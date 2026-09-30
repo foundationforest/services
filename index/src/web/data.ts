@@ -6,6 +6,7 @@
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
 import type { Directory, MarketFile } from '../markets.ts'
+import { VOUCHED } from '../issuers.ts'
 import { badgeStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
 import { type Near, type Urls, SCORING_DOC, SOURCE, PAYLINK_DOC } from './html.ts'
@@ -283,8 +284,8 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
     ),
     ctx.db.query(
       `select l.did, l.wallet, l.label, p.wallet as declared, p.market as profile_market, p.role as profile_role
-       from lines l join profiles p on p.did = l.did where l.market = $1`,
-      [name],
+       from lines l join profiles p on p.did = l.did where l.market = $2 and ${VOUCHED}`,
+      [Object.keys(ctx.config.issuers), name],
     ),
     offers(ctx, 'pr.market = $1', [name], PAGE_SIZE, offset, near),
   ])
@@ -293,7 +294,7 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
       .filter(
         (b) =>
           badgeStatus(
-            { did: b.did, wallet: b.wallet, scope: b.label, issuer: null },
+            { wallet: b.wallet, scope: b.label },
             { wallet: b.declared, scope: scopeOf({ market: b.profile_market, role: b.profile_role }) },
             ctx.directory,
           ).counted,
@@ -322,14 +323,15 @@ export async function profile(ctx: Ctx, did: string) {
   const r = p.record
   const trusted = Object.keys(ctx.config.issuers)
   const [badges, scores, posts, credentials, received, given] = await Promise.all([
-    // Each line, with the trusted issuers vouching for it: by its root, then by memberships that checked.
+    // Each line a trusted issuer vouches for, with those issuers: by its root, then by memberships
+    // that checked. Any other line is no badge here.
     ctx.db.query(
       `select l.*,
-         array(select r.issuer from issuer_roots r where r.root = l.root and r.issuer = any($2) order by r.issuer) as by_root,
-         array(select m.issuer from memberships m where m.code = l.code and m.did = l.did and m.status = 'valid' and m.issuer = any($2)
+         array(select r.issuer from issuer_roots r where r.root = l.root and r.issuer = any($1) order by r.issuer) as by_root,
+         array(select m.issuer from memberships m where m.code = l.code and m.did = l.did and m.status = 'valid' and m.issuer = any($1)
                order by m.issuer) as by_membership
-       from lines l where l.did = $1 order by l.time, l.address`,
-      [did, trusted],
+       from lines l where l.did = $2 and ${VOUCHED} order by l.time, l.address`,
+      [trusted, did],
     ),
     ctx.db.query('select * from scores where did = $1 order by kind, scope', [did]),
     ctx.db.query(`${OFFER_SELECT} where p.did = $1 order by p.created_at desc nulls last, p.uri`, [did]),
@@ -362,7 +364,7 @@ export async function profile(ctx: Ctx, did: string) {
       cid: p.cid as string,
     },
     badges: badges.rows.map((b) => {
-      const status = badgeStatus({ did, wallet: b.wallet, scope: b.label, issuer: null }, { wallet: p.wallet, scope: scopeOf(p) }, ctx.directory)
+      const status = badgeStatus({ wallet: b.wallet, scope: b.label }, { wallet: p.wallet, scope: scopeOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
       const issuer = (key: string, via: 'line' | 'membership') => ({
         key,

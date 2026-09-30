@@ -21,7 +21,34 @@ import { toBytes32 } from '../../forest/registry/client/src/field.ts'
 
 import { lineOf } from './chain/registry.ts'
 import { INDEX_ROOT, type IssuerConfig } from './config.ts'
-import type { Db } from './db.ts'
+import type { Db, Queryable } from './db.ts'
+
+// ---------------------------------------------------------------------------------------------
+// Trust: which lines, and so which profiles, this index counts
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A line `l` this index trusts: an issuer it trusts (`$1`, their did:keys) published the line's
+ * root, or a membership record from one checked against it. Every other line counts for nothing
+ * here, and a profile with no trusted line is neither stored nor shown.
+ */
+export const VOUCHED = `(exists (select 1 from issuer_roots r where r.root = l.root and r.issuer = any($1))
+  or exists (select 1 from memberships m where m.code = l.code and m.did = l.did and m.status = 'valid' and m.issuer = any($1)))`
+
+/** The profiles with a trusted line: all of them, or those among `dids`. */
+export async function trustedProfiles(db: Queryable, issuers: string[], dids?: string[]): Promise<Set<string>> {
+  const { rows } = await db.query(
+    `select distinct l.did from lines l where ${VOUCHED}${dids ? ' and l.did = any($2)' : ''}`,
+    dids ? [issuers, dids] : [issuers],
+  )
+  return new Set(rows.map((r) => r.did as string))
+}
+
+/** Among `dids`, the profiles holding any line: their membership records may yet earn one trust. */
+export async function linedProfiles(db: Queryable, dids: string[]): Promise<Set<string>> {
+  const { rows } = await db.query('select distinct did from lines where did = any($1)', [dids])
+  return new Set(rows.map((r) => r.did as string))
+}
 
 /** What the roots file's signature covers begins with this: 0xff, then its own label. */
 export const ROOTS_SIGN_PREFIX = concat(Uint8Array.of(0xff), utf8('forest.foundation/issuer/roots/v1\n'))

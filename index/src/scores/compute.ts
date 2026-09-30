@@ -17,10 +17,10 @@ import { type Directory, splitScope } from '../markets.ts'
 export type ProfileIn = { did: string; wallet: string | null; scope: string | null }
 /**
  * A badge and one issuer vouching for it: a trusted issuer whose published roots hold the line's
- * root, or one whose membership record for the line checks. `issuer` is null for a line no issuer
- * this index trusts vouches for: like an issuer at weight 0, it adds nothing.
+ * root, or one whose membership record for the line checks. A line no trusted issuer vouches for
+ * is no badge.
  */
-export type BadgeIn = { did: string; wallet: string; scope: string; issuer: string | null }
+export type BadgeIn = { did: string; wallet: string; scope: string; issuer: string }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -72,7 +72,7 @@ export type BadgeStatus =
  * which is its wallet. A plain `market` scope counts for nothing.
  */
 export function badgeStatus(
-  badge: BadgeIn,
+  badge: Pick<BadgeIn, 'wallet' | 'scope'>,
   profile: { wallet: string | null; scope: string | null },
   directory: Directory,
 ): BadgeStatus {
@@ -103,7 +103,7 @@ export type Uniqueness = {
 /**
  * Per profile and badge scope: the distinct issuers vouching for its counted lines, combined as
  * 1 − Π(1 − weight). One issuer at weight w gives w; two independent issuers give more than either
- * and never more than 1; an issuer at 0, or none, adds nothing.
+ * and never more than 1; an issuer at 0 adds nothing.
  */
 export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings: Settings): Uniqueness[] {
   const profiles = new Map(inputs.profiles.map((p) => [p.did, p]))
@@ -115,7 +115,7 @@ export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings
     if (!status.counted) continue
     const key = `${b.did}\u0000${b.scope}`
     const g = groups.get(key) ?? { did: b.did, scope: b.scope, market: status.market, role: status.role, owners: new Set() }
-    if (b.issuer !== null) g.owners.add(b.issuer)
+    g.owners.add(b.issuer)
     groups.set(key, g)
   }
   const out: Uniqueness[] = []

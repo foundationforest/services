@@ -23,7 +23,7 @@ import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { DEAL, EXCHANGE, FOLDER, FOUNDATION_ISSUER, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PHOTO, ana, ben, cleo, dara, makeFixture } from './fixture.ts'
+import { DEAL, EXCHANGE, FOLDER, FOUNDATION_ISSUER, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PHOTO, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -219,8 +219,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         for (const f of facts) assert.ok(text.includes(f), `${p.path}: the page shows "${f}"`)
         if (twin.kind !== 'search' || twin.q) assert.ok(facts.length > 0, `${p.path}: something to compare`)
       }
-      // The numbers themselves, for the profile whose scores part one's test checks.
-      assert.ok(Math.abs(anaTwin.scores.standing.value - (1 + 1.618034 / 2.618034 - 0.0025)) < 1e-3, `Ana ${anaTwin.scores.standing.value}`)
+      // The numbers themselves. Ana and Ben vouch for each other on a deal both said yes to; Cleo, a
+      // badged stranger (her weight 1) with a made-up deal id (0.05), takes 0.05 off Ana's.
+      const ta = anaTwin.scores.standing.value
+      const tb = (await json(`/profiles/${ben.did}.json`)).scores.standing.value
+      assert.ok(Math.abs(tb - (1 + ta / (ta + 1))) < 1e-6, `Ben ${tb}`)
+      assert.ok(Math.abs(ta - (1 + tb / (tb + 1) - 0.05)) < 1e-6, `Ana ${ta}`)
       assert.equal(cur('25', portuguese.price.mint), '$25')
       assert.equal(cur('12.5', portuguese.price.mint), '$12.50')
     })
@@ -337,7 +341,8 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
 
       // Two numbers for every profile an offer or a receipt shows: a rating out of 10, and standing.
       assert.equal(anaTwin.scores.rating.details.reviews, 2)
-      assert.ok(anaTwin.scores.rating.value > 9.9 && anaTwin.scores.rating.value <= 10, `Ana rated ${anaTwin.scores.rating.value}`)
+      const wBen = 1 + (await json(`/profiles/${ben.did}.json`)).scores.standing.value / (1 + (await json(`/profiles/${ben.did}.json`)).scores.standing.value)
+      assert.ok(Math.abs(anaTwin.scores.rating.value - (10 * wBen + 0.05) / (wBen + 0.05)) < 1e-5, `Ana rated ${anaTwin.scores.rating.value}`)
       assert.deepEqual(portuguese.rating, { value: anaTwin.scores.rating.value, reviews: 2 })
       assert.equal(portuguese.standing, anaTwin.scores.standing.value)
       assert.deepEqual(deal.receipt.sellerProfiles[0].rating, portuguese.rating)
@@ -363,9 +368,14 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         [`${MARKET}/seller`, 1, [{ issuer: FOUNDATION_ISSUER, name: 'Forest Foundation (placeholder key)', weight: 1 }]],
       ])
       assert.ok(anaPage.includes('Vouched for by Forest Foundation (placeholder key).'))
-      // Cleo's line names her second profile's key: it is not her badge.
-      const cleoTwin = await json(`/profiles/${cleo.did}.json`)
-      assert.deepEqual([cleoTwin.badges, cleoTwin.scores.uniqueness], [[], []])
+      // Eve's line: no issuer this index trusts vouches for it, so it is no badge, and nothing of
+      // hers is kept: no page, no offer, no review, no count.
+      assert.equal((await get(`/profiles/${eve.did}`)).status, 404)
+      assert.equal((await get(`/profiles/${eve.did}.json`)).status, 404)
+      assert.equal(anaTwin.reviews.received.some((r: any) => r.reviewer === eve.did), false)
+      assert.equal((await json(`/markets/${MARKET}.json`)).offers.some((o: any) => o.did === eve.did), false)
+      assert.deepEqual((await json(`/markets/${MARKET}.json`)).counts, { offers: 2, requests: 0, badgedProfiles: 3 }, 'Ana, Ben and Cleo, badged in this market (buyers too); not Eve')
+      assert.equal(readable(rendered.get('/sitemap.xml') ?? (await get('/sitemap.xml')).text).includes(eve.did), false)
       assert.deepEqual(
         benTwin.badges.map((b: any) => [b.scope, b.counted, b.why, b.side]).sort(),
         [[`${EXCHANGE}/peer`, false, 'notProfileScope', null], [`${MARKET}/buyer`, true, null, 'student']],

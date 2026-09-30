@@ -14,11 +14,11 @@ import { type IndexKeys, type Kind, sign } from './sign.ts'
 
 /**
  * Badges: each line once for every trusted issuer vouching for it, by its root or by a membership
- * that checked; a line none vouches for, once with no issuer.
+ * that checked. A line no trusted issuer vouches for is no badge here.
  */
 export const BADGES_SQL = `
   select l.did, l.wallet, l.label as scope, r.issuer
-  from lines l left join issuer_roots r on r.root = l.root and r.issuer = any($1)
+  from lines l join issuer_roots r on r.root = l.root and r.issuer = any($1)
   union
   select l.did, l.wallet, l.label as scope, m.issuer
   from memberships m join lines l on l.code = m.code and l.did = m.did
@@ -35,7 +35,7 @@ export async function loadInputs(db: Db, issuers: IssuerConfig): Promise<Inputs>
   ])
   return {
     profiles: profiles.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    badges: badges.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.scope, issuer: r.issuer ?? null })),
+    badges: badges.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.scope, issuer: r.issuer })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,

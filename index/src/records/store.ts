@@ -50,10 +50,11 @@ const ts = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 export type Projected = { stored: number; refused: { path: string; why: string }[] }
 
 /**
- * Replace everything the index holds for one profile with what its view says now. A profile whose
- * owner closed its folder keeps nothing here.
+ * Replace everything the index holds for one profile with what its view says now. Only a profile
+ * with a trusted line (`keep`) is stored whole; any other keeps its memberships alone, which may
+ * earn it one. A profile whose owner closed its folder keeps nothing here.
  */
-export async function project(db: Db, view: ProfileView): Promise<Projected> {
+export async function project(db: Db, view: ProfileView, keep: boolean): Promise<Projected> {
   const did = view.profile
   const wallet = addressFromDid(did)
   const content = view.folder === null ? new Map() : liveContent(view)
@@ -72,6 +73,7 @@ export async function project(db: Db, view: ProfileView): Promise<Projected> {
       const kind = kindOf(path)
       const body = v.entry.body as Body
       if (!kind || isSealed(body)) continue
+      if (!keep && !(kind === 'proof' && 'membership' in body)) continue
       const checked = checkBody(kind, body)
       if (!checked.ok) {
         out.refused.push({ path, why: checked.why })

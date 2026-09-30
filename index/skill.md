@@ -2,8 +2,9 @@
 
 Forest is an open place where each person is checked once, by face, to be one real human, and then
 owns their profile, their offers and their reviews. People deal with strangers directly; a payment
-is held between the two until both agree. This index reads every public record and serves it to
-people as pages and to you as JSON.
+is held between the two until both agree. This index reads the public records of every profile
+with a badge it trusts, and serves them to people as pages and to you as JSON. A profile with no
+such badge is not here.
 
 ## How to read
 
@@ -60,7 +61,8 @@ several profiles; they are linked only if the person chose to link them. The ans
 - `profile`: `name`, the one `market` it lives in and its `role` there (with `side`, the market's
   word for it), `about`, `contact`, and the key it is paid at. A profile is one folder in one
   market; a person in two markets holds two profiles.
-- `badges`: every badge registered for this profile, counted or not.
+- `badges`: every badge of this profile's that an issuer this index trusts vouches for, counted
+  or not.
 - `scores`: `uniqueness` (one per counted badge), `rating` and `standing`, each signed.
 - `offers` and `requests`: its live posts.
 - `reviews.received` and `reviews.given`: each with its `ratings` (by name, 1 to 10), its
@@ -89,8 +91,8 @@ In `badges[]`:
   under another market or side than the one the profile lives in) or `walletNotDeclared`.
 - `issuers` are who vouched, each with the weight this index gives it: every issuer this index
   trusts whose published list of roots holds the badge's `root` (`via: "line"`), and every one a
-  membership record in the profile's own folder shows (`via: "membership"`). An empty list: no
-  issuer this index trusts vouches for it. `scores.uniqueness[]` combines the issuers of each
+  membership record in the profile's own folder shows (`via: "membership"`). A line no issuer this
+  index trusts vouches for is no badge here. `scores.uniqueness[]` combines the issuers of each
   counted badge into one number from 0 to 1.
 
 To check it yourself, without trusting this index: `line` is the address of the badge's account in

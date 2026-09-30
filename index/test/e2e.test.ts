@@ -5,22 +5,22 @@
 //
 // The story:
 //   Ana tutors; Ben is her student; Cleo is a stranger; Dara teaches English on a second host.
-//   1. Ana, Ben and Cleo write their folders and cards on host A, which the index follows in full.
-//      Ana's folder also names host B, so the index follows host B too, badged profiles only. Dara
-//      writes her card and an offer on host B alone, before she has a badge: the index sees none of it.
-//   2. Each gets a line in the registry. Ana's and Dara's are proven against the foundation's list,
-//      Ben's against a second issuer's, Cleo's against a list of her own that no issuer publishes.
-//      The index reads each issuer's signed roots. Host B starts counting Ana as badged; Ana writes
-//      on, so the index's badged cursor on host B moves past Dara's first entries. Then Dara is
-//      badged and writes once more: the index sees her for the first time, and reads her earlier
-//      entries by profile. A fresh chain reader finds every line again from the registry's accounts
-//      alone.
-//   3. Ben proves he is on the foundation's list too, in a membership record in his folder; Cleo
-//      copies it into hers, and it does not check for her.
+//   1. Ana, Ben and Cleo write their folders, cards and offers on host A, which the index follows in
+//      full, and Dara on host B. Nobody holds a badge yet, so the index keeps none of it.
+//   2. Each gets a line in the registry. Ana's is proven against the foundation's list, Ben's against
+//      a second trusted issuer's, Cleo's and Dara's against lists no trusted issuer publishes. The
+//      index reads each issuer's signed roots. Ana and Ben now hold a trusted line: what was dropped
+//      is read again by profile, from host A and from host B, which Ana's folder names. Cleo and
+//      Dara stay out, though host B counts Dara as badged: its word is a hint. A fresh chain reader
+//      finds every line again from the registry's accounts alone.
+//   3. Memberships: Ben proves he is on the foundation's list too; Dara does, and so comes to hold a
+//      trusted line, and everything of hers is read in by profile; Cleo copies Ben's record, and it
+//      does not check for her.
 //   4. A paid deal on escrow v2: Ana invoices Ben; Ben objects, then pays and releases it to her in
 //      one transaction. A deal on escrow v1: Dara pays Ana in one tap.
-//   5. Reviews both ways on the v2 deal, and Cleo's with a made-up deal id.
-//   6. A forged entry, claiming to be Ana's, is refused; a genuine one on the same host is stored.
+//   5. Reviews both ways on the v2 deal; Cleo's review, with no badge behind it, is not kept.
+//   6. A forged entry, claiming to be Ana's, is refused; a genuine one of Ana's on the same host is
+//      kept, and Mallory's, with no badge, is not.
 //   7. The scores, and 8. every page and its twin.
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
@@ -289,11 +289,15 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       encodeEntry(forged),
       encodeEntry(folderEntry(mallory.key, { hosts: [fakeUrl] }, T0)),
       encodeEntry(ownerEntry(mallory.key, 'profile', { name: 'Mallory', market: MARKET, role: 'seller', createdAt: new Date(T0).toISOString() }, T0)),
+      // And one of Ana's, genuine: a note, a kind no index reads.
+      encodeEntry(ownerEntry(ana.key, 'note/hello', { text: 'hello' }, T0)),
     ]
     const fake = createServer((req, res) => {
-      const after = Number(new URL(req.url ?? '/', 'http://x').searchParams.get('after') ?? 0)
-      const lines = fakeLines.slice(after)
-      res.writeHead(200, { 'content-type': 'application/x-ndjson', 'forest-cursor': String(after + lines.length) }).end(lines.map((l) => `${l}\n`).join(''))
+      const query = new URL(req.url ?? '/', 'http://x').searchParams
+      const after = Number(query.get('after') ?? 0)
+      const profile = query.get('profile')
+      const lines = fakeLines.slice(after).filter((l) => !profile || (JSON.parse(l) as Entry).profile === profile)
+      res.writeHead(200, { 'content-type': 'application/x-ndjson', 'forest-cursor': String(Math.max(after, fakeLines.length)) }).end(lines.map((l) => `${l}\n`).join(''))
     })
     await new Promise<void>((resolve) => fake.listen(fakePort, '127.0.0.1', resolve))
     cleanups.push(() => new Promise<void>((resolve) => fake.close(() => resolve())))
@@ -344,7 +348,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     const review = (subject: string, overall: string, dealId: string, text: string) => ({ subject, ratings: { overall }, text, dealId, createdAt: now() })
     const anaHosts = [hostA.url, hostB.url]
 
-    await t.test('1. folders, cards and offers from host A; host B found in a folder and read for badged profiles only', async () => {
+    await t.test('1. folders, cards and offers on hosts A and B, before anyone holds a badge: nothing kept', async () => {
       await write(ana, anaHosts, [
         ['profile', card('Ana', SELLER)],
         ['offer/portuguese', offer('Portuguese conversation for adults, A1 to B2.')],
@@ -354,16 +358,15 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       await write(cleo, [hostA.url], [['profile', card('Cleo', SELLER)]], true)
       const { price: _, ...exchange } = offer('English for Portuguese, an hour each way.')
       await write(dara, [hostB.url], [['profile', card('Dara', PEER)], ['offer/exchange', exchange]], true)
+      // Host A read to its end: its cursor is past every entry, and nothing of it was kept.
       await waitFor(
-        async () => (await count(`select count(*) n from profiles where did = any($1)`, [[ana.did, ben.did, cleo.did]])) === 3 && (await count('select count(*) n from posts')) === 2,
+        async () => Number((await index.db.query('select value from cursors where source = $1', [`host:${hostA.url}`])).rows[0]?.value ?? 0) >= hostA.read({}).cursor,
         30_000,
-        'three profiles and two offers',
+        'host A read to its end',
       )
-      const { rows } = await index.db.query('select pr.market, pr.role from posts p join profiles pr on pr.did = p.did')
-      assert.deepEqual(rows, [{ market: MARKET, role: 'seller' }, { market: MARKET, role: 'seller' }], "both in their author's market, as her side: the offers name neither")
-      assert.deepEqual(index.records!.following().find((f) => f.host === hostB.url), { host: hostB.url, badged: true }, 'host B, named in a folder, badged profiles only')
-      assert.equal(await count('select count(*) n from profiles where did = $1', [dara.did]), 0, 'Dara has no badge: host B shows the index nothing of hers')
-      assert.equal(await count('select count(*) n from host_entries where host = $1', [hostB.url]), 0, 'nor of anyone, yet')
+      assert.equal(await count('select count(*) n from host_entries'), 0, 'no badge, nothing kept')
+      assert.equal(await count('select count(*) n from profiles'), 0)
+      assert.equal(index.records!.following().some((f) => f.host === hostB.url), false, 'no kept folder names host B yet')
     })
 
     let lineOf: Map<string, { line: PublicKey; code: bigint }>
@@ -382,43 +385,48 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       lineOf.set(p.did, { line: new PublicKey(reg.line.toBase58()), code: reg.code })
     }
 
-    await t.test('2. lines, the issuers’ roots, a profile read by profile, and every line again from the accounts alone', async () => {
+    await t.test('2. lines and the issuers’ roots; the trusted profiles read in by profile; every line again from the accounts alone', async () => {
       lineOf = new Map()
       await register(ana, SELLER, foundation.commitments)
       await register(ben, BUYER, second.commitments)
       await register(cleo, SELLER, [commitmentOf(cleo.secret), ...others(1)])
-      await waitFor(async () => (await count('select count(*) n from lines')) === 3, 60_000, 'three lines')
+      await register(dara, PEER, [commitmentOf(dara.secret), ...others(1)])
+      await waitFor(async () => (await count('select count(*) n from lines')) === 4, 60_000, 'four lines')
       await index.roots.readOnce()
       assert.equal(await count('select count(*) n from issuer_roots'), 2, "each issuer's one root")
-      const { rows } = await index.db.query(
-        `select l.did, l.label, l.wallet, r.issuer from lines l left join issuer_roots r on r.root = l.root order by l.label, l.did`,
-      )
+      const { rows } = await index.db.query(`select l.did, l.label, l.wallet, r.issuer from lines l left join issuer_roots r on r.root = l.root`)
       assert.deepEqual(
         rows.map((r) => [r.did, r.label, r.issuer]).sort(),
         [
           [ana.did, SELLER, foundation.key.did],
           [ben.did, BUYER, second.key.did],
           [cleo.did, SELLER, null],
+          [dara.did, PEER, null],
         ].sort(),
-        'who vouched: the issuer whose roots hold the line’s root; nobody publishes Cleo’s',
+        'who vouched: the issuer whose roots hold the line’s root; nobody publishes Cleo’s or Dara’s',
       )
       for (const r of rows) assert.equal(r.wallet, addressFromDid(r.did), "a line names the profile's own key")
 
-      // Host B counts Ana as badged now; she writes on, so the index's badged cursor there moves past
-      // Dara's first entries.
-      await hostB.refreshBadges()
-      const beforeDara = hostB.read({}).cursor
-      await write(ana, anaHosts, [['offer/portuguese', offer('Portuguese conversation for adults, A1 to C1.')]])
-      await waitFor(async () => (await count('select count(*) n from host_entries where host = $1 and profile = $2', [hostB.url, ana.did])) === 5, 30_000, "Ana's entries from host B")
-      const cursor = Number((await index.db.query('select value from cursors where source = $1', [`host:${hostB.url}#badged`])).rows[0].value)
-      assert.ok(cursor > beforeDara, `the badged cursor ${cursor} is past Dara's entries (up to ${beforeDara})`)
+      // Ana and Ben hold trusted lines: what was dropped is read again, by profile. Ana's folder names
+      // host B, which is then followed, badged profiles only, and read for her too.
+      await waitFor(
+        async () => (await count('select count(*) n from profiles where did = any($1)', [[ana.did, ben.did]])) === 2 && (await count('select count(*) n from posts')) === 2,
+        30_000,
+        'Ana and Ben, and her two offers',
+      )
+      assert.deepEqual(index.records!.following().find((f) => f.host === hostB.url), { host: hostB.url, badged: true }, 'host B, named in a kept folder, badged profiles only')
+      await waitFor(async () => (await count('select count(*) n from host_entries where host = $1 and profile = $2', [hostB.url, ana.did])) === 4, 30_000, "Ana's entries on host B, read by profile")
+      const { rows: posts } = await index.db.query('select pr.market, pr.role from posts p join profiles pr on pr.did = p.did')
+      assert.deepEqual(posts, [{ market: MARKET, role: 'seller' }, { market: MARKET, role: 'seller' }], "both in their author's market, as her side: the offers name neither")
 
-      // Dara's line; then one more entry of hers, which host B's badged feed shows. The index reads
-      // her by profile, so her earlier offer arrives too.
-      await register(dara, PEER, foundation.commitments)
-      await write(dara, [hostB.url], [['profile', card('Dara Mensah', PEER)]])
-      await waitFor(async () => (await count('select count(*) n from posts where did = $1', [dara.did])) === 1, 30_000, "Dara's first offer, read by profile")
-      assert.equal((await index.db.query('select name from profiles where did = $1', [dara.did])).rows[0].name, 'Dara Mensah')
+      // Host B counts Dara as badged (she holds a line), and Ana writes on there. The index keeps
+      // nothing of Dara's: no issuer it trusts vouches for her line.
+      await hostB.refreshBadges()
+      await write(ana, anaHosts, [['offer/portuguese', offer('Portuguese conversation for adults, A1 to C1.')]])
+      await waitFor(async () => (await count('select count(*) n from host_entries where host = $1 and profile = $2', [hostB.url, ana.did])) === 5, 30_000, "Ana's new entry from host B")
+      assert.ok(await isBadged(dara.did), "host B's word: Dara is badged")
+      assert.equal(await count('select count(*) n from host_entries where profile = any($1)', [[cleo.did, dara.did]]), 0, 'nothing of Cleo’s or Dara’s kept')
+      assert.equal(await count('select count(*) n from profiles where did = any($1)', [[cleo.did, dara.did]]), 0)
 
       // A chain reader that starts now finds every line from the registry's accounts, and follows
       // only transactions after the newest one there is. The index's own reader pauses meanwhile.
@@ -437,36 +445,35 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       await index.scorer.now()
     })
 
-    await t.test('3. a membership: Ben on the foundation’s list too; the same record in Cleo’s folder does not check', async () => {
+    await t.test('3. memberships: Ben’s adds the foundation; Dara’s earns her a trusted line; Cleo’s copy does not check', async () => {
       const before = (await get(`/profiles/${ben.did}.json`)).body
       assert.deepEqual(before.scores.uniqueness.map((u: any) => [u.scope, u.value]), [[BUYER, 0.5]], 'the second issuer, at 0.5')
-      const membership = await makeMembership({
-        secret: ben.secret,
-        label: BUYER,
-        profile: ben.key.publicKey,
-        commitments: foundation.commitments,
-        issuer: foundation.key.did,
-        artifacts: ARTIFACTS,
-      })
-      await write(ben, [hostA.url], [['proof/foundation', membership as unknown as Record<string, unknown>]])
-      await write(cleo, [hostA.url], [['proof/foundation', membership as unknown as Record<string, unknown>]])
+      const membership = (p: typeof ana, label: string) =>
+        makeMembership({ secret: p.secret, label, profile: p.key.publicKey, commitments: foundation.commitments, issuer: foundation.key.did, artifacts: ARTIFACTS })
+      const bens = await membership(ben, BUYER)
+      await write(ben, [hostA.url], [['proof/foundation', bens as unknown as Record<string, unknown>]])
+      await write(cleo, [hostA.url], [['proof/foundation', bens as unknown as Record<string, unknown>]])
+      await write(dara, [hostB.url], [['proof/foundation', (await membership(dara, PEER)) as unknown as Record<string, unknown>]])
       await waitFor(
-        async () => (await count(`select count(*) n from memberships where status <> 'pending'`)) === 2,
+        async () => (await count(`select count(*) n from memberships where status <> 'pending'`)) === 3,
         60_000,
         async () => JSON.stringify((await index.db.query('select did, status, why from memberships')).rows),
       )
       const { rows } = await index.db.query('select did, status, why from memberships order by did')
       assert.deepEqual(
         Object.fromEntries(rows.map((r) => [r.did, [r.status, r.why]])),
-        { [ben.did]: ['valid', null], [cleo.did]: ['invalid', 'doesNotVerify'] },
+        { [ben.did]: ['valid', null], [dara.did]: ['valid', null], [cleo.did]: ['invalid', 'doesNotVerify'] },
       )
+      // Dara now holds a trusted line: everything of hers is read in, by profile, from host B.
+      await waitFor(async () => (await count('select count(*) n from posts where did = $1', [dara.did])) === 1, 30_000, "Dara's offer, read by profile")
+      assert.equal(await count('select count(*) n from host_entries where profile = $1 and path not like $2', [cleo.did, 'proof/%']), 0, 'of Cleo’s, only her proof record')
       await index.scorer.now()
       const after = (await get(`/profiles/${ben.did}.json`)).body
       assert.deepEqual(after.scores.uniqueness.map((u: any) => [u.scope, u.value]), [[BUYER, 1]], 'with the foundation: 1 − (1 − 1) × (1 − 0.5)')
-      assert.deepEqual(
-        after.badges[0].issuers.map((i: any) => [i.name, i.via]),
-        [['Second issuer', 'line'], ['Forest Foundation', 'membership']],
-      )
+      assert.deepEqual(after.badges[0].issuers.map((i: any) => [i.name, i.via]), [['Second issuer', 'line'], ['Forest Foundation', 'membership']])
+      const daraTwin = (await get(`/profiles/${dara.did}.json`)).body
+      assert.deepEqual(daraTwin.badges.map((b: any) => [b.scope, b.counted, b.issuers.map((i: any) => [i.name, i.via])]), [[PEER, true, [['Forest Foundation', 'membership']]]])
+      assert.equal((await get(`/profiles/${cleo.did}.json`)).status, 404, 'no trusted line, no page')
     })
 
     let escrow: PublicKey
@@ -505,17 +512,19 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     })
 
     const madeUpDeal = randomBytes(32).toString('hex')
-    await t.test('5. reviews both ways on the v2 deal, and one with no receipt', async () => {
+    await t.test('5. reviews both ways on the v2 deal; Cleo’s, with no badge behind it, not kept', async () => {
+      await write(cleo, [hostA.url], [['review/ana', review(ana.did, '1', madeUpDeal, 'Never showed up.')]])
       await write(ben, [hostA.url], [['review/ana', review(ana.did, '10', escrow.toBase58(), 'Patient and well prepared.')]])
       await write(ana, anaHosts, [['review/ben', review(ben.did, '10', escrow.toBase58(), 'Paid on time, came prepared.')]])
-      await write(cleo, [hostA.url], [['review/ana', review(ana.did, '1', madeUpDeal, 'Never showed up.')]])
-      await waitFor(async () => (await count('select count(*) n from reviews')) === 3, 30_000, 'three reviews')
+      await waitFor(async () => (await count('select count(*) n from reviews')) === 2, 30_000, 'two reviews')
+      assert.equal(await count('select count(*) n from reviews where reviewer = $1', [cleo.did]), 0)
     })
 
-    await t.test('6. a forged entry is refused; a genuine one on the same host is stored', async () => {
-      await waitFor(async () => (await count('select count(*) n from profiles where did = $1', [mallory.did])) === 1, 30_000, "Mallory's card")
+    await t.test('6. a forged entry is refused; a genuine one of Ana’s on the same host is kept; Mallory’s, with no badge, is not', async () => {
+      await waitFor(async () => (await count('select count(*) n from host_entries where host = $1 and profile = $2', [fakeUrl, ana.did])) === 1, 30_000, "Ana's note from the fake host, read by profile")
+      assert.equal(await count('select count(*) n from host_entries where host = $1 and profile = $2', [fakeUrl, mallory.did]), 0, 'Mallory holds no line: nothing kept')
       assert.equal(await count(`select count(*) n from reviews where subject = $1`, [mallory.did]), 0, 'the forged review is not stored')
-      assert.equal(await count(`select count(*) n from host_entries where id is not null and text like '%review/forged%'`), 0)
+      assert.equal(await count(`select count(*) n from host_entries where path = 'review/forged'`), 0)
       assert.ok(indexErrors.some((e) => String(e).includes(`refused from ${fakeUrl}: signature`)), 'refused for its signature')
     })
 
@@ -526,38 +535,32 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     await t.test('7. scores as expected, each signed twice', async () => {
       const a = (await get(`/profiles/${ana.did}.json`)).body
       const b = (await get(`/profiles/${ben.did}.json`)).body
-      const c = (await get(`/profiles/${cleo.did}.json`)).body
+      const d = (await get(`/profiles/${dara.did}.json`)).body
 
       assert.deepEqual(a.scores.uniqueness.map((u: any) => [u.scope, u.value]), [[SELLER, 1]], "Ana's line, on the foundation's list")
       assert.deepEqual(b.scores.uniqueness.map((u: any) => [u.scope, u.value]), [[BUYER, 1]])
-      assert.deepEqual(c.scores.uniqueness.map((u: any) => [u.scope, u.value, u.details.issuers]), [[SELLER, 0, []]], "Cleo's line: no issuer this index trusts published its root")
-      assert.deepEqual(c.badges.map((x: any) => [x.counted, x.issuers]), [[true, []]])
+      assert.deepEqual(d.scores.uniqueness.map((u: any) => [u.scope, u.value]), [[PEER, 1]], "Dara's, by her membership")
 
       // Ana and Ben vouch for each other on one deal both said yes to (she invoiced it); each
-      // converges to the golden ratio. Cleo's review, from a reviewer no trusted issuer vouches for
-      // and with no receipt, takes 0.05 × 0.05 × 1 off Ana's. Cleo has no reviews: zero.
+      // converges to the golden ratio. Cleo's review was never kept. Dara has no reviews: zero.
       const ta = a.scores.standing.value
       const tb = b.scores.standing.value
       assert.ok(Math.abs(tb - 1.618034) < 1e-3, `Ben ${tb}`)
-      const wBen = 1 + tb / (tb + 1)
-      assert.ok(Math.abs(ta - (wBen - 0.0025)) < 1e-5, `Ana ${ta}`)
-      assert.equal(c.scores.standing.value, 0)
+      assert.ok(Math.abs(ta - 1.618034) < 1e-3, `Ana ${ta}`)
+      assert.equal(d.scores.standing.value, 0)
       assert.equal(a.scores.standing.details.reviews.withReceipt, 1)
-      // The rating: Ben's 10 at weight wBen and Cleo's 1 at 0.0025, averaged; Ben's is Ana's 10.
-      assert.ok(Math.abs(a.scores.rating.value - (10 * wBen + 0.0025) / (wBen + 0.0025)) < 1e-5, `Ana rated ${a.scores.rating.value}`)
+      assert.equal(a.scores.rating.value, 10, "Ben's 10, the one review she received")
       assert.equal(b.scores.rating.value, 10)
-      assert.equal(c.scores.rating, null, 'no review, no rating')
+      assert.equal(d.scores.rating, null, 'no review, no rating')
 
-      for (const score of [...a.scores.uniqueness, a.scores.standing, a.scores.rating, b.scores.standing, b.scores.rating, c.scores.standing]) {
+      for (const score of [...a.scores.uniqueness, a.scores.standing, a.scores.rating, b.scores.standing, b.scores.rating, d.scores.standing]) {
         assert.deepEqual(verify(score.signed, pub), { ed25519: true, eddsaPoseidon: true })
       }
 
       const byBen = a.reviews.received.find((r: any) => r.reviewer === ben.did)
-      const byCleo = a.reviews.received.find((r: any) => r.reviewer === cleo.did)
       assert.deepEqual(byBen.evidence, { kind: 'both', note: null, weight: 1 }, 'a receipt both said yes to')
       assert.deepEqual(byBen.objection?.by, 'buyer', 'the objection, on the review that names the deal')
-      assert.deepEqual(byCleo.evidence, { kind: 'none', note: 'noReceipt', weight: 0.05 }, 'a made-up deal id')
-      assert.equal(byCleo.reviewerWeight, 0.05)
+      assert.equal(a.reviews.received.length, 1)
       assert.equal(a.reviews.given[0].subject, ben.did)
     })
 
@@ -578,8 +581,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       hasKeys(market.body, ['kind', 'url', 'json', 'market', 'folderUrl', 'counts', 'near', 'limit', 'offset', 'total', 'next', 'offers'], '/markets/{m}.json')
       assert.equal(market.body.market.name, MARKET)
       assert.deepEqual([market.body.market.sides, market.body.market.labels, market.body.market.roles], ['two', { seller: 'tutor', buyer: 'student' }, ['seller', 'buyer']])
-      // Every profile with a counted badge, whatever its uniqueness, as before: Cleo's too.
-      assert.deepEqual(market.body.counts, { offers: 2, requests: 0, badgedProfiles: 3 }, 'Ana, Ben and Cleo')
+      assert.deepEqual(market.body.counts, { offers: 2, requests: 0, badgedProfiles: 2 }, 'Ana and Ben; not Cleo, whose line no trusted issuer vouches for')
       assert.equal(market.body.total, 2)
       const OFFER = ['uri', 'cid', 'did', 'name', 'profileUrl', 'direction', 'market', 'marketUrl', 'role', 'description', 'price', 'terms', 'availability', 'remote', 'location', 'expires', 'createdAt', 'uniqueness', 'rating', 'standing', 'payLink']
       for (const o of market.body.offers) {
@@ -588,7 +590,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
         assert.equal(o.name, 'Ana')
         assert.equal(o.uniqueness, 1)
         assert.ok(o.standing > 1.6)
-        assert.ok(o.rating.value > 9.9 && o.rating.reviews === 2, `Ana rated ${o.rating.value} from ${o.rating.reviews}`)
+        assert.deepEqual(o.rating, { value: 10, reviews: 1 })
         assert.ok(o.payLink.includes(encodeURIComponent(o.uri)), 'the pay link names the offer')
         assert.match(o.cid, /^[0-9a-f]{64}$/, "the offer's entry id")
       }
@@ -611,7 +613,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       hasKeys(a.body.scores.standing, ['scope', 'value', 'valueMicro', 'details', 'computedAt', 'signed'], 'a score')
       hasKeys(a.body.scores.standing.signed, ['statement', 'message', 'ed25519', 'eddsaPoseidon'], 'a signature')
       assert.equal(a.body.offers.length, 2)
-      assert.deepEqual([a.body.reviews.received.length, a.body.reviews.given.length], [2, 1])
+      assert.deepEqual([a.body.reviews.received.length, a.body.reviews.given.length], [1, 1])
       const REVIEW = ['uri', 'reviewer', 'reviewerName', 'reviewerUrl', 'subject', 'subjectName', 'subjectUrl', 'market', 'overall', 'ratings', 'text', 'media', 'fields', 'dealId', 'dealUrl', 'hasReceipt', 'objection', 'createdAt', 'counted', 'skipped', 'evidence', 'reviewerWeight', 'contribution']
       hasKeys(a.body.reviews.received[0], REVIEW, 'a review')
       assert.equal((await get('/profiles/did:key:z6MkNobody.json')).status, 404)
@@ -630,8 +632,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       assert.deepEqual([d.body.receipt.objection.by, d.body.receipt.objection.side], ['buyer', 'student'])
       assert.equal(d.body.reviews.length, 2, 'the two sides')
       const noReceipt = await get(`/deals/${madeUpDeal}.json`)
-      assert.equal(noReceipt.body.receipt, null)
-      assert.equal(noReceipt.body.reviews.length, 1)
+      assert.equal(noReceipt.status, 404, "Cleo's review, the one naming it, was never kept")
       assert.equal((await get(`/deals/${'00'.repeat(32)}.json`)).status, 404)
 
       const s = await get('/search.json?q=portuguese')

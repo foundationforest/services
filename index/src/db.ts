@@ -43,7 +43,7 @@ export async function migrate(db: Db): Promise<string[]> {
 }
 
 /** The pool, or one client inside a transaction. */
-type Queryable = Pick<pg.Pool, 'query'> | pg.PoolClient
+export type Queryable = Pick<pg.Pool, 'query'> | pg.PoolClient
 
 export async function getCursor(db: Queryable, source: string): Promise<string | null> {
   const { rows } = await db.query('select value from cursors where source = $1', [source])

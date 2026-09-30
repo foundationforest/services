@@ -13,10 +13,17 @@ a local Postgres. The devnet index on Railway runs an earlier build (`deploy/REA
 ## What it reads
 
 - **Records**, from hosts (`forest/records/SPEC.md` §7), read directly: no directory, no relay.
+  - **Only what counts is kept:** the entries of profiles holding a line an issuer this index trusts
+    vouches for. Everything else is dropped as it arrives, but the `proof/` records of a profile
+    holding some other line, since a membership among them may earn it that trust. When a profile
+    comes to hold a trusted line, what was dropped is read again, by `profile`, from every host
+    the index follows and every host its folder names. A host's own word on who is badged is a
+    hint for what it sends; the index checks the lines.
   - Every line a host serves is checked by `forest/records`' own reader: its canonical text and its
     signature. A line that fails is dropped and reported.
-  - The hosts in `HOSTS` are read in full. Every other host a folder names is read for badged
-    profiles only (`badged=1`). The first time a profile turns up in a badged feed, its earlier
+  - The hosts in `HOSTS` are read in full. Every other host a kept folder names is read for badged
+    profiles only (`badged=1`). A host still answering after 60 seconds is skipped until it
+    finishes. The first time a profile turns up in a badged feed, its earlier
     entries are read from that host by `profile`, once, since a badged feed shows a profile only
     from when its host counted it badged. Each host's feed resumes from its cursor, kept in
     Postgres.
@@ -26,8 +33,9 @@ a local Postgres. The devnet index on Railway runs an earlier build (`deploy/REA
     checked against its schema in `forest/records/schemas/`; one that fails is not stored. A record
     is addressed as `<did>/<path>`, and its `cid` is the id of the entry that holds it now. A
     profile's key is its wallet.
-- **Badges**, from the registry's lines. At start, every line from the registry program's own
-  accounts (`getProgramAccounts`, each line checked to sit at its code's address); then only newer
+- **Badges**, from the registry's lines, each one a badge only when an issuer this index trusts
+  vouches for it. At start, every line from the registry program's own accounts
+  (`getProgramAccounts`, each line checked to sit at its code's address); then only newer
   transactions, to pick up new lines. A line names the profile's key, a label, and the root of the
   issuer's list it was proven against; it never changes.
 - **Issuers' roots**, from each issuer `config/issuers.json` names: its signed roots file (the
@@ -93,7 +101,7 @@ stale-while-revalidate=300`, `access-control-allow-origin: *`, no cookies, no se
 | `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's two public keys and the statement format |
 | `/folders/{folder}` | `.json` | The folder's markets |
 | `/markets/{market}?near=&km=&offset=` | `.json` | The market file (with how deals go), counts, and live offers: badged sellers first, then standing, then newest, 50 a page. `near=lat,lon&km=N` keeps the offers whose point is within N km |
-| `/profiles/{did}` | `.json` | The profile; every badge, counted or not and why, and who vouched; its scores, apart and signed; live offers and requests; reviews received and given, each with the payment behind it; credentials |
+| `/profiles/{did}` | `.json` | The profile, if it holds a trusted badge; every such badge, counted or not and why, and who vouched; its scores, apart and signed; live offers and requests; reviews received and given, each with the payment behind it; credentials |
 | `/deals/{dealId}` | `.json` | The receipt in plain words (or none), the profiles that declare its two keys with their two numbers, and the reviews that name it |
 | `/search?q=&near=&km=` | `/search.json?q=` | Directory markets matching `q` by substring (name, folder, roles, labels), and live offers by full-text search (Postgres's `simple` configuration, which favours no language), near a point if asked |
 | `/pay?…` | `/pay.json?…` | An offer's Pay link, checked against the offer as indexed ([PAYLINK.md](PAYLINK.md)) |

@@ -65,7 +65,7 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
 
   let records: HostReader | null = null
   if (config.hosts.length) {
-    records = new HostReader({ db, hosts: config.hosts, onChange: () => scorer.schedule(), onError })
+    records = new HostReader({ db, hosts: config.hosts, issuers: Object.keys(config.issuers), onChange: () => scorer.schedule(), onError })
     await records.start(config.pollMs)
   }
 

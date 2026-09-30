@@ -1,5 +1,6 @@
 // Part one's story, as data, for the page tests: Ana tutors; Ben is her student; Cleo is a
-// stranger. The same people, badges, deal and reviews the end-to-end test makes on real pieces,
+// stranger; Eve holds a line no issuer this index trusts vouches for, so the index keeps nothing of
+// hers. The same people, badges, deal and reviews the end-to-end test makes on real pieces,
 // written straight into a fresh database, so the pages can be tested with nothing but Postgres.
 // Markets v1 adds a one-sided market, where Dara offers a language exchange in a place, with no
 // price. Every profile lives in one market, as one side of it.
@@ -54,10 +55,13 @@ const person = (fill: number, name: string, n = 0) => {
 }
 export const ana = person(21, 'Ana Ribeiro')
 export const ben = person(22, 'Ben Okafor')
-/** Cleo's line names her second profile's key, not this one's: it is not her badge here. */
-export const cleo = { ...person(23, 'Cleo'), badgeKey: person(23, 'Cleo', 1) }
+export const cleo = person(23, 'Cleo')
 /** A peer in the language exchange: another market, so another profile. */
 export const dara = person(24, 'Dara Mensah')
+/** Her line was proven against a list no trusted issuer publishes: no badge here, and nothing kept. */
+export const eve = person(25, 'Eve')
+/** The root of Eve's list, which no issuer this index trusts published. */
+export const UNKNOWN_ROOT = 'cd'.repeat(32)
 /** Ana invoiced Ben; Ben objected, then paid in one tap and released it to her. */
 export const DEAL = 'CJfRUQxyonG6B5mnztsNUqxknbFT89DJdrdrzV9F96mU'
 export const MADE_UP_DEAL = 'cd'.repeat(32)
@@ -121,6 +125,10 @@ export const ENTRIES: Entry[] = [
   ...entries(cleo, 3, profile(SELLER_SCOPE, null, 3), [['review/ana', review(ana.did, { overall: '1' }, MADE_UP_DEAL, 'Never showed up.', 8), 8]]),
   // Dara's offer: in her market, the language exchange; no price, and a place.
   ...entries(dara, 3, profile(PEER_SCOPE, 'English teacher, learning Portuguese.', 3), [['offer/exchange', exchange, 4]]),
+  ...entries(eve, 3, profile(SELLER_SCOPE, 'Portuguese lessons, cheap.', 3), [
+    ['offer/cheap', offer('Portuguese lessons, cheap.', '5', {}), 4],
+    ['review/ana', review(ana.did, { overall: '1' }, MADE_UP_DEAL, 'Terrible.', 8), 8],
+  ]),
 ]
 
 const idAt = (did: string, path: string) => entryId(unsignedOf(ENTRIES.find((e) => e.profile === did && e.path === path)!))
@@ -150,16 +158,11 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const readers = await startReaders(db, config())
   readers.roots.stop()
 
-  // The records: every entry as one host served them, merged and stored as the reader does.
-  const refused: unknown[] = []
-  await takeIn(db, HOST, ENTRIES.map((entry) => ({ entry, id: entryId(unsignedOf(entry)) })), (err) => refused.push(err))
-  if (refused.length) throw new Error(`fixture entries refused: ${refused.map(String).join('; ')}`)
-
-  // Five lines, each proven against the foundation's list. Cleo's names her second profile's key.
-  // Ben's second is under another scope than his profile's, so it does not count for it: a second
-  // market is a second profile, as Dara's is.
+  // Six lines. Five proven against the foundation's list; Ben's second is under another scope than
+  // his profile's, so it does not count for it: a second market is a second profile, as Dara's is.
+  // Eve's, against a list no trusted issuer publishes.
   await storeRoots(db, FOUNDATION_ISSUER, [{ root: FOUNDATION_ROOT, size: 5, time: at(5) }])
-  const line = async (i: number, p: { key: ProfileKey }, scope: string) => {
+  const line = async (i: number, p: { key: ProfileKey }, scope: string, root = FOUNDATION_ROOT) => {
     await storeLine(db, {
       address: `ExampleLine${i}`.padEnd(44, '1'),
       code: String(i).repeat(64),
@@ -167,16 +170,23 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
       wallet: p.key.address,
       label: scope,
       ...splitScope(scope),
-      root: FOUNDATION_ROOT,
+      root,
       time: at(5) / 1000,
       payer: 'ExamplePayer'.padEnd(44, '1'),
     })
   }
   await line(1, ana, SELLER_SCOPE)
   await line(2, ben, BUYER_SCOPE)
-  await line(3, cleo.badgeKey, SELLER_SCOPE)
+  await line(3, cleo, SELLER_SCOPE)
   await line(4, ben, PEER_SCOPE)
   await line(5, dara, PEER_SCOPE)
+  await line(6, eve, SELLER_SCOPE, UNKNOWN_ROOT)
+
+  // The records: every entry as one host served them, kept, merged and stored as the reader does.
+  // Eve's are dropped as they arrive.
+  const refused: unknown[] = []
+  await takeIn(db, HOST, ENTRIES.map((entry) => ({ entry, id: entryId(unsignedOf(entry)) })), [FOUNDATION_ISSUER], (err) => refused.push(err))
+  if (refused.length) throw new Error(`fixture entries refused: ${refused.map(String).join('; ')}`)
 
   // The receipt: $25 from Ben to Ana, which she asked for. Ben objected, then released it to her.
   await db.query(

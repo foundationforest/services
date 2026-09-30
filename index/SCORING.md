@@ -16,9 +16,11 @@ from the `markets` repo (`MARKETS_URL`). Another index may weigh everything diff
 
 ## Badges: which ones count
 
-A badge is one line in the registry: an account the registry program wrote, naming a profile's key,
-a label, and the root of the issuer's list the person proved they are on. It counts for a profile
-only if all four are true:
+A badge is one line in the registry that an issuer this index trusts vouches for (below): an
+account the registry program wrote, naming a profile's key, a label, and the root of the issuer's
+list the person proved they are on. A line no trusted issuer vouches for is no badge here, and this
+index keeps nothing of a profile without a badge: not its card, its offers or its reviews. A badge
+counts for a profile only if all four are true:
 
 1. **It is `market/role`, and its market is in the directory, byte for byte.** Such as
    `tutoring/seller`. The name before the slash must be the name of a market the `markets` repo's
@@ -46,7 +48,7 @@ issuers `config/issuers.json` names:
   the registry is sealed with.
 
 Each issuer has a weight from 0 to 1 in `config/issuers.json`. The foundation's issuer starts at
-1; every other issuer is 0 until someone sets it. A line no named issuer vouches for counts 0.
+1. An issuer the file does not name vouches for nothing here.
 
     uniqueness = 1 − (1 − w1) × (1 − w2) × …
 

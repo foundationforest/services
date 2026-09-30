@@ -20,15 +20,25 @@ alter table profiles drop column rev;
 -- Every entry this index took from each host, as its canonical text, in the order it took them from
 -- that host. Per host and profile that is the host's own order, which is what the merge reads
 -- (records/SPEC.md §5).
+-- Only what counts: entries of profiles with a trusted line, and the proof records of profiles
+-- holding another line (src/records/hosts.ts).
 create table host_entries (
   host     text not null,
   id       text not null,
   seq      bigserial not null,
   profile  text not null,
+  path     text not null,
   text     text not null,
   primary key (host, id)
 );
 create index host_entries_profile on host_entries (profile, host, seq);
+
+-- Profiles with a trusted line whose entries were read again, by profile, from every host, when
+-- they came to hold it: what the index dropped before it trusted them.
+create table kept (
+  profile  text primary key,
+  since    timestamptz not null default now()
+);
 
 -- One row per registry line, as the registry's own account holds it (the bump aside). A line never
 -- changes after it is written. `code` and `root` are 32 bytes as lowercase hex; `label` is split at
