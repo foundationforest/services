@@ -1,6 +1,7 @@
 # The index (index/): its readers and its pages. The build context is the repo root, because the
 # index imports forest's shapes/, registry/client and escrow/client by relative path
-# (index/HOSTING.md); forest.sh fetches them into forest/ at the commit in FOREST, and needs git.
+# (index/HOSTING.md); forest.sh fetches them into forest/ at the index's own commit, index/FOREST,
+# and needs git.
 # The devnet opinions (which issuer counts, which tokens are money) are index/deploy/*.devnet.json,
 # named by the variables below.
 FROM node:22.22.2-bookworm-slim
@@ -8,7 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services
 COPY FOREST forest.sh ./
-RUN ./forest.sh shapes registry/client escrow/client
+COPY index/FOREST index/FOREST
+RUN FOREST_PIN=index/FOREST ./forest.sh shapes registry/client escrow/client
 COPY index/ index/
 RUN cd index && npm ci --no-audit --no-fund
 # Supabase's pooler presents a certificate from Supabase's own root CA, which Node does not carry.

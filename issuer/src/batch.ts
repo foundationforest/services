@@ -1,12 +1,12 @@
 // The batch: accepted commitments go onto the list together, in random order, on a timer or once
-// enough are waiting, so an entry on the chain can't be matched to a face check by when it arrived.
+// enough are waiting, so a place on the list can't be matched to a face check by when it arrived.
 //
-// A flush takes everything queued, drops what is already on the list, shuffles the rest and inserts
-// them one transaction at a time, deleting each from the file once the chain has it. If anything
-// fails it stops, and the rest wait for the next flush. Either way it ends by rewriting the file,
-// so nothing inserted stays in it.
+// A flush takes everything queued, drops what is already on the list, shuffles the rest and adds
+// them to the end of the list with one new root, in one transaction that also takes them out of
+// the queue. If that fails, nothing changes and everything waits for the next flush. Either way it
+// ends by rewriting the file, so no deleted row stays in it.
 //
-// It logs counts only: never a commitment, a session, a signature or an error's message.
+// It logs counts only: never a commitment, a session, a root or an error's message.
 
 import { randomInt } from 'node:crypto'
 
@@ -32,6 +32,7 @@ export class Batcher {
   readonly #max: number
   readonly #intervalMs: number
   readonly #log: (line: string) => void
+  readonly #now: () => number
   #timer: NodeJS.Timeout | undefined
   #running: Promise<void> | undefined
   #closed = false
@@ -39,13 +40,14 @@ export class Batcher {
   constructor(
     store: Store,
     list: IssuerList,
-    options: { max: number; intervalMs: number; log?: (line: string) => void },
+    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number },
   ) {
     this.#store = store
     this.#list = list
     this.#max = options.max
     this.#intervalMs = options.intervalMs
     this.#log = options.log ?? ((line) => console.log(line))
+    this.#now = options.now ?? Date.now
   }
 
   /** The timer: a flush every interval, whatever is waiting. */
@@ -82,24 +84,17 @@ export class Batcher {
 
   async #flush(): Promise<void> {
     let waiting = 0
-    let inserted = 0
     try {
       const pending = this.#store.queued()
       waiting = pending.length
       if (waiting === 0) return
-      // Anything already on the list landed before a crash or a lost confirmation: the program
-      // takes a commitment twice, so it is ours not to send it again.
-      await this.#list.refresh()
-      const todo = pending.filter((c) => !this.#list.has(c))
-      for (const c of pending) if (this.#list.has(c)) this.#store.remove(c)
-      for (const c of shuffle(todo)) {
-        await this.#list.insert(c)
-        this.#store.remove(c)
-        inserted++
-      }
-      this.#log(`issuer: batch of ${inserted} inserted`)
+      // A commitment can be queued again while a batch lists it (a submit waiting on Didit
+      // meanwhile): it leaves the queue without being added twice.
+      const added = shuffle(pending.filter((c) => !this.#list.has(c)))
+      this.#list.append(added, pending, this.#now())
+      this.#log(`issuer: batch of ${added.length} added to the list`)
     } catch (error) {
-      this.#log(`issuer: batch stopped after ${inserted} of ${waiting} (${errorKind(error)}); the rest wait`)
+      this.#log(`issuer: batch of ${waiting} not added (${errorKind(error)}); all wait`)
     } finally {
       if (waiting > 0) {
         try {

@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # Fetches foundationforest/forest at the commit in FOREST into forest/ (not committed), then runs
 # `npm ci` in each forest package named on the command line. The services use forest's pieces from
-# there, unchanged, by relative path: forest/shapes, forest/keys, forest/registry/client and
-# forest/escrow/client in code; forest's programs, proving files and host in the slow tests. Moving
-# the pin is a one-line change to FOREST. Needs git and the network.
+# there, unchanged, by relative path: forest/records, forest/registry/client and both escrow
+# clients in code; forest's programs and proving files in the slow tests. Moving the
+# pin is a one-line change to FOREST. Needs git and the network.
+#
+# FOREST_PIN names another pin file. Only the index uses one, index/FOREST, until it moves to
+# forest's records/.
 #
 #   ./forest.sh                                          forest at the pinned commit
-#   ./forest.sh shapes registry/client escrow/client     and `npm ci` in those packages
+#   ./forest.sh registry/client records                  and `npm ci` in those packages
+#   FOREST_PIN=index/FOREST ./forest.sh shapes keys      forest at the index's commit
 set -euo pipefail
 cd "$(dirname "$0")"
 
 FOREST_REPO="${FOREST_REPO:-https://github.com/foundationforest/forest}"
-FOREST_COMMIT="$(tr -d '[:space:]' < FOREST)"
+FOREST_COMMIT="$(tr -d '[:space:]' < "${FOREST_PIN:-FOREST}")"
 
 if [ ! -d forest/.git ]; then
   git init -q forest

@@ -12,7 +12,7 @@ Railway service builds from it yet.
 
 | | |
 |---|---|
-| `Dockerfile` | Node 22.22.2 and git; `forest.sh shapes registry/client escrow/client`, then `npm ci` in `index/`. Runs `node src/main.ts`: readers and pages in one process, so the pages hold the signing seed |
+| `Dockerfile` | Node 22.22.2 and git; `forest.sh shapes registry/client escrow/client` at `index/FOREST`, then `npm ci` in `index/`. Runs `node src/main.ts`: readers and pages in one process, so the pages hold the signing seed |
 | `issuers.devnet.json`, `currencies.devnet.json`, `scoring.devnet.json` | The devnet opinions: which issuer counts, which tokens are money. The Dockerfile names them in `ISSUERS_FILE`, `CURRENCIES_FILE` and `SCORING_FILE` |
 | `supabase-root-2021.crt` | Supabase's public root CA, which Node does not carry, for the pooler's TLS (`NODE_EXTRA_CA_CERTS`) |
 

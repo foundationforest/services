@@ -1,13 +1,12 @@
-// Stand-ins for Didit and for the chain, and the check that the file keeps no link.
+// A stand-in for Didit, a fresh issuer key, and the check that the file keeps no link.
 
 import assert from 'node:assert/strict'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { toBytes32 } from '../../forest/registry/client/src/field.ts'
+import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
 import type { Decision, FaceCheck } from '../src/didit.ts'
-import type { IssuerList } from '../src/list.ts'
 import { sessionHash } from '../src/store.ts'
 
 export const WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
@@ -68,22 +67,12 @@ export class FakeFaceCheck implements FaceCheck {
   }
 }
 
-/** The list, in memory: its members in the order they went in. */
-export class FakeList implements IssuerList {
-  readonly members: bigint[] = []
-  /** Inserts fail once the list holds this many. */
-  failAt = Infinity
-
-  async refresh() {}
-
-  has(commitment: bigint) {
-    return this.members.includes(commitment)
-  }
-
-  async insert(commitment: bigint) {
-    if (this.members.length >= this.failAt) throw new Error('the chain is down')
-    this.members.push(commitment)
-  }
+/** A fresh Ed25519 key as `solana-keygen` writes one: 64 numbers, the secret then the public key. */
+export function keypairJson(): { json: string; publicKey: Uint8Array } {
+  const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
+  const secret = Buffer.from(jwk.d!, 'base64url')
+  const publicKey = Buffer.from(jwk.x!, 'base64url')
+  return { json: JSON.stringify([...secret, ...publicKey]), publicKey: new Uint8Array(publicKey) }
 }
 
 /** Every file SQLite may have written next to the database. */
@@ -105,29 +94,44 @@ export function assertFileHolds(path: string, commitments: bigint[]): void {
 }
 
 /**
- * After a batch: the file holds no commitment in any form, no session id in the clear, and only the
- * two tables, the queue empty and the used sessions exactly the hashes of these sessions. No journal
- * is left beside it.
+ * After a batch: the file holds each listed commitment exactly once, as its list row in list order,
+ * and in no other form; no session id in the clear; and only the four tables, the queue empty and
+ * the used sessions exactly the hashes of these sessions. No journal is left beside it.
  */
 export function assertNoLink(path: string, sessionIds: string[], commitments: bigint[]): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
   const file = readFileSync(path)
   for (const c of commitments) {
-    for (const form of forms(c)) assert.equal(file.includes(form), false, 'no commitment is left in the file')
+    const [bytes, ...others] = forms(c)
+    assert.equal(file.indexOf(bytes), file.lastIndexOf(bytes), 'a listed commitment is in the file once: no stale copy')
+    assert.ok(file.includes(bytes), 'as its list row')
+    for (const form of others) assert.equal(file.includes(form), false, 'and in no other form')
   }
   for (const id of sessionIds) assert.equal(file.includes(Buffer.from(id)), false, 'no session id is in the clear')
 
   const db = new DatabaseSync(path, { readOnly: true })
   try {
-    const tables = db.prepare("SELECT name, sql FROM sqlite_master ORDER BY name").all()
+    const schema = db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY name').all()
     assert.deepEqual(
-      tables.map((t) => t.name),
-      ['queue', 'used_sessions'],
-      'two tables, and no index or other table beside them',
+      schema.map((t) => `${t.type} ${t.name}`),
+      ['table list', 'table queue', 'table roots', 'table used_sessions'],
+      'four tables, and no index or other table beside them',
     )
-    assert.match(String(tables[0].sql), /^CREATE TABLE queue \(commitment BLOB PRIMARY KEY\) WITHOUT ROWID$/)
-    assert.match(String(tables[1].sql), /^CREATE TABLE used_sessions \(hash BLOB PRIMARY KEY\) WITHOUT ROWID$/)
+    assert.deepEqual(
+      schema.map((t) => t.sql),
+      [
+        'CREATE TABLE list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL)',
+        'CREATE TABLE queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID',
+        'CREATE TABLE roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
+        'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
+      ],
+    )
     assert.equal(db.prepare('SELECT count(*) AS n FROM queue').get()!.n, 0, 'the queue is empty')
+    const listed = db
+      .prepare('SELECT commitment FROM list ORDER BY position')
+      .all()
+      .map((row) => fromBytes32(row.commitment as Uint8Array))
+    assert.deepEqual([...listed].sort(), [...commitments].sort(), 'the list holds these commitments, each once')
     const kept = db
       .prepare('SELECT hash FROM used_sessions')
       .all()

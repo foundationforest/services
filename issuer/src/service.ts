@@ -5,13 +5,11 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { dirname } from 'node:path'
 
-import { Connection, PublicKey, type Keypair } from '@solana/web3.js'
-
-import { PROGRAM_ID } from '../../forest/registry/client/src/program.ts'
 import { Batcher } from './batch.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
+import { loadKeypair, writeKeyFile, type IssuerKey } from './key.ts'
 import { RateLimit } from './limit.ts'
-import { ChainList, loadKeypair, writeKeyFile, type IssuerList } from './list.ts'
+import { IssuerList } from './list.ts'
 import { handler } from './server.ts'
 import { Store } from './store.ts'
 
@@ -23,9 +21,6 @@ export type Config = {
   issuerKeypairPath?: string
   /** Or its contents, from a sealed variable, as on Railway. Exactly one of the two is set. */
   issuerKeypair?: string
-  rpcUrl: string
-  programId: PublicKey
-  listIndex: number
   databasePath: string
   batchMax: number
   batchIntervalMs: number
@@ -48,7 +43,7 @@ function whole(name: string, value: string, min: number): number {
  * environment later finds them.
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const required = ['DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'SOLANA_RPC_URL']
+  const required = ['DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID']
   const missing = required.filter((name) => !env[name])
   if (!env.ISSUER_KEYPAIR && !env.ISSUER_KEYPAIR_PATH) missing.push('ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH')
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
@@ -63,9 +58,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     diditBaseUrl: env.DIDIT_BASE_URL || 'https://verification.didit.me',
     issuerKeypairPath: env.ISSUER_KEYPAIR_PATH || undefined,
     issuerKeypair,
-    rpcUrl: env.SOLANA_RPC_URL!,
-    programId: env.REGISTRY_PROGRAM_ID ? new PublicKey(env.REGISTRY_PROGRAM_ID) : PROGRAM_ID,
-    listIndex: whole('LIST_INDEX', env.LIST_INDEX || '0', 0),
     databasePath: env.DATABASE_PATH || './data/issuer.sqlite',
     batchMax: whole('BATCH_MAX', env.BATCH_MAX || '50', 1),
     batchIntervalMs: whole('BATCH_INTERVAL_SECONDS', env.BATCH_INTERVAL_SECONDS || '3600', 1) * 1000,
@@ -79,6 +71,7 @@ export type Issuer = {
   url: string
   server: Server
   store: Store
+  list: IssuerList
   batcher: Batcher
   /** Where the key from `ISSUER_KEYPAIR` was written; the file is gone by the time this returns. */
   keyFile?: string
@@ -90,7 +83,7 @@ export type Issuer = {
  * The issuer's key: from its file, or, when it came in a sealed variable, written to a private file
  * in a temporary directory, loaded, and the file deleted at once. Nothing reads it again.
  */
-function issuerKey(config: Config): { keypair: Keypair; keyFile?: string } {
+function issuerKey(config: Config): { keypair: IssuerKey; keyFile?: string } {
   if (!config.issuerKeypair) return { keypair: loadKeypair(config.issuerKeypairPath!) }
   const file = writeKeyFile(config.issuerKeypair)
   try {
@@ -101,22 +94,14 @@ function issuerKey(config: Config): { keypair: Keypair; keyFile?: string } {
 }
 
 /**
- * Starts the service. Tests pass their own face check or list; otherwise it talks to Didit and to the
- * chain, and refuses to start unless the key is an insert key of the list.
+ * Starts the service. Tests pass their own face check and clock; otherwise it talks to Didit. The
+ * list is the file's own, read at start.
  */
 export async function startIssuer(
   config: Config,
-  overrides: { faceCheck?: FaceCheck; list?: IssuerList; log?: (line: string) => void } = {},
+  overrides: { faceCheck?: FaceCheck; log?: (line: string) => void; now?: () => number } = {},
 ): Promise<Issuer> {
-  const key = overrides.list ? undefined : issuerKey(config)
-  const list =
-    overrides.list ??
-    (await ChainList.open({
-      connection: new Connection(config.rpcUrl, 'confirmed'),
-      issuer: key!.keypair,
-      listIndex: config.listIndex,
-      programId: config.programId,
-    }))
+  const key = issuerKey(config)
   const faceCheck =
     overrides.faceCheck ??
     new DiditClient({
@@ -127,10 +112,12 @@ export async function startIssuer(
 
   mkdirSync(dirname(config.databasePath), { recursive: true })
   const store = new Store(config.databasePath)
+  const list = new IssuerList(store, key.keypair)
   const batcher = new Batcher(store, list, {
     max: config.batchMax,
     intervalMs: config.batchIntervalMs,
     log: overrides.log,
+    now: overrides.now,
   })
   const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(
@@ -156,8 +143,9 @@ export async function startIssuer(
     url: `http://127.0.0.1:${port}`,
     server,
     store,
+    list,
     batcher,
-    keyFile: key?.keyFile,
+    keyFile: key.keyFile,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())

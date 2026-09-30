@@ -19,10 +19,10 @@ The index is two processes over one Postgres database:
 
 Both need Node 22.18 or later (they run TypeScript directly) and the repo's root checked out,
 not only `index/`: the index imports forest's `shapes/`, `registry/client` and `escrow/client` by
-relative path, from `forest/` at the commit in `FOREST`. Install them first, from the repo root:
+relative path, from `forest/` at the commit in `index/FOREST`. Install them first, from the repo root:
 
 ```
-./forest.sh shapes registry/client escrow/client && (cd index && npm ci)
+FOREST_PIN=index/FOREST ./forest.sh shapes registry/client escrow/client && (cd index && npm ci)
 ```
 
 ## The database
