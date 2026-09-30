@@ -1,0 +1,98 @@
+# Every service's checks from a clean install, on every pull request and every push to main. Each job
+# first fetches forest at the commit in FOREST (forest.sh) and installs the forest packages it uses.
+#
+#   issuer   its type-check (the stand-in Didit included) and its tests that need no chain
+#   index    its type-check, and its unit and page tests on a Postgres service
+#   relayer  its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
+#
+# Not here: the issuer's validator test, the relayer's local run and the index's end-to-end test.
+# They need forest's programs, its proving files, its host and Kora built.
+#
+# A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
+# summary must say "# skipped 0", so a missing piece never passes as green.
+
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  issuer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh registry/client
+          (cd issuer && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: issuer
+        run: npm run check
+      - name: Test
+        working-directory: issuer
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh shapes keys registry/client escrow/client
+          (cd index && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: index
+        run: npm run check
+      - name: Test (everything but the end-to-end test)
+        working-directory: index
+        run: |
+          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
+  relayer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh registry/client escrow/client
+          (cd relayer && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: relayer
+        run: npm run check
+      - name: The devnet kora.toml
+        run: bash relayer/deploy/devnet-config.sh relayer/kora.toml > /dev/null
