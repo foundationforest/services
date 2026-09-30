@@ -249,7 +249,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const links = [...llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => m[1])
       assert.ok(links.length >= 6)
       for (const link of links) {
-        if (link.startsWith('https://github.com/foundationforest/forest')) continue
+        if (link.startsWith('https://github.com/foundationforest/services')) continue
         assert.ok(link.startsWith(base), `${link} is on this index`)
         assert.equal((await get(link)).status, 200, link)
       }
@@ -268,7 +268,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.equal(res.status, 200, u)
       }
       assert.ok(local.includes(portuguese.payLink), 'the Pay link example is the offer’s own link')
-      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/forest'), u)
+      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services'), u)
     })
 
     await t.test('7. no crypto word anywhere a person reads', async () => {

@@ -19,10 +19,10 @@ const graph = (nodes: Node[]) => ({ '@context': CONTEXT, '@graph': nodes })
 const ref = (id: string) => ({ '@id': id })
 
 export const RATING_EXPLANATION =
-  'The weighted average of the overall ratings, from 1 to 10, in the reviews this index counts, each weighed by who wrote it and by the payment behind it. See index/SCORING.md in the Forest repository.'
+  'The weighted average of the overall ratings, from 1 to 10, in the reviews this index counts, each weighed by who wrote it and by the payment behind it. See index/SCORING.md in the Forest services repository.'
 
 export const STANDING_EXPLANATION =
-  'The seller’s standing in this index: the reviews they received, each weighed by who wrote it and by the payment behind it, summed. Everyone starts at 0; it can go below. See index/SCORING.md in the Forest repository.'
+  'The seller’s standing in this index: the reviews they received, each weighed by who wrote it and by the payment behind it, summed. Everyone starts at 0; it can go below. See index/SCORING.md in the Forest services repository.'
 
 /** A rating out of 10, one decimal, as the pages show it. */
 const tenth = (v: number) => Math.round(v * 10) / 10

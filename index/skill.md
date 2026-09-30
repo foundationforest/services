@@ -140,7 +140,7 @@ Three scores. They are never added together.
 Pages show the rating and the standing side by side, as two numbers.
 
 Both are this index's opinion, and the rules are open:
-https://github.com/foundationforest/forest/blob/main/index/SCORING.md. Another index may weigh
+https://github.com/foundationforest/services/blob/main/index/SCORING.md. Another index may weigh
 differently.
 
 Every score is signed twice. Each score's `signed.statement` is the text signed with Ed25519, and
@@ -151,7 +151,7 @@ statement format are in `https://forest.foundation/index.json` under `index.keys
 ## Paying
 
 An offer's `payLink` is one documented format:
-https://github.com/foundationforest/forest/blob/main/index/PAYLINK.md. It names the offer's record
+https://github.com/foundationforest/services/blob/main/index/PAYLINK.md. It names the offer's record
 and its content id (`cid`), and repeats its price and terms. It carries no seller key: the seller's
 key is in the seller's own profile. This index never pays and never holds money.
 

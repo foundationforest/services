@@ -71,7 +71,7 @@ export function urlsFor(base: string) {
   }
 }
 
-export const SOURCE = 'https://github.com/foundationforest/forest'
+export const SOURCE = 'https://github.com/foundationforest/services'
 export const SCORING_DOC = `${SOURCE}/blob/main/index/SCORING.md`
 export const PAYLINK_DOC = `${SOURCE}/blob/main/index/PAYLINK.md`
 

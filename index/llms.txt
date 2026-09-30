@@ -15,6 +15,6 @@ Every page has a JSON twin at the same address with `.json`. Reading needs no ke
 
 ## Rules
 
-- [How the scores work](https://github.com/foundationforest/forest/blob/main/index/SCORING.md)
-- [The Pay link](https://github.com/foundationforest/forest/blob/main/index/PAYLINK.md): the one format for paying for an offer from any app
-- [Source](https://github.com/foundationforest/forest): all of it open; anyone may run another index
+- [How the scores work](https://github.com/foundationforest/services/blob/main/index/SCORING.md)
+- [The Pay link](https://github.com/foundationforest/services/blob/main/index/PAYLINK.md): the one format for paying for an offer from any app
+- [Source](https://github.com/foundationforest/services): all of it open; anyone may run another index
