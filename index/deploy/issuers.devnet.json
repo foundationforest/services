@@ -1,0 +1,6 @@
+{
+  "about": "The devnet index's opinion of each issuer, in the shape of index/config/issuers.json. On devnet, list 0 is owned by the devnet issuer key devnet/keys.sh derives (label `issuer`, docs/devnet.md), which the devnet registry build names as FOUNDATION_ISSUER. It counts 1, as the foundation's list does in index/config/issuers.json; every other key counts 0.",
+  "issuers": {
+    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Forest Foundation (devnet key)", "weight": 1 }
+  }
+}

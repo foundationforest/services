@@ -1,0 +1,3 @@
+# Kora's binary, installed by build.sh
+.kora/
+node_modules/

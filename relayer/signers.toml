@@ -1,0 +1,12 @@
+# The fee payer's one key, its own. Nothing here holds it: Kora reads it from the environment
+# variable named below, whose value is the path to a keypair file (the Solana CLI's JSON form)
+# outside this repo. Kora 2.0.5 also accepts the key itself in that variable, as that JSON array or
+# as base58, which is how a host with no files (Railway) passes it.
+
+[signer_pool]
+strategy = "round_robin"
+
+[[signers]]
+name = "forest_fee_payer"
+type = "memory"
+private_key_env = "FOREST_FEEPAYER_KEY"

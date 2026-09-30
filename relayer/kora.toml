@@ -1,0 +1,89 @@
+# The Forest fee payer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
+#
+# It co-signs a person's transaction as its payer and charges, in their dollar token, exactly what
+# that transaction costs it: the network fee plus every storage deposit it puts down, including the
+# ones a program makes inside the transaction. It refuses anything that calls a program not listed
+# here, and anything that would move its own SOL or tokens except to create an account it is paid for.
+#
+# This file is the mainnet shape. The local run (test/feepayer.test.ts) copies it and changes one
+# line, `price_source`, to "Mock". Every key Kora 2.0.5 requires in a table is written out, so
+# nothing here is a default someone has to look up.
+
+[kora]
+# Requests per second, across all callers (Kora's own global limiter). Kora's example value.
+rate_limit = 100
+# Payments go to token accounts the fee payer's own key owns (`payment_address` unset).
+
+[validation]
+# The most SOL one transaction may take from the fee payer beyond its network fee: storage deposits.
+# 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
+# 0.0052 at today's rent.
+max_allowed_lamports = 10000000
+# The fee payer, the profile's wallet and a separate fee authority: register's three signers.
+max_signatures = 3
+# Kora checks these against every program a transaction calls, the ones called from inside other
+# programs included. No compute budget program: a registration fits the default compute limit, and
+# the fee payer never pays a priority fee it did not agree to.
+allowed_programs = [
+  "FoRPzGfMyWjK8uLjMoZfae2yevnviyCsGsHM7AwBwK8B", # the Forest registry
+  "FoRE4JYRAxFpqRoPBzuPZZ9Yfn6ovtkBfUggynex3MKT", # the Forest escrow
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
+  "11111111111111111111111111111111",            # System
+]
+# The dollar token people pay in: USDC. In 2.0.5 `allowed_tokens` gates only Kora's own
+# transferTransaction helper; an escrow in another token still passes.
+allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
+allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
+disallowed_accounts = []
+# Jupiter needs JUPITER_API_KEY in the environment.
+price_source = "Jupiter"
+
+# The charge is the cost and nothing more: nothing inside Forest charges a fee except the registry's.
+[validation.price]
+type = "margin"
+margin = 0.0
+
+# What the fee payer's own key may do inside a transaction. Only one thing: pay for a new account
+# (a registration's code account, an escrow's account and its deposit address, a token account),
+# which Kora then counts in the charge. It may not send its SOL or its tokens anywhere, assign or
+# allocate its own account, or act as the owner or authority of any token account or mint.
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+allow_create_account = true
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_withdraw = false
+allow_authorize = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false

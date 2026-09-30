@@ -1,0 +1,37 @@
+{
+  "name": "online-tutors",
+  "folder": "freelance-work",
+  "description": "Lessons and tutoring held online, one to one.",
+  "sides": "two",
+  "labels": { "seller": "tutor", "buyer": "student" },
+  "evidenceTypes": ["escrow"],
+  "offerFields": {
+    "properties": {
+      "subjects": {
+        "type": "array",
+        "description": "What is taught or sought.",
+        "items": { "type": "string", "maxLength": 64 },
+        "minLength": 1,
+        "maxLength": 10
+      },
+      "languages": {
+        "type": "array",
+        "description": "Languages a session can be held in, as BCP 47 tags.",
+        "items": { "type": "string", "format": "language" },
+        "maxLength": 10
+      }
+    },
+    "required": ["subjects"]
+  },
+  "reviewFields": {
+    "properties": {
+      "sessions": {
+        "type": "integer",
+        "description": "How many sessions the review covers.",
+        "minimum": 1
+      }
+    }
+  },
+  "ratings": ["overall", "patience", "preparation"],
+  "howDealsGo": "The student pays for a block of sessions up front. The money is held until the student releases it after the last session. A missed session is made up, or its share goes back to the student. A timer to the tutor, set past the last session, pays for the sessions given if the student goes quiet."
+}

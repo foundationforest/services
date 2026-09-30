@@ -1,0 +1,15 @@
+{
+  "about": "The devnet index's weights: index/config/scoring.json's, unchanged, except countedMints, which names devnet USDC and the test dollar the devnet run mints (docs/devnet.md) in place of mainnet USDC.",
+  "evidence": {
+    "both": 1,
+    "oneSided": 0.5,
+    "none": 0.05
+  },
+  "unbadgedReviewer": 0.05,
+  "countedMints": [
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa"
+  ],
+  "maxRounds": 100,
+  "tolerance": 1e-09
+}
