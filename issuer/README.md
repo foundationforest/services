@@ -5,9 +5,8 @@ foundation's list". The issuer keeps its list itself and publishes it; the regis
 list. Issuers are open: anyone may keep a list and publish it the same way, with this service or
 another.
 
-**Nothing here is shipped.** Its tests run against a stand-in Didit. The devnet issuer on Railway
-still runs the earlier version, which inserts into the earlier registry's list 0
-(`deploy/README.md`).
+**Nothing here is shipped.** Its tests run against a stand-in Didit and a stand-in Solana RPC. The
+devnet issuer on Railway runs this version, with the stand-in face check (`deploy/README.md`).
 
 ## What it does
 
@@ -28,7 +27,9 @@ still runs the earlier version, which inserts into the earlier registry's list 0
    on the list can't be matched to a face check by when it arrived. Each batch gives the list one
    new root.
 6. **The service publishes two files:** the whole list, in order, and every root it has had, with
-   dates, signed with the issuer's key ("The two files", below). They change after each batch.
+   dates, signed with the issuer's key ("The two files", below). They change after each batch. When
+   it has a Solana RPC, it also writes each new root on chain, in a memo its key signs ("Each root
+   on chain", below).
 7. **The app polls `POST /status`** until its commitment is `listed`. It then reads `/list.json`
    and proves against it with `forest/registry/client` (`buildRegistration`).
 
@@ -51,8 +52,8 @@ still runs the earlier version, which inserts into the earlier registry's list 0
   their paths name nothing.
 - **Never stores anything at `/session`.** The session's `vendor_data` is a fresh random id that
   names nobody.
-- **Never signs for anyone.** Its key signs its roots file and nothing else, and it holds no one
-  else's key. There are no accounts.
+- **Never signs for anyone.** Its key signs its roots file and the transactions that put its roots
+  on chain, and nothing else, and it holds no one else's key. There are no accounts.
 - **Never deletes a Didit session.** Deleting a session removes that face from Didit's duplicate
   search, and the person could then pass again under a new secret.
 
@@ -134,7 +135,38 @@ Numbers too large for JSON are decimal text, as the API sends them.
 4. It may check every older root against its prefix of the list the same way.
 
 A device proves against the whole list (the newest root). An index or a board counts a line when
-the line's root is in the roots file of an issuer it trusts. The registry itself checks no root.
+the line's root is in the roots file of an issuer it trusts, or on chain from it (below). The
+registry itself checks no root.
+
+## Each root on chain
+
+When `SOLANA_RPC_URL` is set, each root, once its batch is in the file, is also written to Solana:
+one transaction, paid for and signed by the issuer's key, with one instruction to Solana's memo
+program (v2, `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`) naming the key as its signer. The memo
+is the root's line of the roots file, under its own label:
+
+```
+forest.foundation/issuer/root/v1
+{"root":"<decimal>","size":3,"time":1790000000000}
+```
+
+(one newline between the label and the canonical text, none after). So the chain holds every root
+the issuer has published, dated by the chain, readable from the issuer's own address even if the
+issuer stops answering or changes its file.
+
+- **How a reader checks one:** the transaction succeeded; the issuer's key signed it (its address
+  is the did:key's public key, in base58); a top-level instruction calls the memo program v2; its
+  text is the label, then canonical text with exactly `root`, `size` and `time`.
+- **Order and retries:** roots are written oldest first, one at a time. A root the RPC does not
+  take, or that does not confirm before its blockhash runs out, is tried again a minute later; the
+  file records each root's transaction once it is confirmed, so none is written twice by design. A
+  root sent, lost and sent again could land twice; a reader keeps it once.
+- **Cost:** the network fee, 5,000 lamports a root. One root per batch, so at one batch an hour
+  about 0.044 SOL a year. The key needs that SOL; nothing else of the service does.
+- **The key signs two kinds of thing:** the roots file (its bytes begin `0xff`) and these Solana
+  messages (which never begin `0xff`), as `forest/records/SPEC.md`, section 1, separates them.
+- **Logs:** a count per run, and a failure's kind (`RpcUnavailable`, `MemoFailed`, `MemoExpired`),
+  never a root, a signature or the RPC's words, since the RPC's address can carry a key.
 
 ## The request limit
 
@@ -199,6 +231,7 @@ repo), point `ISSUER_KEYPAIR_PATH` at it, and set the other required variables.
 | `BATCH_MAX` | no | `50` | A batch runs as soon as this many are waiting |
 | `BATCH_INTERVAL_SECONDS` | no | `3600` | And on this timer, whatever is waiting |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour |
+| `SOLANA_RPC_URL` | no | none | A Solana RPC: each new root is also written on chain there, paid by the issuer's key. Unset, nothing goes on chain. A URL with a provider's key in it is a secret. |
 | `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy in front puts the client's address in: `x-real-ip` on Railway. Unset, the connection's own address. |
 | `DIDIT_BASE_URL` | no | `https://verification.didit.me` | For a stand-in |
 | `PORT` | no | `8080` | |
@@ -295,3 +328,11 @@ this repo's `docs/changes.md`.
     `forest.foundation/issuer/roots/v1` (this repo).
 23. **A root's time is milliseconds since 1970,** as a records entry's is (this repo).
 24. **The list file is not signed.** The signed roots file covers it (this repo).
+25. **Each root on chain as a memo** (this repo): the memo program v2, the issuer's key paying and
+    signing, the memo the root's line of the roots file under the label
+    `forest.foundation/issuer/root/v1`. The roots file's format is unchanged.
+26. **The transaction is built by hand** (this repo): one instruction in a legacy message, so the
+    service keeps one dependency.
+27. **A root is written after its batch is in the file,** not in the same step (this repo): the
+    chain cannot join the file's transaction, so the file comes first and the chain follows, with
+    retries, and the file records each root's transaction.

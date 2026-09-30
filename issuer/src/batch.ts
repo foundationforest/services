@@ -33,6 +33,7 @@ export class Batcher {
   readonly #intervalMs: number
   readonly #log: (line: string) => void
   readonly #now: () => number
+  readonly #onAppend: () => void
   #timer: NodeJS.Timeout | undefined
   #running: Promise<void> | undefined
   #closed = false
@@ -40,7 +41,7 @@ export class Batcher {
   constructor(
     store: Store,
     list: IssuerList,
-    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number },
+    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number; onAppend?: () => void },
   ) {
     this.#store = store
     this.#list = list
@@ -48,6 +49,7 @@ export class Batcher {
     this.#intervalMs = options.intervalMs
     this.#log = options.log ?? ((line) => console.log(line))
     this.#now = options.now ?? Date.now
+    this.#onAppend = options.onAppend ?? (() => {})
   }
 
   /** The timer: a flush every interval, whatever is waiting. */
@@ -93,6 +95,7 @@ export class Batcher {
       const added = shuffle(pending.filter((c) => !this.#list.has(c)))
       this.#list.append(added, pending, this.#now())
       this.#log(`issuer: batch of ${added.length} added to the list`)
+      if (added.length) this.#onAppend()
     } catch (error) {
       this.#log(`issuer: batch of ${waiting} not added (${errorKind(error)}); all wait`)
     } finally {

@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/chain.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
