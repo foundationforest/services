@@ -5,6 +5,9 @@
 //   npm test
 
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { existsSync, readFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
 import { createServer } from 'node:net'
 import { after, before, test } from 'node:test'
@@ -16,7 +19,7 @@ import { Host } from '../../forest/records/src/host.ts'
 import { profileKey, seedFromPrf } from '../../forest/records/src/keys.ts'
 import { requestFromLink } from '../../forest/records/src/request.ts'
 import { folderEntry, ownerEntry } from '../../forest/records/src/write.ts'
-import { readConfig, startConnections, type Service } from '../src/service.ts'
+import { PAGE_DIR, PAGE_POLICY, readConfig, startConnections, type Service } from '../src/service.ts'
 
 const PAGE = 'https://forest.example/approve'
 const T0 = Date.UTC(2026, 8, 29, 12, 0, 0)
@@ -42,6 +45,8 @@ let host: Host
 let service: Service
 
 before(async () => {
+  // Forest's approval page, built by its own build, as the image builds it.
+  if (!existsSync(`${PAGE_DIR}/approve.html`)) execFileSync(process.execPath, [new URL('../../forest/records/web/build.ts', import.meta.url).pathname])
   const port = await freePort()
   host = new Host({ url: `http://127.0.0.1:${port}` })
   await host.listen(port)
@@ -122,5 +127,31 @@ test('the configuration names what is missing, and takes only URLs', () => {
   assert.throws(() => readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://a.example, ftp://b.example' }), /HOSTS/)
   assert.throws(() => readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://a.example', WAIT_SECONDS: '-1' }), /WAIT_SECONDS/)
   const config = readConfig({ APPROVAL_PAGE: PAGE, HOSTS: ' https://a.example ,https://b.example,' })
-  assert.deepEqual(config, { approvalPage: PAGE, hosts: ['https://a.example', 'https://b.example'], waitMs: 30_000, port: 8080 })
+  assert.deepEqual(config, { approvalPage: PAGE, hosts: ['https://a.example', 'https://b.example'], waitMs: 30_000, pageDir: PAGE_DIR, port: 8080 })
+})
+
+test('it serves forest’s approval page as built, with the policy the spec asks for; nothing else changes', async () => {
+  const page = await fetch(`${service.url}/approve`)
+  assert.equal(page.status, 200)
+  assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8')
+  assert.equal(page.headers.get('content-security-policy'), PAGE_POLICY)
+  assert.match(PAGE_POLICY, /frame-ancestors 'none'/)
+  assert.match(PAGE_POLICY, /connect-src https:;/, 'reads and posts over https only')
+  assert.equal(page.headers.get('x-content-type-options'), 'nosniff')
+  assert.equal(await page.text(), readFileSync(`${PAGE_DIR}/approve.html`, 'utf8'))
+
+  const js = Buffer.from(await (await fetch(`${service.url}/approve.js`)).arrayBuffer())
+  const published = (await (await fetch(`${service.url}/approve.js.sha256`)).text()).split(' ')[0]
+  assert.equal(createHash('sha256').update(js).digest('hex'), published, 'the bundle served is the one whose hash is published')
+  const libraries = (await (await fetch(`${service.url}/approve.deps.txt`)).text()).trim().split('\n').map((l) => l.split(' ')[0])
+  assert.deepEqual(libraries, ['@noble/curves', '@noble/hashes', '@scure/base', 'canonicalize'])
+  assert.equal((await fetch(`${service.url}/approve.css`)).status, 200)
+
+  assert.equal((await fetch(`${service.url}/approve`, { method: 'POST' })).status, 405)
+  assert.equal((await fetch(`${service.url}/approve.html`)).status, 404, 'only the paths it names')
+  assert.equal((await fetch(`${service.url}/`)).status, 404)
+})
+
+test('with APPROVAL_PAGE_DIR=none it serves no page', () => {
+  assert.equal(readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://h.example', APPROVAL_PAGE_DIR: 'none' }).pageDir, null)
 })

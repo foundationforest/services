@@ -4,7 +4,8 @@
 #   issuer       its type-check (the stand-in Didit included) and its tests
 #   index        its type-check, and its unit and page tests on a Postgres service
 #   relayer      its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
-#   connections  its type-check, and its tests against forest's reference host
+#   connections  its type-check, and its tests against forest's reference host and forest's built
+#                approval page
 #
 # Not here: the relayer's local run and the index's end-to-end test. They need forest's programs,
 # its proving files, a local validator and (for the relayer) Kora built.
@@ -109,6 +110,7 @@ jobs:
       - name: Install
         run: |
           ./forest.sh records
+          (cd forest/records && node web/build.ts)
           (cd connections && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: connections
