@@ -6,6 +6,7 @@
 #   relayer      its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
 #   connections  its type-check, and its tests against forest's reference host and forest's built
 #                approval page
+#   board        the loop's devnet test board (loop/board): its type-check and its tests
 #
 # Not here: the relayer's local run and the index's end-to-end test. They need forest's programs,
 # its proving files, a local validator and (for the relayer) Kora built.
@@ -117,6 +118,27 @@ jobs:
         run: npm run check
       - name: Test
         working-directory: connections
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
+  board:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh records registry/client
+          (cd loop/board && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: loop/board
+        run: npm run check
+      - name: Test
+        working-directory: loop/board
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
