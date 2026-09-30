@@ -59,7 +59,6 @@ import {
 
 import {
   PROGRAM_ID as REGISTRY_ID,
-  buildAddProof,
   buildRegistration,
   commitmentOf,
   decodeLine,
@@ -359,25 +358,22 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
     [setup],
   )
 
-  // The person's identity secret, and two issuers' published lists with their commitment in each,
-  // as the issuers' list files give them (issuer/README.md, "The two files").
+  // The person's identity secret, and an issuer's published list with their commitment in it, as
+  // the issuer's list file gives it (issuer/README.md, "The two files").
   const secret = randomBytes(32)
   const others = (n: number) => Array.from({ length: n }, () => commitmentOf(randomBytes(32)))
-  const firstList = [...others(2), commitmentOf(secret), ...others(1)]
-  const secondList = [commitmentOf(secret), ...others(4)]
+  const list = [...others(2), commitmentOf(secret), ...others(1)]
 
   const start = await balances()
   assert.equal(start.personSol, 0, 'the person holds no SOL')
   assert.equal(start.personTokens, START_DOLLARS)
   const labelBytes = new TextEncoder().encode(LABEL).length
   const rent = {
-    line: await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes, 1)),
-    root: 0,
+    line: await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes)),
     escrow: 0,
     escrowV2: 0,
     deposit: await connection.getMinimumBalanceForRentExemption(165),
   }
-  rent.root = (await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes, 2))) - rent.line
 
   // ---- Refusals ----
   const refusals: Record<string, string> = {
@@ -400,18 +396,19 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   }
 
   // ---- A registry line ----
-  // The relayer is the payer: the network fee and the line's storage deposit, and it is recorded in
-  // the line. The profile key signs nothing; the person signs only their payment to the relayer.
+  // One transaction: `register`. The relayer is the payer: the network fee and the line's storage
+  // deposit, and it is recorded in the line. The profile key signs nothing; the person signs only
+  // their payment to the relayer. A line never grows, so nothing after this asks the relayer for SOL.
   const registration = await buildRegistration({
     secret,
     label: LABEL,
     profile: person.publicKey.toBytes(),
-    lists: [firstList],
+    commitments: list,
     artifacts,
     payer: relayer.publicKey,
     recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
   })
-  const [register] = registration.instructions
+  const register = registration.instruction
 
   // Paying only the network fee is refused: Kora counts the storage deposit the registry program
   // makes inside the transaction, and no line is written.
@@ -444,20 +441,6 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
     reg.charge,
     /[Ff]ee payer cannot/,
   )
-
-  // A second issuer's root on the same line: `add_proof` grows the line by 32 bytes, paid by the
-  // payer. Anchor pays for the growth with a System transfer from the payer inside the program,
-  // which kora.toml does not let the relayer's key make, so Kora refuses it.
-  const addProof = await buildAddProof({
-    secret,
-    label: LABEL,
-    profile: person.publicKey.toBytes(),
-    commitments: secondList,
-    artifacts,
-    payer: relayer.publicKey,
-    recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
-  })
-  refusals.addProof = await refused([addProof.instruction], 1_000_000n, /[Ff]ee payer cannot/)
 
   // What the rent cuts free on a line goes back to its payer, the relayer. Anyone may send `refund`.
   await send([SystemProgram.transfer({ fromPubkey: setup.publicKey, toPubkey: registration.line, lamports: GIFT })], [setup])
@@ -599,7 +582,7 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   assert.equal(end.personSol, refunded, 'the person was never given a lamport but its own refunds')
   const lamports = (n: number | bigint) => `${Number(n).toLocaleString('en-US')} lamports`
   console.log('\n== the relayer, Kora 2.0.5, on a local validator ==')
-  console.log(`   rent here: line ${lamports(rent.line)} (+${lamports(rent.root)} a root), escrow v1 ${lamports(rent.escrow)}, escrow v2 ${lamports(rent.escrowV2)}, deposit address ${lamports(rent.deposit)}`)
+  console.log(`   rent here: line ${lamports(rent.line)}, escrow v1 ${lamports(rent.escrow)}, escrow v2 ${lamports(rent.escrowV2)}, deposit address ${lamports(rent.deposit)}`)
   console.log(`   registry line: ${reg.wire} bytes, ${reg.units} units, network fee ${lamports(reg.networkFee)}; charged ${reg.charge} test-dollar units; relayer spent ${lamports(lineSpent)}`)
   console.log(`   escrow v1, pay: ${pay.wire} bytes, ${pay.units} units; charged ${pay.charge} units; relayer spent ${lamports(paySpent)}`)
   console.log(`   escrow v1, release: ${release.wire} bytes, ${release.units} units; charged ${release.charge} units; relayer spent ${lamports(releaseSpent)}`)

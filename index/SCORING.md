@@ -16,8 +16,9 @@ from the `markets` repo (`MARKETS_URL`). Another index may weigh everything diff
 
 ## Badges: which ones count
 
-A badge is one `Registered` entry the registry program itself wrote. It counts for a profile only
-if all four are true:
+A badge is one line in the registry: an account the registry program wrote, naming a profile's key,
+a label, and the root of the issuer's list the person proved they are on. It counts for a profile
+only if all four are true:
 
 1. **It is `market/role`, and its market is in the directory, byte for byte.** Such as
    `tutoring/seller`. The name before the slash must be the name of a market the `markets` repo's
@@ -30,17 +31,22 @@ if all four are true:
    record names `market` and `role`, and a badge counts for it only under exactly that
    `market/role`. A badge under any other scope counts for nothing here, whoever holds it; a person
    in a second market, or on the other side of the same one, holds a second profile.
-3. **The profile declares its wallet.** The entry names the wallet that signed the registration.
-   The profile's own record must name the same wallet. Change the record's wallet and the badge
-   stops counting at once.
+3. **The line names the profile's own key.** A profile is named by its key (its DID), and that key
+   is its wallet: the line must name exactly it.
 4. **The profile exists** in this index.
 
 ## Uniqueness
 
-For each counted badge (one market and role), take the owners of the lists that
-vouch for it: the list owner each entry names. Each owner has a weight from 0 to 1 in
-`config/issuers.json`. The foundation's issuer starts at 1; every other key is 0 until someone
-sets it.
+For each counted badge (one market and role), take the issuers that vouch for it, among the
+issuers `config/issuers.json` names:
+
+- each one whose signed roots file holds the root the line was proven against;
+- each one a membership record in the profile's own folder shows: a proof, for the same line, that
+  the same person is on that issuer's list too, checked against that issuer's roots and the key
+  the registry is sealed with.
+
+Each issuer has a weight from 0 to 1 in `config/issuers.json`. The foundation's issuer starts at
+1; every other issuer is 0 until someone sets it. A line no named issuer vouches for counts 0.
 
     uniqueness = 1 − (1 − w1) × (1 − w2) × …
 
@@ -49,17 +55,18 @@ sets it.
   0.5 give 0.75.
 - An issuer at 0 adds nothing.
 
-The weight follows the owner the entry named when the badge was registered, not whoever owns the
-list today.
+An issuer publishes every root its list has had, and never removes one, so a line proven against
+an older root keeps its issuer.
 
 ## Evidence: what backs a review
 
 A review can point at a deal with its `dealId`. When that id is an escrow's address, the index
-reads that escrow's permanent receipt, built only from events the escrow program itself wrote.
+reads that escrow's permanent receipt, built only from events the escrow program itself wrote (either
+version: each escrow follows the program it was opened in).
 The receipt counts only if:
 
-- the reviewer and the reviewed are the escrow's buyer and seller, in either order, going by the
-  wallets their profiles declare; and
+- the reviewer and the reviewed are the escrow's buyer and seller, in either order, going by their
+  profiles' keys; and
 - its token is one this index counts (`countedMints` in `config/scoring.json`; for now, USDC on
   mainnet and on devnet).
 
@@ -166,7 +173,7 @@ The statement, as text:
 
     forest.foundation/index/v1/score
     kind uniqueness            (or standing, or rating)
-    did did:plc:…
+    did did:key:…
     scope online-tutors/seller (empty for standing and rating)
     value 1000000              (millionths; may be negative for standing; a rating of 8.5 is 8500000)
     at 1790300000              (unix seconds, when this value was first computed)
@@ -195,5 +202,5 @@ HKDF-SHA256, under the labels `forest.foundation/index/ed25519/v1` and
 
 ## When scores change
 
-Every time a record or a chain event arrives, the index waits a quarter of a second, then
-recomputes everything. At this size that is simplest; an incremental recompute is later work.
+Every time a record, a line, an issuer's root or an escrow event arrives, the index waits a quarter
+of a second, then recomputes everything. At this size that is simplest; an incremental recompute is later work.

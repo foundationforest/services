@@ -163,3 +163,98 @@ this repo, is `forest/docs/changes.md`.
   offer and proof, and a free registry.
 - Importing the registry client's `proof.ts` prints Node's `punycode` deprecation warning at the
   issuer's start, from a dependency (cosmetic).
+
+## 2026-09-30: forest 449511d: the index on records, lines and roots; the index's own pin goes
+
+**Built.**
+- `FOREST` at `449511d8f57e5647d790405d4590729fb3c5d002` (forest's main): the registry's fixed
+  line (one root, no `add_proof`) and membership records. `index/FOREST` and `FOREST_PIN` are gone;
+  every service now uses forest at the one commit in `FOREST`.
+- `index/`, only the sources changed; the scoring rules did not (`compute.ts` is the same but for
+  a rename, `listOwner` → `issuer`, which may be null):
+  - **Records from hosts** (`src/records/hosts.ts`, which replaces `firehose.ts`), read with
+    forest's own `readPage`, which checks each line's canonical text and signature. The three
+    filters: every feed read since its cursor (kept in Postgres); the hosts in `HOSTS` in full,
+    every other host a folder names for badged profiles only; a profile first seen in a badged
+    feed read once by `profile` from that host. Each profile is merged with forest's
+    `viewProfile` and what it holds now replaces what the index held (`src/records/store.ts`),
+    each body checked against `forest/records/schemas/` with ajv. `HOSTS` replaces `FIREHOSE_URL`
+    and `PLC_URL`; `@atproto/*` and `ws` are gone.
+  - **Badges from lines.** At every start every line is read from the registry's own accounts
+    (`fetchLines`: `getProgramAccounts` with the line discriminator); then only transactions after
+    the newest one at that moment, for new lines (every account the transaction names that holds a
+    line at its code's address). No old history is needed. Table `lines`; `badges` is dropped.
+  - **Issuers' roots** (`src/issuers.ts`): `config/issuers.json` is keyed by the issuer's did:key,
+    with `roots`, the address of its signed roots file. Each file is checked (canonical text, the
+    configured issuer, the signature over the issuer's own prefix) and its roots kept
+    (`issuer_roots`), at most once a minute. A line's issuers are the trusted ones whose roots hold
+    its root.
+  - **Memberships**: a `proof/<id>` membership in a profile's folder adds its issuer to the line once
+    `verifyMembership` passes against the line, that issuer's kept roots and
+    `forest/registry/artifacts/semaphore-32.json`. It waits (pending, with why) while the issuer,
+    line or root is unknown; a proof that fails is invalid for that version of the record.
+  - **Receipts from escrow v1 and v2** (`src/chain/escrow.ts`). v2's `Ended.fundedAt` fills
+    `funded_at` when nobody marked it; v2's `Objected` is stored (`objected_by`, `objected_at`) and
+    shown on the deal page ("Objection") and on a profile's reviews that name the deal ("The
+    student objected on …"). Scoring does not read it.
+  - Migration `006_records_lines.sql`: drops what the firehose and the earlier registry stored, adds
+    `host_entries`, `lines`, `issuer_roots`, `memberships`, the objection columns.
+  - Pages and twins: a badge is one line with `issuers` (`via`: line or membership), `line`, `code`,
+    `root`; `listIndex`, `listOwner` and `transaction` are gone. Photos and media by `sha256`. A
+    record is addressed `<did>/<path>`; its `cid` is its entry's id. The deal page's "Payment
+    marked" reads "Paid", since v2 records when the money was there even unmarked.
+  - `POLL_MS` replaces `CHAIN_POLL_MS`; `ESCROW_V2_PROGRAM_ID` added. Devnet: registry `Hyh5…`,
+    escrow v1 `3vAV…`, v2 `B3p13…`; the devnet issuer by its did:key and its `/roots.json`.
+  - Tests: the page fixture on did:key profiles and signed entries, taken in through the index's
+    own merge; `e2e.test.ts` rewritten on real pieces (below).
+  - Docs: README, HOSTING, SCORING's badge sources, PAYLINK's `offer` and `cid`, the read skill's
+    examples and badge check, deploy README.
+- `relayer/`: the test registers in one transaction (`buildRegistration({ commitments })`) and
+  drops `add_proof`; `deploy/devnet-config.sh` names the registry `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf`
+  (escrow v2 was already `B3p13…`); the README's `add_proof` section becomes "A line never grows".
+- CI: the index job installs `records registry/client escrow/client escrow/v2/client`.
+
+**Chosen, where the plan was silent.**
+1. "Boards" are forest's hosts; the code says host, as forest's does.
+2. Crawling: hosts named in folders are followed, badged only; one on loopback only when `HOSTS`
+   has one (a local run). A host still answering after 60 s is skipped until it finishes.
+3. The index reads an issuer's roots file only, not `list.json`: it needs the roots, not the list.
+4. A line whose root no trusted issuer published is still a badge with no issuer (uniqueness 0),
+   as a badge on an untrusted list was. So it still counts in a market's "verified real people".
+5. A closed folder (`null`) leaves nothing of that profile in the index.
+6. The Pay link keeps its parameter names; `offer` is `<did>/offer/<id>` and `cid` the entry's id.
+7. Forest has no market-file validator any more (`shapes/` went); the index checks only the fields
+   it reads, and derives roles from sides.
+8. The issuers file names each issuer's roots address; the default file keeps the placeholder key,
+   as a did:key, with no address (the foundation's issuer has none yet).
+
+**Learned.**
+- Built here with Solana CLI 4.2.2: the registry at 165,320 bytes and escrow v2 at 291,568, as forest
+  records them; escrow v1 at 282,888.
+- Kora 2.0.5, on a local validator (6,960 lamports a byte), `kora.toml` unchanged but the mock
+  price: a line with a 20-byte label is 702 bytes and 123,921 units, charged 2,077,120 (the fee
+  and the 297-byte deposit's 2,067,120, exactly).
+- The index's end-to-end test (two reference hosts, a validator, both escrows, two issuers' roots
+  files from `issuer/src/list.ts`, four real registrations and a membership) takes about 30 s. One
+  run in about ten failed at the membership step; the likely cause, the test deleting the lines to
+  prove the backfill while a recompute ran, is fixed in the test. Three runs since, green.
+- All four images build from the repo root and the index's starts and migrates, with this
+  sandbox's proxy lines added to throwaway copies of the Dockerfiles only. Its one error there: the
+  devnet issuer has no `/roots.json` yet.
+
+**Open.**
+- **The devnet services** (mechanical, then Railway): the index and the relayer here are not
+  deployed. The devnet index needs a records host on devnet (`HOSTS`) and the devnet issuer
+  redeployed from this repo (`/roots.json`); until then it reads lines and receipts only.
+- **A badged feed trusts its host's word** (needs Carlos): a crawled host decides who is badged in
+  what it serves. The index still counts only lines and roots it checks itself, but a host can make
+  the index store its junk. `records/SPEC.md` §7's `badged=1` does not check roots either.
+- **Crawling grows with whatever folders name** (needs Carlos): any profile on a followed host can
+  name eight hosts. A list of hosts the index follows, or a cap, is a rule to choose.
+- **`readPage` has no size limit** (mechanical, forest): a host can send an endless page; the
+  index waits 60 s per round but reads what arrives. A limit belongs in forest's client.
+- **"Verified real people" on a market page** counts a line no trusted issuer vouches for (chosen,
+  4): whether it should count only badges with uniqueness above 0 (needs Carlos).
+- **The market-file validator's home** (mechanical, forest or markets): the index's check reads
+  fields, not the format.
+- **This repo's `CLAUDE.md` is behind forest's** (needs Carlos), as the last session said.

@@ -62,7 +62,7 @@ here is 6,960 lamports a byte, the validator's default. The programs are built a
 
 | Transaction | Size | Units | Relayer spent | Charged | Of which deposits |
 |---|---|---|---|---|---|
-| Registry line, a 20-byte label | 702 bytes | 121,083 | 2,104,960 | 2,104,960 | line 2,094,960 |
+| Registry line, a 20-byte label | 702 bytes | 123,921 | 2,077,120 | 2,077,120 | line 2,067,120 |
 | Escrow v1, pay (deposit address, create, money in) | 661 | 29,644 | 4,777,600 | 4,777,600 | escrow 2,728,320, deposit address 2,039,280 |
 | Escrow v1, release | 488 | 12,768 | 10,000 | 10,000 | none; the deposit address's 2,039,280 go back to the person |
 | Escrow v1 in one tap | 710 | 40,835 | 4,777,600 | 4,777,600 | the same two; the deposit address's comes back to the person in the same transaction |
@@ -80,7 +80,7 @@ costs at mainnet's rent, today and after the cuts, is in `forest/registry/README
 **Can Kora's price count the deposit?** Yes. The test shows it:
 - A line's charge is exactly the network fee plus the line the registry program makes inside its
   own call.
-- A line paying only the network fee is refused: "Insufficient token payment. Required 2104960
+- A line paying only the network fee is refused: "Insufficient token payment. Required 2077120
   lamports". Nothing lands.
 - An escrow's pay step is charged both accounts the escrow program makes.
 
@@ -116,8 +116,7 @@ Tested, each with nothing landing and nothing moving:
 | The relayer's SOL sent anywhere | `Fee payer cannot be used for 'System Transfer'` |
 | The payment taken back out of the relayer's token account, under the signature it adds | `Fee payer cannot be used for 'SPL Token Transfer'` |
 | No payment | `Insufficient token payment. Required 10050 lamports` |
-| A line paying the network fee but not the deposit | `Insufficient token payment. Required 2104960 lamports` |
-| A second issuer's root on a line (`add_proof`, below) | `Fee payer cannot be used for 'System Transfer'` |
+| A line paying the network fee but not the deposit | `Insufficient token payment. Required 2077120 lamports` |
 | An escrow whose deposit address only the escrow program makes (below) | `Account BbCZ… not found` |
 
 Also enforced by the config, not provoked here:
@@ -129,10 +128,9 @@ Also enforced by the config, not provoked here:
 Kora checks the program list against every call inside the transaction, not only the top-level
 ones.
 
-**`add_proof` does not pass.** It grows a line by 32 bytes, and the program pays for that with a
-System transfer from the payer inside its own call. `kora.toml` lets the relayer's key create
-accounts, never transfer SOL, so Kora refuses. A line through this relayer holds one issuer's root.
-A second root needs another payer, or a change to the config: open.
+**A line never grows.** `register` writes it once, at its full size, and nothing writes to it again
+(`forest/registry/README.md`), so nothing a line needs after `register` asks the relayer for SOL. A
+second issuer vouches for the same line in a membership record in the profile's folder, off chain.
 
 ### One thing a product must do for Kora: make the deposit address at the top
 
@@ -261,4 +259,3 @@ deployed, and each is in `forest/docs/changes.md` or this repo's `docs/changes.m
   path. It was read, not run.
 - **Load, rate limits, several relayer keys**, and the operations loop that turns collected
   dollars back into SOL.
-- **A second issuer's root through the relayer.** Kora refuses `add_proof` (above).

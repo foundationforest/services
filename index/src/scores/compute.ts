@@ -2,7 +2,7 @@
 // rule here is written out in plain words in SCORING.md; the two must say the same thing.
 //
 // Three scores, never blended into one number:
-//   uniqueness  per badge: which issuers' lists vouch for it, by this index's issuer weights
+//   uniqueness  per badge: which issuers vouch for it, by this index's issuer weights
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
@@ -15,7 +15,12 @@ import { type Directory, splitScope } from '../markets.ts'
 
 /** A profile, with the wallet it declares and the one scope it lives in (`market/role`, from its record). */
 export type ProfileIn = { did: string; wallet: string | null; scope: string | null }
-export type BadgeIn = { did: string; wallet: string; scope: string; listOwner: string }
+/**
+ * A badge and one issuer vouching for it: a trusted issuer whose published roots hold the line's
+ * root, or one whose membership record for the line checks. `issuer` is null for a line no issuer
+ * this index trusts vouches for: like an issuer at weight 0, it adds nothing.
+ */
+export type BadgeIn = { did: string; wallet: string; scope: string; issuer: string | null }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -63,8 +68,8 @@ export type BadgeStatus =
 /**
  * A badge counts for its profile only when its scope is `market/role`, the market a directory
  * market byte for byte and the role one of that market's roles; when that is the profile's own
- * scope, the one market and side its record names; and when the profile's record declares the
- * wallet the registry's entry names. A plain `market` scope counts for nothing.
+ * scope, the one market and side its record names; and when the line names the profile's own key,
+ * which is its wallet. A plain `market` scope counts for nothing.
  */
 export function badgeStatus(
   badge: BadgeIn,
@@ -81,8 +86,8 @@ export function badgeStatus(
   return { counted: true, ...scope }
 }
 
-export function issuerWeight(issuers: IssuerConfig, owner: string): number {
-  const w = issuers[owner]?.weight ?? 0
+export function issuerWeight(issuers: IssuerConfig, issuer: string): number {
+  const w = issuers[issuer]?.weight ?? 0
   return Math.min(1, Math.max(0, w))
 }
 
@@ -92,13 +97,13 @@ export type Uniqueness = {
   market: string
   role: string
   value: number
-  issuers: { owner: string; name: string | null; weight: number }[]
+  issuers: { issuer: string; name: string | null; weight: number }[]
 }
 
 /**
- * Per profile and badge scope: the distinct list owners behind its counted entries, combined as
+ * Per profile and badge scope: the distinct issuers vouching for its counted lines, combined as
  * 1 − Π(1 − weight). One issuer at weight w gives w; two independent issuers give more than either
- * and never more than 1; an issuer at 0 adds nothing.
+ * and never more than 1; an issuer at 0, or none, adds nothing.
  */
 export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings: Settings): Uniqueness[] {
   const profiles = new Map(inputs.profiles.map((p) => [p.did, p]))
@@ -110,15 +115,15 @@ export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings
     if (!status.counted) continue
     const key = `${b.did}\u0000${b.scope}`
     const g = groups.get(key) ?? { did: b.did, scope: b.scope, market: status.market, role: status.role, owners: new Set() }
-    g.owners.add(b.listOwner)
+    if (b.issuer !== null) g.owners.add(b.issuer)
     groups.set(key, g)
   }
   const out: Uniqueness[] = []
   for (const g of groups.values()) {
-    const issuers = [...g.owners].sort().map((owner) => ({
-      owner,
-      name: settings.issuers[owner]?.name ?? null,
-      weight: issuerWeight(settings.issuers, owner),
+    const issuers = [...g.owners].sort().map((issuer) => ({
+      issuer,
+      name: settings.issuers[issuer]?.name ?? null,
+      weight: issuerWeight(settings.issuers, issuer),
     }))
     const value = 1 - issuers.reduce((p, i) => p * (1 - i.weight), 1)
     out.push({ did: g.did, scope: g.scope, market: g.market, role: g.role, value, issuers })

@@ -2,10 +2,10 @@
 // links. Any app that follows the escrow client opens the link, checks it against the offer
 // record it names, and makes the payment itself.
 //
-//   {base}/pay?v=1&offer=<at-uri>&cid=<record cid>&price.amount=<decimal>&price.mint=<mint>
+//   {base}/pay?v=1&offer=<did>/offer/<id>&cid=<entry id>&price.amount=<decimal>&price.mint=<mint>
 //            &price.per=<hour|day|job>[&terms.arbiter=<key>][&terms.timer.days=<n>&terms.timer.to=<seller|buyer>]
 //
-// Every parameter after `cid` is the post record's own field, named by its path. Parameters come
+// Every parameter after `cid` is the offer record's own field, named by its path. Parameters come
 // in exactly this order, so two builders write the same link. There is no seller key in the link
 // on purpose: an app must read it from the seller's own profile, so a forged link cannot send
 // money anywhere else.
@@ -14,16 +14,16 @@ export const PAY_VERSION = '1'
 
 export type PayLink = {
   v: 1
-  /** The offer's record address: at://<did>/foundation.forest.post/<rkey>. */
+  /** The offer's address: its profile's did:key, then its path, `offer/<id>`. */
   offer: string
-  /** The record's content id: which version of the offer the terms are from. */
+  /** The id of the entry that holds the offer: which version of the offer the terms are from. */
   cid: string
   price: { amount: string; mint: string; per: 'hour' | 'day' | 'job' }
   /** The escrow's two options, each off unless set. Null: neither. */
   terms: { arbiter?: string; timer?: { days: number; to: 'seller' | 'buyer' } } | null
 }
 
-const AT_POST = /^at:\/\/(did:[a-z]+:[a-zA-Z0-9._:%-]+)\/foundation\.forest\.post\/([a-zA-Z0-9._~:-]{1,512})$/
+const OFFER = /^did:key:z[1-9A-HJ-NP-Za-km-z]{1,56}\/offer\/[a-z0-9][a-z0-9._-]{0,63}$/
 const BASE58_KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const DECIMAL = /^\d{1,24}(\.\d{1,12})?$/
 
@@ -49,9 +49,9 @@ export function parsePayLink(search: URLSearchParams): { ok: true; link: PayLink
   const get = (k: string) => search.get(k)
   if (get('v') !== PAY_VERSION) errors.push(`v must be ${PAY_VERSION}`)
   const offer = get('offer') ?? ''
-  if (!AT_POST.test(offer)) errors.push('offer must be a post record address, at://<did>/foundation.forest.post/<rkey>')
+  if (!OFFER.test(offer)) errors.push('offer must be an offer address, <did>/offer/<id>')
   const cid = get('cid') ?? ''
-  if (!/^[a-z0-9]{8,128}$/i.test(cid)) errors.push('cid must be the record content id')
+  if (!/^[0-9a-f]{64}$/.test(cid)) errors.push("cid must be the id of the offer's entry, 64 hex characters")
   const amount = get('price.amount') ?? ''
   if (!DECIMAL.test(amount)) errors.push('price.amount must be whole units as decimal text, such as 25 or 12.50')
   const mint = get('price.mint') ?? ''

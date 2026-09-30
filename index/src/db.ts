@@ -42,12 +42,15 @@ export async function migrate(db: Db): Promise<string[]> {
   return applied
 }
 
-export async function getCursor(db: Db, source: string): Promise<string | null> {
+/** The pool, or one client inside a transaction. */
+type Queryable = Pick<pg.Pool, 'query'> | pg.PoolClient
+
+export async function getCursor(db: Queryable, source: string): Promise<string | null> {
   const { rows } = await db.query('select value from cursors where source = $1', [source])
   return rows[0]?.value ?? null
 }
 
-export async function setCursor(db: Db, source: string, value: string): Promise<void> {
+export async function setCursor(db: Queryable, source: string, value: string): Promise<void> {
   await db.query(
     'insert into cursors (source, value) values ($1, $2) on conflict (source) do update set value = excluded.value',
     [source, value],

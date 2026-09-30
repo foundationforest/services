@@ -130,6 +130,18 @@ export function field(name: string, value: unknown): string {
 
 export const BADGE = 'Verified real person, one per market'
 
+/** Who vouched for a badge, by the names this index gives its issuers. */
+export function vouchers(names: (string | null)[]): string {
+  const known = names.map((n) => n ?? 'an issuer this index gives no name')
+  if (!known.length) return 'no issuer this index trusts'
+  return known.length === 1 ? known[0]! : `${known.slice(0, -1).join(', ')} and ${known[known.length - 1]}`
+}
+
+/** A side of a deal objected: `The student objected on 3 Oct 2026.` */
+export function objected(side: string, at: string | null): string {
+  return `The ${side} objected${at ? ` on ${date(at)}` : ''}.`
+}
+
 export function badgeWhyNot(why: string | null): string {
   switch (why) {
     case 'walletNotDeclared':

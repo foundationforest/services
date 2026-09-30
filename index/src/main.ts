@@ -12,13 +12,13 @@ import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
 import { ChainReader, type Program } from './chain/poll.ts'
-import { ESCROW_PROGRAM_ID } from './chain/escrow.ts'
+import { ESCROW_PROGRAM_ID, ESCROW_V2_PROGRAM_ID } from './chain/escrow.ts'
 import { REGISTRY_PROGRAM_ID } from './chain/registry.ts'
 import { type Config, loadConfig } from './config.ts'
 import { type Db, createPool, migrate } from './db.ts'
+import { RootsReader } from './issuers.ts'
 import { Directory } from './markets.ts'
-import { type RecordReader, startRecordReader } from './records/firehose.ts'
-import type { Outcome } from './records/store.ts'
+import { HostReader } from './records/hosts.ts'
 import { Scorer, recompute } from './scores/run.ts'
 import { indexKeys, publicKeys } from './scores/sign.ts'
 import { type Web, createWeb } from './web/routes.ts'
@@ -26,7 +26,6 @@ import { serve } from './web/server.ts'
 
 type Opts = {
   onError?: (err: unknown) => void
-  onRecord?: (uri: string, outcome: Outcome) => void
 }
 
 async function loadDirectory(config: Config, onError: (err: unknown) => void): Promise<Directory> {
@@ -35,9 +34,16 @@ async function loadDirectory(config: Config, onError: (err: unknown) => void): P
   return directory
 }
 
-export type Readers = { directory: Directory; scorer: Scorer; chain: ChainReader | null; records: RecordReader | null; stop: () => Promise<void> }
+export type Readers = {
+  directory: Directory
+  scorer: Scorer
+  chain: ChainReader | null
+  records: HostReader | null
+  roots: RootsReader
+  stop: () => Promise<void>
+}
 
-/** Migrations, the public keys for the pages, both readers and the recompute, on `db`. */
+/** Migrations, the public keys for the pages, the three readers (hosts, chain, issuers' roots) and the recompute, on `db`. */
 export async function startReaders(db: Db, config: Config, opts: Opts = {}): Promise<Readers> {
   const onError = opts.onError ?? ((err: unknown) => console.error(err))
   if (!config.signingSeed) throw new Error('the readers sign scores: INDEX_SIGNING_SEED is required')
@@ -54,25 +60,24 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   scorer.onError = onError
   await scorer.now()
 
-  const records = config.firehoseUrl
-    ? await startRecordReader({
-        db,
-        firehoseUrl: config.firehoseUrl,
-        plcUrl: config.plcUrl,
-        onChange: () => scorer.schedule(),
-        onError,
-        onRecord: opts.onRecord,
-      })
-    : null
+  const roots = new RootsReader({ db, issuers: config.issuers, onChange: () => scorer.schedule(), onError })
+  roots.start(config.pollMs)
+
+  let records: HostReader | null = null
+  if (config.hosts.length) {
+    records = new HostReader({ db, hosts: config.hosts, onChange: () => scorer.schedule(), onError })
+    await records.start(config.pollMs)
+  }
 
   let chain: ChainReader | null = null
   if (config.rpcUrl) {
     const programs: Program[] = [
       { id: config.registryProgramId ?? REGISTRY_PROGRAM_ID, kind: 'registry' },
       { id: config.escrowProgramId ?? ESCROW_PROGRAM_ID, kind: 'escrow' },
+      { id: config.escrowV2ProgramId ?? ESCROW_V2_PROGRAM_ID, kind: 'escrowV2' },
     ]
     chain = new ChainReader(db, config.rpcUrl, programs, () => scorer.schedule(), config.chainCommitment, onError)
-    chain.start(config.chainPollMs)
+    chain.start(config.pollMs)
   }
 
   return {
@@ -80,9 +85,11 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
     scorer,
     chain,
     records,
+    roots,
     stop: async () => {
       chain?.stop()
-      await records?.stop()
+      records?.stop()
+      roots.stop()
       scorer.stop()
     },
   }

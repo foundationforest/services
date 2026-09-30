@@ -1,6 +1,5 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
-# first fetches forest at the commit in FOREST (forest.sh; the index at its own, index/FOREST) and
-# installs the forest packages it uses.
+# first fetches forest at the commit in FOREST (forest.sh) and installs the forest packages it uses.
 #
 #   issuer       its type-check (the stand-in Didit included) and its tests
 #   index        its type-check, and its unit and page tests on a Postgres service
@@ -8,7 +7,7 @@
 #   connections  its type-check, and its tests against forest's reference host
 #
 # Not here: the relayer's local run and the index's end-to-end test. They need forest's programs,
-# its proving files and Kora built (and, for the index, the earlier host).
+# its proving files, a local validator and (for the relayer) Kora built.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -70,7 +69,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          FOREST_PIN=index/FOREST ./forest.sh shapes keys registry/client escrow/client
+          ./forest.sh records registry/client escrow/client escrow/v2/client
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index

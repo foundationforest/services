@@ -23,7 +23,7 @@ import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { DEAL, EXCHANGE, FOLDER, LISBON, MADE_UP_DEAL, MARKET, OFFERS, ana, ben, cleo, dara, makeFixture } from './fixture.ts'
+import { DEAL, EXCHANGE, FOLDER, FOUNDATION_ISSUER, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PHOTO, ana, ben, cleo, dara, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -117,12 +117,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // No aliases: another spelling of a market is no market here.
       assert.equal((await get('/markets/online-tutor')).status, 404)
       assert.equal((await get('/markets/online-tutor.json')).status, 404)
-      for (const path of ['/profiles/did:plc:nobody', '/markets/plumbers', '/folders/nothing', `/categories/${FOLDER}`, `/deals/${'00'.repeat(32)}`, '/nope', '/profiles/%E0%A4%A']) {
+      for (const path of ['/profiles/did:key:z6MkNobody', '/markets/plumbers', '/folders/nothing', `/categories/${FOLDER}`, `/deals/${'00'.repeat(32)}`, '/nope', '/profiles/%E0%A4%A']) {
         const res = await get(path)
         assert.equal(res.status, 404, path)
         assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8', path)
       }
-      const missing = await get('/profiles/did:plc:nobody.json')
+      const missing = await get('/profiles/did:key:z6MkNobody.json')
       assert.equal(missing.status, 404)
       assert.equal(JSON.parse(missing.text).error, 'NotFound')
       assert.deepEqual(JSON.parse((await get('/search.json')).text).offers, [], 'no words, no results: the twin of the empty search page')
@@ -289,10 +289,10 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.equal(await check(portuguese.payLink), 'matches')
       assert.equal(await check(altered.toString()), 'differs')
       const moved = new URL(portuguese.payLink)
-      moved.searchParams.set('cid', 'bafyreianolderversionofthisoffer')
+      moved.searchParams.set('cid', 'e'.repeat(64))
       assert.equal(await check(moved.toString()), 'changed')
       const gone = new URL(portuguese.payLink)
-      gone.searchParams.set('offer', `at://${ben.did}/foundation.forest.post/3kzq2vrffxb9z`)
+      gone.searchParams.set('offer', `${ben.did}/offer/nothing`)
       assert.equal(await check(gone.toString()), 'notFound')
       assert.equal(await check(`${base}/pay?v=1`), 'invalid')
       const alteredPage = readable(rendered.get(altered.pathname + altered.search)!)
@@ -328,6 +328,13 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.deepEqual(deal.receipt.sides, { seller: 'tutor', buyer: 'student' })
       assert.ok(readable(rendered.get(`/deals/${DEAL}`)!).includes('The tutor asked for this payment'))
 
+      // Escrow v2's objection, a fact on the receipt: which side, and when; on the deal and on the
+      // profile's reviews that name it. It changes no score.
+      assert.deepEqual(deal.receipt.objection, { by: 'buyer', side: 'student', at: '2026-09-06T10:00:00.000Z' })
+      assert.match(readable(rendered.get(`/deals/${DEAL}`)!), /Objection Ben Okafor · 6 Sept 2026/)
+      assert.ok(anaPage.includes('The student objected on 6 Sept 2026.'))
+      assert.deepEqual(anaTwin.reviews.received.find((r: any) => r.reviewer === ben.did).objection, deal.receipt.objection)
+
       // Two numbers for every profile an offer or a receipt shows: a rating out of 10, and standing.
       assert.equal(anaTwin.scores.rating.details.reviews, 2)
       assert.ok(anaTwin.scores.rating.value > 9.9 && anaTwin.scores.rating.value <= 10, `Ana rated ${anaTwin.scores.rating.value}`)
@@ -340,7 +347,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // A review's market is its subject's: Ana lives in online-tutors, whose file adds `sessions`.
       const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.did)
       assert.deepEqual([byBen.market, byBen.fields, byBen.ratings, byBen.overall], [MARKET, { sessions: 8 }, { overall: 10, patience: 10 }, 10])
-      assert.deepEqual(byBen.media, [{ cid: 'bafkreicx54kjfbjopw56j2bwh7zphoa5ejyyx7e6wazjsfr3u2q33d65he', mimeType: 'image/jpeg' }])
+      assert.deepEqual(byBen.media, [{ sha256: PHOTO.sha256, mimeType: 'image/jpeg' }])
       assert.ok(anaPage.includes('Overall 10.0 of 10 · Patience 10.0 of 10'))
       assert.ok(anaPage.includes('Sessions: 8 · With 1 photo'))
       // One scope per profile: Ben lives in online-tutors as a buyer. His badge in the language
@@ -348,6 +355,17 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // be another profile, as Dara's is. A review of him takes online-tutors' review fields.
       const benTwin = await json(`/profiles/${ben.did}.json`)
       assert.equal(benTwin.reviews.received[0].market, MARKET)
+      // A badge is a line, vouched for by each trusted issuer whose published roots hold its root.
+      assert.deepEqual(anaTwin.badges.map((b: any) => [b.scope, b.counted, b.issuers]), [
+        [`${MARKET}/seller`, true, [{ key: FOUNDATION_ISSUER, name: 'Forest Foundation (placeholder key)', weight: 1, via: 'line' }]],
+      ])
+      assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.scope, u.value, u.details.issuers]), [
+        [`${MARKET}/seller`, 1, [{ issuer: FOUNDATION_ISSUER, name: 'Forest Foundation (placeholder key)', weight: 1 }]],
+      ])
+      assert.ok(anaPage.includes('Vouched for by Forest Foundation (placeholder key).'))
+      // Cleo's line names her second profile's key: it is not her badge.
+      const cleoTwin = await json(`/profiles/${cleo.did}.json`)
+      assert.deepEqual([cleoTwin.badges, cleoTwin.scores.uniqueness], [[], []])
       assert.deepEqual(
         benTwin.badges.map((b: any) => [b.scope, b.counted, b.why, b.side]).sort(),
         [[`${EXCHANGE}/peer`, false, 'notProfileScope', null], [`${MARKET}/buyer`, true, null, 'student']],

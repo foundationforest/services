@@ -2,7 +2,7 @@
   "name": "@forest/index",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest index: reads signed records from a firehose and the registry's and escrow's own events from the chain, scores every profile (uniqueness and trust, never blended, each signed twice), and serves the same data as pages for people and for machines: HTML, JSON-LD, a JSON twin of every page, a sitemap, llms.txt and the read skill.",
+  "description": "The Forest index: reads signed records from hosts, the registry's lines from its own accounts, the issuers' signed roots, and the escrows' own events from the chain, scores every profile (uniqueness, standing and rating, never blended, each signed twice), and serves the same data as pages for people and for machines: HTML, JSON-LD, a JSON twin of every page, a sitemap, llms.txt and the read skill.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
@@ -15,13 +15,12 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@atproto/identity": "0.5.13",
-    "@atproto/lex": "0.3.11",
-    "@atproto/sync": "0.4.10",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@solana/web3.js": "1.99.0",
     "@zk-kit/eddsa-poseidon": "1.0.4",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
     "pg": "8.23.0",
     "poseidon-lite": "0.3.0"
   },
@@ -29,8 +28,9 @@
     "@solana/spl-token": "0.4.9",
     "@types/node": "22.20.2",
     "@types/pg": "8.23.1",
-    "@types/ws": "8.18.1",
-    "typescript": "5.9.3",
-    "ws": "8.21.3"
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }

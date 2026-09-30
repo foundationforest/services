@@ -12,7 +12,7 @@ Nothing is shipped. Read [CLAUDE.md](CLAUDE.md) before any task.
 
 | Folder | What |
 |---|---|
-| [`index/`](index/) | The foundation's index: reads records and the programs' events, scores every profile, serves pages for people and for machines. It still reads the old data layer, at forest's earlier commit (`index/FOREST`) |
+| [`index/`](index/) | The foundation's index: reads records from hosts, the registry's lines, the issuers' signed roots and both escrows' events, scores every profile, serves pages for people and for machines |
 | [`issuer/`](issuer/) | The foundation's issuer: turns a passed face check into a person's place on its list, and publishes the list and its signed roots as two files |
 | [`relayer/`](relayer/) | The relayer: Kora, configured. Co-signs a person's transaction and charges what it spends, in their dollar token. When Solana cuts its storage price, part of a deposit it put down is freed, and it keeps that refund |
 | [`connections/`](connections/) | Forest's MCP server for assistants, run as a service: reads public notes, drafts, returns approval links. It holds no keys, no grants and no drafts |
@@ -29,18 +29,13 @@ The services use forest's pieces unchanged, by relative path. `FOREST` holds one
 that commit.
 
 ```
-./forest.sh registry/client records                        # the issuer
-./forest.sh registry/client escrow/client escrow/v2/client # the relayer's type-check
-./forest.sh records                                        # connections
-FOREST_PIN=index/FOREST ./forest.sh shapes keys registry/client escrow/client   # the index
+./forest.sh registry/client records                                 # the issuer
+./forest.sh registry/client escrow/client escrow/v2/client          # the relayer's type-check
+./forest.sh records                                                 # connections
+./forest.sh records registry/client escrow/client escrow/v2/client  # the index
 ```
 
 Moving the pin is a one-line change to `FOREST`, in its own pull request.
-
-**The index has its own pin,** `index/FOREST`, at forest's earlier commit, which still has the
-`shapes/`, the registry and the keys the index reads. `forest.sh` reads the pin file `FOREST_PIN`
-names. One `forest/` checkout is at one commit, so switching between the index and the other
-services fetches again. The index's pin goes when the index moves to forest's `records/`.
 
 ## Checks
 

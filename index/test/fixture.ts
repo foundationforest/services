@@ -4,25 +4,37 @@
 // Markets v1 adds a one-sided market, where Dara offers a language exchange in a place, with no
 // price. Every profile lives in one market, as one side of it.
 //
-//   - Records go in through part one's own `applyRecordOp`, so each is checked against its lexicon
-//     exactly as a record off the firehose is.
-//   - Chain rows go in as the adapters store them (badges, the log archive, the receipt).
+//   - Records are real signed entries (forest/records), one host's feed, taken in through the
+//     index's own merge and store, so each body is checked against its schema exactly as an entry
+//     read from a host is.
+//   - Chain rows go in as the readers store them (lines, the issuer's roots, the receipt).
 //   - Scores come from the real recompute, signed with a fixed seed.
 //
-// The ids are fixed, so the read skill (index/skill.md) can use them as its examples.
+// The keys are fixed (each profile's from a fixed stand-in for a passkey's secret), so the ids are
+// too, and the read skill (index/skill.md) uses them as its examples.
 
 import { randomBytes } from 'node:crypto'
 
 import pg from 'pg'
 
+import { type Body, type Entry, entryId, unsignedOf } from '../../forest/records/src/entry.ts'
+import { type ProfileKey, profileKey, seedFromPrf } from '../../forest/records/src/keys.ts'
+import { folderEntry, ownerEntry } from '../../forest/records/src/write.ts'
+
+import { storeLine } from '../src/chain/poll.ts'
+import { splitScope } from '../src/markets.ts'
 import { type Config, loadConfig } from '../src/config.ts'
 import { type Db, createPool } from '../src/db.ts'
+import { storeRoots } from '../src/issuers.ts'
 import { startReaders } from '../src/main.ts'
+import { takeIn } from '../src/records/hosts.ts'
 import { serveMarkets } from './markets-repo.ts'
-import { applyRecordOp } from '../src/records/store.ts'
 
 export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-export const FOUNDATION_ISSUER = 'H7qXWNAeAvedhwuvhAkBYK2WE2nA3KgbufnRz38zFdzS'
+/** The issuer config/issuers.json trusts, by its did:key. */
+export const FOUNDATION_ISSUER = 'did:key:z6Mkva6a6cR5WU96pSkdNji2PQaW3c41TCvxbghMpK71Armp'
+/** The root of the foundation's list every counted line here was proven against. */
+export const FOUNDATION_ROOT = 'ab'.repeat(32)
 export const MARKET = 'online-tutors'
 /** Badges count only as `market/role`: Ana and Cleo sell, Ben buys. */
 export const SELLER_SCOPE = `${MARKET}/seller`
@@ -31,33 +43,93 @@ export const FOLDER = 'freelance-work'
 /** A one-sided market: Dara is a peer in it, and her offer there names no price. */
 export const EXCHANGE = 'language-exchange'
 export const PEER_SCOPE = `${EXCHANGE}/peer`
-/** Where Ben's exchange offer is, rounded to 2 km. */
+/** Where Dara's exchange offer is, rounded to 2 km. */
 export const LISBON = { lat: '38.72', lon: '-9.14', precisionKm: 2, area: 'Arroios, Lisbon' }
+/** The host the story's folders name. Nothing is served there: the entries go straight in. */
+export const HOST = 'https://host.example'
 
-export const ana = { did: 'did:plc:exampleana22222222222222', wallet: '7v54NWdBtkjuAFJrLGsS2SXnuk8nKam81mZJeeYxVFi9', name: 'Ana Ribeiro' }
-export const ben = { did: 'did:plc:exampleben22222222222222', wallet: 'mBKqcnGotbsSb5vNrdyhzZ5EhqZdids9QYiTRckvi7v', name: 'Ben Okafor' }
-/** Cleo's badge is registered with one key; her profile declares another, so it must not count. */
-export const cleo = {
-  did: 'did:plc:examplecleo2222222222222',
-  wallet: '4MfyR4G3NWfVRDWo6iNAHDBZqWMgwZX6FNtMqEW3a9JT',
-  badgeWallet: 'AoVsGaj8MSJ6xwKxfFxo9iZWH3enC8RRTXKH2fx2F8os',
-  name: 'Cleo',
+const person = (fill: number, name: string, n = 0) => {
+  const key = profileKey(seedFromPrf(new Uint8Array(32).fill(fill)), n)
+  return { key, did: key.did, wallet: key.address, name }
 }
+export const ana = person(21, 'Ana Ribeiro')
+export const ben = person(22, 'Ben Okafor')
+/** Cleo's line names her second profile's key, not this one's: it is not her badge here. */
+export const cleo = { ...person(23, 'Cleo'), badgeKey: person(23, 'Cleo', 1) }
 /** A peer in the language exchange: another market, so another profile. */
-export const dara = { did: 'did:plc:exampledara2222222222222', wallet: 'EdmxWPmx2WH6WgFfTdu9xfkYf3k1g5wD1zccTVySEEh1', name: 'Dara Mensah' }
-/** Ana invoiced Ben; Ben paid in one tap and released it to her. */
+export const dara = person(24, 'Dara Mensah')
+/** Ana invoiced Ben; Ben objected, then paid in one tap and released it to her. */
 export const DEAL = 'CJfRUQxyonG6B5mnztsNUqxknbFT89DJdrdrzV9F96mU'
 export const MADE_UP_DEAL = 'cd'.repeat(32)
-export const OFFERS = {
-  portuguese: { rkey: '3kzq2vrffxb2c', cid: 'bafyreiexampleanaportuguese2222', uri: `at://${ana.did}/foundation.forest.post/3kzq2vrffxb2c` },
-  spanish: { rkey: '3kzq2vrffxb2d', cid: 'bafyreiexampleanaspanish2222222', uri: `at://${ana.did}/foundation.forest.post/3kzq2vrffxb2d` },
-  exchange: { rkey: '3kzq2vrffxb2e', cid: 'bafyreiexampledaraexchange22222', uri: `at://${dara.did}/foundation.forest.post/3kzq2vrffxb2e` },
-}
-/** The photo Ben's review carries. The index never fetches it. */
-export const PHOTO = { $type: 'blob', ref: { $link: 'bafkreicx54kjfbjopw56j2bwh7zphoa5ejyyx7e6wazjsfr3u2q33d65he' }, mimeType: 'image/jpeg', size: 20 }
+/** The photo Ben's review carries, by the SHA-256 of its bytes. The index never fetches it. */
+export const PHOTO = { sha256: '5e3b1f3c2a8a8f2b6c4e9d0a7b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a3b5c', mimeType: 'image/jpeg', size: 20 }
 export const SIGNING_SEED = '09'.repeat(32)
 
 const day = (d: number) => `2026-09-${String(d).padStart(2, '0')}T10:00:00.000Z`
+const at = (d: number) => Date.parse(day(d))
+
+// -----------------------------------------------------------------------------------------------
+// The entries: each profile's folder, card, offers and reviews, signed with its own key
+// -----------------------------------------------------------------------------------------------
+
+const profile = (scope: string, about: string | null, d: number, extra: Record<string, unknown> = {}) => ({
+  market: scope.split('/')[0],
+  role: scope.split('/')[1],
+  ...(about ? { about } : {}),
+  createdAt: day(d),
+  ...extra,
+})
+// An offer names no market or side: they are its author profile's.
+const offer = (description: string, amount: string, extra: Record<string, unknown>) => ({
+  direction: 'offer',
+  description,
+  price: { amount, mint: USDC, per: 'hour' },
+  remote: true,
+  createdAt: day(4),
+  ...extra,
+})
+const review = (subject: string, ratings: Record<string, string>, dealId: string, text: string, d: number, extra: Record<string, unknown> = {}) => ({
+  subject,
+  ratings,
+  text,
+  dealId,
+  createdAt: day(d),
+  ...extra,
+})
+
+const { remote: _r, ...spanish } = offer('Spanish grammar, one hour, homework optional.', '12.50', { terms: { timer: { days: 30, to: 'buyer' } }, subjects: ['spanish'] })
+const { price: _p, remote: _q, ...exchange } = offer('English for Portuguese, an hour each way, in a café.', '0', { location: LISBON, speaks: ['en'] })
+
+const entries = (p: { key: ProfileKey; name: string }, d: number, card: Record<string, unknown>, rest: [string, Record<string, unknown>, number][]): Entry[] => [
+  folderEntry(p.key, { hosts: [HOST] }, at(d)),
+  ownerEntry(p.key, 'profile', { ...card, name: p.name } as Body, at(d)),
+  ...rest.map(([path, body, when]) => ownerEntry(p.key, path, body as Body, at(when))),
+]
+
+export const ENTRIES: Entry[] = [
+  ...entries(ana, 1, profile(SELLER_SCOPE, 'Portuguese and Spanish tutor. Ten years teaching adults online.', 1, { contact: 'Message me here first; video calls after a first reply.' }), [
+    ['offer/portuguese', offer('Portuguese conversation for adults, A1 to B2.', '25', { availability: 'Weekday evenings, Lisbon time.', subjects: ['portuguese'] }), 4],
+    // With a timer that sends the money back to the buyer (which no page speaks of), and saying
+    // nothing of where (`remote` is optional).
+    ['offer/spanish', spanish, 4],
+    ['review/ben', review(ben.did, { overall: '10' }, DEAL, 'Paid on time, came prepared.', 7), 7],
+  ]),
+  ...entries(ben, 2, profile(BUYER_SCOPE, 'Learning Portuguese for a move to Lisbon.', 2), [
+    // Ana lives in online-tutors, whose file adds `sessions` to a review of her.
+    ['review/ana', review(ana.did, { overall: '10', patience: '10' }, DEAL, 'Patient and well prepared.', 7, { sessions: 8, media: [PHOTO] }), 7],
+  ]),
+  ...entries(cleo, 3, profile(SELLER_SCOPE, null, 3), [['review/ana', review(ana.did, { overall: '1' }, MADE_UP_DEAL, 'Never showed up.', 8), 8]]),
+  // Dara's offer: in her market, the language exchange; no price, and a place.
+  ...entries(dara, 3, profile(PEER_SCOPE, 'English teacher, learning Portuguese.', 3), [['offer/exchange', exchange, 4]]),
+]
+
+const idAt = (did: string, path: string) => entryId(unsignedOf(ENTRIES.find((e) => e.profile === did && e.path === path)!))
+const address = (did: string, path: string) => ({ path, uri: `${did}/${path}`, cid: idAt(did, path) })
+export const OFFERS = {
+  portuguese: address(ana.did, 'offer/portuguese'),
+  spanish: address(ana.did, 'offer/spanish'),
+  exchange: address(dara.did, 'offer/exchange'),
+}
 
 export type Fixture = { db: Db; config: (env?: Record<string, string>) => Config; drop: () => Promise<void> }
 
@@ -74,94 +146,45 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const config = (more: Record<string, string> = {}) => loadConfig({ ...env, ...more })
   const db = createPool(url.toString())
 
-  // Migrations and the public keys; no firehose and no chain, so no reader starts.
+  // Migrations and the public keys; no hosts, no chain and no roots address, so no reader reads.
   const readers = await startReaders(db, config())
-  const put = async (did: string, collection: string, rkey: string, cid: string, record: Record<string, unknown>) => {
-    const out = await applyRecordOp(db, { event: 'create', did, collection, rkey, cid, rev: '3kzq2vrffxb2a', record })
-    if (out.result !== 'stored') throw new Error(`fixture record ${did}/${collection}/${rkey} not stored: ${JSON.stringify(out)}`)
+  readers.roots.stop()
+
+  // The records: every entry as one host served them, merged and stored as the reader does.
+  const refused: unknown[] = []
+  await takeIn(db, HOST, ENTRIES.map((entry) => ({ entry, id: entryId(unsignedOf(entry)) })), (err) => refused.push(err))
+  if (refused.length) throw new Error(`fixture entries refused: ${refused.map(String).join('; ')}`)
+
+  // Five lines, each proven against the foundation's list. Cleo's names her second profile's key.
+  // Ben's second is under another scope than his profile's, so it does not count for it: a second
+  // market is a second profile, as Dara's is.
+  await storeRoots(db, FOUNDATION_ISSUER, [{ root: FOUNDATION_ROOT, size: 5, time: at(5) }])
+  const line = async (i: number, p: { key: ProfileKey }, scope: string) => {
+    await storeLine(db, {
+      address: `ExampleLine${i}`.padEnd(44, '1'),
+      code: String(i).repeat(64),
+      did: p.key.did,
+      wallet: p.key.address,
+      label: scope,
+      ...splitScope(scope),
+      root: FOUNDATION_ROOT,
+      time: at(5) / 1000,
+      payer: 'ExamplePayer'.padEnd(44, '1'),
+    })
   }
+  await line(1, ana, SELLER_SCOPE)
+  await line(2, ben, BUYER_SCOPE)
+  await line(3, cleo.badgeKey, SELLER_SCOPE)
+  await line(4, ben, PEER_SCOPE)
+  await line(5, dara, PEER_SCOPE)
 
-  const profile = (p: { name: string; wallet: string }, scope: string, about: string | null, d: number) => ({
-    $type: 'foundation.forest.profile',
-    name: p.name,
-    market: scope.split('/')[0],
-    role: scope.split('/')[1],
-    wallet: p.wallet,
-    ...(about ? { about } : {}),
-    createdAt: day(d),
-  })
-  await put(ana.did, 'foundation.forest.profile', 'self', 'bafyreiexampleanaprofile2222222', {
-    ...profile(ana, SELLER_SCOPE, 'Portuguese and Spanish tutor. Ten years teaching adults online.', 1),
-    contact: 'Message me here first; video calls after a first reply.',
-  })
-  await put(ben.did, 'foundation.forest.profile', 'self', 'bafyreiexamplebenprofile2222222', profile(ben, BUYER_SCOPE, 'Learning Portuguese for a move to Lisbon.', 2))
-  await put(cleo.did, 'foundation.forest.profile', 'self', 'bafyreiexamplecleoprofile222222', profile(cleo, SELLER_SCOPE, null, 3))
-  await put(dara.did, 'foundation.forest.profile', 'self', 'bafyreiexampledaraprofile222222', profile(dara, PEER_SCOPE, 'English teacher, learning Portuguese.', 3))
-
-  // A post names no market or side: they are its author profile's.
-  const offer = (description: string, amount: string, extra: Record<string, unknown>) => ({
-    $type: 'foundation.forest.post',
-    direction: 'offer',
-    description,
-    price: { amount, mint: USDC, per: 'hour' },
-    remote: true,
-    createdAt: day(4),
-    ...extra,
-  })
-  await put(ana.did, 'foundation.forest.post', OFFERS.portuguese.rkey, OFFERS.portuguese.cid,
-    offer('Portuguese conversation for adults, A1 to B2.', '25', { availability: 'Weekday evenings, Lisbon time.', subjects: ['portuguese'] }))
-  // With a timer that sends the money back to the buyer (which no page speaks of), and saying
-  // nothing of where (`remote` is optional).
-  const { remote: _, ...spanish } = offer('Spanish grammar, one hour, homework optional.', '12.50', { terms: { timer: { days: 30, to: 'buyer' } }, subjects: ['spanish'] })
-  await put(ana.did, 'foundation.forest.post', OFFERS.spanish.rkey, OFFERS.spanish.cid, spanish)
-  // Dara's offer: in her market, the language exchange; no price, and a place.
-  const { price: __, remote: ___, ...exchange } = offer('English for Portuguese, an hour each way, in a café.', '0', { location: LISBON, speaks: ['en'] })
-  await put(dara.did, 'foundation.forest.post', OFFERS.exchange.rkey, OFFERS.exchange.cid, exchange)
-
-  // Five badges on list 0, vouched for by the foundation's issuer. Cleo's is for a key her profile
-  // does not declare. Ben's second is under another scope than his profile's, so it does not count
-  // for it: a second market is a second profile, as Dara's is.
-  const badge = async (i: number, did: string, wallet: string, scope: string) => {
-    const [market, role] = scope.split('/')
-    const signature = `ExampleRegistration${i}`.padEnd(88, '1')
-    await db.query(
-      `insert into chain_transactions (signature, program_id, slot, block_time, logs) values ($1, 'registry', $2, $3, '[]')`,
-      [signature, 100 + i, day(5)],
-    )
-    await db.query(
-      `insert into badges (signature, ix, scope, market, role, did, wallet, code, list_index, list_owner, slot, block_time)
-       values ($1, 0, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10)`,
-      [signature, scope, market, role, did, wallet, String(i).repeat(64), FOUNDATION_ISSUER, 100 + i, day(5)],
-    )
-  }
-  await badge(1, ana.did, ana.wallet, SELLER_SCOPE)
-  await badge(2, ben.did, ben.wallet, BUYER_SCOPE)
-  await badge(3, cleo.did, cleo.badgeWallet, SELLER_SCOPE)
-  await badge(4, ben.did, ben.wallet, PEER_SCOPE)
-  await badge(5, dara.did, dara.wallet, PEER_SCOPE)
-
-  // The receipt: $25 from Ben to Ana, which she asked for, released to her.
+  // The receipt: $25 from Ben to Ana, which she asked for. Ben objected, then released it to her.
   await db.query(
-    `insert into escrow_receipts (escrow, program_id, buyer, seller, creator, mint, amount, created_at, ended_at, outcome,
-                                  to_seller, to_buyer, signature)
-     values ($1, 'escrow', $2, $3, 'seller', $4, 25000000, $5, $6, 'releasedToSeller', 25000000, 0, $7)`,
+    `insert into escrow_receipts (escrow, program_id, buyer, seller, creator, mint, amount, created_at, funded_at, ended_at, outcome,
+                                  to_seller, to_buyer, objected_by, objected_at, signature)
+     values ($1, 'escrow-v2', $2, $3, 'seller', $4, 25000000, $5, $6, $6, 'releasedToSeller', 25000000, 0, 'buyer', $5, $7)`,
     [DEAL, ben.wallet, ana.wallet, USDC, day(6), day(6), 'ExampleDealRelease'.padEnd(88, '1')],
   )
-
-  const review = (subject: string, ratings: Record<string, string>, dealId: string, text: string, d: number, extra: Record<string, unknown> = {}) => ({
-    $type: 'foundation.forest.review',
-    subject,
-    ratings,
-    text,
-    dealId,
-    createdAt: day(d),
-    ...extra,
-  })
-  // Ana lives in online-tutors, whose file adds `sessions` to a review of her.
-  await put(ben.did, 'foundation.forest.review', '3kzq2vrffxb3a', 'bafyreiexamplebenreview22222222',
-    review(ana.did, { overall: '10', patience: '10' }, DEAL, 'Patient and well prepared.', 7, { sessions: 8, media: [PHOTO] }))
-  await put(ana.did, 'foundation.forest.review', '3kzq2vrffxb3b', 'bafyreiexampleanareview22222222', review(ben.did, { overall: '10' }, DEAL, 'Paid on time, came prepared.', 7))
-  await put(cleo.did, 'foundation.forest.review', '3kzq2vrffxb3c', 'bafyreiexamplecleoreview2222222', review(ana.did, { overall: '1' }, MADE_UP_DEAL, 'Never showed up.', 8))
 
   await readers.scorer.now()
   readers.scorer.stop()

@@ -28,8 +28,8 @@ const directory = new Directory([
   { file: 'learning/language-exchange.json', market: exchange },
 ])
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-const FOUNDATION = 'H7qXWNAeAvedhwuvhAkBYK2WE2nA3KgbufnRz38zFdzS'
-const OTHER_ISSUER = 'Other1ssuer11111111111111111111111111111111'
+const FOUNDATION = 'did:key:z6Mkva6a6cR5WU96pSkdNji2PQaW3c41TCvxbghMpK71Armp'
+const OTHER_ISSUER = 'did:key:z6MkotherIssuer'
 const scoring = {
   evidence: { both: 1, oneSided: 0.5, none: 0.05 },
   unbadgedReviewer: 0.05,
@@ -43,7 +43,7 @@ const settings = { directory, issuers: { [FOUNDATION]: { name: 'Forest Foundatio
 const ana = { did: 'did:plc:ana', wallet: 'AnaWallet', scope: 'online-tutors/seller' }
 const ben = { did: 'did:plc:ben', wallet: 'BenWallet', scope: 'online-tutors/buyer' }
 const cleo = { did: 'did:plc:cleo', wallet: 'CleoDeclared', scope: 'online-tutors/seller' }
-const badge = (did: string, wallet: string, scope = 'online-tutors/seller', listOwner = FOUNDATION): BadgeIn => ({ did, wallet, scope, listOwner })
+const badge = (did: string, wallet: string, scope = 'online-tutors/seller', issuer: string | null = FOUNDATION): BadgeIn => ({ did, wallet, scope, issuer })
 /** A badge's status for a profile declaring `wallet` and living in `scope` (the badge's own, unless another is named). */
 const own = (b: BadgeIn, wallet: string | null = ana.wallet, scope: string | null = b.scope) => badgeStatus(b, { wallet, scope }, directory)
 // Ana invoiced Ben (the seller created it), and Ben paid in one tap: no funding mark, released.
@@ -158,10 +158,15 @@ test('uniqueness: issuers combine, an issuer at 0 adds nothing', () => {
   const one = uniqueness({ profiles: [ana], badges: [badge(ana.did, ana.wallet)] }, settings)
   assert.equal(one.length, 1)
   assert.equal(one[0].value, 1)
-  assert.deepEqual(one[0].issuers, [{ owner: FOUNDATION, name: 'Forest Foundation', weight: 1 }])
+  assert.deepEqual(one[0].issuers, [{ issuer: FOUNDATION, name: 'Forest Foundation', weight: 1 }])
 
   const unknown = uniqueness({ profiles: [ana], badges: [badge(ana.did, ana.wallet, 'online-tutors/seller', OTHER_ISSUER)] }, settings)
   assert.equal(unknown[0].value, 0, 'others start at 0')
+
+  const nobody = uniqueness({ profiles: [ana], badges: [badge(ana.did, ana.wallet, 'online-tutors/seller', null)] }, settings)
+  assert.deepEqual([nobody[0].value, nobody[0].issuers], [0, []], 'a line no trusted issuer vouches for: 0')
+  const plusFoundation = uniqueness({ profiles: [ana], badges: [badge(ana.did, ana.wallet, 'online-tutors/seller', null), badge(ana.did, ana.wallet)] }, settings)
+  assert.equal(plusFoundation[0].value, 1, 'and a membership from a trusted issuer on the same line counts in full')
 
   const halves = { ...settings, issuers: { [FOUNDATION]: { name: 'F', weight: 0.5 }, [OTHER_ISSUER]: { name: 'O', weight: 0.5 } } }
   const two = uniqueness(

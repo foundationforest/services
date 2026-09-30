@@ -57,6 +57,7 @@ function reviewCard(r: Review, show: 'author' | 'subject' | 'both'): Raw {
 ${r.text ? html`<p>${r.text}</p>` : ''}
 ${fields.length || media ? html`<p class="small muted">${[...fields, ...(media ? [media] : [])].join(' · ')}</p>` : ''}
 <p class="small muted">${w.evidence(r.evidence.kind, r.evidence.note)} ${show !== 'both' && r.dealUrl && r.hasReceipt ? html`<a href="${r.dealUrl}">See the receipt</a>` : ''}</p>
+${show !== 'both' && r.objection ? html`<p class="small muted">${w.objected(r.objection.side, r.objection.at)}</p>` : ''}
 ${skip ? html`<p class="small warn">${skip}</p>` : r.counted && r.contribution !== 0 ? html`<p class="small muted">Moves standing by ${w.signed(r.contribution)}.</p>` : ''}
 </li>`
 }
@@ -127,7 +128,7 @@ ${counted.length
     ? html`<ul class="cards">${counted.map(
         (b) => html`<li><h3>${w.BADGE}</h3>
 <p>In <a href="${b.marketUrl}">${w.title(b.market)}</a>${b.side ? `, as ${b.side}` : ''}${b.registeredAt ? ` · since ${w.date(b.registeredAt)}` : ''}</p>
-<p class="small muted">Vouched for by ${b.issuer.name ?? 'an issuer this index gives no weight'}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(b.scope) ?? 0)}</span></p></li>`,
+<p class="small muted">Vouched for by ${w.vouchers(b.issuers.map((i) => i.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(b.scope) ?? 0)}</span></p></li>`,
       )}</ul>`
     : html`<p class="muted">No real-person badge counted for this profile.</p>`}
 ${uncounted.map((b) => html`<p class="small warn">A badge for ${w.title(b.market)}: ${w.badgeWhyNot(b.why)}</p>`)}
@@ -194,7 +195,8 @@ export function dealPage(v: View, m: DealModel): string {
 <dt>From</dt><dd>${buyer.html}${partyNumbers(r.buyerProfiles)}</dd>
 <dt>To</dt><dd>${seller.html}${partyNumbers(r.sellerProfiles)}</dd>
 <dt>Started by</dt><dd>${r.creator === 'seller' ? html`${seller.html} (asked for payment)` : buyer.html}${r.createdAt ? ` · ${w.date(r.createdAt)}` : ''}</dd>
-${r.fundedAt ? html`<dt>Payment marked</dt><dd>${w.date(r.fundedAt)}</dd>` : ''}
+${r.fundedAt ? html`<dt>Paid</dt><dd>${w.date(r.fundedAt)}</dd>` : ''}
+${r.objection ? html`<dt>Objection</dt><dd>${r.objection.by === 'seller' ? seller.html : buyer.html}${r.objection.at ? ` · ${w.date(r.objection.at)}` : ''}</dd>` : ''}
 <dt>${r.endedAt ? 'Ended' : 'Now'}</dt><dd>${status}${r.endedAt ? ` ${w.date(r.endedAt)}.` : ''}</dd>
 </dl>
 <p class="small muted">${weight}</p>`
