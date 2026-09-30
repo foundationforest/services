@@ -1,152 +1,99 @@
-// The issuer's side of the chain: its list's members, and inserting one more.
+// The issuer's list, and the two files it publishes: what indexes, boards and apps read.
 //
-// Everything here goes through `forest/registry/client`: the list's address, the insert instruction, and
-// `fetchListLeaves`, which rebuilds the list from the registry's own log entries and checks the
-// result against the root on the chain. The members are kept in memory only: they are public, and
-// they answer "is this commitment on the list yet".
+//   GET /list.json    every commitment on the list, in list order
+//   GET /roots.json   every root the list has had, with its size and time, signed with the issuer's key
+//
+// The registry never sees a list. A device proves against the list (forest/registry/client's
+// `proveMembership`, which takes list.json's commitments), and a reader trusts a line's root when
+// this issuer's signed roots file holds it (README.md, "The two files").
+//
+// The members and the Merkle tree are kept in memory: read from the file at start, and grown by
+// each batch, so a batch hashes only what it adds. The tree is Semaphore's own Group, which is what
+// forest/registry/client's `listRoot` builds for a whole list; the tests check the two agree.
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { Group } from '@semaphore-protocol/group'
 
-import { Connection, Keypair, Transaction, type PublicKey } from '@solana/web3.js'
+import { b64u, concat, utf8 } from '../../forest/records/src/bytes.ts'
+import { canonical } from '../../forest/records/src/canonical.ts'
+import type { IssuerKey } from './key.ts'
+import type { Root, Store } from './store.ts'
 
-import { fetchListLeaves } from '../../forest/registry/client/src/leaves.ts'
-import { decodeIdentityList, insertIdentityIx, listAddress } from '../../forest/registry/client/src/program.ts'
+/** What the roots file's signature covers begins with this: 0xff, then its own label. */
+export const ROOTS_SIGN_PREFIX = concat(Uint8Array.of(0xff), utf8('forest.foundation/issuer/roots/v1\n'))
 
-export interface IssuerList {
-  /** Read every member again from the chain. */
-  refresh(): Promise<void>
-  /** Whether the last read, plus every insert confirmed since, holds this commitment. */
-  has(commitment: bigint): boolean
-  /** Insert one commitment. Resolves once the chain has it; throws once it is sure it never will. */
-  insert(commitment: bigint): Promise<void>
-}
+export class IssuerList {
+  readonly #store: Store
+  readonly #key: IssuerKey
+  readonly #list: bigint[]
+  readonly #members: Set<bigint>
+  readonly #roots: Root[]
+  #group: Group
+  #listFile = ''
+  #rootsFile = ''
 
-/** An insert that failed on the chain, or whose transaction can no longer land. */
-export class InsertFailed extends Error {}
-
-/**
- * A Solana keypair in the form `solana-keygen` writes: a JSON list of 64 numbers. On anything else it
- * throws a message that quotes none of the input, since the input is a secret key and an error
- * message ends up in a log (JSON's own parse errors quote the text they fail on).
- */
-export function parseKeypair(text: string, source: string): Keypair {
-  let numbers: unknown
-  try {
-    numbers = JSON.parse(text)
-  } catch {
-    numbers = undefined
-  }
-  const valid =
-    Array.isArray(numbers) &&
-    numbers.length === 64 &&
-    numbers.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
-  if (!valid) throw new Error(`${source} is not a Solana keypair: a JSON list of 64 numbers`)
-  try {
-    return Keypair.fromSecretKey(Uint8Array.from(numbers as number[]))
-  } catch {
-    throw new Error(`${source} is not a Solana keypair: its two halves do not match`)
-  }
-}
-
-/** The issuer's key, from a keypair file. */
-export function loadKeypair(path: string): Keypair {
-  return parseKeypair(readFileSync(path, 'utf8'), `the key file ${path}`)
-}
-
-/**
- * The issuer's key from the contents of a sealed variable (`ISSUER_KEYPAIR`), written to a file of
- * its own: a new directory under the system's temporary directory, readable by this process's user
- * only (0700), holding one file readable by it only (0600). Never under the repo or the build, and
- * `remove` deletes it. The service loads the key and removes the file at once.
- */
-export function writeKeyFile(contents: string): { path: string; remove(): void } {
-  const keypair = parseKeypair(contents, 'ISSUER_KEYPAIR')
-  const dir = mkdtempSync(join(tmpdir(), 'forest-issuer-key-'))
-  const path = join(dir, 'issuer-keypair.json')
-  writeFileSync(path, JSON.stringify([...keypair.secretKey]), { mode: 0o600, flag: 'wx' })
-  return { path, remove: () => rmSync(dir, { recursive: true, force: true }) }
-}
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-export class ChainList implements IssuerList {
-  readonly #connection: Connection
-  readonly #issuer: Keypair
-  readonly #listIndex: number
-  readonly #programId: PublicKey
-  #members = new Set<bigint>()
-
-  private constructor(connection: Connection, issuer: Keypair, listIndex: number, programId: PublicKey) {
-    this.#connection = connection
-    this.#issuer = issuer
-    this.#listIndex = listIndex
-    this.#programId = programId
-  }
-
-  /**
-   * Opens the list and reads its members. Refuses to start unless the key is one of the list's insert
-   * keys and the list is open, so a wrong key fails now rather than at the first batch.
-   */
-  static async open(options: {
-    connection: Connection
-    issuer: Keypair
-    listIndex: number
-    programId: PublicKey
-  }): Promise<ChainList> {
-    const { connection, issuer, listIndex, programId } = options
-    const info = await connection.getAccountInfo(listAddress(listIndex, programId), 'confirmed')
-    if (!info) throw new Error(`list ${listIndex} does not exist under program ${programId.toBase58()}`)
-    const list = decodeIdentityList(new Uint8Array(info.data))
-    if (!list.issuers.some((key) => key.equals(issuer.publicKey))) {
-      throw new Error(`${issuer.publicKey.toBase58()} is not an insert key of list ${listIndex}`)
+  constructor(store: Store, key: IssuerKey) {
+    this.#store = store
+    this.#key = key
+    this.#list = store.members()
+    this.#members = new Set(this.#list)
+    this.#group = new Group(this.#list)
+    this.#roots = store.roots()
+    const newest = this.#roots.at(-1)
+    if ((newest?.size ?? 0) !== this.#list.length || (newest && newest.root !== this.#group.root)) {
+      throw new Error("the file's list does not match its newest root")
     }
-    if (list.closed) throw new Error(`list ${listIndex} is closed`)
-    const chain = new ChainList(connection, issuer, listIndex, programId)
-    await chain.refresh()
-    return chain
-  }
-
-  async refresh(): Promise<void> {
-    const { leaves } = await fetchListLeaves(this.#connection, this.#listIndex, { programId: this.#programId })
-    this.#members = new Set(leaves)
+    this.#publish()
   }
 
   has(commitment: bigint): boolean {
     return this.#members.has(commitment)
   }
 
-  /**
-   * One commitment, one transaction, paid by the issuer's key. It waits until the transaction is
-   * confirmed or its blockhash has expired, never less: giving up while it can still land would
-   * let the next batch send the same commitment again.
-   */
-  async insert(commitment: bigint): Promise<void> {
-    const { blockhash, lastValidBlockHeight } = await this.#connection.getLatestBlockhash('confirmed')
-    const tx = new Transaction({ feePayer: this.#issuer.publicKey, blockhash, lastValidBlockHeight }).add(
-      insertIdentityIx({
-        issuer: this.#issuer.publicKey,
-        listIndex: this.#listIndex,
-        commitment,
-        programId: this.#programId,
-      }),
-    )
-    tx.sign(this.#issuer)
-    const signature = await this.#connection.sendRawTransaction(tx.serialize())
+  get size(): number {
+    return this.#list.length
+  }
 
-    for (let expired = false; ; ) {
-      const { value } = await this.#connection.getSignatureStatuses([signature])
-      const status = value[0]
-      if (status?.err) throw new InsertFailed('the insert failed on the chain')
-      if (status?.confirmationStatus === 'confirmed' || status?.confirmationStatus === 'finalized') {
-        this.#members.add(commitment)
-        return
-      }
-      // One more look after the blockhash expires, in case it landed in its last block.
-      if (expired) throw new InsertFailed('the insert expired without landing')
-      expired = (await this.#connection.getBlockHeight('confirmed')) > lastValidBlockHeight
-      await sleep(400)
+  /**
+   * One batch: `added` onto the end of the list in the order given, and one new root, dated `time`.
+   * `done` leaves the queue in the same transaction. If the file refuses, nothing changes.
+   */
+  append(added: bigint[], done: bigint[], time: number): void {
+    if (added.length === 0) return this.#store.append([], undefined, done)
+    this.#group.addMembers(added)
+    const root: Root = { root: this.#group.root, size: this.#group.size, time }
+    try {
+      this.#store.append(added, root, done)
+    } catch (error) {
+      // The tree grew but the file did not: build it again from the list as it still is.
+      this.#group = new Group(this.#list)
+      throw error
     }
+    for (const c of added) {
+      this.#list.push(c)
+      this.#members.add(c)
+    }
+    this.#roots.push(root)
+    this.#publish()
+  }
+
+  /** `{"commitments":["<decimal>",…],"v":1}`, canonical text. */
+  listFile(): string {
+    return this.#listFile
+  }
+
+  /** `{"issuer":"did:key:…","roots":[{"root":"<decimal>","size":n,"time":ms},…],"sig":"…","v":1}`, canonical text. */
+  rootsFile(): string {
+    return this.#rootsFile
+  }
+
+  #publish(): void {
+    this.#listFile = canonical({ v: 1, commitments: this.#list.map(String) })
+    const unsigned = {
+      v: 1,
+      issuer: this.#key.did,
+      roots: this.#roots.map((r) => ({ root: r.root.toString(), size: r.size, time: r.time })),
+    }
+    const sig = this.#key.sign(concat(ROOTS_SIGN_PREFIX, utf8(canonical(unsigned))))
+    this.#rootsFile = canonical({ ...unsigned, sig: b64u.encode(sig) })
   }
 }

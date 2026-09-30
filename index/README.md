@@ -14,7 +14,7 @@ of DIDs, a local validator and a local Postgres.
 **It still reads the old data layer:** records from a firehose, the programs' events from an RPC,
 and the market directory from the `markets` repo, into its own Postgres, as below. It reads nothing
 from forest's `records/`. How it reads will change in a later session; this copy reads exactly as
-forest's `index/` did at the commit in `../FOREST`.
+forest's `index/` did at the commit in `FOREST` (the index's own pin, below).
 
 ## What it reads
 
@@ -125,10 +125,11 @@ into `/markets/{m}.json`; `/profiles/{did}/reviews` into `/profiles/{did}.json`.
 
 Needs Node 22.18 or later (it runs TypeScript directly) and Postgres 14 or later. The index imports
 forest's `shapes`, `registry/client`, `escrow/client` and, in tests, `keys` and `host/` by path,
-from `forest/` at the commit in `../FOREST`, so fetch and install those first, from the repo root:
+from `forest/` at the commit in `FOREST` (the index's own pin: forest's main no longer has `shapes/` or
+the old registry), so fetch and install those first, from the repo root:
 
 ```
-./forest.sh shapes keys registry/client escrow/client
+FOREST_PIN=index/FOREST ./forest.sh shapes keys registry/client escrow/client
 cd index && npm ci
 
 export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/forest_index

@@ -1,12 +1,14 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
-# first fetches forest at the commit in FOREST (forest.sh) and installs the forest packages it uses.
+# first fetches forest at the commit in FOREST (forest.sh; the index at its own, index/FOREST) and
+# installs the forest packages it uses.
 #
-#   issuer   its type-check (the stand-in Didit included) and its tests that need no chain
-#   index    its type-check, and its unit and page tests on a Postgres service
-#   relayer  its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
+#   issuer       its type-check (the stand-in Didit included) and its tests
+#   index        its type-check, and its unit and page tests on a Postgres service
+#   relayer      its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
+#   connections  its type-check, and its tests against forest's reference host
 #
-# Not here: the issuer's validator test, the relayer's local run and the index's end-to-end test.
-# They need forest's programs, its proving files, its host and Kora built.
+# Not here: the relayer's local run and the index's end-to-end test. They need forest's programs,
+# its proving files and Kora built (and, for the index, the earlier host).
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -40,7 +42,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh registry/client
+          ./forest.sh registry/client records
           (cd issuer && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: issuer
@@ -68,7 +70,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh shapes keys registry/client escrow/client
+          FOREST_PIN=index/FOREST ./forest.sh shapes keys registry/client escrow/client
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
@@ -89,10 +91,31 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh registry/client escrow/client
+          ./forest.sh registry/client escrow/client escrow/v2/client
           (cd relayer && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: relayer
         run: npm run check
       - name: The devnet kora.toml
         run: bash relayer/deploy/devnet-config.sh relayer/kora.toml > /dev/null
+
+  connections:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh records
+          (cd connections && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: connections
+        run: npm run check
+      - name: Test
+        working-directory: connections
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"

@@ -1,9 +1,11 @@
 # The Forest relayer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
 #
-# It co-signs a person's transaction as its payer and charges, in their dollar token, exactly what
-# that transaction costs it: the network fee plus every storage deposit it puts down, including the
-# ones a program makes inside the transaction. It refuses anything that calls a program not listed
-# here, and anything that would move its own SOL or tokens except to create an account it is paid for.
+# It co-signs a person's transaction as its payer and charges, in their dollar token, what that
+# transaction costs it: the network fee plus every storage deposit it puts down, including the ones
+# a program makes inside the transaction. When Solana cuts its storage price, part of a deposit it
+# put down is freed, and the relayer keeps that refund. It refuses anything that calls a program not
+# listed here, and anything that would move its own SOL or tokens except to create an account it is
+# paid for.
 #
 # This file is the mainnet shape. The local run (test/relayer.test.ts) copies it and changes one
 # line, `price_source`, to "Mock". Every key Kora 2.0.5 requires in a table is written out, so
@@ -17,16 +19,18 @@ rate_limit = 100
 [validation]
 # The most SOL one transaction may take from the relayer beyond its network fee: storage deposits.
 # 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
-# 0.0052 at today's rent.
+# 0.0037 at today's mainnet rent for v2 (forest/escrow/v2/README.md); a registry line, about 0.0015.
 max_allowed_lamports = 10000000
-# The relayer, the profile's wallet and a separate fee authority: register's three signers.
+# The relayer, and an escrow's two parties when both sign a split. A registration needs two: the
+# relayer, and the person signing their payment.
 max_signatures = 3
 # Kora checks these against every program a transaction calls, the ones called from inside other
 # programs included. No compute budget program: a registration fits the default compute limit, and
 # the relayer never pays a priority fee it did not agree to.
 allowed_programs = [
-  "FoRPzGfMyWjK8uLjMoZfae2yevnviyCsGsHM7AwBwK8B", # the Forest registry
-  "FoRE4JYRAxFpqRoPBzuPZZ9Yfn6ovtkBfUggynex3MKT", # the Forest escrow
+  "FoRBadgeLineFreeNoFeeNoAdmin1111111111111111", # the Forest registry
+  "FoRE4JYRAxFpqRoPBzuPZZ9Yfn6ovtkBfUggynex3MKT", # the Forest escrow, v1
+  "FoRE2EscrowV2objectsTimerFundedAtPayer222222", # the Forest escrow, v2
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
   "11111111111111111111111111111111",            # System
@@ -39,7 +43,7 @@ disallowed_accounts = []
 # Jupiter needs JUPITER_API_KEY in the environment.
 price_source = "Jupiter"
 
-# The charge is the cost and nothing more: nothing inside Forest charges a fee except the registry's.
+# The charge is the cost and nothing more: nothing inside Forest charges anything.
 [validation.price]
 type = "margin"
 margin = 0.0

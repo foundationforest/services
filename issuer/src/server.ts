@@ -1,9 +1,15 @@
-// The issuer's three routes, all POST with a JSON body, so nothing a person sends is ever in a URL:
-// hosting platforms log the path of every request (Railway does, with the client's address).
+// The issuer's routes. The three a person's app calls are POST with a JSON body, so nothing a person
+// sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
+// client's address).
 //
 //   POST /session   {}                        -> 201 {sessionId, url}     a Didit session to do the check on
 //   POST /submit    {sessionId, commitment}   -> 202 {status: "queued"}   or an error, below
 //   POST /status    {commitment}              -> 200 {status: "queued" | "listed" | "unknown"}
+//
+// The two public files, which anyone reads (list.ts; README.md, "The two files"):
+//
+//   GET  /list.json     every commitment on the list, in order
+//   GET  /roots.json    every root the list has had, signed with the issuer's key
 //
 // Errors are `{error: <code>}`: 400 a malformed body, 403 a face check that does not count (the code
 // says why), 409 a session already used or a commitment already queued or listed, 413 a body over
@@ -71,15 +77,25 @@ function commitmentFrom(value: string): bigint {
   return commitment
 }
 
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-methods': 'GET, POST, OPTIONS',
+  'access-control-allow-headers': 'content-type',
+}
+
 function send(res: ServerResponse, status: number, body?: unknown): void {
   res.writeHead(status, {
-    'access-control-allow-origin': '*',
-    'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type',
+    ...CORS,
     'cache-control': 'no-store',
     ...(body === undefined ? {} : { 'content-type': 'application/json' }),
   })
   res.end(body === undefined ? undefined : JSON.stringify(body))
+}
+
+/** A public file, as it is: its text is already canonical JSON. Readers may keep it and ask again. */
+function sendFile(res: ServerResponse, text: string): void {
+  res.writeHead(200, { ...CORS, 'cache-control': 'no-cache', 'content-type': 'application/json' })
+  res.end(text)
 }
 
 export type IssuerDeps = {
@@ -152,11 +168,20 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     },
   }
 
+  const files: Record<string, () => string> = {
+    '/list.json': () => list.listFile(),
+    '/roots.json': () => list.rootsFile(),
+  }
+
   return (req, res) => {
     void (async () => {
       try {
         if (req.method === 'OPTIONS') return send(res, 204)
         const path = req.url ?? ''
+        if (Object.hasOwn(files, path)) {
+          if (req.method !== 'GET') throw new HttpError(405, 'get_only')
+          return sendFile(res, files[path]())
+        }
         if (!Object.hasOwn(routes, path)) throw new HttpError(404, 'not_found')
         const route = routes[path]
         if (req.method !== 'POST') throw new HttpError(405, 'post_only')

@@ -1,9 +1,15 @@
-// The issuer's one file: the session ids already used, and the commitments waiting for a batch.
+// The issuer's one file: the session ids already used, the commitments waiting for a batch, and
+// the list with its roots.
 //
-// Two tables that share nothing. Neither has a timestamp or a row number, so nothing in them says
-// which session brought which commitment, and each keeps its rows in key order. A commitment leaves
-// the file once it is on the list; what stays is a hash of every session id ever used, which is all
-// that refusing a second use needs.
+// The session ids and the waiting commitments are two tables that share nothing. Neither has a
+// timestamp or a row number, so nothing in them says which session brought which commitment, and
+// each keeps its rows in key order. A commitment leaves the queue once it is on the list; what
+// stays of a session is a hash of its id, which is all that refusing a second use needs.
+//
+// The list and its roots are public: the issuer publishes both (list.ts). The list keeps each
+// commitment once, in list order, which within a batch is shuffled. A root is kept with the size
+// of the list it is the root of and the time its batch ran. A batch moves commitments from the
+// queue to the list and adds their root in one transaction, so a failure changes nothing.
 //
 // Deleting a row is not enough to take it out of the file: SQLite leaves deleted bytes in free
 // space, and page rebuilds can leave stale copies of rows that moved, in insertion order. So deleted
@@ -23,6 +29,9 @@ export function sessionHash(sessionId: string): Uint8Array {
 
 export type Accepted = 'queued' | 'session_used' | 'commitment_queued'
 
+/** One root of the list: the root of its first `size` commitments, made by a batch at `time` (ms since 1970). */
+export type Root = { root: bigint; size: number; time: number }
+
 export class Store {
   readonly #db: DatabaseSync
   readonly #isUsed: StatementSync
@@ -32,6 +41,10 @@ export class Store {
   readonly #queued: StatementSync
   readonly #count: StatementSync
   readonly #remove: StatementSync
+  readonly #members: StatementSync
+  readonly #roots: StatementSync
+  readonly #list: StatementSync
+  readonly #root: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -42,6 +55,8 @@ export class Store {
       PRAGMA journal_mode = DELETE;
       CREATE TABLE IF NOT EXISTS used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL);
     `)
     this.#isUsed = this.#db.prepare('SELECT 1 FROM used_sessions WHERE hash = ?')
     this.#isQueued = this.#db.prepare('SELECT 1 FROM queue WHERE commitment = ?')
@@ -50,6 +65,10 @@ export class Store {
     this.#queued = this.#db.prepare('SELECT commitment FROM queue')
     this.#count = this.#db.prepare('SELECT count(*) AS n FROM queue')
     this.#remove = this.#db.prepare('DELETE FROM queue WHERE commitment = ?')
+    this.#members = this.#db.prepare('SELECT commitment FROM list ORDER BY position')
+    this.#roots = this.#db.prepare('SELECT size, root, time FROM roots ORDER BY size')
+    this.#list = this.#db.prepare('INSERT INTO list (position, commitment) VALUES (?, ?)')
+    this.#root = this.#db.prepare('INSERT INTO roots (size, root, time) VALUES (?, ?, ?)')
   }
 
   isUsed(sessionId: string): boolean {
@@ -89,8 +108,40 @@ export class Store {
     return Number((this.#count.get() as { n: number | bigint }).n)
   }
 
-  remove(commitment: bigint): void {
-    this.#remove.run(toBytes32(commitment))
+  /** The list, in order. */
+  members(): bigint[] {
+    return this.#members.all().map((row) => fromBytes32(row.commitment as Uint8Array))
+  }
+
+  /** Every root the list has had, oldest first. */
+  roots(): Root[] {
+    return this.#roots.all().map((row) => ({
+      root: fromBytes32(row.root as Uint8Array),
+      size: Number(row.size),
+      time: Number(row.time),
+    }))
+  }
+
+  /**
+   * One batch, all or nothing: `added` onto the end of the list, in the order given; the list's new
+   * root (with anything added, and only then); and every commitment in `done` out of the queue (the
+   * added ones, and any found already listed).
+   */
+  append(added: bigint[], root: Root | undefined, done: bigint[]): void {
+    this.#db.exec('BEGIN IMMEDIATE')
+    try {
+      if (added.length) {
+        if (!root) throw new Error('commitments added with no root')
+        const start = root.size - added.length
+        added.forEach((c, i) => this.#list.run(start + i, toBytes32(c)))
+        this.#root.run(root.size, toBytes32(root.root), root.time)
+      }
+      for (const c of done) this.#remove.run(toBytes32(c))
+      this.#db.exec('COMMIT')
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   /** Rewrite the file from its live rows only. */

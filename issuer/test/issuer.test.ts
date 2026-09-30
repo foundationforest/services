@@ -1,27 +1,33 @@
-// The issuer without a chain: a stand-in Didit and an in-memory list, a real SQLite file, real HTTP.
+// The issuer end to end, in one process: a stand-in Didit, a real SQLite file, real HTTP, and the
+// two files it publishes checked the way a reader checks them.
 //
 //   npm test
 
 import assert from 'node:assert/strict'
+import { createPublicKey, verify } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 
 import { BN254_R, toBytes32 } from '../../forest/registry/client/src/field.ts'
-import { Keypair } from '@solana/web3.js'
+import { listRoot } from '../../forest/registry/client/src/proof.ts'
+import { b64u, concat, utf8 } from '../../forest/records/src/bytes.ts'
+import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
+import { didFromPublicKey, publicKeyFromDid } from '../../forest/records/src/keys.ts'
 
 import { shuffle } from '../src/batch.ts'
+import { loadKeypair, writeKeyFile } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
-import { loadKeypair, writeKeyFile } from '../src/list.ts'
+import { ROOTS_SIGN_PREFIX } from '../src/list.ts'
 import { readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import { Store } from '../src/store.ts'
 import {
   FakeFaceCheck,
-  FakeList,
   WORKFLOW,
   assertFileHolds,
   assertNoLink,
+  keypairJson,
   passed,
   randomCommitment,
 } from './fakes.ts'
@@ -40,8 +46,10 @@ function tempDir(): string {
 type Harness = {
   issuer: Issuer
   faces: FakeFaceCheck
-  list: FakeList
   dbPath: string
+  /** The list, in order, as the file holds it. */
+  listed(): bigint[]
+  get(path: string): Promise<Response>
   logs: string[]
   post(path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>
   /** A new session whose check came to `decision`; returns its id. */
@@ -49,14 +57,22 @@ type Harness = {
 }
 
 async function start(
-  options: { batchMax?: number; intervalSeconds?: number; env?: Record<string, string> } = {},
+  options: {
+    batchMax?: number
+    intervalSeconds?: number
+    env?: Record<string, string>
+    /** The key, as its 64 numbers; a fresh one unless given. */
+    key?: string
+    /** The file, to start again on one an earlier issuer wrote. */
+    dbPath?: string
+    now?: () => number
+  } = {},
 ): Promise<Harness> {
-  const dbPath = join(tempDir(), 'issuer.sqlite')
+  const dbPath = options.dbPath ?? join(tempDir(), 'issuer.sqlite')
   const config = readConfig({
     DIDIT_API_KEY: 'not-used',
     DIDIT_WORKFLOW_ID: WORKFLOW,
-    ISSUER_KEYPAIR_PATH: 'not-used',
-    SOLANA_RPC_URL: 'not-used',
+    ISSUER_KEYPAIR: options.key ?? keypairJson().json,
     DATABASE_PATH: dbPath,
     BATCH_MAX: String(options.batchMax ?? 1000),
     BATCH_INTERVAL_SECONDS: String(options.intervalSeconds ?? 3600),
@@ -66,9 +82,8 @@ async function start(
     ...options.env,
   })
   const faces = new FakeFaceCheck()
-  const list = new FakeList()
   const logs: string[] = []
-  const issuer = await startIssuer(config, { faceCheck: faces, list, log: (line) => logs.push(line) })
+  const issuer = await startIssuer(config, { faceCheck: faces, log: (line) => logs.push(line), now: options.now })
   const post = async (path: string, body: unknown = {}, headers: Record<string, string> = {}) => {
     const res = await fetch(issuer.url + path, {
       method: 'POST',
@@ -83,7 +98,9 @@ async function start(
     faces.set(body.sessionId, decision)
     return body.sessionId as string
   }
-  return { issuer, faces, list, dbPath, logs, post, session }
+  const listed = () => issuer.store.members()
+  const get = (path: string) => fetch(issuer.url + path)
+  return { issuer, faces, dbPath, listed, get, logs, post, session }
 }
 
 const submit = (h: Harness, sessionId: string, commitment: bigint) =>
@@ -100,13 +117,13 @@ test('a passed face check puts the commitment on the list', async () => {
     const commitment = randomCommitment()
     assert.deepEqual(await submit(h, created.body.sessionId, commitment), { status: 202, body: { status: 'queued' } })
     assert.deepEqual((await h.post('/status', { commitment: commitment.toString() })).body, { status: 'queued' })
-    assert.deepEqual(h.list.members, [], 'nothing goes on the list before the batch')
+    assert.deepEqual(h.listed(), [], 'nothing goes on the list before the batch')
 
     await h.issuer.batcher.flush()
-    assert.deepEqual(h.list.members, [commitment])
+    assert.deepEqual(h.listed(), [commitment])
     assert.deepEqual((await h.post('/status', { commitment: commitment.toString() })).body, { status: 'listed' })
     assert.deepEqual((await h.post('/status', { commitment: randomCommitment().toString() })).body, { status: 'unknown' })
-    assert.deepEqual(h.logs, ['issuer: batch of 1 inserted'], 'the log holds a count and nothing else')
+    assert.deepEqual(h.logs, ['issuer: batch of 1 added to the list'], 'the log holds a count and nothing else')
   } finally {
     await h.issuer.close()
   }
@@ -252,7 +269,7 @@ test('a batch goes onto the list in random order', async () => {
     }
     await h.issuer.batcher.flush()
 
-    const inserted = h.list.members
+    const inserted = h.listed()
     assert.deepEqual([...inserted].sort(), [...submitted].sort(), 'every commitment, once')
     assert.notDeepEqual(inserted, submitted, 'not in the order they arrived')
     // The file keeps them in key order; the batch must not follow that either.
@@ -279,10 +296,10 @@ test('a batch runs once BATCH_MAX are waiting, and on the timer', async () => {
   try {
     for (let i = 0; i < 4; i++) await submit(counted, await counted.session(), randomCommitment())
     await counted.issuer.batcher.idle()
-    assert.equal(counted.list.members.length, 0, 'four wait')
+    assert.equal(counted.listed().length, 0, 'four wait')
     await submit(counted, await counted.session(), randomCommitment())
     await counted.issuer.batcher.idle()
-    assert.equal(counted.list.members.length, 5, 'the fifth sends all five')
+    assert.equal(counted.listed().length, 5, 'the fifth sends all five')
     assert.equal(counted.issuer.store.count(), 0)
   } finally {
     await counted.issuer.close()
@@ -292,31 +309,40 @@ test('a batch runs once BATCH_MAX are waiting, and on the timer', async () => {
   try {
     await submit(timed, await timed.session(), randomCommitment())
     await submit(timed, await timed.session(), randomCommitment())
-    for (let i = 0; i < 100 && timed.list.members.length < 2; i++) await new Promise((r) => setTimeout(r, 50))
-    assert.equal(timed.list.members.length, 2, 'the timer sent the two waiting')
+    for (let i = 0; i < 100 && timed.listed().length < 2; i++) await new Promise((r) => setTimeout(r, 50))
+    assert.equal(timed.listed().length, 2, 'the timer sent the two waiting')
   } finally {
     await timed.issuer.close()
   }
 })
 
-test('a commitment already on the list is not sent again', async () => {
+test('a commitment queued again while it was being listed goes on the list once', async () => {
   const h = await start()
   try {
-    const landed = randomCommitment()
-    const other = randomCommitment()
-    await submit(h, await h.session(), landed)
-    await submit(h, await h.session(), other)
-    // As if a batch inserted it and stopped before deleting it from the queue.
-    h.list.members.push(landed)
+    const twice = randomCommitment()
+    await submit(h, await h.session(), twice)
     await h.issuer.batcher.flush()
-    assert.deepEqual([...h.list.members].sort(), [landed, other].sort(), 'each once')
+    const roots = h.issuer.store.roots().length
+    // As if a submit that checked the list before this batch listed it reached the queue after.
+    assert.equal(h.issuer.store.accept(crypto.randomUUID(), twice), 'queued')
+    const other = randomCommitment()
+    await submit(h, await h.session(), other)
+    await h.issuer.batcher.flush()
+    assert.deepEqual(h.listed(), [twice, other], 'each once')
     assert.equal(h.issuer.store.count(), 0)
+    assert.equal(h.issuer.store.roots().length, roots + 1, 'one root for the one added')
+
+    // A batch of nothing new adds no root.
+    assert.equal(h.issuer.store.accept(crypto.randomUUID(), other), 'queued')
+    await h.issuer.batcher.flush()
+    assert.equal(h.issuer.store.count(), 0)
+    assert.equal(h.issuer.store.roots().length, roots + 1)
   } finally {
     await h.issuer.close()
   }
 })
 
-test('a batch that fails keeps the rest waiting', async () => {
+test('a batch that fails adds nothing, and everything waits for the next', async () => {
   const h = await start()
   try {
     const all: bigint[] = []
@@ -325,23 +351,29 @@ test('a batch that fails keeps the rest waiting', async () => {
       all.push(c)
       await submit(h, await h.session(), c)
     }
-    h.list.failAt = 3
+    const append = h.issuer.store.append
+    h.issuer.store.append = () => {
+      throw new RangeError('the disk is full')
+    }
     await h.issuer.batcher.flush()
-    assert.equal(h.list.members.length, 3)
-    assert.equal(h.issuer.store.count(), 7)
-    const waiting = all.filter((c) => !h.list.members.includes(c))
-    for (const c of waiting) assert.deepEqual((await h.post('/status', { commitment: c.toString() })).body, { status: 'queued' })
-    assert.match(h.logs.at(-1)!, /^issuer: batch stopped after 3 of 10 \(Error\); the rest wait$/)
+    assert.deepEqual(h.listed(), [])
+    assert.equal(h.issuer.store.count(), 10)
+    assert.equal(h.issuer.list.size, 0)
+    for (const c of all) assert.deepEqual((await h.post('/status', { commitment: c.toString() })).body, { status: 'queued' })
+    assert.match(h.logs.at(-1)!, /^issuer: batch of 10 not added \(RangeError\); all wait$/)
+    assert.deepEqual(JSON.parse(await (await h.get('/roots.json')).text()).roots, [], 'no root was published')
 
-    h.list.failAt = Infinity
+    h.issuer.store.append = append
     await h.issuer.batcher.flush()
-    assert.deepEqual([...h.list.members].sort(), [...all].sort())
+    assert.deepEqual([...h.listed()].sort(), [...all].sort())
+    const [only] = JSON.parse(await (await h.get('/roots.json')).text()).roots
+    assert.equal(BigInt(only.root), listRoot(h.listed()), 'the tree was not left grown by the failed batch')
   } finally {
     await h.issuer.close()
   }
 })
 
-test('after the batch, the file holds no link from a session to a commitment', async () => {
+test('after the batch, the file holds the list and no link from a session to a commitment', async () => {
   const h = await start()
   const sessionIds: string[] = []
   const commitments: bigint[] = []
@@ -356,17 +388,114 @@ test('after the batch, the file holds no link from a session to a commitment', a
     }
     assertFileHolds(h.dbPath, commitments)
 
-    // A batch that stops part way, then one that finishes.
-    h.list.failAt = 120
+    // A batch that fails, then one that lands.
+    const append = h.issuer.store.append
+    h.issuer.store.append = () => {
+      throw new Error('the disk is full')
+    }
     await h.issuer.batcher.flush()
-    assert.equal(h.issuer.store.count(), 180)
-    h.list.failAt = Infinity
+    assert.equal(h.issuer.store.count(), 300)
+    h.issuer.store.append = append
     await h.issuer.batcher.flush()
-    assert.equal(h.list.members.length, 300)
+    assert.equal(h.listed().length, 300)
   } finally {
     await h.issuer.close()
   }
   assertNoLink(h.dbPath, sessionIds, commitments)
+})
+
+type RootsFile = { v: number; issuer: string; roots: { root: string; size: number; time: number }[]; sig: string }
+
+/** Whether a roots file's signature holds, checked as README.md's "The two files" says. */
+function signed(file: RootsFile): boolean {
+  const { sig, ...unsigned } = file
+  const key = publicKeyFromDid(file.issuer)
+  assert.ok(key, 'the issuer is a did:key')
+  const spki = createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), key]), format: 'der', type: 'spki' })
+  const input = concat(Uint8Array.of(0xff), utf8('forest.foundation/issuer/roots/v1\n'), utf8(canonical(unsigned)))
+  return verify(null, input, spki, b64u.decode(sig))
+}
+
+/** Both files as a reader takes them: canonical text, the fields README.md names, every root its prefix's. */
+async function readFiles(h: Harness): Promise<{ listText: string; rootsText: string; commitments: bigint[]; roots: RootsFile }> {
+  const listText = await (await h.get('/list.json')).text()
+  const rootsText = await (await h.get('/roots.json')).text()
+  const list = parseCanonical(listText) as { v: number; commitments: string[] }
+  const roots = parseCanonical(rootsText) as RootsFile
+  assert.deepEqual(Object.keys(list).sort(), ['commitments', 'v'])
+  assert.deepEqual(Object.keys(roots).sort(), ['issuer', 'roots', 'sig', 'v'])
+  assert.equal(list.v, 1)
+  assert.equal(roots.v, 1)
+  assert.ok(signed(roots), 'signed by the key the file names')
+  const commitments = list.commitments.map((c) => BigInt(c))
+  for (const r of roots.roots) {
+    assert.deepEqual(Object.keys(r).sort(), ['root', 'size', 'time'])
+    assert.equal(BigInt(r.root), listRoot(commitments.slice(0, r.size)), 'each root is forest\'s listRoot of its first `size` commitments')
+  }
+  assert.equal(roots.roots.at(-1)?.size ?? 0, commitments.length, 'the newest root is the whole list\'s')
+  return { listText, rootsText, commitments, roots }
+}
+
+test("the two files: the list in order, and its roots signed with the issuer's key", async () => {
+  let now = 1_790_000_000_000
+  const key = keypairJson()
+  const h = await start({ key: key.json, now: () => now })
+  let before
+  try {
+    assert.equal(ROOTS_SIGN_PREFIX.length, 1 + 'forest.foundation/issuer/roots/v1\n'.length)
+    const empty = await readFiles(h)
+    assert.deepEqual(empty.commitments, [], 'an empty list at first')
+    assert.deepEqual(empty.roots.roots, [], 'and no root, signed all the same')
+    assert.deepEqual(publicKeyFromDid(empty.roots.issuer), key.publicKey, "the issuer is named by its key's did:key")
+
+    for (let i = 0; i < 3; i++) await submit(h, await h.session(), randomCommitment())
+    await h.issuer.batcher.flush()
+    const first = now
+    now += 3_600_000
+    for (let i = 0; i < 2; i++) await submit(h, await h.session(), randomCommitment())
+    await h.issuer.batcher.flush()
+
+    before = await readFiles(h)
+    assert.deepEqual(before.commitments, h.listed(), 'the list file is the list, in its order')
+    assert.deepEqual(
+      before.roots.roots.map((r) => [r.size, r.time]),
+      [[3, first], [5, now]],
+      'one root per batch, oldest first, with the size and the time of its batch',
+    )
+
+    const res = await h.get('/roots.json')
+    assert.equal(res.headers.get('content-type'), 'application/json')
+    assert.equal(res.headers.get('cache-control'), 'no-cache')
+    assert.equal(res.headers.get('access-control-allow-origin'), '*', 'any page may read it')
+
+    // Any change to the file breaks its signature: a date, a size, a root, the issuer.
+    const [a, b] = before.roots.roots
+    for (const changed of [
+      { ...before.roots, roots: [{ ...a, time: a.time + 1 }, b] },
+      { ...before.roots, roots: [{ ...a, size: 2 }, b] },
+      { ...before.roots, roots: [b] },
+      { ...before.roots, issuer: didFromPublicKey(keypairJson().publicKey) },
+    ]) {
+      assert.equal(signed(changed as RootsFile), false)
+    }
+
+    assert.deepEqual(await h.post('/list.json'), { status: 405, body: { error: 'get_only' } })
+    assert.deepEqual(await h.post('/roots.json'), { status: 405, body: { error: 'get_only' } })
+    assert.equal((await h.get('/status')).status, 405, 'the routes a person calls stay POST')
+  } finally {
+    await h.issuer.close()
+  }
+
+  // Started again on the same file and key: the same list, and the same two files byte for byte.
+  const again = await start({ key: key.json, dbPath: h.dbPath })
+  try {
+    const after = await readFiles(again)
+    assert.equal(after.listText, before.listText)
+    assert.equal(after.rootsText, before.rootsText)
+    for (const c of after.commitments) assert.deepEqual((await again.post('/status', { commitment: c.toString() })).body, { status: 'listed' })
+  } finally {
+    await again.issuer.close()
+  }
 })
 
 test('the store queues a commitment only with an unused session, in one step', () => {
@@ -385,16 +514,12 @@ test('the store queues a commitment only with an unused session, in one step', (
 })
 
 test('the configuration names what is missing', () => {
-  assert.throws(
-    () => readConfig({}),
-    /DIDIT_API_KEY, DIDIT_WORKFLOW_ID, SOLANA_RPC_URL, ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH/,
-  )
-  const base = { DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', ISSUER_KEYPAIR_PATH: 'p', SOLANA_RPC_URL: 'r' }
+  assert.throws(() => readConfig({}), /DIDIT_API_KEY, DIDIT_WORKFLOW_ID, ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH/)
+  const base = { DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', ISSUER_KEYPAIR_PATH: 'p' }
   assert.throws(() => readConfig({ ...base, BATCH_MAX: '0' }), /BATCH_MAX/)
   const config = readConfig(base)
   assert.equal(config.batchMax, 50)
   assert.equal(config.batchIntervalMs, 3_600_000)
-  assert.equal(config.listIndex, 0)
   assert.equal(config.diditBaseUrl, 'https://verification.didit.me')
   assert.equal(config.sessionLimitPerHour, 5)
   assert.equal(config.clientAddressHeader, undefined)
@@ -425,7 +550,7 @@ test('opening sessions is limited per address, and a refusal says only "try late
     const sessionId = await h.session()
     assert.equal((await h.post('/submit', { sessionId, commitment: randomCommitment().toString() }, { 'x-real-ip': '203.0.113.7' })).status, 202)
     await h.issuer.batcher.flush()
-    assert.deepEqual(h.logs, ['issuer: batch of 1 inserted'])
+    assert.deepEqual(h.logs, ['issuer: batch of 1 added to the list'])
     const file = readFileSync(h.dbPath)
     for (const a of ['203.0.113.7', '203.0.113.8', '2001:db8']) assert.equal(file.includes(Buffer.from(a)), false)
   } finally {
@@ -468,13 +593,12 @@ test('the limit: a fresh share each hour, and nothing kept past it', () => {
 })
 
 test('the key from a sealed variable: a private temporary file, loaded, then deleted', () => {
-  const keypair = Keypair.generate()
-  const contents = JSON.stringify([...keypair.secretKey])
+  const { json: contents, publicKey } = keypairJson()
+  const numbers = JSON.parse(contents) as number[]
 
   const env: Record<string, string | undefined> = {
     DIDIT_API_KEY: 'k',
     DIDIT_WORKFLOW_ID: 'w',
-    SOLANA_RPC_URL: 'r',
     ISSUER_KEYPAIR: contents,
   }
   const config = readConfig(env)
@@ -491,14 +615,18 @@ test('the key from a sealed variable: a private temporary file, loaded, then del
     assert.ok(file.path.startsWith(tmpdir()), 'under the system temporary directory, not the repo')
     assert.equal(statSync(file.path).mode & 0o777, 0o600, 'the file: this user only')
     assert.equal(statSync(dirname(file.path)).mode & 0o777, 0o700, 'its directory: this user only')
-    assert.equal(loadKeypair(file.path).publicKey.toBase58(), keypair.publicKey.toBase58())
+    assert.deepEqual(loadKeypair(file.path).publicKey, publicKey)
   } finally {
     file.remove()
   }
   assert.equal(existsSync(dirname(file.path)), false, 'removed, directory and all')
 
   // A malformed key is refused, and the message quotes none of it.
-  const broken = [contents.slice(0, 40), JSON.stringify([...keypair.secretKey].slice(0, 32)), JSON.stringify([...keypair.secretKey.slice(0, 32), ...Keypair.generate().secretKey.slice(32)])]
+  const broken = [
+    contents.slice(0, 40),
+    JSON.stringify(numbers.slice(0, 32)),
+    JSON.stringify([...numbers.slice(0, 32), ...JSON.parse(keypairJson().json).slice(32)]),
+  ]
   for (const text of broken) {
     assert.throws(
       () => writeKeyFile(text),

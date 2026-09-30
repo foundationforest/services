@@ -1,11 +1,13 @@
 # issuer
 
 The foundation's issuer: the step from "a face check passed" to "this person's secret is on the
-foundation's list". The foundation runs the first issuer, on list 0, which it owns. Issuers are
-open: anyone may open a list of their own in the registry and run this service, or another, on it.
+foundation's list". The issuer keeps its list itself and publishes it; the registry never sees a
+list. Issuers are open: anyone may keep a list and publish it the same way, with this service or
+another.
 
-**Nothing here is shipped.** It runs on devnet, on Railway, with Didit's real face check
-(`forest/docs/services.md`); its tests run against a stand-in Didit and a local validator.
+**Nothing here is shipped.** Its tests run against a stand-in Didit. The devnet issuer on Railway
+still runs the earlier version, which inserts into the earlier registry's list 0
+(`deploy/README.md`).
 
 ## What it does
 
@@ -15,36 +17,42 @@ open: anyone may open a list of their own in the registry and run this service, 
 2. **The person does the check** on Didit's page: liveness and a duplicate-face search. Didit holds
    the face.
 3. **The app sends two things:** the session id and the person's identity commitment, computed on
-   the device from the identity secret `forest/keys/` derives (`humanIdentity(seed).commitment`). Nothing
-   else is accepted: a body with any other field is refused.
+   the device from the identity secret `forest/keys/` derives (`humanIdentity(seed)`'s
+   `commitment`). Nothing else is accepted: a body with any other field is refused.
 4. **The service asks Didit for that session's decision** and accepts only this: the session is on
    the foundation's workflow; Didit reports no duplicate face (`DUPLICATED_FACE` or
    `POSSIBLE_DUPLICATED_FACE`); every liveness step passed; the session is approved. A session id
    counts once.
 5. **Accepted commitments wait in a queue.** A batch takes all of them every hour, or as soon as 50
-   are waiting, whichever comes first. It shuffles them and inserts them into the list one
-   transaction each, so an entry on the chain can't be matched to a face check by when it arrived.
-6. **The app polls `POST /status`** until its commitment is `listed`. It can then build proofs
-   against the list with `forest/registry/client`.
+   are waiting, whichever comes first. It shuffles them and appends them to the list, so a place
+   on the list can't be matched to a face check by when it arrived. Each batch gives the list one
+   new root.
+6. **The service publishes two files:** the whole list, in order, and every root it has had, with
+   dates, signed with the issuer's key ("The two files", below). They change after each batch.
+7. **The app polls `POST /status`** until its commitment is `listed`. It then reads `/list.json`
+   and proves against it with `forest/registry/client` (`buildRegistration`).
 
 ## What it never does
 
-- **Never keeps a session next to a commitment.** The file holds two tables that share nothing, with
-  no timestamps and no row numbers: the SHA-256 of every session id used, and the commitments still
-  waiting. A commitment leaves the file once it is on the list. Deleted bytes are overwritten, and
-  after every batch the whole file is rewritten from what it still holds. A test reads the raw file
-  and checks this.
+- **Never keeps a session next to a commitment.** The file holds four tables. The two private ones
+  share nothing and hold no timestamps and no row numbers: the SHA-256 of every session id used,
+  and the commitments still waiting. The two public ones are what the files publish: the list and
+  its roots. A commitment leaves the queue in the same transaction that puts it on the list.
+  Deleted bytes are overwritten, and after every batch the whole file is rewritten from what it
+  still holds, so each listed commitment is in it once, as its place on the list. A test reads the
+  raw file and checks this.
 - **Never logs a request, an address, a session id or a commitment.** It logs one line per batch
-  (how many were inserted) and the kind of an error, never an error's message.
+  (how many were added) and the kind of an error, never an error's message.
 - **Never writes down an address.** It reads the client's address for one thing only, counting
   `/session` requests against the limit, and holds even that in memory as a keyed hash, under a key
   that exists only in the running process.
-- **Never puts anything a person sends in a URL.** All three routes are POST with a JSON body,
-  because hosting platforms log every request's path.
+- **Never puts anything a person sends in a URL.** The three routes a person's app calls are POST
+  with a JSON body, because hosting platforms log every request's path. The two files are GET, and
+  their paths name nothing.
 - **Never stores anything at `/session`.** The session's `vendor_data` is a fresh random id that
   names nobody.
-- **Never signs for anyone.** Its key signs only its own inserts, and it holds no one else's key.
-  There are no accounts.
+- **Never signs for anyone.** Its key signs its roots file and nothing else, and it holds no one
+  else's key. There are no accounts.
 - **Never deletes a Didit session.** Deleting a session removes that face from Didit's duplicate
   search, and the person could then pass again under a new secret.
 
@@ -55,6 +63,8 @@ open: anyone may open a list of their own in the registry and run this service, 
 | `POST /session` | `{}` or none | `201 {"sessionId": "…", "url": "https://verify.didit.me/…"}` |
 | `POST /submit` | `{"sessionId": "<uuid>", "commitment": "<decimal>"}` | `202 {"status": "queued"}` |
 | `POST /status` | `{"commitment": "<decimal>"}` | `200 {"status": "queued" \| "listed" \| "unknown"}` |
+| `GET /list.json` | | `200`, the list file |
+| `GET /roots.json` | | `200`, the roots file |
 
 The commitment is a decimal number, as Semaphore prints it: above zero, below BN254's field order,
 no leading zero.
@@ -72,11 +82,59 @@ Errors are `{"error": "<code>"}`:
 - **`429 try_later`: this address has opened its share of sessions for the hour.** Nothing more is
   said.
 - **Other codes.**
-  - `404 not_found`, `405 post_only`, `413 too_large` (bodies are capped at 1 KB)
+  - `404 not_found`, `405 post_only`, `405 get_only` (the two files), `413 too_large` (bodies
+    are capped at 1 KB)
   - `502 face_check_unavailable`, `500 internal`
 
 A refused or failed submit uses nothing up. The same session can be sent again, for instance once a
 review in Didit's console approves it. CORS is open to any origin.
+
+## The two files
+
+What indexes, boards and apps read. Each is served at a fixed path on the issuer's own address, as
+RFC 8785 canonical JSON (`forest/records/SPEC.md`, section 2), with `cache-control: no-cache`.
+Numbers too large for JSON are decimal text, as the API sends them.
+
+**`GET /list.json`: the list.**
+
+```
+{"commitments":["<decimal>",…],"v":1}
+```
+
+- `commitments`: every identity commitment on the list, in list order: the order the batches added
+  them, shuffled within each batch. The list only grows; nothing is ever removed or reordered.
+- `v`: 1.
+- The file is not signed. It is checked against the roots file.
+
+**`GET /roots.json`: every root the list has had, signed.**
+
+```
+{"issuer":"did:key:z6Mk…","roots":[{"root":"<decimal>","size":3,"time":1790000000000},…],"sig":"<base64url>","v":1}
+```
+
+- `issuer`: the issuer's key, as its did:key (`forest/records/SPEC.md`, section 1). This is the
+  name a reader trusts.
+- `roots`: one entry per batch, oldest first, never removed.
+  - `root`: the Semaphore Merkle root of the first `size` commitments, as the circuit computes it
+    (`forest/registry/client`'s `listRoot`).
+  - `size`: how many commitments the list held.
+  - `time`: when the batch ran, in milliseconds since 1970.
+  - Before the first batch, `roots` is empty.
+- `sig`: Ed25519 (RFC 8032), base64url without padding, over `0xff` ‖
+  UTF-8(`forest.foundation/issuer/roots/v1\n`) ‖ UTF-8(the canonical text of the file without
+  `sig`). This is how a records entry is signed, under its own label, so neither signature can pass
+  for the other.
+- `v`: 1.
+
+**How a reader checks them:**
+1. Parse both as canonical text: re-serializing must give the same bytes.
+2. Check `sig` against the key `issuer` names, and that `issuer` is the issuer it trusts.
+3. Check that the newest root's `size` is the list's length, and that `listRoot` of the whole list
+   is that root.
+4. It may check every older root against its prefix of the list the same way.
+
+A device proves against the whole list (the newest root). An index or a board counts a line when
+the line's root is in the roots file of an issuer it trusts. The registry itself checks no root.
 
 ## The request limit
 
@@ -114,28 +172,20 @@ whoever runs it:
 
 ## Running it locally
 
-Node 22.18 or later runs the TypeScript directly. Forest's registry client is imported from
-`forest/registry/client/src` by relative path (forest at the commit in `../FOREST`), so both
-packages need their dependencies. From the repo root:
+Node 22.18 or later runs the TypeScript directly. Forest's registry client and records library are
+imported from `forest/registry/client/src` and `forest/records/src` by relative path (forest at the
+commit in `../FOREST`), so those packages need their dependencies too. From the repo root:
 
 ```
-./forest.sh registry/client
+./forest.sh registry/client records
 cd issuer && npm ci
-npm run check                # type-check, the registry client's files included
-npm test                     # no chain: a stand-in Didit, an in-memory list, a real SQLite file
-npm run test:validator       # end to end on solana-test-validator (see below)
+npm run check                # type-check, forest's files included
+npm test                     # a stand-in Didit, a real SQLite file, real HTTP; no chain anywhere
 npm start                    # the service, with the variables below
 ```
 
-`npm run test:validator` needs the Solana CLI on the PATH (4.2.2, `forest/docs/devnet.md`) and the registry
-program built (`cargo build-sbf` in `forest/registry/program`). It starts its own validator, loads the
-program, sends `init`, and starts the service from its environment variables with the real chain
-client and a stand-in Didit. The issuer key is the program's placeholder, which the tests can sign
-for (`forest/registry/README.md`, "What is sealed").
-
-To run the service by hand against that validator, write a key file (`solana-keygen new -o
-issuer-keypair.json`, or the placeholder as the test does), point `ISSUER_KEYPAIR_PATH` at it, and
-set the other required variables.
+To run it by hand, write a key file (`solana-keygen new -o issuer-keypair.json`, outside the
+repo), point `ISSUER_KEYPAIR_PATH` at it, and set the other required variables.
 
 ## Environment variables
 
@@ -144,11 +194,8 @@ set the other required variables.
 | `DIDIT_API_KEY` | yes | | The foundation's Didit API key. A secret. |
 | `DIDIT_WORKFLOW_ID` | yes | | The workflow sessions are opened on; decisions on any other are refused |
 | `ISSUER_KEYPAIR` | one of these two | | The issuer's key itself: the contents of a key file, 64 numbers as `solana-keygen` writes them. For Railway, as a sealed variable. At start the service writes it to a new directory under the system's temporary directory, readable by its own user only, loads it, deletes the file, and takes the variable out of its environment. |
-| `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to the key file, for local runs. Never commit it (`.gitignore` covers `*keypair*.json`). Either way the key must be an insert key of the list, and it pays its own inserts, so it holds a little SOL. |
-| `SOLANA_RPC_URL` | yes | | The RPC the service reads the list from and sends inserts to |
-| `REGISTRY_PROGRAM_ID` | no | the client's `PROGRAM_ID` | The registry program; devnet's is in `forest/devnet/devnet.json` |
-| `LIST_INDEX` | no | `0` | The list this issuer inserts into |
-| `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file |
+| `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to the key file, for local runs. Never commit it (`.gitignore` covers `*keypair*.json`). Either way the key signs the roots file and nothing else; it needs no SOL. Its did:key is the issuer's name, so a new key is a new name readers must be told. |
+| `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file: the queue, the used sessions, the list and its roots |
 | `BATCH_MAX` | no | `50` | A batch runs as soon as this many are waiting |
 | `BATCH_INTERVAL_SECONDS` | no | `3600` | And on this timer, whatever is waiting |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour |
@@ -157,20 +204,28 @@ set the other required variables.
 | `PORT` | no | `8080` | |
 
 The service refuses to start if a required variable is missing, if both key variables are set, if
-the key is not a keypair (the message quotes none of it), if the key is not an insert key of the
-list, or if the list is closed.
+the key is not a keypair (the message quotes none of it), or if the file's list does not match its
+newest root.
+
+At start it builds the list's Merkle tree from the file once: about 0.4 seconds per 1,000
+members here, about 27 seconds per 100,000. After that each batch hashes only what it adds.
 
 ## What running it on Railway will need
 
 `deploy/` does this on devnet (`deploy/README.md`). Written before it was tried, what the service
 needs from any host, as it reads on Railway's documents in September 2026:
 
-- **One replica, never more.** The queue is a SQLite file and one process runs the batches.
-- **A volume** for `DATABASE_PATH`, or every deploy empties the queue and forgets the used sessions.
-  A volume backup is a copy of the file as it was: waiting commitments included, and the deleted
-  bytes of files that are gone, which the service can't rewrite.
-- **The repo root as the build's root,** since the service imports `forest/registry/client`.
-  - Build: `./forest.sh registry/client`, then `npm ci` in `issuer`. Start: `npm start` in `issuer`.
+- **One replica, never more.** The queue and the list are one SQLite file, and one process runs
+  the batches.
+- **A volume** for `DATABASE_PATH`, or every deploy empties the queue, forgets the used sessions and
+  loses the list. The list is public, so anyone holding its last published file holds a copy, but
+  only the file on the volume goes on growing. A volume backup is a copy of the file as it was:
+  waiting commitments included, and the deleted bytes of files that are gone, which the service
+  can't rewrite.
+- **The repo root as the build's root,** since the service imports `forest/registry/client` and
+  `forest/records`.
+  - Build: `./forest.sh registry/client records`, then `npm ci` in `issuer`. Start: `npm start` in
+    `issuer`.
   - Node 22.18 or later: Railpack reads `RAILPACK_NODE_VERSION`, or `engines` in `package.json`.
   - The repo root has no `package.json`, so Railpack may not recognize the service as Node without
     a Railpack config file or a Dockerfile. Not tried.
@@ -182,17 +237,18 @@ needs from any host, as it reads on Railway's documents in September 2026:
   either, as long as no build step reads the variable: Railway does hand sealed variables to builds,
   and nothing in this service's build uses it.
 - **`CLIENT_ADDRESS_HEADER=x-real-ip`,** so the request limit counts each client, not Railway's edge.
-- **SOL on the issuer key** for its inserts, about 5,000 lamports each.
 - **Railway's HTTP logs.** Railway keeps every request's client address and path for 3 to 90 days,
   depending on plan, and its documents describe no way to turn that off. The service puts nothing
   in a path, but the addresses are Railway's log, not the service's. This conflicts with "no address
   logs" and is open (`forest/docs/changes.md`).
-- **A public domain** for the app to call. `PORT` is set by Railway.
+- **A public domain** for the app to call, and the fixed address of the two files. `PORT` is set by
+  Railway.
 
 ## Chosen, not decided
 
 Where the handoff and the task were silent, the simplest option was taken. Each is reversible
-until something ships, and each is in `forest/docs/changes.md`.
+until something ships, and each is in `forest/docs/changes.md` or, from 9 on where it says so,
+this repo's `docs/changes.md`.
 
 1. **Each Didit session gets a random `vendor_data`.** Didit's duplicate check compares a face
    against faces verified under a different `vendor_data`, and its documents don't say what happens
@@ -206,21 +262,23 @@ until something ships, and each is in `forest/docs/changes.md`.
 6. **The commitment is sent as a decimal number,** the way Semaphore prints it.
 7. **The file keeps session ids as SHA-256 hashes,** not in the clear. Refusing reuse needs no more,
    and a copy of the file then lists no Didit session.
-8. **Two `WITHOUT ROWID` tables, no timestamps, `secure_delete` on, and `VACUUM` after every batch.**
+8. **The queue and the used sessions: two `WITHOUT ROWID` tables, no timestamps; `secure_delete`
+   on, and `VACUUM` after every batch.**
    `VACUUM` rewrites the file from its live rows, which also drops the order rows arrived in. The
    rollback journal is deleted after each commit.
-9. **One insert per transaction,** sent in the shuffled order, each confirmed (or its blockhash
-   expired) before the next. The issuer key pays its own network fees; the relayer is for
-   people's transactions.
-10. **A batch takes everything waiting,** skips any commitment already on the list, and stops at
-    the first failure, leaving the rest queued. The program takes the same commitment twice, so not
-    sending it twice is the issuer's job.
-11. **The members are held in memory,** read from the chain at start and before every batch, plus
-    each confirmed insert. `/status` never reads the chain itself.
-12. **`node:sqlite` and `node:http`,** built into Node, so the service has one dependency:
-    `@solana/web3.js`, pinned to the client's version.
+9. **One root per batch** (this repo). A batch appends everything it adds, then the list has one
+   new root, so there are as few roots as batches.
+10. **A batch takes everything waiting,** skips any commitment already on the list, and adds the
+    rest together with their root and their removal from the queue, in one transaction: all or
+    nothing (this repo).
+11. **The list and its roots live in the same file as the queue** (this repo), so one transaction
+    moves a batch. The members and the Merkle tree are held in memory, built from the file at start
+    and grown by each batch. `/status` and the files read only memory.
+12. **`node:sqlite`, `node:http` and `node:crypto`,** built into Node, so the service has one
+    dependency: `@semaphore-protocol/group`, pinned to the registry client's version (this repo).
+    Its tree is what `listRoot` builds; the tests check every root against `listRoot`.
 13. **CORS is open to any origin.** The app may be served from anywhere.
-14. **At start, the key must be an insert key of an open list.**
+14. **At start, the file's list must match its newest root** (this repo).
 15. **Five sessions per address per hour by default,** in a window that starts at the address's
     first request.
 16. **An IPv6 address counts by its /64.**
@@ -229,3 +287,11 @@ until something ships, and each is in `forest/docs/changes.md`.
     one,** so a client can't choose its own address where no proxy stands in front.
 19. **The key file from `ISSUER_KEYPAIR` is deleted as soon as the key is loaded,** since nothing
     reads it again, and the variable is taken out of the process's environment.
+20. **The two files are served by the issuer itself,** at `/list.json` and `/roots.json`, with no
+    other host in between (this repo).
+21. **The key stays a `solana-keygen` file,** now a signing key only, named by its did:key as
+    Forest names Ed25519 keys (this repo).
+22. **The roots file is signed as a records entry is,** under its own label,
+    `forest.foundation/issuer/roots/v1` (this repo).
+23. **A root's time is milliseconds since 1970,** as a records entry's is (this repo).
+24. **The list file is not signed.** The signed roots file covers it (this repo).
