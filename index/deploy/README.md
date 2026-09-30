@@ -37,7 +37,7 @@ records host on devnet to read yet: `HOSTS` stays unset until one runs there.
 | `SOLANA_RPC_URL` | Helius's devnet RPC when there is a Helius key, then sealed since the URL holds it; otherwise `https://api.devnet.solana.com` | with Helius |
 | `REGISTRY_PROGRAM_ID` | `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf` (`forest/registry/devnet/devnet.json`) | no |
 | `ESCROW_PROGRAM_ID` | `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy9CbeR` (escrow v1, `forest/docs/devnet.md`) | no |
-| `ESCROW_V2_PROGRAM_ID` | `B3p13G8xvNvUrAnaXg9AUtwffBAUHcp6XoMwGV2jKPi7` (`forest/escrow/v2/devnet/devnet.json`) | no |
+| `ESCROW_V2_PROGRAM_ID` | `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`forest/escrow/v2/devnet/devnet.json`) | no |
 | `CHAIN_COMMITMENT` | `finalized` | no |
 | `POLL_MS` | `10000` | no |
 | `PUBLIC_URL` | the service's own public URL | no |

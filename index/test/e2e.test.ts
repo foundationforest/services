@@ -17,7 +17,8 @@
 //      trusted line, and everything of hers is read in by profile; Cleo copies Ben's record, and it
 //      does not check for her.
 //   4. A paid deal on escrow v2: Ana invoices Ben; Ben objects, then pays and releases it to her in
-//      one transaction. A deal on escrow v1: Dara pays Ana in one tap.
+//      one transaction. A deal on escrow v1: Dara pays Ana in one tap. And one on v2 in Open USD, a
+//      Token-2022 dollar planted from its mainnet mint: Dara pays Ana in one tap.
 //   5. Reviews both ways on the v2 deal; Cleo's review, with no badge behind it, is not kept.
 //   6. A forged entry, claiming to be Ana's, is refused; a genuine one of Ana's on the same host is
 //      kept, and Mallory's, with no badge, is not.
@@ -37,7 +38,7 @@
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -129,6 +130,26 @@ async function serveTexts(texts: (path: string, query: URLSearchParams) => { tex
   return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server }
 }
 
+/** Open USD, a Token-2022 dollar with eight extensions. */
+const OPEN_USD = new PublicKey('ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB')
+const TOKEN_2022 = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
+
+/**
+ * Open USD's mint account as mainnet held it, from forest's own record of it (the escrow v2 tests
+ * embed it), with only its mint authority swapped for `authority`.
+ */
+function openUsdJson(authority: PublicKey): string {
+  const source = readFileSync(join(FOREST, 'escrow/v2/program/tests-litesvm/src/token_2022.rs'), 'utf8')
+  const data = Buffer.from(/OPEN_USD_MAINNET: &str = "([^"]+)"/.exec(source)![1], 'base64')
+  data.writeUInt32LE(1, 0)
+  authority.toBuffer().copy(data, 4)
+  data.writeBigUInt64LE(0n, 36)
+  return JSON.stringify({
+    pubkey: OPEN_USD.toBase58(),
+    account: { lamports: 10_000_000, data: [data.toString('base64'), 'base64'], owner: TOKEN_2022.toBase58(), executable: false, rentEpoch: 0, space: data.length },
+  })
+}
+
 /** A classic SPL Token mint at USDC's address, six decimals, whose mint authority is `authority`. */
 function usdcAccountJson(authority: PublicKey): string {
   const data = Buffer.alloc(MINT_SIZE)
@@ -183,6 +204,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     const ledger = mkdtempSync(join(tmpdir(), 'forest-index-ledger-'))
     const scratch = mkdtempSync(join(tmpdir(), 'forest-index-scratch-'))
     writeFileSync(join(scratch, 'usdc.json'), usdcAccountJson(payer.publicKey))
+    writeFileSync(join(scratch, 'open-usd.json'), openUsdJson(payer.publicKey))
     const validator: ChildProcess = spawn(
       'solana-test-validator',
       [
@@ -191,6 +213,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
         '--bpf-program', ESCROW_ID.toBase58(), ESCROW_SO,
         '--bpf-program', v2.PROGRAM_ID.toBase58(), ESCROW_V2_SO,
         '--account', USDC.toBase58(), join(scratch, 'usdc.json'),
+        '--account', OPEN_USD.toBase58(), join(scratch, 'open-usd.json'),
       ],
       { stdio: 'ignore' },
     )
@@ -477,7 +500,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     })
 
     let escrow: PublicKey
-    await t.test('4. deals: an invoice on escrow v2 that Ben objects to, then pays and releases; a one-tap payment on v1', async () => {
+    await t.test('4. deals: an invoice on escrow v2 that Ben objects to, then pays and releases; a one tap on v1; a one tap on v2 in Open USD', async () => {
       const ata = (owner: PublicKey) => getAssociatedTokenAddressSync(USDC, owner)
       await send(
         [
@@ -493,14 +516,34 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       await send([invoice], [payer, ana.wallet])
       const read = async () => v2.decodeEscrow(new Uint8Array((await connection.getAccountInfo(escrow))!.data))
       await send([v2.objectIx({ account: await read(), party: ben.wallet.publicKey })], [payer, ben.wallet])
-      await send(v2.payInvoiceInOneTap({ escrow: await read(), payer: payer.publicKey }), [payer, ben.wallet])
+      const tokenOf = async (mint: PublicKey) => v2.tokenOf(mint, (await connection.getAccountInfo(mint))!)
+      await send(v2.payInvoiceInOneTap({ escrow: await read(), payer: payer.publicKey, token: await tokenOf(USDC) }), [payer, ben.wallet])
 
       const v1Terms = termsFor(null, { seller: ana.wallet.publicKey, amount: 5_000_000n })
       await send(payInOneTap({ buyer: dara.wallet.publicKey, payer: payer.publicKey, mint: USDC, terms: v1Terms }), [payer, dara.wallet])
 
-      await waitFor(async () => (await count(`select count(*) n from escrow_receipts where outcome = 'releasedToSeller'`)) === 2, 60_000, 'two receipts')
-      const { rows } = await index.db.query('select * from escrow_receipts order by amount desc')
-      const [deal, v1] = rows
+      // Open USD, under Token-2022: Dara holds some, Ana an account for it.
+      const ousd = (owner: PublicKey) => getAssociatedTokenAddressSync(OPEN_USD, owner, false, TOKEN_2022)
+      await send(
+        [
+          ...[ana, dara].map((p) => createAssociatedTokenAccountIdempotentInstruction(payer.publicKey, ousd(p.wallet.publicKey), p.wallet.publicKey, OPEN_USD, TOKEN_2022)),
+          createMintToInstruction(OPEN_USD, ousd(dara.wallet.publicKey), payer.publicKey, 10_000_000, [], TOKEN_2022),
+        ],
+        [payer],
+      )
+      const openUsdTerms = v2.termsFor(null, { seller: ana.wallet.publicKey, amount: 3_000_000n })
+      await send(v2.payInOneTap({ buyer: dara.wallet.publicKey, payer: payer.publicKey, token: await tokenOf(OPEN_USD), terms: openUsdTerms }), [payer, dara.wallet])
+
+      await waitFor(async () => (await count(`select count(*) n from escrow_receipts where outcome = 'releasedToSeller'`)) === 3, 60_000, 'three receipts')
+      const { rows } = await index.db.query('select * from escrow_receipts')
+      const deal = rows.find((r) => r.escrow === escrow.toBase58())
+      const t22 = rows.find((r) => r.mint === OPEN_USD.toBase58())
+      const v1 = rows.find((r) => r.program_id === ESCROW_ID.toBase58())
+      assert.deepEqual(
+        [t22.program_id, t22.mint, t22.buyer, t22.seller, t22.amount, t22.to_seller],
+        [v2.PROGRAM_ID.toBase58(), OPEN_USD.toBase58(), dara.wallet.publicKey.toBase58(), ana.wallet.publicKey.toBase58(), '3000000', '3000000'],
+        'a receipt in a Token-2022 dollar',
+      )
       assert.deepEqual(
         [deal.escrow, deal.program_id, deal.buyer, deal.seller, deal.creator, deal.amount, deal.to_seller],
         [escrow.toBase58(), v2.PROGRAM_ID.toBase58(), ben.wallet.publicKey.toBase58(), ana.wallet.publicKey.toBase58(), 'seller', '25000000', '25000000'],
