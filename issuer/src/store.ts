@@ -14,7 +14,7 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { fromBytes32, toBytes32 } from '../../registry/client/src/field.ts'
+import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
 
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {

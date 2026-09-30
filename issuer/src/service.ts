@@ -7,7 +7,7 @@ import { dirname } from 'node:path'
 
 import { Connection, PublicKey, type Keypair } from '@solana/web3.js'
 
-import { PROGRAM_ID } from '../../registry/client/src/program.ts'
+import { PROGRAM_ID } from '../../forest/registry/client/src/program.ts'
 import { Batcher } from './batch.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { RateLimit } from './limit.ts'

@@ -5,7 +5,7 @@
 //   npm run test:validator
 //
 // Needs `solana-test-validator` on the PATH and the program built (`cargo build-sbf` in
-// registry/program). If either is missing, or something already answers on the validator's port,
+// forest/registry/program). If either is missing, or something already answers on the validator's port,
 // the test says so and skips rather than failing for the wrong reason.
 //
 // Like the registry client's test, everything polls rather than opening a websocket, which would keep
@@ -22,8 +22,8 @@ import { fileURLToPath } from 'node:url'
 
 import { Connection, Keypair, LAMPORTS_PER_SOL, Transaction, type PublicKey } from '@solana/web3.js'
 
-import { commitmentOf } from '../../registry/client/src/code.ts'
-import { fetchListLeaves } from '../../registry/client/src/leaves.ts'
+import { commitmentOf } from '../../forest/registry/client/src/code.ts'
+import { fetchListLeaves } from '../../forest/registry/client/src/leaves.ts'
 import {
   FOUNDATION_ISSUER,
   FOUNDATION_ISSUER_PLACEHOLDER_SEED,
@@ -31,12 +31,12 @@ import {
   TOKEN_PROGRAM_ID,
   USDC_MINT,
   initIx,
-} from '../../registry/client/src/program.ts'
+} from '../../forest/registry/client/src/program.ts'
 import { readConfig, startIssuer } from '../src/service.ts'
 import { FakeFaceCheck, WORKFLOW, assertFileHolds, assertNoLink, passed } from './fakes.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const soPath = join(here, '../../registry/program/target/deploy/forest_registry.so')
+const soPath = join(here, '../../forest/registry/program/target/deploy/forest_registry.so')
 const RPC = 'http://127.0.0.1:8899'
 
 const payer = Keypair.generate()
@@ -92,7 +92,7 @@ async function confirm(signature: string): Promise<void> {
 
 before(
   async () => {
-    if (!existsSync(soPath)) return void (skip = `no program at ${soPath}; run \`cargo build-sbf\` in registry/program`)
+    if (!existsSync(soPath)) return void (skip = `no program at ${soPath}; run \`cargo build-sbf\` in forest/registry/program`)
     if (await answers()) return void (skip = `something already answers on ${RPC}; stop it first`)
     // Not inside the ledger directory: `--reset` empties that before `--account` files are read.
     const mint = join(temp, 'usdc.json')
@@ -170,7 +170,7 @@ test('face check to list: submit, batch, and the commitments are the list’s le
   const commitments: bigint[] = []
   try {
     // Each person: a session, the face check (Didit's part, here the stand-in's), then the
-    // commitment the app computes from the identity secret `keys/` derives.
+    // commitment the app computes from the identity secret `forest/keys/` derives.
     for (let i = 0; i < 3; i++) {
       const { body } = await post('/session')
       faces.set(body.sessionId, passed())

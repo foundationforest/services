@@ -5,7 +5,7 @@ foundation's list". The foundation runs the first issuer, on list 0, which it ow
 open: anyone may open a list of their own in the registry and run this service, or another, on it.
 
 **Nothing here is shipped.** It runs on devnet, on Railway, with Didit's real face check
-(`docs/services.md`); its tests run against a stand-in Didit and a local validator.
+(`forest/docs/services.md`); its tests run against a stand-in Didit and a local validator.
 
 ## What it does
 
@@ -15,7 +15,7 @@ open: anyone may open a list of their own in the registry and run this service, 
 2. **The person does the check** on Didit's page: liveness and a duplicate-face search. Didit holds
    the face.
 3. **The app sends two things:** the session id and the person's identity commitment, computed on
-   the device from the identity secret `keys/` derives (`humanIdentity(seed).commitment`). Nothing
+   the device from the identity secret `forest/keys/` derives (`humanIdentity(seed).commitment`). Nothing
    else is accepted: a body with any other field is refused.
 4. **The service asks Didit for that session's decision** and accepts only this: the session is on
    the foundation's workflow; Didit reports no duplicate face (`DUPLICATED_FACE` or
@@ -25,7 +25,7 @@ open: anyone may open a list of their own in the registry and run this service, 
    are waiting, whichever comes first. It shuffles them and inserts them into the list one
    transaction each, so an entry on the chain can't be matched to a face check by when it arrived.
 6. **The app polls `POST /status`** until its commitment is `listed`. It can then build proofs
-   against the list with `registry/client`.
+   against the list with `forest/registry/client`.
 
 ## What it never does
 
@@ -114,24 +114,24 @@ whoever runs it:
 
 ## Running it locally
 
-Node 22.18 or later runs the TypeScript directly. The registry client is imported from
-`../registry/client/src` by relative path, the way `registry/client/scripts/devnet.ts` imports
-`keys/`, so both packages need their dependencies:
+Node 22.18 or later runs the TypeScript directly. Forest's registry client is imported from
+`forest/registry/client/src` by relative path (forest at the commit in `../FOREST`), so both
+packages need their dependencies. From the repo root:
 
 ```
-cd registry/client && npm ci
-cd issuer          && npm ci
+./forest.sh registry/client
+cd issuer && npm ci
 npm run check                # type-check, the registry client's files included
 npm test                     # no chain: a stand-in Didit, an in-memory list, a real SQLite file
 npm run test:validator       # end to end on solana-test-validator (see below)
 npm start                    # the service, with the variables below
 ```
 
-`npm run test:validator` needs the Solana CLI on the PATH (4.2.2, `docs/devnet.md`) and the registry
-program built (`cargo build-sbf` in `registry/program`). It starts its own validator, loads the
+`npm run test:validator` needs the Solana CLI on the PATH (4.2.2, `forest/docs/devnet.md`) and the registry
+program built (`cargo build-sbf` in `forest/registry/program`). It starts its own validator, loads the
 program, sends `init`, and starts the service from its environment variables with the real chain
 client and a stand-in Didit. The issuer key is the program's placeholder, which the tests can sign
-for (`registry/README.md`, "What is sealed").
+for (`forest/registry/README.md`, "What is sealed").
 
 To run the service by hand against that validator, write a key file (`solana-keygen new -o
 issuer-keypair.json`, or the placeholder as the test does), point `ISSUER_KEYPAIR_PATH` at it, and
@@ -146,7 +146,7 @@ set the other required variables.
 | `ISSUER_KEYPAIR` | one of these two | | The issuer's key itself: the contents of a key file, 64 numbers as `solana-keygen` writes them. For Railway, as a sealed variable. At start the service writes it to a new directory under the system's temporary directory, readable by its own user only, loads it, deletes the file, and takes the variable out of its environment. |
 | `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to the key file, for local runs. Never commit it (`.gitignore` covers `*keypair*.json`). Either way the key must be an insert key of the list, and it pays its own inserts, so it holds a little SOL. |
 | `SOLANA_RPC_URL` | yes | | The RPC the service reads the list from and sends inserts to |
-| `REGISTRY_PROGRAM_ID` | no | the client's `PROGRAM_ID` | The registry program; devnet's is in `devnet/devnet.json` |
+| `REGISTRY_PROGRAM_ID` | no | the client's `PROGRAM_ID` | The registry program; devnet's is in `forest/devnet/devnet.json` |
 | `LIST_INDEX` | no | `0` | The list this issuer inserts into |
 | `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file |
 | `BATCH_MAX` | no | `50` | A batch runs as soon as this many are waiting |
@@ -162,15 +162,15 @@ list, or if the list is closed.
 
 ## What running it on Railway will need
 
-Not tried. What the service needs from any host, as it reads on Railway's documents in September
-2026:
+`deploy/` does this on devnet (`deploy/README.md`). Written before it was tried, what the service
+needs from any host, as it reads on Railway's documents in September 2026:
 
 - **One replica, never more.** The queue is a SQLite file and one process runs the batches.
 - **A volume** for `DATABASE_PATH`, or every deploy empties the queue and forgets the used sessions.
   A volume backup is a copy of the file as it was: waiting commitments included, and the deleted
   bytes of files that are gone, which the service can't rewrite.
-- **The repo root as the build's root,** since the service imports `registry/client`.
-  - Build: `npm ci` in `registry/client`, then in `issuer`. Start: `npm start` in `issuer`.
+- **The repo root as the build's root,** since the service imports `forest/registry/client`.
+  - Build: `./forest.sh registry/client`, then `npm ci` in `issuer`. Start: `npm start` in `issuer`.
   - Node 22.18 or later: Railpack reads `RAILPACK_NODE_VERSION`, or `engines` in `package.json`.
   - The repo root has no `package.json`, so Railpack may not recognize the service as Node without
     a Railpack config file or a Dockerfile. Not tried.
@@ -186,13 +186,13 @@ Not tried. What the service needs from any host, as it reads on Railway's docume
 - **Railway's HTTP logs.** Railway keeps every request's client address and path for 3 to 90 days,
   depending on plan, and its documents describe no way to turn that off. The service puts nothing
   in a path, but the addresses are Railway's log, not the service's. This conflicts with "no address
-  logs" and is open (`docs/changes.md`).
+  logs" and is open (`forest/docs/changes.md`).
 - **A public domain** for the app to call. `PORT` is set by Railway.
 
 ## Chosen, not decided
 
 Where the handoff and the task were silent, the simplest option was taken. Each is reversible
-until something ships, and each is in `docs/changes.md`.
+until something ships, and each is in `forest/docs/changes.md`.
 
 1. **Each Didit session gets a random `vendor_data`.** Didit's duplicate check compares a face
    against faces verified under a different `vendor_data`, and its documents don't say what happens
@@ -210,7 +210,7 @@ until something ships, and each is in `docs/changes.md`.
    `VACUUM` rewrites the file from its live rows, which also drops the order rows arrived in. The
    rollback journal is deleted after each commit.
 9. **One insert per transaction,** sent in the shuffled order, each confirmed (or its blockhash
-   expired) before the next. The issuer key pays its own network fees; the fee payer is for
+   expired) before the next. The issuer key pays its own network fees; the relayer is for
    people's transactions.
 10. **A batch takes everything waiting,** skips any commitment already on the list, and stops at
     the first failure, leaving the rest queued. The program takes the same commitment twice, so not

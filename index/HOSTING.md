@@ -1,7 +1,7 @@
 # Hosting the index
 
 **Nothing is shipped.** This page says what each part needs. On devnet the index runs as one
-process on Railway, with its Postgres on Supabase (`docs/services.md`); as two processes it has run
+process on Railway, with its Postgres on Supabase (`forest/docs/services.md`); as two processes it has run
 only on one machine.
 
 The index is two processes over one Postgres database:
@@ -18,11 +18,11 @@ The index is two processes over one Postgres database:
 `node src/main.ts` with no argument runs both in one process, for local use.
 
 Both need Node 22.18 or later (they run TypeScript directly) and the repo's root checked out,
-not only `index/`: the index imports `shapes/`, `registry/client` and `escrow/client` by relative
-path. Install them first, from the repo root:
+not only `index/`: the index imports forest's `shapes/`, `registry/client` and `escrow/client` by
+relative path, from `forest/` at the commit in `FOREST`. Install them first, from the repo root:
 
 ```
-(cd shapes && npm ci) && (cd registry/client && npm ci) && (cd escrow/client && npm ci) && (cd index && npm ci)
+./forest.sh shapes registry/client escrow/client && (cd index && npm ci)
 ```
 
 ## The database
@@ -45,7 +45,8 @@ Postgres 14 or later: a Railway Postgres, or Supabase's.
 One service, from this repo:
 
 - **Build:** the install line above, from the repo root (Railway's "shared monorepo": build from
-  the root, override the build and start commands per service).
+  the root, override the build and start commands per service). `deploy/Dockerfile` does it, with
+  git for `forest.sh`; `deploy/README.md` is the devnet setup.
 - **Start:** `cd index && node src/main.ts readers`.
 - **Replicas:** one. Two would read the same events twice and race to write the same scores.
 - **Networking:** no public domain. It opens connections; nothing connects to it.
@@ -106,7 +107,7 @@ built, not tried):
 
   and a rewrite of every path to it in `vercel.json` (`{ "source": "/(.*)", "destination": "/api" }`).
 - **The Node.js runtime,** not Edge: it uses `pg` and reads files.
-- **The repo root as the project's root,** for the relative imports to `shapes/` and the clients.
+- **The repo root as the project's root,** for the relative imports to `forest/shapes/` and the clients.
 - **The files it reads at start, included in the function:** `index/config/*.json`,
   `index/skill.md` and `index/llms.txt`, through the function's `includeFiles`. The market
   directory is fetched from the `markets` repo when an instance starts.
@@ -123,4 +124,4 @@ The readers cannot run on Vercel: a function cannot keep a websocket or a poll l
 Neither process writes a visitor's address anywhere: the pages log only a failed request's path
 and its error, never an address or a query. Railway and Vercel keep request logs of their own:
 Railway's keep each request's client address and path, with no documented way to turn it off, and
-Vercel's are not checked (`docs/handoff.md`, Open).
+Vercel's are not checked (`forest/docs/handoff.md`, Open).

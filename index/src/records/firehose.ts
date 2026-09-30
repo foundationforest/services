@@ -41,7 +41,7 @@ export async function startRecordReader(args: {
     runner,
     filterCollections: FOREST_COLLECTIONS,
     // Handles are names, a later feature; identity, account and sync events are not acted on in
-    // part one (docs/changes.md).
+    // part one (forest/docs/changes.md).
     unauthenticatedHandles: true,
     excludeIdentity: true,
     excludeAccount: true,

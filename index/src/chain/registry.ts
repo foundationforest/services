@@ -4,7 +4,7 @@
 
 import { PublicKey } from '@solana/web3.js'
 
-import { PROGRAM_ID, decodeRegisteredEvents } from '../../../registry/client/src/program.ts'
+import { PROGRAM_ID, decodeRegisteredEvents } from '../../../forest/registry/client/src/program.ts'
 import { splitScope } from '../markets.ts'
 
 export const REGISTRY_PROGRAM_ID: string = PROGRAM_ID.toBase58()

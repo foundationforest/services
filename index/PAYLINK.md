@@ -2,7 +2,7 @@
 
 The one format for paying for an offer from any app. The index shows a Pay link on every live offer
 whose profile names a key to be paid at. **The index never pays and never holds money: it links.**
-Any app that follows the escrow client (`escrow/client`) can open the link and make the payment.
+Any app that follows the escrow client (`forest/escrow/client`) can open the link and make the payment.
 
 **Nothing here is shipped.** Version 1 of the format, tested locally.
 
@@ -30,7 +30,7 @@ the same string. Another index writes its own address in place of `https://fores
 | `terms.timer.days`, `terms.timer.to` | The post's `terms.timer`, only if the offer sets one; both or neither |
 
 Every parameter after `cid` is the post record's own field, named by its path in the record
-(`shapes/lexicons/foundation/forest/post.json`). An app ignores parameters it does not know, so
+(`forest/shapes/lexicons/foundation/forest/post.json`). An app ignores parameters it does not know, so
 version 1 can grow. Only an offer with a price has a Pay link: a post's price is optional.
 
 An example, from the index's test data:
@@ -58,7 +58,7 @@ lies about its price or terms is caught by the next step; a link cannot redirect
 5. **Make the escrow and pay,** with the escrow client: `termsFor(post.terms, { seller, amount })`,
    then `payInOneTap` to create, pay and release in one transaction, or `createIx` and a plain
    transfer to hold the money until the work is done. Before paying into an escrow someone else
-   created, check it with `optionsNotAgreed` (see `escrow/client/src/terms.ts`).
+   created, check it with `optionsNotAgreed` (see `forest/escrow/client/src/terms.ts`).
 
 The index's own page at the link (`/pay?…`) shows the offer in plain words and whether the link
 still matches it; its twin (`/pay.json?…`) says the same for machines, in `check`:
@@ -81,6 +81,6 @@ an escrow, and an escrow exists only once someone creates it: the buyer's app, o
 invoicing. So there are two links, one after the other:
 
 - **This link, on an offer,** before any escrow: which offer, on what terms. The index makes it.
-- **The escrow client's Solana Pay link** (`solanaPayUrl`, `invoice` in `escrow/client/src/pay.ts`),
+- **The escrow client's Solana Pay link** (`solanaPayUrl`, `invoice` in `forest/escrow/client/src/pay.ts`),
   once an escrow exists: where to send exactly what is still missing. The app makes it, from the
   escrow as read from the chain.

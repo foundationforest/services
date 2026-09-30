@@ -1,6 +1,6 @@
 // The market directory, as this index reads it: the `markets` repo itself, fetched over HTTPS from
 // MARKETS_URL, never copied. Its `directory.md` names each market with a link to its file,
-// `<folder>/<name>.json`, which is checked with shapes/' validator. There are no aliases: a market
+// `<folder>/<name>.json`, which is checked with forest/shapes/' validator. There are no aliases: a market
 // is its one directory name, byte for byte.
 //
 // badgeScope(scope) says whether a registry scope can count as a badge: `market/role` only, the
@@ -8,8 +8,8 @@
 // two, peer when one). A plain `market` counts for nothing. A post names no market: it is in its
 // author profile's.
 
-// @ts-expect-error shapes/ is plain JavaScript with no type declarations
-import { rolesOf, validateMarket } from '../../shapes/src/validate.js'
+// @ts-expect-error forest/shapes/ is plain JavaScript with no type declarations
+import { rolesOf, validateMarket } from '../../forest/shapes/src/validate.js'
 
 /** A block of extra fields, as a market file writes it: flat fields in lexicon syntax. */
 export type FieldBlock = { properties?: Record<string, { type: string; description?: string }>; required?: string[] }

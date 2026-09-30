@@ -1,0 +1,4 @@
+# Each image fetches forest itself (forest.sh) and installs its own dependencies.
+.git
+forest/
+**/node_modules

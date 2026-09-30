@@ -113,7 +113,7 @@ Rules that stop cheap inflation:
 What these rules do not stop: two real people who agree to run many small real deals and praise
 each other. The handoff bounds that by identity (one badge per human per market) and by reviewer
 standing. A minimum amount, or less weight for repeat deals between the same two, are open questions
-in `docs/changes.md`.
+in `forest/docs/changes.md`.
 
 A worked example (the end-to-end test):
 

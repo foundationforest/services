@@ -8,17 +8,22 @@ JavaScript, and for machines schema.org JSON-LD on every page, a JSON twin of ev
 sitemap, `robots.txt`, `llms.txt` and the read skill.
 
 **Nothing here is shipped.** It runs on devnet, its readers and pages in one process on Railway and
-its Postgres on Supabase (`docs/services.md`); its tests run against a local host, a local directory
+its Postgres on Supabase (`forest/docs/services.md`); its tests run against a local host, a local directory
 of DIDs, a local validator and a local Postgres.
+
+**It still reads the old data layer:** records from a firehose, the programs' events from an RPC,
+and the market directory from the `markets` repo, into its own Postgres, as below. It reads nothing
+from forest's `records/`. How it reads will change in a later session; this copy reads exactly as
+forest's `index/` did at the commit in `../FOREST`.
 
 ## What it reads
 
-- **Records**, from a firehose: the host's own (`host/`) in tests, the carrier later.
+- **Records**, from a firehose: the host's own (`forest/host/`) in tests, the carrier later.
   - It uses Bluesky's own consumer, `@atproto/sync`, unchanged. For every commit, the consumer
     resolves the DID document, checks the commit's signature against the signing key the document
     names, and checks each record against the signed commit by its Merkle proof. A commit that fails
     is dropped whole.
-  - Each record is then checked against its lexicon with `shapes/`' own validator, and a record that
+  - Each record is then checked against its lexicon with `forest/shapes/`' own validator, and a record that
     fails is not stored.
   - Only the four Forest collections are read: profile, post, review, credential. The cursor is kept
     in Postgres, so a restart resumes where it stopped.
@@ -35,7 +40,7 @@ of DIDs, a local validator and a local Postgres.
     when it was created, marked funded and ended, the outcome, and what each side got.
 - **The market directory**, from the `markets` repo itself, over HTTPS (`MARKETS_URL`, its main
   branch by default), never copied: its `directory.md` and each market file that page links, at
-  `<folder>/<name>.json`, checked with `shapes/`' validator. A market has one name: there are no
+  `<folder>/<name>.json`, checked with `forest/shapes/`' validator. A market has one name: there are no
   aliases. A post names no market; it is listed in its author profile's market, and only when the
   directory has that market, byte for byte. It is read once at
   start, so a change in the `markets` repo reaches the index at its next restart. The tests serve
@@ -119,16 +124,16 @@ into `/markets/{m}.json`; `/profiles/{did}/reviews` into `/profiles/{did}.json`.
 ## Run it locally
 
 Needs Node 22.18 or later (it runs TypeScript directly) and Postgres 14 or later. The index imports
-`registry/client`, `escrow/client`, `shapes` and, in tests, `keys` and `host/` by path, so install
-those first:
+forest's `shapes`, `registry/client`, `escrow/client` and, in tests, `keys` and `host/` by path,
+from `forest/` at the commit in `../FOREST`, so fetch and install those first, from the repo root:
 
 ```
-(cd shapes && npm install) && (cd registry/client && npm install) && (cd escrow/client && npm install)
-cd index && npm install
+./forest.sh shapes keys registry/client escrow/client
+cd index && npm ci
 
 export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/forest_index
 export INDEX_SIGNING_SEED=$(openssl rand -hex 32)     # keep it: it is the index's signing identity
-export FIREHOSE_URL=ws://localhost:2583              # a host from host/run.sh, or the carrier
+export FIREHOSE_URL=ws://localhost:2583              # a host from forest/host/run.sh, or the carrier
 export PLC_URL=https://plc.directory
 export SOLANA_RPC_URL=http://127.0.0.1:8899
 export PUBLIC_URL=http://localhost:8080              # where the pages say they are
@@ -156,9 +161,9 @@ offer's terms.
 
 The end-to-end test needs:
 
-- `host/` built (`./build.sh`) and `keys` installed;
-- both programs built (`cargo build-sbf` in `registry/program` and `escrow/program`);
-- the proving files (`npm run fetch` in `registry/artifacts`);
+- `forest/host/` built (`forest/host/build.sh`) and `forest/keys` installed;
+- both programs built (`cargo build-sbf` in `forest/registry/program` and `forest/escrow/program`);
+- the proving files (`npm run fetch` in `forest/registry/artifacts`);
 - `solana-test-validator` on the PATH;
 - a Postgres where it may create and drop a database.
 
@@ -200,5 +205,6 @@ that too).
 | `SCORING.md` | The rules, in plain words |
 | `PAYLINK.md` | The Pay link's one format |
 | `HOSTING.md` | The two processes: what each needs on Railway, and what the pages need on Vercel |
+| `deploy/` | The foundation's devnet instance: its Dockerfile, the devnet opinions, Railway and Supabase ([deploy/README.md](deploy/README.md)) |
 
-The choices made where the handoff was silent, and the open questions, are in `docs/changes.md`.
+The choices made where the handoff was silent, and the open questions, are in `forest/docs/changes.md`.

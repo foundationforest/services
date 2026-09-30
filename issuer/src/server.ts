@@ -16,7 +16,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { isFieldElement } from '../../registry/client/src/field.ts'
+import { isFieldElement } from '../../forest/registry/client/src/field.ts'
 import { errorKind, type Batcher } from './batch.ts'
 import { judge, type FaceCheck } from './didit.ts'
 import type { RateLimit } from './limit.ts'

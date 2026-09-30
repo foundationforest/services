@@ -5,18 +5,18 @@
 // reads `EscrowFact`, the index's own shape for what happened to one escrow, and stores it in
 // `escrow_receipts`.
 //
-// It follows the escrow as rewritten to "Escrow" in the handoff (escrow/README.md): six events,
+// It follows the escrow as rewritten to "Escrow" in the handoff (forest/escrow/README.md): six events,
 // `Created`, `Funded`, `Ended`, `Closed`, `RecoveredLate`, `RentSwept`. There is no accept step:
 // who said yes is read from who created the escrow (`creator`), and every way out pays the whole
 // balance, which must hold the amount, so an ending is proof the deal was paid.
 //
-// It reads only events the escrow program itself wrote: `decodeEvents` in escrow/client follows
+// It reads only events the escrow program itself wrote: `decodeEvents` in forest/escrow/client follows
 // the runtime's own invoke and success lines, so a `Program data:` line another program wrote
 // with the same bytes is never read (adversarial review 1, rule 1).
 
 import { PublicKey } from '@solana/web3.js'
 
-import { PROGRAM_ID, decodeEvents } from '../../../escrow/client/src/program.ts'
+import { PROGRAM_ID, decodeEvents } from '../../../forest/escrow/client/src/program.ts'
 
 /** The escrow program the index reads by default: the client's own id. */
 export const ESCROW_PROGRAM_ID: string = PROGRAM_ID.toBase58()

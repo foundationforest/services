@@ -1,11 +1,13 @@
 # The issuer (issuer/), started by `npm start` as its README says. The build context is the repo
-# root, because the issuer imports registry/client by relative path. deploy/issuer/start.sh runs the
-# stand-in Didit first when no Didit key is set.
+# root, because the issuer imports forest's registry/client by relative path; forest.sh fetches it
+# into forest/ at the commit in FOREST, and needs git. issuer/deploy/start.sh runs the stand-in
+# Didit first when no Didit key is set.
 FROM node:22.22.2-bookworm-slim
-WORKDIR /forest
-COPY registry/client/ registry/client/
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /services
+COPY FOREST forest.sh ./
+RUN ./forest.sh registry/client
 COPY issuer/ issuer/
-COPY deploy/issuer/ deploy/issuer/
-RUN (cd registry/client && npm ci --no-audit --no-fund) \
-  && (cd issuer && npm ci --no-audit --no-fund)
-CMD ["bash", "deploy/issuer/start.sh"]
+RUN cd issuer && npm ci --no-audit --no-fund
+CMD ["bash", "issuer/deploy/start.sh"]

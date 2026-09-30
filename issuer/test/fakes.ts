@@ -5,7 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { toBytes32 } from '../../registry/client/src/field.ts'
+import { toBytes32 } from '../../forest/registry/client/src/field.ts'
 import type { Decision, FaceCheck } from '../src/didit.ts'
 import type { IssuerList } from '../src/list.ts'
 import { sessionHash } from '../src/store.ts'

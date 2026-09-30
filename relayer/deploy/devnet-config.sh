@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Prints the devnet fee payer's kora.toml: feepayer/kora.toml with exactly these lines changed, and
+# Prints the devnet relayer's kora.toml: relayer/kora.toml with exactly these lines changed, and
 # nothing else. Each old line must appear exactly once, or it stops.
 #
-#   the registry's id    -> devnet's (docs/devnet.md)
+#   the registry's id    -> devnet's (forest/docs/devnet.md)
 #   the escrow's id      -> devnet's
-#   USDC, the paid token -> the test dollar the devnet run mints (docs/devnet.md)
-#   Jupiter's price      -> Kora's mock, since Jupiter prices mainnet only (feepayer/README.md). The
+#   USDC, the paid token -> the test dollar the devnet run mints (forest/docs/devnet.md)
+#   Jupiter's price      -> Kora's mock, since Jupiter prices mainnet only (relayer/README.md). The
 #                           mock values the test dollar at 0.001 SOL a whole token: one base unit
 #                           buys one lamport.
 set -euo pipefail

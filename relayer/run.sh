@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Runs the fee payer: Kora (installed by build.sh) with kora.toml and signers.toml.
+# Runs the relayer: Kora (installed by build.sh) with kora.toml and signers.toml.
 #
-#   FOREST_FEEPAYER_KEY  path to the fee payer's keypair file, outside this repo (or, where a host
+#   FOREST_RELAYER_KEY   path to the relayer's keypair file, outside this repo (or, where a host
 #                        has no files, the key itself; see README.md)
 #   RPC_URL              the Solana RPC it simulates and sends through
 #   JUPITER_API_KEY      for the dollar price, with price_source = "Jupiter"
@@ -12,12 +12,12 @@ cd "$(dirname "$0")"
 here="$PWD"
 root="$(cd .. && pwd)"
 
-: "${FOREST_FEEPAYER_KEY:?set FOREST_FEEPAYER_KEY to the path of the fee payer key file}"
+: "${FOREST_RELAYER_KEY:?set FOREST_RELAYER_KEY to the path of the relayer key file}"
 : "${RPC_URL:?set RPC_URL to a Solana RPC}"
-if [ -f "$FOREST_FEEPAYER_KEY" ]; then
-  key="$(cd "$(dirname "$FOREST_FEEPAYER_KEY")" && pwd)/$(basename "$FOREST_FEEPAYER_KEY")"
+if [ -f "$FOREST_RELAYER_KEY" ]; then
+  key="$(cd "$(dirname "$FOREST_RELAYER_KEY")" && pwd)/$(basename "$FOREST_RELAYER_KEY")"
   case "$key" in
-    "$root"/*) echo "refusing: the fee payer key is inside the repo ($key); keep it outside" >&2; exit 1 ;;
+    "$root"/*) echo "refusing: the relayer key is inside the repo ($key); keep it outside" >&2; exit 1 ;;
   esac
 fi
 

@@ -20,7 +20,6 @@
     "noEmit": true
   },
   "include": [
-    "src",
     "test",
     "../forest/registry/client/types"
   ]

@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { BN254_R, toBytes32 } from '../../registry/client/src/field.ts'
+import { BN254_R, toBytes32 } from '../../forest/registry/client/src/field.ts'
 import { Keypair } from '@solana/web3.js'
 
 import { shuffle } from '../src/batch.ts'

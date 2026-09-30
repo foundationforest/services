@@ -1,12 +1,12 @@
 // One verified record operation into Postgres. By the time a record gets here its commit has been
 // checked against the signing key its DID document names, and the record against that commit
-// (firehose.ts). Here it is checked once more, against its lexicon, with shapes/' own validator,
+// (firehose.ts). Here it is checked once more, against its lexicon, with forest/shapes/' own validator,
 // and a record that fails is not stored: nothing unchecked ever reaches a score.
 
 import { lexToJson } from '@atproto/lex'
 
-// @ts-expect-error shapes/ is plain JavaScript with no type declarations
-import { validateRecord } from '../../../shapes/src/validate.js'
+// @ts-expect-error forest/shapes/ is plain JavaScript with no type declarations
+import { validateRecord } from '../../../forest/shapes/src/validate.js'
 
 import type { Db } from '../db.ts'
 

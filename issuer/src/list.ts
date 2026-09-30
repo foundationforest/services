@@ -1,6 +1,6 @@
 // The issuer's side of the chain: its list's members, and inserting one more.
 //
-// Everything here goes through `registry/client`: the list's address, the insert instruction, and
+// Everything here goes through `forest/registry/client`: the list's address, the insert instruction, and
 // `fetchListLeaves`, which rebuilds the list from the registry's own log entries and checks the
 // result against the root on the chain. The members are kept in memory only: they are public, and
 // they answer "is this commitment on the list yet".
@@ -11,8 +11,8 @@ import { join } from 'node:path'
 
 import { Connection, Keypair, Transaction, type PublicKey } from '@solana/web3.js'
 
-import { fetchListLeaves } from '../../registry/client/src/leaves.ts'
-import { decodeIdentityList, insertIdentityIx, listAddress } from '../../registry/client/src/program.ts'
+import { fetchListLeaves } from '../../forest/registry/client/src/leaves.ts'
+import { decodeIdentityList, insertIdentityIx, listAddress } from '../../forest/registry/client/src/program.ts'
 
 export interface IssuerList {
   /** Read every member again from the chain. */

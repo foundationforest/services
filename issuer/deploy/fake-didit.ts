@@ -8,7 +8,7 @@
 //
 // So every face check "passes", and anyone who asks the devnet issuer for a session can put a
 // commitment on devnet's list 0 (the issuer's own limit, five sessions an hour per address, still
-// holds). deploy/issuer/start.sh starts it only when DIDIT_API_KEY is unset, on 127.0.0.1 inside the
+// holds). deploy/start.sh starts it only when DIDIT_API_KEY is unset, on 127.0.0.1 inside the
 // issuer's container, where nothing else reaches it. It keeps the ids it opened in memory, and
 // nothing else, and logs nothing per request.
 

@@ -1,0 +1,9 @@
+# forest at the commit in FOREST, fetched by forest.sh
+forest/
+
+node_modules/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example

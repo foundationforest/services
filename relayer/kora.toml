@@ -1,29 +1,29 @@
-# The Forest fee payer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
+# The Forest relayer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
 #
 # It co-signs a person's transaction as its payer and charges, in their dollar token, exactly what
 # that transaction costs it: the network fee plus every storage deposit it puts down, including the
 # ones a program makes inside the transaction. It refuses anything that calls a program not listed
 # here, and anything that would move its own SOL or tokens except to create an account it is paid for.
 #
-# This file is the mainnet shape. The local run (test/feepayer.test.ts) copies it and changes one
+# This file is the mainnet shape. The local run (test/relayer.test.ts) copies it and changes one
 # line, `price_source`, to "Mock". Every key Kora 2.0.5 requires in a table is written out, so
 # nothing here is a default someone has to look up.
 
 [kora]
 # Requests per second, across all callers (Kora's own global limiter). Kora's example value.
 rate_limit = 100
-# Payments go to token accounts the fee payer's own key owns (`payment_address` unset).
+# Payments go to token accounts the relayer's own key owns (`payment_address` unset).
 
 [validation]
-# The most SOL one transaction may take from the fee payer beyond its network fee: storage deposits.
+# The most SOL one transaction may take from the relayer beyond its network fee: storage deposits.
 # 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
 # 0.0052 at today's rent.
 max_allowed_lamports = 10000000
-# The fee payer, the profile's wallet and a separate fee authority: register's three signers.
+# The relayer, the profile's wallet and a separate fee authority: register's three signers.
 max_signatures = 3
 # Kora checks these against every program a transaction calls, the ones called from inside other
 # programs included. No compute budget program: a registration fits the default compute limit, and
-# the fee payer never pays a priority fee it did not agree to.
+# the relayer never pays a priority fee it did not agree to.
 allowed_programs = [
   "FoRPzGfMyWjK8uLjMoZfae2yevnviyCsGsHM7AwBwK8B", # the Forest registry
   "FoRE4JYRAxFpqRoPBzuPZZ9Yfn6ovtkBfUggynex3MKT", # the Forest escrow
@@ -44,7 +44,7 @@ price_source = "Jupiter"
 type = "margin"
 margin = 0.0
 
-# What the fee payer's own key may do inside a transaction. Only one thing: pay for a new account
+# What the relayer's own key may do inside a transaction. Only one thing: pay for a new account
 # (a registration's code account, an escrow's account and its deposit address, a token account),
 # which Kora then counts in the charge. It may not send its SOL or its tokens anywhere, assign or
 # allocate its own account, or act as the owner or authority of any token account or mint.

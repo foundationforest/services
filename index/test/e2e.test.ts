@@ -1,6 +1,6 @@
-// The index end to end, on real pieces: a local DID directory and a Forest host (host/), a local
-// validator running both programs (registry/, escrow/), and a local Postgres. Nothing is mocked but
-// the one firehose that carries a forged commit, which no real host would send.
+// The index end to end, on real pieces: a local DID directory and a Forest host (forest/host/), a
+// local validator running both programs (forest/registry/, forest/escrow/), and a local Postgres.
+// Nothing is mocked but the one firehose that carries a forged commit, which no real host would send.
 //
 // The story:
 //   Ana tutors; Ben is her student; Cleo is a stranger. Each makes a profile on the host, declaring
@@ -15,11 +15,11 @@
 //
 // The market directory comes from a stand-in for the markets repo served locally (test/markets/).
 //
-// Needs: DATABASE_URL (a Postgres the test may create and drop a database in), host/ built
-// (`./build.sh`), both programs built (`cargo build-sbf`), the proving files fetched
-// (`npm run fetch` in registry/artifacts), `npm install` in registry/client, escrow/client, keys
-// and shapes, and `solana-test-validator` on the PATH. If any is missing the test says which and
-// skips.
+// Needs: DATABASE_URL (a Postgres the test may create and drop a database in), forest/host/ built
+// (its `build.sh`), both programs built (`cargo build-sbf`), the proving files fetched
+// (`npm run fetch` in forest/registry/artifacts), `npm ci` in forest/registry/client,
+// forest/escrow/client, forest/keys and forest/shapes (`../forest.sh`), and `solana-test-validator`
+// on the PATH. If any is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
@@ -52,7 +52,7 @@ import {
   commitmentOf,
   initIx,
   insertIdentityIx,
-} from '../../registry/client/src/index.ts'
+} from '../../forest/registry/client/src/index.ts'
 import {
   PROGRAM_ID as ESCROW_ID,
   decodeEscrow,
@@ -62,8 +62,8 @@ import {
   releaseToSellerIx,
   termsFor,
   transferIx,
-} from '../../escrow/client/src/index.ts'
-import { didGenesis, identitySecret, profileKeys, submitGenesis } from '../../keys/src/index.ts'
+} from '../../forest/escrow/client/src/index.ts'
+import { didGenesis, identitySecret, profileKeys, submitGenesis } from '../../forest/keys/src/index.ts'
 
 import { INDEX_ROOT, loadConfig } from '../src/config.ts'
 import { startIndex } from '../src/main.ts'
@@ -72,11 +72,11 @@ import type { Outcome } from '../src/records/store.ts'
 import { verify } from '../src/scores/sign.ts'
 import { serveMarkets } from './markets-repo.ts'
 
-const REPO = join(INDEX_ROOT, '..')
-const UPSTREAM = join(REPO, 'host/upstream/packages')
-const REGISTRY_SO = join(REPO, 'registry/program/target/deploy/forest_registry.so')
-const ESCROW_SO = join(REPO, 'escrow/program/target/deploy/forest_escrow.so')
-const ARTIFACTS = { wasm: join(REPO, 'registry/artifacts/semaphore-32.wasm'), zkey: join(REPO, 'registry/artifacts/semaphore-32.zkey') }
+const FOREST = join(INDEX_ROOT, '../forest')
+const UPSTREAM = join(FOREST, 'host/upstream/packages')
+const REGISTRY_SO = join(FOREST, 'registry/program/target/deploy/forest_registry.so')
+const ESCROW_SO = join(FOREST, 'escrow/program/target/deploy/forest_escrow.so')
+const ARTIFACTS = { wasm: join(FOREST, 'registry/artifacts/semaphore-32.wasm'), zkey: join(FOREST, 'registry/artifacts/semaphore-32.zkey') }
 const RPC_PORT = 18899
 const RPC = `http://127.0.0.1:${RPC_PORT}`
 const MARKET = 'online-tutors'
@@ -87,10 +87,10 @@ const SIGNING_SEED = '09'.repeat(32)
 
 function missing(): string | null {
   if (!process.env.DATABASE_URL) return 'DATABASE_URL is not set'
-  if (!existsSync(join(UPSTREAM, 'dev-env/dist/pds.js'))) return 'host/ is not built; run ./build.sh in host'
-  if (!existsSync(REGISTRY_SO)) return 'the registry is not built; run `cargo build-sbf` in registry/program'
-  if (!existsSync(ESCROW_SO)) return 'the escrow is not built; run `cargo build-sbf` in escrow/program'
-  if (!existsSync(ARTIFACTS.zkey)) return 'no proving files; run `npm run fetch` in registry/artifacts'
+  if (!existsSync(join(UPSTREAM, 'dev-env/dist/pds.js'))) return 'forest/host/ is not built; run forest/host/build.sh'
+  if (!existsSync(REGISTRY_SO)) return 'the registry is not built; run `cargo build-sbf` in forest/registry/program'
+  if (!existsSync(ESCROW_SO)) return 'the escrow is not built; run `cargo build-sbf` in forest/escrow/program'
+  if (!existsSync(ARTIFACTS.zkey)) return 'no proving files; run `npm run fetch` in forest/registry/artifacts'
   if (spawnSync('solana-test-validator', ['--version']).status !== 0) return 'solana-test-validator is not on the PATH'
   return null
 }
@@ -135,7 +135,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
   const { MemoryBlockstore, Repo, WriteOpAction, blocksToCarFile, cidForRecord } = await import(join(UPSTREAM, 'repo/dist/index.js'))
   const { MessageFrame } = await import(join(UPSTREAM, 'xrpc-server/dist/index.js'))
   const { TID } = await import(join(UPSTREAM, 'common/dist/index.js'))
-  const { Device } = await import(join(REPO, 'host/test/device.ts'))
+  const { Device } = await import(join(FOREST, 'host/test/device.ts'))
 
   const cleanups: (() => Promise<void> | void)[] = []
   try {
@@ -211,7 +211,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     })
     const hostDid = pds.ctx.cfg.service.did
 
-    // --- People. Each seed stands in for a passkey's; each profile's keys come from keys/ -------
+    // --- People. Each seed stands in for a passkey's; each profile's keys come from forest/keys/ -------
     async function person(fill: number, handle: string, withFolder = true) {
       const seed = new Uint8Array(32).fill(fill)
       const keys = await profileKeys(seed, 0)

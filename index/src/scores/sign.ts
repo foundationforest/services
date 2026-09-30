@@ -30,7 +30,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { derivePublicKey, signMessage, verifySignature } from '@zk-kit/eddsa-poseidon'
 import { poseidon6 } from 'poseidon-lite/poseidon6'
 
-import { fieldHash, scopeOf } from '../../../registry/client/src/field.ts'
+import { fieldHash, scopeOf } from '../../../forest/registry/client/src/field.ts'
 
 export const STATEMENT_HEADER = 'forest.foundation/index/v1/score'
 export const DOMAIN = fieldHash('forest.foundation/index/v1/score')
@@ -55,7 +55,7 @@ export type Signed = {
 
 const utf8 = (s: string) => new TextEncoder().encode(s)
 
-/** Both keys from one 32-byte seed, each by HKDF-SHA256 under its own label, as keys/ derives its keys. */
+/** Both keys from one 32-byte seed, each by HKDF-SHA256 under its own label, as forest/keys/ derives its keys. */
 export function indexKeys(seed: Uint8Array): IndexKeys {
   if (seed.length !== 32) throw new RangeError('the index seed is 32 bytes')
   const edSecret = hkdf(sha256, seed, new Uint8Array(0), utf8('forest.foundation/index/ed25519/v1'), 32)
