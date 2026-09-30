@@ -61,7 +61,7 @@ One service, from this repo:
   | `DATABASE_URL` | The database, with a role that can write |
   | `INDEX_SIGNING_SEED` | 64 hex characters, as a secret. It is the index's signing identity: keep it, and never give it to the pages |
   | `MARKETS_URL` | Unset: the `markets` repo's main branch, read over HTTPS at start. Set it to pin a commit |
-  | `HOSTS` | The hosts to read in full, `https://` origins separated by commas. Hosts the folders name are read too, badged profiles only |
+  | `HOSTS` | The hosts to read in full, `https://` origins separated by commas. Hosts the folders of trusted profiles name are read too, badged profiles only |
   | `SOLANA_RPC_URL` | An RPC for the network the programs are on, one that answers `getProgramAccounts` for the registry |
   | `CHAIN_COMMITMENT` | `finalized` (the default) |
   | `ISSUERS_FILE`, `SCORING_FILE` | Only to use other files than `config/` |

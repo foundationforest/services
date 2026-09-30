@@ -3,12 +3,11 @@
 How the foundation runs this index on Solana devnet: one instance of what `../HOSTING.md` says any
 index needs. Nothing here is mainnet, and nothing is shipped.
 
-**Where it runs today.** The devnet index (https://index-production-1b6e.up.railway.app) is still
-built from forest's `deploy/index/Dockerfile`, on forest's `main`, and set up by forest's
-`deploy/railway.ts` and `deploy/supabase.ts`, and reads the earlier data layer and registry. This
-folder sets up this version from this repo. No Railway service builds from it yet. Pointed here,
-it migrates away what the earlier build stored (profiles, posts, reviews, badges) and finds no
-records host on devnet to read yet: `HOSTS` stays unset until one runs there.
+**Where it runs today.** The devnet index (https://index-production-1b6e.up.railway.app) is built
+from this repo since 2026-09-30, in the same Railway service, with the same Postgres and signing
+seed as before: only its source moved from forest's deleted `deploy/`. Its migrations cleared what
+the earlier build stored. It reads the loop's test board (`../../loop/board/`) as `HOSTS`, the
+devnet issuer's roots file and memos, and devnet's registry and both escrows.
 
 ## Files
 
@@ -33,7 +32,7 @@ records host on devnet to read yet: `HOSTS` stays unset until one runs there.
 |---|---|---|
 | `DATABASE_URL` | Supabase's session pooler, as `postgres` (below) | yes |
 | `INDEX_SIGNING_SEED` | 32 random bytes, hex: the index's signing identity | yes |
-| `HOSTS` | unset: no records host runs on devnet yet. Then the hosts' `https://` origins, separated by commas | no |
+| `HOSTS` | the loop's test board (`../../loop/board/`), for devnet testing only; the hosts' `https://` origins, separated by commas | no |
 | `SOLANA_RPC_URL` | Helius's devnet RPC when there is a Helius key, then sealed since the URL holds it; otherwise `https://api.devnet.solana.com` | with Helius |
 | `REGISTRY_PROGRAM_ID` | `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf` (`forest/registry/devnet/devnet.json`) | no |
 | `ESCROW_PROGRAM_ID` | `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy9CbeR` (escrow v1, `forest/docs/devnet.md`) | no |

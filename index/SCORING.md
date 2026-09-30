@@ -42,7 +42,8 @@ counts for a profile only if all four are true:
 For each counted badge (one market and role), take the issuers that vouch for it, among the
 issuers `config/issuers.json` names:
 
-- each one whose signed roots file holds the root the line was proven against;
+- each one whose signed roots file, or whose roots written on chain, hold the root the line was
+  proven against;
 - each one a membership record in the profile's own folder shows: a proof, for the same line, that
   the same person is on that issuer's list too, checked against that issuer's roots and the key
   the registry is sealed with.

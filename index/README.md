@@ -21,8 +21,8 @@ a local Postgres. The devnet index on Railway runs an earlier build (`deploy/REA
     hint for what it sends; the index checks the lines.
   - Every line a host serves is checked by `forest/records`' own reader: its canonical text and its
     signature. A line that fails is dropped and reported.
-  - The hosts in `HOSTS` are read in full. Every other host a kept folder names is read for badged
-    profiles only (`badged=1`). A host still answering after 60 seconds is skipped until it
+  - The hosts in `HOSTS` are read in full. Every other host is followed only while the folder of a
+    profile with a trusted line names it, and read for badged profiles only (`badged=1`). A host still answering after 60 seconds is skipped until it
     finishes. The first time a profile turns up in a badged feed, its earlier
     entries are read from that host by `profile`, once, since a badged feed shows a profile only
     from when its host counted it badged. Each host's feed resumes from its cursor, kept in
@@ -38,9 +38,16 @@ a local Postgres. The devnet index on Railway runs an earlier build (`deploy/REA
   (`getProgramAccounts`, each line checked to sit at its code's address); then only newer
   transactions, to pick up new lines. A line names the profile's key, a label, and the root of the
   issuer's list it was proven against; it never changes.
-- **Issuers' roots**, from each issuer `config/issuers.json` names: its signed roots file (the
-  format is `issuer/README.md`, "The two files"), checked for canonical text, its issuer and its
-  signature, at most once a minute. A line's issuers are those whose roots hold its root.
+- **Issuers' roots**, from each issuer `config/issuers.json` names, at most once a minute:
+  - its signed roots file (the format is `issuer/README.md`, "The two files"), checked for canonical
+    text, its issuer and its signature;
+  - with an RPC, the roots it wrote on chain (`src/chain/roots.ts`): every transaction naming the
+    issuer's key since the last read, keeping a root only from a memo (program v2) in a transaction
+    that succeeded and that the key signed, whose text is exactly the root's line under
+    `forest.foundation/issuer/root/v1` (`issuer/README.md`, "Each root on chain"). The root keeps
+    that transaction's signature.
+
+  A line's issuers are those whose roots, from either, hold its root.
 - **Memberships**: a `proof/<id>` record of the membership kind, in a profile's folder, adds its
   issuer to one of the profile's lines once it checks (`verifyMembership` in
   `forest/registry/client`, against the line, that issuer's roots and the registry's sealed
@@ -200,8 +207,8 @@ that too).
 | `MARKETS_URL` | no | Where the `markets` repo's files are read: the folder holding its `directory.md`, over HTTP(S). Default `https://raw.githubusercontent.com/foundationforest/markets/main`; a commit in place of `main` pins it. Only these names count in badges |
 | `INDEX_SIGNING_SEED` | readers | 32 bytes as 64 hex characters. Both signing keys come from it. The pages never need it |
 | `PUBLIC_URL` | no | Where the pages are published: an origin, no path. Canonical links, the sitemap, the Pay link and the read skill use it. Default `https://forest.foundation` |
-| `HOSTS` | no | The hosts read in full: origins separated by commas, `https://` (`http://` only on loopback). Hosts the folders name are read too, badged profiles only; a loopback one only when `HOSTS` has one. Unset: no record reader |
-| `SOLANA_RPC_URL` | no | Unset: no chain reader. It must answer `getProgramAccounts` for the registry |
+| `HOSTS` | no | The hosts read in full: origins separated by commas, `https://` (`http://` only on loopback). Hosts the folders of profiles with a trusted line name are read too, badged profiles only; a loopback one only when `HOSTS` has one. Unset: no record reader |
+| `SOLANA_RPC_URL` | no | Unset: no chain reader, and issuers' roots from their files only. It must answer `getProgramAccounts` for the registry |
 | `CHAIN_COMMITMENT` | no | `finalized` (default) or `confirmed` (tests) |
 | `POLL_MS` | no | How often the readers look for anything new. Default 5000. The issuers' roots are read at most once a minute |
 | `REGISTRY_PROGRAM_ID`, `ESCROW_PROGRAM_ID`, `ESCROW_V2_PROGRAM_ID` | no | Default: the clients' own ids |
