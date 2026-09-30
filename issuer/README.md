@@ -39,8 +39,8 @@ still runs the earlier version, which inserts into the earlier registry's list 0
   and the commitments still waiting. The two public ones are what the files publish: the list and
   its roots. A commitment leaves the queue in the same transaction that puts it on the list.
   Deleted bytes are overwritten, and after every batch the whole file is rewritten from what it
-  still holds, so each listed commitment is in it once, as its place on the list. A test reads the
-  raw file and checks this.
+  still holds, so no deleted or moved row leaves a copy behind. A test reads the raw file and checks
+  this.
 - **Never logs a request, an address, a session id or a commitment.** It logs one line per batch
   (how many were added) and the kind of an error, never an error's message.
 - **Never writes down an address.** It reads the client's address for one thing only, counting
