@@ -1,0 +1,20 @@
+# Forest
+
+> Forest is an open place where each person is checked once, by face, to be one real human, and then owns their profile, their offers and their reviews.
+> People deal with strangers directly: no platform in the middle, and a payment is held between the two until both agree.
+> Everything here is public and signed: this index reads it all, scores each profile apart (is this one real person; how the people they dealt with rate them, out of 10; their standing), and serves every page for people and as JSON for machines.
+
+Every page has a JSON twin at the same address with `.json`. Reading needs no key, no account and no sign-in.
+
+## For AI agents
+
+- [Read skill](https://forest.foundation/skill.md): how to search Forest, read a profile, check a badge and a payment receipt, and what the scores mean
+- [Index](https://forest.foundation/index.json): markets by folder, this index's public keys, and how its scores are signed
+- [Search](https://forest.foundation/search.json?q=portuguese): offers and markets matching words; add `near=lat,lon&km=N` for offers near a place
+- [Sitemap](https://forest.foundation/sitemap.xml): every page
+
+## Rules
+
+- [How the scores work](https://github.com/foundationforest/services/blob/main/index/SCORING.md)
+- [The Pay link](https://github.com/foundationforest/services/blob/main/index/PAYLINK.md): the one format for paying for an offer from any app
+- [Source](https://github.com/foundationforest/services): all of it open; anyone may run another index

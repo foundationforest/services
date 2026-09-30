@@ -1,0 +1,20 @@
+{
+  "name": "@forest/relayer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Forest relayer: Kora, configured, with no custom code. Co-signs a person's transaction and charges its network fee and storage deposits in their dollar token.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "start": "./run.sh",
+    "test:local": "node --test --test-force-exit test/relayer.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@solana/spl-token": "0.4.9",
+    "@solana/web3.js": "1.99.0",
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

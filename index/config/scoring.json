@@ -1,0 +1,15 @@
+{
+  "about": "The index's weights, explained in SCORING.md. Changing any of them changes every score; they are the index's opinion, not the foundation's rule.",
+  "evidence": {
+    "both": 1,
+    "oneSided": 0.5,
+    "none": 0.05
+  },
+  "unbadgedReviewer": 0.05,
+  "countedMints": [
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+  ],
+  "maxRounds": 100,
+  "tolerance": 1e-9
+}

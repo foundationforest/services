@@ -1,0 +1,6 @@
+{
+  "about": "The index's opinion of each issuer: how much a list's owner vouching for a badge counts, from 0 to 1. Keyed by the list owner's key, as the registry's Registered entry names it. Any key not here counts 0. This is the index's opinion, not the foundation's rule; anyone running an index sets their own. The key below is the registry's placeholder FOUNDATION_ISSUER, which anyone with this repo can sign for; it is replaced with the foundation's issuer key before mainnet, here and in registry/.",
+  "issuers": {
+    "H7qXWNAeAvedhwuvhAkBYK2WE2nA3KgbufnRz38zFdzS": { "name": "Forest Foundation (placeholder key)", "weight": 1 }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "about": "How the pages show money: which tokens are which currency, and how many decimals their base units have. Only for display; which tokens count as evidence is countedMints in scoring.json. A token not here is shown as a currency this index does not show, with no number. This is the index's opinion, not the foundation's rule.",
+  "currencies": {
+    "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": { "code": "USD", "symbol": "$", "decimals": 6 },
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": { "code": "USD", "symbol": "$", "decimals": 6 }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "about": "How the devnet index's pages show money, in the shape of index/config/currencies.json: devnet USDC, and the test dollar the devnet run mints (docs/devnet.md), both as dollars with six decimals.",
+  "currencies": {
+    "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": { "code": "USD", "symbol": "$", "decimals": 6 },
+    "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa": { "code": "USD", "symbol": "$", "decimals": 6 }
+  }
+}

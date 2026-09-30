@@ -1,0 +1,24 @@
+{
+  "name": "@forest/issuer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The foundation's issuer: a passed Didit face check to an identity commitment on its list, inserted in shuffled batches.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts",
+    "test:validator": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/validator.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

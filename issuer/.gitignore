@@ -1,0 +1,6 @@
+# The queue and the used session ids (DATABASE_PATH defaults to ./data/issuer.sqlite)
+data/
+*.sqlite
+*.sqlite-journal
+# The issuer key never enters the repo
+*keypair*.json
