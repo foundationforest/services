@@ -2,7 +2,7 @@
 
 > Forest is an open place where each person is checked once, by face, to be one real human, and then owns their profile, their offers and their reviews.
 > People deal with strangers directly: no platform in the middle, and a payment is held between the two until both agree.
-> Everything here is public and signed: this index reads it all, scores each profile apart (is this one real person; how the people they dealt with rate them, out of 10; their standing), and serves every page for people and as JSON for machines.
+> Everything here is public and signed: this index reads every profile with a badge it trusts, scores each one apart (is this one real person; how the people they dealt with rate them, out of 10; their standing), and serves every page for people and as JSON for machines.
 
 Every page has a JSON twin at the same address with `.json`. Reading needs no key, no account and no sign-in.
 

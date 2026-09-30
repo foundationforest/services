@@ -1,67 +1,84 @@
 # index
 
-The Forest index. It reads signed records from a firehose and the registry's and escrow's own
-events from the chain. It scores every profile apart: uniqueness per badge, and a rating out of 10
-and a standing per profile, never blended, each score signed twice. It serves the same data two
-ways at the same open URLs, with no session and no login: pages for people, plain HTML with no
-JavaScript, and for machines schema.org JSON-LD on every page, a JSON twin of every page, a
-sitemap, `robots.txt`, `llms.txt` and the read skill.
+The Forest index. It reads signed records from hosts, the registry's lines from the chain, the
+issuers' signed roots, and both escrow versions' own events. It scores every profile apart:
+uniqueness per badge, and a rating out of 10 and a standing per profile, never blended, each score
+signed twice. It serves the same data two ways at the same open URLs, with no session and no login:
+pages for people, plain HTML with no JavaScript, and for machines schema.org JSON-LD on every page,
+a JSON twin of every page, a sitemap, `robots.txt`, `llms.txt` and the read skill.
 
-**Nothing here is shipped.** It runs on devnet, its readers and pages in one process on Railway and
-its Postgres on Supabase (`forest/docs/services.md`); its tests run against a local host, a local directory
-of DIDs, a local validator and a local Postgres.
-
-**It still reads the old data layer:** records from a firehose, the programs' events from an RPC,
-and the market directory from the `markets` repo, into its own Postgres, as below. It reads nothing
-from forest's `records/`. How it reads will change in a later session; this copy reads exactly as
-forest's `index/` did at the commit in `FOREST` (the index's own pin, below).
+**Nothing here is shipped.** Its tests run against forest's reference hosts, a local validator and
+a local Postgres. The devnet index on Railway runs an earlier build (`deploy/README.md`).
 
 ## What it reads
 
-- **Records**, from a firehose: the host's own (`forest/host/`) in tests, the carrier later.
-  - It uses Bluesky's own consumer, `@atproto/sync`, unchanged. For every commit, the consumer
-    resolves the DID document, checks the commit's signature against the signing key the document
-    names, and checks each record against the signed commit by its Merkle proof. A commit that fails
-    is dropped whole.
-  - Each record is then checked against its lexicon with `forest/shapes/`' own validator, and a record that
-    fails is not stored.
-  - Only the four Forest collections are read: profile, post, review, credential. The cursor is kept
-    in Postgres, so a restart resumes where it stopped.
-- **Chain events**, from an RPC: a local validator in tests.
+- **Records**, from hosts (`forest/records/SPEC.md` §7), read directly: no directory, no relay.
+  - **Only what counts is kept:** the entries of profiles holding a line an issuer this index trusts
+    vouches for. Everything else is dropped as it arrives, but the `proof/` records of a profile
+    holding some other line, since a membership among them may earn it that trust. When a profile
+    comes to hold a trusted line, what was dropped is read again, by `profile`, from every host
+    the index follows and every host its folder names. A host's own word on who is badged is a
+    hint for what it sends; the index checks the lines.
+  - Every line a host serves is checked by `forest/records`' own reader: its canonical text and its
+    signature. A line that fails is dropped and reported.
+  - The hosts in `HOSTS` are read in full. Every other host a kept folder names is read for badged
+    profiles only (`badged=1`). A host still answering after 60 seconds is skipped until it
+    finishes. The first time a profile turns up in a badged feed, its earlier
+    entries are read from that host by `profile`, once, since a badged feed shows a profile only
+    from when its host counted it badged. Each host's feed resumes from its cursor, kept in
+    Postgres.
+  - Each profile is merged from every host's feed with forest's own merge (`viewProfile`), and what
+    it holds now replaces what the index held for it. Four kinds, by path: `profile`,
+    `offer/<id>`, `review/<id>` and `proof/<id>` (a credential, or a membership). Each body is
+    checked against its schema in `forest/records/schemas/`; one that fails is not stored. A record
+    is addressed as `<did>/<path>`, and its `cid` is the id of the entry that holds it now. A
+    profile's key is its wallet.
+- **Badges**, from the registry's lines, each one a badge only when an issuer this index trusts
+  vouches for it. At start, every line from the registry program's own accounts
+  (`getProgramAccounts`, each line checked to sit at its code's address); then only newer
+  transactions, to pick up new lines. A line names the profile's key, a label, and the root of the
+  issuer's list it was proven against; it never changes.
+- **Issuers' roots**, from each issuer `config/issuers.json` names: its signed roots file (the
+  format is `issuer/README.md`, "The two files"), checked for canonical text, its issuer and its
+  signature, at most once a minute. A line's issuers are those whose roots hold its root.
+- **Memberships**: a `proof/<id>` record of the membership kind, in a profile's folder, adds its
+  issuer to one of the profile's lines once it checks (`verifyMembership` in
+  `forest/registry/client`, against the line, that issuer's roots and the registry's sealed
+  verification key). It waits while its issuer, root or line is unknown.
+- **Receipts**, from both escrow versions' events, from an RPC.
   - For each program, it reads every transaction that named it, oldest first; failed transactions
     are skipped.
   - It keeps each transaction's log lines in its own archive (`chain_transactions`), because RPC
     nodes are not an archive.
   - It reads only events the programs themselves wrote. The clients' decoders already refuse a
     `Program data:` line that another program wrote.
-  - From the registry, **badges**: the scope (market, and role after a slash), the DID, the profile's
-    wallet, the list, and the list's owner.
-  - From the escrow, **receipts**: buyer, seller, who created it, its two options, token, amount,
-    when it was created, marked funded and ended, the outcome, and what each side got.
+  - For each escrow: buyer, seller, who created it, its two options, token, amount, when it was
+    created, funded and ended, the outcome, what each side got, and, in v2, which side objected
+    and when.
 - **The market directory**, from the `markets` repo itself, over HTTPS (`MARKETS_URL`, its main
   branch by default), never copied: its `directory.md` and each market file that page links, at
-  `<folder>/<name>.json`, checked with `forest/shapes/`' validator. A market has one name: there are no
-  aliases. A post names no market; it is listed in its author profile's market, and only when the
-  directory has that market, byte for byte. It is read once at
-  start, so a change in the `markets` repo reaches the index at its next restart. The tests serve
-  a stand-in from `test/markets/`.
+  `<folder>/<name>.json`. Forest no longer holds a market-file validator, so each file is checked
+  for the fields the index reads. A market has one name: there are no aliases. An offer names no
+  market; it is listed in its author profile's market, and only when the directory has that
+  market, byte for byte. It is read once at start, so a change in the `markets` repo reaches the
+  index at its next restart. The tests serve a stand-in from `test/markets/`.
 
-**The escrow program may still change.** Everything the index knows about its events is in one
-file, `src/chain/escrow.ts`, which maps the escrow client's events to the index's own `EscrowFact`.
-It follows the escrow as rewritten to the handoff's "Escrow" (six events, no accept step, who
-created it in `Created`). When the events change, change that file; the receipt table and its
-store in `src/chain/poll.ts` change only if a receipt gains or loses a fact.
+**Escrow versions.** Everything the index knows about the escrows' events is in one file,
+`src/chain/escrow.ts`, which maps both clients' events to the index's own `EscrowFact`. A new
+version is one more program there; the receipt table and its store in `src/chain/poll.ts` change
+only if a receipt gains or loses a fact.
 
 ## How it scores
 
 In [SCORING.md](SCORING.md), in plain words. In short:
 
-- A badge counts only as `market/role`, the market a directory name byte for byte and the role one
-  its sides allow (`seller` or `buyer` when two, `peer` when one), only when that is the profile's
-  own scope (the market and role its record names), and only for the wallet the profile declares.
-  A plain `market` counts for nothing.
-- **Uniqueness** combines the weights this index gives the issuers vouching for a badge. The
-  weights are in `config/issuers.json`: the foundation's list starts at 1, everyone else at 0.
+- A badge is a line. It counts only as `market/role`, the market a directory name byte for byte and
+  the role one its sides allow (`seller` or `buyer` when two, `peer` when one), only when that is
+  the profile's own scope (the market and role its record names), and only when the line names
+  the profile's own key. A plain `market` counts for nothing.
+- **Uniqueness** combines the weights this index gives the issuers vouching for a badge: those
+  whose roots hold the line's root, and those a membership record shows. The weights are in
+  `config/issuers.json`: the foundation's issuer starts at 1, everyone else at 0.
 - **Standing** sums the reviews received, from each one's `overall`
   rating. Each weighs by its reviewer (their badge, then their own standing) and by what is under
   its deal id:
@@ -84,7 +101,7 @@ stale-while-revalidate=300`, `access-control-allow-origin: *`, no cookies, no se
 | `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's two public keys and the statement format |
 | `/folders/{folder}` | `.json` | The folder's markets |
 | `/markets/{market}?near=&km=&offset=` | `.json` | The market file (with how deals go), counts, and live offers: badged sellers first, then standing, then newest, 50 a page. `near=lat,lon&km=N` keeps the offers whose point is within N km |
-| `/profiles/{did}` | `.json` | The profile; every badge, counted or not and why, and who vouched; its scores, apart and signed; live offers and requests; reviews received and given, each with the payment behind it; credentials |
+| `/profiles/{did}` | `.json` | The profile, if it holds a trusted badge; every such badge, counted or not and why, and who vouched; its scores, apart and signed; live offers and requests; reviews received and given, each with the payment behind it; credentials |
 | `/deals/{dealId}` | `.json` | The receipt in plain words (or none), the profiles that declare its two keys with their two numbers, and the reviews that name it |
 | `/search?q=&near=&km=` | `/search.json?q=` | Directory markets matching `q` by substring (name, folder, roles, labels), and live offers by full-text search (Postgres's `simple` configuration, which favours no language), near a point if asked |
 | `/pay?…` | `/pay.json?…` | An offer's Pay link, checked against the offer as indexed ([PAYLINK.md](PAYLINK.md)) |
@@ -124,18 +141,16 @@ into `/markets/{m}.json`; `/profiles/{did}/reviews` into `/profiles/{did}.json`.
 ## Run it locally
 
 Needs Node 22.18 or later (it runs TypeScript directly) and Postgres 14 or later. The index imports
-forest's `shapes`, `registry/client`, `escrow/client` and, in tests, `keys` and `host/` by path,
-from `forest/` at the commit in `FOREST` (the index's own pin: forest's main no longer has `shapes/` or
-the old registry), so fetch and install those first, from the repo root:
+forest's `records`, `registry/client` and both escrow clients by path, from `forest/` at the commit
+in `FOREST`, so fetch and install those first, from the repo root:
 
 ```
-FOREST_PIN=index/FOREST ./forest.sh shapes keys registry/client escrow/client
+./forest.sh records registry/client escrow/client escrow/v2/client
 cd index && npm ci
 
 export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/forest_index
 export INDEX_SIGNING_SEED=$(openssl rand -hex 32)     # keep it: it is the index's signing identity
-export FIREHOSE_URL=ws://localhost:2583              # a host from forest/host/run.sh, or the carrier
-export PLC_URL=https://plc.directory
+export HOSTS=http://127.0.0.1:8787                   # hosts to read in full, such as forest's reference host
 export SOLANA_RPC_URL=http://127.0.0.1:8899
 export PUBLIC_URL=http://localhost:8080              # where the pages say they are
 npm start                                            # migrates, reads, scores, serves on :8080
@@ -160,16 +175,19 @@ twin matches its page, that the sitemap lists every page, that every URL in the 
 `llms.txt` resolves, that no page says a crypto word, and that the Pay link reads back to the
 offer's terms.
 
-The end-to-end test needs:
+The end-to-end test runs two of forest's reference hosts in process, a local validator with the
+registry and both escrows, two issuers' lists and signed roots files made by the issuer's own code
+(`issuer/src/list.ts`), and the index. It needs:
 
-- `forest/host/` built (`forest/host/build.sh`) and `forest/keys` installed;
-- both programs built (`cargo build-sbf` in `forest/registry/program` and `forest/escrow/program`);
+- the three programs built (`cargo build-sbf --arch v3` in `forest/registry/program`,
+  `forest/escrow/program` and `forest/escrow/v2/program`);
 - the proving files (`npm run fetch` in `forest/registry/artifacts`);
+- `npm ci` in `issuer/`;
 - `solana-test-validator` on the PATH;
 - a Postgres where it may create and drop a database.
 
-It skips, saying which, if one is missing. The whole of `npm test` takes about 30 seconds here, 19
-of them making three registration proofs.
+It skips, saying which, if one is missing. The whole of `npm test` takes about 35 seconds here,
+most of them making four registration proofs and a membership.
 
 `npm run check` type-checks; `npm run migrate` applies the migrations and stops (`npm start` does
 that too).
@@ -182,12 +200,11 @@ that too).
 | `MARKETS_URL` | no | Where the `markets` repo's files are read: the folder holding its `directory.md`, over HTTP(S). Default `https://raw.githubusercontent.com/foundationforest/markets/main`; a commit in place of `main` pins it. Only these names count in badges |
 | `INDEX_SIGNING_SEED` | readers | 32 bytes as 64 hex characters. Both signing keys come from it. The pages never need it |
 | `PUBLIC_URL` | no | Where the pages are published: an origin, no path. Canonical links, the sitemap, the Pay link and the read skill use it. Default `https://forest.foundation` |
-| `FIREHOSE_URL` | no | `ws://` or `wss://`. Unset: no record reader |
-| `PLC_URL` | no | Where DIDs resolve. Default `https://plc.directory`. An `http://` URL (a local directory) makes the resolver use plain fetch |
-| `SOLANA_RPC_URL` | no | Unset: no chain reader |
+| `HOSTS` | no | The hosts read in full: origins separated by commas, `https://` (`http://` only on loopback). Hosts the folders name are read too, badged profiles only; a loopback one only when `HOSTS` has one. Unset: no record reader |
+| `SOLANA_RPC_URL` | no | Unset: no chain reader. It must answer `getProgramAccounts` for the registry |
 | `CHAIN_COMMITMENT` | no | `finalized` (default) or `confirmed` (tests) |
-| `CHAIN_POLL_MS` | no | Default 5000 |
-| `REGISTRY_PROGRAM_ID`, `ESCROW_PROGRAM_ID` | no | Default: the clients' own ids |
+| `POLL_MS` | no | How often the readers look for anything new. Default 5000. The issuers' roots are read at most once a minute |
+| `REGISTRY_PROGRAM_ID`, `ESCROW_PROGRAM_ID`, `ESCROW_V2_PROGRAM_ID` | no | Default: the clients' own ids |
 | `PORT` | no | Default 8080 |
 | `ISSUERS_FILE`, `SCORING_FILE`, `CURRENCIES_FILE` | no | Default: the files in `config/` |
 
@@ -196,9 +213,10 @@ that too).
 | | |
 |---|---|
 | `migrations/` | The schema, in plain SQL, applied in order, each once |
-| `config/` | This index's opinions: issuer weights, scoring weights, and which tokens the pages show as which currency |
-| `src/records/` | The firehose reader and the record store |
-| `src/chain/` | The chain reader, the registry adapter, and **the escrow adapter** |
+| `config/` | This index's opinions: which issuers it trusts, their weights and where their roots are, scoring weights, and which tokens the pages show as which currency |
+| `src/records/` | The host reader, and the record store |
+| `src/chain/` | The chain reader, the registry's lines, and **the escrow adapter** |
+| `src/issuers.ts` | The issuers' signed roots, and the membership check |
 | `src/scores/` | The scores as pure functions, the signatures, and the recompute |
 | `src/web/` | The pages and their twins: the page models (`data.ts`), the HTML (`pages.ts`, `html.ts`, `words.ts`), the JSON-LD, the Pay link, the machine files, the routes and a node:http server |
 | `src/main.ts` | The readers, the pages, or both |
@@ -208,4 +226,5 @@ that too).
 | `HOSTING.md` | The two processes: what each needs on Railway, and what the pages need on Vercel |
 | `deploy/` | The foundation's devnet instance: its Dockerfile, the devnet opinions, Railway and Supabase ([deploy/README.md](deploy/README.md)) |
 
-The choices made where the handoff was silent, and the open questions, are in `forest/docs/changes.md`.
+The choices made where the plan was silent, and the open questions, are in `forest/docs/changes.md`
+(before this repo) and `../docs/changes.md`.

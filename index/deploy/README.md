@@ -5,15 +5,17 @@ index needs. Nothing here is mainnet, and nothing is shipped.
 
 **Where it runs today.** The devnet index (https://index-production-1b6e.up.railway.app) is still
 built from forest's `deploy/index/Dockerfile`, on forest's `main`, and set up by forest's
-`deploy/railway.ts` and `deploy/supabase.ts`. This folder is the same setup from this repo. No
-Railway service builds from it yet.
+`deploy/railway.ts` and `deploy/supabase.ts`, and reads the earlier data layer and registry. This
+folder sets up this version from this repo. No Railway service builds from it yet. Pointed here,
+it migrates away what the earlier build stored (profiles, posts, reviews, badges) and finds no
+records host on devnet to read yet: `HOSTS` stays unset until one runs there.
 
 ## Files
 
 | | |
 |---|---|
-| `Dockerfile` | Node 22.22.2 and git; `forest.sh shapes registry/client escrow/client` at `index/FOREST`, then `npm ci` in `index/`. Runs `node src/main.ts`: readers and pages in one process, so the pages hold the signing seed |
-| `issuers.devnet.json`, `currencies.devnet.json`, `scoring.devnet.json` | The devnet opinions: which issuer counts, which tokens are money. The Dockerfile names them in `ISSUERS_FILE`, `CURRENCIES_FILE` and `SCORING_FILE` |
+| `Dockerfile` | Node 22.22.2 and git; `forest.sh records registry/client escrow/client escrow/v2/client` at the commit in `FOREST`, then `npm ci` in `index/`. Runs `node src/main.ts`: readers and pages in one process, so the pages hold the signing seed |
+| `issuers.devnet.json`, `currencies.devnet.json`, `scoring.devnet.json` | The devnet opinions: which issuer counts and where its roots file is, which tokens are money. The Dockerfile names them in `ISSUERS_FILE`, `CURRENCIES_FILE` and `SCORING_FILE` |
 | `supabase-root-2021.crt` | Supabase's public root CA, which Node does not carry, for the pooler's TLS (`NODE_EXTRA_CA_CERTS`) |
 
 ## The Railway service
@@ -31,13 +33,13 @@ Railway service builds from it yet.
 |---|---|---|
 | `DATABASE_URL` | Supabase's session pooler, as `postgres` (below) | yes |
 | `INDEX_SIGNING_SEED` | 32 random bytes, hex: the index's signing identity | yes |
-| `FIREHOSE_URL` | `wss://` and the carrier's host | no |
-| `PLC_URL` | `https://plc.directory` | no |
+| `HOSTS` | unset: no records host runs on devnet yet. Then the hosts' `https://` origins, separated by commas | no |
 | `SOLANA_RPC_URL` | Helius's devnet RPC when there is a Helius key, then sealed since the URL holds it; otherwise `https://api.devnet.solana.com` | with Helius |
-| `REGISTRY_PROGRAM_ID` | `8sUyd9JXRGEUqf2hYVnLCybi74549VG27dAK6YvbbU3i` | no |
-| `ESCROW_PROGRAM_ID` | `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy9CbeR` | no |
+| `REGISTRY_PROGRAM_ID` | `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf` (`forest/registry/devnet/devnet.json`) | no |
+| `ESCROW_PROGRAM_ID` | `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy9CbeR` (escrow v1, `forest/docs/devnet.md`) | no |
+| `ESCROW_V2_PROGRAM_ID` | `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`forest/escrow/v2/devnet/devnet.json`) | no |
 | `CHAIN_COMMITMENT` | `finalized` | no |
-| `CHAIN_POLL_MS` | `10000` | no |
+| `POLL_MS` | `10000` | no |
 | `PUBLIC_URL` | the service's own public URL | no |
 | `PORT` | `8080` | no |
 
@@ -69,7 +71,7 @@ A sealed value cannot be read back, so check the new one works (health, logs) be
 Measured on 2026-09-25, idle: 0.18 GB of memory and 0.002 vCPU on average. At Railway's published
 prices ($10 a GB-month, $20 a vCPU-month) that is about $1.84 a month. Supabase's free plan is $0;
 it pauses a project after a week without activity, and the index's poll every 10 seconds should
-count as activity (not watched for a week).
+count as activity (not watched for a week). This version is not measured.
 
 ## Splitting readers and pages
 

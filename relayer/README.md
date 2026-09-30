@@ -57,30 +57,36 @@ someone else is just another payer, and the programs cannot tell and never need 
 ## Measured, on a local validator
 
 `test/relayer.test.ts`, below. A wallet that never held a lamport writes a registry line, pays for
-escrows under v1 and v2, and closes one v1 escrow that was never funded, all in a test dollar. Rent
-here is 6,960 lamports a byte, the validator's default. The programs are built as SBPF v3.
+escrows under v1 and v2 (one of them in Open USD, a Token-2022 dollar planted from its mainnet
+mint), and closes one v1 escrow that was never funded, paying the relayer in a test dollar
+throughout. Rent here is 6,960 lamports a byte, the validator's default. The programs are built as
+SBPF v3.
 
 | Transaction | Size | Units | Relayer spent | Charged | Of which deposits |
 |---|---|---|---|---|---|
-| Registry line, a 20-byte label | 702 bytes | 121,083 | 2,104,960 | 2,104,960 | line 2,094,960 |
+| Registry line, a 20-byte label | 702 bytes | 123,921 | 2,077,120 | 2,077,120 | line 2,067,120 |
 | Escrow v1, pay (deposit address, create, money in) | 661 | 29,644 | 4,777,600 | 4,777,600 | escrow 2,728,320, deposit address 2,039,280 |
 | Escrow v1, release | 488 | 12,768 | 10,000 | 10,000 | none; the deposit address's 2,039,280 go back to the person |
 | Escrow v1 in one tap | 710 | 40,835 | 4,777,600 | 4,777,600 | the same two; the deposit address's comes back to the person in the same transaction |
 | Escrow v2, pay | 661 | 35,958 | 5,062,960 | 5,062,960 | escrow 3,013,680, deposit address 2,039,280 |
 | Escrow v2, release | 488 | 13,029 | 10,000 | 10,000 | none; the deposit address's go back to the person |
 | Escrow v2 in one tap | 710 | 60,910 | 5,062,960 | 5,062,960 | the same two; the deposit address's comes back to the person |
+| Escrow v2 in Open USD, pay | 727 | 45,002 | 5,160,400 | 5,160,400 | escrow 3,013,680, deposit address 2,136,720 (its extensions make it larger) |
+| Escrow v2 in Open USD, release | 553 | 24,157 | 10,000 | 10,000 | none; the deposit address's go back to the person |
 
-All amounts are in lamports. Under Kora's mock price, one base unit of the test dollar buys one
-lamport. The network fee was 10,000 lamports each time: two signatures, no priority fee. What each
-costs at mainnet's rent, today and after the cuts, is in `forest/registry/README.md` and
-`forest/escrow/v2/README.md`.
+The Open USD rows are from a run on 2026-09-30, the other escrow rows from an earlier one. Units
+move by up to about 20,000 from run to run, with the keys each run draws (the Open USD pay has
+measured 39,002 and 45,002); sizes and lamports do not. All amounts are in lamports. Under Kora's
+mock price, one base unit of the test dollar buys one lamport. The network fee was 10,000 lamports
+each time: two signatures, no priority fee. What each costs at mainnet's rent, today and after the
+cuts, is in `forest/registry/README.md` and `forest/escrow/v2/README.md`.
 
 ## Deposits: charged once; what comes back, and to whom
 
 **Can Kora's price count the deposit?** Yes. The test shows it:
 - A line's charge is exactly the network fee plus the line the registry program makes inside its
   own call.
-- A line paying only the network fee is refused: "Insufficient token payment. Required 2104960
+- A line paying only the network fee is refused: "Insufficient token payment. Required 2077120
   lamports". Nothing lands.
 - An escrow's pay step is charged both accounts the escrow program makes.
 
@@ -100,8 +106,9 @@ program sends it:
 
 Anyone may send `refund` or `sweep_rent`; they need no signature. The test stands in for a rent cut
 with a gift of SOL to the account, which leaves it holding more than its minimum, as a cut would.
-Here the person got 13,924,720 lamports back (five deposit addresses' rents, a never-funded
-escrow's rent and a swept gift). The relayer got 2,000,000 back (a line's refund and a v2 sweep).
+Here the person got 16,061,440 lamports back (six deposit addresses' rents, Open USD's among them,
+a never-funded escrow's rent and a swept gift). The relayer got 2,000,000 back (a line's refund and
+a v2 sweep).
 What the person gets back arrives as SOL in a wallet that otherwise holds none; what an app does
 with it is open (`forest/docs/handoff.md`, Open).
 
@@ -116,9 +123,9 @@ Tested, each with nothing landing and nothing moving:
 | The relayer's SOL sent anywhere | `Fee payer cannot be used for 'System Transfer'` |
 | The payment taken back out of the relayer's token account, under the signature it adds | `Fee payer cannot be used for 'SPL Token Transfer'` |
 | No payment | `Insufficient token payment. Required 10050 lamports` |
-| A line paying the network fee but not the deposit | `Insufficient token payment. Required 2104960 lamports` |
-| A second issuer's root on a line (`add_proof`, below) | `Fee payer cannot be used for 'System Transfer'` |
+| A line paying the network fee but not the deposit | `Insufficient token payment. Required 2077120 lamports` |
 | An escrow whose deposit address only the escrow program makes (below) | `Account BbCZ… not found` |
+| An escrow v2 one tap in Open USD (below) | `Account HBMJ… not found` |
 
 Also enforced by the config, not provoked here:
 - more than 0.01 SOL of deposits in one transaction (`max_allowed_lamports`);
@@ -129,10 +136,35 @@ Also enforced by the config, not provoked here:
 Kora checks the program list against every call inside the transaction, not only the top-level
 ones.
 
-**`add_proof` does not pass.** It grows a line by 32 bytes, and the program pays for that with a
-System transfer from the payer inside its own call. `kora.toml` lets the relayer's key create
-accounts, never transfer SOL, so Kora refuses. A line through this relayer holds one issuer's root.
-A second root needs another payer, or a change to the config: open.
+**A line never grows.** `register` writes it once, at its full size, and nothing writes to it again
+(`forest/registry/README.md`), so nothing a line needs after `register` asks the relayer for SOL. A
+second issuer vouches for the same line in a membership record in the profile's folder, off chain.
+
+### Token-2022 dollars
+
+`kora.toml` allows the Token-2022 program, so escrow v2 deals in a Token-2022 dollar such as Open
+USD pass. The relayer's own key may still do nothing in it: every `token_2022` flag in
+`fee_payer_policy` is false, so it pays for others' Token-2022 instructions and never moves a token
+itself. The relayer is still paid in USDC, a classic token.
+
+**A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** For every Token-2022 transfer whose
+destination exists, the escrow's payout to the seller inside its own call included, Kora reads the
+transfer's source. In a one tap that source is the deposit address the same transaction makes, so
+Kora finds none and refuses. Paying and then releasing, in two transactions, passes, and so does a
+one tap in a classic dollar. An app paying in Open USD through this relayer pays, then releases.
+
+**Kora can be paid in a Token-2022 dollar,** checked with a scratch run not kept in this repo (the
+config there: this `kora.toml`, the mock price, three test dollars and Open USD as the paid tokens):
+- a plain Token-2022 dollar, and Open USD's own mainnet mint with its eight extensions: quoted,
+  co-signed and charged exactly what the relayer spent; one unit short refused;
+- a dollar with a transfer fee: the quote must be asked again with the quoted amount in place
+  until it holds still (three rounds at 1%), and even then the relayer nets less than it spent
+  (9,999 of 10,000 lamports' worth), since Token-2022 takes its fee from the amount received and
+  Kora's price does not gross it up. Escrow v2 refuses such mints; the relayer should not take one.
+
+Accepting a Token-2022 dollar as payment is one line (`allowed_spl_paid_tokens`), not taken: Open
+USD's issuer holds a permanent delegate, which can take back what the relayer collected. That is
+Kora's first warning below.
 
 ### One thing a product must do for Kora: make the deposit address at the top
 
@@ -227,8 +259,9 @@ betas) takes the key itself only, not a path.
 - **The relayer's USDC account**, created once. `kora rpc initialize-atas` does it, or any
   transfer that makes it.
 - **The port:** `PORT` from Railway, and a health check on `GET /liveness`.
-- **Devnet** needs its own `kora.toml`: the three devnet program ids (`deploy/devnet-config.sh`
-  names where each is recorded), the devnet test dollar or devnet USDC, and
+- **Devnet** needs its own `kora.toml`: the three devnet program ids, escrow v2 at
+  `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`deploy/devnet-config.sh` names where each is
+  recorded), the devnet test dollar or devnet USDC, and
   `price_source = "Mock"`, since Jupiter prices mainnet only.
 
 ## Chosen, not decided
@@ -250,8 +283,9 @@ deployed, and each is in `forest/docs/changes.md` or this repo's `docs/changes.m
 8. **Kora's three warnings on `config validate` left as they are:**
    - no auth, as above;
    - `allow_create_account`, which is priced, capped and tested;
-   - Token-2022's permanent delegate, which cannot arise, since the Token-2022 program is not on the
-     list.
+   - Token-2022's permanent delegate, which does not reach what the relayer collects while it is
+     paid in USDC only. Blocking the extension (`[validation.token_2022]`) would also refuse Open
+     USD escrow payouts, since Kora applies it to every Token-2022 transfer it reads.
 
 ## What is not done
 
@@ -261,4 +295,3 @@ deployed, and each is in `forest/docs/changes.md` or this repo's `docs/changes.m
   path. It was read, not run.
 - **Load, rate limits, several relayer keys**, and the operations loop that turns collected
   dollars back into SOL.
-- **A second issuer's root through the relayer.** Kora refuses `add_proof` (above).

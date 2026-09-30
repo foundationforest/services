@@ -1,7 +1,7 @@
 // The relayer, run locally: Kora (installed by ../build.sh, started by ../run.sh) in front of a
 // local validator with the registry and both escrow programs loaded. A wallet that holds no SOL
-// writes a registry line, pays for escrows under v1 and v2 and closes one it never funded, paying
-// for everything in a test dollar; each storage deposit is charged to it once. Every deposit
+// writes a registry line, pays for escrows under v1 and v2 (one of them in Open USD, a Token-2022
+// dollar, which Kora takes in two steps but not in one tap) and closes one it never funded, paying for everything in a test dollar; each storage deposit is charged to it once. Every deposit
 // address's rent comes back to it; what Solana's storage price cuts free goes back to whoever
 // fronted the deposit, which for a line and a v2 escrow is the relayer. Kora refuses what it must
 // refuse.
@@ -59,7 +59,6 @@ import {
 
 import {
   PROGRAM_ID as REGISTRY_ID,
-  buildAddProof,
   buildRegistration,
   commitmentOf,
   decodeLine,
@@ -94,6 +93,9 @@ const KORA_PORT = 8080
 const KORA_URL = `http://127.0.0.1:${KORA_PORT}`
 const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
+/** Open USD, a Token-2022 dollar with eight extensions, planted from its mainnet account (below). */
+const OPEN_USD = new PublicKey('ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB')
+const TOKEN_2022 = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
 const LABEL = 'online-tutors/seller'
 const START_DOLLARS = 100_000_000n
 const GIFT = 1_000_000
@@ -144,6 +146,23 @@ function testDollarJson(): string {
       rentEpoch: 0,
       space: MINT_SIZE,
     },
+  })
+}
+
+/**
+ * Open USD's mint account as mainnet held it, from forest's own record of it (the escrow v2 tests
+ * embed it), with only its mint authority swapped for `setup` so the test can mint. All eight of its
+ * extensions stay as mainnet has them.
+ */
+function openUsdJson(): string {
+  const source = readFileSync(join(forest, 'escrow/v2/program/tests-litesvm/src/token_2022.rs'), 'utf8')
+  const data = Buffer.from(/OPEN_USD_MAINNET: &str = "([^"]+)"/.exec(source)![1], 'base64')
+  data.writeUInt32LE(1, 0) // mint_authority: Some
+  setup.publicKey.toBuffer().copy(data, 4)
+  data.writeBigUInt64LE(0n, 36) // supply
+  return JSON.stringify({
+    pubkey: OPEN_USD.toBase58(),
+    account: { lamports: 10_000_000, data: [data.toString('base64'), 'base64'], owner: TOKEN_2022.toBase58(), executable: false, rentEpoch: 0, space: data.length },
   })
 }
 
@@ -267,6 +286,8 @@ before(
     ledger = join(work, 'ledger')
     const dollarJson = join(work, 'test-dollar.json')
     writeFileSync(dollarJson, testDollarJson())
+    const openUsd = join(work, 'open-usd.json')
+    writeFileSync(openUsd, openUsdJson())
     validator = spawn(
       'solana-test-validator',
       [
@@ -275,6 +296,7 @@ before(
         '--bpf-program', ESCROW_ID.toBase58(), escrowSo,
         '--bpf-program', v2.PROGRAM_ID.toBase58(), escrowV2So,
         '--account', USDC_MINT.toBase58(), dollarJson,
+        '--account', OPEN_USD.toBase58(), openUsd,
       ],
       { stdio: 'ignore' },
     )
@@ -334,7 +356,7 @@ after(() => {
   if (work) rmSync(work, { recursive: true, force: true })
 })
 
-test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and closes one through Kora, in a test dollar', { timeout: 600_000 }, async (t) => {
+test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 (one in Open USD) and closes one through Kora, in a test dollar', { timeout: 600_000 }, async (t) => {
   const why = missing()
   if (why) return t.skip(why)
   if (!validator) return t.skip('solana-test-validator did not start (is it on the PATH?)')
@@ -359,25 +381,23 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
     [setup],
   )
 
-  // The person's identity secret, and two issuers' published lists with their commitment in each,
-  // as the issuers' list files give them (issuer/README.md, "The two files").
+  // The person's identity secret, and an issuer's published list with their commitment in it, as
+  // the issuer's list file gives it (issuer/README.md, "The two files").
   const secret = randomBytes(32)
   const others = (n: number) => Array.from({ length: n }, () => commitmentOf(randomBytes(32)))
-  const firstList = [...others(2), commitmentOf(secret), ...others(1)]
-  const secondList = [commitmentOf(secret), ...others(4)]
+  const list = [...others(2), commitmentOf(secret), ...others(1)]
 
   const start = await balances()
   assert.equal(start.personSol, 0, 'the person holds no SOL')
   assert.equal(start.personTokens, START_DOLLARS)
   const labelBytes = new TextEncoder().encode(LABEL).length
   const rent = {
-    line: await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes, 1)),
-    root: 0,
+    line: await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes)),
     escrow: 0,
     escrowV2: 0,
     deposit: await connection.getMinimumBalanceForRentExemption(165),
+    depositT22: 0,
   }
-  rent.root = (await connection.getMinimumBalanceForRentExemption(lineSpace(labelBytes, 2))) - rent.line
 
   // ---- Refusals ----
   const refusals: Record<string, string> = {
@@ -400,18 +420,19 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   }
 
   // ---- A registry line ----
-  // The relayer is the payer: the network fee and the line's storage deposit, and it is recorded in
-  // the line. The profile key signs nothing; the person signs only their payment to the relayer.
+  // One transaction: `register`. The relayer is the payer: the network fee and the line's storage
+  // deposit, and it is recorded in the line. The profile key signs nothing; the person signs only
+  // their payment to the relayer. A line never grows, so nothing after this asks the relayer for SOL.
   const registration = await buildRegistration({
     secret,
     label: LABEL,
     profile: person.publicKey.toBytes(),
-    lists: [firstList],
+    commitments: list,
     artifacts,
     payer: relayer.publicKey,
     recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
   })
-  const [register] = registration.instructions
+  const register = registration.instruction
 
   // Paying only the network fee is refused: Kora counts the storage deposit the registry program
   // makes inside the transaction, and no line is written.
@@ -444,20 +465,6 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
     reg.charge,
     /[Ff]ee payer cannot/,
   )
-
-  // A second issuer's root on the same line: `add_proof` grows the line by 32 bytes, paid by the
-  // payer. Anchor pays for the growth with a System transfer from the payer inside the program,
-  // which kora.toml does not let the relayer's key make, so Kora refuses it.
-  const addProof = await buildAddProof({
-    secret,
-    label: LABEL,
-    profile: person.publicKey.toBytes(),
-    commitments: secondList,
-    artifacts,
-    payer: relayer.publicKey,
-    recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
-  })
-  refusals.addProof = await refused([addProof.instruction], 1_000_000n, /[Ff]ee payer cannot/)
 
   // What the rent cuts free on a line goes back to its payer, the relayer. Anyone may send `refund`.
   await send([SystemProgram.transfer({ fromPubkey: setup.publicKey, toPubkey: registration.line, lamports: GIFT })], [setup])
@@ -551,10 +558,12 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   assert.equal(await connection.getBalance(first.keys.escrow), rent.escrow, 'the receipt keeps exactly its minimum')
 
   // ---- Escrow v2: pay, then release, through Kora; its sweep goes to the relayer ----
-  const dealV2 = (amount: bigint) => {
+  const tokenOf = async (mint: PublicKey) => v2.tokenOf(mint, (await connection.getAccountInfo(mint))!)
+  const dollar = await tokenOf(USDC_MINT)
+  const dealV2 = (amount: bigint, token = dollar) => {
     const terms = v2.termsFor(undefined, { seller: seller.publicKey, amount })
-    const keys = v2.keysFor({ buyer: person.publicKey, mint: USDC_MINT, terms })
-    const args = { buyer: person.publicKey, payer: relayer.publicKey, mint: USDC_MINT, terms }
+    const keys = v2.keysFor({ buyer: person.publicKey, mint: token.mint, tokenProgram: token.program, terms })
+    const args = { buyer: person.publicKey, payer: relayer.publicKey, token, terms }
     return { keys, pay: v2.createAndFund(args), oneTap: v2.payInOneTap(args), release: v2.releaseToSellerIx({ keys }) }
   }
 
@@ -594,12 +603,44 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   assert.equal(afterSweepV2.personSol, beforeSweepV2.personSol, 'not to the person')
   assert.equal(await connection.getBalance(fourth.keys.escrow), rent.escrowV2, 'the receipt keeps exactly its minimum')
 
+  // ---- Escrow v2 in a Token-2022 dollar: Open USD, paid then released, through Kora ----
+  // The escrow calls Token-2022, which kora.toml allows; the relayer is still paid in the test
+  // dollar. The person and the seller hold Open USD accounts already.
+  const openUsd = await tokenOf(OPEN_USD)
+  assert.equal(openUsd.program.toBase58(), TOKEN_2022.toBase58())
+  const ousd = (owner: PublicKey) => getAssociatedTokenAddressSync(OPEN_USD, owner, false, TOKEN_2022)
+  await send(
+    [
+      ...[person, seller].map((k) => createAssociatedTokenAccountIdempotentInstruction(setup.publicKey, ousd(k.publicKey), k.publicKey, OPEN_USD, TOKEN_2022)),
+      createMintToInstruction(OPEN_USD, ousd(person.publicKey), setup.publicKey, 10_000_000n, [], TOKEN_2022),
+    ],
+    [setup],
+  )
+  const sixth = dealV2(2_000_000n, openUsd)
+  // In one tap, Kora 2.0.5 refuses: for a Token-2022 transfer whose destination exists (here the
+  // escrow's payout to the seller, inside its own call), it reads the source, the deposit address
+  // the same transaction makes, and finds none. Nothing lands.
+  refusals.oneTapInToken2022 = await refused(sixth.oneTap, 1_000_000n, /not found/)
+  const beforePayT22 = await balances()
+  const payT22 = await throughKora(sixth.pay)
+  const afterPayT22 = await balances()
+  const payT22Spent = beforePayT22.relayerSol - afterPayT22.relayerSol
+  rent.depositT22 = await connection.getBalance(sixth.keys.vault)
+  assert.ok(rent.depositT22 > rent.deposit, "Open USD's deposit account is larger than a classic one: its extensions")
+  assert.equal(payT22Spent, payT22.networkFee + rent.escrowV2 + rent.depositT22, "the relayer's SOL: the network fee, the escrow and the Open USD deposit address")
+  assert.equal(payT22.charge, BigInt(payT22Spent), 'charged once for each, in the test dollar')
+  const releaseT22 = await throughKora([sixth.release])
+  const afterReleaseT22 = await balances()
+  assert.equal((await getAccount(connection, ousd(seller.publicKey), 'confirmed', TOKEN_2022)).amount, 2_000_000n, 'the seller holds the two Open USD')
+  assert.equal(afterReleaseT22.personSol - afterPayT22.personSol, rent.depositT22, "the deposit address's rent back to the person")
+  assert.equal(releaseT22.charge, BigInt(releaseT22.networkFee))
+
   const end = await balances()
-  const refunded = 5 * rent.deposit + rent.escrow + GIFT // v1: release, one tap, close (both), sweep; v2: release, one tap
+  const refunded = 5 * rent.deposit + rent.escrow + GIFT + rent.depositT22 // v1: release, one tap, close (both), sweep; v2: release, one tap; v2 in Open USD: release
   assert.equal(end.personSol, refunded, 'the person was never given a lamport but its own refunds')
   const lamports = (n: number | bigint) => `${Number(n).toLocaleString('en-US')} lamports`
   console.log('\n== the relayer, Kora 2.0.5, on a local validator ==')
-  console.log(`   rent here: line ${lamports(rent.line)} (+${lamports(rent.root)} a root), escrow v1 ${lamports(rent.escrow)}, escrow v2 ${lamports(rent.escrowV2)}, deposit address ${lamports(rent.deposit)}`)
+  console.log(`   rent here: line ${lamports(rent.line)}, escrow v1 ${lamports(rent.escrow)}, escrow v2 ${lamports(rent.escrowV2)}, deposit address ${lamports(rent.deposit)}`)
   console.log(`   registry line: ${reg.wire} bytes, ${reg.units} units, network fee ${lamports(reg.networkFee)}; charged ${reg.charge} test-dollar units; relayer spent ${lamports(lineSpent)}`)
   console.log(`   escrow v1, pay: ${pay.wire} bytes, ${pay.units} units; charged ${pay.charge} units; relayer spent ${lamports(paySpent)}`)
   console.log(`   escrow v1, release: ${release.wire} bytes, ${release.units} units; charged ${release.charge} units; relayer spent ${lamports(releaseSpent)}`)
@@ -608,6 +649,8 @@ test('a wallet with no SOL writes a line, pays for escrows under v1 and v2 and c
   console.log(`   escrow v2, pay: ${payV2.wire} bytes, ${payV2.units} units; charged ${payV2.charge} units; relayer spent ${lamports(payV2Spent)}`)
   console.log(`   escrow v2, release: ${releaseV2.wire} bytes, ${releaseV2.units} units; charged ${releaseV2.charge} units`)
   console.log(`   escrow v2, one tap: ${tapV2.wire} bytes, ${tapV2.units} units; charged ${tapV2.charge} units; relayer spent ${lamports(tapV2Spent)}`)
+  console.log(`   escrow v2 in Open USD (Token-2022), pay: ${payT22.wire} bytes, ${payT22.units} units; charged ${payT22.charge} units; relayer spent ${lamports(payT22Spent)}; its deposit address ${lamports(rent.depositT22)}`)
+  console.log(`   escrow v2 in Open USD, release: ${releaseT22.wire} bytes, ${releaseT22.units} units; charged ${releaseT22.charge} units`)
   console.log(`   person: ${START_DOLLARS - end.personTokens} test-dollar units spent in all; ${lamports(end.personSol)} of storage deposits and a v1 sweep came back to it`)
   console.log(`   relayer: ${lamports(2 * GIFT)} came back to it, a line's refund and a v2 sweep`)
   console.log('   refused:')

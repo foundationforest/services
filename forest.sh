@@ -5,17 +5,13 @@
 # clients in code; forest's programs and proving files in the slow tests. Moving the
 # pin is a one-line change to FOREST. Needs git and the network.
 #
-# FOREST_PIN names another pin file. Only the index uses one, index/FOREST, until it moves to
-# forest's records/.
-#
 #   ./forest.sh                                          forest at the pinned commit
 #   ./forest.sh registry/client records                  and `npm ci` in those packages
-#   FOREST_PIN=index/FOREST ./forest.sh shapes keys      forest at the index's commit
 set -euo pipefail
 cd "$(dirname "$0")"
 
 FOREST_REPO="${FOREST_REPO:-https://github.com/foundationforest/forest}"
-FOREST_COMMIT="$(tr -d '[:space:]' < "${FOREST_PIN:-FOREST}")"
+FOREST_COMMIT="$(tr -d '[:space:]' < FOREST)"
 
 if [ ! -d forest/.git ]; then
   git init -q forest

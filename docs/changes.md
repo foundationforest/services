@@ -163,3 +163,131 @@ this repo, is `forest/docs/changes.md`.
   offer and proof, and a free registry.
 - Importing the registry client's `proof.ts` prints Node's `punycode` deprecation warning at the
   issuer's start, from a dependency (cosmetic).
+
+## 2026-09-30: forest b2e838f: the index on records, lines and roots, trusted badges only; Token-2022 through the relayer
+
+**Built.**
+- `FOREST` at `b2e838f6bd1e64f3c43d93eb91ae8edc1c1d6bdc` (forest's main, with #42): the registry's
+  fixed line (one root, no `add_proof`), membership records, and escrow v2 taking Token-2022
+  dollars. `index/FOREST` and `FOREST_PIN` are gone; every service uses forest at the one commit in
+  `FOREST`.
+- `index/`, only the sources changed; the scoring rules did not (`compute.ts` is the same but for
+  a rename, `listOwner` → `issuer`):
+  - **Records from hosts** (`src/records/hosts.ts`, which replaces `firehose.ts`), read with
+    forest's own `readPage`, which checks each entry's canonical text and signature. The three
+    filters: every feed read since its cursor (kept in Postgres); the hosts in `HOSTS` in full,
+    every other host a folder names for badged profiles only; a profile read by `profile` when it
+    first shows up badged, and when it comes to hold a trusted line. Each profile is merged with
+    forest's `viewProfile`, and what it holds now replaces what the index held
+    (`src/records/store.ts`), each body checked against `forest/records/schemas/` with ajv.
+    `HOSTS` replaces `FIREHOSE_URL` and `PLC_URL`; `@atproto/*` and `ws` are gone.
+  - **Only trusted badges count, show or are kept.** A badge is a line a trusted issuer vouches for:
+    its root is in that issuer's published roots, or a membership for it checks. A line with
+    neither is not "verified", not counted, and its profile is not shown. Entries are dropped on
+    arrival unless their profile holds such a line; a profile holding another line keeps its proof
+    records only, since a membership may earn it trust. When a profile comes to hold a trusted
+    line, what was dropped is read again by profile from every followed host and the hosts its
+    folder names; when it stops, all but its proofs goes. A host's badged flag is only a hint.
+  - **Lines.** At every start every line is read from the registry's own accounts (`fetchLines`:
+    `getProgramAccounts` with the line discriminator); then only transactions after the newest one
+    at that moment, for new lines. No old history is needed. Table `lines`; `badges` is dropped.
+  - **Issuers' roots** (`src/issuers.ts`): `config/issuers.json` is keyed by the issuer's did:key,
+    with `roots`, the address of its signed roots file. Each file is checked (canonical text, the
+    configured issuer, the signature over the issuer's own prefix) and its roots kept
+    (`issuer_roots`), at most once a minute.
+  - **Memberships**: a `proof/<id>` membership adds its issuer to the line once `verifyMembership`
+    passes against the line, that issuer's kept roots and `forest/registry/artifacts/semaphore-32.json`.
+    It waits (pending, with why) while the issuer, line or root is unknown; a proof that fails is
+    invalid for that version of the record.
+  - **Receipts from escrow v1 and v2** (`src/chain/escrow.ts`), v2 in any dollar it takes, Open USD
+    included. v2's `Ended.fundedAt` fills `funded_at` when nobody marked it; v2's `Objected` is
+    stored (`objected_by`, `objected_at`) and shown on the deal page ("Objection") and on a
+    profile's reviews that name the deal. Scoring does not read it.
+  - Migration `006_records_lines.sql`: drops what the firehose and the earlier registry stored, adds
+    `host_entries`, `kept`, `lines`, `issuer_roots`, `memberships`, the objection columns.
+  - Pages and twins: a badge is one line with `issuers` (`via`: line or membership), `line`, `code`,
+    `root`; `listIndex`, `listOwner` and `transaction` are gone. Photos and media by `sha256`. A
+    record is addressed `<did>/<path>`; its `cid` is its entry's id. The deal page's "Payment
+    marked" reads "Paid", since v2 records when the money was there even unmarked.
+  - `POLL_MS` replaces `CHAIN_POLL_MS`; `ESCROW_V2_PROGRAM_ID` added. Devnet: registry `Hyh5…`,
+    escrow v1 `3vAV…`, v2 `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`; the devnet issuer by its
+    did:key and its `/roots.json`.
+  - Tests: the page fixture on did:key profiles and signed entries, taken in through the index's
+    own merge; `e2e.test.ts` rewritten on real pieces (two reference hosts, a validator with the
+    three programs, two issuers' roots files, real registrations, a membership that rescues a
+    profile, an unvouched profile kept out, deals on v1, v2 and v2 in Open USD, an objection).
+  - Docs: README, HOSTING, SCORING's badge sources, PAYLINK's `offer` and `cid`, the read skill's
+    examples and badge check, deploy README.
+- `relayer/`:
+  - the test registers in one transaction (`buildRegistration({ commitments })`) and drops
+    `add_proof`; it now also pays and releases an escrow v2 deal in Open USD, planted from forest's
+    copy of its mainnet mint;
+  - `kora.toml` allows the Token-2022 program; every `token_2022` flag for the relayer's own key
+    stays false, so it pays for others' Token-2022 instructions and never moves a token itself;
+  - `deploy/devnet-config.sh` names the registry `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf`
+    and escrow v2 `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`B3p13…` dropped);
+  - README: "A line never grows" replaces the `add_proof` section; a Token-2022 section; the Open
+    USD rows.
+- CI: the index job installs `records registry/client escrow/client escrow/v2/client`.
+
+**Chosen, where the plan was silent.**
+1. "Boards" are forest's hosts; the code says host, as forest's does.
+2. Crawling: hosts named in folders are followed, badged only; one on loopback only when `HOSTS`
+   has one (a local run). A host still answering after 60 s is skipped until it finishes.
+3. The index reads an issuer's roots file only, not `list.json`: it needs the roots, not the list.
+4. A profile holding an unvouched line keeps its `proof/` records in the index (not shown), so a
+   membership can earn it trust without waiting for a host to send them again.
+5. A closed folder (`null`) leaves nothing of that profile in the index.
+6. The Pay link keeps its parameter names; `offer` is `<did>/offer/<id>` and `cid` the entry's id.
+7. Forest has no market-file validator any more (`shapes/` went); the index checks only the fields
+   it reads, and derives roles from sides.
+8. The issuers file names each issuer's roots address; the default file keeps the placeholder key,
+   as a did:key, with no address (the foundation's issuer has none yet).
+9. The relayer is still paid in USDC only; Open USD is not added to `allowed_spl_paid_tokens`
+   (Learned, below).
+
+**Learned.**
+- Built here with Solana CLI 4.2.2 at `b2e838f`: the registry at 165,320 bytes and escrow v2 at
+  315,104, as forest records them; escrow v1 at 282,888.
+- Kora 2.0.5, on a local validator (6,960 lamports a byte), `kora.toml` as committed but the mock
+  price: a line with a 20-byte label is 702 bytes and 123,921 units, charged 2,077,120. An Open USD
+  pay is 727 bytes, charged 5,160,400 (its deposit address is 2,136,720, larger than a classic
+  one's, for its extensions); its release 10,000.
+- **A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** Kora reads the source of every
+  Token-2022 transfer whose destination exists, the escrow's own payout included; in a one tap that
+  source is the deposit address the same transaction makes, so Kora refuses (`Account … not
+  found`). Pay, then release, passes.
+- **Kora can charge its fee in a Token-2022 dollar** (a scratch run, not kept): a plain one and
+  Open USD's mainnet mint are quoted, co-signed and charged exactly; one unit short is refused. A
+  dollar with a transfer fee needs its quote asked again until it holds (three rounds at 1%), and
+  the relayer still nets less than it spent (9,999 of 10,000). Without the Token-2022 program in
+  `allowed_programs`, every Token-2022 payment is refused.
+- Blocking the permanent-delegate extension in Kora (`[validation.token_2022]`) would also refuse
+  every Open USD escrow payout, since Kora applies it to every Token-2022 transfer it reads.
+- The index's end-to-end test once failed at the membership step, about one run in ten (a
+  recompute during the test's deleted-lines window); fixed in the test. Green in every run since.
+- All four images build from the repo root and the index's starts and migrates, with this
+  sandbox's proxy lines added to throwaway copies of the Dockerfiles only. Its one error there: the
+  devnet issuer has no `/roots.json` yet.
+
+**Open.**
+- **The devnet services** (mechanical, then Railway): the index and the relayer here are not
+  deployed. The devnet index needs a records host on devnet (`HOSTS`) and the devnet issuer
+  redeployed from this repo (`/roots.json`); until then it reads lines and receipts only, and with
+  no roots it trusts no line, so it shows no one.
+- **The foundation's issuer on mainnet has no did:key or roots address yet**: `config/issuers.json`
+  holds a placeholder, so the mainnet index trusts no line until it does.
+- **One tap in Open USD** (needs Carlos, or Kora): an app must pay, then release, in two
+  transactions, until Kora reads a source made in the same transaction.
+- **Paying the relayer in Open USD** (needs Carlos): one line, not taken, since Open USD's issuer
+  holds a permanent delegate that can take back what the relayer collected.
+- **A badged feed trusts its host's word** (needs Carlos): a crawled host decides who is badged in
+  what it serves. The index checks lines itself and keeps nothing unvouched but proofs, yet a host
+  can still make it read and drop junk.
+- **Crawling grows with whatever folders name** (needs Carlos): any profile on a followed host can
+  name eight hosts. A list of hosts the index follows, or a cap, is a rule to choose.
+- **`readPage` has no size limit** (mechanical, forest): a host can send an endless page; the
+  index waits 60 s per round but reads what arrives. A limit belongs in forest's client.
+- **The market-file validator's home** (mechanical, forest or markets): the index's check reads
+  fields, not the format.
+- **This repo's `CLAUDE.md` is behind forest's** (needs Carlos), as the last session said.

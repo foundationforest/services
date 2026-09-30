@@ -9,7 +9,7 @@ The index is two processes over one Postgres database:
 | | Readers | Pages |
 |---|---|---|
 | Command | `node src/main.ts readers` (`npm run start:readers`) | `node src/main.ts web` (`npm run start:web`) |
-| Does | Applies migrations; reads the firehose and the chain; recomputes and signs scores; writes the index's public keys for the pages | Serves every page, its JSON twin, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
+| Does | Applies migrations; reads the hosts, the chain and the issuers' roots; recomputes and signs scores; writes the index's public keys for the pages | Serves every page, its JSON twin, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
 | Runs | Always, exactly one copy | On request, as many copies as wanted |
 | Database | Reads and writes | Reads only |
 | Holds the signing seed | Yes | No |
@@ -18,11 +18,12 @@ The index is two processes over one Postgres database:
 `node src/main.ts` with no argument runs both in one process, for local use.
 
 Both need Node 22.18 or later (they run TypeScript directly) and the repo's root checked out,
-not only `index/`: the index imports forest's `shapes/`, `registry/client` and `escrow/client` by
-relative path, from `forest/` at the commit in `index/FOREST`. Install them first, from the repo root:
+not only `index/`: the index imports forest's `records`, `registry/client` and both escrow clients
+by relative path, from `forest/` at the commit in `FOREST`, and reads the registry's verification
+key from `forest/registry/artifacts/`. Install them first, from the repo root:
 
 ```
-FOREST_PIN=index/FOREST ./forest.sh shapes registry/client escrow/client && (cd index && npm ci)
+./forest.sh records registry/client escrow/client escrow/v2/client && (cd index && npm ci)
 ```
 
 ## The database
@@ -50,8 +51,9 @@ One service, from this repo:
 - **Start:** `cd index && node src/main.ts readers`.
 - **Replicas:** one. Two would read the same events twice and race to write the same scores.
 - **Networking:** no public domain. It opens connections; nothing connects to it.
-- **Restart:** always. It holds a websocket to the firehose and a poll loop on the RPC; a restart
-  resumes from the cursors kept in Postgres.
+- **Restart:** always. It holds poll loops on the hosts, the RPC and the issuers' roots files; a
+  restart reads every line again from the registry's accounts and resumes the rest from the
+  cursors kept in Postgres.
 - **Variables:**
 
   | Variable | Value |
@@ -59,9 +61,8 @@ One service, from this repo:
   | `DATABASE_URL` | The database, with a role that can write |
   | `INDEX_SIGNING_SEED` | 64 hex characters, as a secret. It is the index's signing identity: keep it, and never give it to the pages |
   | `MARKETS_URL` | Unset: the `markets` repo's main branch, read over HTTPS at start. Set it to pin a commit |
-  | `FIREHOSE_URL` | The carrier's relay, `wss://`: its own stream, which the readers check commit by commit, not Jetstream's JSON |
-  | `PLC_URL` | `https://plc.directory` (the default) |
-  | `SOLANA_RPC_URL` | An RPC for the network the programs are on |
+  | `HOSTS` | The hosts to read in full, `https://` origins separated by commas. Hosts the folders name are read too, badged profiles only |
+  | `SOLANA_RPC_URL` | An RPC for the network the programs are on, one that answers `getProgramAccounts` for the registry |
   | `CHAIN_COMMITMENT` | `finalized` (the default) |
   | `ISSUERS_FILE`, `SCORING_FILE` | Only to use other files than `config/` |
 
@@ -107,7 +108,7 @@ built, not tried):
 
   and a rewrite of every path to it in `vercel.json` (`{ "source": "/(.*)", "destination": "/api" }`).
 - **The Node.js runtime,** not Edge: it uses `pg` and reads files.
-- **The repo root as the project's root,** for the relative imports to `forest/shapes/` and the clients.
+- **The repo root as the project's root,** for the relative imports to `forest/records` and the clients.
 - **The files it reads at start, included in the function:** `index/config/*.json`,
   `index/skill.md` and `index/llms.txt`, through the function's `includeFiles`. The market
   directory is fetched from the `markets` repo when an instance starts.
@@ -117,7 +118,7 @@ built, not tried):
 - **Caching:** every answer says `public, max-age=30, stale-while-revalidate=300`, which Vercel's
   CDN honours, so most reads never reach the function.
 
-The readers cannot run on Vercel: a function cannot keep a websocket or a poll loop alive.
+The readers cannot run on Vercel: a function cannot keep a poll loop alive.
 
 ## No address logs
 

@@ -1,6 +1,10 @@
 {
-  "about": "The devnet index's opinion of each issuer, in the shape of index/config/issuers.json. On devnet, list 0 is owned by the devnet issuer key devnet/keys.sh derives (label `issuer`, docs/devnet.md), which the devnet registry build names as FOUNDATION_ISSUER. It counts 1, as the foundation's list does in index/config/issuers.json; every other key counts 0.",
+  "about": "The devnet index's opinion of each issuer, in the shape of index/config/issuers.json. The devnet issuer's key is the one forest's devnet/keys.sh derives (label `issuer`, public key 7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7), named here by its did:key, and its roots file is at its own Railway address. It counts 1, as the foundation's issuer does in index/config/issuers.json; every other issuer counts 0.",
   "issuers": {
-    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Forest Foundation (devnet key)", "weight": 1 }
+    "did:key:z6MkmSeFgQp3SxoPB3qmrNFmqPaZAmjMUzmv9KViBqWtPLFV": {
+      "name": "Forest Foundation (devnet key)",
+      "weight": 1,
+      "roots": "https://issuer-production-fd68.up.railway.app/roots.json"
+    }
   }
 }

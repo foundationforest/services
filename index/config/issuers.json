@@ -1,6 +1,6 @@
 {
-  "about": "The index's opinion of each issuer: how much a list's owner vouching for a badge counts, from 0 to 1. Keyed by the list owner's key, as the registry's Registered entry names it. Any key not here counts 0. This is the index's opinion, not the foundation's rule; anyone running an index sets their own. The key below is the registry's placeholder FOUNDATION_ISSUER, which anyone with this repo can sign for; it is replaced with the foundation's issuer key before mainnet, here and in registry/.",
+  "about": "The index's opinion of each issuer: how much its vouching for a badge counts, from 0 to 1, and where it publishes its signed roots file (issuer/README.md, \"The two files\"). Keyed by the issuer's did:key, the key its roots file is signed with. An issuer not here counts 0. This is the index's opinion, not the foundation's rule; anyone running an index sets their own. The key below is the did:key of the registry's earlier placeholder issuer key, which anyone with forest's code can sign for, and the foundation's issuer has no public address yet; both are replaced before mainnet.",
   "issuers": {
-    "H7qXWNAeAvedhwuvhAkBYK2WE2nA3KgbufnRz38zFdzS": { "name": "Forest Foundation (placeholder key)", "weight": 1 }
+    "did:key:z6Mkva6a6cR5WU96pSkdNji2PQaW3c41TCvxbghMpK71Armp": { "name": "Forest Foundation (placeholder key)", "weight": 1 }
   }
 }

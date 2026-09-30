@@ -6,6 +6,7 @@
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
 import type { Directory, MarketFile } from '../markets.ts'
+import { VOUCHED } from '../issuers.ts'
 import { badgeStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
 import { type Near, type Urls, SCORING_DOC, SOURCE, PAYLINK_DOC } from './html.ts'
@@ -147,7 +148,8 @@ export type Review = Awaited<ReturnType<typeof reviews>>[number]
 async function reviews(ctx: Ctx, where: string, params: unknown[]) {
   const { rows } = await ctx.db.query(
     `select v.*, w.counted, w.skipped, w.evidence_kind, w.evidence_note, w.evidence_weight, w.reviewer_weight, w.contribution,
-            a.name as reviewer_name, b.name as subject_name, (e.escrow is not null) as has_receipt
+            a.name as reviewer_name, b.name as subject_name, (e.escrow is not null) as has_receipt,
+            e.objected_by, e.objected_at
      from reviews v left join review_weights w on w.uri = v.uri
        left join profiles a on a.did = v.reviewer left join profiles b on b.did = v.subject
        left join escrow_receipts e on e.escrow = v.deal_id
@@ -173,12 +175,15 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
       /** Every rating the review gives, by name, from 1 to 10. */
       ratings: Object.fromEntries(Object.entries((r.ratings ?? {}) as Record<string, string>).map(([k, v]) => [k, Number(v)])),
       text: row.text as string | null,
-      media: ((r.media ?? []) as { ref?: { $link?: string }; mimeType?: string }[]).map((m) => ({ cid: m.ref?.$link ?? null, mimeType: m.mimeType ?? null })),
+      /** Each photo or video by the SHA-256 of its bytes. The index never fetches them. */
+      media: ((r.media ?? []) as { sha256: string; mimeType: string }[]).map((m) => ({ sha256: m.sha256, mimeType: m.mimeType })),
       /** The market's review fields this review fills in. */
       fields: Object.fromEntries(defined.filter((k) => r[k] !== undefined).map((k) => [k, r[k] as FieldValue])),
       dealId: row.deal_id as string | null,
       dealUrl: row.deal_id ? ctx.urls.deal(row.deal_id) : null,
       hasReceipt: Boolean(row.has_receipt),
+      /** A side of the deal objected (escrow v2): which, the plain word for it in the subject's market, and when. */
+      objection: row.objected_by ? objectionOut(ctx, market, row.objected_by, row.objected_at) : null,
       createdAt: iso(row.created_at),
       counted: (row.counted ?? false) as boolean,
       skipped: (row.skipped ?? null) as string | null,
@@ -187,6 +192,10 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
       contribution: (row.contribution ?? 0) as number,
     }
   })
+}
+
+function objectionOut(ctx: Ctx, market: string | null, by: 'buyer' | 'seller', at: unknown) {
+  return { by, side: ctx.directory.sideWord(market, by), at: iso(at) }
 }
 
 function scoreOut(row: any) {
@@ -225,7 +234,7 @@ export async function home(ctx: Ctx) {
     ...self(ctx, 'home', ctx.urls.home()),
     index: {
       name: 'Forest index',
-      about: 'Profiles, badges, reviews and payment receipts, read from signed records and the programs’ own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
+      about: 'Profiles, badges, reviews and payment receipts, read from signed records, the registry’s lines and the escrows’ own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
       scoring: { version: 'v1', rules: SCORING_DOC },
       payLink: PAYLINK_DOC,
       source: SOURCE,
@@ -274,9 +283,9 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
       [name],
     ),
     ctx.db.query(
-      `select b.did, b.wallet, b.scope, b.list_owner, p.wallet as declared, p.market as profile_market, p.role as profile_role
-       from badges b join profiles p on p.did = b.did where b.market = $1`,
-      [name],
+      `select l.did, l.wallet, l.label, p.wallet as declared, p.market as profile_market, p.role as profile_role
+       from lines l join profiles p on p.did = l.did where l.market = $2 and ${VOUCHED}`,
+      [Object.keys(ctx.config.issuers), name],
     ),
     offers(ctx, 'pr.market = $1', [name], PAGE_SIZE, offset, near),
   ])
@@ -285,7 +294,7 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
       .filter(
         (b) =>
           badgeStatus(
-            { did: b.did, wallet: b.wallet, scope: b.scope, listOwner: b.list_owner },
+            { wallet: b.wallet, scope: b.label },
             { wallet: b.declared, scope: scopeOf({ market: b.profile_market, role: b.profile_role }) },
             ctx.directory,
           ).counted,
@@ -312,11 +321,17 @@ export async function profile(ctx: Ctx, did: string) {
   if (!rows.length) return null
   const p = rows[0]
   const r = p.record
+  const trusted = Object.keys(ctx.config.issuers)
   const [badges, scores, posts, credentials, received, given] = await Promise.all([
+    // Each line a trusted issuer vouches for, with those issuers: by its root, then by memberships
+    // that checked. Any other line is no badge here.
     ctx.db.query(
-      `select b.*, t.block_time as registered_at from badges b join chain_transactions t on t.signature = b.signature
-       where b.did = $1 order by b.slot, b.ix`,
-      [did],
+      `select l.*,
+         array(select r.issuer from issuer_roots r where r.root = l.root and r.issuer = any($1) order by r.issuer) as by_root,
+         array(select m.issuer from memberships m where m.code = l.code and m.did = l.did and m.status = 'valid' and m.issuer = any($1)
+               order by m.issuer) as by_membership
+       from lines l where l.did = $2 and ${VOUCHED} order by l.time, l.address`,
+      [trusted, did],
     ),
     ctx.db.query('select * from scores where did = $1 order by kind, scope', [did]),
     ctx.db.query(`${OFFER_SELECT} where p.did = $1 order by p.created_at desc nulls last, p.uri`, [did]),
@@ -343,29 +358,40 @@ export async function profile(ctx: Ctx, did: string) {
       about: (r.about ?? null) as string | null,
       contact: (r.contact ?? null) as string | null,
       wallet: (p.wallet ?? null) as string | null,
-      photo: r.photo ? { cid: (r.photo.ref?.$link ?? null) as string | null, mimeType: (r.photo.mimeType ?? null) as string | null } : null,
+      /** By the SHA-256 of its bytes. The index never fetches it. */
+      photo: r.photo ? { sha256: r.photo.sha256 as string, mimeType: r.photo.mimeType as string } : null,
       createdAt: iso(p.created_at),
       cid: p.cid as string,
     },
     badges: badges.rows.map((b) => {
-      const status = badgeStatus({ did, wallet: b.wallet, scope: b.scope, listOwner: b.list_owner }, { wallet: p.wallet, scope: scopeOf(p) }, ctx.directory)
-      const issuer = ctx.config.issuers[b.list_owner]
+      const status = badgeStatus({ wallet: b.wallet, scope: b.label }, { wallet: p.wallet, scope: scopeOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
+      const issuer = (key: string, via: 'line' | 'membership') => ({
+        key,
+        name: (ctx.config.issuers[key]?.name ?? null) as string | null,
+        weight: (ctx.config.issuers[key]?.weight ?? 0) as number,
+        via,
+      })
       return {
-        scope: b.scope as string,
+        scope: b.label as string,
         market: b.market as string,
         marketUrl: file ? ctx.urls.market(b.market) : null,
         role: b.role as string | null,
         /** The plain word for the role: the market's label, the role itself, or null in a one-sided market. */
         side: status.counted && file?.sides === 'two' ? ctx.directory.sideWord(b.market, status.role as 'seller' | 'buyer') : null,
-        listIndex: b.list_index as number,
-        listOwner: b.list_owner as string,
-        issuer: { name: (issuer?.name ?? null) as string | null, weight: (issuer?.weight ?? 0) as number },
+        /**
+         * The trusted issuers vouching for it: the ones whose published roots hold the line's root
+         * (`line`), then the ones a membership record in this profile's folder shows (`membership`).
+         */
+        issuers: [...(b.by_root as string[]).map((k) => issuer(k, 'line')), ...(b.by_membership as string[]).map((k) => issuer(k, 'membership'))],
         wallet: b.wallet as string,
         counted: status.counted,
         why: status.counted ? null : status.why,
-        registeredAt: iso(b.registered_at),
-        transaction: b.signature as string,
+        registeredAt: iso(b.time),
+        /** The line's address: the registry account anyone can read to check it. */
+        line: b.address as string,
+        code: b.code as string,
+        root: b.root as string,
       }
     }),
     scores: {
@@ -421,6 +447,8 @@ export async function deal(ctx: Ctx, dealId: string) {
       toSeller: (e.to_seller ?? null) as string | null,
       toBuyer: (e.to_buyer ?? null) as string | null,
       closed: e.closed as boolean,
+      /** Escrow v2: a side objected, and when. It moved no money. */
+      objection: e.objected_by ? { by: e.objected_by as 'buyer' | 'seller', side: sides[e.objected_by as 'buyer' | 'seller'], at: iso(e.objected_at) } : null,
       transaction: e.signature as string,
     }
   }
