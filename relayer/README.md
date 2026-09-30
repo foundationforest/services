@@ -10,7 +10,9 @@ In forest this was `feepayer/`, the fee payer, which forest's `main` no longer h
 names keep "fee payer": its `fee_payer_policy` settings and its messages.
 
 **Nothing here is shipped.** Its tests run in front of a local validator. The devnet relayer on
-Railway still runs the earlier configuration (`deploy/README.md`). Nothing is on mainnet.
+Railway runs this configuration (`deploy/README.md`). Nothing is on mainnet.
+
+It is paid in USDC or in Open USD, whichever the person holds.
 
 ## What it does
 
@@ -145,13 +147,18 @@ second issuer vouches for the same line in a membership record in the profile's 
 `kora.toml` allows the Token-2022 program, so escrow v2 deals in a Token-2022 dollar such as Open
 USD pass. The relayer's own key may still do nothing in it: every `token_2022` flag in
 `fee_payer_policy` is false, so it pays for others' Token-2022 instructions and never moves a token
-itself. The relayer is still paid in USDC, a classic token.
+itself. It is paid in USDC or Open USD (below).
 
 **A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** For every Token-2022 transfer whose
 destination exists, the escrow's payout to the seller inside its own call included, Kora reads the
 transfer's source. In a one tap that source is the deposit address the same transaction makes, so
 Kora finds none and refuses. Paying and then releasing, in two transactions, passes, and so does a
-one tap in a classic dollar. An app paying in Open USD through this relayer pays, then releases.
+one tap in a classic dollar. An app paying in Open USD through this relayer pays, then releases:
+two transactions from one approval, the second sent once the first is confirmed. The cause is in
+Kora's source (`token/token.rs`, `verify_token_payment`: the extension check reads the source of
+every Token-2022 transfer before checking whether that transfer pays Kora); Kora's
+`2.2.0-beta.8` moves that check after it. The issue for Kora is drafted in
+`../docs/kora-issue.md`. When Kora 2.2 is stable, upgrading drops the two transactions.
 
 **Kora can be paid in a Token-2022 dollar,** checked with a scratch run not kept in this repo (the
 config there: this `kora.toml`, the mock price, three test dollars and Open USD as the paid tokens):
@@ -162,9 +169,12 @@ config there: this `kora.toml`, the mock price, three test dollars and Open USD 
   (9,999 of 10,000 lamports' worth), since Token-2022 takes its fee from the amount received and
   Kora's price does not gross it up. Escrow v2 refuses such mints; the relayer should not take one.
 
-Accepting a Token-2022 dollar as payment is one line (`allowed_spl_paid_tokens`), not taken: Open
-USD's issuer holds a permanent delegate, which can take back what the relayer collected. That is
-Kora's first warning below.
+**The relayer takes Open USD as payment** (`allowed_spl_paid_tokens`), the founder's choice of
+2026-09-30. Open USD's issuer holds a permanent delegate, which can take back what the relayer
+collected in it; the foundation accepts that. Open USD has no transfer fee, so its quote holds. On
+devnet the Open-USD-shaped test dollar stands in (`g55mj…`, every extension Open USD has); the
+relayer needs a token account for it before the first payment, which the loop makes
+(`../loop/`).
 
 ### One thing a product must do for Kora: make the deposit address at the top
 
@@ -256,12 +266,12 @@ betas) takes the key itself only, not a path.
   Jupiter API key (`JUPITER_API_KEY`).
 - **SOL on the relayer's key** before the first transaction: enough for the deposits in flight.
   It is paid back in dollars, which someone must turn back into SOL: an operations loop, not code.
-- **The relayer's USDC account**, created once. `kora rpc initialize-atas` does it, or any
-  transfer that makes it.
+- **The relayer's USDC and Open USD accounts**, created once each. `kora rpc initialize-atas` does
+  it, or any transfer that makes them.
 - **The port:** `PORT` from Railway, and a health check on `GET /liveness`.
 - **Devnet** needs its own `kora.toml`: the three devnet program ids, escrow v2 at
   `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`deploy/devnet-config.sh` names where each is
-  recorded), the devnet test dollar or devnet USDC, and
+  recorded), the two devnet test dollars (USDC-shaped and Open-USD-shaped) as the paid tokens, and
   `price_source = "Mock"`, since Jupiter prices mainnet only.
 
 ## Chosen, not decided
@@ -283,15 +293,17 @@ deployed, and each is in `forest/docs/changes.md` or this repo's `docs/changes.m
 8. **Kora's three warnings on `config validate` left as they are:**
    - no auth, as above;
    - `allow_create_account`, which is priced, capped and tested;
-   - Token-2022's permanent delegate, which does not reach what the relayer collects while it is
-     paid in USDC only. Blocking the extension (`[validation.token_2022]`) would also refuse Open
-     USD escrow payouts, since Kora applies it to every Token-2022 transfer it reads.
+   - Token-2022's permanent delegate: Open USD's issuer can take back what the relayer collected
+     in Open USD, which the foundation accepts. Blocking the extension (`[validation.token_2022]`)
+     would also refuse Open USD escrow payouts, since Kora applies it to every Token-2022 transfer
+     it reads.
 
 ## What is not done
 
 - **Mainnet.** Nothing deployed; on devnet Kora prices the test dollar with its mock, and Jupiter's
   price was not called.
-- **Kora 2.2.** It hardens the relayer against being drained and no longer reads the key from a
-  path. It was read, not run.
+- **Kora 2.2.** It hardens the relayer against being drained, no longer reads the key from a
+  path, and appears to fix the Token-2022 one tap. It was read, not run. When it is stable:
+  upgrade, and drop the two-transaction payment.
 - **Load, rate limits, several relayer keys**, and the operations loop that turns collected
   dollars back into SOL.
