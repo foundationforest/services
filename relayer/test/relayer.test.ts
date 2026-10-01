@@ -14,8 +14,8 @@
 // (`../forest.sh registry/client escrow/client escrow/v2/client`) and Kora (`./build.sh`). If any is
 // missing the test says which and skips.
 //
-// The test dollar is a six-decimal mint planted at USDC's address, because that is the one token
-// kora.toml accepts payment in. Kora runs on a copy of kora.toml with one line changed: prices from
+// The test dollar is a six-decimal mint planted at USDC's address, one of the tokens kora.toml
+// accepts payment in. Kora runs on a copy of kora.toml with one line changed: prices from
 // Kora's own mock ("Mock") instead of Jupiter. The mock values any mint but two at 0.001 SOL per
 // whole token, so here one base unit of the test dollar buys one lamport. The rules are the file's
 // own.

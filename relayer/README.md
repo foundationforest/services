@@ -1,7 +1,7 @@
 # relayer
 
-The relayer co-signs a person's transaction as its payer and charges, in their dollar token, what it
-spends: the network fee and every storage deposit it puts down. When Solana cuts its storage price,
+The relayer co-signs a person's transaction as its payer and charges, in the token they pay in, what
+it spends: the network fee and every storage deposit it puts down. When Solana cuts its storage price,
 part of a deposit it put down is freed, and the relayer keeps that refund. So people never need
 SOL, and the relayer pays for nobody. It is Kora 2.0.5, configured, with no custom code. It holds
 none of the person's keys and decides nothing about the person, the market or the deal.
@@ -12,14 +12,15 @@ names keep "fee payer": its `fee_payer_policy` settings and its messages.
 **Nothing here is shipped.** Its tests run in front of a local validator. The devnet relayer on
 Railway runs this configuration (`deploy/README.md`). Nothing is on mainnet.
 
-It is paid in USDC or in Open USD, whichever the person holds.
+It is paid in USDC, USDT, Open USD or EURC, whichever the person holds ("Paid in four tokens",
+below). On devnet, in the two test dollars.
 
 ## What it does
 
 The person's device:
 1. builds the transaction with the relayer as its payer, and one plain token transfer to the relayer
    whose amount it fills in next;
-2. asks Kora the price of that transaction in the dollar token (`estimateTransactionFee`);
+2. asks Kora the price of that transaction in that token (`estimateTransactionFee`);
 3. sets the transfer to exactly that price;
 4. signs with the person's own keys;
 5. hands the transaction to Kora (`signAndSendTransaction`).
@@ -147,7 +148,7 @@ second issuer vouches for the same line in a membership record in the profile's 
 `kora.toml` allows the Token-2022 program, so escrow v2 deals in a Token-2022 dollar such as Open
 USD pass. The relayer's own key may still do nothing in it: every `token_2022` flag in
 `fee_payer_policy` is false, so it pays for others' Token-2022 instructions and never moves a token
-itself. It is paid in USDC or Open USD (below).
+itself. It is paid in four tokens, Open USD among them (below).
 
 **A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** For every Token-2022 transfer whose
 destination exists, the escrow's payout to the seller inside its own call included, Kora reads the
@@ -176,6 +177,30 @@ devnet the Open-USD-shaped test dollar stands in (`g55mj…`, every extension Op
 relayer needs a token account for it before the first payment, which the loop makes
 (`../loop/`).
 
+### Paid in four tokens
+
+On mainnet `kora.toml` takes the fee in four tokens, the founder's choice of 2026-10-01, each its
+issuer's own mint, read on mainnet on 2026-10-01:
+
+| Token | Mint | Program | Issuer's page |
+|---|---|---|---|
+| USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | SPL Token | Circle's contract addresses |
+| USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | SPL Token | Tether's supported protocols |
+| Open USD | `ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB` | Token-2022, eight extensions | Solana's launch post, 2026-09-30 |
+| EURC | `HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr` | SPL Token | Circle's contract addresses |
+
+- All four have six decimals and no transfer fee, so each quote holds.
+- **EURC is a euro.** Kora's Jupiter source prices every token in dollars and divides by SOL's
+  price, so the charge is the same SOL cost in whichever token is paid: in EURC, fewer units at the
+  euro's rate. Nothing else changes.
+- Each issuer holds a freeze authority over its token, so it can freeze the relayer's account in it,
+  as Circle can for USDC; Open USD's issuer can also take back what the relayer collected
+  (above). The foundation accepts both.
+- Devnet stays on the two test dollars (`deploy/devnet-config.sh`): no USDT- or EURC-shaped test
+  token is minted, and Jupiter prices mainnet only.
+- Not run: no test pays the relayer in USDT or EURC. Kora handles them as it handles USDC, a classic
+  six-decimal SPL token; mainnet is not deployed.
+
 ### One thing a product must do for Kora: make the deposit address at the top
 
 Kora 2.0.5 looks up the destination of every token transfer before it signs. It accepts one that
@@ -199,7 +224,7 @@ Both escrow clients do this in every builder that funds in the same transaction 
 |---|---|
 | `KORA` | the version pinned: `2.0.5`, the latest stable release |
 | `build.sh` | `cargo install kora-cli --version 2.0.5 --locked` into `.kora/` |
-| `kora.toml` | the rules: programs, the dollar token, the price, what the relayer's key may do |
+| `kora.toml` | the rules: programs, the tokens it is paid in, the price, what the relayer's key may do |
 | `signers.toml` | the one key, read from `FOREST_RELAYER_KEY` |
 | `run.sh` | starts Kora with both files; refuses a key file inside this repo |
 | `test/relayer.test.ts` | the local run |
@@ -266,8 +291,8 @@ betas) takes the key itself only, not a path.
   Jupiter API key (`JUPITER_API_KEY`).
 - **SOL on the relayer's key** before the first transaction: enough for the deposits in flight.
   It is paid back in dollars, which someone must turn back into SOL: an operations loop, not code.
-- **The relayer's USDC and Open USD accounts**, created once each. `kora rpc initialize-atas` does
-  it, or any transfer that makes them.
+- **The relayer's USDC, USDT, Open USD and EURC accounts**, created once each. `kora rpc
+  initialize-atas` does it, or any transfer that makes them.
 - **The port:** `PORT` from Railway, and a health check on `GET /liveness`.
 - **Devnet** needs its own `kora.toml`: the three devnet program ids, escrow v2 at
   `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`deploy/devnet-config.sh` names where each is
