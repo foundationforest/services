@@ -11,7 +11,7 @@ Rules Claude Code does not change (Carlos changes them, in a chat, then here):
 - The relayer co-signs a person's transaction and charges what that transaction costs it (the network fee and every storage deposit it puts down) in the token the person pays with, with no margin. It pays for no one; sponsorship is never built in.
 - No mixers, no custody, no arbitration by Forest. Fees exist only at ramp in and out; nothing inside charges anything.
 - Reputation is computed per profile. Profiles link only when the person chooses. Never build a per-human score that links profiles by itself. Nothing server-side ever holds a person next to a profile.
-- No address logs: no service here writes down a network address.
+- No address logs in our code: no service here keeps a network address. A hosting provider's own request logs are the operator's choice; on Railway they exist.
 - Anyone can make any market: a label is free text, and the registry accepts any. The recommended label is `market/role`. The `markets` repo is the foundation's directory of recommended names; the foundation excludes, prohibits and approves nothing.
 - Crypto is invisible in anything a person reads: no "wallet", "USDC", "chain", "gas" in copy.
 - Out of scope until decided otherwise: issuer-assisted recovery, a cross-profile zero-knowledge proof, video hosting, an arbiter by default.

@@ -73,5 +73,5 @@ The build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 
 
 - **Open to anyone,** and it grows with every loop run. Wipe its volume when it gets in the way.
 - **Badged means any line,** whoever vouched: a hint only.
-- **Address logs at the hosting platform.** Forest's board logs no address; Railway keeps every request's
-  client address and path in its own logs.
+- **Address logs.** Forest's board keeps no network address. A hosting provider's own request logs
+  are the operator's choice; on Railway they exist, with each request's client address and path.

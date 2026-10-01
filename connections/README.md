@@ -113,5 +113,6 @@ build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 and 
   person's passkey.
 - **The passkey belongs to the page's origin.** On devnet that is this service's Railway address,
   so a passkey made there opens nothing on any other address.
-- **Address logs at the hosting platform.** Railway keeps every request's client address and path; the path is
-  always `/mcp` or one of the page's files.
+- **Address logs.** Connections keeps no network address and logs nothing per request. A hosting
+  provider's own request logs are the operator's choice; on Railway they exist, with each request's
+  client address and path (always `/mcp` or one of the page's files).

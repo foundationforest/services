@@ -245,5 +245,6 @@ the stand-in's place.
 - **A restart mid-batch writes that batch's notes again,** so a note can land twice; readers keep
   each once.
 - **The request limit is not a security boundary** (above).
-- **Address logs at the hosting platform.** Railway keeps every request's client address and path in its own
-  logs.
+- **Address logs.** The issuer keeps no network address (above). A hosting provider's own request
+  logs are the operator's choice; on Railway they exist, with each request's client address and
+  path.

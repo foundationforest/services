@@ -157,7 +157,7 @@ The three files in `config/` are this index's opinions, not the foundation's rul
 
 | File | What it says |
 |---|---|
-| `issuers.json` | Which issuers it trusts, keyed by did:key: a name, a weight from 0 to 1, and where its roots file is. Ships with one placeholder key (below) |
+| `issuers.json` | Which issuers it trusts, keyed by did:key: a name, a weight from 0 to 1, and where its roots file is. Empty: it trusts no issuer until its operator names one |
 | `scoring.json` | The evidence weights, the unbadged reviewer's floor, and `countedMints`: the tokens whose receipts count (USDC on mainnet and on devnet) |
 | `currencies.json` | Which tokens the pages show as which currency, and their decimals |
 
@@ -261,10 +261,9 @@ identity: every score is signed again under new public keys.
 
 ## Limits
 
-- **The default `config/issuers.json` is a placeholder.** It names the registry's earlier
-  placeholder issuer key, which anyone with forest's code can sign for, with no roots address. With
-  an RPC, an index on these defaults would take roots that key writes on chain. The foundation's
-  issuer has no mainnet key yet.
+- **By default it trusts no issuer,** so it keeps and shows no one. The devnet index names the
+  devnet issuer (`deploy/issuers.devnet.json`); the foundation's issuer has no mainnet key yet, and
+  gets one in `config/issuers.json` when it runs there.
 - **On devnet, readers and pages are one process,** so the pages hold the signing seed.
 - **The directory is read once, at start.** A change in the `markets` repo reaches the index at its
   next restart.
@@ -277,5 +276,6 @@ identity: every score is signed again under new public keys.
 - **One RPC's word** for every log; no second source cross-checks it.
 - **Two escrow versions,** each a program in `src/chain/escrow.ts`; a new version is code.
 - **Pages in English only.**
-- **Address logs at the hosting platform.** The pages log only a failed request's path and its error, never an
-  address or a query. Railway keeps every request's client address and path in its own logs.
+- **Address logs.** The index keeps no network address: the pages log only a failed request's path
+  and its error, never an address or a query. A hosting provider's own request logs are the
+  operator's choice; on Railway they exist, with each request's client address and path.

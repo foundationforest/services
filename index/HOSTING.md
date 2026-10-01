@@ -1,8 +1,8 @@
 # Hosting the index
 
 **Nothing is shipped.** This page says what each part needs. On devnet the index runs as one
-process on Railway, with its Postgres on Supabase (`forest/docs/services.md`); as two processes it has run
-only on one machine.
+process on Railway, with its Postgres on Supabase (`README.md`, "Deploy"); as two processes it has
+run only on one machine.
 
 The index is two processes over one Postgres database:
 
@@ -120,9 +120,9 @@ built, not tried):
 
 The readers cannot run on Vercel: a function cannot keep a poll loop alive.
 
-## No address logs
+## Address logs
 
-Neither process writes a visitor's address anywhere: the pages log only a failed request's path
-and its error, never an address or a query. Railway and Vercel keep request logs of their own:
-Railway's keep each request's client address and path, with no documented way to turn it off, and
-Vercel's are not checked (`forest/docs/handoff.md`, Open).
+Neither process keeps a visitor's address: the pages log only a failed request's path and its
+error, never an address or a query. A hosting provider's own request logs are the operator's
+choice. On Railway they exist: they keep each request's client address and path, with no
+documented way to turn them off. Vercel's are not checked.

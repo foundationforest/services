@@ -2,7 +2,7 @@
   "name": "@forest/relayer",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest relayer: Kora, configured, with no custom code. Co-signs a person's transaction and charges its network fee and storage deposits in their dollar token.",
+  "description": "The Forest relayer: Kora, configured, with no custom code. Co-signs a person's transaction and charges its network fee and storage deposits in the token they pay in.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

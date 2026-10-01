@@ -55,8 +55,12 @@ between 04:50 and 04:52 UTC.
 
 Secrets are sealed in Railway and cannot be read back: the index's `DATABASE_URL` and
 `INDEX_SIGNING_SEED`, the issuer's `ISSUER_KEYPAIR`, the relayer's `FOREST_RELAYER_KEY`, and the
-Helius RPC URLs of the index, issuer, relayer and board, each of which holds Helius's key. The issuer has no Didit key, so its stand-in
-face check runs.
+Helius RPC URLs of the index, issuer, relayer and board, each of which holds Helius's key. The
+issuer has no Didit key, so its stand-in face check runs.
+
+**Address logs.** None of the five keeps a network address in its own code. Railway's own request
+logs keep each request's client address and path, for every service here. The relayer's Kora also
+logs the body of every request it gets (`relayer/README.md`, "Limits").
 
 **How they are wired:**
 

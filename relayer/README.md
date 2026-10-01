@@ -218,5 +218,8 @@ back in tokens; turning them back into SOL is an operations loop, not code.
 - **What comes back to a person arrives as SOL** in a wallet that otherwise holds none.
 - **Kora 2.2** hardens a relayer against being drained and no longer reads the key from a path; it
   is not stable, and not taken.
-- **Address logs at the hosting platform.** Railway keeps every request's client address and path in its own
-  logs.
+- **Address logs.** No code of ours runs in the relayer. Kora 2.0.5, as it runs here, logs no
+  network address, but it logs the body of every request: each transaction it is asked to price or
+  sign, refused ones included, which never reach the chain. A hosting provider's own request logs
+  are the operator's choice; on Railway they exist, with each request's client address and time, so
+  the two can be matched by time.

@@ -27,6 +27,8 @@ decision that shapes these services goes here, in the same form.
   network.
 - **A board still answering after 60 seconds is skipped until it finishes:** one slow board never
   holds up the rest.
+- **By default the index trusts no issuer:** a key nobody runs must never vouch, and each operator
+  names the issuers it trusts.
 - **It reads an issuer's roots, never its list, from its signed file or its notes on chain, either
   one:** counting a line needs only its root, and either source proves the issuer published it.
 - **A badge counts only as `market/role`, the market a directory name byte for byte, under the

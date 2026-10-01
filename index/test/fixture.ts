@@ -15,6 +15,7 @@
 // too, and the read skill (index/skill.md) uses them as its examples.
 
 import { randomBytes } from 'node:crypto'
+import { join } from 'node:path'
 
 import pg from 'pg'
 
@@ -24,7 +25,7 @@ import { folderEntry, ownerEntry } from '../../forest/records/src/write.ts'
 
 import { storeLine } from '../src/chain/poll.ts'
 import { splitScope } from '../src/markets.ts'
-import { type Config, loadConfig } from '../src/config.ts'
+import { type Config, INDEX_ROOT, loadConfig } from '../src/config.ts'
 import { type Db, createPool } from '../src/db.ts'
 import { storeRoots } from '../src/issuers.ts'
 import { startReaders } from '../src/main.ts'
@@ -32,7 +33,7 @@ import { takeIn } from '../src/records/hosts.ts'
 import { serveMarkets } from './markets-repo.ts'
 
 export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-/** The issuer config/issuers.json trusts, by its did:key. */
+/** The issuer test/issuers.json trusts, by its did:key. */
 export const FOUNDATION_ISSUER = 'did:key:z6Mkva6a6cR5WU96pSkdNji2PQaW3c41TCvxbghMpK71Armp'
 /** The root of the foundation's list every counted line here was proven against. */
 export const FOUNDATION_ROOT = 'ab'.repeat(32)
@@ -150,7 +151,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const url = new URL(adminUrl)
   url.pathname = `/${name}`
   const markets = await serveMarkets()
-  const env = { DATABASE_URL: url.toString(), MARKETS_URL: markets.url, INDEX_SIGNING_SEED: SIGNING_SEED }
+  const env = { DATABASE_URL: url.toString(), MARKETS_URL: markets.url, INDEX_SIGNING_SEED: SIGNING_SEED, ISSUERS_FILE: join(INDEX_ROOT, 'test/issuers.json') }
   const config = (more: Record<string, string> = {}) => loadConfig({ ...env, ...more })
   const db = createPool(url.toString())
 
