@@ -34,7 +34,7 @@ keys, and nothing here has user accounts.
 | [`issuer/`](issuer/README.md) | The issuer: a passed face check becomes a place on its list; publishes the list and its signed roots, and writes each batch on chain | Running, with a stand-in face check that passes everyone |
 | [`relayer/`](relayer/README.md) | The relayer: Kora 2.0.5, configured, with no custom code | Running, paid in two test dollars |
 | [`connections/`](connections/README.md) | forest's MCP service for assistants, run as a service, and the approval page its links open | Running |
-| [`loop/`](loop/README.md) | A script that runs Forest end to end on devnet against these services | Run by hand; three passing runs recorded |
+| [`loop/`](loop/README.md) | A script that runs Forest end to end on devnet against these services | Run by hand; four passing runs recorded, the latest against `main` |
 | [`loop/board/`](loop/board/README.md) | A board for devnet testing only: forest's reference board, unchanged | Running |
 | [`docs/`](docs/) | [Why things are as they are](docs/decisions.md); [what runs on devnet](docs/devnet.md); [an issue drafted for Kora](docs/kora-issue.md) | |
 

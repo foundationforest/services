@@ -6,7 +6,7 @@ shipped.
 
 Up: [the repo](../README.md). Each service's settings: its README's "Deploy" section.
 
-Read on 2026-10-01, after the loop's run of 04:36 UTC and the deploy of `main` at 04:51 UTC.
+Read on 2026-10-01, after the deploy of `main` at 04:51 UTC and the loop's run against it at 05:18 UTC.
 
 ## Open these in a browser
 
@@ -14,11 +14,11 @@ Read on 2026-10-01, after the loop's run of 04:36 UTC and the deploy of `main` a
 |---|---|
 | The index's home | https://index-production-1b6e.up.railway.app/ |
 | The tutoring market, with the loop's offers | https://index-production-1b6e.up.railway.app/markets/tutoring |
-| The latest run's seller: badge, rating, standing, offer, two reviews | https://index-production-1b6e.up.railway.app/profiles/did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD |
-| The latest run's buyer | https://index-production-1b6e.up.railway.app/profiles/did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq |
-| Deal 1, USDC-shaped dollar, one tap: the receipt and both reviews | https://index-production-1b6e.up.railway.app/deals/3xSr9wWVssLaHpdvL16DoRZxa1zmQpyM4qqspyJZVXDd |
-| Deal 2, Open-USD-shaped dollar, pay then release | https://index-production-1b6e.up.railway.app/deals/GSE7R6Hnj1Weckbe5tT5ZQykeZiH7n9aag4N5URaMeo8 |
-| Any page as data: add `.json` | https://index-production-1b6e.up.railway.app/profiles/did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD.json |
+| The latest run's seller: badge, rating, standing, offer, two reviews | https://index-production-1b6e.up.railway.app/profiles/did:key:z6MksTtmq2QRfySSbpL3mW5nz6wYfiri6aX4eBc5sTYgppQd |
+| The latest run's buyer | https://index-production-1b6e.up.railway.app/profiles/did:key:z6Mkufm7uHEbTYAAkBqdZrJDYGUeDnYoJgtBaM3RqmAZA2pb |
+| Deal 1, USDC-shaped dollar, one tap: the receipt and both reviews | https://index-production-1b6e.up.railway.app/deals/2AtLJfR6HYz7gX2jeEpN6YvmRrw6s1AFghcoJ4DAroLm |
+| Deal 2, Open-USD-shaped dollar, pay then release | https://index-production-1b6e.up.railway.app/deals/BRGcqZQdhhpNiqpe5s3CVfavYByBhkUcCoDguDyKHBkP |
+| Any page as data: add `.json` | https://index-production-1b6e.up.railway.app/profiles/did:key:z6MksTtmq2QRfySSbpL3mW5nz6wYfiri6aX4eBc5sTYgppQd.json |
 | What AI agents read first | https://index-production-1b6e.up.railway.app/llms.txt and https://index-production-1b6e.up.railway.app/skill.md |
 | The issuer's list and its signed roots | https://issuer-production-4976.up.railway.app/list.json and https://issuer-production-4976.up.railway.app/roots.json |
 | The issuer's list on chain: every note its key signed | https://explorer.solana.com/address/7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7?cluster=devnet |
@@ -85,40 +85,35 @@ Deployed and recorded by forest (`forest/registry/devnet/devnet.json`, `forest/d
 | USDC-shaped (classic SPL token, six decimals) | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` |
 | Open-USD-shaped (Token-2022 with Open USD's extensions, six decimals) | `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz` |
 
-- **The issuer's list:** 10 members and 5 roots; on chain, 5 notes with members (label
+- **The issuer's list:** 12 members and 6 roots; on chain, 6 notes with members (label
   `…/root/v2`) and 4 older memos with roots alone (`…/root/v1`).
-- **The index:** 10 profiles with a counted badge in `tutoring`, and 5 live offers, all from the
+- **The index:** 12 profiles with a counted badge in `tutoring`, and 6 live offers, all from the
   loop's runs.
-- **The loop's runs:** three passing runs recorded in [`loop/runs/`](../loop/runs/). Every run
-  leaves its people, records and receipts on devnet for good.
+- **The loop's runs:** four passing runs recorded in [`loop/runs/`](../loop/runs/), the latest
+  against `main`. Every run leaves its people, records and receipts on devnet for good.
 
 ## The latest run
 
-[`loop/loop.ts`](../loop/README.md), 2026-10-01 04:36 to 04:39 UTC: **passed** in 3 minutes 13
-seconds. Its record, with every address and signature, is
-[`loop/runs/2026-10-01T04-36-04-193Z.json`](../loop/runs/2026-10-01T04-36-04-193Z.json).
+[`loop/loop.ts`](../loop/README.md), 2026-10-01 05:18 to 05:20 UTC, against all five services built
+from `main` (`588dc44`): **passed** in 1 minute 48 seconds. Its record, with every address and
+signature, is [`loop/runs/2026-10-01T05-18-57-469Z.json`](../loop/runs/2026-10-01T05-18-57-469Z.json).
 
 | Step | What happened |
 |---|---|
-| People | Seller `did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD`, buyer `did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq`, each a virtual passkey on the approval page's origin |
-| The list | Both listed by one batch: 10 members. The batch on chain in one note, [`2comvBb…`](https://explorer.solana.com/tx/2comvBbGDRYCRRWe4Hr16KRXwALHTWH7hZQiB1w73XwS2GskpL6FctUiiJ4uuVQ5kAykYjwyPnpAbN1R8di1w9rx?cluster=devnet). The whole list rebuilt from the 5 notes on chain alone equals `list.json`, and all 5 roots match |
-| Badges, through the relayer | `tutoring/seller`, [`32rCCss…`](https://explorer.solana.com/tx/32rCCssSooGiDU4swzp2xYnP9mg9VgAexPW4wFwygFEEM2fWgkLo9YVnyLdKWZr1x31NRLukEMi63cXd1U4CN7MM?cluster=devnet), charged 1.49336 test dollars; `tutoring/buyer`, [`3kzDWbF…`](https://explorer.solana.com/tx/3kzDWbFytJERAmNCRAizzpXQex3KpNRK1CEFj1R76GwKAbkZywhapbppBdMzGJmfJ319fse2MwzbueWwUPsA8EM?cluster=devnet), charged 1.48828 |
+| People | Seller `did:key:z6MksTtmq2QRfySSbpL3mW5nz6wYfiri6aX4eBc5sTYgppQd`, buyer `did:key:z6Mkufm7uHEbTYAAkBqdZrJDYGUeDnYoJgtBaM3RqmAZA2pb`, each a virtual passkey on the approval page's origin |
+| The list | Both listed by one batch: 12 members. The batch on chain in one note, [`SwscPv6…`](https://explorer.solana.com/tx/SwscPv6URhGcDS77wtE7J1geW5gmDjUQCC8AZfyn2fuJFqAAfvzUYD1rV59WMwnhXgSn2QfEmu2eSmnNsZGTWTC?cluster=devnet). The whole list rebuilt from the 6 notes on chain alone equals `list.json`, and all 6 roots match |
+| Badges, through the relayer | `tutoring/seller`, [`5qweuwP…`](https://explorer.solana.com/tx/5qweuwPKcx5PAL3Kzi9HJcVTQB897XoTFZePkFC73Wc729mPcdqQVBWt1HAwzN1kT3arejZBgcX9BPVh1BrNN7x4?cluster=devnet), 731 bytes, charged 1.49336 test dollars; `tutoring/buyer`, [`5vpbD1Y…`](https://explorer.solana.com/tx/5vpbD1YtPgGy8YQwyNCfPMoQpgQK99D98WELMQvxTQ2LBBWqoZnz5NiCSLY7PJcpoqaEFKmT2eKMXuJVUhmtZ3t9?cluster=devnet), charged 1.48828 |
 | Records, through approvals | Both profiles, the seller's offer (1 USDC-shaped dollar an hour) and four reviews, each drafted through connections, approved with the passkey and published to the test board |
-| Deal 1, USDC-shaped | One tap, one transaction, [`57goG8T…`](https://explorer.solana.com/tx/57goG8ToYVMYNDy8sbKuic7i48jjvdxWiw3HWhRq4SuXmxY9Woov1gr9NCDyNnu1Qbhpuwfq3jArfkq5RAdEHBCS?cluster=devnet); the relayer charged 3.69808 |
-| Deal 2, Open-USD-shaped | Kora refused the one tap as one transaction (`Account DGErqHEv… not found`, [docs/kora-issue.md](kora-issue.md)); then pay, [`4UQ6tuy…`](https://explorer.solana.com/tx/4UQ6tuyp2Bu5tL3UKFGyDPpe6ACVcu2fUrvbnJPnGFGmae4EnHkmhKNmdDsNXfo8vq4TooHeSyCYwMfPqNrk4VYJ?cluster=devnet), charged 3.76920; and release, [`4bsc1Bw…`](https://explorer.solana.com/tx/4bsc1BwEMbhznhJ8wYiPK4bHsjV547iRCqRtST4PrA5F38928tfU8oXrMHstyD8xFszkDEfzVf6dzAHiXdePhhoy?cluster=devnet), charged 0.01 |
-| The index | Both badges counted, vouched for by "Forest Foundation (devnet key)"; the offer listed; both deals released to the seller, each with two reviews; all four reviews at full weight. Seller: rating 9.5, standing 3.16. Buyer: rating 10, standing 3.52 |
-
-That run was against the issuer, relayer and index built from commit `0b917c7`, and connections
-and the board from `main` at the time. `main` (`588dc44`) differs from it only in the issuer: building a
-batch's notes moved inside the writer's error handling, and `listFromNotes` moved to `list.ts`. The
-loop has not run against `main`.
+| Deal 1, USDC-shaped | Escrow `2AtLJfR6HYz7gX2jeEpN6YvmRrw6s1AFghcoJ4DAroLm`: one tap, one transaction, [`2Xrt7XW…`](https://explorer.solana.com/tx/2Xrt7XWRMwmhN1RSeVGZRiStLKcwNNdAokmXZtzavY2RKZK1fBheojEDpcGr4o33sWr6U8eWGB347Gcq1H3c7tZv?cluster=devnet), 715 bytes; the relayer charged 3.69808 |
+| Deal 2, Open-USD-shaped | Kora refused the one tap as one transaction (`Account AhY6GaT6… not found`, [docs/kora-issue.md](kora-issue.md)); then escrow `BRGcqZQdhhpNiqpe5s3CVfavYByBhkUcCoDguDyKHBkP`: pay, [`5Fkh2nN…`](https://explorer.solana.com/tx/5Fkh2nNkryQeMQRGNiaMqS5vbNotKTuvqLVxQAmp76kZwJVNqMyWGBpciJoHhBMF2MDNMcEPShYmFrrf32ii6Yio?cluster=devnet), charged 3.76920; and release, [`2ASE6EF…`](https://explorer.solana.com/tx/2ASE6EFLLsBPzwg46jr3gpdPAgqtSV4rPb42G91251RzKqrph9FPGMRhiLaDBvJV9F5FJKhzvZSyVWQXpyJ75xU7?cluster=devnet), charged 0.01 |
+| The index | Both badges counted, vouched for by "Forest Foundation (devnet key)"; the offer listed; both deals released to the seller, each with two reviews; all four reviews at full weight (`oneSidedConfirmed`). Seller: rating 9.5, standing 3.16. Buyer: rating 10, standing 3.52 |
 
 ## The keys
 
 | Key | Address | SOL, 2026-10-01 |
 |---|---|---|
-| Deploy (pays the loop's setup) | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` | 4.819 |
-| Relayer (`payer`); also the Open-USD-shaped dollar's issuer | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` | 1.037 |
-| Issuer (`did:key:z6MkmSeFgQp3SxoPB3qmrNFmqPaZAmjMUzmv9KViBqWtPLFV`) | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` | 0.009945, about 2,000 notes |
+| Deploy (pays the loop's setup) | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` | 4.813 |
+| Relayer (`payer`); also the Open-USD-shaped dollar's issuer | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` | 1.027 |
+| Issuer (`did:key:z6MkmSeFgQp3SxoPB3qmrNFmqPaZAmjMUzmv9KViBqWtPLFV`) | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` | 0.00994, about 2,000 notes |
 
 All are derived from the devnet phrase by forest's `devnet/keys.sh`; none is in this repo.
