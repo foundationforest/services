@@ -59,8 +59,8 @@ Helius RPC URLs of the index, issuer, relayer and board, each of which holds Hel
 issuer has no Didit key, so its stand-in face check runs.
 
 **Address logs.** None of the five keeps a network address in its own code. Railway's own request
-logs keep each request's client address and path, for every service here. The relayer's Kora also
-logs the body of every request it gets (`relayer/README.md`, "Limits").
+logs keep each request's client address and path, for every service here. The relayer runs Kora
+with `RUST_LOG=warn`, so Kora logs no request.
 
 **How they are wired:**
 

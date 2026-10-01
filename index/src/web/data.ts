@@ -283,7 +283,7 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
       [name],
     ),
     ctx.db.query(
-      `select l.did, l.wallet, l.label, p.wallet as declared, p.market as profile_market, p.role as profile_role
+      `select l.did, l.label, p.market as profile_market, p.role as profile_role
        from lines l join profiles p on p.did = l.did where l.market = $2 and ${VOUCHED}`,
       [Object.keys(ctx.config.issuers), name],
     ),
@@ -293,11 +293,8 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
     badges.rows
       .filter(
         (b) =>
-          badgeStatus(
-            { wallet: b.wallet, scope: b.label },
-            { wallet: b.declared, scope: scopeOf({ market: b.profile_market, role: b.profile_role }) },
-            ctx.directory,
-          ).counted,
+          badgeStatus({ scope: b.label }, { scope: scopeOf({ market: b.profile_market, role: b.profile_role }) }, ctx.directory)
+            .counted,
       )
       .map((b) => b.did),
   )
@@ -364,7 +361,7 @@ export async function profile(ctx: Ctx, did: string) {
       cid: p.cid as string,
     },
     badges: badges.rows.map((b) => {
-      const status = badgeStatus({ wallet: b.wallet, scope: b.label }, { wallet: p.wallet, scope: scopeOf(p) }, ctx.directory)
+      const status = badgeStatus({ scope: b.label }, { scope: scopeOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
       const issuer = (key: string, via: 'line' | 'membership') => ({
         key,

@@ -149,6 +149,7 @@ The network fee was 10,000 each time: two signatures, no priority fee.
 | `PORT` | Default `8080` |
 | `KORA_CONFIG` | Default `kora.toml` |
 | `KORA_BIN` | Default `.kora/bin/kora` |
+| `RUST_LOG` | Kora's log filter. Unset, Kora logs at `info`, which writes the body of every request: each transaction it is asked to price or sign, refused ones included. `warn` writes no request |
 
 `run.sh` refuses a key file inside this repo.
 
@@ -205,7 +206,13 @@ back in tokens; turning them back into SOL is an operations loop, not code.
 |---|---|---|
 | `FOREST_RELAYER_KEY` | the `payer` key, as its JSON array | yes |
 | `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
+| `RUST_LOG` | `warn` | no |
 | `PORT` | `8080` | no |
+
+With `RUST_LOG=warn`, Kora logs no request (checked on 2026-10-01: after the redeploy, a payer
+lookup, a config read, a fee estimate and a sign-and-send left no line in its log). It still logs
+errors: a token instruction type it cannot read, by its type alone, and an instruction with too few
+accounts, whole.
 
 ## Limits
 
@@ -218,8 +225,7 @@ back in tokens; turning them back into SOL is an operations loop, not code.
 - **What comes back to a person arrives as SOL** in a wallet that otherwise holds none.
 - **Kora 2.2** hardens a relayer against being drained and no longer reads the key from a path; it
   is not stable, and not taken.
-- **Address logs.** No code of ours runs in the relayer. Kora 2.0.5, as it runs here, logs no
-  network address, but it logs the body of every request: each transaction it is asked to price or
-  sign, refused ones included, which never reach the chain. A hosting provider's own request logs
-  are the operator's choice; on Railway they exist, with each request's client address and time, so
-  the two can be matched by time.
+- **Address logs.** No code of ours runs in the relayer, and Kora 2.0.5 logs no network address.
+  At its default level it logs the body of every request; `RUST_LOG=warn` stops that, and the devnet
+  relayer sets it. A hosting provider's own request logs are the operator's choice; on Railway they
+  exist, with each request's client address and path.

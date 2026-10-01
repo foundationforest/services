@@ -83,6 +83,9 @@ decision that shapes these services goes here, in the same form.
   and Open USD's permanent delegate accepted:** people pay in what they hold (the founder's choice,
   2026-10-01).
 - **No API key:** a page in a browser cannot keep a secret, and every transaction pays its way.
+- **The devnet relayer runs Kora at `RUST_LOG=warn`:** at its default level Kora logs every
+  request's body, and nothing server-side should hold a person's transactions next to Railway's
+  record of their address.
 
 ## Connections and the test board
 

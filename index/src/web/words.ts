@@ -144,8 +144,6 @@ export function objected(side: string, at: string | null): string {
 
 export function badgeWhyNot(why: string | null): string {
   switch (why) {
-    case 'walletNotDeclared':
-      return 'Not counted: this profile doesn’t name the key the badge was registered with.'
     case 'notInDirectory':
       return 'Not counted: registered under a name that isn’t a market in this index’s directory.'
     case 'noRole':

@@ -20,7 +20,7 @@ export type ProfileIn = { did: string; wallet: string | null; scope: string | nu
  * root, or one whose membership record for the line checks. A line no trusted issuer vouches for
  * is no badge.
  */
-export type BadgeIn = { did: string; wallet: string; scope: string; issuer: string }
+export type BadgeIn = { did: string; scope: string; issuer: string }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -63,26 +63,21 @@ export type Settings = {
 
 export type BadgeStatus =
   | { counted: true; market: string; role: string }
-  | { counted: false; why: 'notInDirectory' | 'noRole' | 'notProfileScope' | 'walletNotDeclared' }
+  | { counted: false; why: 'notInDirectory' | 'noRole' | 'notProfileScope' }
 
 /**
  * A badge counts for its profile only when its scope is `market/role`, the market a directory
- * market byte for byte and the role one of that market's roles; when that is the profile's own
- * scope, the one market and side its record names; and when the line names the profile's own key,
- * which is its wallet. A plain `market` scope counts for nothing.
+ * market byte for byte and the role one of that market's roles; and when that is the profile's own
+ * scope, the one market and side its record names. A plain `market` scope counts for nothing. The
+ * line always names the profile's own key: a badge is found by the profile its line names.
  */
-export function badgeStatus(
-  badge: Pick<BadgeIn, 'wallet' | 'scope'>,
-  profile: { wallet: string | null; scope: string | null },
-  directory: Directory,
-): BadgeStatus {
+export function badgeStatus(badge: Pick<BadgeIn, 'scope'>, profile: { scope: string | null }, directory: Directory): BadgeStatus {
   const scope = directory.badgeScope(badge.scope)
   if (!scope) {
     const { market, role } = splitScope(badge.scope)
     return { counted: false, why: role === null && directory.markets.has(market) ? 'noRole' : 'notInDirectory' }
   }
   if (badge.scope !== profile.scope) return { counted: false, why: 'notProfileScope' }
-  if (profile.wallet === null || profile.wallet !== badge.wallet) return { counted: false, why: 'walletNotDeclared' }
   return { counted: true, ...scope }
 }
 

@@ -20,7 +20,7 @@ A badge is one line in the registry that an issuer this index trusts vouches for
 account the registry program wrote, naming a profile's key, a label, and the root of the issuer's
 list the person proved they are on. A line no trusted issuer vouches for is no badge here, and this
 index keeps nothing of a profile without a badge: not its card, its offers or its reviews. A badge
-counts for a profile only if all four are true:
+counts for a profile only if all three are true:
 
 1. **It is `market/role`, and its market is in the directory, byte for byte.** Such as
    `tutoring/seller`. The name before the slash must be the name of a market the `markets` repo's
@@ -33,9 +33,10 @@ counts for a profile only if all four are true:
    record names `market` and `role`, and a badge counts for it only under exactly that
    `market/role`. A badge under any other scope counts for nothing here, whoever holds it; a person
    in a second market, or on the other side of the same one, holds a second profile.
-3. **The line names the profile's own key.** A profile is named by its key (its DID), and that key
-   is its wallet: the line must name exactly it.
-4. **The profile exists** in this index.
+3. **The profile exists** in this index.
+
+A line always names its profile's own key: a profile is named by its key (its DID), that key is its
+wallet, and a badge is found by the profile its line names.
 
 ## Uniqueness
 
