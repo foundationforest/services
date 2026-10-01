@@ -6,8 +6,10 @@
 //
 // signed with the issuer's key over 0xff ‖ "forest.foundation/issuer/roots/v1\n" ‖ the canonical
 // text without `sig`. The index reads the file of each issuer it trusts, checks it is canonical text,
-// that it names that issuer, and its signature, and keeps its roots. A line counts for an issuer when
-// its root is one of them. The list itself (`list.json`) is not read: an index needs only the roots.
+// that it names that issuer, and its signature, and keeps its roots. It also reads the roots each
+// issuer wrote on chain, one memo per root signed by its key (chain/roots.ts), when it has an RPC. A
+// line counts for an issuer when its root is one of either. The list itself (`list.json`) is not
+// read: an index needs only the roots.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -20,6 +22,7 @@ import { type Membership, verifyMembership } from '../../forest/registry/client/
 import { toBytes32 } from '../../forest/registry/client/src/field.ts'
 
 import { lineOf } from './chain/registry.ts'
+import { type ChainRoots, readChainRoots } from './chain/roots.ts'
 import { INDEX_ROOT, type IssuerConfig } from './config.ts'
 import type { Db, Queryable } from './db.ts'
 
@@ -56,7 +59,19 @@ export const ROOTS_SIGN_PREFIX = concat(Uint8Array.of(0xff), utf8('forest.founda
 export type Root = { root: string; size: number; time: number }
 
 const DECIMAL = /^(0|[1-9][0-9]{0,77})$/
-const exactKeys = (value: object, keys: string[]) => Object.keys(value).sort().join() === [...keys].sort().join()
+export const exactKeys = (value: object, keys: string[]) => Object.keys(value).sort().join() === [...keys].sort().join()
+
+/** One root as the roots file writes it, `{root, size, time}`, checked. The root as 64 hex. Throws with why. */
+export function checkRoot(r: unknown): Root {
+  const entry = r as Record<string, unknown>
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry) || !exactKeys(entry, ['root', 'size', 'time'])) throw new Error('a root is not {root, size, time}')
+  if (typeof entry.root !== 'string' || !DECIMAL.test(entry.root)) throw new Error('a root is not decimal text')
+  if (!Number.isSafeInteger(entry.size) || (entry.size as number) < 0) throw new Error("a root's size is not a whole number")
+  if (!Number.isSafeInteger(entry.time) || (entry.time as number) < 0) throw new Error("a root's time is not a whole number")
+  const value = BigInt(entry.root)
+  if (value >= 1n << 256n) throw new Error('a root is more than 32 bytes')
+  return { root: hex.encode(toBytes32(value)), size: entry.size as number, time: entry.time as number }
+}
 
 /** An issuer's roots file, checked: canonical text, its issuer, its shape and its signature. Roots as 64 hex. Throws with why. */
 export function checkRootsFile(text: string, issuer: string): Root[] {
@@ -75,26 +90,22 @@ export function checkRootsFile(text: string, issuer: string): Root[] {
     throw new Error('its signature is not base64url')
   }
   if (!verifySignature(signature, concat(ROOTS_SIGN_PREFIX, utf8(canonical(unsigned))), key)) throw new Error('its signature does not verify')
-  return (file.roots as unknown[]).map((r) => {
-    const entry = r as Record<string, unknown>
-    if (!entry || typeof entry !== 'object' || !exactKeys(entry, ['root', 'size', 'time'])) throw new Error('a root is not {root, size, time}')
-    if (typeof entry.root !== 'string' || !DECIMAL.test(entry.root)) throw new Error('a root is not decimal text')
-    if (!Number.isSafeInteger(entry.size) || (entry.size as number) < 0) throw new Error("a root's size is not a whole number")
-    if (!Number.isSafeInteger(entry.time) || (entry.time as number) < 0) throw new Error("a root's time is not a whole number")
-    const value = BigInt(entry.root)
-    if (value >= 1n << 256n) throw new Error('a root is more than 32 bytes')
-    return { root: hex.encode(toBytes32(value)), size: entry.size as number, time: entry.time as number }
-  })
+  return (file.roots as unknown[]).map(checkRoot)
 }
 
-/** Keep an issuer's roots. The file only grows; a root already kept stays as it was. Returns how many are new. */
-export async function storeRoots(db: Db, issuer: string, roots: Root[]): Promise<number> {
+/**
+ * Keep an issuer's roots. The file only grows; a root already kept stays as it was. A root read on
+ * chain also keeps its transaction's `signature`, whether the file had it first or not. Returns how
+ * many are new, or newly seen on chain.
+ */
+export async function storeRoots(db: Queryable, issuer: string, roots: Root[], signature: string | null = null): Promise<number> {
   let added = 0
   for (const r of roots) {
     const res = await db.query(
-      `insert into issuer_roots (issuer, root, size, time) values ($1, $2, $3, to_timestamp($4::double precision / 1000))
-       on conflict do nothing`,
-      [issuer, r.root, r.size, r.time],
+      `insert into issuer_roots (issuer, root, size, time, signature) values ($1, $2, $3, to_timestamp($4::double precision / 1000), $5)
+       on conflict (issuer, root) do update set signature = excluded.signature
+       where issuer_roots.signature is null and excluded.signature is not null`,
+      [issuer, r.root, r.size, r.time, signature],
     )
     added += res.rowCount ?? 0
   }
@@ -117,23 +128,29 @@ export async function readRoots(db: Db, issuers: IssuerConfig, onError: (err: un
   return added
 }
 
-/** Reads the trusted issuers' roots files on a timer: at most once a minute, since issuers add roots in batches. */
+/**
+ * Reads the trusted issuers' roots files, and with an RPC their roots on chain, on a timer: at most
+ * once a minute, since issuers add roots in batches.
+ */
 export class RootsReader {
   private timer: NodeJS.Timeout | null = null
   private readonly db: Db
   private readonly issuers: IssuerConfig
+  private readonly chain: ChainRoots | null
   private readonly onChange: () => void
   private readonly onError: (err: unknown) => void
 
-  constructor(args: { db: Db; issuers: IssuerConfig; onChange: () => void; onError: (err: unknown) => void }) {
+  constructor(args: { db: Db; issuers: IssuerConfig; chain?: ChainRoots | null; onChange: () => void; onError: (err: unknown) => void }) {
     this.db = args.db
     this.issuers = args.issuers
+    this.chain = args.chain ?? null
     this.onChange = args.onChange
     this.onError = args.onError
   }
 
   async readOnce(): Promise<number> {
-    const added = await readRoots(this.db, this.issuers, this.onError)
+    let added = await readRoots(this.db, this.issuers, this.onError)
+    if (this.chain) added += await readChainRoots(this.db, this.chain, Object.keys(this.issuers), this.onError)
     if (added > 0) this.onChange()
     return added
   }

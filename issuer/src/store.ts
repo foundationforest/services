@@ -8,8 +8,9 @@
 //
 // The list and its roots are public: the issuer publishes both (list.ts). The list keeps each
 // commitment once, in list order, which within a batch is shuffled. A root is kept with the size
-// of the list it is the root of and the time its batch ran. A batch moves commitments from the
-// queue to the list and adds their root in one transaction, so a failure changes nothing.
+// of the list it is the root of, the time its batch ran, and, once it is written on chain
+// (chain.ts), that transaction's signature. A batch moves commitments from the queue to the list
+// and adds their root in one transaction, so a failure changes nothing.
 //
 // Deleting a row is not enough to take it out of the file: SQLite leaves deleted bytes in free
 // space, and page rebuilds can leave stale copies of rows that moved, in insertion order. So deleted
@@ -45,6 +46,8 @@ export class Store {
   readonly #roots: StatementSync
   readonly #list: StatementSync
   readonly #root: StatementSync
+  readonly #unwritten: StatementSync
+  readonly #written: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -56,8 +59,12 @@ export class Store {
       CREATE TABLE IF NOT EXISTS used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL);
-      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, chain TEXT);
     `)
+    // A file from before roots went on chain: its roots are written too, oldest first.
+    if (!this.#db.prepare('SELECT name FROM pragma_table_info(?)').all('roots').some((c) => c.name === 'chain')) {
+      this.#db.exec('ALTER TABLE roots ADD COLUMN chain TEXT')
+    }
     this.#isUsed = this.#db.prepare('SELECT 1 FROM used_sessions WHERE hash = ?')
     this.#isQueued = this.#db.prepare('SELECT 1 FROM queue WHERE commitment = ?')
     this.#use = this.#db.prepare('INSERT OR IGNORE INTO used_sessions (hash) VALUES (?)')
@@ -69,6 +76,8 @@ export class Store {
     this.#roots = this.#db.prepare('SELECT size, root, time FROM roots ORDER BY size')
     this.#list = this.#db.prepare('INSERT INTO list (position, commitment) VALUES (?, ?)')
     this.#root = this.#db.prepare('INSERT INTO roots (size, root, time) VALUES (?, ?, ?)')
+    this.#unwritten = this.#db.prepare('SELECT size, root, time FROM roots WHERE chain IS NULL ORDER BY size')
+    this.#written = this.#db.prepare('UPDATE roots SET chain = ? WHERE size = ? AND chain IS NULL')
   }
 
   isUsed(sessionId: string): boolean {
@@ -120,6 +129,20 @@ export class Store {
       size: Number(row.size),
       time: Number(row.time),
     }))
+  }
+
+  /** The roots not yet written on chain, oldest first. */
+  unwritten(): Root[] {
+    return this.#unwritten.all().map((row) => ({
+      root: fromBytes32(row.root as Uint8Array),
+      size: Number(row.size),
+      time: Number(row.time),
+    }))
+  }
+
+  /** The root of the first `size` commitments is on chain, in the transaction `signature`. */
+  written(size: number, signature: string): void {
+    this.#written.run(signature, size)
   }
 
   /**

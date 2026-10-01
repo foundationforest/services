@@ -11,6 +11,8 @@
 import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
+import { Connection } from '@solana/web3.js'
+
 import { ChainReader, type Program } from './chain/poll.ts'
 import { ESCROW_PROGRAM_ID, ESCROW_V2_PROGRAM_ID } from './chain/escrow.ts'
 import { REGISTRY_PROGRAM_ID } from './chain/registry.ts'
@@ -60,7 +62,13 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   scorer.onError = onError
   await scorer.now()
 
-  const roots = new RootsReader({ db, issuers: config.issuers, onChange: () => scorer.schedule(), onError })
+  const roots = new RootsReader({
+    db,
+    issuers: config.issuers,
+    chain: config.rpcUrl ? { connection: new Connection(config.rpcUrl, config.chainCommitment), commitment: config.chainCommitment } : null,
+    onChange: () => scorer.schedule(),
+    onError,
+  })
   roots.start(config.pollMs)
 
   let records: HostReader | null = null

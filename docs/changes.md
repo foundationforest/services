@@ -291,3 +291,97 @@ this repo, is `forest/docs/changes.md`.
 - **The market-file validator's home** (mechanical, forest or markets): the index's check reads
   fields, not the format.
 - **This repo's `CLAUDE.md` is behind forest's** (needs Carlos), as the last session said.
+
+## 2026-09-30: Forest end to end on devnet, on Railway, from this repo
+
+**Built.**
+- `FOREST` at `1874ce3ce18d0b35df7fef43a214fb8946f23dca` (forest #43): `readPage` refuses a page
+  over 4 MB and gives up a read after 60 s; an entry's cap counts bytes. The index, connections and
+  the test board read hosts with it. No API the services use changed.
+- `issuer/`: **each new root on chain.** With `SOLANA_RPC_URL`, once a batch is in the file, its
+  root goes to Solana in one memo (program v2) the issuer's key pays for and signs:
+  `forest.foundation/issuer/root/v1\n` + the root's line of the roots file. Oldest first, retried
+  every minute, each root's transaction kept in the file (`roots.chain`). The transaction is built
+  by hand; no Solana library added. `roots.json` and `list.json` unchanged. 27 tests (5 new, with a
+  stand-in RPC that checks the signature and the memo).
+- `index/`: **reads the issuers' roots on chain too** (`src/chain/roots.ts`): every transaction
+  naming a trusted issuer's key since a cursor; a root only from a successful transaction the key
+  signed, holding exactly that memo. Either source vouches. Migration 007 keeps the memo's
+  signature. **Other hosts are followed only while a trusted profile's folder names them**, and
+  dropped when it stops. Devnet: the issuers file names the new issuer; the Open-USD-shaped test
+  dollar is money and counts. New `test/roots.test.ts` (parser, the issuer's own bytes read back,
+  the reader on Postgres); 35 fast tests pass.
+- `relayer/`: **fee in Open USD as well as USDC** (`allowed_tokens`, `allowed_spl_paid_tokens`);
+  devnet: the two test dollars. `docs/kora-issue.md`: the issue for Kora, drafted for the founder.
+- `connections/`: **serves forest's approval page** at `/approve`, built unchanged by forest's
+  `web/build.ts` in the image, with the policy `records/SPEC.md` §12 asks for; the hash and library
+  list served beside it. The hash Railway serves is the one built here
+  (`b66b6bcc…a421371`). 7 tests.
+- `loop/board/`: **a board for devnet testing only**: forest's reference host unchanged, behind a
+  front that labels it at `GET /`; the badged feed asks the registry. In `loop/` because the
+  foundation runs no board. 4 tests, its own CI job.
+- `loop/`: **the loop**, against the deployed services, with the stand-in face check: two virtual
+  passkeys, the list and the root's memo, badges through the relayer, folders and approvals through
+  connections' MCP and the approval page, escrow v2 in both test dollars (the Open-USD-shaped one
+  as pay then release, after recording Kora's refusal of the one tap), reviews both ways, the index
+  checked. Passed twice on the live services (`loop/runs/`).
+- **Railway** (`forest-devnet`): `host`, `carrier`, the earlier `issuer` and `feepayer` deleted;
+  their volumes pending deletion until 2026-10-02 23:25 UTC. New `issuer` (fresh list, stand-in
+  face check), `relayer`, `connections`, `board-devnet-test`; `index` repointed. All build this
+  repo's branch. Secrets sealed through Railway's API. `docs/devnet.md` has every URL and what to
+  open.
+
+**Chosen, where the plan was silent** (the plan itself was approved by the founder this session).
+1. **The index kept its Railway service, Postgres and signing seed**; only its source moved. Its
+   `DATABASE_URL` is sealed and the Supabase password is not here.
+2. **Retire = delete,** services and volumes; the earlier issuer's Didit key went with it.
+3. **Railway builds the pull request's branch** until it merges.
+4. **The issuer keeps the devnet issuer key**, now also paying 5,000 lamports a root.
+5. **The memo is the roots file's line under its own label**, so a reader needs no second format.
+6. **The index trusts a root from either source**; the chain is not required, and a root seen in
+   both keeps its transaction.
+7. **The issuer runs without a health-check path** on Railway, which refuses `/roots.json`.
+8. **The devnet issuer allows 20 face checks an hour per address**, not 5, so a few loops fit.
+9. **The loop's buyer pays from the offer** (buyer-opened escrows): one tap for the classic dollar,
+   pay then release for the Token-2022 one. Reviews then count at full weight as
+   `oneSidedConfirmed`, the seller having reviewed the deal.
+10. **The loop's folders are written by its "app"** directly; every other record goes through an
+    approval, as the spec has it.
+11. **The board's label is one line at `GET /`**, its Railway name and its README.
+
+**Learned.**
+- **Kora 2.0.5's Token-2022 refusal, found in its source:** `verify_token_payment`
+  (`token/token.rs`) runs the extension check, which fetches the source account, for every
+  Token-2022 transfer whose destination exists, before checking whether it pays Kora. Seen live on
+  devnet: `Account <deposit address> not found`. `2.2.0-beta.8` moves the check after the payment
+  test and resolves accounts made in the transaction.
+- Kora 2.0.5 takes its fee in the Open-USD-shaped dollar (no transfer fee) exactly, and needs the
+  relayer's account for it to exist first.
+- On devnet, through the relayer, at the mock price: a registry line 730 bytes, charged about 1.49
+  test dollars; escrow v2 one tap in the classic dollar 715 bytes, about 3.70; the Token-2022 pay
+  665 bytes, about 3.77, and its release 523 bytes, 0.01.
+- Railway refuses a health-check path with a dot, deletes a volume only after 48 hours
+  (`isPendingDeletion`), and its MCP's delete calls time out; its GraphQL API does them at once.
+- A headless Chromium behind this sandbox's proxy needs the proxy's CA in `~/.pki/nssdb`; the
+  store was not set up beforehand.
+- The approval page, the virtual passkey (PRF) and connections' MCP drafts work end to end on the
+  live services: seven approvals a run, a few seconds each.
+
+**Open.**
+- **Switch every Railway service to `main` after merge** (mechanical): five services, one setting
+  each.
+- **When Kora 2.2 is stable, upgrade the relayer and drop the two-transaction payment** in a
+  Token-2022 dollar (mechanical, after checking 2.2's fix on devnet).
+- **File the Kora issue** (needs Carlos): `docs/kora-issue.md`.
+- **The devnet issuer has no Didit key** (needs Carlos): the stand-in passes everyone. Setting
+  `DIDIT_API_KEY` and `DIDIT_WORKFLOW_ID` (sealed) on `issuer` brings the real face check back.
+- **The test board is open to anyone** and grows with every loop run; wipe it (its volume) when it
+  gets in the way. Nothing on it is kept for good.
+- **Each loop run leaves two more people** on the devnet list, badges and records; devnet now holds
+  eight from this session (one pair stopped before its deals).
+- **The relayer's Open-USD-shaped account and the loop's minting** use the relayer's own key
+  outside Kora, as the test dollar's issuer: a devnet shortcut only.
+- **`relayer/test/relayer.test.ts` does not pay Kora in Open USD** (mechanical): it needs a local
+  validator and the built programs; the devnet loop is the proof for now.
+- **Railway's HTTP logs keep every request's address**, on every service, as before (needs Carlos).
+- This repo's `CLAUDE.md` is still behind forest's (needs Carlos), as the last sessions said.

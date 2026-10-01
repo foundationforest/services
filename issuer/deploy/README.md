@@ -1,15 +1,14 @@
 # issuer on Railway, devnet
 
-How the foundation runs its issuer for devnet. It touches no chain: its list and roots are its own
-two files. Nothing here is mainnet, and nothing is shipped.
+How the foundation runs its issuer for devnet. Its list and roots are its own two files, and each
+root is also written on devnet as a memo its key signs. Nothing here is mainnet, and nothing is
+shipped.
 
-**Where it runs today.** The devnet issuer (https://issuer-production-fd68.up.railway.app) runs the
-earlier version, which inserts into the earlier registry's list 0. It was built from forest's
-`deploy/issuer/Dockerfile`, which forest's `main` no longer has, and set up by forest's
-`deploy/railway.ts`. This folder sets up this version from this repo. No Railway service builds
-from it yet. Pointed here, the service starts with an empty list: list 0's members are not carried
-over, and a person whose face Didit already holds cannot join again under the same Didit
-application.
+**Where it runs today.** The Railway service `issuer` in the project `forest-devnet`, built from this
+repo (`../../docs/devnet.md` has its address). It started on 2026-09-30 with a fresh list, and with
+no Didit key, so its face check is the stand-in: every session passes. The earlier issuer, built
+from forest's deleted `deploy/`, is retired, and its volume (list 0's queue and used sessions) with
+it.
 
 ## Files
 
@@ -24,7 +23,8 @@ application.
 - **Source:** this repo. The build context is the repo root.
 - **Build:** `RAILWAY_DOCKERFILE_PATH=issuer/deploy/Dockerfile`.
 - **Replicas:** one, never more: the queue and the list are one SQLite file. **Restart:** always.
-- **Health check:** `GET /roots.json`.
+- **Health check:** none: Railway refuses a health-check path with a dot (`/roots.json`), and the
+  issuer's other routes are POST.
 - **Volume:** at `/data`, for the SQLite file. It holds the list: losing it loses the list.
 - **Networking:** a public domain to port 8080. The two files' address is this domain, so it
   stays fixed.
@@ -37,15 +37,14 @@ application.
 | `DATABASE_PATH` | `/data/issuer.sqlite` | no |
 | `BATCH_MAX` | `50` | no |
 | `BATCH_INTERVAL_SECONDS` | `120` | no |
-| `SESSION_LIMIT_PER_HOUR` | `5` | no |
+| `SESSION_LIMIT_PER_HOUR` | `20`, so a few runs of the loop an hour fit; the default is 5 | no |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |
+| `SOLANA_RPC_URL` | Helius's devnet RPC, whose URL holds its key | yes |
 | `PORT` | `8080` | no |
 | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` | Didit's, when set; unset, `start.sh` runs the stand-in | yes |
 
-**Before it starts,** nothing: the key needs no SOL and no list on any chain.
-
-`SOLANA_RPC_URL`, `REGISTRY_PROGRAM_ID` and `LIST_INDEX`, which the earlier version read, are no
-longer read; delete them from the service.
+**Before it starts,** the key needs a little SOL on devnet for the memos: 5,000 lamports a root.
+The devnet key held 0.00999 SOL on 2026-09-30, about 2,000 roots.
 
 ## Rotating a secret
 

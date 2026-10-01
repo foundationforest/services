@@ -10,8 +10,9 @@
 // Three filters, as a host serves them:
 //   since a cursor   every host is read from where this index left off; the cursor is kept in
 //                    Postgres, per host and per kind of feed, so a restart resumes there.
-//   badged only      the hosts in HOSTS are read in full. Every other host a folder names is read
-//                    for badged profiles only (`badged=1`): profiles its host counts as badged.
+//   badged only      the hosts in HOSTS are read in full. Every other host is followed only while
+//                    a trusted profile's folder names it, and read for badged profiles only
+//                    (`badged=1`): profiles its host counts as badged.
 //   by profile       a badged feed shows a profile only from when its host counted it badged, so
 //                    the first time a profile turns up in one, its earlier entries are read from
 //                    that host by `profile`, once. And when a profile comes to hold a trusted line,
@@ -69,8 +70,8 @@ export class HostReader {
   readonly hosts: string[]
   /** The issuers this index trusts, by did:key. */
   private readonly issuers: string[]
-  /** Every host the folders of the profiles kept so far name. */
-  readonly named = new Set<string>()
+  /** The hosts each trusted profile's folder names, as last merged: only these are followed beyond HOSTS. */
+  readonly named = new Map<string, string[]>()
   /** A crawled host on loopback is followed only when this index was pointed at one: a local run. */
   private readonly loopback: boolean
   /** Profiles holding entries dated ahead, which the merge holds back, and when they come due. */
@@ -125,7 +126,7 @@ export class HostReader {
   /** The hosts to read: the configured ones in full, then every other host a folder names, badged only. */
   following(): { host: string; badged: boolean }[] {
     const out = this.hosts.map((host) => ({ host, badged: false }))
-    for (const named of this.named) {
+    for (const named of new Set([...this.named.values()].flat())) {
       const host = this.allowed(named)
       if (host && !out.some((o) => o.host === host)) out.push({ host, badged: true })
     }
@@ -320,7 +321,10 @@ export class HostReader {
       if (keep) {
         const hosts = view.folder?.hosts ?? []
         folders.set(profile, hosts)
-        for (const host of hosts) this.named.add(host)
+        this.named.set(profile, hosts)
+      } else {
+        // A profile that lost its trusted line, or never had one, names no host this index follows.
+        this.named.delete(profile)
       }
       const out = await project(this.db, view, keep)
       for (const r of out.refused) this.onError(new Error(`refused ${profile}/${r.path}: ${r.why}`))

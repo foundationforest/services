@@ -36,10 +36,12 @@ allowed_programs = [
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
   "11111111111111111111111111111111",            # System
 ]
-# The dollar token people pay in: USDC. In 2.0.5 `allowed_tokens` gates only Kora's own
+# The dollar tokens people pay in: USDC, and Open USD (a Token-2022 dollar with no transfer fee).
+# Open USD's issuer holds a permanent delegate, so it can take back what the relayer collected in
+# it; the foundation accepts that. In 2.0.5 `allowed_tokens` gates only Kora's own
 # transferTransaction helper; an escrow in another token still passes.
-allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
-allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"]
+allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB"]
+allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB"]
 disallowed_accounts = []
 # Jupiter needs JUPITER_API_KEY in the environment.
 price_source = "Jupiter"

@@ -1,0 +1,15 @@
+{
+  "about": "What the loop runs against: the devnet services this repo deploys on Railway (docs/devnet.md), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/v2/devnet/devnet.json) and the two test dollars. Devnet only.",
+  "issuer": "https://issuer-production-4976.up.railway.app",
+  "relayer": "https://relayer-production-8d40.up.railway.app",
+  "connections": "https://connections-production-ebc4.up.railway.app",
+  "board": "https://board-devnet-test-production.up.railway.app",
+  "index": "https://index-production-1b6e.up.railway.app",
+  "rpc": "https://api.devnet.solana.com",
+  "registry": "Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf",
+  "escrowV2": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+  "issuerKey": "did:key:z6MkmSeFgQp3SxoPB3qmrNFmqPaZAmjMUzmv9KViBqWtPLFV",
+  "usdcShaped": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+  "openUsdShaped": "g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz",
+  "market": "tutoring"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@forest/test-board",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A board for devnet testing only: forest/records' reference host, unchanged, run for the loop. The foundation runs no board.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/board.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}
