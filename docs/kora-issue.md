@@ -61,8 +61,17 @@ creation in the transaction, as the destination branch already does
   `transfer_checked`s from it to the recipient, signed by the program; a transfer paying Kora.
 - `signAndSendTransaction` answers `Account <deposit account> not found`.
 
-**Seen on Solana devnet:** see "The Kora refusal" in `docs/devnet.md` for the transaction as sent
-and Kora's answer, from the run recorded there.
+**Seen on Solana devnet** (2026-09-30, Kora 2.0.5 behind a devnet RPC, `price_source = "Mock"`):
+an escrow program's one tap in a Token-2022 test dollar with Open USD's eight extensions (no
+transfer fee, transfer hook with no program), sent to `signAndSendTransaction`, answered
+
+```
+Account 2szQPncbDkYA2cAAd6CgHjAt8ewgzx6neWoCQ4xNtXZn not found
+```
+
+where `2szQPn…` is the escrow's deposit account, created by the first instruction of the same
+transaction. The same deal as two transactions (create, fund and pay Kora; then release and pay
+Kora) was signed and landed. A classic SPL dollar's one tap, in the same run, passed.
 
 **Workaround we use:** send the payment and the release as two transactions from one approval, the
 second once the first is confirmed.

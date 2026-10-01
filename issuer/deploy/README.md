@@ -23,7 +23,8 @@ it.
 - **Source:** this repo. The build context is the repo root.
 - **Build:** `RAILWAY_DOCKERFILE_PATH=issuer/deploy/Dockerfile`.
 - **Replicas:** one, never more: the queue and the list are one SQLite file. **Restart:** always.
-- **Health check:** `GET /roots.json`.
+- **Health check:** none: Railway refuses a health-check path with a dot (`/roots.json`), and the
+  issuer's other routes are POST.
 - **Volume:** at `/data`, for the SQLite file. It holds the list: losing it loses the list.
 - **Networking:** a public domain to port 8080. The two files' address is this domain, so it
   stays fixed.
@@ -36,7 +37,7 @@ it.
 | `DATABASE_PATH` | `/data/issuer.sqlite` | no |
 | `BATCH_MAX` | `50` | no |
 | `BATCH_INTERVAL_SECONDS` | `120` | no |
-| `SESSION_LIMIT_PER_HOUR` | `5` | no |
+| `SESSION_LIMIT_PER_HOUR` | `20`, so a few runs of the loop an hour fit; the default is 5 | no |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |
 | `SOLANA_RPC_URL` | Helius's devnet RPC, whose URL holds its key | yes |
 | `PORT` | `8080` | no |

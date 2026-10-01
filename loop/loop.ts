@@ -503,4 +503,11 @@ async function main() {
   }
 }
 
-await main()
+// The RPC and MCP clients keep sockets open; the run is over either way.
+await main().then(
+  () => process.exit(0),
+  (err) => {
+    console.error(redact((err as Error).stack ?? String(err)))
+    process.exit(1)
+  },
+)
