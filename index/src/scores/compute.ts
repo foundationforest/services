@@ -6,8 +6,8 @@
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
-// Uniqueness enters standing only as the starting weight of a reviewer (the handoff: "an unbadged
-// reviewer's review weighs near zero"). Without that seed, "weighted by the reviewer's own
+// Uniqueness enters standing only as the starting weight of a reviewer (SCORING.md: a reviewer with
+// no counted badge gets the floor, so its review weighs near zero). Without that seed, "weighted by the reviewer's own
 // standing" with everyone starting at zero would leave every score at zero forever.
 
 import type { IssuerConfig, ScoringConfig } from '../config.ts'
@@ -20,7 +20,7 @@ export type ProfileIn = { did: string; wallet: string | null; scope: string | nu
  * root, or one whose membership record for the line checks. A line no trusted issuer vouches for
  * is no badge.
  */
-export type BadgeIn = { did: string; wallet: string; scope: string; issuer: string }
+export type BadgeIn = { did: string; scope: string; issuer: string }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -63,26 +63,21 @@ export type Settings = {
 
 export type BadgeStatus =
   | { counted: true; market: string; role: string }
-  | { counted: false; why: 'notInDirectory' | 'noRole' | 'notProfileScope' | 'walletNotDeclared' }
+  | { counted: false; why: 'notInDirectory' | 'noRole' | 'notProfileScope' }
 
 /**
  * A badge counts for its profile only when its scope is `market/role`, the market a directory
- * market byte for byte and the role one of that market's roles; when that is the profile's own
- * scope, the one market and side its record names; and when the line names the profile's own key,
- * which is its wallet. A plain `market` scope counts for nothing.
+ * market byte for byte and the role one of that market's roles; and when that is the profile's own
+ * scope, the one market and side its record names. A plain `market` scope counts for nothing. The
+ * line always names the profile's own key: a badge is found by the profile its line names.
  */
-export function badgeStatus(
-  badge: Pick<BadgeIn, 'wallet' | 'scope'>,
-  profile: { wallet: string | null; scope: string | null },
-  directory: Directory,
-): BadgeStatus {
+export function badgeStatus(badge: Pick<BadgeIn, 'scope'>, profile: { scope: string | null }, directory: Directory): BadgeStatus {
   const scope = directory.badgeScope(badge.scope)
   if (!scope) {
     const { market, role } = splitScope(badge.scope)
     return { counted: false, why: role === null && directory.markets.has(market) ? 'noRole' : 'notInDirectory' }
   }
   if (badge.scope !== profile.scope) return { counted: false, why: 'notProfileScope' }
-  if (profile.wallet === null || profile.wallet !== badge.wallet) return { counted: false, why: 'walletNotDeclared' }
   return { counted: true, ...scope }
 }
 
@@ -136,8 +131,9 @@ export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings
 // ---------------------------------------------------------------------------------------------
 
 /**
- * What stands under a review's deal id (the handoff's "who said yes": a receipt counts fully when
- * the seller signed for it: created the escrow, signed its ending, or reviewed the deal).
+ * What stands under a review's deal id (SCORING.md, "Evidence: what backs a review"): a receipt
+ * counts fully when the seller signed for it: created the escrow, signed its ending, or reviewed
+ * the deal.
  *   both                paid, and the seller signed: created the escrow (an invoice), or signed
  *                       its ending (a split, or a release back to the buyer)
  *   oneSidedConfirmed   paid, the buyer created it, and the seller reviewed the same deal

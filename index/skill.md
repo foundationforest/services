@@ -80,15 +80,14 @@ not good.
 
 In `badges[]`:
 
-- `counted: true` means this index counts it. It counts only if all four hold:
+- `counted: true` means this index counts it. It counts only if all three hold:
   - its `scope` is a directory market and a role its sides allow, exactly
     (`online-tutors/seller`, `language-exchange/peer`); a plain market with no role counts for
     nothing;
   - it is the profile's own scope: `profile.market` and `profile.role`;
-  - the line names the profile's own key (`wallet` equals `profile.wallet`);
   - the profile exists here.
-- `why` says why not when it doesn't: `notInDirectory`, `noRole`, `notProfileScope` (registered
-  under another market or side than the one the profile lives in) or `walletNotDeclared`.
+- `why` says why not when it doesn't: `notInDirectory`, `noRole` or `notProfileScope` (registered
+  under another market or side than the one the profile lives in).
 - `issuers` are who vouched, each with the weight this index gives it: every issuer this index
   trusts whose published list of roots holds the badge's `root` (`via: "line"`), and every one a
   membership record in the profile's own folder shows (`via: "membership"`). A line no issuer this

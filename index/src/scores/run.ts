@@ -3,7 +3,7 @@
 // cache and a signature someone already holds stay good; only changed values are signed again.
 //
 // Everything is recomputed each time. That is fine at this size; an incremental recompute is
-// later work (forest/docs/changes.md).
+// later work (README.md, "Limits").
 
 import type { Config, IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
@@ -17,10 +17,10 @@ import { type IndexKeys, type Kind, sign } from './sign.ts'
  * that checked. A line no trusted issuer vouches for is no badge here.
  */
 export const BADGES_SQL = `
-  select l.did, l.wallet, l.label as scope, r.issuer
+  select l.did, l.label as scope, r.issuer
   from lines l join issuer_roots r on r.root = l.root and r.issuer = any($1)
   union
-  select l.did, l.wallet, l.label as scope, m.issuer
+  select l.did, l.label as scope, m.issuer
   from memberships m join lines l on l.code = m.code and l.did = m.did
   where m.status = 'valid' and m.issuer = any($1)`
 
@@ -35,7 +35,7 @@ export async function loadInputs(db: Db, issuers: IssuerConfig): Promise<Inputs>
   ])
   return {
     profiles: profiles.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    badges: badges.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.scope, issuer: r.issuer })),
+    badges: badges.rows.map((r) => ({ did: r.did, scope: r.scope, issuer: r.issuer })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,

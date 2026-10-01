@@ -20,7 +20,7 @@ A badge is one line in the registry that an issuer this index trusts vouches for
 account the registry program wrote, naming a profile's key, a label, and the root of the issuer's
 list the person proved they are on. A line no trusted issuer vouches for is no badge here, and this
 index keeps nothing of a profile without a badge: not its card, its offers or its reviews. A badge
-counts for a profile only if all four are true:
+counts for a profile only if all three are true:
 
 1. **It is `market/role`, and its market is in the directory, byte for byte.** Such as
    `tutoring/seller`. The name before the slash must be the name of a market the `markets` repo's
@@ -33,9 +33,10 @@ counts for a profile only if all four are true:
    record names `market` and `role`, and a badge counts for it only under exactly that
    `market/role`. A badge under any other scope counts for nothing here, whoever holds it; a person
    in a second market, or on the other side of the same one, holds a second profile.
-3. **The line names the profile's own key.** A profile is named by its key (its DID), and that key
-   is its wallet: the line must name exactly it.
-4. **The profile exists** in this index.
+3. **The profile exists** in this index.
+
+A line always names its profile's own key: a profile is named by its key (its DID), that key is its
+wallet, and a badge is found by the profile its line names.
 
 ## Uniqueness
 
@@ -70,8 +71,12 @@ The receipt counts only if:
 
 - the reviewer and the reviewed are the escrow's buyer and seller, in either order, going by their
   profiles' keys; and
-- its token is one this index counts (`countedMints` in `config/scoring.json`; for now, USDC on
-  mainnet and on devnet).
+- its token is one this index counts (`countedMints`):
+  - by default (`config/scoring.json`): USDC on mainnet (`EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
+    and USDC on devnet (`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`);
+  - on the foundation's devnet index (`deploy/scoring.devnet.json`): USDC on devnet, the USDC-shaped
+    test dollar (`J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`) and the Open-USD-shaped test dollar
+    (`g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`).
 
 If it counts, the index asks who said yes. The escrow has no accept step: the seller says yes by
 signing for the deal. That is creating the escrow (an invoice), signing its ending (a split, which
@@ -121,18 +126,17 @@ Rules that stop cheap inflation:
   human, one badge per market.
 
 What these rules do not stop: two real people who agree to run many small real deals and praise
-each other. The handoff bounds that by identity (one badge per human per market) and by reviewer
-standing. A minimum amount, or less weight for repeat deals between the same two, are open questions
-in `forest/docs/changes.md`.
+each other. Identity bounds that (one badge per human per market), and so does reviewer standing. A
+minimum amount, or less weight for repeat deals between the same two, is not built.
 
 A worked example (the end-to-end test):
 
 - Ana and Ben are each badged at 1. Ana invoiced Ben and he paid, so both said yes; each gave the
   other an overall of 10 on that deal. Each converges to 1.618 (the golden ratio:
   x = 1 + x / (x + 1)).
-- Cleo's badge does not count, because her profile declares another wallet. She gives Ana an
-  overall of 1 with a made-up deal id, which takes off 0.05 × 0.05 × 1 = 0.0025.
-- Cleo, with no reviews, stays at 0.
+- Cleo's line was proven against a list no trusted issuer publishes, so she holds no badge here
+  and the index keeps nothing of hers. The overall of 1 she writes about Ana, with a made-up deal
+  id, is never read into any score.
 
 ## Rating
 
@@ -149,8 +153,7 @@ gives them:
   sum. A new profile with one good review has a high rating and a small standing.
 - No review that counts gives an `overall`: no rating, rather than a zero.
 
-In the example, Ana's rating is Ben's 10 at weight 1.618 and Cleo's 1 at weight 0.0025, so 9.986,
-shown as 10.0. Ben's is Ana's 10 alone.
+In the example, Ana's rating is Ben's 10 alone, and Ben's is Ana's 10 alone.
 
 ## How the pages show them
 

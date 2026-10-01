@@ -76,9 +76,9 @@ still matches it; its twin (`/pay.json?…`) says the same for machines, in `che
 
 ## The two links
 
-The handoff's pay link is "a one-time Solana Pay link naming the escrow's address". That link needs
-an escrow, and an escrow exists only once someone creates it: the buyer's app, or the seller
-invoicing. So there are two links, one after the other:
+A Solana Pay link names an escrow's address, so it needs an escrow, and an escrow exists only once
+someone creates it: the buyer's app, or the seller invoicing. So there are two links, one after the
+other:
 
 - **This link, on an offer,** before any escrow: which offer, on what terms. The index makes it.
 - **The escrow client's Solana Pay link** (`solanaPayUrl`, `invoice` in `forest/escrow/client/src/pay.ts`),

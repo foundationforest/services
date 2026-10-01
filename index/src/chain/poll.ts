@@ -6,7 +6,7 @@
 // Each escrow version: every transaction that named it since the last one read, oldest first. A
 // transaction that failed is skipped. One that succeeded is archived whole (its log lines), then read
 // through the escrow adapter, then the cursor moves past it, all in one database transaction, so a
-// crash never half-reads one. RPC nodes are not an archive (adversarial review 1, rule 7): the logs
+// crash never half-reads one. RPC nodes are not an archive (docs/decisions.md, "Index"): the logs
 // are kept here.
 
 import { Connection, PublicKey, type Commitment } from '@solana/web3.js'

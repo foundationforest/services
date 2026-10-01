@@ -362,12 +362,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.equal(benTwin.reviews.received[0].market, MARKET)
       // A badge is a line, vouched for by each trusted issuer whose published roots hold its root.
       assert.deepEqual(anaTwin.badges.map((b: any) => [b.scope, b.counted, b.issuers]), [
-        [`${MARKET}/seller`, true, [{ key: FOUNDATION_ISSUER, name: 'Forest Foundation (placeholder key)', weight: 1, via: 'line' }]],
+        [`${MARKET}/seller`, true, [{ key: FOUNDATION_ISSUER, name: 'Forest Foundation (test key)', weight: 1, via: 'line' }]],
       ])
       assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.scope, u.value, u.details.issuers]), [
-        [`${MARKET}/seller`, 1, [{ issuer: FOUNDATION_ISSUER, name: 'Forest Foundation (placeholder key)', weight: 1 }]],
+        [`${MARKET}/seller`, 1, [{ issuer: FOUNDATION_ISSUER, name: 'Forest Foundation (test key)', weight: 1 }]],
       ])
-      assert.ok(anaPage.includes('Vouched for by Forest Foundation (placeholder key).'))
+      assert.ok(anaPage.includes('Vouched for by Forest Foundation (test key).'))
       // Eve's line: no issuer this index trusts vouches for it, so it is no badge, and nothing of
       // hers is kept: no page, no offer, no review, no count.
       assert.equal((await get(`/profiles/${eve.did}`)).status, 404)
