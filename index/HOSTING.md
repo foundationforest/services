@@ -47,7 +47,7 @@ One service, from this repo:
 
 - **Build:** the install line above, from the repo root (Railway's "shared monorepo": build from
   the root, override the build and start commands per service). `deploy/Dockerfile` does it, with
-  git for `forest.sh`; `deploy/README.md` is the devnet setup.
+  git for `forest.sh`; `README.md`, "Deploy", is the devnet setup.
 - **Start:** `cd index && node src/main.ts readers`.
 - **Replicas:** one. Two would read the same events twice and race to write the same scores.
 - **Networking:** no public domain. It opens connections; nothing connects to it.

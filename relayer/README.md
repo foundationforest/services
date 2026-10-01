@@ -1,334 +1,222 @@
 # relayer
 
-The relayer co-signs a person's transaction as its payer and charges, in the token they pay in, what
-it spends: the network fee and every storage deposit it puts down. When Solana cuts its storage price,
-part of a deposit it put down is freed, and the relayer keeps that refund. So people never need
-SOL, and the relayer pays for nobody. It is Kora 2.0.5, configured, with no custom code. It holds
-none of the person's keys and decides nothing about the person, the market or the deal.
+Devnet only: the foundation's relayer runs on devnet, paid in two test dollars. `kora.toml` is
+written for mainnet, where nothing is deployed. Nothing is shipped.
 
-In forest this was `feepayer/`, the fee payer, which forest's `main` no longer holds. Kora's own
-names keep "fee payer": its `fee_payer_policy` settings and its messages.
+Up: [the repo](../README.md). The issue drafted for Kora: [docs/kora-issue.md](../docs/kora-issue.md).
 
-**Nothing here is shipped.** Its tests run in front of a local validator. The devnet relayer on
-Railway runs this configuration (`deploy/README.md`). Nothing is on mainnet.
+The relayer lets a person send a transaction without holding SOL. It co-signs the transaction as
+its payer, pays the network fee and any storage deposit, and charges the person exactly what that
+cost it, in the token they pay with: **USDC, USDT, Open USD or EURC** on mainnet; on devnet, two
+test dollars. No margin, and it pays for no one.
 
-It is paid in USDC, USDT, Open USD or EURC, whichever the person holds ("Paid in four tokens",
-below). On devnet, in the two test dollars.
+It is [Kora](https://github.com/solana-foundation/kora) 2.0.5, configured, with no custom code. It
+holds none of the person's keys and decides nothing about the person, the market or the deal. Kora's
+own names say "fee payer" (`fee_payer_policy`, its messages).
 
-## What it does
+## How a transaction goes through it
 
 The person's device:
-1. builds the transaction with the relayer as its payer, and one plain token transfer to the relayer
+
+1. builds the transaction with the relayer as payer, plus one plain token transfer to the relayer
    whose amount it fills in next;
-2. asks Kora the price of that transaction in that token (`estimateTransactionFee`);
-3. sets the transfer to exactly that price;
-4. signs with the person's own keys;
-5. hands the transaction to Kora (`signAndSendTransaction`).
+2. asks Kora the price of exactly that transaction, in that token (`estimateTransactionFee`);
+3. sets the transfer to that price, and signs with the person's own key;
+4. hands it to Kora (`signAndSendTransaction`).
 
-Kora then:
-1. simulates the transaction and reads every program call inside it;
-2. checks it against `kora.toml`;
-3. checks the transfer covers the price;
-4. adds its signature and sends it.
+Kora simulates it, reads every program call inside it, checks it against `kora.toml`, checks the
+transfer covers the price, adds its signature and sends it.
 
-**The price** is:
-- the network fee, per signature, the person's included;
-- plus every account the relayer funds, including the ones a program makes inside the
-  transaction.
+**The price** is the network fee (per signature, the person's included) plus every account the
+relayer funds, counted from the simulation, including accounts a program creates inside its own
+call. The transfer must already be in the transaction when the device asks: without it, Kora adds a
+fixed 50 lamports for the payment it expects and misses that payment's signature, so on a registry
+line the quote falls 5,000 lamports short and Kora refuses the transaction it quoted.
 
-There is no margin: nothing inside Forest charges anything. Kora 2.0.5 finds the deposits by
-simulating the transaction and counting every System `CreateAccount` the relayer funds, program
-calls included (`fee/fee.rs`, `calculate_fee_payer_outflow`).
+**A registry line** takes one signature, the payer's: the relayer pays the network fee and the
+line's deposit, and is recorded in the line as its payer. The person signs only their payment. The
+proof names their profile and label, so nothing the relayer sees lets it take the badge.
 
-**The transfer must be in the transaction when the device asks the price.** Asked without it, Kora
-adds a fixed 50 lamports for the payment it expects, and its price misses the signature the
-transfer brings. A registry line has no other signature of the person's, so that price falls 5,000
-lamports short and Kora refuses the transaction it quoted.
+## Paid in four tokens
 
-**A registry line.** The registry takes one signature, the payer's: the proof is the person's
-consent, and it names their profile (`forest/registry/README.md`). The relayer is the payer. It pays
-the network fee and the line's storage deposit and is recorded in the line as its payer. The person
-signs only their payment to the relayer. There is no registration fee.
+On mainnet, `kora.toml` takes the fee in each issuer's own mint:
 
-**Nothing it sees lets it take a badge.** It receives the transaction before it lands. It can refuse
-to co-sign. It cannot make the proof count for another profile or another label: the proof names
-both.
+| Token | Mint | Program |
+|---|---|---|
+| USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | SPL Token |
+| USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | SPL Token |
+| Open USD | `ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB` | Token-2022, eight extensions, no transfer fee |
+| EURC | `HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr` | SPL Token; a euro |
 
-Anything paid on someone's behalf is an outside layer, never in the foundation. Whoever pays for
-someone else is just another payer, and the programs cannot tell and never need to.
+- All four have six decimals and no transfer fee, so each quote holds.
+- **The charge is the same SOL cost in whichever token.** Kora's Jupiter price source prices each
+  token in dollars and divides by SOL's price, so EURC is charged at the euro's rate.
+- **Each issuer can freeze the relayer's account in its token,** and Open USD's issuer holds a
+  permanent delegate that can take back what the relayer collected in it. The foundation accepts
+  both.
+- In Kora 2.0.5, `allowed_tokens` gates only Kora's own `transferTransaction` helper; an escrow in
+  another token still passes. `allowed_spl_paid_tokens` is the list it is paid in.
+
+## What it allows
+
+| Setting | Value | Why |
+|---|---|---|
+| `allowed_programs` | the registry, escrow v1, escrow v2, SPL Token, Token-2022, Associated Token Account, System | Kora checks every program a transaction calls, inner calls included |
+| No compute budget program | | So no priority fee: the relayer never pays one it did not agree to |
+| `max_allowed_lamports` | 0.01 SOL | Deposits per transaction; an escrow v2's creation takes about 0.0037 at mainnet rent |
+| `max_signatures` | 3 | The relayer, and an escrow's two parties when both sign a split |
+| `price` | margin 0 | The charge is the cost |
+| `price_source` | `Jupiter` (needs `JUPITER_API_KEY`) | Jupiter prices mainnet only; devnet uses Kora's mock |
+| `rate_limit` | 100 a second, across all callers | Kora's own limiter |
+| `payment_address` | unset | Payments go to token accounts the relayer's own key owns |
+| `fee_payer_policy` | only `allow_create_account` | The relayer's key may fund a new account it is paid for, and nothing else: no transfer, assign, allocate or nonce use, and no SPL Token or Token-2022 instruction as owner or authority |
+| No API key or HMAC | | A page in a browser cannot keep a secret, and every transaction pays its way |
+
+Refused, each tested with nothing landing: a program not on the list (`… is not in the allowed
+list`); a priority fee; the relayer's SOL sent anywhere (`Fee payer cannot be used for 'System
+Transfer'`); the payment taken back out of the relayer's account (`… 'SPL Token Transfer'`); no
+payment, or one short of the deposits (`Insufficient token payment. Required … lamports`).
+
+## What comes back, and to whom
+
+The relayer charges what it spends. What comes back later goes where each program sends it:
+
+- **An escrow's deposit address:** its rent goes back to the person who created the escrow, at
+  every ending.
+- **An escrow never funded, closed:** both rents go back to the person.
+- **What Solana's storage price cuts free** on an account the relayer funded goes to the relayer,
+  which keeps it: a registry line's (`refund`, to the payer the line records) and an escrow v2
+  receipt's (`sweep_rent`, to the payer it records).
+- **An escrow v1 receipt:** `sweep_rent` sends it to the person who created it; v1 records no payer.
+
+Anyone may send `refund` or `sweep_rent`. A line never grows after `register`, so nothing a line
+needs later asks the relayer for SOL.
+
+## Token-2022 and the one tap
+
+Escrow v2 takes Token-2022 dollars such as Open USD, so `kora.toml` allows the Token-2022 program,
+while the relayer's own key may do nothing in it.
+
+**A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** In a one tap (deposit address,
+create, pay and release in one transaction), the escrow's payout to the seller is a Token-2022
+transfer out of the deposit address the same transaction creates. Kora reads the source of every
+Token-2022 transfer whose destination exists before checking whether it pays Kora, finds no
+account, and refuses (`Account … not found`). Paying, then releasing, in two transactions, passes;
+so does a one tap in a classic dollar. So an app paying in Open USD through this relayer sends two
+transactions from one approval, the second once the first is confirmed. The cause and the fix are
+in [docs/kora-issue.md](../docs/kora-issue.md); Kora's `2.2.0-beta.8` appears to fix it.
+
+**Every payment that creates its deposit address does so at the top.** Kora 2.0.5 accepts a
+transfer to an account that does not exist yet only when the same transaction creates it with a
+top-level associated-token-account instruction; an account a program creates inside its own call
+is invisible to it. Both escrow clients put `CreateIdempotent` for the deposit address first in
+every builder that pays in the same transaction (`makeDepositAddressIx`).
+
+## What it trusts
+
+- **Its RPC's simulation** of each transaction, for what it calls and what it costs.
+- **Jupiter's price** for each paid token against SOL (mainnet), with nothing for that price's
+  error, since there is no margin.
+- **Its own `kora.toml`,** and nothing about the person.
 
 ## Measured, on a local validator
 
-`test/relayer.test.ts`, below. A wallet that never held a lamport writes a registry line, pays for
-escrows under v1 and v2 (one of them in Open USD, a Token-2022 dollar planted from its mainnet
-mint), and closes one v1 escrow that was never funded, paying the relayer in a test dollar
-throughout. Rent here is 6,960 lamports a byte, the validator's default. The programs are built as
-SBPF v3.
+`test/relayer.test.ts`, the programs built as SBPF v3, rent at the validator's default (6,960
+lamports a byte), Kora's mock price (one base unit of the test dollar buys one lamport). All
+amounts in lamports. Charged equals spent in every row.
 
-| Transaction | Size | Units | Relayer spent | Charged | Of which deposits |
-|---|---|---|---|---|---|
-| Registry line, a 20-byte label | 702 bytes | 123,921 | 2,077,120 | 2,077,120 | line 2,067,120 |
-| Escrow v1, pay (deposit address, create, money in) | 661 | 29,644 | 4,777,600 | 4,777,600 | escrow 2,728,320, deposit address 2,039,280 |
-| Escrow v1, release | 488 | 12,768 | 10,000 | 10,000 | none; the deposit address's 2,039,280 go back to the person |
-| Escrow v1 in one tap | 710 | 40,835 | 4,777,600 | 4,777,600 | the same two; the deposit address's comes back to the person in the same transaction |
-| Escrow v2, pay | 661 | 35,958 | 5,062,960 | 5,062,960 | escrow 3,013,680, deposit address 2,039,280 |
-| Escrow v2, release | 488 | 13,029 | 10,000 | 10,000 | none; the deposit address's go back to the person |
-| Escrow v2 in one tap | 710 | 60,910 | 5,062,960 | 5,062,960 | the same two; the deposit address's comes back to the person |
-| Escrow v2 in Open USD, pay | 727 | 45,002 | 5,160,400 | 5,160,400 | escrow 3,013,680, deposit address 2,136,720 (its extensions make it larger) |
-| Escrow v2 in Open USD, release | 553 | 24,157 | 10,000 | 10,000 | none; the deposit address's go back to the person |
-
-The Open USD rows are from a run on 2026-09-30, the other escrow rows from an earlier one. Units
-move by up to about 20,000 from run to run, with the keys each run draws (the Open USD pay has
-measured 39,002 and 45,002); sizes and lamports do not. All amounts are in lamports. Under Kora's
-mock price, one base unit of the test dollar buys one lamport. The network fee was 10,000 lamports
-each time: two signatures, no priority fee. What each costs at mainnet's rent, today and after the
-cuts, is in `forest/registry/README.md` and `forest/escrow/v2/README.md`.
-
-## Deposits: charged once; what comes back, and to whom
-
-**Can Kora's price count the deposit?** Yes. The test shows it:
-- A line's charge is exactly the network fee plus the line the registry program makes inside its
-  own call.
-- A line paying only the network fee is refused: "Insufficient token payment. Required 2077120
-  lamports". Nothing lands.
-- An escrow's pay step is charged both accounts the escrow program makes.
-
-**What comes back.** The relayer charges what it spends; what comes back later goes where each
-program sends it:
-
-- **A deposit address**, under either escrow version: its rent goes back to the person, who
-  created the escrow, at every ending. The person paid for it, and gets it back.
-- **An escrow never funded**, closed: both rents go back to the person.
-- **What Solana's storage price cuts free** on an account the relayer fronted goes back to the
-  relayer, which keeps it:
-  - a registry line: `refund` sends what a line holds above its minimum to the payer the line
-    records, the relayer;
-  - an escrow v2 receipt: `sweep_rent` sends it to the payer the escrow records, the relayer.
-- **An escrow v1 receipt**: `sweep_rent` sends it to the person, who created the escrow. v1 records
-  no payer.
-
-Anyone may send `refund` or `sweep_rent`; they need no signature. The test stands in for a rent cut
-with a gift of SOL to the account, which leaves it holding more than its minimum, as a cut would.
-Here the person got 16,061,440 lamports back (six deposit addresses' rents, Open USD's among them,
-a never-funded escrow's rent and a swept gift). The relayer got 2,000,000 back (a line's refund and
-a v2 sweep).
-What the person gets back arrives as SOL in a wallet that otherwise holds none; what an app does
-with it is open (`forest/docs/handoff.md`, Open).
-
-## What it refuses
-
-Tested, each with nothing landing and nothing moving:
-
-| Attempt | Kora's answer |
-|---|---|
-| A program not on the list (Memo) | `Program MemoSq4g… is not in the allowed list` |
-| A priority fee (the compute budget program is not on the list) | `Program ComputeBudget111… is not in the allowed list` |
-| The relayer's SOL sent anywhere | `Fee payer cannot be used for 'System Transfer'` |
-| The payment taken back out of the relayer's token account, under the signature it adds | `Fee payer cannot be used for 'SPL Token Transfer'` |
-| No payment | `Insufficient token payment. Required 10050 lamports` |
-| A line paying the network fee but not the deposit | `Insufficient token payment. Required 2077120 lamports` |
-| An escrow whose deposit address only the escrow program makes (below) | `Account BbCZ… not found` |
-| An escrow v2 one tap in Open USD (below) | `Account HBMJ… not found` |
-
-Also enforced by the config, not provoked here:
-- more than 0.01 SOL of deposits in one transaction (`max_allowed_lamports`);
-- more than three signatures;
-- the relayer's key used as the owner, authority or signer of any token instruction, or to
-  assign or allocate its own account.
-
-Kora checks the program list against every call inside the transaction, not only the top-level
-ones.
-
-**A line never grows.** `register` writes it once, at its full size, and nothing writes to it again
-(`forest/registry/README.md`), so nothing a line needs after `register` asks the relayer for SOL. A
-second issuer vouches for the same line in a membership record in the profile's folder, off chain.
-
-### Token-2022 dollars
-
-`kora.toml` allows the Token-2022 program, so escrow v2 deals in a Token-2022 dollar such as Open
-USD pass. The relayer's own key may still do nothing in it: every `token_2022` flag in
-`fee_payer_policy` is false, so it pays for others' Token-2022 instructions and never moves a token
-itself. It is paid in four tokens, Open USD among them (below).
-
-**A one tap in a Token-2022 dollar does not pass Kora 2.0.5.** For every Token-2022 transfer whose
-destination exists, the escrow's payout to the seller inside its own call included, Kora reads the
-transfer's source. In a one tap that source is the deposit address the same transaction makes, so
-Kora finds none and refuses. Paying and then releasing, in two transactions, passes, and so does a
-one tap in a classic dollar. An app paying in Open USD through this relayer pays, then releases:
-two transactions from one approval, the second sent once the first is confirmed. The cause is in
-Kora's source (`token/token.rs`, `verify_token_payment`: the extension check reads the source of
-every Token-2022 transfer before checking whether that transfer pays Kora); Kora's
-`2.2.0-beta.8` moves that check after it. The issue for Kora is drafted in
-`../docs/kora-issue.md`. When Kora 2.2 is stable, upgrading drops the two transactions.
-
-**Kora can be paid in a Token-2022 dollar,** checked with a scratch run not kept in this repo (the
-config there: this `kora.toml`, the mock price, three test dollars and Open USD as the paid tokens):
-- a plain Token-2022 dollar, and Open USD's own mainnet mint with its eight extensions: quoted,
-  co-signed and charged exactly what the relayer spent; one unit short refused;
-- a dollar with a transfer fee: the quote must be asked again with the quoted amount in place
-  until it holds still (three rounds at 1%), and even then the relayer nets less than it spent
-  (9,999 of 10,000 lamports' worth), since Token-2022 takes its fee from the amount received and
-  Kora's price does not gross it up. Escrow v2 refuses such mints; the relayer should not take one.
-
-**The relayer takes Open USD as payment** (`allowed_spl_paid_tokens`), the founder's choice of
-2026-09-30. Open USD's issuer holds a permanent delegate, which can take back what the relayer
-collected in it; the foundation accepts that. Open USD has no transfer fee, so its quote holds. On
-devnet the Open-USD-shaped test dollar stands in (`g55mj…`, every extension Open USD has); the
-relayer needs a token account for it before the first payment, which the loop makes
-(`../loop/`).
-
-### Paid in four tokens
-
-On mainnet `kora.toml` takes the fee in four tokens, the founder's choice of 2026-10-01, each its
-issuer's own mint, read on mainnet on 2026-10-01:
-
-| Token | Mint | Program | Issuer's page |
+| Transaction | Size | Charged | Of which deposits |
 |---|---|---|---|
-| USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | SPL Token | Circle's contract addresses |
-| USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | SPL Token | Tether's supported protocols |
-| Open USD | `ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB` | Token-2022, eight extensions | Solana's launch post, 2026-09-30 |
-| EURC | `HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr` | SPL Token | Circle's contract addresses |
+| Registry line, a 20-byte label | 702 bytes | 2,077,120 | the line, 2,067,120 |
+| Escrow v1, pay (deposit address, create, money in) | 661 | 4,777,600 | escrow 2,728,320, deposit address 2,039,280 |
+| Escrow v1, release | 488 | 10,000 | none |
+| Escrow v1, one tap | 710 | 4,777,600 | the same two |
+| Escrow v2, pay | 661 | 5,062,960 | escrow 3,013,680, deposit address 2,039,280 |
+| Escrow v2, release | 488 | 10,000 | none |
+| Escrow v2, one tap | 710 | 5,062,960 | the same two |
+| Escrow v2 in Open USD, pay | 727 | 5,160,400 | escrow 3,013,680, deposit address 2,136,720 |
+| Escrow v2 in Open USD, release | 553 | 10,000 | none |
 
-- All four have six decimals and no transfer fee, so each quote holds.
-- **EURC is a euro.** Kora's Jupiter source prices every token in dollars and divides by SOL's
-  price, so the charge is the same SOL cost in whichever token is paid: in EURC, fewer units at the
-  euro's rate. Nothing else changes.
-- Each issuer holds a freeze authority over its token, so it can freeze the relayer's account in it,
-  as Circle can for USDC; Open USD's issuer can also take back what the relayer collected
-  (above). The foundation accepts both.
-- Devnet stays on the two test dollars (`deploy/devnet-config.sh`): no USDT- or EURC-shaped test
-  token is minted, and Jupiter prices mainnet only.
-- Not run: no test pays the relayer in USDT or EURC. Kora handles them as it handles USDC, a classic
-  six-decimal SPL token; mainnet is not deployed.
+The network fee was 10,000 each time: two signatures, no priority fee.
 
-### One thing a product must do for Kora: make the deposit address at the top
+## Settings
 
-Kora 2.0.5 looks up the destination of every token transfer before it signs. It accepts one that
-does not exist yet only when the same transaction creates it with a top-level associated-token-account
-instruction (`token/token.rs`, `find_ata_creation_for_destination`). An account a program creates
-inside its own call is invisible to it.
-
-An escrow's "Pay" that leaves the deposit address to `create` (create, then a transfer into it) is
-refused. Putting `CreateIdempotent` for the deposit address, paid by the relayer, before `create`
-fixes it:
-- the escrow's `init_if_needed` finds the account made;
-- Kora counts its rent;
-- the transaction grows by about 10 bytes.
-
-Both escrow clients do this in every builder that funds in the same transaction (`createAndFund`,
-`payInOneTap`, with `makeDepositAddressIx`), and the test pays through them.
-
-## Files
-
-| | |
+| Variable | What |
 |---|---|
-| `KORA` | the version pinned: `2.0.5`, the latest stable release |
-| `build.sh` | `cargo install kora-cli --version 2.0.5 --locked` into `.kora/` |
-| `kora.toml` | the rules: programs, the tokens it is paid in, the price, what the relayer's key may do |
-| `signers.toml` | the one key, read from `FOREST_RELAYER_KEY` |
-| `run.sh` | starts Kora with both files; refuses a key file inside this repo |
-| `test/relayer.test.ts` | the local run |
-| `deploy/` | the foundation's devnet instance: its Dockerfile, the devnet `kora.toml`, Railway ([deploy/README.md](deploy/README.md)) |
+| `FOREST_RELAYER_KEY` | The relayer's key: a path to a keypair file (the Solana CLI's JSON form) outside this repo, or, where a hosting platform has no files, the key itself, as that JSON array or base58. Kora 2.0.5 built `--locked` uses solana-keychain 0.1.0, which reads a path first and otherwise takes the key itself; Kora 2.2 takes the key only |
+| `RPC_URL` | The Solana RPC Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
+| `JUPITER_API_KEY` | For `price_source = "Jupiter"` |
+| `PORT` | Default `8080` |
+| `KORA_CONFIG` | Default `kora.toml` |
+| `KORA_BIN` | Default `.kora/bin/kora` |
 
-`.kora/` and `node_modules/` are not committed.
+`run.sh` refuses a key file inside this repo.
 
-## Build, run, test
+## Run it
 
 ```
-cd relayer && ./build.sh                   # Kora 2.0.5 into .kora/ (Rust; about 6 to 12 minutes)
-cd relayer && FOREST_RELAYER_KEY=/path/outside/repo/relayer.json \
-              RPC_URL=https://<rpc> JUPITER_API_KEY=<key> ./run.sh       # :8080
-./forest.sh registry/client escrow/client escrow/v2/client               # forest's three clients, from the repo root
-cd relayer && npm ci && npm run check                                     # type-check the local run
-cd relayer && npm run test:local                                          # the local run
+./build.sh          # Kora 2.0.5 into .kora/ (cargo install kora-cli --locked; Rust, 6 to 12 minutes)
+FOREST_RELAYER_KEY=/outside/repo/relayer.json RPC_URL=https://… JUPITER_API_KEY=… ./run.sh   # :8080
 ```
 
-**The local run** needs:
-- `solana-test-validator` on the PATH (Solana CLI 4.2.2);
-- the three programs built (`cargo build-sbf --arch v3` in `forest/registry/program`,
-  `forest/escrow/program` and `forest/escrow/v2/program`);
-- the registry's proving files (`npm run fetch` in `forest/registry/artifacts`);
-- the three clients' dependencies (`./forest.sh registry/client escrow/client escrow/v2/client`);
-- `./build.sh`.
+Checks:
 
-If one is missing it says which and skips. About 30 seconds. What it does:
+```
+./forest.sh registry/client escrow/client escrow/v2/client        # from the repo root
+cd relayer && npm ci && npm run check                               # type-check the local run
+bash deploy/devnet-config.sh kora.toml > /dev/null                  # the devnet config still applies
+npm run test:local                                                  # the local run, about 30 seconds
+```
 
-1. Starts a validator with the three programs and a six-decimal test dollar planted at USDC's
-   address, the one token `kora.toml` accepts payment in.
-2. Writes the relayer's key to a file outside the repo and starts Kora through `run.sh`, on a copy
-   of `kora.toml` with exactly one line changed: `price_source = "Mock"`. The mock prices any mint
-   but two at 0.001 SOL a token.
-3. Runs the refusals above, the line, and the escrows.
-4. Checks every balance: the person's SOL (0 until its own refunds come back), their tokens, and
-   the relayer's SOL and tokens.
+**The local run** starts a validator with the three programs, a six-decimal test dollar planted at
+USDC's address and Open USD planted from its mainnet account, and Kora through `run.sh` on a copy of
+`kora.toml` with one line changed: `price_source = "Mock"`. A wallet that never held a lamport then
+writes a registry line, pays escrows under v1 and v2 (one in Open USD), closes one never funded, and
+provokes every refusal above; every balance is checked. It needs `solana-test-validator` (Solana CLI
+4.2.2), the three programs built (`cargo build-sbf --arch v3` in `forest/registry/program`,
+`forest/escrow/program`, `forest/escrow/v2/program`), the proving files (`npm run fetch` in
+`forest/registry/artifacts`) and `./build.sh`. It skips, saying which, if one is missing. Not in CI.
 
-**The key.** `FOREST_RELAYER_KEY` holds the path to a keypair file in the Solana CLI's JSON form,
-outside this repo. Kora 2.0.5, built `--locked`, uses solana-keychain 0.1.0, which reads a path
-first and otherwise takes the key itself, as that JSON array or as base58. Kora's `main` (2.2
-betas) takes the key itself only, not a path.
+## Deploy
 
-## Environment variables
+Kora's own published image, `ghcr.io/solana-foundation/kora:v2.0.5`, pinned by digest, with
+`kora.toml`, `signers.toml` and `run.sh`. `deploy/Dockerfile` checks the image is the version in
+`KORA` and writes the devnet config with `deploy/devnet-config.sh`, which prints `kora.toml` with
+exactly six lines changed and stops if any is not there exactly once: the three programs' devnet
+ids, the two paid-token lists (the two devnet test dollars in place of the four mainnet tokens), and
+`price_source = "Mock"`, since Jupiter prices mainnet only. Kora's mock values the test dollars at
+0.001 SOL a whole token: one base unit buys one lamport.
 
-| | |
-|---|---|
-| `FOREST_RELAYER_KEY` | path to the relayer's keypair file, outside this repo (or the key itself, where a host has no files) |
-| `RPC_URL` | the Solana RPC Kora simulates and sends through (`run.sh` requires it) |
-| `JUPITER_API_KEY` | Kora's price source on mainnet (`price_source = "Jupiter"`) |
-| `PORT` | default 8080 |
-| `KORA_CONFIG` | default `kora.toml` |
+Before the first transaction, the key needs SOL for the deposits it funds, and a token account for
+each token it is paid in (`kora rpc initialize-atas`, or any transfer that makes them). It is paid
+back in tokens; turning them back into SOL is an operations loop, not code.
 
-## What running it on Railway will need
+**The foundation's devnet relayer** runs that image on Railway, project `forest-devnet`, service
+`relayer`:
 
-`deploy/` does this on devnet (`deploy/README.md`).
+- **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=relayer/deploy/Dockerfile`.
+- **One replica,** health check `GET /liveness`, a public domain to port 8080, no volume.
+- **Signs as** `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` (forest's `devnet/keys.sh` calls it
+  `payer`; it is also the Open-USD-shaped test dollar's issuer).
+- **Paid in** the USDC-shaped test dollar `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` and the
+  Open-USD-shaped one `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`.
 
-- **A build:** a Dockerfile that runs `build.sh` (Rust, about 12 minutes on four cores), or Kora's
-  own image at 2.0.5 (`ghcr.io/solana-foundation/kora`, not checked for that tag), plus
-  `kora.toml`, `signers.toml` and `run.sh`.
-- **The key as a variable.** Railway has no secret files. `FOREST_RELAYER_KEY` holds the key
-  itself, as the JSON array, which 2.0.5 accepts. A volume holding a key file would also do. Either
-  way it is a secret, never in the repo.
-- **A mainnet RPC** that allows `simulateTransaction` with inner instructions (`RPC_URL`), and a
-  Jupiter API key (`JUPITER_API_KEY`).
-- **SOL on the relayer's key** before the first transaction: enough for the deposits in flight.
-  It is paid back in dollars, which someone must turn back into SOL: an operations loop, not code.
-- **The relayer's USDC, USDT, Open USD and EURC accounts**, created once each. `kora rpc
-  initialize-atas` does it, or any transfer that makes them.
-- **The port:** `PORT` from Railway, and a health check on `GET /liveness`.
-- **Devnet** needs its own `kora.toml`: the three devnet program ids, escrow v2 at
-  `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (`deploy/devnet-config.sh` names where each is
-  recorded), the two devnet test dollars (USDC-shaped and Open-USD-shaped) as the paid tokens, and
-  `price_source = "Mock"`, since Jupiter prices mainnet only.
+| Variable | On devnet | Sealed |
+|---|---|---|
+| `FOREST_RELAYER_KEY` | the `payer` key, as its JSON array | yes |
+| `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
+| `PORT` | `8080` | no |
 
-## Chosen, not decided
+## Limits
 
-Where the handoff was silent the simplest option was taken. Each is reversible, since nothing is
-deployed, and each is in `forest/docs/changes.md` or this repo's `docs/changes.md`.
-
-1. **Kora 2.0.5**, the latest stable release, not the 2.2 betas on `main`. The betas harden the fee
-   payer against draining, change the price, and no longer read the key from a path.
-2. **Margin 0.** The charge is the cost.
-3. **Paid to the relayer's own token account** (`payment_address` unset). Kora refuses any token
-   instruction that key owns, so what it is paid stays put until someone moves it with the key.
-4. **`max_allowed_lamports` = 0.01 SOL of deposits per transaction**, about twice an escrow's.
-5. **`max_signatures` = 3**: the relayer, and an escrow's two parties when both sign a split.
-6. **No compute budget program**, so no priority fee. A registry line fits the default compute
-   limit (121,083 of 200,000).
-7. **No API key or HMAC.** A page in a browser cannot keep a secret, and every transaction pays its
-   way. Kora's rate limit (100 a second, across all callers) stays.
-8. **Kora's three warnings on `config validate` left as they are:**
-   - no auth, as above;
-   - `allow_create_account`, which is priced, capped and tested;
-   - Token-2022's permanent delegate: Open USD's issuer can take back what the relayer collected
-     in Open USD, which the foundation accepts. Blocking the extension (`[validation.token_2022]`)
-     would also refuse Open USD escrow payouts, since Kora applies it to every Token-2022 transfer
-     it reads.
-
-## What is not done
-
-- **Mainnet.** Nothing deployed; on devnet Kora prices the test dollar with its mock, and Jupiter's
-  price was not called.
-- **Kora 2.2.** It hardens the relayer against being drained, no longer reads the key from a
-  path, and appears to fix the Token-2022 one tap. It was read, not run. When it is stable:
-  upgrade, and drop the two-transaction payment.
-- **Load, rate limits, several relayer keys**, and the operations loop that turns collected
-  dollars back into SOL.
+- **Mainnet is not deployed,** and Jupiter's price was never called. No test pays the relayer in
+  USDT or EURC; Kora handles them as it handles USDC.
+- **A one tap in a Token-2022 dollar is refused** by Kora 2.0.5 (above): two transactions instead.
+- **No priority fee,** so under congestion a transaction may land late.
+- **What it collects sits under its signing key,** in the key's own token accounts; nothing moves
+  it but someone holding the key.
+- **What comes back to a person arrives as SOL** in a wallet that otherwise holds none.
+- **Kora 2.2** hardens a relayer against being drained and no longer reads the key from a path; it
+  is not stable, and not taken.
+- **Address logs at the hosting platform.** Railway keeps every request's client address and path in its own
+  logs.
