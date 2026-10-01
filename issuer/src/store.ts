@@ -8,8 +8,8 @@
 //
 // The list and its roots are public: the issuer publishes both (list.ts). The list keeps each
 // commitment once, in list order, which within a batch is shuffled. A root is kept with the size
-// of the list it is the root of, the time its batch ran, and, once it is written on chain
-// (chain.ts), that transaction's signature. A batch moves commitments from the queue to the list
+// of the list it is the root of, the time its batch ran, and, once its batch is written on chain
+// (chain.ts), the signatures of its notes. A batch moves commitments from the queue to the list
 // and adds their root in one transaction, so a failure changes nothing.
 //
 // Deleting a row is not enough to take it out of the file: SQLite leaves deleted bytes in free
@@ -33,6 +33,9 @@ export type Accepted = 'queued' | 'session_used' | 'commitment_queued'
 /** One root of the list: the root of its first `size` commitments, made by a batch at `time` (ms since 1970). */
 export type Root = { root: bigint; size: number; time: number }
 
+/** A root whose batch is not on chain yet, with `from`, where its batch's members start: the size before it. */
+export type Unwritten = Root & { from: number }
+
 export class Store {
   readonly #db: DatabaseSync
   readonly #isUsed: StatementSync
@@ -43,6 +46,7 @@ export class Store {
   readonly #count: StatementSync
   readonly #remove: StatementSync
   readonly #members: StatementSync
+  readonly #between: StatementSync
   readonly #roots: StatementSync
   readonly #list: StatementSync
   readonly #root: StatementSync
@@ -59,12 +63,13 @@ export class Store {
       CREATE TABLE IF NOT EXISTS used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL);
-      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, chain TEXT);
+      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, notes TEXT);
     `)
-    // A file from before roots went on chain: its roots are written too, oldest first.
-    if (!this.#db.prepare('SELECT name FROM pragma_table_info(?)').all('roots').some((c) => c.name === 'chain')) {
-      this.#db.exec('ALTER TABLE roots ADD COLUMN chain TEXT')
-    }
+    // A file from before the notes carried members (its roots on chain alone, in `chain`), or from
+    // before anything went on chain: every batch is written, with its members, oldest first.
+    const columns = this.#db.prepare('SELECT name FROM pragma_table_info(?)').all('roots').map((c) => c.name)
+    if (!columns.includes('notes')) this.#db.exec('ALTER TABLE roots ADD COLUMN notes TEXT')
+    if (columns.includes('chain')) this.#db.exec('ALTER TABLE roots DROP COLUMN chain')
     this.#isUsed = this.#db.prepare('SELECT 1 FROM used_sessions WHERE hash = ?')
     this.#isQueued = this.#db.prepare('SELECT 1 FROM queue WHERE commitment = ?')
     this.#use = this.#db.prepare('INSERT OR IGNORE INTO used_sessions (hash) VALUES (?)')
@@ -73,11 +78,14 @@ export class Store {
     this.#count = this.#db.prepare('SELECT count(*) AS n FROM queue')
     this.#remove = this.#db.prepare('DELETE FROM queue WHERE commitment = ?')
     this.#members = this.#db.prepare('SELECT commitment FROM list ORDER BY position')
+    this.#between = this.#db.prepare('SELECT commitment FROM list WHERE position >= ? AND position < ? ORDER BY position')
     this.#roots = this.#db.prepare('SELECT size, root, time FROM roots ORDER BY size')
     this.#list = this.#db.prepare('INSERT INTO list (position, commitment) VALUES (?, ?)')
     this.#root = this.#db.prepare('INSERT INTO roots (size, root, time) VALUES (?, ?, ?)')
-    this.#unwritten = this.#db.prepare('SELECT size, root, time FROM roots WHERE chain IS NULL ORDER BY size')
-    this.#written = this.#db.prepare('UPDATE roots SET chain = ? WHERE size = ? AND chain IS NULL')
+    this.#unwritten = this.#db.prepare(
+      'SELECT size, root, time, coalesce((SELECT max(p.size) FROM roots p WHERE p.size < r.size), 0) AS start FROM roots r WHERE notes IS NULL ORDER BY size',
+    )
+    this.#written = this.#db.prepare('UPDATE roots SET notes = ? WHERE size = ? AND notes IS NULL')
   }
 
   isUsed(sessionId: string): boolean {
@@ -122,6 +130,11 @@ export class Store {
     return this.#members.all().map((row) => fromBytes32(row.commitment as Uint8Array))
   }
 
+  /** The list's members at positions `from` up to, not including, `to`, in order. */
+  between(from: number, to: number): bigint[] {
+    return this.#between.all(from, to).map((row) => fromBytes32(row.commitment as Uint8Array))
+  }
+
   /** Every root the list has had, oldest first. */
   roots(): Root[] {
     return this.#roots.all().map((row) => ({
@@ -131,18 +144,19 @@ export class Store {
     }))
   }
 
-  /** The roots not yet written on chain, oldest first. */
-  unwritten(): Root[] {
+  /** The roots whose batch is not yet written on chain, oldest first. */
+  unwritten(): Unwritten[] {
     return this.#unwritten.all().map((row) => ({
       root: fromBytes32(row.root as Uint8Array),
       size: Number(row.size),
       time: Number(row.time),
+      from: Number(row.start),
     }))
   }
 
-  /** The root of the first `size` commitments is on chain, in the transaction `signature`. */
-  written(size: number, signature: string): void {
-    this.#written.run(signature, size)
+  /** The batch whose root is of the first `size` commitments is on chain, in the notes `signatures`, in order. */
+  written(size: number, signatures: string[]): void {
+    this.#written.run(signatures.join(' '), size)
   }
 
   /**

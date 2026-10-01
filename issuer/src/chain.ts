@@ -1,36 +1,136 @@
-// Each root on chain: when a batch closes, its new root is also written to Solana as one memo that
-// the issuer's key signs, besides the two files. Anyone can then read the issuer's roots from the
-// chain, dated by the chain, even if the issuer's address stops answering or its file is changed.
+// Each batch on chain: when a batch closes, its new root and its new members are also written to
+// Solana, in notes the issuer's key signs, besides the two files. Anyone can then read the
+// issuer's roots and rebuild its whole list from the chain alone, dated by the chain, even if the
+// issuer's address stops answering or its files are changed.
 //
-// The memo is the root's line of the roots file, under its own label:
+// A note is the root's line of the roots file with a run of the batch's new members, in list
+// order, from list position `from`, under its own label:
 //
-//   forest.foundation/issuer/root/v1\n{"root":"<decimal>","size":n,"time":ms}
+//   forest.foundation/issuer/root/v2\n{"commitments":["<decimal>",…],"from":n,"root":"<decimal>","size":n,"time":ms}
 //
-// in one transaction the issuer's key pays for and signs: Solana's memo program (v2), with the
-// key as its one signer. A reader keeps a memo only from a transaction that succeeded and that the
-// issuer's key signed. The transaction is built here by hand (one instruction, a legacy message),
-// so this needs no Solana library: the key signs the message bytes, which begin with the message
-// header, never with the roots file's 0xff (forest/records/SPEC.md, section 1).
+// A batch whose members do not fit in one note is cut into as few as fit, each with the root's line
+// again, so every note reads alone. Each goes in its own transaction the issuer's key pays for and
+// signs: Solana's memo program (v2), with the key as its one signer, after one instruction raising
+// the transaction's compute limit, since the memo program spends about 350 units a byte and a full
+// note takes more than the default 200,000. No compute price is set, so the fee stays 5,000
+// lamports. A reader keeps a note only from a transaction that succeeded and that the issuer's key
+// signed. The transaction is built here by hand (two instructions, a legacy message), so this needs
+// no Solana library: the key signs the message bytes, which begin with the message header, never
+// with the roots file's 0xff (forest/records/SPEC.md, section 1). Version 1 of the label held the
+// root's line alone.
 //
-// A root is written once it is in the file, oldest first; a root that could not be written is
-// tried again a minute later, and the file records each one's transaction once it is confirmed.
-// It logs counts and the kind of a failure only: never a root, a signature or the RPC's words,
-// since the RPC's address can hold a key.
+// A batch is written once it is in the file, oldest first, one note at a time; a note that could
+// not be written is tried again a minute later, from that note on, and the file records each
+// batch's transactions once all its notes are confirmed. It logs counts and the kind of a failure
+// only: never a root, a member, a signature or the RPC's words, since the RPC's address can hold a
+// key.
+
+import { Group } from '@semaphore-protocol/group'
 
 import { base58, utf8 } from '../../forest/records/src/bytes.ts'
-import { canonical } from '../../forest/records/src/canonical.ts'
+import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
 import type { IssuerKey } from './key.ts'
 import type { Root, Store } from './store.ts'
 
 /** Solana's memo program, v2: it checks that every account it is given signed. */
 export const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
 
-/** Every root memo begins with this. */
-export const ROOT_MEMO_LABEL = 'forest.foundation/issuer/root/v1\n'
+/** Solana's compute budget program: its one instruction here sets the transaction's compute limit. */
+export const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
 
-/** The memo for one root: the label, then the root's entry in the roots file, as canonical text. */
-export function rootMemo(root: Root): string {
-  return ROOT_MEMO_LABEL + canonical({ root: root.root.toString(), size: root.size, time: root.time })
+/**
+ * The compute limit a note's transaction sets. Measured on devnet on 2026-10-01: the memo program
+ * takes 84,069 units for a 195-byte note and about 351 more a byte, so a note of `NOTE_MAX_BYTES`
+ * takes about 374,000; this leaves a quarter more. It costs nothing while no price is set.
+ */
+export const NOTE_COMPUTE_UNITS = 500_000
+
+/** Every note begins with this. */
+export const NOTE_LABEL = 'forest.foundation/issuer/root/v2\n'
+
+/**
+ * The longest note, in bytes: a transaction is at most 1,232 bytes, and the rest of the issuer's
+ * (one signature, three accounts, a blockhash, the compute limit's instruction, the memo
+ * instruction's header and a two-byte length) takes 211.
+ */
+export const NOTE_MAX_BYTES = 1232 - 211
+
+/** One note: the root's line of the roots file, and `commitments`, the members from list position `from`. */
+function note(root: Root, from: number, commitments: bigint[]): string {
+  return NOTE_LABEL + canonical({ commitments: commitments.map(String), from, root: root.root.toString(), size: root.size, time: root.time })
+}
+
+/**
+ * A batch's notes: its new members, at list positions `from` up to the root's size, in order, cut
+ * into as few notes as fit in `NOTE_MAX_BYTES`, each the root's line with its run of members.
+ */
+export function batchNotes(root: Root, from: number, members: bigint[]): string[] {
+  if (members.length === 0 || from + members.length !== root.size) throw new Error("a batch's members must end at its root's size")
+  const notes: string[] = []
+  for (let at = 0; at < members.length; ) {
+    let n = 1
+    while (at + n < members.length && utf8(note(root, from + at, members.slice(at, at + n + 1))).length <= NOTE_MAX_BYTES) n++
+    notes.push(note(root, from + at, members.slice(at, at + n)))
+    at += n
+  }
+  return notes
+}
+
+/** A note's parts, or it throws: one root, and its run of members from list position `from`. */
+export type Note = { root: Root; from: number; commitments: bigint[] }
+
+const DECIMAL = /^(0|[1-9][0-9]{0,77})$/
+const whole = (n: unknown): n is number => Number.isSafeInteger(n) && (n as number) >= 0
+
+/** A note's text read back: the label, then canonical text with exactly its five fields. Throws with why. */
+export function parseNote(text: string): Note {
+  if (!text.startsWith(NOTE_LABEL)) throw new Error('not a note')
+  const body = text.slice(NOTE_LABEL.length)
+  const value = parseCanonical(body) as Record<string, unknown>
+  if (canonical(value) !== body) throw new Error('not canonical text')
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join() !== 'commitments,from,root,size,time') throw new Error('not a note')
+  const { commitments, from, root, size, time } = value
+  if (!Array.isArray(commitments) || commitments.length === 0 || !commitments.every((c) => typeof c === 'string' && DECIMAL.test(c))) throw new Error('its members are not decimal text')
+  if (typeof root !== 'string' || !DECIMAL.test(root)) throw new Error('its root is not decimal text')
+  if (!whole(from) || !whole(size) || !whole(time)) throw new Error('its numbers are not whole')
+  if (from + commitments.length > size) throw new Error('its members run past its root')
+  return { root: { root: BigInt(root), size, time }, from, commitments: commitments.map(BigInt) }
+}
+
+/**
+ * The list rebuilt from notes alone, and the roots they name, oldest first: what anyone can do with
+ * the issuer's notes on chain. Each note places its members from its `from`; a note seen twice is
+ * kept once. Throws on a text that is not a note, two notes that disagree on a member or on a root,
+ * a member missing, or a root that is not the Merkle root of the list's first `size` members, as
+ * forest/registry/client's `listRoot` builds it.
+ */
+export function listFromNotes(texts: string[]): { list: bigint[]; roots: Root[] } {
+  const members = new Map<number, bigint>()
+  const roots = new Map<number, Root>()
+  for (const text of texts) {
+    const { root, from, commitments } = parseNote(text)
+    const known = roots.get(root.size)
+    if (known && (known.root !== root.root || known.time !== root.time)) throw new Error(`two roots for size ${root.size}`)
+    roots.set(root.size, root)
+    commitments.forEach((c, i) => {
+      const had = members.get(from + i)
+      if (had !== undefined && had !== c) throw new Error(`two members at position ${from + i}`)
+      members.set(from + i, c)
+    })
+  }
+  const list = Array.from({ length: members.size }, (_, i) => {
+    const c = members.get(i)
+    if (c === undefined) throw new Error(`no member at position ${i}`)
+    return c
+  })
+  const ordered = [...roots.values()].sort((a, b) => a.size - b.size)
+  if ((ordered.at(-1)?.size ?? 0) !== list.length) throw new Error('the newest root does not cover every member')
+  const group = new Group()
+  for (const r of ordered) {
+    group.addMembers(list.slice(group.size, r.size))
+    if (group.root !== r.root) throw new Error(`the root for size ${r.size} is not its members' root`)
+  }
+  return { list, roots: ordered }
 }
 
 /** Solana's compact length: seven bits a byte, low first. */
@@ -46,19 +146,28 @@ function compactU16(n: number): number[] {
 
 /**
  * The memo transaction, signed, as it goes on the wire: one signature, then a legacy message with
- * two accounts (the issuer's key, which pays and signs; the memo program, read only) and one
- * instruction naming the key as the memo's signer.
+ * three accounts (the issuer's key, which pays and signs; the memo program and the compute budget
+ * program, read only) and two instructions: the compute limit, `NOTE_COMPUTE_UNITS`; then the memo,
+ * naming the key as its signer.
  */
 export function memoTransaction(key: IssuerKey, memo: string, blockhash: string): Uint8Array {
   const data = utf8(memo)
+  const limit = new Uint8Array(4)
+  new DataView(limit.buffer).setUint32(0, NOTE_COMPUTE_UNITS, true)
   const message = Uint8Array.from([
-    1, 0, 1, // one signature; no read-only signer; one read-only account unsigned (the program)
-    ...compactU16(2),
+    1, 0, 2, // one signature; no read-only signer; two read-only accounts unsigned (the programs)
+    ...compactU16(3),
     ...key.publicKey,
     ...base58.decode(MEMO_PROGRAM),
+    ...base58.decode(COMPUTE_BUDGET_PROGRAM),
     ...base58.decode(blockhash),
-    ...compactU16(1),
-    1, // the program: account 1
+    ...compactU16(2),
+    2, // the compute budget program: account 2
+    ...compactU16(0),
+    ...compactU16(5),
+    2, // SetComputeUnitLimit
+    ...limit,
+    1, // the memo program: account 1
     ...compactU16(1),
     0, // its one account: the issuer's key
     ...compactU16(data.length),
@@ -119,8 +228,8 @@ export async function sendMemo(
 const kind = (error: unknown) => (error instanceof Error ? error.constructor.name : typeof error)
 
 /**
- * Writes every root the file holds that is not on chain yet, oldest first, one at a time; at start,
- * after each batch (`poke`), and every `retryMs` while any is left.
+ * Writes every batch the file holds that is not on chain yet, oldest first, one note at a time; at
+ * start, after each batch (`poke`), and every `retryMs` while any is left.
  */
 export class RootWriter {
   readonly #store: Store
@@ -129,6 +238,8 @@ export class RootWriter {
   readonly #log: (line: string) => void
   readonly #retryMs: number
   readonly #sleep?: (ms: number) => Promise<void>
+  /** The notes of a batch confirmed so far, by its root's size, until the whole batch is. */
+  readonly #sent = new Map<number, string[]>()
   #timer: NodeJS.Timeout | undefined
   #running: Promise<void> | undefined
   #again = false
@@ -181,17 +292,27 @@ export class RootWriter {
   }
 
   async #write(): Promise<void> {
-    let written = 0
+    let roots = 0
+    let notes = 0
     for (const root of this.#store.unwritten()) {
       if (this.#closed) break
+      const texts = batchNotes(root, root.from, this.#store.between(root.from, root.size))
+      const sent = this.#sent.get(root.size) ?? []
+      this.#sent.set(root.size, sent)
       try {
-        this.#store.written(root.size, await sendMemo(this.#rpc, this.#key, rootMemo(root), this.#sleep))
-        written++
+        while (sent.length < texts.length && !this.#closed) {
+          sent.push(await sendMemo(this.#rpc, this.#key, texts[sent.length]!, this.#sleep))
+          notes++
+        }
       } catch (error) {
-        this.#log(`issuer: a root not written on chain (${kind(error)}); tried again in ${Math.round(this.#retryMs / 1000)} s`)
+        this.#log(`issuer: a note not written on chain (${kind(error)}); tried again in ${Math.round(this.#retryMs / 1000)} s`)
         break
       }
+      if (sent.length < texts.length) break
+      this.#store.written(root.size, sent)
+      this.#sent.delete(root.size)
+      roots++
     }
-    if (written) this.#log(`issuer: ${written} root${written === 1 ? '' : 's'} written on chain`)
+    if (notes) this.#log(`issuer: ${notes} note${notes === 1 ? '' : 's'} written on chain, ${roots} root${roots === 1 ? '' : 's'} complete`)
   }
 }

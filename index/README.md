@@ -43,9 +43,10 @@ a local Postgres. The devnet index on Railway runs an earlier build (`deploy/REA
     text, its issuer and its signature;
   - with an RPC, the roots it wrote on chain (`src/chain/roots.ts`): every transaction naming the
     issuer's key since the last read, keeping a root only from a memo (program v2) in a transaction
-    that succeeded and that the key signed, whose text is exactly the root's line under
-    `forest.foundation/issuer/root/v1` (`issuer/README.md`, "Each root on chain"). The root keeps
-    that transaction's signature.
+    that succeeded and that the key signed, whose text is exactly a note: the root's line with a run
+    of the batch's members under `forest.foundation/issuer/root/v2`, or the root's line alone under
+    `…/root/v1` (`issuer/README.md`, "Each batch on chain"). The root keeps the signature of the
+    first transaction it was read from. The members are not kept.
 
   A line's issuers are those whose roots, from either, hold its root.
 - **Memberships**: a `proof/<id>` record of the membership kind, in a profile's folder, adds its

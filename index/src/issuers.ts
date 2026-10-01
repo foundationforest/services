@@ -7,9 +7,9 @@
 // signed with the issuer's key over 0xff ‖ "forest.foundation/issuer/roots/v1\n" ‖ the canonical
 // text without `sig`. The index reads the file of each issuer it trusts, checks it is canonical text,
 // that it names that issuer, and its signature, and keeps its roots. It also reads the roots each
-// issuer wrote on chain, one memo per root signed by its key (chain/roots.ts), when it has an RPC. A
-// line counts for an issuer when its root is one of either. The list itself (`list.json`) is not
-// read: an index needs only the roots.
+// issuer wrote on chain, in notes signed by its key (chain/roots.ts), when it has an RPC. A line
+// counts for an issuer when its root is one of either. The list itself (`list.json`, or the members
+// in the notes) is not read: an index needs only the roots.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

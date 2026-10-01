@@ -122,7 +122,7 @@ export function assertNoLink(path: string, sessionIds: string[], commitments: bi
       [
         'CREATE TABLE list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL)',
         'CREATE TABLE queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID',
-        'CREATE TABLE roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, chain TEXT)',
+        'CREATE TABLE roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, notes TEXT)',
         'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
       ],
     )
