@@ -440,6 +440,10 @@ this repo, is `forest/docs/changes.md`.
 - A web search's first "Open USD" hit was a pump.fun token (`662jm…pump`); the mint above is the one
   Solana's own post names, and mainnet shows it as Token-2022 with Open USD's eight extensions.
 - Chromium here needs every certificate of the proxy's bundle in `~/.pki/nssdb`, not the first.
+- **The index type-checks the issuer's `src/chain.ts`** through its roots test, without the
+  issuer's packages installed, so `chain.ts` imports nothing but forest's records library.
+  `listFromNotes` lives in `src/list.ts`, with the Merkle tree; the first push had it in `chain.ts`
+  and CI's index job failed on it.
 
 **Open.**
 - **Switch `issuer`, `relayer` and `index` back to `main` after merge** (mechanical): one setting

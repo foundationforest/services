@@ -167,7 +167,7 @@ stops answering or changes its files.
   is the did:key's public key, in base58); a top-level instruction calls the memo program v2 naming
   that key; its text is the label, then canonical text with exactly `commitments` (decimal text, at
   least one), `from`, `root`, `size` and `time`, the members ending at or before `size`.
-- **How a reader rebuilds the list** (`listFromNotes` in `src/chain.ts`): read every note the key
+- **How a reader rebuilds the list** (`listFromNotes` in `src/list.ts`): read every note the key
   signed; place each member at its position; a note seen twice counts once. Refuse a gap, two notes
   that disagree on a member or on a root, or members past the newest root. Then check each root
   against its prefix of the list, as "The two files" says. The tests rebuild `list.json` and every

@@ -25,8 +25,6 @@
 // only: never a root, a member, a signature or the RPC's words, since the RPC's address can hold a
 // key.
 
-import { Group } from '@semaphore-protocol/group'
-
 import { base58, utf8 } from '../../forest/records/src/bytes.ts'
 import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
 import type { IssuerKey } from './key.ts'
@@ -95,42 +93,6 @@ export function parseNote(text: string): Note {
   if (!whole(from) || !whole(size) || !whole(time)) throw new Error('its numbers are not whole')
   if (from + commitments.length > size) throw new Error('its members run past its root')
   return { root: { root: BigInt(root), size, time }, from, commitments: commitments.map(BigInt) }
-}
-
-/**
- * The list rebuilt from notes alone, and the roots they name, oldest first: what anyone can do with
- * the issuer's notes on chain. Each note places its members from its `from`; a note seen twice is
- * kept once. Throws on a text that is not a note, two notes that disagree on a member or on a root,
- * a member missing, or a root that is not the Merkle root of the list's first `size` members, as
- * forest/registry/client's `listRoot` builds it.
- */
-export function listFromNotes(texts: string[]): { list: bigint[]; roots: Root[] } {
-  const members = new Map<number, bigint>()
-  const roots = new Map<number, Root>()
-  for (const text of texts) {
-    const { root, from, commitments } = parseNote(text)
-    const known = roots.get(root.size)
-    if (known && (known.root !== root.root || known.time !== root.time)) throw new Error(`two roots for size ${root.size}`)
-    roots.set(root.size, root)
-    commitments.forEach((c, i) => {
-      const had = members.get(from + i)
-      if (had !== undefined && had !== c) throw new Error(`two members at position ${from + i}`)
-      members.set(from + i, c)
-    })
-  }
-  const list = Array.from({ length: members.size }, (_, i) => {
-    const c = members.get(i)
-    if (c === undefined) throw new Error(`no member at position ${i}`)
-    return c
-  })
-  const ordered = [...roots.values()].sort((a, b) => a.size - b.size)
-  if ((ordered.at(-1)?.size ?? 0) !== list.length) throw new Error('the newest root does not cover every member')
-  const group = new Group()
-  for (const r of ordered) {
-    group.addMembers(list.slice(group.size, r.size))
-    if (group.root !== r.root) throw new Error(`the root for size ${r.size} is not its members' root`)
-  }
-  return { list, roots: ordered }
 }
 
 /** Solana's compact length: seven bits a byte, low first. */
