@@ -1,0 +1,210 @@
+{
+  "started": "2026-10-01T04:36:04.193Z",
+  "services": {
+    "about": "What the loop runs against: the devnet services this repo deploys on Railway (docs/devnet.md), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/v2/devnet/devnet.json) and the two test dollars. Devnet only.",
+    "issuer": "https://issuer-production-4976.up.railway.app",
+    "relayer": "https://relayer-production-8d40.up.railway.app",
+    "connections": "https://connections-production-ebc4.up.railway.app",
+    "board": "https://board-devnet-test-production.up.railway.app",
+    "index": "https://index-production-1b6e.up.railway.app",
+    "rpc": "https://api.devnet.solana.com",
+    "registry": "Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf",
+    "escrowV2": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+    "issuerKey": "did:key:z6MkmSeFgQp3SxoPB3qmrNFmqPaZAmjMUzmv9KViBqWtPLFV",
+    "usdcShaped": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+    "openUsdShaped": "g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz",
+    "market": "tutoring"
+  },
+  "steps": {
+    "setup": {
+      "accounts": "2dETF3mzGf7iDgUHQ3FdmxFQph5R553s672MoJJPuoAUNidXqbVQEGv4nbts2E3yY8sQqYbtb7TeHmVsgqa9Qdjv",
+      "minted": "4NMskKbNk7ssv35PcbXmaHqj7q54WFzLRC9jFczkaEZ7fVbzrv881XRNvAvHyQXQF6dwmjcfhSvGvAviHuUQjEwM",
+      "seller": {
+        "usdcShaped": "5.00"
+      },
+      "buyer": {
+        "usdcShaped": "15.00",
+        "openUsdShaped": "10.00"
+      }
+    },
+    "list": {
+      "members": 10,
+      "root": {
+        "root": "21013713775485422003456619483187831458032065433180113707212370088032729715149",
+        "size": 10,
+        "time": 1790829483384
+      },
+      "notes": [
+        "2comvBbGDRYCRRWe4Hr16KRXwALHTWH7hZQiB1w73XwS2GskpL6FctUiiJ4uuVQ5kAykYjwyPnpAbN1R8di1w9rx"
+      ],
+      "rebuiltFromChain": {
+        "members": 10,
+        "roots": 5,
+        "notes": 5
+      }
+    },
+    "badges": {
+      "seller": {
+        "label": "tutoring/seller",
+        "line": "E2uZSFgdU4NWf1pjvZnuRDXTNshR7a8t2rgef6jAdp5E",
+        "signature": "32rCCssSooGiDU4swzp2xYnP9mg9VgAexPW4wFwygFEEM2fWgkLo9YVnyLdKWZr1x31NRLukEMi63cXd1U4CN7MM",
+        "charge": "1493360",
+        "feeToken": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+        "bytes": 731
+      },
+      "buyer": {
+        "label": "tutoring/buyer",
+        "line": "5XG2Xcyja1CjSuoTMsRD3eKmKXwS8aB1Xc1WveQZcbMh",
+        "signature": "3kzDWbFytJERAmNCRAizzpXQex3KpNRK1CEFj1R76GwKAbkZywhapbppBdMzGJmfJ319fse2MwzbueWwUPsA8EM",
+        "charge": "1488280",
+        "feeToken": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+        "bytes": 730
+      }
+    },
+    "records": {
+      "seller": {
+        "did": "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD",
+        "wallet": "D963JSMtuBRHhQ8B5aRaxgo8ntVgD6fEfnrkm7m2Svpq",
+        "approvalLink": "https://connections-production-ebc4.up.railway.app/approve"
+      },
+      "buyer": {
+        "did": "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq",
+        "wallet": "CzyVNfVxMPoTMPWKirGmU2KPNFSST9DANkRzyvNBLvhT",
+        "approvalLink": "https://connections-production-ebc4.up.railway.app/approve"
+      },
+      "offer": "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD/offer/maths"
+    },
+    "deals": {
+      "usdcShaped": {
+        "escrow": "3xSr9wWVssLaHpdvL16DoRZxa1zmQpyM4qqspyJZVXDd",
+        "transactions": [
+          {
+            "signature": "57goG8ToYVMYNDy8sbKuic7i48jjvdxWiw3HWhRq4SuXmxY9Woov1gr9NCDyNnu1Qbhpuwfq3jArfkq5RAdEHBCS",
+            "charge": "3698080",
+            "feeToken": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+            "bytes": 715
+          }
+        ]
+      },
+      "openUsdShaped": {
+        "escrow": "GSE7R6Hnj1Weckbe5tT5ZQykeZiH7n9aag4N5URaMeo8",
+        "transactions": [
+          {
+            "signature": "4UQ6tuyp2Bu5tL3UKFGyDPpe6ACVcu2fUrvbnJPnGFGmae4EnHkmhKNmdDsNXfo8vq4TooHeSyCYwMfPqNrk4VYJ",
+            "charge": "3769200",
+            "feeToken": "g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz",
+            "bytes": 665
+          },
+          {
+            "signature": "4bsc1BwEMbhznhJ8wYiPK4bHsjV547iRCqRtST4PrA5F38928tfU8oXrMHstyD8xFszkDEfzVf6dzAHiXdePhhoy",
+            "charge": "10000",
+            "feeToken": "g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz",
+            "bytes": 523
+          }
+        ],
+        "oneTapRefusedByKora": "signAndSendTransaction: Account DGErqHEvTKWdW6mnAFcgWoCFyjmnGUZwMr1rpugfEs2x not found \"\"",
+        "oneTapAsSent": "deposit address, create, transfer_checked in, release_to_seller, and the payment to the relayer"
+      }
+    },
+    "reviews": [
+      "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq/review/deal1",
+      "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD/review/deal1",
+      "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq/review/deal2",
+      "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD/review/deal2"
+    ],
+    "index": {
+      "seller": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD",
+        "badges": [
+          {
+            "scope": "tutoring/seller",
+            "counted": true,
+            "issuers": [
+              "Forest Foundation (devnet key)"
+            ],
+            "line": "E2uZSFgdU4NWf1pjvZnuRDXTNshR7a8t2rgef6jAdp5E"
+          }
+        ],
+        "rating": 9.5,
+        "standing": 3.162197,
+        "offers": 1,
+        "reviewsReceived": [
+          {
+            "uri": "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq/review/deal2",
+            "dealId": "GSE7R6Hnj1Weckbe5tT5ZQykeZiH7n9aag4N5URaMeo8",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          },
+          {
+            "uri": "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq/review/deal1",
+            "dealId": "3xSr9wWVssLaHpdvL16DoRZxa1zmQpyM4qqspyJZVXDd",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "buyer": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq",
+        "badges": [
+          {
+            "scope": "tutoring/buyer",
+            "counted": true,
+            "issuers": [
+              "Forest Foundation (devnet key)"
+            ],
+            "line": "5XG2Xcyja1CjSuoTMsRD3eKmKXwS8aB1Xc1WveQZcbMh"
+          }
+        ],
+        "rating": 10,
+        "standing": 3.519485,
+        "offers": 0,
+        "reviewsReceived": [
+          {
+            "uri": "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD/review/deal2",
+            "dealId": "GSE7R6Hnj1Weckbe5tT5ZQykeZiH7n9aag4N5URaMeo8",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          },
+          {
+            "uri": "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD/review/deal1",
+            "dealId": "3xSr9wWVssLaHpdvL16DoRZxa1zmQpyM4qqspyJZVXDd",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "deals": [
+        {
+          "url": "https://index-production-1b6e.up.railway.app/deals/3xSr9wWVssLaHpdvL16DoRZxa1zmQpyM4qqspyJZVXDd",
+          "outcome": "releasedToSeller",
+          "mint": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+          "amount": "1000000",
+          "reviews": 2
+        },
+        {
+          "url": "https://index-production-1b6e.up.railway.app/deals/GSE7R6Hnj1Weckbe5tT5ZQykeZiH7n9aag4N5URaMeo8",
+          "outcome": "releasedToSeller",
+          "mint": "g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz",
+          "amount": "1000000",
+          "reviews": 2
+        }
+      ]
+    }
+  },
+  "people": {
+    "seller": {
+      "did": "did:key:z6MkrbM5tgcLEiukotxsm9PRonM8cTmXcyubMomgbPj3N9cD",
+      "wallet": "D963JSMtuBRHhQ8B5aRaxgo8ntVgD6fEfnrkm7m2Svpq"
+    },
+    "buyer": {
+      "did": "did:key:z6MkrTEXxukPgwHvTtM2QREcK7sPBpiHs2TX4mLvpCLCG9Uq",
+      "wallet": "CzyVNfVxMPoTMPWKirGmU2KPNFSST9DANkRzyvNBLvhT"
+    }
+  },
+  "passed": true,
+  "ended": "2026-10-01T04:39:17.034Z"
+}

@@ -296,10 +296,11 @@ export class RootWriter {
     let notes = 0
     for (const root of this.#store.unwritten()) {
       if (this.#closed) break
-      const texts = batchNotes(root, root.from, this.#store.between(root.from, root.size))
       const sent = this.#sent.get(root.size) ?? []
       this.#sent.set(root.size, sent)
+      let texts: string[]
       try {
+        texts = batchNotes(root, root.from, this.#store.between(root.from, root.size))
         while (sent.length < texts.length && !this.#closed) {
           sent.push(await sendMemo(this.#rpc, this.#key, texts[sent.length]!, this.#sleep))
           notes++
