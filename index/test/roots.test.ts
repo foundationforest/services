@@ -11,9 +11,10 @@ import { Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction,
 import pg from 'pg'
 
 import { hex } from '../../forest/records/src/bytes.ts'
+import { canonical } from '../../forest/records/src/canonical.ts'
 import { didFromPublicKey } from '../../forest/records/src/keys.ts'
 import { toBytes32 } from '../../forest/registry/client/src/field.ts'
-import { memoTransaction, rootMemo } from '../../issuer/src/chain.ts'
+import { batchNotes, memoTransaction } from '../../issuer/src/chain.ts'
 import { parseKeypair } from '../../issuer/src/key.ts'
 
 import { MEMO_PROGRAM, type ReadTransaction, readChainRoots, rootFromMemo } from '../src/chain/roots.ts'
@@ -27,7 +28,11 @@ const other = Keypair.generate()
 const ROOT = 21888242871839275222246405745257275088548364400416034343698204186575808495616n
 const memo = (text: string, signer = issuer.publicKey, isSigner = true) =>
   new TransactionInstruction({ programId: MEMO, keys: [{ pubkey: signer, isSigner, isWritable: false }], data: Buffer.from(text) })
-const good = rootMemo({ root: ROOT, size: 3, time: 1_790_000_000_000 })
+/** A root memo as the issuer's first version wrote it: the root's line alone. */
+const v1 = (r: { root: bigint; size: number; time: number }) => 'forest.foundation/issuer/root/v1\n' + canonical({ root: r.root.toString(), size: r.size, time: r.time })
+const good = v1({ root: ROOT, size: 3, time: 1_790_000_000_000 })
+/** The issuer's notes for a batch of 25 at positions 3 to 27: three notes, each naming the root. */
+const batch = batchNotes({ root: ROOT, size: 28, time: 1_790_000_000_000 }, 3, Array.from({ length: 25 }, (_, i) => ROOT - BigInt(i)))
 
 /** A transaction as `getTransaction` serves it: legacy or v0, succeeded unless `err`. */
 function served(instructions: TransactionInstruction[], opts: { payer?: PublicKey; v0?: boolean; err?: unknown } = {}): ReadTransaction {
@@ -41,7 +46,7 @@ function served(instructions: TransactionInstruction[], opts: { payer?: PublicKe
 const expected = { root: hex.encode(toBytes32(ROOT)), size: 3, time: 1_790_000_000_000 }
 const address = issuer.publicKey.toBase58()
 
-test('a root is taken from a memo the issuer signed, legacy or v0, and from nothing else', () => {
+test('a root is taken from a v1 memo the issuer signed, legacy or v0, and from nothing else', () => {
   assert.deepEqual(rootFromMemo(served([memo(good)]), address), expected)
   assert.deepEqual(rootFromMemo(served([memo(good)], { v0: true }), address), expected)
   assert.deepEqual(rootFromMemo(served([memo(good)], { payer: other.publicKey }), address), expected, 'someone else may pay, if the key signs the memo')
@@ -67,15 +72,33 @@ test('a root is taken from a memo the issuer signed, legacy or v0, and from noth
   assert.deepEqual(rootFromMemo(served([memo('hello'), memo(good)]), address), expected, 'the root memo among others')
 })
 
+test('a root is taken from each of the issuer’s notes with members, and from no malformed one', () => {
+  assert.equal(batch.length, 3)
+  for (const note of batch) assert.deepEqual(rootFromMemo(served([memo(note)]), address), { ...expected, size: 28 }, 'every note of a batch names its root')
+  const one = batch[2]!
+  for (const text of [
+    one.replace('root/v2', 'root/v3'),
+    one.replace('"commitments":[', '"commitments":[1,'),
+    one.replace(/"commitments":\[[^\]]*\]/, '"commitments":[]'),
+    one.replace(/"from":\d+/, '"from":27'),
+    one.replace(/"from":\d+/, '"from":-1'),
+    one.replace('"from"', '"extra":1,"from"'),
+    one.replace(/"from":\d+,/, ''),
+  ]) {
+    assert.equal(rootFromMemo(served([memo(text)]), address), null, text.slice(0, 80))
+  }
+})
+
 test('the issuer’s own transaction, read back as the index reads it', () => {
   const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
   const secret = Buffer.from(jwk.d!, 'base64url')
   const publicKey = Buffer.from(jwk.x!, 'base64url')
   const key = parseKeypair(JSON.stringify([...secret, ...publicKey]), 'test')
-  const wire = memoTransaction(key, good, BLOCKHASH)
-  const tx = VersionedTransaction.deserialize(wire)
-  assert.equal(tx.signatures.length, 1)
-  assert.deepEqual(rootFromMemo({ meta: { err: null }, transaction: { message: tx.message } }, new PublicKey(publicKey).toBase58()), expected)
+  for (const note of batch) {
+    const tx = VersionedTransaction.deserialize(memoTransaction(key, note, BLOCKHASH))
+    assert.equal(tx.signatures.length, 1)
+    assert.deepEqual(rootFromMemo({ meta: { err: null }, transaction: { message: tx.message } }, new PublicKey(publicKey).toBase58()), { ...expected, size: 28 })
+  }
 })
 
 // ---- The reader, on Postgres, with a stand-in RPC ----
@@ -104,7 +127,9 @@ after(async () => {
 
 test('the reader keeps each root once with its transaction, moves its cursor, and never reads a transaction twice', { skip: process.env.DATABASE_URL ? false : 'DATABASE_URL is not set' }, async () => {
   const did = didFromPublicKey(issuer.publicKey.toBytes())
-  const secondRoot = rootMemo({ root: 7n, size: 4, time: 1_790_000_060_000 })
+  const notes = batchNotes({ root: 7n, size: 23, time: 1_790_000_060_000 }, 3, Array.from({ length: 20 }, (_, i) => ROOT - BigInt(i)))
+  assert.equal(notes.length, 2)
+  const [secondRoot, alsoSecondRoot] = notes
   const history: Array<{ signature: string; err: unknown; tx: ReadTransaction | null }> = [
     { signature: 'sig-transfer-in', err: null, tx: served([SystemProgram.transfer({ fromPubkey: other.publicKey, toPubkey: issuer.publicKey, lamports: 1 })], { payer: other.publicKey }) },
     { signature: 'sig-root-1', err: null, tx: served([memo(good)]) },
@@ -133,16 +158,17 @@ test('the reader keeps each root once with its transaction, moves its cursor, an
   assert.deepEqual(asked, ['sig-transfer-in', 'sig-root-1'], 'a failed transaction is not fetched')
   assert.equal(await getCursor(db!, `issuer-chain:${did}`), 'sig-failed')
 
-  history.push({ signature: 'sig-root-2', err: null, tx: served([memo(secondRoot)]) })
+  // A batch of twenty: two notes, each naming its root, kept once with the first note's transaction.
+  history.push({ signature: 'sig-root-2', err: null, tx: served([memo(secondRoot!)]) }, { signature: 'sig-root-2b', err: null, tx: served([memo(alsoSecondRoot!)]) })
   assert.equal(await readChainRoots(db!, chain, [did], (e) => errors.push(e)), 1)
-  assert.deepEqual(asked, ['sig-transfer-in', 'sig-root-1', 'sig-root-2'], 'only what is new')
+  assert.deepEqual(asked, ['sig-transfer-in', 'sig-root-1', 'sig-root-2', 'sig-root-2b'], 'only what is new')
   assert.equal(await readChainRoots(db!, chain, [did], (e) => errors.push(e)), 0)
 
   // The file read again later changes nothing the chain recorded.
-  assert.equal(await storeRoots(db!, did, [expected, { root: hex.encode(toBytes32(7n)), size: 4, time: 1_790_000_060_000 }]), 0)
+  assert.equal(await storeRoots(db!, did, [expected, { root: hex.encode(toBytes32(7n)), size: 23, time: 1_790_000_060_000 }]), 0)
   const { rows } = await db!.query('select root, size, signature from issuer_roots where issuer = $1 order by size', [did])
   assert.deepEqual(rows, [
     { root: expected.root, size: 3, signature: 'sig-root-1' },
-    { root: hex.encode(toBytes32(7n)), size: 4, signature: 'sig-root-2' },
+    { root: hex.encode(toBytes32(7n)), size: 23, signature: 'sig-root-2' },
   ])
 })

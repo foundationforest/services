@@ -1,6 +1,6 @@
 # The Forest relayer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
 #
-# It co-signs a person's transaction as its payer and charges, in their dollar token, what that
+# It co-signs a person's transaction as its payer and charges, in the token they pay in, what that
 # transaction costs it: the network fee plus every storage deposit it puts down, including the ones
 # a program makes inside the transaction. When Solana cuts its storage price, part of a deposit it
 # put down is freed, and the relayer keeps that refund. It refuses anything that calls a program not
@@ -36,12 +36,18 @@ allowed_programs = [
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
   "11111111111111111111111111111111",            # System
 ]
-# The dollar tokens people pay in: USDC, and Open USD (a Token-2022 dollar with no transfer fee).
-# Open USD's issuer holds a permanent delegate, so it can take back what the relayer collected in
-# it; the foundation accepts that. In 2.0.5 `allowed_tokens` gates only Kora's own
-# transferTransaction helper; an escrow in another token still passes.
-allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB"]
-allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB"]
+# The tokens people pay in, in this order, each its issuer's own mint on mainnet:
+#   USDC      EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  Circle; SPL Token
+#   USDT      Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB  Tether; SPL Token
+#   Open USD  ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB   Bridge; Token-2022, no transfer fee
+#   EURC      HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr  Circle; SPL Token, a euro
+# All six decimals. Jupiter prices each against SOL, so the charge is the same SOL cost in whichever
+# is paid, EURC at the euro's rate. Each issuer can freeze the relayer's account in its token, and
+# Open USD's also holds a permanent delegate that can take back what the relayer collected in it;
+# the foundation accepts both. In 2.0.5 `allowed_tokens` gates only Kora's own transferTransaction
+# helper; an escrow in another token still passes.
+allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
+allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
 disallowed_accounts = []
 # Jupiter needs JUPITER_API_KEY in the environment.
 price_source = "Jupiter"

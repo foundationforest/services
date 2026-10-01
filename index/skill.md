@@ -98,7 +98,8 @@ In `badges[]`:
 To check it yourself, without trusting this index: `line` is the address of the badge's account in
 the registry program on Solana. Read it: it names the profile's key, the market and role, the
 `code` and the `root`. Then find the root in the signed roots file of an issuer you trust, or in a
-memo its key signed on Solana (`forest.foundation/issuer/root/v1`, then the root's line of the file).
+note its key signed on Solana (`forest.foundation/issuer/root/v2`, then the root's line of the file
+with a run of the list's members; `…/root/v1`, the root's line alone, from its first version).
 
 ## Check a receipt
 

@@ -1,7 +1,7 @@
 # issuer on Railway, devnet
 
 How the foundation runs its issuer for devnet. Its list and roots are its own two files, and each
-root is also written on devnet as a memo its key signs. Nothing here is mainnet, and nothing is
+batch, its root and its new members, is also written on devnet in notes its key signs. Nothing here is mainnet, and nothing is
 shipped.
 
 **Where it runs today.** The Railway service `issuer` in the project `forest-devnet`, built from this
@@ -43,8 +43,9 @@ it.
 | `PORT` | `8080` | no |
 | `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` | Didit's, when set; unset, `start.sh` runs the stand-in | yes |
 
-**Before it starts,** the key needs a little SOL on devnet for the memos: 5,000 lamports a root.
-The devnet key held 0.00999 SOL on 2026-09-30, about 2,000 roots.
+**Before it starts,** the key needs a little SOL on devnet for the notes: 5,000 lamports a note,
+about ten members a note. The devnet key held 0.00997 SOL on 2026-10-01, about 2,000 notes. That
+day this version wrote the four earlier batches again, with their members (four notes).
 
 ## Rotating a secret
 

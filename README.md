@@ -13,8 +13,8 @@ Nothing is shipped. Read [CLAUDE.md](CLAUDE.md) before any task.
 | Folder | What |
 |---|---|
 | [`index/`](index/) | The foundation's index: reads records from hosts, the registry's lines, the issuers' signed roots and both escrows' events, scores every profile, serves pages for people and for machines |
-| [`issuer/`](issuer/) | The foundation's issuer: turns a passed face check into a person's place on its list, publishes the list and its signed roots as two files, and writes each root on chain in a memo its key signs |
-| [`relayer/`](relayer/) | The relayer: Kora, configured. Co-signs a person's transaction and charges what it spends, in their dollar token (USDC or Open USD). When Solana cuts its storage price, part of a deposit it put down is freed, and it keeps that refund |
+| [`issuer/`](issuer/) | The foundation's issuer: turns a passed face check into a person's place on its list, publishes the list and its signed roots as two files, and writes each batch on chain, its root and its new members, in notes its key signs |
+| [`relayer/`](relayer/) | The relayer: Kora, configured. Co-signs a person's transaction and charges what it spends, in the token they pay in (USDC, USDT, Open USD or EURC). When Solana cuts its storage price, part of a deposit it put down is freed, and it keeps that refund |
 | [`connections/`](connections/) | Forest's MCP server for assistants, run as a service: reads public notes, drafts, returns approval links, and serves the approval page they open. It holds no keys, no grants and no drafts |
 | [`loop/`](loop/) | Forest end to end on devnet against these services, with the stand-in face check; and [`loop/board/`](loop/board/), a board for devnet testing only |
 | [`docs/`](docs/) | This repo's session log; [`devnet.md`](docs/devnet.md), what runs on devnet and what to open; [`kora-issue.md`](docs/kora-issue.md), an issue drafted for Kora |

@@ -28,8 +28,9 @@ devnet issuer on Railway runs this version, with the stand-in face check (`deplo
    new root.
 6. **The service publishes two files:** the whole list, in order, and every root it has had, with
    dates, signed with the issuer's key ("The two files", below). They change after each batch. When
-   it has a Solana RPC, it also writes each new root on chain, in a memo its key signs ("Each root
-   on chain", below).
+   it has a Solana RPC, it also writes each batch on chain, its new root and its new members, in
+   notes its key signs, so the whole list can be rebuilt from the chain alone ("Each batch on
+   chain", below).
 7. **The app polls `POST /status`** until its commitment is `listed`. It then reads `/list.json`
    and proves against it with `forest/registry/client` (`buildRegistration`).
 
@@ -52,8 +53,8 @@ devnet issuer on Railway runs this version, with the stand-in face check (`deplo
   their paths name nothing.
 - **Never stores anything at `/session`.** The session's `vendor_data` is a fresh random id that
   names nobody.
-- **Never signs for anyone.** Its key signs its roots file and the transactions that put its roots
-  on chain, and nothing else, and it holds no one else's key. There are no accounts.
+- **Never signs for anyone.** Its key signs its roots file and the transactions that put its
+  batches on chain, and nothing else, and it holds no one else's key. There are no accounts.
 - **Never deletes a Didit session.** Deleting a session removes that face from Didit's duplicate
   search, and the person could then pass again under a new secret.
 
@@ -138,35 +139,55 @@ A device proves against the whole list (the newest root). An index or a board co
 the line's root is in the roots file of an issuer it trusts, or on chain from it (below). The
 registry itself checks no root.
 
-## Each root on chain
+## Each batch on chain
 
-When `SOLANA_RPC_URL` is set, each root, once its batch is in the file, is also written to Solana:
-one transaction, paid for and signed by the issuer's key, with one instruction to Solana's memo
-program (v2, `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`) naming the key as its signer. The memo
-is the root's line of the roots file, under its own label:
+When `SOLANA_RPC_URL` is set, each batch, once it is in the file, is also written to Solana: its
+new root and its new members, in notes. A note is the root's line of the roots file with a run of
+the batch's members, in list order, from list position `from` (0 for the list's first), under its
+own label:
 
 ```
-forest.foundation/issuer/root/v1
-{"root":"<decimal>","size":3,"time":1790000000000}
+forest.foundation/issuer/root/v2
+{"commitments":["<decimal>",…],"from":0,"root":"<decimal>","size":3,"time":1790000000000}
 ```
 
-(one newline between the label and the canonical text, none after). So the chain holds every root
-the issuer has published, dated by the chain, readable from the issuer's own address even if the
-issuer stops answering or changes its file.
+(one newline between the label and the canonical text, none after). A batch whose members do not fit
+in one note is cut into as few as fit, about ten members a note; each note carries the root's line
+again, so every note reads alone. So the chain holds every root the issuer has published and every
+member of its list, dated by the chain, readable from the issuer's own address even if the issuer
+stops answering or changes its files.
 
+- **The transaction:** one per note, paid for and signed by the issuer's key. Two instructions: the
+  compute budget program's `SetComputeUnitLimit` at 500,000 with no price, then Solana's memo
+  program (v2, `MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr`) naming the key as its signer, with the
+  note as its text. The memo program spends about 350 compute units a byte (it logs the text): a
+  full note, 1,021 bytes, took 373,272 units on devnet, above the default limit of 200,000. A note's
+  size is bound by the transaction's 1,232 bytes.
 - **How a reader checks one:** the transaction succeeded; the issuer's key signed it (its address
-  is the did:key's public key, in base58); a top-level instruction calls the memo program v2; its
-  text is the label, then canonical text with exactly `root`, `size` and `time`.
-- **Order and retries:** roots are written oldest first, one at a time. A root the RPC does not
-  take, or that does not confirm before its blockhash runs out, is tried again a minute later; the
-  file records each root's transaction once it is confirmed, so none is written twice by design. A
-  root sent, lost and sent again could land twice; a reader keeps it once.
-- **Cost:** the network fee, 5,000 lamports a root. One root per batch, so at one batch an hour
-  about 0.044 SOL a year. The key needs that SOL; nothing else of the service does.
+  is the did:key's public key, in base58); a top-level instruction calls the memo program v2 naming
+  that key; its text is the label, then canonical text with exactly `commitments` (decimal text, at
+  least one), `from`, `root`, `size` and `time`, the members ending at or before `size`.
+- **How a reader rebuilds the list** (`listFromNotes` in `src/list.ts`): read every note the key
+  signed; place each member at its position; a note seen twice counts once. Refuse a gap, two notes
+  that disagree on a member or on a root, or members past the newest root. Then check each root
+  against its prefix of the list, as "The two files" says. The tests rebuild `list.json` and every
+  root of `roots.json` from the notes alone; on devnet, the loop does it from the chain.
+- **Order and retries:** batches are written oldest first, one note at a time. A note the RPC does
+  not take, or that does not confirm before its blockhash runs out, is tried again a minute later,
+  from that note on; the file records a batch's transactions once all its notes are confirmed. A
+  restart in the middle of a batch writes that batch's notes again, and a note sent, lost and sent
+  again could land twice; a reader keeps each once.
+- **Version 1** of the label (`forest.foundation/issuer/root/v1`) held the root's line alone. A file
+  from then is written again at start, every batch with its members, oldest first; the old notes
+  stay on chain, and an index still reads a root from them.
+- **Cost:** the network fee, 5,000 lamports a note; the compute limit costs nothing while no price
+  is set. A batch of 50 is five notes: at one batch an hour, about 0.22 SOL a year. The key needs
+  that SOL; nothing else of the service does.
 - **The key signs two kinds of thing:** the roots file (its bytes begin `0xff`) and these Solana
   messages (which never begin `0xff`), as `forest/records/SPEC.md`, section 1, separates them.
-- **Logs:** a count per run, and a failure's kind (`RpcUnavailable`, `MemoFailed`, `MemoExpired`),
-  never a root, a signature or the RPC's words, since the RPC's address can carry a key.
+- **Logs:** counts per run (notes written, roots complete), and a failure's kind (`RpcUnavailable`,
+  `MemoFailed`, `MemoExpired`), never a root, a member, a signature or the RPC's words, since the
+  RPC's address can carry a key.
 
 ## The request limit
 
@@ -226,12 +247,12 @@ repo), point `ISSUER_KEYPAIR_PATH` at it, and set the other required variables.
 | `DIDIT_API_KEY` | yes | | The foundation's Didit API key. A secret. |
 | `DIDIT_WORKFLOW_ID` | yes | | The workflow sessions are opened on; decisions on any other are refused |
 | `ISSUER_KEYPAIR` | one of these two | | The issuer's key itself: the contents of a key file, 64 numbers as `solana-keygen` writes them. For Railway, as a sealed variable. At start the service writes it to a new directory under the system's temporary directory, readable by its own user only, loads it, deletes the file, and takes the variable out of its environment. |
-| `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to the key file, for local runs. Never commit it (`.gitignore` covers `*keypair*.json`). Either way the key signs the roots file and nothing else; it needs no SOL. Its did:key is the issuer's name, so a new key is a new name readers must be told. |
+| `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to the key file, for local runs. Never commit it (`.gitignore` covers `*keypair*.json`). Either way the key signs the roots file and its notes on chain, and nothing else; it needs SOL only for the notes. Its did:key is the issuer's name, so a new key is a new name readers must be told. |
 | `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file: the queue, the used sessions, the list and its roots |
 | `BATCH_MAX` | no | `50` | A batch runs as soon as this many are waiting |
 | `BATCH_INTERVAL_SECONDS` | no | `3600` | And on this timer, whatever is waiting |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour |
-| `SOLANA_RPC_URL` | no | none | A Solana RPC: each new root is also written on chain there, paid by the issuer's key. Unset, nothing goes on chain. A URL with a provider's key in it is a secret. |
+| `SOLANA_RPC_URL` | no | none | A Solana RPC: each batch, its root and its members, is also written on chain there, paid by the issuer's key. Unset, nothing goes on chain. A URL with a provider's key in it is a secret. |
 | `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy in front puts the client's address in: `x-real-ip` on Railway. Unset, the connection's own address. |
 | `DIDIT_BASE_URL` | no | `https://verification.didit.me` | For a stand-in |
 | `PORT` | no | `8080` | |
@@ -330,9 +351,20 @@ this repo's `docs/changes.md`.
 24. **The list file is not signed.** The signed roots file covers it (this repo).
 25. **Each root on chain as a memo** (this repo): the memo program v2, the issuer's key paying and
     signing, the memo the root's line of the roots file under the label
-    `forest.foundation/issuer/root/v1`. The roots file's format is unchanged.
+    `forest.foundation/issuer/root/v1`. The roots file's format is unchanged. From 28 on, each
+    batch's notes carry its members too, under `…/root/v2`.
 26. **The transaction is built by hand** (this repo): one instruction in a legacy message, so the
     service keeps one dependency.
 27. **A root is written after its batch is in the file,** not in the same step (this repo): the
     chain cannot join the file's transaction, so the file comes first and the chain follows, with
     retries, and the file records each root's transaction.
+28. **The members in decimal text** (this repo), as `list.json` writes them, so a reader needs no
+    second format.
+29. **One note shape for every part of a batch** (this repo): each note repeats the root's line, so
+    every note reads alone and the index takes a root from any of them, for about 160 bytes a note.
+30. **A new label, `…/root/v2`** (this repo); the index reads v1 and v2.
+31. **The compute limit raised, at no price** (this repo), rather than notes of four members within
+    the default limit: a third as many notes for every reader to fetch.
+32. **A file from v1 writes every batch again** (this repo), so a list begun then is whole on chain.
+33. **Progress inside a batch is kept in memory** (this repo); the file records a batch once all its
+    notes are on chain.

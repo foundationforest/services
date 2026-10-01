@@ -14,7 +14,8 @@
 // Two new people each run, each a fresh virtual passkey:
 //   1. setup: their dollar accounts, and dollars;
 //   2. each joins the issuer's list (the stand-in face check passes every session) and waits for a batch;
-//      the root is checked against the list, in the signed roots file and in the issuer's memo on chain;
+//      the root is checked against the list, in the signed roots file and in the issuer's notes on chain;
+//      then the whole list is rebuilt from the issuer's notes on chain alone, and every root checked;
 //   3. each registers a badge through the relayer, paying its fee in the USDC-shaped dollar;
 //   4. each app writes its profile's folder on the test board; then the profile, the seller's offer, and
 //      later every review, go through connections (MCP `forest_draft`): the approval page opens, one
@@ -57,7 +58,7 @@ const ARTIFACTS = { wasm: join(here, '../forest/registry/artifacts/semaphore-32.
 const PAGE = `${cfg.connections}/approve`
 const MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
 const ROOTS_PREFIX = concat(Uint8Array.of(0xff), utf8('forest.foundation/issuer/roots/v1\n'))
-const ROOT_MEMO_LABEL = 'forest.foundation/issuer/root/v1\n'
+const NOTE_LABEL = 'forest.foundation/issuer/root/v2\n'
 const DOLLAR = 1_000_000n
 
 const connection = new Connection(RPC, 'confirmed')
@@ -305,25 +306,68 @@ async function joinList(people: Person[]) {
   for (const p of people) assert.ok(list.includes(p.commitment), 'each commitment is on the list')
   say(`both on the list: ${list.length} members, root ${newest.root.slice(0, 12)}…`)
 
-  say('the issuer’s memo for that root, on chain')
+  say('the issuer’s notes on chain: that batch, then the whole list rebuilt from the notes alone')
   const issuerAddress = new PublicKey(publicKeyFromDid(cfg.issuerKey!)!)
-  const memoText = ROOT_MEMO_LABEL + canonical(newest)
-  const memo = await waitFor('the root’s memo on chain', 240_000, async () => {
-    for (const s of await connection.getSignaturesForAddress(issuerAddress, { limit: 25 })) {
-      if (s.err) continue
-      const tx = await connection.getTransaction(s.signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
-      const m = tx?.transaction.message
-      if (!m) continue
-      const keys = m.staticAccountKeys.map((k) => k.toBase58())
-      for (const ix of m.compiledInstructions) {
-        if (keys[ix.programIdIndex] === MEMO_PROGRAM && Buffer.from(ix.data).toString('utf8') === memoText && keys.indexOf(issuerAddress.toBase58()) < m.header.numRequiredSignatures) return s.signature
-      }
-    }
-    return null
+  const previous = roots.roots.at(-2)?.size ?? 0
+  const onChain = await waitFor('the batch’s notes on chain', 300_000, async () => {
+    const notes = await issuerNotes(issuerAddress.toBase58())
+    const covered = new Set(notes.filter((n) => n.root === newest.root).flatMap((n) => n.commitments.map((_, i) => n.from + i)))
+    for (let at = previous; at < newest.size; at++) if (!covered.has(at)) return null
+    return notes
   }, 10_000)
-  steps.list = { members: list.length, root: newest, memo }
-  say(`the memo: ${memo}`)
+  // An independent reader, as a phone or an index could be: place each member by its note's `from`,
+  // then every root in the signed file must be forest's listRoot of its prefix of the rebuilt list.
+  const placed = new Map<number, bigint>()
+  for (const n of onChain) {
+    n.commitments.forEach((c, i) => {
+      const had = placed.get(n.from + i)
+      assert.ok(had === undefined || had === BigInt(c), `one member at position ${n.from + i}`)
+      placed.set(n.from + i, BigInt(c))
+    })
+  }
+  const rebuilt = Array.from({ length: placed.size }, (_, i) => placed.get(i)!)
+  assert.ok(rebuilt.every((c) => c !== undefined), 'no gap')
+  assert.deepEqual(rebuilt, list, 'the list rebuilt from the chain alone is list.json')
+  for (const r of roots.roots) {
+    assert.equal(listRoot(rebuilt.slice(0, r.size)).toString(), r.root, `the root of the first ${r.size}`)
+    assert.ok(onChain.some((n) => n.root === r.root && n.size === r.size && n.time === r.time), `a note names the root of the first ${r.size}`)
+  }
+  const batchNotes = onChain.filter((n) => n.root === newest.root).map((n) => n.signature)
+  steps.list = { members: list.length, root: newest, notes: batchNotes, rebuiltFromChain: { members: rebuilt.length, roots: roots.roots.length, notes: onChain.length } }
+  say(`the batch in ${batchNotes.length} note${batchNotes.length === 1 ? '' : 's'} (${batchNotes[0]}); the list rebuilt from ${onChain.length} notes: ${rebuilt.length} members, all ${roots.roots.length} roots match`)
   return list
+}
+
+type ChainNote = { signature: string; commitments: string[]; from: number; root: string; size: number; time: number }
+
+/** Every note the issuer's key signed on chain, oldest first: a succeeded transaction, a memo naming the key, the v2 label, canonical text. */
+async function issuerNotes(address: string): Promise<ChainNote[]> {
+  const signatures: string[] = []
+  for (let before: string | undefined; ; ) {
+    const page = await connection.getSignaturesForAddress(new PublicKey(address), { before, limit: 1000 })
+    signatures.push(...page.filter((s) => !s.err).map((s) => s.signature))
+    if (page.length < 1000) break
+    before = page.at(-1)!.signature
+  }
+  const notes: ChainNote[] = []
+  for (const signature of signatures.reverse()) {
+    const tx = await connection.getTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: 'confirmed' })
+    const m = tx?.transaction.message
+    if (!m || tx.meta?.err) continue
+    const keys = m.staticAccountKeys.map((k) => k.toBase58())
+    const signer = keys.indexOf(address)
+    if (signer < 0 || signer >= m.header.numRequiredSignatures) continue
+    for (const ix of m.compiledInstructions) {
+      const text = Buffer.from(ix.data).toString('utf8')
+      if (keys[ix.programIdIndex] !== MEMO_PROGRAM || !ix.accountKeyIndexes.includes(signer) || !text.startsWith(NOTE_LABEL)) continue
+      const body = text.slice(NOTE_LABEL.length)
+      const note = parseCanonical(body) as Omit<ChainNote, 'signature'>
+      assert.equal(canonical(note), body, 'a note is canonical text')
+      assert.deepEqual(Object.keys(note).sort(), ['commitments', 'from', 'root', 'size', 'time'])
+      notes.push({ signature, ...note })
+    }
+  }
+  return notes
 }
 
 async function register(p: Person, list: bigint[], usdcToken: v2.Token) {

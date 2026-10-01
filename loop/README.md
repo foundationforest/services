@@ -16,7 +16,9 @@ public services (`devnet.json` has their addresses; `../docs/devnet.md` says wha
 3. **The list.** Each opens a face check at the issuer (the stand-in passes it), submits its
    commitment, and waits for the issuer's batch (every two minutes on devnet). The loop checks the
    roots file (canonical, signed by the issuer the index trusts, its newest root the list's) and
-   finds the same root in the issuer's memo on chain.
+   finds the batch's notes on chain. Then it rebuilds the whole list from the issuer's notes on
+   chain alone, as a phone or an index could, and checks it is `list.json` and that every root in
+   the roots file is forest's `listRoot` of its prefix.
 4. **Badges through the relayer.** Each proves against the list (`buildRegistration`) and sends the
    line through the relayer, paying its fee in the USDC-shaped dollar: `tutoring/seller` and
    `tutoring/buyer`.

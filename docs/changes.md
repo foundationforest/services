@@ -385,3 +385,77 @@ this repo, is `forest/docs/changes.md`.
   validator and the built programs; the devnet loop is the proof for now.
 - **Railway's HTTP logs keep every request's address**, on every service, as before (needs Carlos).
 - This repo's `CLAUDE.md` is still behind forest's (needs Carlos), as the last sessions said.
+
+## 2026-10-01: the relayer paid in four tokens; each batch's members on chain
+
+**Built.**
+- `relayer/`: **on mainnet, the fee in USDC, USDT, Open USD or EURC** (`allowed_tokens`,
+  `allowed_spl_paid_tokens`), each its issuer's own mint, read on mainnet and checked against the
+  issuer's page: USDC `EPjFWdd5…Dt1v` and EURC `HzwqbKZw…EDKtr` (Circle's contract addresses),
+  USDT `Es9vMFrz…NYB` (Tether's supported protocols), Open USD `ousd2mJs…YHB` (Solana's launch
+  post). Devnet unchanged: the two test dollars (`deploy/devnet-config.sh` swaps the four-mint
+  lines). README: "Paid in four tokens".
+- `issuer/`: **each batch on chain with its new members.** A note is the root's line of the roots
+  file with a run of the batch's members from list position `from`, under
+  `forest.foundation/issuer/root/v2`; a batch too long for one note takes several (about ten
+  members a note), each reading alone. Each note's transaction sets a compute limit of 500,000, no
+  price. `listFromNotes` rebuilds the list from notes alone and checks every root. The file's
+  `roots.chain` became `notes`; a file from before writes every batch again with its members. 31
+  tests (rebuild from the notes gives `list.json` and every root; splitting; the fullest note fits
+  1,232 bytes; a retry resumes mid-batch; the old file).
+- `index/`: reads a root from a v2 note or a v1 memo (`src/chain/roots.ts`); keeps roots only. 36
+  fast tests.
+- `loop/`: rebuilds the devnet list from the issuer's notes on chain alone, with its own reader and
+  forest's `listRoot`, and checks it against `list.json` and every root.
+- **Devnet:** `issuer`, `relayer` and `index` build this branch. The issuer wrote its four earlier
+  batches again with their members at start. The loop passed once (04:36 UTC,
+  `loop/runs/2026-10-01T04-36-04-193Z.json`): 10 members rebuilt from 5 notes, all 5 roots match;
+  the rest as before. `docs/devnet.md` updated.
+
+**Chosen, where the ask was silent.**
+1. **The members in decimal text**, as `list.json` writes them.
+2. **One note shape for every part of a batch**, repeating the root's line (about 160 bytes a
+   note), so any note reads alone and the index takes a root from any of them.
+3. **A new label, `…/root/v2`**; the index still reads v1.
+4. **The compute limit raised in each note's transaction, at no price**, rather than notes of four
+   members within the default limit: a third as many notes for every reader to fetch, the same fee.
+5. **The issuer writes every v1-era batch again**, so devnet's list is whole on chain; the old memos
+   stay.
+6. **Progress inside a batch is kept in memory**; a restart mid-batch writes that batch's notes
+   again, and readers keep duplicates once.
+7. **No production reader rebuilds the list yet.** `listFromNotes` is the reference; phones still
+   read `list.json`, and the index needs only roots.
+8. **Devnet stays on the two test dollars**: no USDT- or EURC-shaped test token.
+9. **The issuer, relayer and index build the branch until the pull request merges**, as last time.
+
+**Learned.**
+- **The memo program costs about 351 compute units a byte** (it logs the text): 84,069 units for a
+  195-byte note, 195,986 for 514 bytes, and a 594-byte note fails at the default 200,000. A full
+  1,021-byte note took 373,272 under the raised limit, and devnet still charged 5,000 lamports for
+  it (`getFeeForMessage`). Simulated before deploying; the unit tests could not see it.
+- Kora 2.0.5's `rpc start` validates its config without RPC (`skip_rpc_validation`), so paid mints
+  missing from a local validator do not stop it; `config validate-with-rpc` would.
+- Kora's Jupiter source prices each token in dollars and divides by SOL's price: EURC is charged
+  at the euro's rate, with no code for it.
+- A web search's first "Open USD" hit was a pump.fun token (`662jm…pump`); the mint above is the one
+  Solana's own post names, and mainnet shows it as Token-2022 with Open USD's eight extensions.
+- Chromium here needs every certificate of the proxy's bundle in `~/.pki/nssdb`, not the first.
+- **The index type-checks the issuer's `src/chain.ts`** through its roots test, without the
+  issuer's packages installed, so `chain.ts` imports nothing but forest's records library.
+  `listFromNotes` lives in `src/list.ts`, with the Merkle tree; the first push had it in `chain.ts`
+  and CI's index job failed on it.
+
+**Open.**
+- **Switch `issuer`, `relayer` and `index` back to `main` after merge** (mechanical): one setting
+  each.
+- **EURC is a euro** (needs Carlos): `CLAUDE.md` and forest's rules say the relayer charges "in
+  their dollar token". Taking EURC stretches that word; the rule's text is Carlos's to change.
+- **A phone's rebuild of the list from the chain** (mechanical, forest): `forest/registry/client`
+  takes `list.json`'s commitments; reading the notes instead belongs in forest's client, which this
+  repo uses unchanged. The handoff's open item ("a phone and the issuer find a list's members by
+  reading every transaction that touched it") now has a published source to read.
+- **Reading cost grows with the list**: about one transaction per ten members for a reader that
+  rebuilds; the index reads every transaction naming the issuer's key but keeps only roots.
+- **No test pays the relayer in USDT or EURC** (mechanical): the local run plants a dollar at USDC's
+  address only; mainnet is not deployed.
+- Everything open from the session before stays open.
