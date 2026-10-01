@@ -6,8 +6,8 @@
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
-// Uniqueness enters standing only as the starting weight of a reviewer (the handoff: "an unbadged
-// reviewer's review weighs near zero"). Without that seed, "weighted by the reviewer's own
+// Uniqueness enters standing only as the starting weight of a reviewer (SCORING.md: a reviewer with
+// no counted badge gets the floor, so its review weighs near zero). Without that seed, "weighted by the reviewer's own
 // standing" with everyone starting at zero would leave every score at zero forever.
 
 import type { IssuerConfig, ScoringConfig } from '../config.ts'
@@ -136,8 +136,9 @@ export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings
 // ---------------------------------------------------------------------------------------------
 
 /**
- * What stands under a review's deal id (the handoff's "who said yes": a receipt counts fully when
- * the seller signed for it: created the escrow, signed its ending, or reviewed the deal).
+ * What stands under a review's deal id (SCORING.md, "Evidence: what backs a review"): a receipt
+ * counts fully when the seller signed for it: created the escrow, signed its ending, or reviewed
+ * the deal.
  *   both                paid, and the seller signed: created the escrow (an invoice), or signed
  *                       its ending (a split, or a release back to the buyer)
  *   oneSidedConfirmed   paid, the buyer created it, and the seller reviewed the same deal

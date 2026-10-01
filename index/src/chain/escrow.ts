@@ -14,7 +14,7 @@
 //
 // It reads only events each escrow program itself wrote: each client's `decodeEvents` follows the
 // runtime's own invoke and success lines, so a `Program data:` line another program wrote with the
-// same bytes is never read (adversarial review 1, rule 1).
+// same bytes is never read (docs/decisions.md, "Index").
 
 import { PublicKey } from '@solana/web3.js'
 

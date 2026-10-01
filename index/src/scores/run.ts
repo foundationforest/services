@@ -3,7 +3,7 @@
 // cache and a signature someone already holds stay good; only changed values are signed again.
 //
 // Everything is recomputed each time. That is fine at this size; an incremental recompute is
-// later work (forest/docs/changes.md).
+// later work (README.md, "Limits").
 
 import type { Config, IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
