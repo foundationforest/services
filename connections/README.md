@@ -1,118 +1,172 @@
 # connections
 
-Devnet only: the foundation's connections service runs on devnet, reading the test board. Nothing
-is shipped.
+Devnet only: the foundation's connections service runs on devnet, posting to a test host. Nothing
+is on mainnet, and nothing is shipped.
 
-Up: [the repo](../README.md). The protocol: `forest/records/SPEC.md`, §12.
+Up: [the repo](../README.md).
 
-Connections lets an AI assistant work for a person without holding their key. The assistant reads
-a profile's public records and drafts a new one; the service answers with an approval link; the
-person opens it on their own device, sees exactly what will be published, and signs it there with
-their passkey.
+## What it is
 
-It is forest's own MCP service (`forest/records/src/connections.ts`), unchanged, run as a service,
-and it serves the approval page its links open: forest's own (`forest/records/web`), built
-unchanged.
+An MCP server an AI assistant connects to with OAuth, so the assistant can post offers and reviews
+for one profile without ever holding the profile's key. Each connection gets one writer key of its
+own. The person adds that writer key to their profile's permissions record in their own app, which
+signs the change with the profile's key. From then on the assistant has two tools, post an offer
+and post a review, and each record it posts is signed by the writer key and sent to the hosts the
+profile's hosts record names (forest's [records](https://github.com/foundationforest/forest/blob/main/records/README.md),
+"Writers").
 
-## What it does
+This is the foundation's first connections service. Anyone can run another, with this code or their
+own: a writer key works wherever the profile's permissions record lists it.
 
-MCP over HTTP at `/mcp`, stateless, no login (protocol revisions 2026-07-28 and 2025-11-25). Two
-tools:
+## How it works
 
-- **`forest_read {profile}`:** the profile's public records (its profile record, offers, reviews and
-  proofs), read from its boards. A sealed record shows as sealed.
-- **`forest_draft {profile, path, body}`:** a record for the person to approve: a profile, an offer,
-  a review or a proof, or a delete (`body` null). The answer is `input_required` with the approval
-  link (URL mode). When the assistant calls again, the service reads the profile's boards for up to
-  `WAIT_SECONDS`: either the record is there, signed by the person, or the draft still waits in its
-  link.
+1. **The assistant registers and sends the person to `/authorize`.** This is OAuth 2.1 as MCP asks
+   for it, from the MCP SDK's own authorization server: metadata at
+   `/.well-known/oauth-authorization-server`, `/register` (dynamic client registration),
+   `/authorize`, `/token`, `/revoke`, PKCE required.
+2. **The person names their profile:** they paste its address from their app into a form. The
+   service makes one writer key for this connection and shows its address.
+3. **The person adds the writer key in their app,** for offers and reviews. The app signs the
+   profile's new permissions record with the profile's key and publishes it to the profile's hosts.
+4. **The waiting page checks every 5 seconds.** It reads the profile from the hosts in `HOSTS` and
+   then every host its hosts record names (forest's `readProfile`). Once the current permissions
+   record lists the writer key for both `offer` and `review`, with its time not up, the grant goes
+   through: the person is sent back to the assistant with a one-time code, and the assistant trades
+   it for tokens.
+5. **The assistant calls `post_offer` or `post_review` at `/mcp`** with its access token. Each tool
+   takes forest's own shape for the record (its JSON Schema is the tool's input) and an optional id.
+   Before signing, the service reads the profile again and posts only if the permissions record
+   lists the key for that path now, and the profile's own key has not written there (the owner
+   wins). The record goes to every host the profile names; the answer says which took it.
 
-It finds a profile on the boards in `HOSTS`, then on the boards the profile's own folder names.
+The person ends a connection by removing the writer key in their app. What it already posted stays
+on the hosts.
 
-**The approval page** is served at `/approve`, with `/approve.js`, `/approve.css`, the bundle's
-SHA-256 at `/approve.js.sha256` and the libraries in it at `/approve.deps.txt`. Every page file goes
-out with the policy §12 asks for: its own script and style only, Trusted Types, reads and posts over
-`https:` only, never in a frame (`frame-ancestors 'none'`); plus `no-cache`, `nosniff` and
-`no-referrer`. The files are read once at start, so the published hash is the hash of what is
-served. The page is where a person's seed is opened, by a passkey that belongs to the page's
-origin: this service's.
+### Routes
 
-Forest's service listens on 127.0.0.1 only, so `src/service.ts` puts a front before it that passes
-each request, untouched, to that loopback address and streams the answer back. The front reads
-nothing, keeps nothing and logs nothing.
+| Route | What answers |
+|---|---|
+| `GET /` | One line saying what this is |
+| `GET /.well-known/oauth-authorization-server`, `GET /.well-known/oauth-protected-resource/mcp` | OAuth metadata |
+| `POST /register`, `GET`/`POST /authorize`, `POST /token`, `POST /revoke` | OAuth, from the MCP SDK |
+| `POST /connect/<id>`, `GET /connect/<id>` | The person's two pages: name the profile; add the writer key |
+| `POST /mcp` | MCP over streamable HTTP, stateless, answered as JSON; a bearer token is required |
 
-## What it never does
+### What it keeps
 
-- **Holds no key, no grant and no draft.** A draft lives only in its link, after the `#`, which no
-  server receives. A second copy of the service, which never saw the draft, gives the same answer.
-- **Signs and publishes nothing.** Only the person's device signs, on the approval page, and posts
-  to the boards the profile's signed folder names.
-- **Has no accounts.**
-- **Logs nothing per request,** one line at start; and nothing a person sends is in a URL: every
-  call is a POST to `/mcp`.
+One SQLite file (`DATABASE_PATH`), readable by its owner only:
 
-## What it trusts
+| Table | What |
+|---|---|
+| `clients` | Each assistant's OAuth registration, as it sent it |
+| `connections` | One per grant: the profile's address, the writer key's private bytes, the assistant it was made for, and until the grant the authorization waiting on the person |
+| `codes` | One-time codes, as their SHA-256, for ten minutes |
+| `tokens` | Access tokens (an hour) and refresh tokens (90 days), as their SHA-256 |
 
-- **Boards, for presence only.** It reads records and checks their signatures with forest's reader;
-  a board can withhold a record, never forge one.
-- **The approval page trusts the person's device:** its passkey for the seed, its browser for the
-  page.
+Every hour it deletes codes and tokens past their time, connections nobody finished within the
+hour, and connections left with no token (90 days after the last refresh, or once revoked), writer
+key and all.
 
-## Settings
+### Settings
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `APPROVAL_PAGE` | yes | | The approval page every link opens, such as `https://<this service>/approve` |
-| `HOSTS` | yes | | The boards it reads a profile from first: origins separated by commas |
-| `WAIT_SECONDS` | no | `30` | How long a returning `forest_draft` reads the boards for the person's approval |
-| `APPROVAL_PAGE_DIR` | no | `../forest/records/web/dist` | Where forest's built approval page is; `none` serves no page. It refuses to start if the page is not built there |
+| `PUBLIC_URL` | yes | | This service's own origin: the OAuth issuer, with the MCP server at `/mcp` |
+| `HOSTS` | yes | | The hosts it reads a profile from first: origins separated by commas |
+| `DATABASE_PATH` | no | `./data/connections.sqlite` | The one file |
 | `PORT` | no | `8080` | |
 
-Nothing here is a secret.
+### Run it
 
-## Run it
+Node 22.18 or later, with forest fetched at the commit in `FOREST`:
 
-Node 22.18 or later. From the repo root:
-
-```
-./forest.sh records
-(cd forest/records && node web/build.ts)    # forest's approval page, into forest/records/web/dist
+```sh
+./forest.sh keys records
 cd connections && npm ci
-npm run check                               # type-check, forest's files included
-npm test                                    # forest's reference board, the service and an MCP client, on loopback
-APPROVAL_PAGE=https://… HOSTS=https://… npm start
+npm test
+PUBLIC_URL=http://127.0.0.1:8080 HOSTS=https://… npm start
 ```
 
-The tests use `@modelcontextprotocol/client` 2.2.0, the version forest's own tests use; the service
-has no dependency of its own.
+The test starts forest's reference host on loopback, connects an assistant with OAuth, adds its
+writer key the way an app would, and posts an offer and a review through MCP.
 
-## Deploy
+### On devnet
 
-Any platform that runs Node 22.18. It holds nothing, so any number of copies give the same answers. The
-build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 and git,
-`forest.sh records`, forest's page build (`node web/build.ts`), `npm ci`, then
-`node src/main.ts`. Assistants connect to `https://<domain>/mcp`.
+Any platform that runs Node 22.18 with a persistent disk. **One replica:** everything is one SQLite
+file. **A volume** for `DATABASE_PATH`, or each deploy drops every connection. The build context is
+the repo root; `deploy/Dockerfile` builds it (Node 22.22.2 and git, `forest.sh records`, `npm ci`).
 
-**The foundation's devnet service** runs that image on Railway, project `forest-devnet`, service
-`connections`:
+The foundation's devnet connections service runs that image on Railway, project `forest-devnet`,
+service `connections`, at https://connections-production-ebc4.up.railway.app:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=connections/deploy/Dockerfile`.
-- **One replica,** health check `GET /approve`, a public domain to port 8080, no volume.
+- **One replica,** a volume at `/data`, a public domain to port 8080, health check `/`.
 
 | Variable | On devnet |
 |---|---|
-| `APPROVAL_PAGE` | `https://connections-production-ebc4.up.railway.app/approve`, its own |
-| `HOSTS` | the test board, `https://board-devnet-test-production.up.railway.app` |
-| `WAIT_SECONDS` | `30` |
+| `PUBLIC_URL` | `https://connections-production-ebc4.up.railway.app` |
+| `HOSTS` | the test host, `https://board-devnet-test-production.up.railway.app` |
+| `DATABASE_PATH` | `/data/connections.sqlite` |
 | `PORT` | `8080` |
+
+e2e connects an assistant for each of its two people on every run.
+
+## Promises
+
+- **It never holds, asks for or signs with a profile's key.** It makes writer keys and signs only
+  with them. A writer key can post only what the profile's permissions record lets it, and only
+  while the record lists it.
+- **It posts only offers and reviews,** and only where the profile's own key has not written.
+- **It posts only to the hosts the profile's hosts record names.**
+- **It never puts what a person sends in a URL.** The profile's address goes in a form's body; the
+  waiting page's address carries only the connection's random id, since hosting platforms log
+  paths.
+- **It never logs a request and never writes down an address.** The MCP SDK's rate limits, which
+  count each address in memory, are off.
+- **It keeps no token or code,** only their SHA-256.
 
 ## Limits
 
-- **No health route of its own:** every path but `/mcp` and the page's files is forest's 404.
-- **No login and no rate limit.** Anyone may read and draft; nothing is published without the
-  person's passkey.
-- **The passkey belongs to the page's origin.** On devnet that is this service's Railway address,
-  so a passkey made there opens nothing on any other address.
-- **Address logs.** Connections keeps no network address and logs nothing per request. A hosting
-  provider's own request logs are the operator's choice; on Railway they exist, with each request's
-  client address and path (always `/mcp` or one of the page's files).
+- **It holds every writer key it made,** private bytes in its SQLite file on the volume, not
+  encrypted. Whoever reads that file can post offers and reviews for every connected profile, until
+  each person removes the key in their app.
+- **Anyone can register an assistant.** Registration is open, as MCP expects. What protects a
+  profile is that only the person's app can list a writer key.
+- **It trusts the hosts it reads.** A host that hides the newest permissions record can keep a
+  removed writer key looking listed, here and to everyone else reading that host.
+- **One writer key per connection, for offers and reviews together.** A person who lists it for one
+  of the two only never gets the grant.
+- **An hour to finish.** A person who has not added the writer key within an hour starts again from
+  the assistant.
+- **Address logs.** The service keeps no network address (above). A hosting provider's own request
+  logs are the operator's choice; on Railway they exist, with each request's client address and
+  path.
+
+## FAQ
+
+**Why a writer key per connection, and not a draft the person approves?**
+A writer key is how forest lets something other than the profile's key write for it: the person
+lists it once in their app, and can remove it there at any time. A record it signs reads as the
+writer key's on every host, so nothing else has to trust this service. Approving each draft on a
+page of ours would put this service between the person and every record.
+
+**Why OAuth?**
+MCP asks for it, and assistants that speak MCP already know how to connect with it. The MCP SDK
+ships the whole authorization server; this service answers its questions from its one file and
+adds the two pages the person sees.
+
+**Why does it check the permissions record before posting, when a host checks it anyway?**
+So the assistant hears why a post would fail before anything is sent, in plain words, instead of
+each host's refusal.
+
+**Why the profile's own hosts, and not the hosts in `HOSTS`?**
+A profile's hosts record says where its records live. `HOSTS` only says where this service looks
+first to find that record.
+
+**Why stateless MCP, a server per request?**
+Each request carries its token, and the token names the connection. Nothing has to live between
+requests, so a restart loses nothing.
+
+**Could someone rebuild this service from public data?**
+No: its file holds the writer keys' private bytes, which are nowhere else. If it is lost, every
+connection ends, and each person connects again and lists a new writer key.

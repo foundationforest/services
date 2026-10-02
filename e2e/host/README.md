@@ -1,77 +1,75 @@
-# loop/board
+# e2e/host
 
-Devnet only, and for testing only: a board for the loop and the devnet index to read and write
-records on. It may be wiped at any time. Nothing is shipped.
+Devnet only: a host for devnet testing only. Nothing is on mainnet, and nothing is shipped.
 
-Up: [the loop](../README.md).
+Up: [e2e](../README.md).
 
-Boards are run by apps; the foundation runs none. This one exists so the devnet services have
-somewhere to read records from. It is forest's reference board (`forest/records/src/host.ts`),
-unchanged, with one line in front saying what it is. It takes anyone's records and sets no policy
-of its own.
+## What it is
 
-## What it does
+A host for records, run so the e2e run and the devnet index have somewhere to read and write: forest's
+reference host (`forest/records/src/host.ts`), unchanged. It takes anyone's records, sets no policy
+of its own, and may be wiped at any time.
 
-- **Forest's board, unchanged:** `POST /v1/entries` and `GET /v1/entries?after=&profile=&badged=1`
-  as `forest/records/SPEC.md` §7 says; one SQLite file; no keys, no accounts, no login.
-- **`GET /`** answers one line saying it is for devnet testing only. Every other request goes,
-  untouched, to forest's board on loopback, which answers only `/v1/entries`.
-- **The badged feed asks the registry:** a profile's key counts as badged when any registry line
-  names it (`getProgramAccounts` on the registry, filtered on a line's discriminator and the profile
-  key at offset 8, as forest's `fetchLines` filters). A failed RPC call counts as not badged.
-- **Once an hour** it forgets what stopped counting (`prune`) and asks the registry again about
-  every profile (`refreshBadges`).
+The foundation runs no host; hosts are run by apps. This one exists for devnet testing only. Anyone
+can run another, with this code or forest's host alone, or their own.
 
-## What it trusts
+## How it works
 
-- **Signatures,** as forest's board does: it stores a record only if it checks.
-- **The registry, through its RPC,** for the badged hint. It asks only whether a line names the
-  key, not which issuer vouched for it, so its `badged=1` feed is a hint; readers check lines
-  themselves.
+Forest's host listens on loopback. In front of it, one thing only: a front that answers `GET /`
+with one line saying what this is, and passes every other request, untouched, to forest's host.
+So the routes are forest's (forest's [records](https://github.com/foundationforest/forest/blob/main/records/README.md),
+"Hosts"): what's new for the whole host, a profile's records, and posting records. Forest's host
+checks each record's signature and the writer rule before it keeps it.
 
-## Settings
+### Settings
 
-| Variable | Required | What |
+| Variable | Default | What |
 |---|---|---|
-| `PUBLIC_URL` | yes | This board's `https://` origin, exactly as folders name it |
-| `DATABASE_PATH` | no | The SQLite file; in memory when unset |
-| `SOLANA_RPC_URL`, `REGISTRY_PROGRAM_ID` | no | For the badged feed; without both, no profile counts as badged |
-| `PORT` | no | Default `8080` |
+| `DATABASE_PATH` | none: records live in memory | The SQLite file |
+| `PORT` | `8080` | |
 
-## Run it
+### Run it
 
-Node 22.18 or later. From the repo root:
-
-```
-./forest.sh records registry/client     # registry/client for the test only
-cd loop/board && npm ci
-npm run check
-npm test                                # forest's board behind the front, with a stand-in registry RPC
-PUBLIC_URL=https://… npm start
+```sh
+./forest.sh keys records
+cd e2e/host && npm ci
+npm test
+DATABASE_PATH=./data/host.sqlite npm start
 ```
 
-## Deploy
+The test checks that `/` says what this is, and that records go in and come back through the
+front, for the whole host and by profile.
 
-The build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 and git,
-`forest.sh records`, `npm ci`, then `node src/main.ts`.
+### On devnet
 
-**The devnet test board** runs that image on Railway, project `forest-devnet`, service
-`board-devnet-test`, at https://board-devnet-test-production.up.railway.app:
+Railway, project `forest-devnet`, service `board-devnet-test` (its old name; the address stays),
+at https://board-devnet-test-production.up.railway.app:
 
-- **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=loop/board/deploy/Dockerfile`.
-- **One replica,** a volume at `/data`, health check `GET /`, a public domain to port 8080.
+- **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=e2e/host/deploy/Dockerfile`.
+- **One replica,** a volume at `/data`, a public domain to port 8080, health check `/`.
+- **Variables:** `DATABASE_PATH=/data/host.sqlite`, `PORT=8080`.
 
-| Variable | On devnet | Sealed |
-|---|---|---|
-| `PUBLIC_URL` | its own Railway address | no |
-| `DATABASE_PATH` | `/data/board.sqlite` | no |
-| `SOLANA_RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
-| `REGISTRY_PROGRAM_ID` | `Hyh5Lt1ErzYV3pF9ZkFWTdjhE2wwTuXnPMVgzCKEv9hf` | no |
-| `PORT` | `8080` | no |
+The devnet index reads it (`index/lists/hosts.json`), and connections looks there first (`HOSTS`).
+
+## Promises
+
+- **Forest's host, unchanged.** The front adds the line at `/` and nothing else.
+- **No address logs.** Neither forest's host nor the front logs a request or keeps an address. On
+  Railway, Railway's own request logs exist.
 
 ## Limits
 
-- **Open to anyone,** and it grows with every loop run. Wipe its volume when it gets in the way.
-- **Badged means any line,** whoever vouched: a hint only.
-- **Address logs.** Forest's board keeps no network address. A hosting provider's own request logs
-  are the operator's choice; on Railway they exist, with each request's client address and path.
+- **Anyone can write here,** anything forest's host accepts.
+- **It may be wiped at any time,** and with it every record the e2e runs left.
+- **One file, one replica.**
+
+## FAQ
+
+**Why is it called `board-devnet-test` on Railway?**
+It was the test board before forest's records replaced boards with hosts. Renaming the service
+would change its address, which the index's hosts list and the hosts record of every profile the
+e2e runs made name.
+
+**Why run forest's host, and not one written here?**
+Forest's host is the reference for what a host does. A host written here could drift from it, and
+the e2e run would test the wrong thing.

@@ -1,86 +1,121 @@
-# loop
+# e2e
 
-Devnet only: the loop runs against the devnet services and leaves everything it makes on devnet.
-Nothing is shipped.
+Devnet only: e2e runs on Solana's devnet, with test dollars and a stand-in face check. Nothing is
+on mainnet, and nothing is shipped.
 
-Up: [the repo](../README.md). What it runs against: [docs/devnet.md](../docs/devnet.md). The test
-board it writes to: [board/](board/README.md).
+Up: [the repo](../README.md). The test host: [`host/`](host/README.md).
 
-The loop is one script, `loop.ts`, that takes two new people through Forest end to end on the
-services this repo deploys, the way two phones and an assistant would: a face check, a badge each,
-a profile and an offer, two paid deals, reviews both ways, and the index showing all of it. It is
-the proof that the deployed services work together. It is not deployed; someone runs it by hand.
+## What it is
 
-## What a run does
+Forest end to end on devnet, against the services this repo deploys: two new people do everything
+a person does, each the way their app would do it, and the run checks that the index shows the
+result. `e2e.ts` is the whole run; `devnet.json` names what it runs against; each run's record goes
+to `runs/`.
 
-Each run makes two new people, a seller and a buyer, in the market `tutoring`:
+It tests the foundation's first index, issuer, relayer and connections service. Anyone running
+their own can point `devnet.json` at theirs.
 
-1. **Setup.** Each person's token accounts for the two test dollars, and some dollars: 5.00
-   USDC-shaped to the seller; 15.00 USDC-shaped and 10.00 Open-USD-shaped to the buyer. The
-   relayer's Open-USD-shaped account, once. The deploy key pays; nothing a person does later needs
-   SOL.
-2. **Two phones.** Headless Chromium, each person with a virtual authenticator (PRF on). Each makes
-   a passkey on the approval page's origin; the seed comes from its PRF output, and the profile key
-   and identity secret from the seed, as forest's keys recipe says.
-3. **The issuer's list.** Each opens a face check (the stand-in passes it), submits its commitment,
-   and waits for the next batch. The loop checks the roots file (canonical, signed by the issuer the
-   index trusts, its newest root the list's root), then rebuilds the whole list from the issuer's
-   notes on chain alone and checks it equals `list.json` and that every root is forest's `listRoot`
-   of its prefix.
-4. **Badges through the relayer.** Each proves against the list and sends its registry line through
-   the relayer, paying in the USDC-shaped dollar: `tutoring/seller` and `tutoring/buyer`.
-5. **Records through approvals.** Each person's app writes its folder on the test board. Then an
-   assistant drafts through connections (`forest_draft`): each profile, the seller's offer (one hour
-   of maths, 1 USDC-shaped dollar), and later each review. The phone opens the approval link, the
-   page shows the record, one tap and the passkey sign it and post it to the board, and connections
-   reports it published.
-6. **Two deals on escrow v2,** the buyer paying from the offer, the relayer paid in the deal's own
-   dollar:
-   - USDC-shaped: one tap, one transaction (deposit address, create, pay, release).
-   - Open-USD-shaped: the loop first asks the relayer for the one tap as one transaction and checks
-     Kora 2.0.5 refuses it (nothing is sent; [docs/kora-issue.md](../docs/kora-issue.md)), then
-     pays, and releases once the payment is confirmed.
-7. **Reviews** both ways for each deal, each naming its escrow.
-8. **The index shows it all:** both badges counted and vouched for by the devnet issuer, the offer,
-   both deals released to the seller with two reviews each, and each profile's two reviews counted
-   at full weight (`oneSidedConfirmed`: the buyer opened the escrow and the seller reviewed the
-   deal).
+## How it works
 
-Every address, signature and page goes to `runs/<start time>.json`, whether the run passes or not.
-The script exits 0 when it passes, 1 when it fails.
+Two people, a seller and a buyer, in the market `tutoring`:
 
-## What it trusts
+1. **A seed from 24 words,** and from it the profile key, the reading key and the stamp for the
+   keeper (forest's keys).
+2. **Setup:** each gets a test-dollar account and some test dollars, paid by the devnet deploy key.
+   Nothing a person does after this needs anything but test dollars.
+3. **Stamped by the issuer:** a face check (the devnet stand-in passes it), the stamp submitted,
+   then polled until it is on the list.
+4. **A row each in the registry,** proven against the keeper's newest snapshot and carrying the
+   keeper's signature on its root, sent through the relayer and paid in test dollars. The run reads
+   the row back and checks the signature.
+5. **Each app publishes** the profile's hosts record and its profile record on the test host.
+6. **An assistant connects to each** through connections, with OAuth. The app adds the writer key
+   the connection shows to the profile's permissions record. The seller's assistant posts an offer
+   through MCP, signed by its writer key.
+7. **One private record:** the buyer writes the seller a message only the seller's reading key
+   opens. The run reads it back from the host and opens it.
+8. **The buyer pays through the escrow** in one tap: pay and release in one transaction, through
+   the relayer, paid in test dollars.
+9. **Each assistant posts a review** of the other, naming the deal.
+10. **The index shows it:** both profiles with their rows counted under the trusted keeper, the
+    offer, the deal released to the seller, and both reviews counted at full weight. Not the private
+    message.
 
-- **The devnet keys** forest's `devnet/keys.sh` derives from the devnet phrase, read from outside
-  the repo. It uses three: `deploy` (pays setup), `test-dollar-authority` (mints the USDC-shaped
-  dollar) and `payer`, the relayer's key, which is also the Open-USD-shaped dollar's issuer and
-  mints it, signing directly, never through Kora.
-- **The addresses in `devnet.json`:** the five services, the devnet programs, the issuer's did:key,
-  the two test dollars and the market.
+Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
+step passed.
 
-## Run it
+### Run it
 
-Node 22.18 or later. From the repo root:
+Node 22.18 or later, with forest fetched at the commit in `FOREST` and the registry's proving files:
 
-```
-./forest.sh records keys registry/client registry/artifacts escrow/v2/client
-(cd forest/registry/artifacts && npm run fetch)     # the proving files
-cd loop && npm ci
-npm run check
-npm run loop                                        # about three minutes
+```sh
+./forest.sh keys records registry/client registry/artifacts escrow/client
+(cd forest/registry/artifacts && npm run fetch)
+cd e2e && npm ci
+FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
 
-| Variable | Default | What |
+| Variable | Required | What |
 |---|---|---|
-| `FOREST_DEVNET_KEYS` | `~/.forest-devnet/keys` | The folder holding `deploy.json`, `test-dollar-authority.json` and `payer.json` |
-| `HELIUS_API_KEY` | none | Use Helius's devnet RPC; otherwise `https://api.devnet.solana.com`. The key is redacted from the run's record |
-| `CHROME_PATH` | `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` | Chromium. Behind a TLS-intercepting proxy, the proxy's certificates must be in Chromium's NSS store (`~/.pki/nssdb`) |
+| `FOREST_DEVNET_SEED` | yes | The devnet phrase. Its `deploy` key pays the setup; its `test-dollar-authority` key mints the test dollars. Never in this repo |
+| `HELIUS_API_KEY` | no | Reads and sends through Helius's devnet RPC instead of `api.devnet.solana.com`; the key never goes into a run's record |
+
+### The latest run
+
+2026-10-02, 18:59 to 19:00 UTC, against all five services built from this branch: **passed** in 76
+seconds. Its record is [`runs/2026-10-02T18-59-03-198Z.json`](runs/2026-10-02T18-59-03-198Z.json).
+
+| Step | What happened |
+|---|---|
+| People | Seller `9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN`, buyer `7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ` |
+| The list | Both stamped in one batch: 14 stamps, snapshot root `22299dca…`, signed by the keeper `7zPD6AZc…` |
+| Rows, through the relayer | `tutoring/seller`, 796 bytes, charged 1.77784 test dollars; `tutoring/buyer`, 795 bytes, charged 1.77276 |
+| Writer keys | Seller's assistant `7am4FVFv…`, buyer's `H2qDubZk…`, each on its profile's permissions list |
+| Records | The seller's offer `offer/maths`; the buyer's private message, 4,388 bytes, opened by the seller's reading key; two reviews |
+| The deal | Escrow `3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF`, one tap, 715 bytes, charged 3.69808 test dollars |
+| The index | Both rows counted under "Forest Foundation issuer (devnet)"; the offer listed; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1). Seller and buyer each rating 10 |
+
+Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN),
+[the buyer](https://index-production-1b6e.up.railway.app/profiles/7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ),
+[the deal](https://index-production-1b6e.up.railway.app/deals/3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF).
+
+## Promises
+
+- **No key, phrase or keyed URL in this folder.** The devnet phrase comes from the environment, and
+  a run's record holds addresses, signatures and charges only.
+- **It does what an app would,** with forest's own pieces: keys, records, the registry and escrow
+  clients. Nothing in it reaches around a service.
+- **A run passes only if every step passed.** A failed run's record holds the steps it finished
+  and the error.
 
 ## Limits
 
-- **Every run is permanent on devnet:** two more people on the devnet issuer's list, two badges,
-  their records on the test board, and two receipts. About 0.01 SOL of the deploy key's per run.
-- **It needs the devnet issuer's stand-in face check,** which passes everyone, and the issuer's
-  devnet session limit (20 an hour per address) so a few runs an hour fit.
-- **It mints test dollars with the relayer's own key,** outside Kora: a devnet shortcut only.
-- **Not in CI.** It needs the devnet keys and the live services.
+- **CI does not run it,** since it needs the devnet phrase and the deployed services; CI only
+  type-checks it. It runs by hand, and its records in `runs/` say when it last passed.
+- **Every run leaves its people on devnet for good:** their rows, their deal and their stamps on the
+  issuer's list. Their records stay on the test host until it is wiped.
+- **The face check is the stand-in,** so a run says nothing about Didit.
+- **One market, one test dollar, one tap.** It does not pay in the Open-USD-shaped test dollar
+  (the relayer's test does, on a local validator, and its README says why a one tap in it fails
+  through Kora), and it does not test a refund.
+- **The index step waits up to 15 minutes** for the index's next read of the host and the chain;
+  a slower devnet fails the run.
+
+## FAQ
+
+**Why on devnet, against the deployed services, and not on a local validator?**
+The local tests (the index's `e2e.test.ts`, the relayer's test) already run every piece on
+loopback. This run checks the pieces as they are deployed: the real programs, Kora, the hosting,
+and the services talking to each other over the internet.
+
+**Why does the deploy key pay the setup?**
+A new person has no test dollars. On mainnet they would come in at a ramp; on devnet the deploy key
+makes the accounts and the test dollar's own authority mints them. Nothing after setup touches SOL.
+
+**Why keep every run's record in the repo?**
+So anyone can check, on devnet itself, what the latest run did: every address and signature in it
+is public.
+
+**Why is the test host in this folder?**
+The foundation runs no host; hosts are run by apps. The run needs one, and so does the devnet index,
+so this one exists for devnet testing only, beside the run that uses it.
