@@ -2,18 +2,17 @@
 // sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
 // client's address).
 //
-//   POST /session   {}                        -> 201 {sessionId, url}     a Didit session to do the check on
-//   POST /submit    {sessionId, commitment}   -> 202 {status: "queued"}   or an error, below
-//   POST /status    {commitment}              -> 200 {status: "queued" | "listed" | "unknown"}
+//   POST /session   {}                  -> 201 {sessionId, url}     a Didit session to do the check on
+//   POST /submit    {sessionId, stamp}  -> 202 {status: "queued"}   or an error, below
+//   POST /status    {stamp}             -> 200 {status: "queued" | "listed" | "unknown"}
 //
-// The two public files, which anyone reads (list.ts; README.md, "The two files"):
+// The public file, which anyone reads (list.ts):
 //
-//   GET  /list.json     every commitment on the list, in order
-//   GET  /roots.json    every root the list has had, signed with the issuer's key
+//   GET  /list.json     every stamp on the list, in order, and every snapshot, signed by the keeper key
 //
 // Errors are `{error: <code>}`: 400 a malformed body, 403 a face check that does not count (the code
-// says why), 409 a session already used or a commitment already queued or listed, 413 a body over
-// 1 KB, 429 `try_later` for an address that has opened its share of sessions this hour, 502 Didit not
+// says why), 409 a session already used or a stamp already queued or listed, 413 a body over 1 KB,
+// 429 `try_later` for an address that has opened its share of sessions this hour, 502 Didit not
 // answering. A refused or failed submit uses nothing up: the same session can be sent again, for
 // instance once a review in Didit approves it.
 //
@@ -31,7 +30,7 @@ import type { Store } from './store.ts'
 
 const MAX_BODY = 1024
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** A commitment is sent as Semaphore prints it: a decimal number, no sign, no leading zero. */
+/** A stamp is sent as Semaphore prints it: a decimal number, no sign, no leading zero. */
 const DECIMAL = /^[1-9][0-9]{0,77}$/
 
 class HttpError extends Error {
@@ -70,11 +69,11 @@ function fields<K extends string>(body: Record<string, unknown>, ...names: K[]):
   return body as Record<K, string>
 }
 
-function commitmentFrom(value: string): bigint {
-  if (!DECIMAL.test(value)) throw new HttpError(400, 'bad_commitment')
-  const commitment = BigInt(value)
-  if (!isFieldElement(commitment)) throw new HttpError(400, 'bad_commitment')
-  return commitment
+function stampFrom(value: string): bigint {
+  if (!DECIMAL.test(value)) throw new HttpError(400, 'bad_stamp')
+  const stamp = BigInt(value)
+  if (!isFieldElement(stamp)) throw new HttpError(400, 'bad_stamp')
+  return stamp
 }
 
 const CORS = {
@@ -135,14 +134,14 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     },
 
     async '/submit'(body) {
-      const input = fields(body, 'sessionId', 'commitment')
+      const input = fields(body, 'sessionId', 'stamp')
       if (!UUID.test(input.sessionId)) throw new HttpError(400, 'bad_session_id')
       const { sessionId } = input
-      const commitment = commitmentFrom(input.commitment)
+      const stamp = stampFrom(input.stamp)
 
       if (store.isUsed(sessionId)) throw new HttpError(409, 'session_used')
-      if (store.isQueued(commitment)) throw new HttpError(409, 'commitment_queued')
-      if (list.has(commitment)) throw new HttpError(409, 'already_listed')
+      if (store.isQueued(stamp)) throw new HttpError(409, 'stamp_queued')
+      if (list.has(stamp)) throw new HttpError(409, 'already_listed')
 
       let decision
       try {
@@ -155,22 +154,21 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
 
       // Checked again, for good, inside one transaction: another request may have used this session
       // while this one waited for Didit.
-      const accepted = store.accept(sessionId, commitment)
+      const accepted = store.accept(sessionId, stamp)
       if (accepted !== 'queued') throw new HttpError(409, accepted)
       batcher.poke()
       return [202, { status: 'queued' }]
     },
 
     async '/status'(body) {
-      const commitment = commitmentFrom(fields(body, 'commitment').commitment)
-      const status = store.isQueued(commitment) ? 'queued' : list.has(commitment) ? 'listed' : 'unknown'
+      const stamp = stampFrom(fields(body, 'stamp').stamp)
+      const status = store.isQueued(stamp) ? 'queued' : list.has(stamp) ? 'listed' : 'unknown'
       return [200, { status }]
     },
   }
 
   const files: Record<string, () => string> = {
-    '/list.json': () => list.listFile(),
-    '/roots.json': () => list.rootsFile(),
+    '/list.json': () => list.file(),
   }
 
   return (req, res) => {

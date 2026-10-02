@@ -6,7 +6,6 @@ import type { AddressInfo } from 'node:net'
 import { dirname } from 'node:path'
 
 import { Batcher } from './batch.ts'
-import { RootWriter } from './chain.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { loadKeypair, writeKeyFile, type IssuerKey } from './key.ts'
 import { RateLimit } from './limit.ts'
@@ -29,8 +28,6 @@ export type Config = {
   sessionLimitPerHour: number
   /** The header a proxy in front puts the client's address in (`x-real-ip` on Railway); unset, the connection's. */
   clientAddressHeader?: string
-  /** A Solana RPC: each new root is also written on chain there (chain.ts). Unset, nothing goes on chain. */
-  solanaRpcUrl?: string
   port: number
 }
 
@@ -66,7 +63,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     batchIntervalMs: whole('BATCH_INTERVAL_SECONDS', env.BATCH_INTERVAL_SECONDS || '3600', 1) * 1000,
     sessionLimitPerHour: whole('SESSION_LIMIT_PER_HOUR', env.SESSION_LIMIT_PER_HOUR || '5', 1),
     clientAddressHeader: env.CLIENT_ADDRESS_HEADER?.toLowerCase() || undefined,
-    solanaRpcUrl: env.SOLANA_RPC_URL || undefined,
     port: whole('PORT', env.PORT || '8080', 0),
   }
 }
@@ -77,8 +73,6 @@ export type Issuer = {
   store: Store
   list: IssuerList
   batcher: Batcher
-  /** Writes each root on chain; none without SOLANA_RPC_URL. */
-  writer?: RootWriter
   /** Where the key from `ISSUER_KEYPAIR` was written; the file is gone by the time this returns. */
   keyFile?: string
   /** Stops taking requests, lets a running batch finish, and closes the file. */
@@ -109,7 +103,6 @@ export async function startIssuer(
     faceCheck?: FaceCheck
     log?: (line: string) => void
     now?: () => number
-    chain?: { retryMs?: number; fetch?: typeof fetch; sleep?: (ms: number) => Promise<void> }
   } = {},
 ): Promise<Issuer> {
   const key = issuerKey(config)
@@ -124,15 +117,11 @@ export async function startIssuer(
   mkdirSync(dirname(config.databasePath), { recursive: true })
   const store = new Store(config.databasePath)
   const list = new IssuerList(store, key.keypair)
-  const writer = config.solanaRpcUrl
-    ? new RootWriter(store, key.keypair, { rpcUrl: config.solanaRpcUrl, log: overrides.log, ...overrides.chain })
-    : undefined
   const batcher = new Batcher(store, list, {
     max: config.batchMax,
     intervalMs: config.batchIntervalMs,
     log: overrides.log,
     now: overrides.now,
-    onAppend: () => void writer?.poke(),
   })
   const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(
@@ -152,7 +141,6 @@ export async function startIssuer(
     server.listen(config.port, resolve)
   })
   batcher.start()
-  writer?.start()
 
   const { port } = server.address() as AddressInfo
   return {
@@ -161,7 +149,6 @@ export async function startIssuer(
     store,
     list,
     batcher,
-    writer,
     keyFile: key.keyFile,
     async close() {
       await new Promise<void>((resolve) => {
@@ -169,7 +156,6 @@ export async function startIssuer(
         server.closeAllConnections()
       })
       await batcher.close()
-      await writer?.close()
       store.close()
     },
   }

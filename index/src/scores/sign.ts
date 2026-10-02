@@ -7,19 +7,19 @@
 //
 // The statement:
 //
-//   forest.foundation/index/v1/score
+//   forest.foundation/index/v2/score
 //   kind <uniqueness|standing|rating>
-//   did <the profile's DID>
-//   scope <the badge's scope, or empty for standing and rating>
+//   profile <the profile's address>
+//   label <the row's label, or empty for standing and rating>
 //   value <millionths, a signed whole number>
 //   at <unix seconds>
 //
-// The field element: Poseidon(domain, kind, did, scope, value + 2^63, at), where
-//   domain = fieldHash('forest.foundation/index/v1/score')
-//   kind   = 1 for uniqueness, 2 for standing, 3 for rating
-//   did    = fieldHash('forest.foundation/index/v1/did/', did)
-//   scope  = the registry's own scopeOf(scope), the number a registration proof carries as its
-//            scope, so a later circuit ties a uniqueness score to a badge's code; 0 otherwise
+// The field element: Poseidon(domain, kind, profile, label, value + 2^63, at), where
+//   domain  = fieldHash('forest.foundation/index/v2/score')
+//   kind    = 1 for uniqueness, 2 for standing, 3 for rating
+//   profile = fieldHash('forest.foundation/index/v2/profile/', profile)
+//   label   = the registry's own scopeOf(label), the number a registration proof carries as its
+//             scope, so a later circuit ties a uniqueness score to a market stamp; 0 otherwise
 // fieldHash is the registry client's: keccak256 of the namespace and the bytes, shifted right a
 // byte. The value is offset by 2^63 so a negative standing is still a small positive number a
 // circuit can range-check. A rating's value is its 1.0 to 10.0 in millionths.
@@ -32,14 +32,14 @@ import { poseidon6 } from 'poseidon-lite/poseidon6'
 
 import { fieldHash, scopeOf } from '../../../forest/registry/client/src/field.ts'
 
-export const STATEMENT_HEADER = 'forest.foundation/index/v1/score'
-export const DOMAIN = fieldHash('forest.foundation/index/v1/score')
-export const DID_NS = 'forest.foundation/index/v1/did/'
+export const STATEMENT_HEADER = 'forest.foundation/index/v2/score'
+export const DOMAIN = fieldHash('forest.foundation/index/v2/score')
+export const PROFILE_NS = 'forest.foundation/index/v2/profile/'
 export const KIND = { uniqueness: 1n, standing: 2n, rating: 3n } as const
 export const VALUE_OFFSET = 1n << 63n
 
 export type Kind = keyof typeof KIND
-export type Statement = { kind: Kind; did: string; scope: string; value: bigint; at: bigint }
+export type Statement = { kind: Kind; profile: string; label: string; value: bigint; at: bigint }
 
 export type IndexKeys = {
   ed25519: { secret: Uint8Array; publicKey: Uint8Array }
@@ -71,8 +71,8 @@ export function statementText(s: Statement): string {
   return [
     STATEMENT_HEADER,
     `kind ${s.kind}`,
-    `did ${s.did}`,
-    `scope ${s.scope}`,
+    `profile ${s.profile}`,
+    `label ${s.label}`,
     `value ${s.value}`,
     `at ${s.at}`,
   ].join('\n')
@@ -88,15 +88,15 @@ export function parseStatement(text: string): Statement {
   }
   const kind = field(1, 'kind')
   if (!Object.hasOwn(KIND, kind)) throw new Error('unknown kind')
-  return { kind: kind as Kind, did: field(2, 'did'), scope: field(3, 'scope'), value: BigInt(field(4, 'value')), at: BigInt(field(5, 'at')) }
+  return { kind: kind as Kind, profile: field(2, 'profile'), label: field(3, 'label'), value: BigInt(field(4, 'value')), at: BigInt(field(5, 'at')) }
 }
 
 export function messageOf(s: Statement): bigint {
   return poseidon6([
     DOMAIN,
     KIND[s.kind],
-    fieldHash(DID_NS, s.did),
-    s.scope === '' ? 0n : scopeOf(s.scope),
+    fieldHash(PROFILE_NS, s.profile),
+    s.label === '' ? 0n : scopeOf(s.label),
     s.value + VALUE_OFFSET,
     s.at,
   ])

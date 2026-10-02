@@ -1,0 +1,24 @@
+{
+  "name": "@forest/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, stamped by the issuer, registered with the keeper's signed root through the relayer, an assistant posting through a writer key via connections, one private record, a payment through the escrow, reviews, and the index showing it.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "e2e": "node --disable-warning=ExperimentalWarning e2e.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.0",
+    "@solana/spl-token": "0.4.9",
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

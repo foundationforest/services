@@ -1,12 +1,12 @@
-// The batch: accepted commitments go onto the list together, in random order, on a timer or once
+// The batch: accepted stamps go onto the list together, in random order, on a timer or once
 // enough are waiting, so a place on the list can't be matched to a face check by when it arrived.
 //
 // A flush takes everything queued, drops what is already on the list, shuffles the rest and adds
-// them to the end of the list with one new root, in one transaction that also takes them out of
+// them to the end of the list with one new snapshot, in one transaction that also takes them out of
 // the queue. If that fails, nothing changes and everything waits for the next flush. Either way it
 // ends by rewriting the file, so no deleted row stays in it.
 //
-// It logs counts only: never a commitment, a session, a root or an error's message.
+// It logs counts only: never a stamp, a session, a root or an error's message.
 
 import { randomInt } from 'node:crypto'
 
@@ -33,7 +33,6 @@ export class Batcher {
   readonly #intervalMs: number
   readonly #log: (line: string) => void
   readonly #now: () => number
-  readonly #onAppend: () => void
   #timer: NodeJS.Timeout | undefined
   #running: Promise<void> | undefined
   #closed = false
@@ -41,7 +40,7 @@ export class Batcher {
   constructor(
     store: Store,
     list: IssuerList,
-    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number; onAppend?: () => void },
+    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number },
   ) {
     this.#store = store
     this.#list = list
@@ -49,7 +48,6 @@ export class Batcher {
     this.#intervalMs = options.intervalMs
     this.#log = options.log ?? ((line) => console.log(line))
     this.#now = options.now ?? Date.now
-    this.#onAppend = options.onAppend ?? (() => {})
   }
 
   /** The timer: a flush every interval, whatever is waiting. */
@@ -57,7 +55,7 @@ export class Batcher {
     this.#timer = setInterval(() => void this.flush(), this.#intervalMs)
   }
 
-  /** After each accepted commitment: flush once enough are waiting. */
+  /** After each accepted stamp: flush once enough are waiting. */
   poke(): void {
     if (this.#store.count() >= this.#max) void this.flush()
   }
@@ -90,12 +88,11 @@ export class Batcher {
       const pending = this.#store.queued()
       waiting = pending.length
       if (waiting === 0) return
-      // A commitment can be queued again while a batch lists it (a submit waiting on Didit
-      // meanwhile): it leaves the queue without being added twice.
-      const added = shuffle(pending.filter((c) => !this.#list.has(c)))
+      // A stamp can be queued again while a batch lists it (a submit waiting on Didit meanwhile): it
+      // leaves the queue without being added twice.
+      const added = shuffle(pending.filter((s) => !this.#list.has(s)))
       this.#list.append(added, pending, this.#now())
       this.#log(`issuer: batch of ${added.length} added to the list`)
-      if (added.length) this.#onAppend()
     } catch (error) {
       this.#log(`issuer: batch of ${waiting} not added (${errorKind(error)}); all wait`)
     } finally {

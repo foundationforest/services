@@ -1,4 +1,4 @@
-// The index runs as two processes that share one database (HOSTING.md):
+// The index runs as two processes that share one database (README.md, "Two processes"):
 //
 //   node src/main.ts readers   always on: migrations, both readers, the recompute; the only one
 //                              that holds the signing seed and writes. No port.
@@ -11,14 +11,9 @@
 import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
-import { Connection } from '@solana/web3.js'
-
-import { ChainReader, type Program } from './chain/poll.ts'
-import { ESCROW_PROGRAM_ID, ESCROW_V2_PROGRAM_ID } from './chain/escrow.ts'
-import { REGISTRY_PROGRAM_ID } from './chain/registry.ts'
+import { ChainReader } from './chain/poll.ts'
 import { type Config, loadConfig } from './config.ts'
 import { type Db, createPool, migrate } from './db.ts'
-import { RootsReader } from './issuers.ts'
 import { Directory } from './markets.ts'
 import { HostReader } from './records/hosts.ts'
 import { Scorer, recompute } from './scores/run.ts'
@@ -31,8 +26,8 @@ type Opts = {
 }
 
 async function loadDirectory(config: Config, onError: (err: unknown) => void): Promise<Directory> {
-  const directory = await Directory.fetch(config.marketsUrl)
-  for (const r of directory.refused) onError(new Error(`market file ${r.file} refused: ${r.errors.join('; ')}`))
+  const directory = await Directory.fetch(config.markets)
+  for (const r of directory.refused) onError(new Error(`market ${r.market} refused: ${r.errors.join('; ')}`))
   return directory
 }
 
@@ -41,11 +36,10 @@ export type Readers = {
   scorer: Scorer
   chain: ChainReader | null
   records: HostReader | null
-  roots: RootsReader
   stop: () => Promise<void>
 }
 
-/** Migrations, the public keys for the pages, the three readers (hosts, chain, issuers' roots) and the recompute, on `db`. */
+/** Migrations, the public keys for the pages, the two readers (hosts, chain) and the recompute, on `db`. */
 export async function startReaders(db: Db, config: Config, opts: Opts = {}): Promise<Readers> {
   const onError = opts.onError ?? ((err: unknown) => console.error(err))
   if (!config.signingSeed) throw new Error('the readers sign scores: INDEX_SIGNING_SEED is required')
@@ -62,29 +56,29 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   scorer.onError = onError
   await scorer.now()
 
-  const roots = new RootsReader({
-    db,
-    issuers: config.issuers,
-    chain: config.rpcUrl ? { connection: new Connection(config.rpcUrl, config.chainCommitment), commitment: config.chainCommitment } : null,
-    onChange: () => scorer.schedule(),
-    onError,
-  })
-  roots.start(config.pollMs)
-
+  const keepers = Object.keys(config.keepers)
   let records: HostReader | null = null
   if (config.hosts.length) {
-    records = new HostReader({ db, hosts: config.hosts, issuers: Object.keys(config.issuers), onChange: () => scorer.schedule(), onError })
+    records = new HostReader({ db, hosts: config.hosts, keepers, onChange: () => scorer.schedule(), onError })
     await records.start(config.pollMs)
   }
 
   let chain: ChainReader | null = null
   if (config.rpcUrl) {
-    const programs: Program[] = [
-      { id: config.registryProgramId ?? REGISTRY_PROGRAM_ID, kind: 'registry' },
-      { id: config.escrowProgramId ?? ESCROW_PROGRAM_ID, kind: 'escrow' },
-      { id: config.escrowV2ProgramId ?? ESCROW_V2_PROGRAM_ID, kind: 'escrowV2' },
-    ]
-    chain = new ChainReader(db, config.rpcUrl, programs, () => scorer.schedule(), config.chainCommitment, onError)
+    chain = new ChainReader({
+      db,
+      rpcUrl: config.rpcUrl,
+      registry: config.registryProgramId,
+      escrow: config.escrowProgramId,
+      keepers,
+      // A profile with a new row: what its hosts already gave this index is stored now.
+      onChange: (profiles) => {
+        if (profiles.length && records) void records.merge(profiles).catch(onError)
+        scorer.schedule()
+      },
+      commitment: config.chainCommitment,
+      onError,
+    })
     chain.start(config.pollMs)
   }
 
@@ -93,11 +87,9 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
     scorer,
     chain,
     records,
-    roots,
     stop: async () => {
       chain?.stop()
       records?.stop()
-      roots.stop()
       scorer.stop()
     },
   }

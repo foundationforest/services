@@ -15,12 +15,12 @@ export type View = { urls: Urls; currencies: CurrencyConfig }
 // -----------------------------------------------------------------------------------------------
 
 /** A profile's two numbers, side by side: never one number. */
-function numbersLine(n: Numbers, badge: Raw | null = null): Raw {
-  return html`<p class="row small">${badge ?? ''}<span>${w.rating(n.rating)}</span><span>Standing <span class="score">${w.score(n.standing)}</span></span></p>`
+function numbersLine(n: Numbers, realPerson: Raw | null = null): Raw {
+  return html`<p class="row small">${realPerson ?? ''}<span>${w.rating(n.rating)}</span><span>Standing <span class="score">${w.score(n.standing)}</span></span></p>`
 }
 
-function badgeWord(o: Offer): Raw {
-  return o.uniqueness > 0 ? html`<span>${w.BADGE}</span>` : html`<span class="muted">No real-person badge counted in this market</span>`
+function realPersonWord(o: Offer): Raw {
+  return o.uniqueness > 0 ? html`<span>${w.REAL_PERSON}</span>` : html`<span class="muted">Not counted as a verified real person in this market</span>`
 }
 
 /** Where an offer happens, in words: online, a place and how close the point is to it, or nothing. */
@@ -34,7 +34,7 @@ function offerCard(v: View, o: Offer, showSeller: boolean): Raw {
   const place = where(o)
   const price = w.price(o.price, v.currencies)
   return html`<li>
-${showSeller ? html`<h3><a href="${o.profileUrl}">${o.name ?? 'A profile with no name'}</a></h3>${numbersLine(o, badgeWord(o))}` : ''}
+${showSeller ? html`<h3><a href="${o.profileUrl}">${o.name ?? 'A profile with no name'}</a></h3>${numbersLine(o, realPersonWord(o))}` : ''}
 ${!showSeller && o.marketUrl ? html`<p class="small"><a href="${o.marketUrl}">${w.title(o.market!)}</a></p>` : ''}
 <p>${o.description}</p>
 <p class="row">${price ? html`<strong>${price}</strong>` : ''}${place ? html`<span class="muted">${place}</span>` : ''}${o.availability ? html`<span class="muted">${o.availability}</span>` : ''}</p>
@@ -79,7 +79,7 @@ function nearLine(near: Near | null): Raw | string {
 
 export function homePage(v: View, m: HomeModel): string {
   const body = html`<h1>Find people you can trust</h1>
-<p>A badge here means one real person, checked once by face, one badge per market. Offers, reviews and payment records are public, and nobody stands in the middle.</p>
+<p>A verified real person here was checked once by face, and counts once per market. Offers, reviews and payment records are public, and nobody stands in the middle.</p>
 ${m.folders.length === 0 ? html`<p class="muted">No markets yet.</p>` : ''}
 ${m.folders.map((f) => html`<h2><a href="${f.url}">${w.title(f.folder)}</a></h2>${marketList(f.markets)}`)}`
   return layout(v.urls, { title: 'Forest: find people you can trust', description: 'Offers from verified real people, with reviews backed by payments. Open to everyone, no sign-in.', url: m.url, json: m.json, jsonLd: homeLd(m) }, body)
@@ -97,7 +97,7 @@ export function marketPage(v: View, m: MarketModel): string {
   const body = html`<p class="small"><a href="${m.folderUrl}">${w.title(m.market.folder)}</a></p>
 <h1>${name}</h1>
 <p>${m.market.description}</p>
-<p class="small muted">${w.plural(m.counts.offers, 'offer')} · ${w.plural(m.counts.requests, 'request')} · ${w.plural(m.counts.badgedProfiles, 'verified real person', 'verified real people')}</p>
+<p class="small muted">${w.plural(m.counts.offers, 'offer')} · ${w.plural(m.counts.requests, 'request')} · ${w.plural(m.counts.realPeople, 'verified real person', 'verified real people')}</p>
 <h2>How deals go</h2>
 ${m.market.howDealsGo.split(/\n+/).map((line) => html`<p>${line}</p>`)}
 <h2>Offers</h2>
@@ -111,9 +111,9 @@ ${m.next ? html`<p><a href="${m.next}">More offers</a></p>` : ''}`
 
 export function profilePage(v: View, m: ProfileModel): string {
   const p = m.profile
-  const counted = m.badges.filter((b) => b.counted)
-  const uncounted = m.badges.filter((b) => !b.counted)
-  const uniq = new Map(m.scores.uniqueness.map((s) => [s.scope, s.value]))
+  const counted = m.stamps.filter((b) => b.counted)
+  const uncounted = m.stamps.filter((b) => !b.counted)
+  const uniq = new Map(m.scores.uniqueness.map((s) => [s.label, s.value]))
   const t = m.scores.standing
   const details = (t?.details ?? { reviews: { received: 0, counted: 0, withReceipt: 0 } }) as { reviews: { received: number; counted: number; withReceipt: number } }
   const rating = { value: m.scores.rating?.value ?? null, reviews: (m.scores.rating?.details as { reviews: number } | undefined)?.reviews ?? 0 }
@@ -125,13 +125,14 @@ ${p.contact ? html`<p><strong>Contact:</strong> ${p.contact}</p>` : ''}
 
 <h2>Real person</h2>
 ${counted.length
-    ? html`<ul class="cards">${counted.map(
-        (b) => html`<li><h3>${w.BADGE}</h3>
-<p>In <a href="${b.marketUrl}">${w.title(b.market)}</a>${b.side ? `, as ${b.side}` : ''}${b.registeredAt ? ` · since ${w.date(b.registeredAt)}` : ''}</p>
-<p class="small muted">Vouched for by ${w.vouchers(b.issuers.map((i) => i.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(b.scope) ?? 0)}</span></p></li>`,
-      )}</ul>`
-    : html`<p class="muted">No real-person badge counted for this profile.</p>`}
-${uncounted.map((b) => html`<p class="small warn">A badge for ${w.title(b.market)}: ${w.badgeWhyNot(b.why)}</p>`)}
+    ? html`<ul class="cards">${[...new Set(counted.map((b) => b.label))].map((label) => {
+        const b = counted.find((x) => x.label === label)!
+        return html`<li><h3>${w.REAL_PERSON}</h3>
+<p>In <a href="${b.marketUrl}">${w.title(b.market)}</a>${b.side ? `, as ${b.side}` : ''}</p>
+<p class="small muted">Checked by ${w.checkedBy(counted.filter((x) => x.label === label).map((x) => x.keeper.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(label) ?? 0)}</span></p></li>`
+      })}</ul>`
+    : html`<p class="muted">Not counted as a verified real person.</p>`}
+${uncounted.map((b) => html`<p class="small warn">Registered for ${w.title(b.market)}: ${w.stampWhyNot(b.why)}</p>`)}
 
 <h2>Rating</h2>
 <p><span class="score">${rating.value === null ? 'None yet' : `${w.outOf10(rating.value)} of 10`}</span> <span class="muted">${rating.value === null ? 'No review that counts gives an overall rating yet.' : `from ${w.plural(rating.reviews, 'review')}`}</span></p>
@@ -149,9 +150,7 @@ ${m.requests.length ? html`<h2>Looking for</h2><ul class="cards">${m.requests.ma
 ${m.reviews.received.length ? html`<ul class="cards">${m.reviews.received.map((r) => reviewCard(r, 'author'))}</ul>` : html`<p class="muted">No reviews yet.</p>`}
 ${m.reviews.given.length ? html`<h2>Reviews they wrote</h2><ul class="cards">${m.reviews.given.map((r) => reviewCard(r, 'subject'))}</ul>` : ''}
 
-${m.credentials.length ? html`<h2>Credentials</h2><ul class="cards">${m.credentials.map((c) => html`<li><p>From <span class="id">${c.issuer}</span>${c.createdAt ? ` · ${w.date(c.createdAt)}` : ''}</p></li>`)}</ul>` : ''}
-
-<p class="small muted">Permanent ID: <span class="id">${m.did}</span>${p.createdAt ? ` · profile made ${w.date(p.createdAt)}` : ''}</p>`
+<p class="small muted">Permanent ID: <span class="id">${m.address}</span>${p.createdAt ? ` · profile made ${w.date(p.createdAt)}` : ''}</p>`
   return layout(v.urls, { title: `${p.name} · Forest`, description: p.about ?? `${p.name} on Forest.`, url: m.url, json: m.json, jsonLd: profileLd(m, v.currencies) }, body)
 }
 
@@ -222,7 +221,6 @@ const PAY_CHECK: Record<PayModel['check'], string> = {
   differs: 'This link doesn’t match the offer it names: its price or terms were changed.',
   notLive: 'This offer isn’t open any more.',
   noPrice: 'This offer names no price.',
-  noKey: 'This seller hasn’t named how to be paid yet.',
   notFound: 'This index has no offer at the address in this link.',
   invalid: 'This isn’t a complete pay link.',
 }

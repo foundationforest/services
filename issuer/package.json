@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "The foundation's issuer: a passed Didit face check to an identity commitment on its list, added in shuffled batches; the list and its signed roots published as two files.",
+  "description": "The foundation's issuer: the keeper of the human list. A passed Didit face check puts a stamp on its list, in shuffled batches; the list and its snapshots, each signed with the keeper key, are published as one file.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/chain.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

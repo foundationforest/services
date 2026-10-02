@@ -5,37 +5,26 @@
 // Everything is recomputed each time. That is fine at this size; an incremental recompute is
 // later work (README.md, "Limits").
 
-import type { Config, IssuerConfig } from '../config.ts'
+import { COUNTED } from '../chain/registry.ts'
+import type { Config, KeeperConfig } from '../config.ts'
 import type { Db } from '../db.ts'
-import { checkMemberships } from '../issuers.ts'
 import type { Directory } from '../markets.ts'
 import { type Inputs, type Scores, compute, toMicro } from './compute.ts'
 import { type IndexKeys, type Kind, sign } from './sign.ts'
 
-/**
- * Badges: each line once for every trusted issuer vouching for it, by its root or by a membership
- * that checked. A line no trusted issuer vouches for is no badge here.
- */
-export const BADGES_SQL = `
-  select l.did, l.label as scope, r.issuer
-  from lines l join issuer_roots r on r.root = l.root and r.issuer = any($1)
-  union
-  select l.did, l.label as scope, m.issuer
-  from memberships m join lines l on l.code = m.code and l.did = m.did
-  where m.status = 'valid' and m.issuer = any($1)`
-
-export async function loadInputs(db: Db, issuers: IssuerConfig): Promise<Inputs> {
-  const [profiles, badges, receipts, reviews] = await Promise.all([
-    db.query('select did, wallet, market, role from profiles'),
-    db.query(BADGES_SQL, [Object.keys(issuers)]),
+export async function loadInputs(db: Db, keepers: KeeperConfig, escrow: string): Promise<Inputs> {
+  const [profiles, stamps, receipts, reviews] = await Promise.all([
+    db.query('select address, market, role from profiles'),
+    db.query(`select r.profile, r.label, r.keeper from rows r where ${COUNTED}`, [Object.keys(keepers)]),
     db.query(
-      `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts`,
+      `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts where program_id = $1`,
+      [escrow],
     ),
     db.query('select uri, reviewer, subject, overall, deal_id, created_at from reviews'),
   ])
   return {
-    profiles: profiles.rows.map((r) => ({ did: r.did, wallet: r.wallet, scope: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    badges: badges.rows.map((r) => ({ did: r.did, scope: r.scope, issuer: r.issuer })),
+    profiles: profiles.rows.map((r) => ({ address: r.address, label: r.market && r.role ? `${r.market}/${r.role}` : null })),
+    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, keeper: r.keeper })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,
@@ -57,73 +46,72 @@ export async function loadInputs(db: Db, issuers: IssuerConfig): Promise<Inputs>
   }
 }
 
-type Row = { did: string; kind: Kind; scope: string; value: bigint; details: unknown }
+type Row = { profile: string; kind: Kind; label: string; value: bigint; details: unknown }
 
 export async function recompute(
   db: Db,
   settings: { directory: Directory; config: Config; keys: IndexKeys },
   now: () => bigint = () => BigInt(Math.floor(Date.now() / 1000)),
 ): Promise<Scores> {
-  await checkMemberships(db, settings.config.issuers)
-  const inputs = await loadInputs(db, settings.config.issuers)
+  const inputs = await loadInputs(db, settings.config.keepers, settings.config.escrowProgramId)
   const scores = compute(inputs, {
     directory: settings.directory,
-    issuers: settings.config.issuers,
+    keepers: settings.config.keepers,
     scoring: settings.config.scoring,
   })
 
   const rows: Row[] = [
     ...scores.uniqueness.map((u) => ({
-      did: u.did,
+      profile: u.profile,
       kind: 'uniqueness' as const,
-      scope: u.scope,
+      label: u.label,
       value: toMicro(u.value),
-      details: { market: u.market, role: u.role, issuers: u.issuers },
+      details: { market: u.market, role: u.role, keepers: u.keepers },
     })),
     ...scores.standing.map((t) => ({
-      did: t.did,
+      profile: t.profile,
       kind: 'standing' as const,
-      scope: '',
+      label: '',
       value: toMicro(t.value),
       details: { reviews: t.reviews, rounds: scores.rounds },
     })),
     // No counted review rates: no rating, rather than a rating of zero.
     ...scores.rating
       .filter((r) => r.value !== null)
-      .map((r) => ({ did: r.did, kind: 'rating' as const, scope: '', value: toMicro(r.value!), details: { reviews: r.reviews } })),
+      .map((r) => ({ profile: r.profile, kind: 'rating' as const, label: '', value: toMicro(r.value!), details: { reviews: r.reviews } })),
   ]
 
   const client = await db.connect()
   try {
     await client.query('begin')
-    const { rows: existing } = await client.query('select did, kind, scope, value_micro from scores for update')
-    const old = new Map(existing.map((r) => [`${r.did}\u0000${r.kind}\u0000${r.scope}`, BigInt(r.value_micro)]))
+    const { rows: existing } = await client.query('select profile, kind, label, value_micro from scores for update')
+    const old = new Map(existing.map((r) => [`${r.profile}\u0000${r.kind}\u0000${r.label}`, BigInt(r.value_micro)]))
     const keep = new Set<string>()
     for (const row of rows) {
-      const key = `${row.did}\u0000${row.kind}\u0000${row.scope}`
+      const key = `${row.profile}\u0000${row.kind}\u0000${row.label}`
       keep.add(key)
       if (old.get(key) === row.value) {
-        await client.query('update scores set details = $4 where did = $1 and kind = $2 and scope = $3', [
-          row.did,
+        await client.query('update scores set details = $4 where profile = $1 and kind = $2 and label = $3', [
+          row.profile,
           row.kind,
-          row.scope,
+          row.label,
           JSON.stringify(row.details),
         ])
         continue
       }
       const at = now()
-      const signed = sign({ kind: row.kind, did: row.did, scope: row.scope, value: row.value, at }, settings.keys)
+      const signed = sign({ kind: row.kind, profile: row.profile, label: row.label, value: row.value, at }, settings.keys)
       await client.query(
-        `insert into scores (did, kind, scope, value_micro, details, statement, message, sig_ed25519, sig_eddsa, computed_at)
+        `insert into scores (profile, kind, label, value_micro, details, statement, message, sig_ed25519, sig_eddsa, computed_at)
          values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         on conflict (did, kind, scope) do update set
+         on conflict (profile, kind, label) do update set
            value_micro = excluded.value_micro, details = excluded.details, statement = excluded.statement,
            message = excluded.message, sig_ed25519 = excluded.sig_ed25519, sig_eddsa = excluded.sig_eddsa,
            computed_at = excluded.computed_at`,
         [
-          row.did,
+          row.profile,
           row.kind,
-          row.scope,
+          row.label,
           row.value.toString(),
           JSON.stringify(row.details),
           signed.statement,
@@ -136,8 +124,8 @@ export async function recompute(
     }
     for (const [key] of old) {
       if (keep.has(key)) continue
-      const [did, kind, scope] = key.split('\u0000')
-      await client.query('delete from scores where did = $1 and kind = $2 and scope = $3', [did, kind, scope])
+      const [profile, kind, label] = key.split('\u0000')
+      await client.query('delete from scores where profile = $1 and kind = $2 and label = $3', [profile, kind, label])
     }
 
     await client.query('delete from review_weights')

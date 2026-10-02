@@ -13,15 +13,14 @@ export type PayModel = {
   errors: string[]
   /**
    *   matches   the link is the offer as indexed now
-   *   changed   the offer was edited since (another cid); `offer` shows it as it is now
-   *   differs   same cid, other price or terms: the link was altered
-   *   notLive   the offer expired or is no longer an offer in a directory market
+   *   changed   the offer was edited since (another record); `offer` shows it as it is now
+   *   differs   same record, other price or terms: the link was altered
+   *   notLive   the offer expired or is no longer an offer in a market this index uses
    *   noPrice   the offer names no price, so it has no Pay link
-   *   noKey     the seller's profile names no key to be paid at
    *   notFound  no offer at that address in this index
    *   invalid   not a complete link
    */
-  check: 'matches' | 'changed' | 'differs' | 'notLive' | 'noPrice' | 'noKey' | 'notFound' | 'invalid'
+  check: 'matches' | 'changed' | 'differs' | 'notLive' | 'noPrice' | 'notFound' | 'invalid'
   differences: string[]
   offer: Offer | null
 }
@@ -33,18 +32,16 @@ export async function pay(ctx: Ctx, search: URLSearchParams): Promise<PayModel> 
   const link = parsed.link
   const offer = await offerByUri(ctx, link.offer)
   // The canonical form of the same link, so the page's URL does not depend on parameter order.
-  const url = payLink(ctx.urls.base, { uri: link.offer, cid: link.cid, record: { price: link.price, terms: link.terms } })
+  const url = payLink(ctx.urls.base, { uri: link.offer, id: link.record, record: { price: link.price, terms: link.terms } })
   const out = { kind: 'pay' as const, url, json: ctx.urls.json(url), link, errors: [], differences: [] as string[], offer }
   if (!offer) return { ...out, check: 'notFound' }
-  if (offer.cid === link.cid) {
+  if (offer.id === link.record) {
     const differences = linkDiffers(link, offer)
     if (differences.length) return { ...out, check: 'differs', differences }
   }
   const live = offer.direction === 'offer' && offer.market !== null && !(offer.expires && new Date(offer.expires) <= new Date())
   if (!live) return { ...out, check: 'notLive' }
   if (!offer.price) return { ...out, check: 'noPrice' }
-  // A live offer with no pay link is one whose profile names no key.
-  if (!offer.payLink) return { ...out, check: 'noKey' }
-  if (offer.cid !== link.cid) return { ...out, check: 'changed', differences: linkDiffers(link, offer) }
+  if (offer.id !== link.record) return { ...out, check: 'changed', differences: linkDiffers(link, offer) }
   return { ...out, check: 'matches' }
 }

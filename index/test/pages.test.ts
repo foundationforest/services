@@ -8,9 +8,10 @@
 //   6. every URL in the read skill resolves;
 //   7. no crypto word anywhere a person reads;
 //   8. the Pay link reads back to the offer's own terms, and the pay page checks it;
-//   9. markets v1: two numbers, one scope per profile, labels, near, no price, review fields, and no
-//      word of the index's own on an offer's or a receipt's options (a market's own text may say
-//      anything).
+//   9. markets: two numbers, one label per profile, role names, near, no price, review fields, and
+//      no word of the index's own on an offer's or a receipt's options (a market's own text may say
+//      anything);
+//  10. records: the writer rule, by forest's view, and private records left alone.
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
@@ -23,7 +24,7 @@ import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { DEAL, EXCHANGE, FOLDER, FOUNDATION_ISSUER, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PHOTO, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
+import { BUYER, DEAL, EXCHANGE, FOLDER, KEEPER, KEEPER_NAME, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -63,7 +64,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
     }
     const json = async (url: string) => JSON.parse((await get(url)).text)
 
-    const anaTwin = await json(`/profiles/${ana.did}.json`)
+    const anaTwin = await json(`/profiles/${ana.address}.json`)
     const portuguese = anaTwin.offers.find((o: any) => o.uri === OFFERS.portuguese.uri)
     const spanish = anaTwin.offers.find((o: any) => o.uri === OFFERS.spanish.uri)
     const altered = new URL(portuguese.payLink)
@@ -77,7 +78,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       { path: `/markets/${MARKET}`, canonical: `${base}/markets/${MARKET}` },
       { path: `/markets/${EXCHANGE}`, canonical: `${base}/markets/${EXCHANGE}` },
       { path: `/markets/${EXCHANGE}?km=10&near=38.720,-9.14`, canonical: `${base}/markets/${EXCHANGE}?near=38.72,-9.14&km=10` },
-      ...[ana, ben, cleo, dara].map((p) => ({ path: `/profiles/${p.did}`, canonical: `${base}/profiles/${p.did}` })),
+      ...[ana, ben, cleo, dara].map((p) => ({ path: `/profiles/${p.address}`, canonical: `${base}/profiles/${p.address}` })),
       { path: `/deals/${DEAL}`, canonical: `${base}/deals/${DEAL}` },
       { path: `/deals/${MADE_UP_DEAL}`, canonical: `${base}/deals/${MADE_UP_DEAL}` },
       { path: '/search?q=portuguese', canonical: `${base}/search?q=portuguese` },
@@ -117,12 +118,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // No aliases: another spelling of a market is no market here.
       assert.equal((await get('/markets/online-tutor')).status, 404)
       assert.equal((await get('/markets/online-tutor.json')).status, 404)
-      for (const path of ['/profiles/did:key:z6MkNobody', '/markets/plumbers', '/folders/nothing', `/categories/${FOLDER}`, `/deals/${'00'.repeat(32)}`, '/nope', '/profiles/%E0%A4%A']) {
+      for (const path of ['/profiles/Nobody1111111111111111111111111111111', '/markets/plumbers', '/folders/nothing', `/categories/${FOLDER}`, `/deals/${'00'.repeat(32)}`, '/nope', '/profiles/%E0%A4%A']) {
         const res = await get(path)
         assert.equal(res.status, 404, path)
         assert.equal(res.headers.get('content-type'), 'text/html; charset=utf-8', path)
       }
-      const missing = await get('/profiles/did:key:z6MkNobody.json')
+      const missing = await get('/profiles/Nobody1111111111111111111111111111111.json')
       assert.equal(missing.status, 404)
       assert.equal(JSON.parse(missing.text).error, 'NotFound')
       assert.deepEqual(JSON.parse((await get('/search.json')).text).offers, [], 'no words, no results: the twin of the empty search page')
@@ -135,11 +136,11 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         for (const doc of jsonLd(rendered.get(p.path)!)) assert.deepEqual(validateJsonLd(doc), [], p.path)
       }
       // What a shopping AI reads from Ana's page.
-      const g: any[] = jsonLd(rendered.get(`/profiles/${ana.did}`)!)[0]['@graph']
+      const g: any[] = jsonLd(rendered.get(`/profiles/${ana.address}`)!)[0]['@graph']
       const person = g.find((n) => n['@type'] === 'Person')
       assert.equal(person.name, ana.name)
-      assert.equal(person.identifier, ana.did)
-      assert.deepEqual(person.makesOffer.map((o: any) => [o.price, o.priceCurrency, o.priceSpecification.unitText]), [['25', 'USD', 'hour'], ['12.50', 'USD', 'hour']])
+      assert.equal(person.identifier, ana.address)
+      assert.deepEqual(person.makesOffer.map((o: any) => [o.price, o.priceCurrency, o.priceSpecification.unitText]), [['20', 'USD', 'hour'], ['25', 'USD', 'hour'], ['12.50', 'USD', 'hour']])
       const rating = g.find((n) => n['@type'] === 'AggregateRating')
       assert.equal(rating.ratingValue, Math.round(anaTwin.scores.rating.value * 10) / 10, 'the weighted overall')
       assert.deepEqual([rating.bestRating, rating.worstRating, rating.reviewCount], [10, 1, 2])
@@ -156,7 +157,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.equal(exchange.price, undefined)
       assert.equal(exchange.itemOffered.areaServed, LISBON.area)
       // Cleo has no reviews: no rating at all rather than an empty one, or a zero.
-      const cleoGraph: any[] = jsonLd(rendered.get(`/profiles/${cleo.did}`)!)[0]['@graph']
+      const cleoGraph: any[] = jsonLd(rendered.get(`/profiles/${cleo.address}`)!)[0]['@graph']
       assert.equal(cleoGraph.find((n) => n['@type'] === 'AggregateRating'), undefined)
       const pay: any = jsonLd(rendered.get(`/deals/${DEAL}`)!)[0]['@graph'].find((n: any) => n['@type'] === 'PayAction')
       assert.deepEqual([pay.agent.name, pay.recipient.name, pay.price, pay.priceCurrency], [ben.name, ana.name, '25', 'USD'])
@@ -193,7 +194,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
             if (twin.profile.about) facts.push(twin.profile.about)
             if (twin.profile.contact) facts.push(twin.profile.contact)
             for (const u of twin.scores.uniqueness) facts.push(w.percent(u.value))
-            for (const b of twin.badges) facts.push(w.title(b.market), ...(b.counted ? [w.BADGE] : [w.badgeWhyNot(b.why)]))
+            for (const b of twin.stamps) facts.push(w.title(b.market), ...(b.counted ? [w.REAL_PERSON] : [w.stampWhyNot(b.why)]))
             twin.offers.forEach(offer)
             for (const r of [...twin.reviews.received, ...twin.reviews.given]) {
               facts.push(r.text, w.ratings(r.ratings), w.evidence(r.evidence.kind, r.evidence.note), ...Object.entries(r.fields).map(([k, x]) => w.field(k, x)))
@@ -220,9 +221,9 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         if (twin.kind !== 'search' || twin.q) assert.ok(facts.length > 0, `${p.path}: something to compare`)
       }
       // The numbers themselves. Ana and Ben vouch for each other on a deal both said yes to; Cleo, a
-      // badged stranger (her weight 1) with a made-up deal id (0.05), takes 0.05 off Ana's.
+      // counted stranger (her weight 1) with a made-up deal id (0.05), takes 0.05 off Ana's.
       const ta = anaTwin.scores.standing.value
-      const tb = (await json(`/profiles/${ben.did}.json`)).scores.standing.value
+      const tb = (await json(`/profiles/${ben.address}.json`)).scores.standing.value
       assert.ok(Math.abs(tb - (1 + ta / (ta + 1))) < 1e-6, `Ben ${tb}`)
       assert.ok(Math.abs(ta - (1 + tb / (tb + 1) - 0.05)) < 1e-6, `Ana ${ta}`)
       assert.equal(cur('25', portuguese.price.mint), '$25')
@@ -287,16 +288,16 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
     await t.test('8. the Pay link reads back to the offer’s own terms', async () => {
       const read = parsePayLink(new URL(spanish.payLink).searchParams)
       assert.ok(read.ok)
-      assert.deepEqual(read.link, { v: 1, offer: OFFERS.spanish.uri, cid: OFFERS.spanish.cid, price: spanish.price, terms: { timer: { days: 30, to: 'buyer' } } })
-      assert.equal(new URL(portuguese.payLink).searchParams.has('seller'), false, 'no key in the link: the app looks it up')
+      assert.deepEqual(read.link, { v: 2, offer: OFFERS.spanish.uri, record: OFFERS.spanish.id, price: spanish.price, terms: { timer: { days: 30, to: 'buyer' } } })
+      assert.equal(new URL(portuguese.payLink).searchParams.has('seller'), false, 'no other key in the link: the seller is the profile the offer names')
       const check = async (u: string) => (await json(`${base}/pay.json${new URL(u, base).search}`)).check
       assert.equal(await check(portuguese.payLink), 'matches')
       assert.equal(await check(altered.toString()), 'differs')
       const moved = new URL(portuguese.payLink)
-      moved.searchParams.set('cid', 'e'.repeat(64))
+      moved.searchParams.set('record', 'e'.repeat(64))
       assert.equal(await check(moved.toString()), 'changed')
       const gone = new URL(portuguese.payLink)
-      gone.searchParams.set('offer', `${ben.did}/offer/nothing`)
+      gone.searchParams.set('offer', `${ben.address}/offer/nothing`)
       assert.equal(await check(gone.toString()), 'notFound')
       assert.equal(await check(`${base}/pay?v=1`), 'invalid')
       const alteredPage = readable(rendered.get(altered.pathname + altered.search)!)
@@ -304,7 +305,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.doesNotMatch(alteredPage, /Don’t pay/, 'the index shows; the app advises')
     })
 
-    await t.test('9. markets v1: two numbers, one scope per profile, labels, near, no price, review fields', async () => {
+    await t.test('9. markets: two numbers, one label per profile, role names, near, no price, review fields', async () => {
       // An offer's and a receipt's options are plain data in the twins; the index's own words say
       // nothing about them, not even for Ana's offer whose timer sends the money back to the buyer.
       // A market's "how deals go" is the market file's text, content that may say anything: the
@@ -321,9 +322,9 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       for (const o of ['releasedToSeller', 'releasedToBuyer', 'split', 'arbitrated', 'timerReleased', 'unknown']) {
         assert.doesNotMatch(w.outcome(o, { buyer: 'Ben', seller: 'Ana', toSeller: '$1.00', toBuyer: '$2.00' }), /arbiter|timer/i, o)
       }
-      const anaPage = readable(rendered.get(`/profiles/${ana.did}`)!)
+      const anaPage = readable(rendered.get(`/profiles/${ana.address}`)!)
       assert.match(anaPage, /Tutor in\s+Online tutors/, 'the profile’s one market and side, in the market’s words')
-      assert.match(anaPage, /In Online tutors\s*, as tutor/, 'the badge line uses the label')
+      assert.match(anaPage, /In Online tutors\s*, as tutor/, 'the real-person line uses the role name')
       assert.deepEqual([anaTwin.profile.market, anaTwin.profile.role, anaTwin.profile.side], [MARKET, 'seller', 'tutor'])
       const deal = await json(`/deals/${DEAL}.json`)
       assert.equal('options' in deal.receipt, false)
@@ -332,72 +333,72 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.deepEqual(deal.receipt.sides, { seller: 'tutor', buyer: 'student' })
       assert.ok(readable(rendered.get(`/deals/${DEAL}`)!).includes('The tutor asked for this payment'))
 
-      // Escrow v2's objection, a fact on the receipt: which side, and when; on the deal and on the
-      // profile's reviews that name it. It changes no score.
+      // The objection, a fact on the receipt: which side, and when; on the deal and on the profile's
+      // reviews that name it. It changes no score.
       assert.deepEqual(deal.receipt.objection, { by: 'buyer', side: 'student', at: '2026-09-06T10:00:00.000Z' })
       assert.match(readable(rendered.get(`/deals/${DEAL}`)!), /Objection Ben Okafor · 6 Sept 2026/)
       assert.ok(anaPage.includes('The student objected on 6 Sept 2026.'))
-      assert.deepEqual(anaTwin.reviews.received.find((r: any) => r.reviewer === ben.did).objection, deal.receipt.objection)
+      assert.deepEqual(anaTwin.reviews.received.find((r: any) => r.reviewer === ben.address).objection, deal.receipt.objection)
 
       // Two numbers for every profile an offer or a receipt shows: a rating out of 10, and standing.
       assert.equal(anaTwin.scores.rating.details.reviews, 2)
-      const wBen = 1 + (await json(`/profiles/${ben.did}.json`)).scores.standing.value / (1 + (await json(`/profiles/${ben.did}.json`)).scores.standing.value)
+      const wBen = 1 + (await json(`/profiles/${ben.address}.json`)).scores.standing.value / (1 + (await json(`/profiles/${ben.address}.json`)).scores.standing.value)
       assert.ok(Math.abs(anaTwin.scores.rating.value - (10 * wBen + 0.05) / (wBen + 0.05)) < 1e-5, `Ana rated ${anaTwin.scores.rating.value}`)
       assert.deepEqual(portuguese.rating, { value: anaTwin.scores.rating.value, reviews: 2 })
       assert.equal(portuguese.standing, anaTwin.scores.standing.value)
       assert.deepEqual(deal.receipt.sellerProfiles[0].rating, portuguese.rating)
-      assert.equal((await json(`/profiles/${cleo.did}.json`)).scores.rating, null, 'no review, no rating')
-      assert.ok(readable(rendered.get(`/profiles/${cleo.did}`)!).includes('No review that counts gives an overall rating yet.'))
+      assert.equal((await json(`/profiles/${cleo.address}.json`)).scores.rating, null, 'no review, no rating')
+      assert.ok(readable(rendered.get(`/profiles/${cleo.address}`)!).includes('No review that counts gives an overall rating yet.'))
 
       // A review's market is its subject's: Ana lives in online-tutors, whose file adds `sessions`.
-      const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.did)
+      const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.address)
       assert.deepEqual([byBen.market, byBen.fields, byBen.ratings, byBen.overall], [MARKET, { sessions: 8 }, { overall: 10, patience: 10 }, 10])
       assert.deepEqual(byBen.media, [{ sha256: PHOTO.sha256, mimeType: 'image/jpeg' }])
       assert.ok(anaPage.includes('Overall 10.0 of 10 · Patience 10.0 of 10'))
       assert.ok(anaPage.includes('Sessions: 8 · With 1 photo'))
-      // One scope per profile: Ben lives in online-tutors as a buyer. His badge in the language
-      // exchange is under another scope, so it does not count for this profile; that market would
+      // One label per profile: Ben lives in online-tutors as a buyer. His row in the language
+      // exchange is under another label, so it does not count for this profile; that market would
       // be another profile, as Dara's is. A review of him takes online-tutors' review fields.
-      const benTwin = await json(`/profiles/${ben.did}.json`)
+      const benTwin = await json(`/profiles/${ben.address}.json`)
       assert.equal(benTwin.reviews.received[0].market, MARKET)
-      // A badge is a line, vouched for by each trusted issuer whose published roots hold its root.
-      assert.deepEqual(anaTwin.badges.map((b: any) => [b.scope, b.counted, b.issuers]), [
-        [`${MARKET}/seller`, true, [{ key: FOUNDATION_ISSUER, name: 'Forest Foundation (test key)', weight: 1, via: 'line' }]],
+      // A row counts when its keeper is one this index trusts and the keeper's signature checks.
+      assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.keeper]), [
+        [SELLER, true, { address: KEEPER.address, name: KEEPER_NAME, weight: 1 }],
       ])
-      assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.scope, u.value, u.details.issuers]), [
-        [`${MARKET}/seller`, 1, [{ issuer: FOUNDATION_ISSUER, name: 'Forest Foundation (test key)', weight: 1 }]],
+      assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.label, u.value, u.details.keepers]), [
+        [SELLER, 1, [{ keeper: KEEPER.address, name: KEEPER_NAME, weight: 1 }]],
       ])
-      assert.ok(anaPage.includes('Vouched for by Forest Foundation (test key).'))
-      // Eve's line: no issuer this index trusts vouches for it, so it is no badge, and nothing of
-      // hers is kept: no page, no offer, no review, no count.
-      assert.equal((await get(`/profiles/${eve.did}`)).status, 404)
-      assert.equal((await get(`/profiles/${eve.did}.json`)).status, 404)
-      assert.equal(anaTwin.reviews.received.some((r: any) => r.reviewer === eve.did), false)
-      assert.equal((await json(`/markets/${MARKET}.json`)).offers.some((o: any) => o.did === eve.did), false)
-      assert.deepEqual((await json(`/markets/${MARKET}.json`)).counts, { offers: 2, requests: 0, badgedProfiles: 3 }, 'Ana, Ben and Cleo, badged in this market (buyers too); not Eve')
-      assert.equal(readable(rendered.get('/sitemap.xml') ?? (await get('/sitemap.xml')).text).includes(eve.did), false)
+      assert.ok(anaPage.includes(`Checked by ${KEEPER_NAME}.`))
+      // Eve's row: its keeper's signature does not check, so it counts for nothing, and nothing of
+      // hers is stored: no page, no offer, no review, no count.
+      assert.equal((await get(`/profiles/${eve.address}`)).status, 404)
+      assert.equal((await get(`/profiles/${eve.address}.json`)).status, 404)
+      assert.equal(anaTwin.reviews.received.some((r: any) => r.reviewer === eve.address), false)
+      assert.equal((await json(`/markets/${MARKET}.json`)).offers.some((o: any) => o.profile === eve.address), false)
+      assert.deepEqual((await json(`/markets/${MARKET}.json`)).counts, { offers: 3, requests: 0, realPeople: 3 }, 'Ana, Ben and Cleo, counted in this market (buyers too); not Eve')
+      assert.equal(readable(rendered.get('/sitemap.xml') ?? (await get('/sitemap.xml')).text).includes(eve.address), false)
       assert.deepEqual(
-        benTwin.badges.map((b: any) => [b.scope, b.counted, b.why, b.side]).sort(),
-        [[`${EXCHANGE}/peer`, false, 'notProfileScope', null], [`${MARKET}/buyer`, true, null, 'student']],
+        benTwin.stamps.map((b: any) => [b.label, b.counted, b.why, b.side]).sort(),
+        [[PEER, false, 'notTheProfilesLabel', null], [BUYER, true, null, 'student']],
       )
-      assert.deepEqual(benTwin.scores.uniqueness.map((u: any) => u.scope), [`${MARKET}/buyer`])
-      assert.ok(readable(rendered.get(`/profiles/${ben.did}`)!).includes('Not counted: registered for another market or side than the one this profile is in.'))
-      const daraTwin = await json(`/profiles/${dara.did}.json`)
-      assert.deepEqual([daraTwin.profile.side, daraTwin.scores.uniqueness.map((u: any) => u.scope)], [null, [`${EXCHANGE}/peer`]])
-      assert.match(readable(rendered.get(`/profiles/${dara.did}`)!), /In\s+Language exchange/, 'a one-sided market names no side')
+      assert.deepEqual(benTwin.scores.uniqueness.map((u: any) => u.label), [BUYER])
+      assert.ok(readable(rendered.get(`/profiles/${ben.address}`)!).includes('Not counted: registered for another market or side than the one this profile is in.'))
+      const daraTwin = await json(`/profiles/${dara.address}.json`)
+      assert.deepEqual([daraTwin.profile.side, daraTwin.scores.uniqueness.map((u: any) => u.label)], [null, [PEER]])
+      assert.match(readable(rendered.get(`/profiles/${dara.address}`)!), /In\s+Language exchange/, 'a one-sided market names no side')
 
       // An offer with no price has no Pay link; the market page says how deals go. The offer names
       // no market or side: they are Dara's profile's.
       const exchange = await json(`/markets/${EXCHANGE}.json`)
       assert.equal('money' in exchange.market, false)
       assert.deepEqual(exchange.market.roles, ['peer'])
-      assert.deepEqual(exchange.counts, { offers: 1, requests: 0, badgedProfiles: 1 })
+      assert.deepEqual(exchange.counts, { offers: 1, requests: 0, realPeople: 1 })
       const [daraOffer] = exchange.offers
       assert.deepEqual([daraOffer.uri, daraOffer.price, daraOffer.payLink, daraOffer.location], [OFFERS.exchange.uri, null, null, LISBON])
       assert.deepEqual([daraOffer.market, daraOffer.role, 'marketWritten' in daraOffer], [EXCHANGE, 'peer', false])
       assert.ok(readable(rendered.get(`/markets/${EXCHANGE}`)!).includes('Arroios, Lisbon (within 2 km)'))
       assert.equal(
-        (await json(`/pay.json?v=1&offer=${encodeURIComponent(OFFERS.exchange.uri)}&cid=${OFFERS.exchange.cid}&price.amount=1&price.mint=${portuguese.price.mint}&price.per=job`)).check,
+        (await json(`/pay.json?v=2&offer=${encodeURIComponent(OFFERS.exchange.uri)}&record=${OFFERS.exchange.id}&price.amount=1&price.mint=${portuguese.price.mint}&price.per=job`)).check,
         'differs',
         'a pay link for an offer with no price does not match it',
       )
@@ -417,6 +418,20 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.equal(JSON.parse(bad.text).error, 'BadRequest', q)
         assert.equal((await get(`/markets/${EXCHANGE}?${q}`)).status, 400, `${q}: the page too`)
       }
+    })
+
+    await t.test('10. records: the writer rule, by forest’s view, and private records left alone', async () => {
+      // The writer key wrote two offers into Ana's profile: one dated before its `until`, which
+      // counts, and one after, which does not. Neither is her own record, and the first counts in
+      // full: an offer is an offer, whoever signed it for her.
+      const uris = anaTwin.offers.map((o: any) => o.uri)
+      assert.ok(uris.includes(OFFERS.french.uri), 'the writer key’s offer from before its until')
+      assert.equal(uris.includes(`${ana.address}/offer/german`), false, 'its offer from after does not count')
+      // A private record at an offer's path: its readers open it, the index never stores it.
+      assert.equal(uris.includes(`${ana.address}/offer/private`), false)
+      assert.equal((await fixture.db.query("select count(*)::int as n from offers where uri like '%/offer/private'")).rows[0].n, 0)
+      // Every record is kept as the host served it, the ones that do not count too.
+      assert.equal((await fixture.db.query('select count(*)::int as n from host_records where profile = $1', [ana.address])).rows[0].n, 9)
     })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))

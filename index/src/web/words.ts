@@ -125,15 +125,15 @@ export function field(name: string, value: unknown): string {
 }
 
 // -----------------------------------------------------------------------------------------------
-// Badges, evidence, receipts
+// Real people, evidence, receipts
 // -----------------------------------------------------------------------------------------------
 
-export const BADGE = 'Verified real person, one per market'
+export const REAL_PERSON = 'Verified real person, one per market'
 
-/** Who vouched for a badge, by the names this index gives its issuers. */
-export function vouchers(names: (string | null)[]): string {
-  const known = names.map((n) => n ?? 'an issuer this index gives no name')
-  if (!known.length) return 'no issuer this index trusts'
+/** Who checked it, by the names this index gives the keepers it trusts. */
+export function checkedBy(names: (string | null)[]): string {
+  const known = names.map((n) => n ?? 'someone this index trusts but gives no name')
+  if (!known.length) return 'nobody this index trusts'
   return known.length === 1 ? known[0]! : `${known.slice(0, -1).join(', ')} and ${known[known.length - 1]}`
 }
 
@@ -142,13 +142,13 @@ export function objected(side: string, at: string | null): string {
   return `The ${side} objected${at ? ` on ${date(at)}` : ''}.`
 }
 
-export function badgeWhyNot(why: string | null): string {
+export function stampWhyNot(why: string | null): string {
   switch (why) {
-    case 'notInDirectory':
-      return 'Not counted: registered under a name that isn’t a market in this index’s directory.'
+    case 'notAMarketHere':
+      return 'Not counted: registered under a name that isn’t a market this index uses.'
     case 'noRole':
       return 'Not counted: registered for the market without a side, such as seller or buyer.'
-    case 'notProfileScope':
+    case 'notTheProfilesLabel':
       return 'Not counted: registered for another market or side than the one this profile is in.'
     default:
       return 'Not counted.'

@@ -1,0 +1,139 @@
+{
+  "started": "2026-10-02T18:59:03.198Z",
+  "services": {
+    "about": "What e2e runs against: the devnet services this repo deploys on Railway (each folder's README, \"On devnet\"), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the keeper the devnet index trusts (index/lists/keepers.json), the classic test dollar and the market. Devnet only.",
+    "issuer": "https://issuer-production-4976.up.railway.app",
+    "relayer": "https://relayer-production-8d40.up.railway.app",
+    "connections": "https://connections-production-ebc4.up.railway.app",
+    "host": "https://board-devnet-test-production.up.railway.app",
+    "index": "https://index-production-1b6e.up.railway.app",
+    "rpc": "https://api.devnet.solana.com",
+    "registry": "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC",
+    "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+    "keeper": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+    "testDollar": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+    "market": "tutoring"
+  },
+  "steps": {
+    "setup": {
+      "accounts": "67MpRLDiEMDEnjpjgcFGDLvC3m6wi1eZCreq1QMsjHeKLYDEDEtEEMvn578e9gGzpSTeTTqGuBhLiNUKra6QDsSf",
+      "minted": "3dUMRCbzD2TgUqVu6Vqc4dtxFD6Luj1SwzC48EvgBYy41euJ32czh5YRUHxK5GWwmQ8wMCSxrZzTSoUdD2oumMYB",
+      "seller": "5.00",
+      "buyer": "10.00"
+    },
+    "list": {
+      "keeper": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+      "stamps": 14,
+      "snapshot": {
+        "root": "22299dcad78506a94ee4ddd8dcce6df81b579324654c422e63478fb9f229509e",
+        "signature": "09c466b0b0ba849c7629d26f80ad7c329ad2d4c0f045fe03ddef1b3906a77ba28a73ca11433cabda57f9ff28fb12dd1db0f389391273946968ac1990682cef0a",
+        "size": 14,
+        "time": 1790967577558
+      }
+    },
+    "rows": {
+      "seller": {
+        "label": "tutoring/seller",
+        "row": "AujhHBbNgfZFk8z363CHDWXzUHJch3K4UYLppyDNshU4",
+        "signature": "NjY7RZfSQwgpFmDA6XF6DFpNauww2T6Jp47qdFne1Fd2TycQ7ZukDxfbwwLnch2txTj75yTvbvFDATNHQ57cSwp",
+        "charge": "1777840",
+        "bytes": 796
+      },
+      "buyer": {
+        "label": "tutoring/buyer",
+        "row": "7XaKTsuMxFZ5TFCQxT7ok6Wsk1CUZct1yPwm57o7p1ob",
+        "signature": "NzSXrk7LFspFcdv1aC4aPtx283efNqkXyLPrbAPCc8xM4VR5nj6rHH9ppr3rARpDDpu41u3EZZJNUe5TSArJfA9",
+        "charge": "1772760",
+        "bytes": 795
+      }
+    },
+    "records": {
+      "sellerWriter": "7am4FVFv87C9r9LFVDrWy9PnTCXxSmoZtmwov5RA1UtW",
+      "buyerWriter": "H2qDubZkY6BXC6qdYwbd1fW9SDC7NUcQELUMbR5oCmkZ",
+      "offer": "9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN/offer/maths"
+    },
+    "private": {
+      "path": "7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ/message/lesson",
+      "bytes": 4388,
+      "text": "Tuesday at six works for me. A devnet test message, made by e2e."
+    },
+    "deal": {
+      "escrow": "3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF",
+      "signature": "58qobxfoVx7eQXm5WBziSt6AYp5VPkup2NtEguvWP9b1rs5QqGijaNv1UsspCxTtLtQy1e43aUL4wzPRGaEvqNny",
+      "charge": "3698080",
+      "bytes": 715
+    },
+    "reviews": [
+      "7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ/review/maths",
+      "9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN/review/maths"
+    ],
+    "index": {
+      "seller": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN",
+        "stamps": [
+          {
+            "label": "tutoring/seller",
+            "counted": true,
+            "keeper": "Forest Foundation issuer (devnet)",
+            "row": "AujhHBbNgfZFk8z363CHDWXzUHJch3K4UYLppyDNshU4"
+          }
+        ],
+        "rating": 10,
+        "standing": 1.618034,
+        "offers": [
+          "9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN/offer/maths"
+        ],
+        "reviewsReceived": [
+          {
+            "uri": "7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ/review/maths",
+            "dealId": "3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "buyer": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ",
+        "stamps": [
+          {
+            "label": "tutoring/buyer",
+            "counted": true,
+            "keeper": "Forest Foundation issuer (devnet)",
+            "row": "7XaKTsuMxFZ5TFCQxT7ok6Wsk1CUZct1yPwm57o7p1ob"
+          }
+        ],
+        "rating": 10,
+        "standing": 1.618034,
+        "offers": [],
+        "reviewsReceived": [
+          {
+            "uri": "9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN/review/maths",
+            "dealId": "3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "deal": {
+        "url": "https://index-production-1b6e.up.railway.app/deals/3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF",
+        "outcome": "releasedToSeller",
+        "amount": "1000000",
+        "reviews": 2
+      }
+    }
+  },
+  "people": {
+    "seller": {
+      "profile": "9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN",
+      "label": "tutoring/seller"
+    },
+    "buyer": {
+      "profile": "7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ",
+      "label": "tutoring/buyer"
+    }
+  },
+  "passed": true,
+  "ended": "2026-10-02T19:00:19.055Z"
+}

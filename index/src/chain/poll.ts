@@ -1,70 +1,71 @@
-// The chain reader, one program at a time, from an RPC (a local validator in tests).
+// The chain reader, from an RPC (a local validator in tests). Two programs.
 //
-// The registry: at start, every line from the program's own accounts (registry.ts); then only the
-// transactions after the newest one it saw then, to pick up new lines. It never needs older history.
+// The registry: every poll, every row of each keeper this index trusts, from the program's own
+// accounts (registry.ts). A row never changes, so only new ones are stored.
 //
-// Each escrow version: every transaction that named it since the last one read, oldest first. A
-// transaction that failed is skipped. One that succeeded is archived whole (its log lines), then read
-// through the escrow adapter, then the cursor moves past it, all in one database transaction, so a
-// crash never half-reads one. RPC nodes are not an archive (docs/decisions.md, "Index"): the logs
-// are kept here.
+// The escrow: every transaction that named it since the last one read, oldest first. A transaction
+// that failed is skipped. One that succeeded is archived whole (its log lines), then read through
+// the escrow adapter, then the cursor moves past it, all in one database transaction, so a crash
+// never half-reads one. RPC nodes are not an archive: the logs are kept here.
 
 import { Connection, PublicKey, type Commitment } from '@solana/web3.js'
 import type pg from 'pg'
 
-import { fetchLines } from '../../../forest/registry/client/src/lines.ts'
-
 import { type Db, getCursor, setCursor } from '../db.ts'
 import { type EscrowFact, decodeEscrowFacts } from './escrow.ts'
-import { type LineRow, lineRow, linesIn } from './registry.ts'
-
-export type Program = { id: string; kind: 'registry' | 'escrow' | 'escrowV2' }
+import { readRows, storeRow } from './registry.ts'
 
 export class ChainReader {
   private timer: NodeJS.Timeout | null = null
   private polling: Promise<number> | null = null
   private readonly db: Db
-  private readonly programs: Program[]
-  private readonly onChange: () => void
+  private readonly registry: string
+  private readonly escrow: string
+  private readonly keepers: string[]
+  /** Called with the profiles of new rows, after anything new was read. */
+  private readonly onChange: (profiles: string[]) => void
   private readonly commitment: Commitment
-  /** Registry programs whose lines were all read from their accounts since this reader started. */
-  private readonly backfilled = new Set<string>()
   readonly connection: Connection
   readonly onError: (err: unknown) => void
 
-  constructor(
-    db: Db,
-    rpcUrl: string,
-    programs: Program[],
-    onChange: () => void,
-    commitment: Commitment = 'finalized',
-    onError: (err: unknown) => void = (err) => console.error('chain read failed', err),
-  ) {
-    this.db = db
-    this.programs = programs
-    this.onChange = onChange
-    this.commitment = commitment
-    this.onError = onError
-    this.connection = new Connection(rpcUrl, commitment)
+  constructor(args: {
+    db: Db
+    rpcUrl: string
+    registry: string
+    escrow: string
+    keepers: string[]
+    onChange: (profiles: string[]) => void
+    commitment?: Commitment
+    onError?: (err: unknown) => void
+  }) {
+    this.db = args.db
+    this.registry = args.registry
+    this.escrow = args.escrow
+    this.keepers = args.keepers
+    this.onChange = args.onChange
+    this.commitment = args.commitment ?? 'finalized'
+    this.onError = args.onError ?? ((err) => console.error('chain read failed', err))
+    this.connection = new Connection(args.rpcUrl, this.commitment)
   }
 
-  /** Read everything new once. Returns how many lines and transactions were read. */
+  /** Read everything new once. Returns how many new rows and transactions were read. */
   pollOnce(): Promise<number> {
     if (!this.polling) {
       this.polling = (async () => {
         let n = 0
+        const profiles: string[] = []
         try {
-          for (const p of this.programs) {
-            if (p.kind === 'registry' && !this.backfilled.has(p.id)) {
-              n += await this.backfill(p)
-              this.backfilled.add(p.id)
+          for (const row of await readRows(this.connection, this.registry, this.keepers, this.commitment)) {
+            if (await storeRow(this.db, row)) {
+              n++
+              profiles.push(row.profile)
             }
-            n += await this.readProgram(p)
           }
+          n += await this.readEscrow()
         } finally {
           this.polling = null
         }
-        if (n > 0) this.onChange()
+        if (n > 0) this.onChange(profiles)
         return n
       })()
     }
@@ -88,78 +89,36 @@ export class ChainReader {
     this.timer = null
   }
 
-  /**
-   * Every line, from the registry's own accounts. The newest transaction naming the program is taken
-   * first, and reading goes on from there, so a line written during the backfill is read either way.
-   */
-  private async backfill(p: Program): Promise<number> {
-    const address = new PublicKey(p.id)
-    const [newest] = await this.connection.getSignaturesForAddress(address, { limit: 1 }, this.commitment as 'confirmed' | 'finalized')
-    // The client's PublicKey comes from its own copy of web3.js; it reads only the bytes.
-    const lines = await fetchLines(this.connection as never, { programId: address as never, commitment: this.commitment })
-    const client = await this.db.connect()
-    try {
-      await client.query('begin')
-      for (const { address: at, line } of lines) await storeLine(client, lineRow(at.toBase58(), line))
-      if (newest) await setCursor(client, `chain:${p.id}`, newest.signature)
-      await client.query('commit')
-    } catch (err) {
-      await client.query('rollback')
-      throw err
-    } finally {
-      client.release()
-    }
-    return lines.length
-  }
-
-  private async readProgram(p: Program): Promise<number> {
-    const source = `chain:${p.id}`
+  private async readEscrow(): Promise<number> {
+    const source = `chain:${this.escrow}`
     const until = (await getCursor(this.db, source)) ?? undefined
-    const address = new PublicKey(p.id)
+    const address = new PublicKey(this.escrow)
+    const finality = this.commitment as 'confirmed' | 'finalized'
     // Newest first, a page at a time, back to the cursor; then read oldest first.
     const found: { signature: string; failed: boolean }[] = []
     let before: string | undefined
     for (;;) {
-      const page = await this.connection.getSignaturesForAddress(address, { until, before, limit: 1000 }, this.commitment as 'confirmed' | 'finalized')
+      const page = await this.connection.getSignaturesForAddress(address, { until, before, limit: 1000 }, finality)
       found.push(...page.map((s) => ({ signature: s.signature, failed: s.err !== null })))
       if (page.length < 1000) break
-      before = page[page.length - 1].signature
+      before = page[page.length - 1]!.signature
     }
     found.reverse()
 
     for (const { signature, failed } of found) {
-      const tx = failed
-        ? null
-        : await this.connection.getTransaction(signature, {
-            commitment: this.commitment as 'confirmed' | 'finalized',
-            maxSupportedTransactionVersion: 0,
-          })
+      const tx = failed ? null : await this.connection.getTransaction(signature, { commitment: finality, maxSupportedTransactionVersion: 0 })
       if (!failed && !tx) throw new Error(`transaction ${signature} not served yet`)
-      // A new line is one of the transaction's accounts, owned by the registry: read them now.
-      let lines: LineRow[] = []
-      if (tx && !tx.meta?.err && p.kind === 'registry') {
-        const keys = tx.transaction.message.getAccountKeys({ accountKeysFromLookups: tx.meta?.loadedAddresses }).keySegments().flat()
-        // The RPC answers at most 100 accounts a call.
-        for (let at = 0; at < keys.length; at += 100) {
-          const some = keys.slice(at, at + 100)
-          lines.push(...linesIn(some, await this.connection.getMultipleAccountsInfo(some, this.commitment), p.id))
-        }
-      }
       const client = await this.db.connect()
       try {
         await client.query('begin')
         if (tx && !tx.meta?.err) {
-          if (p.kind === 'registry') {
-            for (const line of lines) await storeLine(client, line)
-          } else {
-            const logs = tx.meta?.logMessages ?? []
-            await client.query(
-              `insert into chain_transactions (signature, program_id, slot, block_time, logs)
-               values ($1, $2, $3, to_timestamp($4), $5) on conflict (signature) do nothing`,
-              [signature, p.id, tx.slot, tx.blockTime ?? null, JSON.stringify(logs)],
-            )
-            await storeEscrowFacts(client, signature, decodeEscrowFacts(logs, p.id, p.kind === 'escrowV2' ? 2 : 1), p.id)
-          }
+          const logs = tx.meta?.logMessages ?? []
+          await client.query(
+            `insert into chain_transactions (signature, program_id, slot, block_time, logs)
+             values ($1, $2, $3, to_timestamp($4), $5) on conflict (signature) do nothing`,
+            [signature, this.escrow, tx.slot, tx.blockTime ?? null, JSON.stringify(logs)],
+          )
+          await storeEscrowFacts(client, signature, decodeEscrowFacts(logs, this.escrow), this.escrow)
         }
         await setCursor(client, source, signature)
         await client.query('commit')
@@ -174,18 +133,8 @@ export class ChainReader {
   }
 }
 
-/** A line, once: it never changes after it is written. */
-export async function storeLine(client: pg.PoolClient | pg.Pool, l: LineRow): Promise<void> {
-  await client.query(
-    `insert into lines (address, code, did, wallet, label, market, role, root, time, payer)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, to_timestamp($9), $10)
-     on conflict do nothing`,
-    [l.address, l.code, l.did, l.wallet, l.label, l.market, l.role, l.root, l.time, l.payer],
-  )
-}
-
 /** A receipt, rebuilt from the facts in the order the chain wrote them. */
-async function storeEscrowFacts(client: pg.PoolClient, signature: string, facts: EscrowFact[], programId: string): Promise<void> {
+export async function storeEscrowFacts(client: pg.PoolClient | pg.Pool, signature: string, facts: EscrowFact[], programId: string): Promise<void> {
   for (const f of facts) {
     switch (f.kind) {
       case 'created':
@@ -210,7 +159,7 @@ async function storeEscrowFacts(client: pg.PoolClient, signature: string, facts:
         )
         break
       case 'ended':
-        // v2 says when the money was there even when nobody marked it: the ending's time.
+        // The money was there when the mark says, or when it ended if nobody marked it.
         await client.query(
           `update escrow_receipts set outcome = $2, to_seller = $3, to_buyer = $4, ended_at = to_timestamp($5),
              funded_at = coalesce(funded_at, to_timestamp($6)), signature = $7, updated_at = now()

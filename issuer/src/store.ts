@@ -1,16 +1,17 @@
-// The issuer's one file: the session ids already used, the commitments waiting for a batch, and
-// the list with its roots.
+// The issuer's one file: the session ids already used, the stamps waiting for a batch, and the list
+// with its snapshots.
 //
-// The session ids and the waiting commitments are two tables that share nothing. Neither has a
-// timestamp or a row number, so nothing in them says which session brought which commitment, and
-// each keeps its rows in key order. A commitment leaves the queue once it is on the list; what
-// stays of a session is a hash of its id, which is all that refusing a second use needs.
+// The session ids and the waiting stamps are two tables that share nothing. Neither has a timestamp
+// or a row number, so nothing in them says which session brought which stamp, and each keeps its
+// rows in key order. A stamp leaves the queue once it is on the list; what stays of a session is a
+// hash of its id, which is all that refusing a second use needs.
 //
-// The list and its roots are public: the issuer publishes both (list.ts). The list keeps each
-// commitment once, in list order, which within a batch is shuffled. A root is kept with the size
-// of the list it is the root of, the time its batch ran, and, once its batch is written on chain
-// (chain.ts), the signatures of its notes. A batch moves commitments from the queue to the list
-// and adds their root in one transaction, so a failure changes nothing.
+// The list and its snapshots are public: the issuer publishes both (list.ts). The list keeps each
+// stamp once, in list order, which within a batch is shuffled. A snapshot is kept with the size of
+// the list it is the root of and the time its batch ran; its signature is made again from the key
+// whenever the file is published, since ed25519 signs the same bytes the same way. A batch moves
+// stamps from the queue to the list and adds their snapshot in one transaction, so a failure changes
+// nothing.
 //
 // Deleting a row is not enough to take it out of the file: SQLite leaves deleted bytes in free
 // space, and page rebuilds can leave stale copies of rows that moved, in insertion order. So deleted
@@ -28,13 +29,28 @@ export function sessionHash(sessionId: string): Uint8Array {
   return createHash('sha256').update(sessionId, 'utf8').digest()
 }
 
-export type Accepted = 'queued' | 'session_used' | 'commitment_queued'
+export type Accepted = 'queued' | 'session_used' | 'stamp_queued'
 
-/** One root of the list: the root of its first `size` commitments, made by a batch at `time` (ms since 1970). */
-export type Root = { root: bigint; size: number; time: number }
+/** One snapshot of the list: the root of its first `size` stamps, made by a batch at `time` (ms since 1970). */
+export type Snapshot = { root: bigint; size: number; time: number }
 
-/** A root whose batch is not on chain yet, with `from`, where its batch's members start: the size before it. */
-export type Unwritten = Root & { from: number }
+/**
+ * A file written before the issuer was a keeper names things as it did then: `commitment` for a
+ * stamp, `roots` for the snapshots, and a `notes` column for the batches it wrote on chain. The same
+ * rows, under today's names; the notes, which only said where on chain a batch was, go.
+ */
+function renameOld(db: DatabaseSync): void {
+  const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name as string))
+  const columns = (table: string) => db.prepare('SELECT name FROM pragma_table_info(?)').all(table).map((c) => c.name as string)
+  if (tables.has('roots') && !tables.has('snapshots')) db.exec('ALTER TABLE roots RENAME TO snapshots')
+  if (tables.has('roots') || tables.has('snapshots')) {
+    const cols = columns('snapshots')
+    if (cols.includes('notes')) db.exec('ALTER TABLE snapshots DROP COLUMN notes')
+    if (cols.includes('chain')) db.exec('ALTER TABLE snapshots DROP COLUMN chain')
+  }
+  if (tables.has('list') && columns('list').includes('commitment')) db.exec('ALTER TABLE list RENAME COLUMN commitment TO stamp')
+  if (tables.has('queue') && columns('queue').includes('commitment')) db.exec('ALTER TABLE queue RENAME COLUMN commitment TO stamp')
+}
 
 export class Store {
   readonly #db: DatabaseSync
@@ -45,13 +61,10 @@ export class Store {
   readonly #queued: StatementSync
   readonly #count: StatementSync
   readonly #remove: StatementSync
-  readonly #members: StatementSync
-  readonly #between: StatementSync
-  readonly #roots: StatementSync
+  readonly #stamps: StatementSync
+  readonly #snapshots: StatementSync
   readonly #list: StatementSync
-  readonly #root: StatementSync
-  readonly #unwritten: StatementSync
-  readonly #written: StatementSync
+  readonly #snapshot: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -60,53 +73,46 @@ export class Store {
       PRAGMA secure_delete = ON;
       PRAGMA temp_store = MEMORY;
       PRAGMA journal_mode = DELETE;
-      CREATE TABLE IF NOT EXISTS used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL);
-      CREATE TABLE IF NOT EXISTS roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, notes TEXT);
     `)
-    // A file from before the notes carried members (its roots on chain alone, in `chain`), or from
-    // before anything went on chain: every batch is written, with its members, oldest first.
-    const columns = this.#db.prepare('SELECT name FROM pragma_table_info(?)').all('roots').map((c) => c.name)
-    if (!columns.includes('notes')) this.#db.exec('ALTER TABLE roots ADD COLUMN notes TEXT')
-    if (columns.includes('chain')) this.#db.exec('ALTER TABLE roots DROP COLUMN chain')
+    renameOld(this.#db)
+    this.#db.exec(`
+      CREATE TABLE IF NOT EXISTS used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL);
+      CREATE TABLE IF NOT EXISTS snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL);
+    `)
     this.#isUsed = this.#db.prepare('SELECT 1 FROM used_sessions WHERE hash = ?')
-    this.#isQueued = this.#db.prepare('SELECT 1 FROM queue WHERE commitment = ?')
+    this.#isQueued = this.#db.prepare('SELECT 1 FROM queue WHERE stamp = ?')
     this.#use = this.#db.prepare('INSERT OR IGNORE INTO used_sessions (hash) VALUES (?)')
-    this.#enqueue = this.#db.prepare('INSERT OR IGNORE INTO queue (commitment) VALUES (?)')
-    this.#queued = this.#db.prepare('SELECT commitment FROM queue')
+    this.#enqueue = this.#db.prepare('INSERT OR IGNORE INTO queue (stamp) VALUES (?)')
+    this.#queued = this.#db.prepare('SELECT stamp FROM queue')
     this.#count = this.#db.prepare('SELECT count(*) AS n FROM queue')
-    this.#remove = this.#db.prepare('DELETE FROM queue WHERE commitment = ?')
-    this.#members = this.#db.prepare('SELECT commitment FROM list ORDER BY position')
-    this.#between = this.#db.prepare('SELECT commitment FROM list WHERE position >= ? AND position < ? ORDER BY position')
-    this.#roots = this.#db.prepare('SELECT size, root, time FROM roots ORDER BY size')
-    this.#list = this.#db.prepare('INSERT INTO list (position, commitment) VALUES (?, ?)')
-    this.#root = this.#db.prepare('INSERT INTO roots (size, root, time) VALUES (?, ?, ?)')
-    this.#unwritten = this.#db.prepare(
-      'SELECT size, root, time, coalesce((SELECT max(p.size) FROM roots p WHERE p.size < r.size), 0) AS start FROM roots r WHERE notes IS NULL ORDER BY size',
-    )
-    this.#written = this.#db.prepare('UPDATE roots SET notes = ? WHERE size = ? AND notes IS NULL')
+    this.#remove = this.#db.prepare('DELETE FROM queue WHERE stamp = ?')
+    this.#stamps = this.#db.prepare('SELECT stamp FROM list ORDER BY position')
+    this.#snapshots = this.#db.prepare('SELECT size, root, time FROM snapshots ORDER BY size')
+    this.#list = this.#db.prepare('INSERT INTO list (position, stamp) VALUES (?, ?)')
+    this.#snapshot = this.#db.prepare('INSERT INTO snapshots (size, root, time) VALUES (?, ?, ?)')
   }
 
   isUsed(sessionId: string): boolean {
     return this.#isUsed.get(sessionHash(sessionId)) !== undefined
   }
 
-  isQueued(commitment: bigint): boolean {
-    return this.#isQueued.get(toBytes32(commitment)) !== undefined
+  isQueued(stamp: bigint): boolean {
+    return this.#isQueued.get(toBytes32(stamp)) !== undefined
   }
 
   /**
-   * Mark the session used and queue the commitment, both or neither. The keys decide: two requests
+   * Mark the session used and queue the stamp, both or neither. The keys decide: two requests
    * carrying one session can both pass every check before this, while each waits for Didit, and
    * only the first to get here queues anything.
    */
-  accept(sessionId: string, commitment: bigint): Accepted {
+  accept(sessionId: string, stamp: bigint): Accepted {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       let outcome: Accepted = 'queued'
       if (Number(this.#use.run(sessionHash(sessionId)).changes) !== 1) outcome = 'session_used'
-      else if (Number(this.#enqueue.run(toBytes32(commitment)).changes) !== 1) outcome = 'commitment_queued'
+      else if (Number(this.#enqueue.run(toBytes32(stamp)).changes) !== 1) outcome = 'stamp_queued'
       this.#db.exec(outcome === 'queued' ? 'COMMIT' : 'ROLLBACK')
       return outcome
     } catch (error) {
@@ -116,9 +122,9 @@ export class Store {
     }
   }
 
-  /** Every commitment waiting, in key order, which is no order anyone chose. */
+  /** Every stamp waiting, in key order, which is no order anyone chose. */
   queued(): bigint[] {
-    return this.#queued.all().map((row) => fromBytes32(row.commitment as Uint8Array))
+    return this.#queued.all().map((row) => fromBytes32(row.stamp as Uint8Array))
   }
 
   count(): number {
@@ -126,54 +132,34 @@ export class Store {
   }
 
   /** The list, in order. */
-  members(): bigint[] {
-    return this.#members.all().map((row) => fromBytes32(row.commitment as Uint8Array))
+  stamps(): bigint[] {
+    return this.#stamps.all().map((row) => fromBytes32(row.stamp as Uint8Array))
   }
 
-  /** The list's members at positions `from` up to, not including, `to`, in order. */
-  between(from: number, to: number): bigint[] {
-    return this.#between.all(from, to).map((row) => fromBytes32(row.commitment as Uint8Array))
-  }
-
-  /** Every root the list has had, oldest first. */
-  roots(): Root[] {
-    return this.#roots.all().map((row) => ({
+  /** Every snapshot the list has had, oldest first. */
+  snapshots(): Snapshot[] {
+    return this.#snapshots.all().map((row) => ({
       root: fromBytes32(row.root as Uint8Array),
       size: Number(row.size),
       time: Number(row.time),
     }))
-  }
-
-  /** The roots whose batch is not yet written on chain, oldest first. */
-  unwritten(): Unwritten[] {
-    return this.#unwritten.all().map((row) => ({
-      root: fromBytes32(row.root as Uint8Array),
-      size: Number(row.size),
-      time: Number(row.time),
-      from: Number(row.start),
-    }))
-  }
-
-  /** The batch whose root is of the first `size` commitments is on chain, in the notes `signatures`, in order. */
-  written(size: number, signatures: string[]): void {
-    this.#written.run(signatures.join(' '), size)
   }
 
   /**
    * One batch, all or nothing: `added` onto the end of the list, in the order given; the list's new
-   * root (with anything added, and only then); and every commitment in `done` out of the queue (the
+   * snapshot (with anything added, and only then); and every stamp in `done` out of the queue (the
    * added ones, and any found already listed).
    */
-  append(added: bigint[], root: Root | undefined, done: bigint[]): void {
+  append(added: bigint[], snapshot: Snapshot | undefined, done: bigint[]): void {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       if (added.length) {
-        if (!root) throw new Error('commitments added with no root')
-        const start = root.size - added.length
-        added.forEach((c, i) => this.#list.run(start + i, toBytes32(c)))
-        this.#root.run(root.size, toBytes32(root.root), root.time)
+        if (!snapshot) throw new Error('stamps added with no snapshot')
+        const start = snapshot.size - added.length
+        added.forEach((s, i) => this.#list.run(start + i, toBytes32(s)))
+        this.#snapshot.run(snapshot.size, toBytes32(snapshot.root), snapshot.time)
       }
-      for (const c of done) this.#remove.run(toBytes32(c))
+      for (const s of done) this.#remove.run(toBytes32(s))
       this.#db.exec('COMMIT')
     } catch (error) {
       if (this.#db.isTransaction) this.#db.exec('ROLLBACK')

@@ -1,95 +1,91 @@
-// The registry adapter: its lines, read from the registry program's own accounts. A line is written
-// once and never changes (forest/registry/README.md): this profile is one verified human under this
-// label, proven against the list whose root the line holds. Who vouched is not on chain: it is
-// whichever trusted issuer published that root (issuers.ts), and any membership record in the
-// profile's folder (memberships.ts).
+// The registry's rows, read from the program's own accounts (forest/registry/README.md). A row says:
+// this profile holds a market stamp on this keeper's list, under this label. It carries the root of
+// the keeper's list the proof was made against and the keeper's signature on that root, and it never
+// changes.
 //
-// The chain reader backfills every line from the program's accounts at start (`fetchLines`: every
-// account with the line's discriminator, each checked to sit at the address its own code derives),
-// then follows only new transactions to pick up new lines (`linesIn`). So the index never needs a
-// transaction older than its start to know every badge.
+// The index reads only the rows of the keepers in lists/keepers.json: `fetchRows`, one
+// `getProgramAccounts` per keeper, filtered at the keeper's offset, so the RPC does the filtering.
+// Rows never change and never close, so each read finds the same rows and maybe new ones; a row
+// already stored is left as it is. A row counts when its keeper's signature on its root checks
+// (`keeperSigned`), which needs nothing but the row: no issuer's file, no list.
 
-import { type AccountInfo, PublicKey } from '@solana/web3.js'
+import type { Connection, Commitment } from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
 
-import { hex } from '../../../forest/records/src/bytes.ts'
-import { didFromPublicKey } from '../../../forest/records/src/keys.ts'
-import { type Line, PROGRAM_ID, decodeLine, lineAddress } from '../../../forest/registry/client/src/program.ts'
-import { splitScope } from '../markets.ts'
+import { base58, hex } from '../../../forest/records/src/index.ts'
+import { type Row, fetchRows, keeperSigned } from '../../../forest/registry/client/src/index.ts'
 
-export const REGISTRY_PROGRAM_ID: string = PROGRAM_ID.toBase58()
+import type { Queryable } from '../db.ts'
+import { splitLabel } from '../markets.ts'
 
-/** One line, as the index stores it. */
-export type LineRow = {
+/** One row, as the index stores it. */
+export type RowRecord = {
   address: string
-  /** The proof's nullifier: one per human per label. 64 lowercase hex. */
-  code: string
-  /** The profile the line names, by its did:key. */
-  did: string
-  /** The same key as an address: the profile's wallet. */
-  wallet: string
-  /** The name the proof was made for, as the line holds it. Counted only as `market/role` under a directory name, byte for byte. */
+  /** The profile's address, which signed the row. */
+  profile: string
+  keeper: string
+  /** 64 hex: the root of the keeper's list the proof was made against. */
+  root: string
+  /** 128 hex: the keeper's signature over that root, as the row holds it. */
+  keeperSignature: string
+  keeperSigned: boolean
+  payer: string
   label: string
   market: string
   role: string | null
-  /** The root of the issuer's list the proof was made against. 64 lowercase hex. */
-  root: string
-  /** Unix seconds. */
-  time: number
-  payer: string
 }
 
-/** A line as the index stores it. */
-export function lineRow(address: string, line: Line): LineRow {
+/** A row as the index stores it. */
+export function rowRecord(address: string, row: Row): RowRecord {
   return {
     address,
-    code: hex.encode(line.code),
-    did: didFromPublicKey(line.profile.toBytes()),
-    wallet: line.profile.toBase58(),
-    label: line.label,
-    ...splitScope(line.label),
-    root: hex.encode(line.root),
-    time: Number(line.time),
-    payer: line.payer.toBase58(),
+    profile: row.profile.toBase58(),
+    keeper: row.keeper.toBase58(),
+    root: hex.encode(row.root),
+    keeperSignature: hex.encode(row.keeperSignature),
+    keeperSigned: keeperSigned(row),
+    payer: row.payer.toBase58(),
+    label: row.label,
+    ...splitLabel(row.label),
   }
 }
 
-/** A stored line, in the shape the registry client's checks read: its profile, code, label and root. */
-export function lineOf(row: { wallet: string; code: string; label: string; root: string; payer: string; time: Date | string }): Line {
-  return {
-    profile: new PublicKey(row.wallet) as never,
-    code: hex.decode(row.code),
-    payer: new PublicKey(row.payer) as never,
-    time: BigInt(Math.floor(new Date(row.time).getTime() / 1000)),
-    bump: 0,
-    root: hex.decode(row.root),
-    label: row.label,
-  }
+/** A row, once: it never changes after it is written. Returns whether it is new here. */
+export async function storeRow(db: Queryable, r: RowRecord): Promise<boolean> {
+  const res = await db.query(
+    `insert into rows (address, profile, keeper, root, keeper_signature, keeper_signed, payer, label, market, role)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) on conflict do nothing`,
+    [r.address, r.profile, r.keeper, r.root, r.keeperSignature, r.keeperSigned, r.payer, r.label, r.market, r.role],
+  )
+  return (res.rowCount ?? 0) > 0
 }
 
 /**
- * The line an account holds, or null when it holds none: not the registry's, not a line's bytes, or
- * not at the address its own code derives.
+ * Every row of each keeper, read now. The registry client has its own copy of web3.js, so a keeper
+ * goes to it as its 32 bytes, which its filter takes as they are, and the program id as this copy's
+ * key, which the connection reads only as base58.
  */
-export function lineAt(address: string, account: Pick<AccountInfo<Buffer | Uint8Array>, 'owner' | 'data'>, programId: string): LineRow | null {
-  if (account.owner.toBase58() !== programId) return null
-  let line: Line
-  try {
-    line = decodeLine(new Uint8Array(account.data))
-  } catch {
-    return null
+export async function readRows(connection: Connection, programId: string, keepers: string[], commitment: Commitment): Promise<RowRecord[]> {
+  const out: RowRecord[] = []
+  for (const keeper of keepers) {
+    const rows = await fetchRows(connection as never, { keeper: base58.decode(keeper) as never, programId: new PublicKey(programId) as never, commitment })
+    for (const { address, row } of rows) out.push(rowRecord(address.toBase58(), row))
   }
-  // The client's PublicKey comes from its own copy of web3.js; the derivation only reads its bytes.
-  if (lineAddress(line.code, new PublicKey(programId) as never).toBase58() !== address) return null
-  return lineRow(address, line)
+  return out
 }
 
-/** Every line among a transaction's accounts: the accounts, read now, that hold one. */
-export function linesIn(keys: PublicKey[], accounts: (AccountInfo<Buffer> | null)[], programId: string): LineRow[] {
-  const out: LineRow[] = []
-  keys.forEach((key, i) => {
-    const account = accounts[i]
-    const row = account ? lineAt(key.toBase58(), account, programId) : null
-    if (row) out.push(row)
-  })
-  return out
+/**
+ * A row `r` this index counts: its keeper is one it trusts (`$1`, their addresses) and the keeper's
+ * signature on its root checks. Every other row counts for nothing here, and a profile with no
+ * counted row is neither stored nor shown.
+ */
+export const COUNTED = `(r.keeper = any($1) and r.keeper_signed)`
+
+/** The profiles holding a counted row: all of them, or those among `profiles`. */
+export async function countedProfiles(db: Queryable, keepers: string[], profiles?: string[]): Promise<Set<string>> {
+  const { rows } = await db.query(
+    `select distinct r.profile from rows r where ${COUNTED}${profiles ? ' and r.profile = any($2)' : ''}`,
+    profiles ? [keepers, profiles] : [keepers],
+  )
+  return new Set(rows.map((r) => r.profile as string))
 }

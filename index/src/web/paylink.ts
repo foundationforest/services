@@ -1,39 +1,39 @@
-// The Pay link on an offer, in the one format PAYLINK.md documents. The index does not pay; it
-// links. Any app that follows the escrow client opens the link, checks it against the offer
-// record it names, and makes the payment itself.
+// The Pay link on an offer, in the one format index/README.md documents ("The Pay link"). The
+// index does not pay; it links. Any app that follows the escrow client opens the link, checks it
+// against the offer record it names, and makes the payment itself.
 //
-//   {base}/pay?v=1&offer=<did>/offer/<id>&cid=<entry id>&price.amount=<decimal>&price.mint=<mint>
+//   {base}/pay?v=2&offer=<profile>/offer/<id>&record=<record id>&price.amount=<decimal>&price.mint=<mint>
 //            &price.per=<hour|day|job>[&terms.arbiter=<key>][&terms.timer.days=<n>&terms.timer.to=<seller|buyer>]
 //
-// Every parameter after `cid` is the offer record's own field, named by its path. Parameters come
-// in exactly this order, so two builders write the same link. There is no seller key in the link
-// on purpose: an app must read it from the seller's own profile, so a forged link cannot send
-// money anywhere else.
+// Every parameter after `record` is the offer record's own field, named by its path. Parameters come
+// in exactly this order, so two builders write the same link. The seller is the profile the offer
+// address names, whose address is where it is paid: the link carries no other key, so a forged link
+// cannot send money anywhere else. Version 1 named profiles by did:key.
 
-export const PAY_VERSION = '1'
+export const PAY_VERSION = '2'
 
 export type PayLink = {
-  v: 1
-  /** The offer's address: its profile's did:key, then its path, `offer/<id>`. */
+  v: 2
+  /** The offer's address: its profile's address, then its path, `offer/<id>`. */
   offer: string
-  /** The id of the entry that holds the offer: which version of the offer the terms are from. */
-  cid: string
+  /** The id of the record that holds the offer: which version of the offer the terms are from. */
+  record: string
   price: { amount: string; mint: string; per: 'hour' | 'day' | 'job' }
   /** The escrow's two options, each off unless set. Null: neither. */
   terms: { arbiter?: string; timer?: { days: number; to: 'seller' | 'buyer' } } | null
 }
 
-const OFFER = /^did:key:z[1-9A-HJ-NP-Za-km-z]{1,56}\/offer\/[a-z0-9][a-z0-9._-]{0,63}$/
+const OFFER = /^[1-9A-HJ-NP-Za-km-z]{32,44}\/offer\/[a-z0-9][a-z0-9._-]{0,63}$/
 const BASE58_KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const DECIMAL = /^\d{1,24}(\.\d{1,12})?$/
 
 /** The link for an offer as the index holds it. */
-export function payLink(base: string, post: { uri: string; cid: string; record: any }): string {
-  const r = post.record
+export function payLink(base: string, offer: { uri: string; id: string; record: any }): string {
+  const r = offer.record
   const params: [string, string][] = [
     ['v', PAY_VERSION],
-    ['offer', post.uri],
-    ['cid', post.cid],
+    ['offer', offer.uri],
+    ['record', offer.id],
     ['price.amount', r.price.amount],
     ['price.mint', r.price.mint],
     ['price.per', r.price.per],
@@ -49,9 +49,9 @@ export function parsePayLink(search: URLSearchParams): { ok: true; link: PayLink
   const get = (k: string) => search.get(k)
   if (get('v') !== PAY_VERSION) errors.push(`v must be ${PAY_VERSION}`)
   const offer = get('offer') ?? ''
-  if (!OFFER.test(offer)) errors.push('offer must be an offer address, <did>/offer/<id>')
-  const cid = get('cid') ?? ''
-  if (!/^[0-9a-f]{64}$/.test(cid)) errors.push("cid must be the id of the offer's entry, 64 hex characters")
+  if (!OFFER.test(offer)) errors.push('offer must be an offer address, <profile>/offer/<id>')
+  const record = get('record') ?? ''
+  if (!/^[0-9a-f]{64}$/.test(record)) errors.push("record must be the id of the offer's record, 64 hex characters")
   const amount = get('price.amount') ?? ''
   if (!DECIMAL.test(amount)) errors.push('price.amount must be whole units as decimal text, such as 25 or 12.50')
   const mint = get('price.mint') ?? ''
@@ -77,9 +77,9 @@ export function parsePayLink(search: URLSearchParams): { ok: true; link: PayLink
   return {
     ok: true,
     link: {
-      v: 1,
+      v: 2,
       offer,
-      cid,
+      record,
       price: { amount, mint, per: per as PayLink['price']['per'] },
       terms: terms.arbiter || terms.timer ? terms : null,
     },
