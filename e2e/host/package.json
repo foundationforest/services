@@ -1,8 +1,8 @@
 {
-  "name": "@forest/test-board",
+  "name": "@forest/test-host",
   "version": "0.0.0",
   "private": true,
-  "description": "A board for devnet testing only: forest/records' reference host, unchanged, run for the loop. The foundation runs no board.",
+  "description": "A host for devnet testing only: forest/records' reference host, unchanged, run for the e2e run. The foundation runs no host.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/board.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/host.test.ts",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

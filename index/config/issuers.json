@@ -1,4 +1,0 @@
-{
-  "about": "The index's opinion of each issuer: how much its vouching for a badge counts, from 0 to 1, and where it publishes its signed roots file (issuer/README.md, \"The two files\"). Keyed by the issuer's did:key, the key its roots file is signed with. An issuer not here counts 0. This is the index's opinion, not the foundation's rule; anyone running an index sets their own. By default it trusts no issuer, so it keeps and shows no one: the foundation's issuer gets its key here when it runs on mainnet. The devnet index's file is deploy/issuers.devnet.json.",
-  "issuers": {}
-}

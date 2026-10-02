@@ -1,4 +1,4 @@
-// A stand-in for Didit, a fresh issuer key, and the check that the file keeps no link.
+// A stand-in for Didit, a fresh keeper key, and the check that the file keeps no link.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
@@ -20,8 +20,8 @@ export const passed = (over: Partial<Decision> = {}): Decision => ({
   ...over,
 })
 
-/** A commitment-shaped number: 31 random bytes, so always below the field order. */
-export const randomCommitment = () => BigInt('0x' + randomBytes(31).toString('hex')) + 1n
+/** A stamp-shaped number: 31 random bytes, so always below the field order. */
+export const randomStamp = () => BigInt('0x' + randomBytes(31).toString('hex')) + 1n
 
 /**
  * Didit, as far as the issuer sees it. A test says what each session came to with `set`. With
@@ -78,32 +78,28 @@ export function keypairJson(): { json: string; publicKey: Uint8Array } {
 /** Every file SQLite may have written next to the database. */
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
-/** The byte forms a commitment could be stored in. */
-function forms(commitment: bigint): Buffer[] {
-  return [
-    Buffer.from(toBytes32(commitment)),
-    Buffer.from(commitment.toString(10)),
-    Buffer.from(commitment.toString(16)),
-  ]
+/** The byte forms a stamp could be stored in. */
+function forms(stamp: bigint): Buffer[] {
+  return [Buffer.from(toBytes32(stamp)), Buffer.from(stamp.toString(10)), Buffer.from(stamp.toString(16))]
 }
 
-/** Sanity for the check below: the file does hold these commitments while they wait. */
-export function assertFileHolds(path: string, commitments: bigint[]): void {
+/** Sanity for the check below: the file does hold these stamps while they wait. */
+export function assertFileHolds(path: string, stamps: bigint[]): void {
   const file = readFileSync(path)
-  for (const c of commitments) assert.ok(file.includes(Buffer.from(toBytes32(c))), 'a queued commitment is in the file')
+  for (const s of stamps) assert.ok(file.includes(Buffer.from(toBytes32(s))), 'a queued stamp is in the file')
 }
 
 /**
- * After a batch: the file holds each listed commitment exactly once, as its list row in list order,
- * and in no other form; no session id in the clear; and only the four tables, the queue empty and
- * the used sessions exactly the hashes of these sessions. No journal is left beside it.
+ * After a batch: the file holds each listed stamp exactly once, as its list row in list order, and
+ * in no other form; no session id in the clear; and only the four tables, the queue empty and the
+ * used sessions exactly the hashes of these sessions. No journal is left beside it.
  */
-export function assertNoLink(path: string, sessionIds: string[], commitments: bigint[]): void {
+export function assertNoLink(path: string, sessionIds: string[], stamps: bigint[]): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
   const file = readFileSync(path)
-  for (const c of commitments) {
-    const [bytes, ...others] = forms(c)
-    assert.equal(file.indexOf(bytes), file.lastIndexOf(bytes), 'a listed commitment is in the file once: no stale copy')
+  for (const s of stamps) {
+    const [bytes, ...others] = forms(s)
+    assert.equal(file.indexOf(bytes), file.lastIndexOf(bytes), 'a listed stamp is in the file once: no stale copy')
     assert.ok(file.includes(bytes), 'as its list row')
     for (const form of others) assert.equal(file.includes(form), false, 'and in no other form')
   }
@@ -114,24 +110,24 @@ export function assertNoLink(path: string, sessionIds: string[], commitments: bi
     const schema = db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY name').all()
     assert.deepEqual(
       schema.map((t) => `${t.type} ${t.name}`),
-      ['table list', 'table queue', 'table roots', 'table used_sessions'],
+      ['table list', 'table queue', 'table snapshots', 'table used_sessions'],
       'four tables, and no index or other table beside them',
     )
     assert.deepEqual(
       schema.map((t) => t.sql),
       [
-        'CREATE TABLE list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL)',
-        'CREATE TABLE queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID',
-        'CREATE TABLE roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, notes TEXT)',
+        'CREATE TABLE list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
+        'CREATE TABLE queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
+        'CREATE TABLE snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
         'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
       ],
     )
     assert.equal(db.prepare('SELECT count(*) AS n FROM queue').get()!.n, 0, 'the queue is empty')
     const listed = db
-      .prepare('SELECT commitment FROM list ORDER BY position')
+      .prepare('SELECT stamp FROM list ORDER BY position')
       .all()
-      .map((row) => fromBytes32(row.commitment as Uint8Array))
-    assert.deepEqual([...listed].sort(), [...commitments].sort(), 'the list holds these commitments, each once')
+      .map((row) => fromBytes32(row.stamp as Uint8Array))
+    assert.deepEqual([...listed].sort(), [...stamps].sort(), 'the list holds these stamps, each once')
     const kept = db
       .prepare('SELECT hash FROM used_sessions')
       .all()

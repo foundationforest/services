@@ -1,6 +1,6 @@
-// The issuer's key: an Ed25519 key that signs the issuer's roots file and nothing else. It is
-// named, in that file, by its did:key, as Forest names every Ed25519 key (forest/records/SPEC.md,
-// section 1).
+// The keeper key: an Ed25519 key that signs each snapshot of the list and nothing else. Its address
+// (base58 of its 32-byte public key) is the keeper's name: what a registry row records and what a
+// reader trusts (forest/keys/README.md, "The list secret and the stamps").
 //
 // It is written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret
 // then the 32-byte public key. Signing is Node's own Ed25519 (RFC 8032, deterministic).
@@ -10,12 +10,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { didFromPublicKey } from '../../forest/records/src/keys.ts'
+import { base58 } from '../../forest/records/src/bytes.ts'
 
 export type IssuerKey = {
   publicKey: Uint8Array
-  /** The key's name: did:key of its public key. */
-  did: string
+  /** The keeper's name: its public key in base58. */
+  address: string
   sign(message: Uint8Array): Uint8Array
 }
 
@@ -56,7 +56,7 @@ export function parseKeypair(text: string, source: string): IssuerKey {
   }
   return {
     publicKey,
-    did: didFromPublicKey(publicKey),
+    address: base58.encode(publicKey),
     sign: (message) => new Uint8Array(sign(null, message, key)),
   }
 }

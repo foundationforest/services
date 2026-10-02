@@ -1,26 +1,26 @@
 // The scores, as pure functions: plain data in, plain data out, no database and no clock. Every
-// rule here is written out in plain words in SCORING.md; the two must say the same thing.
+// rule here is written out in plain words in README.md; the two must say the same thing.
 //
 // Three scores, never blended into one number:
-//   uniqueness  per badge: which issuers vouch for it, by this index's issuer weights
+//   uniqueness  per label: which trusted keepers' rows the profile holds under it, by their weights
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
-// Uniqueness enters standing only as the starting weight of a reviewer (SCORING.md: a reviewer with
-// no counted badge gets the floor, so its review weighs near zero). Without that seed, "weighted by the reviewer's own
-// standing" with everyone starting at zero would leave every score at zero forever.
+// Uniqueness enters standing only as the starting weight of a reviewer (README.md, "How it scores":
+// a reviewer with no counted row gets the floor, so its review weighs near zero). Without that seed,
+// "weighted by the reviewer's own standing" with everyone starting at zero would leave every score at
+// zero forever.
+//
+// A profile is named by its address, which is also its wallet: the escrow's buyer and seller are
+// compared with it directly.
 
-import type { IssuerConfig, ScoringConfig } from '../config.ts'
-import { type Directory, splitScope } from '../markets.ts'
+import type { KeeperConfig, ScoringConfig } from '../config.ts'
+import { type Directory, splitLabel } from '../markets.ts'
 
-/** A profile, with the wallet it declares and the one scope it lives in (`market/role`, from its record). */
-export type ProfileIn = { did: string; wallet: string | null; scope: string | null }
-/**
- * A badge and one issuer vouching for it: a trusted issuer whose published roots hold the line's
- * root, or one whose membership record for the line checks. A line no trusted issuer vouches for
- * is no badge.
- */
-export type BadgeIn = { did: string; scope: string; issuer: string }
+/** A profile, and the one label it lives in (`market/role`, from its record). */
+export type ProfileIn = { address: string; label: string | null }
+/** A counted row: a trusted keeper's, its signature on the root checked. */
+export type StampIn = { profile: string; label: string; keeper: string }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -46,84 +46,84 @@ export type ReviewIn = {
 
 export type Inputs = {
   profiles: ProfileIn[]
-  badges: BadgeIn[]
+  stamps: StampIn[]
   receipts: ReceiptIn[]
   reviews: ReviewIn[]
 }
 
 export type Settings = {
   directory: Directory
-  issuers: IssuerConfig
+  keepers: KeeperConfig
   scoring: ScoringConfig
 }
 
 // ---------------------------------------------------------------------------------------------
-// Badges and uniqueness
+// Rows and uniqueness
 // ---------------------------------------------------------------------------------------------
 
-export type BadgeStatus =
+export type StampStatus =
   | { counted: true; market: string; role: string }
-  | { counted: false; why: 'notInDirectory' | 'noRole' | 'notProfileScope' }
+  | { counted: false; why: 'notAMarketHere' | 'noRole' | 'notTheProfilesLabel' }
 
 /**
- * A badge counts for its profile only when its scope is `market/role`, the market a directory
- * market byte for byte and the role one of that market's roles; and when that is the profile's own
- * scope, the one market and side its record names. A plain `market` scope counts for nothing. The
- * line always names the profile's own key: a badge is found by the profile its line names.
+ * A row counts for its profile only when its label is `market/role`, the market one this index
+ * uses, byte for byte, and the role one of that market's roles; and when that is the profile's own
+ * label, the one market and side its record names. A plain `market` counts for nothing. The row
+ * always names the profile's own key: it is found by the profile it names.
  */
-export function badgeStatus(badge: Pick<BadgeIn, 'scope'>, profile: { scope: string | null }, directory: Directory): BadgeStatus {
-  const scope = directory.badgeScope(badge.scope)
-  if (!scope) {
-    const { market, role } = splitScope(badge.scope)
-    return { counted: false, why: role === null && directory.markets.has(market) ? 'noRole' : 'notInDirectory' }
+export function stampStatus(stamp: Pick<StampIn, 'label'>, profile: { label: string | null }, directory: Directory): StampStatus {
+  const label = directory.labelOf(stamp.label)
+  if (!label) {
+    const { market, role } = splitLabel(stamp.label)
+    return { counted: false, why: role === null && directory.markets.has(market) ? 'noRole' : 'notAMarketHere' }
   }
-  if (badge.scope !== profile.scope) return { counted: false, why: 'notProfileScope' }
-  return { counted: true, ...scope }
+  if (stamp.label !== profile.label) return { counted: false, why: 'notTheProfilesLabel' }
+  return { counted: true, ...label }
 }
 
-export function issuerWeight(issuers: IssuerConfig, issuer: string): number {
-  const w = issuers[issuer]?.weight ?? 0
+export function keeperWeight(keepers: KeeperConfig, keeper: string): number {
+  const w = keepers[keeper]?.weight ?? 0
   return Math.min(1, Math.max(0, w))
 }
 
 export type Uniqueness = {
-  did: string
-  scope: string
+  profile: string
+  label: string
   market: string
   role: string
   value: number
-  issuers: { issuer: string; name: string | null; weight: number }[]
+  keepers: { keeper: string; name: string | null; weight: number }[]
 }
 
 /**
- * Per profile and badge scope: the distinct issuers vouching for its counted lines, combined as
- * 1 − Π(1 − weight). One issuer at weight w gives w; two independent issuers give more than either
- * and never more than 1; an issuer at 0 adds nothing.
+ * Per profile and label: the distinct keepers whose counted rows the profile holds under it,
+ * combined as 1 − Π(1 − weight). One keeper at weight w gives w; two independent keepers give more
+ * than either and never more than 1; a keeper at 0 adds nothing.
  */
-export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings: Settings): Uniqueness[] {
-  const profiles = new Map(inputs.profiles.map((p) => [p.did, p]))
-  const groups = new Map<string, { did: string; scope: string; market: string; role: string; owners: Set<string> }>()
-  for (const b of inputs.badges) {
-    const profile = profiles.get(b.did)
+export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'stamps'>, settings: Settings): Uniqueness[] {
+  const profiles = new Map(inputs.profiles.map((p) => [p.address, p]))
+  const groups = new Map<string, { profile: string; label: string; market: string; role: string; keepers: Set<string> }>()
+  for (const st of inputs.stamps) {
+    const profile = profiles.get(st.profile)
     if (!profile) continue
-    const status = badgeStatus(b, profile, settings.directory)
+    const status = stampStatus(st, profile, settings.directory)
     if (!status.counted) continue
-    const key = `${b.did}\u0000${b.scope}`
-    const g = groups.get(key) ?? { did: b.did, scope: b.scope, market: status.market, role: status.role, owners: new Set() }
-    g.owners.add(b.issuer)
+    const key = `${st.profile}\u0000${st.label}`
+    const g = groups.get(key) ?? { profile: st.profile, label: st.label, market: status.market, role: status.role, keepers: new Set() }
+    g.keepers.add(st.keeper)
     groups.set(key, g)
   }
   const out: Uniqueness[] = []
   for (const g of groups.values()) {
-    const issuers = [...g.owners].sort().map((issuer) => ({
-      issuer,
-      name: settings.issuers[issuer]?.name ?? null,
-      weight: issuerWeight(settings.issuers, issuer),
+    const keepers = [...g.keepers].sort().map((keeper) => ({
+      keeper,
+      name: settings.keepers[keeper]?.name ?? null,
+      weight: keeperWeight(settings.keepers, keeper),
     }))
-    const value = 1 - issuers.reduce((p, i) => p * (1 - i.weight), 1)
-    out.push({ did: g.did, scope: g.scope, market: g.market, role: g.role, value, issuers })
+    const value = 1 - keepers.reduce((p, k) => p * (1 - k.weight), 1)
+    out.push({ profile: g.profile, label: g.label, market: g.market, role: g.role, value, keepers })
   }
-  return out.sort((a, b) => cmp(a.did, b.did) || cmp(a.scope, b.scope))
+  return out.sort((a, b) => cmp(a.profile, b.profile) || cmp(a.label, b.label))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -131,7 +131,7 @@ export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'badges'>, settings
 // ---------------------------------------------------------------------------------------------
 
 /**
- * What stands under a review's deal id (SCORING.md, "Evidence: what backs a review"): a receipt
+ * What stands under a review's deal id (README.md, "Evidence: what backs a review"): a receipt
  * counts fully when the seller signed for it: created the escrow, signed its ending, or reviewed
  * the deal.
  *   both                paid, and the seller signed: created the escrow (an invoice), or signed
@@ -162,7 +162,6 @@ export function evidenceFor(
   review: ReviewIn,
   ctx: {
     receipts: Map<string, ReceiptIn>
-    wallets: Map<string, string | null>
     reviews: ReviewIn[]
     scoring: ScoringConfig
   },
@@ -172,28 +171,21 @@ export function evidenceFor(
   if (!review.dealId) return none('noDealId')
   const r = ctx.receipts.get(review.dealId)
   if (!r || r.closed) return none('noReceipt')
-  if (!partiesMatch(r, ctx.wallets.get(review.reviewer) ?? null, ctx.wallets.get(review.subject) ?? null)) {
-    return none('notTheParties')
-  }
+  if (!partiesMatch(r, review.reviewer, review.subject)) return none('notTheParties')
   if (!ctx.scoring.countedMints.includes(r.mint)) return none('tokenNotCounted')
   if (!paid(r)) return none('notPaid')
   if (r.creator === 'seller' || (r.outcome !== null && SELLER_SIGNS.has(r.outcome))) return { kind: 'both', weight: w.both }
-  const sellerReviewed = ctx.reviews.some(
-    (v) => v.dealId === r.escrow && ctx.wallets.get(v.reviewer) === r.seller && ctx.wallets.get(v.subject) === r.buyer,
-  )
+  const sellerReviewed = ctx.reviews.some((v) => v.dealId === r.escrow && v.reviewer === r.seller && v.subject === r.buyer)
   return sellerReviewed ? { kind: 'oneSidedConfirmed', weight: w.both } : { kind: 'oneSided', weight: w.oneSided }
 }
 
 /** The endings the seller signs: a split (both sign) and a release back to the buyer (a refund). */
 const SELLER_SIGNS = new Set(['split', 'releasedToBuyer'])
 
-/** The reviewer and the subject are the escrow's two parties, by their declared wallets, either way round. */
-function partiesMatch(r: ReceiptIn, reviewerWallet: string | null, subjectWallet: string | null): boolean {
-  if (!reviewerWallet || !subjectWallet || reviewerWallet === subjectWallet) return false
-  return (
-    (reviewerWallet === r.buyer && subjectWallet === r.seller) ||
-    (reviewerWallet === r.seller && subjectWallet === r.buyer)
-  )
+/** The reviewer and the subject are the escrow's two parties, either way round: a profile's address is its wallet. */
+function partiesMatch(r: ReceiptIn, reviewer: string, subject: string): boolean {
+  if (reviewer === subject) return false
+  return (reviewer === r.buyer && subject === r.seller) || (reviewer === r.seller && subject === r.buyer)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -205,9 +197,9 @@ export function signal(overall: number | null): number {
   return overall === null ? 0 : (overall - 5.5) / 4.5
 }
 
-/** How much a reviewer's word weighs: its best badge (or the floor), scaled by its own standing. */
+/** How much a reviewer's word weighs: its best uniqueness (or the floor), scaled by its own standing. */
 export function reviewerWeight(u: number, t: number, scoring: ScoringConfig): number {
-  return Math.max(u, scoring.unbadgedReviewer) * (1 + t / (Math.abs(t) + 1))
+  return Math.max(u, scoring.unstampedReviewer) * (1 + t / (Math.abs(t) + 1))
 }
 
 export type ScoredReview = ReviewIn & {
@@ -221,7 +213,7 @@ export type ScoredReview = ReviewIn & {
 }
 
 export type Standing = {
-  did: string
+  profile: string
   value: number
   reviews: { received: number; counted: number; withReceipt: number }
 }
@@ -231,7 +223,7 @@ export type Standing = {
  * times the evidence under it, the same weights standing uses. Null when no counted review rates.
  */
 export type Rating = {
-  did: string
+  profile: string
   value: number | null
   /** How many counted reviews give an `overall`. */
   reviews: number
@@ -247,16 +239,16 @@ export type Scores = {
 
 export function compute(inputs: Inputs, settings: Settings): Scores {
   const { scoring } = settings
-  const wallets = new Map(inputs.profiles.map((p) => [p.did, p.wallet]))
+  const profiles = inputs.profiles.map((p) => p.address)
   const receipts = new Map(inputs.receipts.map((r) => [r.escrow, r]))
   const uniq = uniqueness(inputs, settings)
   const best = new Map<string, number>()
-  for (const u of uniq) best.set(u.did, Math.max(best.get(u.did) ?? 0, u.value))
+  for (const u of uniq) best.set(u.profile, Math.max(best.get(u.profile) ?? 0, u.value))
 
   // Which reviews count. Per reviewer and subject: one per deal id that has evidence under it,
   // and one in all for everything else (the latest), so a reviewer cannot add weight by repeating
   // itself or by inventing deal ids.
-  const ctx = { receipts, wallets, reviews: inputs.reviews, scoring }
+  const ctx = { receipts, reviews: inputs.reviews, scoring }
   const evidence = new Map(inputs.reviews.map((v) => [v.uri, evidenceFor(v, ctx)]))
   const latest = [...inputs.reviews].sort((a, b) => cmp(b.createdAt ?? '', a.createdAt ?? '') || cmp(b.uri, a.uri))
   const kept = new Set<string>()
@@ -273,18 +265,18 @@ export function compute(inputs: Inputs, settings: Settings): Scores {
 
   // Standing: repeat the sum, each reviewer weighed by the standing the last round gave it, until
   // no profile moves by more than the tolerance.
-  const dids = new Set<string>([...wallets.keys(), ...inputs.reviews.map((v) => v.subject), ...inputs.reviews.map((v) => v.reviewer)])
-  let t = new Map<string, number>([...dids].map((d) => [d, 0]))
+  const all = new Set<string>([...profiles, ...inputs.reviews.map((v) => v.subject), ...inputs.reviews.map((v) => v.reviewer)])
+  let t = new Map<string, number>([...all].map((d) => [d, 0]))
   let rounds = 0
   for (; rounds < scoring.maxRounds; ) {
     rounds++
-    const next = new Map<string, number>([...dids].map((d) => [d, 0]))
+    const next = new Map<string, number>([...all].map((d) => [d, 0]))
     for (const v of counted) {
       const w = reviewerWeight(best.get(v.reviewer) ?? 0, t.get(v.reviewer)!, scoring)
       next.set(v.subject, next.get(v.subject)! + w * evidence.get(v.uri)!.weight * signal(v.overall))
     }
     let delta = 0
-    for (const d of dids) delta = Math.max(delta, Math.abs(next.get(d)! - t.get(d)!))
+    for (const d of all) delta = Math.max(delta, Math.abs(next.get(d)! - t.get(d)!))
     t = next
     if (delta < scoring.tolerance) break
   }
@@ -304,11 +296,11 @@ export function compute(inputs: Inputs, settings: Settings): Scores {
     }
   })
 
-  const standing: Standing[] = [...wallets.keys()].sort().map((did) => {
-    const received = reviews.filter((v) => v.subject === did)
+  const standing: Standing[] = [...profiles].sort().map((profile) => {
+    const received = reviews.filter((v) => v.subject === profile)
     return {
-      did,
-      value: t.get(did) ?? 0,
+      profile,
+      value: t.get(profile) ?? 0,
       reviews: {
         received: received.length,
         counted: received.filter((v) => v.counted).length,
@@ -317,8 +309,8 @@ export function compute(inputs: Inputs, settings: Settings): Scores {
     }
   })
 
-  const rating: Rating[] = [...wallets.keys()].sort().map((did) => {
-    const rated = reviews.filter((v) => v.subject === did && v.counted && v.overall !== null)
+  const rating: Rating[] = [...profiles].sort().map((profile) => {
+    const rated = reviews.filter((v) => v.subject === profile && v.counted && v.overall !== null)
     let sum = 0
     let weights = 0
     for (const v of rated) {
@@ -326,7 +318,7 @@ export function compute(inputs: Inputs, settings: Settings): Scores {
       sum += weight * v.overall!
       weights += weight
     }
-    return { did, value: weights > 0 ? sum / weights : null, reviews: rated.length }
+    return { profile, value: weights > 0 ? sum / weights : null, reviews: rated.length }
   })
 
   return { uniqueness: uniq, standing, rating, reviews, rounds }

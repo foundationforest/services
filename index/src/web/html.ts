@@ -37,9 +37,9 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Raw {
 // URLs. One place builds them, so the pages, their twins, the sitemap and the pay link agree.
 // -----------------------------------------------------------------------------------------------
 
-/** A path segment, encoded, keeping the colons of a DID readable (a colon is legal in a path). */
+/** A path segment, encoded. */
 export function seg(s: string): string {
-  return encodeURIComponent(s).replace(/%3A/gi, ':').replace(/%40/g, '@')
+  return encodeURIComponent(s)
 }
 
 export type Urls = ReturnType<typeof urlsFor>
@@ -58,7 +58,7 @@ export function urlsFor(base: string) {
     folder: (f: string) => `${base}/folders/${seg(f)}`,
     market: (m: string, offset = 0, near: Near | null = null) =>
       `${base}/markets/${seg(m)}${query([...nearQuery(near), ...(offset ? [`offset=${offset}`] : [])])}`,
-    profile: (did: string) => `${base}/profiles/${seg(did)}`,
+    profile: (address: string) => `${base}/profiles/${seg(address)}`,
     deal: (id: string) => `${base}/deals/${seg(id)}`,
     search: (q: string, near: Near | null = null) => `${base}/search${query([`q=${encodeURIComponent(q)}`, ...nearQuery(near)])}`,
     file: (name: string) => `${base}/${name}`,
@@ -72,8 +72,14 @@ export function urlsFor(base: string) {
 }
 
 export const SOURCE = 'https://github.com/foundationforest/services'
-export const SCORING_DOC = `${SOURCE}/blob/main/index/SCORING.md`
-export const PAYLINK_DOC = `${SOURCE}/blob/main/index/PAYLINK.md`
+export const SCORING_DOC = `${SOURCE}/blob/main/index/README.md#how-it-scores`
+export const PAYLINK_DOC = `${SOURCE}/blob/main/index/README.md#the-pay-link`
+/** The three public lists the foundation's index reads. Another index's are its own. */
+export const LISTS = {
+  hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,
+  markets: `${SOURCE}/blob/main/index/lists/markets.json`,
+  keepers: `${SOURCE}/blob/main/index/lists/keepers.json`,
+}
 
 // -----------------------------------------------------------------------------------------------
 // The layout

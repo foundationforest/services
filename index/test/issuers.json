@@ -1,6 +1,0 @@
-{
-  "about": "The page tests' issuer: the key the fixture's lines are proven against (test/fixture.ts), at weight 1. For tests only.",
-  "issuers": {
-    "did:key:z6Mkva6a6cR5WU96pSkdNji2PQaW3c41TCvxbghMpK71Armp": { "name": "Forest Foundation (test key)", "weight": 1 }
-  }
-}

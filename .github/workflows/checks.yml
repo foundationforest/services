@@ -4,12 +4,13 @@
 #   issuer       its type-check (the stand-in Didit included) and its tests
 #   index        its type-check, and its unit and page tests on a Postgres service
 #   relayer      its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
-#   connections  its type-check, and its tests against forest's reference host and forest's built
-#                approval page
-#   board        the loop's devnet test board (loop/board): its type-check and its tests
+#   connections  its type-check, and its tests against forest's reference host
+#   host         the devnet test host (e2e/host): its type-check and its tests
+#   e2e          the devnet run's type-check
 #
-# Not here: the relayer's local run and the index's end-to-end test. They need forest's programs,
-# its proving files, a local validator and (for the relayer) Kora built.
+# Not here: the relayer's local run, the index's end-to-end test and the e2e run itself. The first two
+# need forest's programs, its proving files, a local validator and (for the relayer) Kora built; the
+# third needs the devnet phrase and the deployed services.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -71,7 +72,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh records registry/client escrow/client escrow/v2/client
+          ./forest.sh keys records registry/client escrow/client
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
@@ -79,7 +80,7 @@ jobs:
       - name: Test (everything but the end-to-end test)
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/roots.test.ts | tee "$RUNNER_TEMP/tap"
+          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   relayer:
@@ -92,7 +93,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh registry/client escrow/client escrow/v2/client
+          ./forest.sh registry/client escrow/client
           (cd relayer && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: relayer
@@ -110,8 +111,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh records
-          (cd forest/records && node web/build.ts)
+          ./forest.sh keys records
           (cd connections && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: connections
@@ -122,7 +122,7 @@ jobs:
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
-  board:
+  host:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -132,13 +132,29 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh records registry/client
-          (cd loop/board && npm ci --no-audit --no-fund)
+          ./forest.sh keys records
+          (cd e2e/host && npm ci --no-audit --no-fund)
       - name: Type-check
-        working-directory: loop/board
+        working-directory: e2e/host
         run: npm run check
       - name: Test
-        working-directory: loop/board
+        working-directory: e2e/host
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh keys records registry/client escrow/client
+          (cd e2e && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: e2e
+        run: npm run check

@@ -16,16 +16,16 @@ test('the same seed gives the same keys, and another seed other keys', () => {
 })
 
 test('a statement reads back as written, for each kind; an unknown kind is refused', () => {
-  const s = { kind: 'standing' as const, did: 'did:plc:abc', scope: '', value: -1_234_567n, at: 1_790_000_000n }
+  const s = { kind: 'standing' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: '', value: -1_234_567n, at: 1_790_000_000n }
   assert.deepEqual(parseStatement(statementText(s)), s)
-  const r = { kind: 'rating' as const, did: 'did:plc:abc', scope: '', value: 8_500_000n, at: 1_790_000_000n }
+  const r = { kind: 'rating' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: '', value: 8_500_000n, at: 1_790_000_000n }
   assert.deepEqual(parseStatement(statementText(r)), r)
   assert.throws(() => parseStatement(statementText(s).replace('kind standing', 'kind trust')), /unknown kind/)
   assert.throws(() => parseStatement(statementText(s).replace('kind standing', 'kind toString')), /unknown kind/)
 })
 
 test('both signatures verify, and a changed score fails both', () => {
-  const s = { kind: 'uniqueness' as const, did: 'did:plc:abc', scope: 'online-tutors', value: 1_000_000n, at: 1_790_000_000n }
+  const s = { kind: 'uniqueness' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: 'online-tutors/seller', value: 1_000_000n, at: 1_790_000_000n }
   const signed = sign(s, keys)
   assert.deepEqual(verify(signed, pub), { ed25519: true, eddsaPoseidon: true })
 
@@ -37,13 +37,14 @@ test('both signatures verify, and a changed score fails both', () => {
   assert.deepEqual(verify(signed, other), { ed25519: false, eddsaPoseidon: false }, "another index's keys")
 })
 
-test('the field message separates kinds, scopes and signs of value', () => {
-  const base = { kind: 'standing' as const, did: 'did:plc:abc', scope: '', value: 5n, at: 1n }
+test('the field message separates kinds, labels and signs of value', () => {
+  const base = { kind: 'standing' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: '', value: 5n, at: 1n }
   const m = messageOf(base)
   assert.notEqual(messageOf({ ...base, kind: 'uniqueness' }), m)
   assert.notEqual(messageOf({ ...base, kind: 'rating' }), m)
   assert.notEqual(messageOf({ ...base, value: -5n }), m)
-  assert.notEqual(messageOf({ ...base, scope: 'online-tutors' }), m)
+  assert.notEqual(messageOf({ ...base, label: 'online-tutors/seller' }), m)
+  assert.notEqual(messageOf({ ...base, profile: '5RWsXwx9Urx8d9sUv1i4viMJZ9pQufyNA76o7sCdLysx' }), m)
   assert.deepEqual(KIND, { uniqueness: 1n, standing: 2n, rating: 3n }, 'standing keeps trust’s code')
   assert.ok(-5n + VALUE_OFFSET > 0n, 'a negative value is still a positive field element')
 })

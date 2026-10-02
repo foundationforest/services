@@ -2,7 +2,7 @@
   "name": "@forest/index",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest index: reads signed records from hosts, the registry's lines from its own accounts, the issuers' signed roots, and the escrows' own events from the chain, scores every profile (uniqueness, standing and rating, never blended, each signed twice), and serves the same data as pages for people and for machines: HTML, JSON-LD, a JSON twin of every page, a sitemap, llms.txt and the read skill.",
+  "description": "The Forest index: reads signed records from the hosts it lists, the registry's rows of the keepers it trusts, and the escrow's own events, scores every profile (uniqueness, standing and rating, never blended, each signed twice), and serves the same data as pages for people and for machines: HTML, JSON-LD, a JSON twin of every page, a sitemap, llms.txt and the read skill.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

@@ -1,5 +1,5 @@
 // The pages on node:http, for running locally and on any plain server (Railway). A serverless host
-// mounts `handle` instead (HOSTING.md).
+// mounts `handle` instead (README.md, "Two processes").
 
 import { createServer, type Server } from 'node:http'
 

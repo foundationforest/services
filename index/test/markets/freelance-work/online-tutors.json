@@ -3,7 +3,7 @@
   "folder": "freelance-work",
   "description": "Lessons and tutoring held online, one to one.",
   "sides": "two",
-  "labels": { "seller": "tutor", "buyer": "student" },
+  "roleNames": { "seller": "tutor", "buyer": "student" },
   "evidenceTypes": ["escrow"],
   "offerFields": {
     "properties": {

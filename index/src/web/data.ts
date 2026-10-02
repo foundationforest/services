@@ -1,15 +1,15 @@
 // The page models. One function per page reads the database and returns one object: that object
 // is the page's JSON twin, and the HTML is rendered from it (pages.ts), so the two never say
-// different things. Field names such as `wallet` and `mint` are the records' own; they are for
-// machines, and the HTML shows none of them.
+// different things. Field names such as `mint` are the records' own; they are for machines, and the
+// HTML shows none of them. A profile is named by its address.
 
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
+import { COUNTED } from '../chain/registry.ts'
 import type { Directory, MarketFile } from '../markets.ts'
-import { VOUCHED } from '../issuers.ts'
-import { badgeStatus } from '../scores/compute.ts'
+import { stampStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
-import { type Near, type Urls, SCORING_DOC, SOURCE, PAYLINK_DOC } from './html.ts'
+import { type Near, type Urls, LISTS, PAYLINK_DOC, SCORING_DOC, SOURCE } from './html.ts'
 import { type PayLink, payLink } from './paylink.ts'
 
 export type Ctx = { db: Db; directory: Directory; config: Config; urls: Urls }
@@ -36,11 +36,12 @@ function offerOut(ctx: Ctx, row: any) {
   const market = ctx.directory.markets.has(row.profile_market) ? (row.profile_market as string) : null
   const live = row.direction === 'offer' && market !== null && (row.expires === null || new Date(row.expires) > new Date())
   return {
-    uri: row.uri,
-    cid: row.cid,
-    did: row.did,
+    uri: row.uri as string,
+    /** The id of the record that holds the offer now: which version its terms are from. */
+    id: row.id as string,
+    profile: row.profile as string,
     name: (row.name as string | null) ?? null,
-    profileUrl: ctx.urls.profile(row.did),
+    profileUrl: ctx.urls.profile(row.profile),
     direction: row.direction as 'offer' | 'request',
     /** The author profile's market, when this index's directory has it; its side there. */
     market,
@@ -57,26 +58,26 @@ function offerOut(ctx: Ctx, row: any) {
     location: (r.location ?? null) as { lat: string; lon: string; precisionKm: number; area: string } | null,
     expires: iso(row.expires),
     createdAt: iso(row.created_at),
-    /** The seller's best uniqueness on a badge in this post's market, and their two numbers. Side by side, never one number. */
+    /** The seller's best uniqueness on a counted row in this offer's market, and their two numbers. Side by side, never one number. */
     uniqueness: micro(row.uniqueness),
     rating: { value: row.rating === null ? null : micro(row.rating), reviews: Number(row.rating_reviews ?? 0) },
     standing: micro(row.standing),
-    /** The Pay link (PAYLINK.md): only on a live, priced offer whose profile names a key to be paid at. */
-    payLink: live && row.declared && r.price ? payLink(ctx.urls.base, { uri: row.uri, cid: row.cid, record: r }) : null,
+    /** The Pay link (README.md, "The Pay link"): only on a live offer with a price. The profile's address is where it is paid. */
+    payLink: live && r.price ? payLink(ctx.urls.base, { uri: row.uri, id: row.id, record: r }) : null,
   }
 }
 
-const OFFER_SELECT = `select p.*, pr.name, pr.wallet as declared, pr.market as profile_market, pr.role as profile_role,
-       (select max(s.value_micro) from scores s where s.did = p.did and s.kind = 'uniqueness'
-          and split_part(s.scope, '/', 1) = pr.market) as uniqueness,
-       (select s.value_micro from scores s where s.did = p.did and s.kind = 'standing' and s.scope = '') as standing,
-       (select s.value_micro from scores s where s.did = p.did and s.kind = 'rating' and s.scope = '') as rating,
-       (select (s.details->>'reviews')::int from scores s where s.did = p.did and s.kind = 'rating' and s.scope = '') as rating_reviews
-     from posts p left join profiles pr on pr.did = p.did`
+const OFFER_SELECT = `select p.*, pr.name, pr.market as profile_market, pr.role as profile_role,
+       (select max(s.value_micro) from scores s where s.profile = p.profile and s.kind = 'uniqueness'
+          and split_part(s.label, '/', 1) = pr.market) as uniqueness,
+       (select s.value_micro from scores s where s.profile = p.profile and s.kind = 'standing' and s.label = '') as standing,
+       (select s.value_micro from scores s where s.profile = p.profile and s.kind = 'rating' and s.label = '') as rating,
+       (select (s.details->>'reviews')::int from scores s where s.profile = p.profile and s.kind = 'rating' and s.label = '') as rating_reviews
+     from offers p left join profiles pr on pr.address = p.profile`
 
 /**
- * A live offer: an offer, not expired, whose author profile lives in a market this index's directory
- * lists, byte for byte. Adds the directory's names to `params` as one array.
+ * A live offer: an offer, not expired, whose author profile lives in a market this index uses, byte
+ * for byte. Adds the markets' names to `params` as one array.
  */
 function liveWhere(ctx: Ctx, params: unknown[]): string {
   params.push([...ctx.directory.markets.keys()])
@@ -84,8 +85,8 @@ function liveWhere(ctx: Ctx, params: unknown[]): string {
 }
 
 /**
- * Within `km` of a point: the great-circle distance to the post's own point (as the post rounded
- * it), by the haversine formula in plain SQL arithmetic. A post with no point is not near anything.
+ * Within `km` of a point: the great-circle distance to the offer's own point (as the offer rounded
+ * it), by the haversine formula in plain SQL arithmetic. An offer with no point is not near anything.
  * Adds its three parameters to `params`.
  */
 function nearWhere(near: Near, params: unknown[]): string {
@@ -96,7 +97,7 @@ function nearWhere(near: Near, params: unknown[]): string {
   ))) <= ${km}`
 }
 
-/** Live offers, badged sellers first, then by standing, then newest: two keys side by side. */
+/** Live offers, sellers with a counted row first, then by standing, then newest: two keys side by side. */
 async function offers(ctx: Ctx, where: string, params: unknown[], limit: number, offset: number, near: Near | null) {
   const all = [...params]
   const live = liveWhere(ctx, all)
@@ -111,25 +112,25 @@ async function offers(ctx: Ctx, where: string, params: unknown[], limit: number,
 }
 
 /**
- * The market each profile lives in: the one its record names, when this index's directory has it;
- * else null. A profile is one folder in one market.
+ * The market each profile lives in: the one its record names, when this index uses it; else null.
+ * A profile is one label in one market.
  */
-async function profileMarkets(ctx: Ctx, dids: string[]): Promise<Map<string, string | null>> {
-  const { rows } = await ctx.db.query('select did, market from profiles where did = any($1)', [dids])
-  const out = new Map<string, string | null>(dids.map((d) => [d, null]))
-  for (const r of rows) if (ctx.directory.markets.has(r.market)) out.set(r.did, r.market)
+async function profileMarkets(ctx: Ctx, addresses: string[]): Promise<Map<string, string | null>> {
+  const { rows } = await ctx.db.query('select address, market from profiles where address = any($1)', [addresses])
+  const out = new Map<string, string | null>(addresses.map((a) => [a, null]))
+  for (const r of rows) if (ctx.directory.markets.has(r.market)) out.set(r.address, r.market)
   return out
 }
 
-/** A profile's own scope, `market/role`, as its record names it. */
-const scopeOf = (p: { market: string | null; role: string | null }): string | null => (p.market && p.role ? `${p.market}/${p.role}` : null)
+/** A profile's own label, `market/role`, as its record names it. */
+const labelOf = (p: { market: string | null; role: string | null }): string | null => (p.market && p.role ? `${p.market}/${p.role}` : null)
 
 /** Each profile's two numbers, from the last recompute. */
-async function numbers(ctx: Ctx, dids: string[]): Promise<Map<string, Numbers>> {
-  const { rows } = await ctx.db.query(`select did, kind, value_micro, details from scores where kind in ('standing', 'rating') and did = any($1)`, [dids])
-  const out = new Map<string, Numbers>(dids.map((d) => [d, { rating: { value: null, reviews: 0 }, standing: 0 }]))
+async function numbers(ctx: Ctx, addresses: string[]): Promise<Map<string, Numbers>> {
+  const { rows } = await ctx.db.query(`select profile, kind, value_micro, details from scores where kind in ('standing', 'rating') and profile = any($1)`, [addresses])
+  const out = new Map<string, Numbers>(addresses.map((a) => [a, { rating: { value: null, reviews: 0 }, standing: 0 }]))
   for (const r of rows) {
-    const n = out.get(r.did)!
+    const n = out.get(r.profile)!
     if (r.kind === 'standing') n.standing = micro(r.value_micro)
     else n.rating = { value: micro(r.value_micro), reviews: Number(r.details.reviews) }
   }
@@ -151,10 +152,10 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
             a.name as reviewer_name, b.name as subject_name, (e.escrow is not null) as has_receipt,
             e.objected_by, e.objected_at
      from reviews v left join review_weights w on w.uri = v.uri
-       left join profiles a on a.did = v.reviewer left join profiles b on b.did = v.subject
-       left join escrow_receipts e on e.escrow = v.deal_id
+       left join profiles a on a.address = v.reviewer left join profiles b on b.address = v.subject
+       left join escrow_receipts e on e.escrow = v.deal_id and e.program_id = $${params.length + 1}
      where ${where} order by v.created_at desc nulls last, v.uri`,
-    params,
+    [...params, ctx.config.escrowProgramId],
   )
   const markets = await profileMarkets(ctx, [...new Set(rows.map((r) => r.subject as string))])
   return rows.map((row) => {
@@ -182,7 +183,7 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
       dealId: row.deal_id as string | null,
       dealUrl: row.deal_id ? ctx.urls.deal(row.deal_id) : null,
       hasReceipt: Boolean(row.has_receipt),
-      /** A side of the deal objected (escrow v2): which, the plain word for it in the subject's market, and when. */
+      /** A side of the deal objected: which, the plain word for it in the subject's market, and when. */
       objection: row.objected_by ? objectionOut(ctx, market, row.objected_by, row.objected_at) : null,
       createdAt: iso(row.created_at),
       counted: (row.counted ?? false) as boolean,
@@ -200,7 +201,7 @@ function objectionOut(ctx: Ctx, market: string | null, by: 'buyer' | 'seller', a
 
 function scoreOut(row: any) {
   return {
-    scope: row.scope as string,
+    label: row.label as string,
     value: micro(row.value_micro),
     valueMicro: String(row.value_micro),
     details: row.details,
@@ -217,7 +218,7 @@ async function liveOfferCounts(ctx: Ctx): Promise<Map<string, number>> {
   const params: unknown[] = []
   const live = liveWhere(ctx, params)
   const { rows } = await ctx.db.query(
-    `select pr.market, count(*)::int as n from posts p join profiles pr on pr.did = p.did where ${live} group by pr.market`,
+    `select pr.market, count(*)::int as n from offers p join profiles pr on pr.address = p.profile where ${live} group by pr.market`,
     params,
   )
   return new Map(rows.map((r) => [r.market, r.n]))
@@ -234,16 +235,18 @@ export async function home(ctx: Ctx) {
     ...self(ctx, 'home', ctx.urls.home()),
     index: {
       name: 'Forest index',
-      about: 'Profiles, badges, reviews and payment receipts, read from signed records, the registry’s lines and the escrows’ own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
-      scoring: { version: 'v1', rules: SCORING_DOC },
+      about: 'Profiles, offers, reviews and payment receipts, read from signed records on the hosts it lists, the registry’s rows of the keepers it trusts, and the escrow’s own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
+      scoring: { version: 'v2', rules: SCORING_DOC },
       payLink: PAYLINK_DOC,
       source: SOURCE,
+      /** What this index reads, as three public lists: anyone can rebuild it from them, the hosts and the chain. */
+      lists: LISTS,
       keys: (keys.rows[0]?.value ?? null) as { ed25519: string; eddsaPoseidon: [string, string] } | null,
       statement: {
         header: STATEMENT_HEADER,
-        lines: ['kind <uniqueness|standing|rating>', 'did <did>', 'scope <badge scope, or empty>', 'value <millionths>', 'at <unix seconds>'],
+        lines: ['kind <uniqueness|standing|rating>', 'profile <address>', 'label <row label, or empty>', 'value <millionths>', 'at <unix seconds>'],
         ed25519: 'over the statement text, UTF-8',
-        eddsaPoseidon: 'over message = Poseidon(domain, kind, did, scope, value + 2^63, at); see index/SCORING.md',
+        eddsaPoseidon: 'over message = Poseidon(domain, kind, profile, label, value + 2^63, at); see index/README.md',
       },
       machines: {
         sitemap: ctx.urls.file('sitemap.xml'),
@@ -276,34 +279,30 @@ export const PAGE_SIZE = 50
 export async function market(ctx: Ctx, name: string, offset: number, near: Near | null) {
   const file = ctx.directory.markets.get(name)
   if (!file) return null
-  const [posts, badges, page] = await Promise.all([
+  const [posts, stamps, page] = await Promise.all([
     ctx.db.query(
-      `select p.direction, count(*)::int as n from posts p join profiles pr on pr.did = p.did
+      `select p.direction, count(*)::int as n from offers p join profiles pr on pr.address = p.profile
        where pr.market = $1 and (p.expires is null or p.expires > now()) group by p.direction`,
       [name],
     ),
     ctx.db.query(
-      `select l.did, l.label, p.market as profile_market, p.role as profile_role
-       from lines l join profiles p on p.did = l.did where l.market = $2 and ${VOUCHED}`,
-      [Object.keys(ctx.config.issuers), name],
+      `select r.profile, r.label, p.market as profile_market, p.role as profile_role
+       from rows r join profiles p on p.address = r.profile where r.market = $2 and ${COUNTED}`,
+      [Object.keys(ctx.config.keepers), name],
     ),
     offers(ctx, 'pr.market = $1', [name], PAGE_SIZE, offset, near),
   ])
   const counted = new Set(
-    badges.rows
-      .filter(
-        (b) =>
-          badgeStatus({ scope: b.label }, { scope: scopeOf({ market: b.profile_market, role: b.profile_role }) }, ctx.directory)
-            .counted,
-      )
-      .map((b) => b.did),
+    stamps.rows
+      .filter((b) => stampStatus({ label: b.label }, { label: labelOf({ market: b.profile_market, role: b.profile_role }) }, ctx.directory).counted)
+      .map((b) => b.profile),
   )
   const by = new Map(posts.rows.map((r) => [r.direction, r.n]))
   return {
     ...self(ctx, 'market', ctx.urls.market(name, offset, near)),
     market: file,
     folderUrl: ctx.urls.folder(file.folder),
-    counts: { offers: by.get('offer') ?? 0, requests: by.get('request') ?? 0, badgedProfiles: counted.size },
+    counts: { offers: by.get('offer') ?? 0, requests: by.get('request') ?? 0, realPeople: counted.size },
     near,
     limit: PAGE_SIZE,
     offset,
@@ -313,28 +312,18 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
   }
 }
 
-export async function profile(ctx: Ctx, did: string) {
-  const { rows } = await ctx.db.query('select * from profiles where did = $1', [did])
+export async function profile(ctx: Ctx, address: string) {
+  const { rows } = await ctx.db.query('select * from profiles where address = $1', [address])
   if (!rows.length) return null
   const p = rows[0]
   const r = p.record
-  const trusted = Object.keys(ctx.config.issuers)
-  const [badges, scores, posts, credentials, received, given] = await Promise.all([
-    // Each line a trusted issuer vouches for, with those issuers: by its root, then by memberships
-    // that checked. Any other line is no badge here.
-    ctx.db.query(
-      `select l.*,
-         array(select r.issuer from issuer_roots r where r.root = l.root and r.issuer = any($1) order by r.issuer) as by_root,
-         array(select m.issuer from memberships m where m.code = l.code and m.did = l.did and m.status = 'valid' and m.issuer = any($1)
-               order by m.issuer) as by_membership
-       from lines l where l.did = $2 and ${VOUCHED} order by l.time, l.address`,
-      [trusted, did],
-    ),
-    ctx.db.query('select * from scores where did = $1 order by kind, scope', [did]),
-    ctx.db.query(`${OFFER_SELECT} where p.did = $1 order by p.created_at desc nulls last, p.uri`, [did]),
-    ctx.db.query('select * from credentials where did = $1 order by created_at desc nulls last, uri', [did]),
-    reviews(ctx, 'v.subject = $1', [did]),
-    reviews(ctx, 'v.reviewer = $1', [did]),
+  const [stamps, scores, posts, received, given] = await Promise.all([
+    // Each row of a trusted keeper whose signature checks. Any other row counts for nothing here.
+    ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.keeper, r.address`, [Object.keys(ctx.config.keepers), address]),
+    ctx.db.query('select * from scores where profile = $1 order by kind, label', [address]),
+    ctx.db.query(`${OFFER_SELECT} where p.profile = $1 order by p.created_at desc nulls last, p.uri`, [address]),
+    reviews(ctx, 'v.subject = $1', [address]),
+    reviews(ctx, 'v.reviewer = $1', [address]),
   ])
   const standing = scores.rows.find((s) => s.kind === 'standing')
   const rating = scores.rows.find((s) => s.kind === 'rating')
@@ -342,53 +331,49 @@ export async function profile(ctx: Ctx, did: string) {
   const isLive = (o: Offer) => o.market !== null && (o.expires === null || new Date(o.expires) > new Date())
   const home = ctx.directory.markets.get(p.market)
   return {
-    ...self(ctx, 'profile', ctx.urls.profile(did)),
-    did,
+    ...self(ctx, 'profile', ctx.urls.profile(address)),
+    /** The profile's name: its key's address, which is also where it is paid. */
+    address,
     profile: {
       name: p.name as string,
       /** The one market this profile lives in, and its side there, as its record names them. */
       market: p.market as string | null,
       marketUrl: home ? ctx.urls.market(p.market) : null,
       role: p.role as string | null,
-      /** The plain word for its side: the market's label, the role itself, or null in a one-sided market. */
+      /** The plain word for its side: the market's role name, the role itself, or null in a one-sided market. */
       side: home?.sides === 'two' && (p.role === 'seller' || p.role === 'buyer') ? ctx.directory.sideWord(p.market, p.role) : null,
       about: (r.about ?? null) as string | null,
       contact: (r.contact ?? null) as string | null,
-      wallet: (p.wallet ?? null) as string | null,
+      /** Its reading key, for whoever makes a private record for it; null when it publishes none. */
+      read: (r.read ?? null) as string | null,
       /** By the SHA-256 of its bytes. The index never fetches it. */
       photo: r.photo ? { sha256: r.photo.sha256 as string, mimeType: r.photo.mimeType as string } : null,
       createdAt: iso(p.created_at),
-      cid: p.cid as string,
+      /** The id of the record that holds the profile card now. */
+      id: p.id as string,
     },
-    badges: badges.rows.map((b) => {
-      const status = badgeStatus({ scope: b.label }, { scope: scopeOf(p) }, ctx.directory)
+    /** Each row of a keeper this index trusts: a market stamp on its list, under a label. */
+    stamps: stamps.rows.map((b) => {
+      const status = stampStatus({ label: b.label }, { label: labelOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
-      const issuer = (key: string, via: 'line' | 'membership') => ({
-        key,
-        name: (ctx.config.issuers[key]?.name ?? null) as string | null,
-        weight: (ctx.config.issuers[key]?.weight ?? 0) as number,
-        via,
-      })
       return {
-        scope: b.label as string,
+        label: b.label as string,
         market: b.market as string,
         marketUrl: file ? ctx.urls.market(b.market) : null,
         role: b.role as string | null,
-        /** The plain word for the role: the market's label, the role itself, or null in a one-sided market. */
+        /** The plain word for the role: the market's role name, the role itself, or null in a one-sided market. */
         side: status.counted && file?.sides === 'two' ? ctx.directory.sideWord(b.market, status.role as 'seller' | 'buyer') : null,
-        /**
-         * The trusted issuers vouching for it: the ones whose published roots hold the line's root
-         * (`line`), then the ones a membership record in this profile's folder shows (`membership`).
-         */
-        issuers: [...(b.by_root as string[]).map((k) => issuer(k, 'line')), ...(b.by_membership as string[]).map((k) => issuer(k, 'membership'))],
-        wallet: b.wallet as string,
+        keeper: {
+          address: b.keeper as string,
+          name: (ctx.config.keepers[b.keeper]?.name ?? null) as string | null,
+          weight: (ctx.config.keepers[b.keeper]?.weight ?? 0) as number,
+        },
         counted: status.counted,
         why: status.counted ? null : status.why,
-        registeredAt: iso(b.time),
-        /** The line's address: the registry account anyone can read to check it. */
-        line: b.address as string,
-        code: b.code as string,
+        /** The row's address: the registry account anyone can read to check it. */
+        row: b.address as string,
         root: b.root as string,
+        keeperSignature: b.keeper_signature as string,
       }
     }),
     scores: {
@@ -398,28 +383,30 @@ export async function profile(ctx: Ctx, did: string) {
     },
     offers: allPosts.filter((o) => o.direction === 'offer' && isLive(o)),
     requests: allPosts.filter((o) => o.direction === 'request' && isLive(o)),
-    credentials: credentials.rows.map((c) => ({ uri: c.uri, issuer: c.issuer, createdAt: iso(c.created_at), credential: c.record.credential })),
     reviews: { received, given },
   }
 }
 
 export async function deal(ctx: Ctx, dealId: string) {
   const [receipt, named] = await Promise.all([
-    ctx.db.query('select * from escrow_receipts where escrow = $1', [dealId]),
+    ctx.db.query('select * from escrow_receipts where escrow = $1 and program_id = $2', [dealId, ctx.config.escrowProgramId]),
     reviews(ctx, 'v.deal_id = $1', [dealId]),
   ])
   if (!receipt.rowCount && !named.length) return null
   let out = null
   if (receipt.rowCount) {
     const e = receipt.rows[0]
-    const profiles = await ctx.db.query('select did, name, wallet from profiles where wallet = any($1) order by did', [[e.buyer, e.seller]])
-    const dids = profiles.rows.map((p) => p.did as string)
-    const [scores, markets] = await Promise.all([numbers(ctx, dids), profileMarkets(ctx, dids)])
-    const of = (w: string) =>
-      profiles.rows.filter((p) => p.wallet === w).map((p) => ({ did: p.did as string, name: p.name as string, url: ctx.urls.profile(p.did), ...scores.get(p.did)! }))
+    // A party's key is a profile's address: each side is one profile here, or none this index holds.
+    const profiles = await ctx.db.query('select address, name from profiles where address = any($1) order by address', [[e.buyer, e.seller]])
+    const addresses = profiles.rows.map((p) => p.address as string)
+    const [scores, markets] = await Promise.all([numbers(ctx, addresses), profileMarkets(ctx, addresses)])
+    const of = (key: string) =>
+      profiles.rows
+        .filter((p) => p.address === key)
+        .map((p) => ({ address: p.address as string, name: p.name as string, url: ctx.urls.profile(p.address), ...scores.get(p.address)! }))
     const sellerProfiles = of(e.seller)
-    // A deal names no market; the seller's profile lives in one, whose labels name the two sides.
-    const sellerMarkets = [...new Set(sellerProfiles.map((p) => markets.get(p.did)).filter((m) => m))]
+    // A deal names no market; the seller's profile lives in one, whose role names name the two sides.
+    const sellerMarkets = [...new Set(sellerProfiles.map((p) => markets.get(p.address)).filter((m) => m))]
     const market = sellerMarkets.length === 1 ? sellerMarkets[0]! : null
     const sides = { seller: ctx.directory.sideWord(market, 'seller'), buyer: ctx.directory.sideWord(market, 'buyer') }
     out = {
@@ -430,7 +417,7 @@ export async function deal(ctx: Ctx, dealId: string) {
       creator: e.creator as 'buyer' | 'seller',
       buyerProfiles: of(e.buyer),
       sellerProfiles,
-      /** The seller's market, whose labels the page uses for the two sides; null when there is none. */
+      /** The seller's market, whose role names the page uses for the two sides; null when there is none. */
       market,
       sides,
       mint: e.mint as string,
@@ -444,7 +431,7 @@ export async function deal(ctx: Ctx, dealId: string) {
       toSeller: (e.to_seller ?? null) as string | null,
       toBuyer: (e.to_buyer ?? null) as string | null,
       closed: e.closed as boolean,
-      /** Escrow v2: a side objected, and when. It moved no money. */
+      /** A side objected, and when. It moved no money. */
       objection: e.objected_by ? { by: e.objected_by as 'buyer' | 'seller', side: sides[e.objected_by as 'buyer' | 'seller'], at: iso(e.objected_at) } : null,
       transaction: e.signature as string,
     }
@@ -458,7 +445,7 @@ export async function search(ctx: Ctx, q: string, near: Near | null) {
   const markets = q
     ? [...ctx.directory.markets.values()]
         .map((m) => {
-          const words = [...m.roles, ...Object.values(m.labels ?? {})]
+          const words = [...m.roles, ...Object.values(m.roleNames ?? {})]
           const matched = m.name.includes(needle)
             ? 'name'
             : m.folder.includes(needle)
@@ -470,21 +457,21 @@ export async function search(ctx: Ctx, q: string, near: Near | null) {
         })
         .filter((m) => m !== null)
     : []
-  const page = q ? await offers(ctx, `p.search @@ websearch_to_tsquery('simple', $1)`, [q], PAGE_SIZE, 0, near) : { total: 0, offers: [] }
+  const page = q ? await offers(ctx, `p.search @@ websearch_to_tsquery('simple', $1)`, [q], PAGE_SIZE, 0, near) : { total: 0, offers: [] as Offer[] }
   return { ...self(ctx, 'search', ctx.urls.search(q, near)), q, near, markets, offers: page.offers, total: page.total }
 }
 
 /** Every page meant for search engines, for the sitemap. Search, pay and deals with no receipt are left out (noindex). */
 export async function pages(ctx: Ctx): Promise<string[]> {
   const [profiles, deals] = await Promise.all([
-    ctx.db.query('select did from profiles order by did'),
-    ctx.db.query('select escrow from escrow_receipts order by escrow'),
+    ctx.db.query('select address from profiles order by address'),
+    ctx.db.query('select escrow from escrow_receipts where program_id = $1 order by escrow', [ctx.config.escrowProgramId]),
   ])
   return [
     ctx.urls.home(),
     ...[...ctx.directory.folders().keys()].map((f) => ctx.urls.folder(f)),
     ...[...ctx.directory.markets.keys()].sort().map((m) => ctx.urls.market(m)),
-    ...profiles.rows.map((r) => ctx.urls.profile(r.did)),
+    ...profiles.rows.map((r) => ctx.urls.profile(r.address)),
     ...deals.rows.map((r) => ctx.urls.deal(r.escrow)),
   ]
 }

@@ -1,157 +1,188 @@
-// The connections service end to end, in one process: forest's reference host holding one profile,
-// the service in front of it, and an assistant's MCP client (SDK v2, protocol 2026-07-28) calling it
-// through the service's front, as an assistant on the internet would.
+// Connections end to end on loopback: forest's reference host, this service, an assistant doing
+// OAuth with PKCE and calling the tools over MCP, and the person's app adding and removing the
+// writer key with the profile's own key.
 //
 //   npm test
 
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { createServer } from 'node:net'
-import { after, before, test } from 'node:test'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { after, test } from 'node:test'
 
-import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-import { publish, readAll } from '../../forest/records/src/client.ts'
+import { profileKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
-import { profileKey, seedFromPrf } from '../../forest/records/src/keys.ts'
-import { requestFromLink } from '../../forest/records/src/request.ts'
-import { folderEntry, ownerEntry } from '../../forest/records/src/write.ts'
-import { PAGE_DIR, PAGE_POLICY, readConfig, startConnections, type Service } from '../src/service.ts'
+import { hostsRecord, ownerRecord, permissionsRecord, publish, readProfile } from '../../forest/records/src/index.ts'
 
-const PAGE = 'https://forest.example/approve'
-const T0 = Date.UTC(2026, 8, 29, 12, 0, 0)
-/** A person, from a stand-in for a passkey's secret. */
-const alice = profileKey(seedFromPrf(new Uint8Array(32).fill(3)), 0)
-const offer = {
-  direction: 'offer',
-  description: 'One hour of maths tutoring, online.',
-  price: { amount: '30', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', per: 'hour' },
-  remote: true,
-  createdAt: '2026-09-29T12:00:00Z',
-}
+import { readConfig, startConnections } from '../src/service.ts'
+
+const dirs: string[] = []
+after(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true })
+})
 
 async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const { port } = server.address() as AddressInfo
-  await new Promise<void>((resolve) => server.close(() => resolve()))
+  const s = createServer()
+  await new Promise<void>((resolve) => s.listen(0, '127.0.0.1', resolve))
+  const { port } = s.address() as AddressInfo
+  await new Promise<void>((resolve) => s.close(() => resolve()))
   return port
 }
 
-let host: Host
-let service: Service
+const b64u = (b: Buffer) => b.toString('base64url')
+const BANNED = /\b(wallets?|usdc|chains?|blockchains?|gas|crypto(currency)?|tokens?|solana|mints?|seed)\b/i
+const readable = (html: string) => html.replace(/<style[\s\S]*?<\/style>/g, ' ').replace(/<[^>]+>/g, ' ')
 
-before(async () => {
-  // Forest's approval page, built by its own build, as the image builds it.
-  if (!existsSync(`${PAGE_DIR}/approve.html`)) execFileSync(process.execPath, [new URL('../../forest/records/web/build.ts', import.meta.url).pathname])
+test('an assistant connects with OAuth, the person adds its writer key, and it posts an offer and a review', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forest-connections-'))
+  dirs.push(dir)
+  const host = new Host()
+  const hostUrl = await host.listen(0)
   const port = await freePort()
-  host = new Host({ url: `http://127.0.0.1:${port}` })
-  await host.listen(port)
-  // The person's app, once: a folder naming the host, and a profile card.
-  const outcomes = await publish(
-    [host.url],
-    [
-      folderEntry(alice, { hosts: [host.url] }, T0),
-      ownerEntry(alice, 'profile', { market: 'tutoring', role: 'seller', name: 'Alice', createdAt: '2026-09-29T12:00:00Z' }, T0),
-    ],
-  )
-  assert.ok(outcomes.every((o) => o.results.every((r) => r.ok)), 'the host took both entries')
-  service = await startConnections(readConfig({ APPROVAL_PAGE: PAGE, HOSTS: host.url, WAIT_SECONDS: '0', PORT: '0' }))
-})
-
-after(async () => {
-  await service?.close()
-  await host?.close()
-})
-
-async function assistant(): Promise<Client> {
-  const client = new Client(
-    { name: 'test-assistant', version: '0.0.0' },
-    { capabilities: { elicitation: { url: {} } }, versionNegotiation: { mode: { pin: '2026-07-28' } }, inputRequired: { autoFulfill: false, maxRounds: 3 } },
-  )
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${service.url}/mcp`)))
-  return client
-}
-
-const textOf = (result: unknown) => (result as { content: Array<{ text: string }> }).content[0]?.text ?? ''
-
-test('it answers on every interface, not only loopback', () => {
-  const { address } = service.server.address() as AddressInfo
-  assert.ok(address === '::' || address === '0.0.0.0', `listening on ${address}`)
-})
-
-test('an assistant reads a profile through the front: no key, no grant, no login', async () => {
-  const client = await assistant()
+  const base = `http://127.0.0.1:${port}`
+  const dbPath = join(dir, 'connections.sqlite')
+  const service = await startConnections(readConfig({ PUBLIC_URL: base, HOSTS: hostUrl, DATABASE_PATH: dbPath, PORT: String(port) }))
   try {
-    const { tools } = await client.listTools()
-    assert.deepEqual(tools.map((t) => t.name).sort(), ['forest_draft', 'forest_read'])
-    assert.match(textOf(await client.callTool({ name: 'forest_read', arguments: { profile: alice.did } })), /"name": "Alice"/)
+    // The person's app: a profile, and its hosts record on the host.
+    const me = await profileKey(randomBytes(32), 'tutoring/seller')
+    const them = await profileKey(randomBytes(32), 'tutoring/buyer')
+    const t0 = Date.now()
+    assert.ok((await publish([hostUrl], [hostsRecord(me, [hostUrl], t0), ownerRecord(me, 'profile', { name: 'Ana', market: 'tutoring', role: 'seller', createdAt: new Date(t0).toISOString() }, t0)]))[0]!.results.every((r) => r.ok))
+
+    // An assistant with no token is sent to the metadata.
+    const mcpUrl = `${base}/mcp`
+    const denied = await fetch(mcpUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+    assert.equal(denied.status, 401)
+    assert.match(denied.headers.get('www-authenticate') ?? '', new RegExp(`resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"`))
+    const resource = await (await fetch(`${base}/.well-known/oauth-protected-resource/mcp`)).json()
+    assert.deepEqual([resource.resource, resource.authorization_servers], [mcpUrl, [`${base}/`]])
+    const meta = await (await fetch(`${base}/.well-known/oauth-authorization-server`)).json()
+    assert.deepEqual(meta.code_challenge_methods_supported, ['S256'])
+
+    // It registers itself, and sends the person to /authorize with a PKCE challenge.
+    const redirect = 'http://127.0.0.1:9/callback'
+    const reg = await fetch(meta.registration_endpoint, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ redirect_uris: [redirect], token_endpoint_auth_method: 'none', client_name: 'Test assistant', grant_types: ['authorization_code', 'refresh_token'] }),
+    })
+    assert.equal(reg.status, 201)
+    const client = await reg.json()
+    const verifier = b64u(randomBytes(32))
+    const challenge = b64u(createHash('sha256').update(verifier).digest())
+    const authorize = new URL(meta.authorization_endpoint)
+    for (const [k, v] of Object.entries({ response_type: 'code', client_id: client.client_id, redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', state: 'xyz', resource: mcpUrl })) {
+      authorize.searchParams.set(k, v)
+    }
+    const first = await fetch(authorize, { redirect: 'manual' })
+    assert.equal(first.status, 200)
+    assert.match(first.headers.get('content-security-policy') ?? '', /default-src 'none'/)
+    const firstPage = await first.text()
+    assert.match(firstPage, /Test assistant asks to post offers and reviews/)
+    const connect = /action="(\/connect\/[^"]+)"/.exec(firstPage)![1]!
+    assert.ok(!connect.includes(me.address), 'the page carries a random id, never the profile')
+
+    // The person names the profile, in the form's body: a writer key is made, and shown.
+    const bad = await fetch(base + connect, { method: 'POST', body: new URLSearchParams({ profile: 'not-an-address' }), redirect: 'manual' })
+    assert.equal(bad.status, 400)
+    const named = await fetch(base + connect, { method: 'POST', body: new URLSearchParams({ profile: me.address }), redirect: 'manual' })
+    assert.equal(named.status, 303)
+    assert.equal(named.headers.get('location'), connect)
+    const waiting = await (await fetch(base + connect, { redirect: 'manual' })).text()
+    const writer = /<code>([1-9A-HJ-NP-Za-km-z]{32,44})<\/code>/.exec(waiting)![1]!
+    assert.match(waiting, /http-equiv="refresh"/)
+    for (const html of [firstPage, waiting]) assert.equal(BANNED.exec(readable(html)), null, 'no crypto word on a page a person reads')
+    assert.equal((await fetch(base + connect, { redirect: 'manual' })).status, 200, 'still waiting: the profile does not list the key yet')
+
+    // The person's app adds the writer key, signed with the profile's own key; the grant goes through.
+    const t1 = Date.now()
+    await publish([hostUrl], [permissionsRecord(me, [{ key: writer, paths: ['offer', 'review'], until: t1 + 30 * 86_400_000 }], t1)])
+    const granted = await fetch(base + connect, { redirect: 'manual' })
+    assert.equal(granted.status, 302)
+    const back = new URL(granted.headers.get('location')!)
+    assert.equal(`${back.origin}${back.pathname}`, redirect)
+    assert.equal(back.searchParams.get('state'), 'xyz')
+    const code = back.searchParams.get('code')!
+
+    // The code, with the verifier, for tokens; once.
+    const exchange = (body: Record<string, string>) => fetch(meta.token_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(body) })
+    const wrong = await exchange({ grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: client.client_id, code_verifier: b64u(randomBytes(32)) })
+    assert.equal(wrong.status, 400, 'the wrong verifier')
+    const tokens = await (await exchange({ grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: client.client_id, code_verifier: verifier })).json()
+    assert.equal(tokens.token_type, 'bearer')
+    assert.equal((await exchange({ grant_type: 'authorization_code', code, redirect_uri: redirect, client_id: client.client_id, code_verifier: verifier })).status, 400, 'a code counts once')
+
+    // The assistant, over MCP, with its token.
+    const mcp = async (token: string) => {
+      const c = new Client({ name: 'test-assistant', version: '0.0.0' })
+      await c.connect(new StreamableHTTPClientTransport(new URL(mcpUrl), { requestInit: { headers: { authorization: `Bearer ${token}` } } }))
+      return c
+    }
+    const assistant = await mcp(tokens.access_token)
+    const { tools } = await assistant.listTools()
+    assert.deepEqual(tools.map((t) => t.name).sort(), ['post_offer', 'post_review'])
+    const offerTool = tools.find((t) => t.name === 'post_offer')!
+    assert.deepEqual((offerTool.inputSchema as any).properties.offer.required, ['direction', 'description', 'createdAt'], "forest's own offer shape")
+
+    const offer = { direction: 'offer', description: 'One hour of maths, online.', price: { amount: '30', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', per: 'hour' }, remote: true }
+    const posted = await assistant.callTool({ name: 'post_offer', arguments: { id: 'maths', offer } })
+    assert.equal(posted.isError, undefined, JSON.stringify(posted))
+    assert.equal((posted.structuredContent as any).path, 'offer/maths')
+    const review = await assistant.callTool({ name: 'post_review', arguments: { review: { subject: them.address, ratings: { overall: '9' }, text: 'Paid on time.' } } })
+    assert.equal(review.isError, undefined, JSON.stringify(review))
+
+    // On the host: signed by the writer key, for the profile, counted by forest's view.
+    const view = await readProfile([hostUrl], me.address, Date.now())
+    const maths = view.current.get('offer/maths')!.record
+    assert.equal(maths.by, writer)
+    assert.equal(maths.profile, me.address)
+    assert.deepEqual((maths.body as any).price, offer.price)
+    assert.ok([...view.current.keys()].some((p) => p.startsWith('review/')))
+
+    // What it may not do: a body that is not an offer, and a path the profile's own key wrote.
+    assert.equal((await assistant.callTool({ name: 'post_offer', arguments: { offer: { direction: 'sell' } } })).isError, true)
+    await publish([hostUrl], [ownerRecord(me, 'offer/mine', { direction: 'offer', description: 'Mine.', createdAt: new Date().toISOString() }, Date.now())])
+    const owners = await assistant.callTool({ name: 'post_offer', arguments: { id: 'mine', offer } })
+    assert.equal(owners.isError, true)
+    assert.match(JSON.stringify(owners), /own key wrote offer\/mine/)
+
+    // The person removes the writer key in their app: from then on the tools refuse; what it wrote stays.
+    const t2 = Date.now()
+    await publish([hostUrl], [permissionsRecord(me, [{ key: writer, paths: ['offer', 'review'], until: t2 }], t2 + 1)])
+    const refused = await assistant.callTool({ name: 'post_offer', arguments: { id: 'later', offer } })
+    assert.equal(refused.isError, true)
+    assert.match(JSON.stringify(refused), /not on the profile's permissions list/)
+    assert.equal((await readProfile([hostUrl], me.address, Date.now())).current.get('offer/maths')!.record.by, writer, 'what it wrote stays')
+    await assistant.close()
+
+    // Refreshing gives a new token and spends the old refresh token; a revoked token is refused.
+    const refreshed = await (await exchange({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.client_id })).json()
+    assert.ok(refreshed.access_token)
+    assert.equal((await exchange({ grant_type: 'refresh_token', refresh_token: tokens.refresh_token, client_id: client.client_id })).status, 400)
+    await fetch(meta.revocation_endpoint, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: refreshed.access_token, client_id: client.client_id }) })
+    const revoked = await fetch(mcpUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${refreshed.access_token}` }, body: '{}' })
+    assert.equal(revoked.status, 401)
+
+    // The file holds no token, code or profile key in the clear.
+    const file = readFileSync(dbPath)
+    for (const secret of [tokens.access_token, tokens.refresh_token, refreshed.access_token, refreshed.refresh_token, code]) assert.equal(file.includes(Buffer.from(secret)), false)
+    assert.equal(file.includes(Buffer.from(me.privateKey)), false)
   } finally {
-    await client.close()
+    await service.close()
+    await host.close()
   }
 })
 
-test('a draft comes back as an approval link carrying exactly the note, and nothing is published', async () => {
-  const client = await assistant()
-  try {
-    const first = (await client.callTool(
-      { name: 'forest_draft', arguments: { profile: alice.did, path: 'offer/maths', body: offer } },
-      { allowInputRequired: true } as never,
-    )) as { resultType?: string; inputRequests?: Record<string, { params: { mode: string; url: string } }> }
-    assert.equal(first.resultType, 'input_required')
-    const url = first.inputRequests!.approve!.params.url
-    assert.ok(url.startsWith(`${PAGE}#`), 'the link opens the approval page')
-    assert.deepEqual(requestFromLink(url), { v: 1, profile: alice.did, path: 'offer/maths', body: offer, hosts: [host.url] })
-    const { versions } = await readAll(host.url, { profile: alice.did })
-    assert.equal(
-      versions.some((v) => v.entry.path === 'offer/maths'),
-      false,
-      'the service signs nothing: only the person, on their device, can publish it',
-    )
-  } finally {
-    await client.close()
-  }
-})
-
-test('anything but /mcp is not found, through the front', async () => {
-  assert.equal((await fetch(`${service.url}/`)).status, 404)
-  assert.equal((await fetch(`${service.url}/other`, { method: 'POST', body: '{}' })).status, 404)
-})
-
-test('the configuration names what is missing, and takes only URLs', () => {
-  assert.throws(() => readConfig({}), /missing environment variables: APPROVAL_PAGE, HOSTS/)
-  assert.throws(() => readConfig({ APPROVAL_PAGE: 'not a url', HOSTS: 'https://a.example' }), /APPROVAL_PAGE/)
-  assert.throws(() => readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://a.example, ftp://b.example' }), /HOSTS/)
-  assert.throws(() => readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://a.example', WAIT_SECONDS: '-1' }), /WAIT_SECONDS/)
-  const config = readConfig({ APPROVAL_PAGE: PAGE, HOSTS: ' https://a.example ,https://b.example,' })
-  assert.deepEqual(config, { approvalPage: PAGE, hosts: ['https://a.example', 'https://b.example'], waitMs: 30_000, pageDir: PAGE_DIR, port: 8080 })
-})
-
-test('it serves forest’s approval page as built, with the policy the spec asks for; nothing else changes', async () => {
-  const page = await fetch(`${service.url}/approve`)
-  assert.equal(page.status, 200)
-  assert.equal(page.headers.get('content-type'), 'text/html; charset=utf-8')
-  assert.equal(page.headers.get('content-security-policy'), PAGE_POLICY)
-  assert.match(PAGE_POLICY, /frame-ancestors 'none'/)
-  assert.match(PAGE_POLICY, /connect-src https:;/, 'reads and posts over https only')
-  assert.equal(page.headers.get('x-content-type-options'), 'nosniff')
-  assert.equal(await page.text(), readFileSync(`${PAGE_DIR}/approve.html`, 'utf8'))
-
-  const js = Buffer.from(await (await fetch(`${service.url}/approve.js`)).arrayBuffer())
-  const published = (await (await fetch(`${service.url}/approve.js.sha256`)).text()).split(' ')[0]
-  assert.equal(createHash('sha256').update(js).digest('hex'), published, 'the bundle served is the one whose hash is published')
-  const libraries = (await (await fetch(`${service.url}/approve.deps.txt`)).text()).trim().split('\n').map((l) => l.split(' ')[0])
-  assert.deepEqual(libraries, ['@noble/curves', '@noble/hashes', '@scure/base', 'canonicalize'])
-  assert.equal((await fetch(`${service.url}/approve.css`)).status, 200)
-
-  assert.equal((await fetch(`${service.url}/approve`, { method: 'POST' })).status, 405)
-  assert.equal((await fetch(`${service.url}/approve.html`)).status, 404, 'only the paths it names')
-  assert.equal((await fetch(`${service.url}/`)).status, 404)
-})
-
-test('with APPROVAL_PAGE_DIR=none it serves no page', () => {
-  assert.equal(readConfig({ APPROVAL_PAGE: PAGE, HOSTS: 'https://h.example', APPROVAL_PAGE_DIR: 'none' }).pageDir, null)
+test('the configuration names what is missing, and takes origins only', () => {
+  assert.throws(() => readConfig({}), /PUBLIC_URL, HOSTS/)
+  assert.throws(() => readConfig({ PUBLIC_URL: 'https://c.example/x', HOSTS: 'https://h.example' }), /origin/)
+  assert.throws(() => readConfig({ PUBLIC_URL: 'https://c.example', HOSTS: 'https://h.example/path' }), /HOSTS/)
+  const c = readConfig({ PUBLIC_URL: 'https://c.example', HOSTS: 'https://h.example, https://i.example' })
+  assert.deepEqual([c.publicUrl, c.hosts, c.port], ['https://c.example', ['https://h.example', 'https://i.example'], 8080])
 })

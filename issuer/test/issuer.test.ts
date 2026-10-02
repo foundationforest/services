@@ -4,22 +4,21 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { createPublicKey, verify } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 
 import { BN254_R, toBytes32 } from '../../forest/registry/client/src/field.ts'
 import { listRoot } from '../../forest/registry/client/src/proof.ts'
-import { b64u, concat, utf8 } from '../../forest/records/src/bytes.ts'
+import { base58, hex } from '../../forest/records/src/bytes.ts'
 import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
-import { didFromPublicKey, publicKeyFromDid } from '../../forest/records/src/keys.ts'
+import { keeperSigned } from '../../forest/registry/client/src/keeper.ts'
 
 import { shuffle } from '../src/batch.ts'
 import { loadKeypair, writeKeyFile } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
-import { ROOTS_SIGN_PREFIX } from '../src/list.ts'
 import { readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import { Store } from '../src/store.ts'
 import {
@@ -29,7 +28,7 @@ import {
   assertNoLink,
   keypairJson,
   passed,
-  randomCommitment,
+  randomStamp,
 } from './fakes.ts'
 
 const dirs: string[] = []
@@ -98,15 +97,14 @@ async function start(
     faces.set(body.sessionId, decision)
     return body.sessionId as string
   }
-  const listed = () => issuer.store.members()
+  const listed = () => issuer.store.stamps()
   const get = (path: string) => fetch(issuer.url + path)
   return { issuer, faces, dbPath, listed, get, logs, post, session }
 }
 
-const submit = (h: Harness, sessionId: string, commitment: bigint) =>
-  h.post('/submit', { sessionId, commitment: commitment.toString() })
+const submit = (h: Harness, sessionId: string, stamp: bigint) => h.post('/submit', { sessionId, stamp: stamp.toString() })
 
-test('a passed face check puts the commitment on the list', async () => {
+test('a passed face check puts the stamp on the list', async () => {
   const h = await start()
   try {
     const created = await h.post('/session')
@@ -114,15 +112,15 @@ test('a passed face check puts the commitment on the list', async () => {
     assert.match(created.body.url, /^https:\/\//)
     h.faces.set(created.body.sessionId, passed())
 
-    const commitment = randomCommitment()
-    assert.deepEqual(await submit(h, created.body.sessionId, commitment), { status: 202, body: { status: 'queued' } })
-    assert.deepEqual((await h.post('/status', { commitment: commitment.toString() })).body, { status: 'queued' })
+    const stamp = randomStamp()
+    assert.deepEqual(await submit(h, created.body.sessionId, stamp), { status: 202, body: { status: 'queued' } })
+    assert.deepEqual((await h.post('/status', { stamp: stamp.toString() })).body, { status: 'queued' })
     assert.deepEqual(h.listed(), [], 'nothing goes on the list before the batch')
 
     await h.issuer.batcher.flush()
-    assert.deepEqual(h.listed(), [commitment])
-    assert.deepEqual((await h.post('/status', { commitment: commitment.toString() })).body, { status: 'listed' })
-    assert.deepEqual((await h.post('/status', { commitment: randomCommitment().toString() })).body, { status: 'unknown' })
+    assert.deepEqual(h.listed(), [stamp])
+    assert.deepEqual((await h.post('/status', { stamp: stamp.toString() })).body, { status: 'listed' })
+    assert.deepEqual((await h.post('/status', { stamp: randomStamp().toString() })).body, { status: 'unknown' })
     assert.deepEqual(h.logs, ['issuer: batch of 1 added to the list'], 'the log holds a count and nothing else')
   } finally {
     await h.issuer.close()
@@ -133,17 +131,17 @@ test('a failed liveness check is refused, and uses nothing up', async () => {
   const h = await start()
   try {
     const sessionId = await h.session(passed({ status: 'Declined', liveness: [{ status: 'Declined' }] }))
-    const commitment = randomCommitment()
-    assert.deepEqual(await submit(h, sessionId, commitment), { status: 403, body: { error: 'liveness_not_passed' } })
+    const stamp = randomStamp()
+    assert.deepEqual(await submit(h, sessionId, stamp), { status: 403, body: { error: 'liveness_not_passed' } })
     assert.equal(h.issuer.store.count(), 0)
 
     // A liveness step still in review, in a session already approved, is not a pass either.
     h.faces.set(sessionId, passed({ liveness: [{ status: 'Approved' }, { status: 'In Review' }] }))
-    assert.deepEqual(await submit(h, sessionId, commitment), { status: 403, body: { error: 'liveness_not_passed' } })
+    assert.deepEqual(await submit(h, sessionId, stamp), { status: 403, body: { error: 'liveness_not_passed' } })
 
     // The session was not used up: once Didit says it passed, it counts.
     h.faces.set(sessionId, passed())
-    assert.equal((await submit(h, sessionId, commitment)).status, 202)
+    assert.equal((await submit(h, sessionId, stamp)).status, 202)
   } finally {
     await h.issuer.close()
   }
@@ -157,10 +155,10 @@ test('a duplicate face is refused, whatever else the session says', async () => 
       const declined = await h.session(
         passed({ status: 'Declined', liveness: [{ status: 'Declined' }], risks: ['LOW_FACE_QUALITY', risk] }),
       )
-      assert.deepEqual(await submit(h, declined, randomCommitment()), { status: 403, body: { error: 'duplicate_face' } })
+      assert.deepEqual(await submit(h, declined, randomStamp()), { status: 403, body: { error: 'duplicate_face' } })
       // And a workflow whose rules approved it anyway: the risk code alone refuses.
       const approved = await h.session(passed({ risks: [risk] }))
-      assert.deepEqual(await submit(h, approved, randomCommitment()), { status: 403, body: { error: 'duplicate_face' } })
+      assert.deepEqual(await submit(h, approved, randomStamp()), { status: 403, body: { error: 'duplicate_face' } })
     }
     assert.equal(h.issuer.store.count(), 0)
   } finally {
@@ -172,24 +170,24 @@ test('a session id counts once', async () => {
   const h = await start()
   try {
     const sessionId = await h.session()
-    const first = randomCommitment()
+    const first = randomStamp()
     assert.equal((await submit(h, sessionId, first)).status, 202)
-    assert.deepEqual(await submit(h, sessionId, randomCommitment()), { status: 409, body: { error: 'session_used' } })
+    assert.deepEqual(await submit(h, sessionId, randomStamp()), { status: 409, body: { error: 'session_used' } })
     assert.deepEqual(await submit(h, sessionId, first), { status: 409, body: { error: 'session_used' } })
 
-    // Two requests with one session, both waiting on Didit at once: exactly one commitment is queued.
+    // Two requests with one session, both waiting on Didit at once: exactly one stamp is queued.
     const racing = await h.session()
     const release = h.faces.hold()
-    const both = Promise.all([submit(h, racing, randomCommitment()), submit(h, racing, randomCommitment())])
+    const both = Promise.all([submit(h, racing, randomStamp()), submit(h, racing, randomStamp())])
     while (h.faces.waiting < 2) await new Promise((r) => setTimeout(r, 5))
     release()
     const statuses = (await both).map((r) => r.status).sort()
     assert.deepEqual(statuses, [202, 409])
-    assert.equal(h.issuer.store.count(), 2, 'one commitment from each session')
+    assert.equal(h.issuer.store.count(), 2, 'one stamp from each session')
 
     // After the batch, the used sessions are still refused.
     await h.issuer.batcher.flush()
-    assert.deepEqual(await submit(h, sessionId, randomCommitment()), { status: 409, body: { error: 'session_used' } })
+    assert.deepEqual(await submit(h, sessionId, randomStamp()), { status: 409, body: { error: 'session_used' } })
   } finally {
     await h.issuer.close()
   }
@@ -204,32 +202,32 @@ test('every other refusal, and malformed requests', async () => {
       [passed({ liveness: [] }), 'no_liveness'],
     ]
     for (const [decision, error] of cases) {
-      assert.deepEqual(await submit(h, await h.session(decision), randomCommitment()), { status: 403, body: { error } })
+      assert.deepEqual(await submit(h, await h.session(decision), randomStamp()), { status: 403, body: { error } })
     }
-    assert.deepEqual(await submit(h, crypto.randomUUID(), randomCommitment()), {
+    assert.deepEqual(await submit(h, crypto.randomUUID(), randomStamp()), {
       status: 403,
       body: { error: 'unknown_session' },
     })
 
     const good = await h.session()
     const bad: [unknown, string][] = [
-      [{ sessionId: 'not-a-uuid', commitment: '5' }, 'bad_session_id'],
-      [{ sessionId: good, commitment: '0' }, 'bad_commitment'],
-      [{ sessionId: good, commitment: '007' }, 'bad_commitment'],
-      [{ sessionId: good, commitment: '0x12' }, 'bad_commitment'],
-      [{ sessionId: good, commitment: '-5' }, 'bad_commitment'],
-      [{ sessionId: good, commitment: BN254_R.toString() }, 'bad_commitment'],
-      [{ sessionId: good, commitment: 5 }, 'expected_exactly_sessionId_and_commitment'],
-      [{ sessionId: good, commitment: '5', wallet: 'x' }, 'expected_exactly_sessionId_and_commitment'],
-      [{ sessionId: good }, 'expected_exactly_sessionId_and_commitment'],
+      [{ sessionId: 'not-a-uuid', stamp: '5' }, 'bad_session_id'],
+      [{ sessionId: good, stamp: '0' }, 'bad_stamp'],
+      [{ sessionId: good, stamp: '007' }, 'bad_stamp'],
+      [{ sessionId: good, stamp: '0x12' }, 'bad_stamp'],
+      [{ sessionId: good, stamp: '-5' }, 'bad_stamp'],
+      [{ sessionId: good, stamp: BN254_R.toString() }, 'bad_stamp'],
+      [{ sessionId: good, stamp: 5 }, 'expected_exactly_sessionId_and_stamp'],
+      [{ sessionId: good, stamp: '5', wallet: 'x' }, 'expected_exactly_sessionId_and_stamp'],
+      [{ sessionId: good }, 'expected_exactly_sessionId_and_stamp'],
       ['not json', 'not_json'],
       ['[1]', 'not_an_object'],
     ]
     for (const [body, error] of bad) assert.deepEqual(await h.post('/submit', body), { status: 400, body: { error } })
     assert.deepEqual(await h.post('/session', { vendor: 'x' }), { status: 400, body: { error: 'expected_empty_body' } })
-    assert.deepEqual(await h.post('/status', { commitment: '1', more: '2' }), {
+    assert.deepEqual(await h.post('/status', { stamp: '1', more: '2' }), {
       status: 400,
-      body: { error: 'expected_exactly_commitment' },
+      body: { error: 'expected_exactly_stamp' },
     })
     assert.deepEqual(await h.post('/submit', 'x'.repeat(2000)), { status: 413, body: { error: 'too_large' } })
     assert.deepEqual(await h.post('/status/123'), { status: 404, body: { error: 'not_found' } })
@@ -241,17 +239,17 @@ test('every other refusal, and malformed requests', async () => {
     assert.equal(preflight.headers.get('access-control-allow-origin'), '*')
 
     // Didit not answering is a 502, and the session is still good afterwards.
-    const commitment = randomCommitment()
+    const stamp = randomStamp()
     h.faces.down = true
-    assert.deepEqual(await submit(h, good, commitment), { status: 502, body: { error: 'face_check_unavailable' } })
+    assert.deepEqual(await submit(h, good, stamp), { status: 502, body: { error: 'face_check_unavailable' } })
     assert.deepEqual(await h.post('/session'), { status: 502, body: { error: 'face_check_unavailable' } })
     h.faces.down = false
-    assert.equal((await submit(h, good, commitment)).status, 202)
+    assert.equal((await submit(h, good, stamp)).status, 202)
 
-    // A commitment already waiting, or already on the list, is refused before Didit is asked.
-    assert.deepEqual(await submit(h, await h.session(), commitment), { status: 409, body: { error: 'commitment_queued' } })
+    // A stamp already waiting, or already on the list, is refused before Didit is asked.
+    assert.deepEqual(await submit(h, await h.session(), stamp), { status: 409, body: { error: 'stamp_queued' } })
     await h.issuer.batcher.flush()
-    assert.deepEqual(await submit(h, await h.session(), commitment), { status: 409, body: { error: 'already_listed' } })
+    assert.deepEqual(await submit(h, await h.session(), stamp), { status: 409, body: { error: 'already_listed' } })
     assert.equal(h.issuer.store.count(), 0)
   } finally {
     await h.issuer.close()
@@ -263,14 +261,14 @@ test('a batch goes onto the list in random order', async () => {
   try {
     const submitted: bigint[] = []
     for (let i = 0; i < 30; i++) {
-      const c = randomCommitment()
+      const c = randomStamp()
       submitted.push(c)
       assert.equal((await submit(h, await h.session(), c)).status, 202)
     }
     await h.issuer.batcher.flush()
 
     const inserted = h.listed()
-    assert.deepEqual([...inserted].sort(), [...submitted].sort(), 'every commitment, once')
+    assert.deepEqual([...inserted].sort(), [...submitted].sort(), 'every stamp, once')
     assert.notDeepEqual(inserted, submitted, 'not in the order they arrived')
     // The file keeps them in key order; the batch must not follow that either.
     const keyOrder = [...submitted].sort((a, b) => Buffer.compare(Buffer.from(toBytes32(a)), Buffer.from(toBytes32(b))))
@@ -294,10 +292,10 @@ test('shuffle is Fisher–Yates over the random index it is given', () => {
 test('a batch runs once BATCH_MAX are waiting, and on the timer', async () => {
   const counted = await start({ batchMax: 5 })
   try {
-    for (let i = 0; i < 4; i++) await submit(counted, await counted.session(), randomCommitment())
+    for (let i = 0; i < 4; i++) await submit(counted, await counted.session(), randomStamp())
     await counted.issuer.batcher.idle()
     assert.equal(counted.listed().length, 0, 'four wait')
-    await submit(counted, await counted.session(), randomCommitment())
+    await submit(counted, await counted.session(), randomStamp())
     await counted.issuer.batcher.idle()
     assert.equal(counted.listed().length, 5, 'the fifth sends all five')
     assert.equal(counted.issuer.store.count(), 0)
@@ -307,8 +305,8 @@ test('a batch runs once BATCH_MAX are waiting, and on the timer', async () => {
 
   const timed = await start({ intervalSeconds: 1 })
   try {
-    await submit(timed, await timed.session(), randomCommitment())
-    await submit(timed, await timed.session(), randomCommitment())
+    await submit(timed, await timed.session(), randomStamp())
+    await submit(timed, await timed.session(), randomStamp())
     for (let i = 0; i < 100 && timed.listed().length < 2; i++) await new Promise((r) => setTimeout(r, 50))
     assert.equal(timed.listed().length, 2, 'the timer sent the two waiting')
   } finally {
@@ -316,27 +314,27 @@ test('a batch runs once BATCH_MAX are waiting, and on the timer', async () => {
   }
 })
 
-test('a commitment queued again while it was being listed goes on the list once', async () => {
+test('a stamp queued again while it was being listed goes on the list once', async () => {
   const h = await start()
   try {
-    const twice = randomCommitment()
+    const twice = randomStamp()
     await submit(h, await h.session(), twice)
     await h.issuer.batcher.flush()
-    const roots = h.issuer.store.roots().length
+    const roots = h.issuer.store.snapshots().length
     // As if a submit that checked the list before this batch listed it reached the queue after.
     assert.equal(h.issuer.store.accept(crypto.randomUUID(), twice), 'queued')
-    const other = randomCommitment()
+    const other = randomStamp()
     await submit(h, await h.session(), other)
     await h.issuer.batcher.flush()
     assert.deepEqual(h.listed(), [twice, other], 'each once')
     assert.equal(h.issuer.store.count(), 0)
-    assert.equal(h.issuer.store.roots().length, roots + 1, 'one root for the one added')
+    assert.equal(h.issuer.store.snapshots().length, roots + 1, 'one root for the one added')
 
     // A batch of nothing new adds no root.
     assert.equal(h.issuer.store.accept(crypto.randomUUID(), other), 'queued')
     await h.issuer.batcher.flush()
     assert.equal(h.issuer.store.count(), 0)
-    assert.equal(h.issuer.store.roots().length, roots + 1)
+    assert.equal(h.issuer.store.snapshots().length, roots + 1)
   } finally {
     await h.issuer.close()
   }
@@ -347,7 +345,7 @@ test('a batch that fails adds nothing, and everything waits for the next', async
   try {
     const all: bigint[] = []
     for (let i = 0; i < 10; i++) {
-      const c = randomCommitment()
+      const c = randomStamp()
       all.push(c)
       await submit(h, await h.session(), c)
     }
@@ -359,34 +357,34 @@ test('a batch that fails adds nothing, and everything waits for the next', async
     assert.deepEqual(h.listed(), [])
     assert.equal(h.issuer.store.count(), 10)
     assert.equal(h.issuer.list.size, 0)
-    for (const c of all) assert.deepEqual((await h.post('/status', { commitment: c.toString() })).body, { status: 'queued' })
+    for (const c of all) assert.deepEqual((await h.post('/status', { stamp: c.toString() })).body, { status: 'queued' })
     assert.match(h.logs.at(-1)!, /^issuer: batch of 10 not added \(RangeError\); all wait$/)
-    assert.deepEqual(JSON.parse(await (await h.get('/roots.json')).text()).roots, [], 'no root was published')
+    assert.deepEqual(JSON.parse(await (await h.get('/list.json')).text()).snapshots, [], 'no snapshot was published')
 
     h.issuer.store.append = append
     await h.issuer.batcher.flush()
     assert.deepEqual([...h.listed()].sort(), [...all].sort())
-    const [only] = JSON.parse(await (await h.get('/roots.json')).text()).roots
-    assert.equal(BigInt(only.root), listRoot(h.listed()), 'the tree was not left grown by the failed batch')
+    const [only] = JSON.parse(await (await h.get('/list.json')).text()).snapshots
+    assert.equal(BigInt('0x' + only.root), listRoot(h.listed()), 'the tree was not left grown by the failed batch')
   } finally {
     await h.issuer.close()
   }
 })
 
-test('after the batch, the file holds the list and no link from a session to a commitment', async () => {
+test('after the batch, the file holds the list and no link from a session to a stamp', async () => {
   const h = await start()
   const sessionIds: string[] = []
-  const commitments: bigint[] = []
+  const stamps: bigint[] = []
   try {
     // 300 rows run the queue past one 4 KB page, so it has interior pages and has been rebalanced.
     for (let i = 0; i < 300; i++) {
       const sessionId = await h.session()
-      const c = randomCommitment()
+      const c = randomStamp()
       assert.equal((await submit(h, sessionId, c)).status, 202)
       sessionIds.push(sessionId)
-      commitments.push(c)
+      stamps.push(c)
     }
-    assertFileHolds(h.dbPath, commitments)
+    assertFileHolds(h.dbPath, stamps)
 
     // A batch that fails, then one that lands.
     const append = h.issuer.store.append
@@ -401,111 +399,124 @@ test('after the batch, the file holds the list and no link from a session to a c
   } finally {
     await h.issuer.close()
   }
-  assertNoLink(h.dbPath, sessionIds, commitments)
+  assertNoLink(h.dbPath, sessionIds, stamps)
 })
 
-type RootsFile = { v: number; issuer: string; roots: { root: string; size: number; time: number }[]; sig: string }
+type Snapshot = { root: string; signature: string; size: number; time: number }
+type ListFile = { v: number; keeper: string; stamps: string[]; snapshots: Snapshot[] }
 
-/** Whether a roots file's signature holds, checked as README.md's "The two files" says. */
-function signed(file: RootsFile): boolean {
-  const { sig, ...unsigned } = file
-  const key = publicKeyFromDid(file.issuer)
-  assert.ok(key, 'the issuer is a did:key')
-  const spki = createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), key]), format: 'der', type: 'spki' })
-  const input = concat(Uint8Array.of(0xff), utf8('forest.foundation/issuer/roots/v1\n'), utf8(canonical(unsigned)))
-  return verify(null, input, spki, b64u.decode(sig))
+/** Whether a snapshot is signed by this keeper, checked as a registry reader checks a row: `keeperSigned`. */
+function signed(keeper: string, s: Snapshot): boolean {
+  return keeperSigned({ keeper: base58.decode(keeper), root: hex.decode(s.root), keeperSignature: hex.decode(s.signature) })
 }
 
-/** Both files as a reader takes them: canonical text, the fields README.md names, every root its prefix's. */
-async function readFiles(h: Harness): Promise<{ listText: string; rootsText: string; commitments: bigint[]; roots: RootsFile }> {
-  const listText = await (await h.get('/list.json')).text()
-  const rootsText = await (await h.get('/roots.json')).text()
-  const list = parseCanonical(listText) as { v: number; commitments: string[] }
-  const roots = parseCanonical(rootsText) as RootsFile
-  assert.deepEqual(Object.keys(list).sort(), ['commitments', 'v'])
-  assert.deepEqual(Object.keys(roots).sort(), ['issuer', 'roots', 'sig', 'v'])
-  assert.equal(list.v, 1)
-  assert.equal(roots.v, 1)
-  assert.ok(signed(roots), 'signed by the key the file names')
-  const commitments = list.commitments.map((c) => BigInt(c))
-  for (const r of roots.roots) {
-    assert.deepEqual(Object.keys(r).sort(), ['root', 'size', 'time'])
-    assert.equal(BigInt(r.root), listRoot(commitments.slice(0, r.size)), 'each root is forest\'s listRoot of its first `size` commitments')
+/** The list file as a reader takes it: canonical text, the fields README.md names, every snapshot its prefix's and signed. */
+async function readFile(h: Harness): Promise<{ text: string; stamps: bigint[]; file: ListFile }> {
+  const text = await (await h.get('/list.json')).text()
+  const file = parseCanonical(text) as ListFile
+  assert.equal(canonical(file), text, 'canonical text')
+  assert.deepEqual(Object.keys(file).sort(), ['keeper', 'snapshots', 'stamps', 'v'])
+  assert.equal(file.v, 1)
+  const stamps = file.stamps.map((s) => BigInt(s))
+  for (const s of file.snapshots) {
+    assert.deepEqual(Object.keys(s).sort(), ['root', 'signature', 'size', 'time'])
+    assert.match(s.root, /^[0-9a-f]{64}$/)
+    assert.equal(BigInt('0x' + s.root), listRoot(stamps.slice(0, s.size)), "each root is forest's listRoot of its first `size` stamps")
+    assert.ok(signed(file.keeper, s), 'signed by the keeper the file names, over the root as 32 big-endian bytes')
   }
-  assert.equal(roots.roots.at(-1)?.size ?? 0, commitments.length, 'the newest root is the whole list\'s')
-  return { listText, rootsText, commitments, roots }
+  assert.equal(file.snapshots.at(-1)?.size ?? 0, stamps.length, "the newest snapshot is the whole list's")
+  return { text, stamps, file }
 }
 
-test("the two files: the list in order, and its roots signed with the issuer's key", async () => {
+test("the list file: the stamps in order, and each snapshot signed with the keeper key", async () => {
   let now = 1_790_000_000_000
   const key = keypairJson()
   const h = await start({ key: key.json, now: () => now })
   let before
   try {
-    assert.equal(ROOTS_SIGN_PREFIX.length, 1 + 'forest.foundation/issuer/roots/v1\n'.length)
-    const empty = await readFiles(h)
-    assert.deepEqual(empty.commitments, [], 'an empty list at first')
-    assert.deepEqual(empty.roots.roots, [], 'and no root, signed all the same')
-    assert.deepEqual(publicKeyFromDid(empty.roots.issuer), key.publicKey, "the issuer is named by its key's did:key")
+    const empty = await readFile(h)
+    assert.deepEqual(empty.stamps, [], 'an empty list at first')
+    assert.deepEqual(empty.file.snapshots, [], 'and no snapshot')
+    assert.equal(empty.file.keeper, base58.encode(key.publicKey), "the keeper is named by its key's address")
 
-    for (let i = 0; i < 3; i++) await submit(h, await h.session(), randomCommitment())
+    for (let i = 0; i < 3; i++) await submit(h, await h.session(), randomStamp())
     await h.issuer.batcher.flush()
     const first = now
     now += 3_600_000
-    for (let i = 0; i < 2; i++) await submit(h, await h.session(), randomCommitment())
+    for (let i = 0; i < 2; i++) await submit(h, await h.session(), randomStamp())
     await h.issuer.batcher.flush()
 
-    before = await readFiles(h)
-    assert.deepEqual(before.commitments, h.listed(), 'the list file is the list, in its order')
+    before = await readFile(h)
+    assert.deepEqual(before.stamps, h.listed(), 'the file holds the list, in its order')
     assert.deepEqual(
-      before.roots.roots.map((r) => [r.size, r.time]),
+      before.file.snapshots.map((s) => [s.size, s.time]),
       [[3, first], [5, now]],
-      'one root per batch, oldest first, with the size and the time of its batch',
+      'one snapshot per batch, oldest first, with the size and the time of its batch',
     )
 
-    const res = await h.get('/roots.json')
+    const res = await h.get('/list.json')
     assert.equal(res.headers.get('content-type'), 'application/json')
     assert.equal(res.headers.get('cache-control'), 'no-cache')
     assert.equal(res.headers.get('access-control-allow-origin'), '*', 'any page may read it')
 
-    // Any change to the file breaks its signature: a date, a size, a root, the issuer.
-    const [a, b] = before.roots.roots
-    for (const changed of [
-      { ...before.roots, roots: [{ ...a, time: a.time + 1 }, b] },
-      { ...before.roots, roots: [{ ...a, size: 2 }, b] },
-      { ...before.roots, roots: [b] },
-      { ...before.roots, issuer: didFromPublicKey(keypairJson().publicKey) },
-    ]) {
-      assert.equal(signed(changed as RootsFile), false)
-    }
+    // A signature counts for its own root and keeper only.
+    const [a, b] = before.file.snapshots as [Snapshot, Snapshot]
+    assert.equal(signed(before.file.keeper, { ...a, root: b.root }), false)
+    assert.equal(signed(base58.encode(keypairJson().publicKey), a), false)
 
     assert.deepEqual(await h.post('/list.json'), { status: 405, body: { error: 'get_only' } })
-    assert.deepEqual(await h.post('/roots.json'), { status: 405, body: { error: 'get_only' } })
+    assert.deepEqual(await h.post('/roots.json'), { status: 404, body: { error: 'not_found' } })
     assert.equal((await h.get('/status')).status, 405, 'the routes a person calls stay POST')
   } finally {
     await h.issuer.close()
   }
 
-  // Started again on the same file and key: the same list, and the same two files byte for byte.
+  // Started again on the same file and key: the same list, and the same file byte for byte.
   const again = await start({ key: key.json, dbPath: h.dbPath })
   try {
-    const after = await readFiles(again)
-    assert.equal(after.listText, before.listText)
-    assert.equal(after.rootsText, before.rootsText)
-    for (const c of after.commitments) assert.deepEqual((await again.post('/status', { commitment: c.toString() })).body, { status: 'listed' })
+    const after = await readFile(again)
+    assert.equal(after.text, before.text)
+    for (const s of after.stamps) assert.deepEqual((await again.post('/status', { stamp: s.toString() })).body, { status: 'listed' })
   } finally {
     await again.issuer.close()
   }
 })
 
-test('the store queues a commitment only with an unused session, in one step', () => {
+test('a file written before the issuer was a keeper opens under the new names, its list kept', async () => {
+  const dbPath = join(tempDir(), 'old.sqlite')
+  const old = new DatabaseSync(dbPath)
+  const stamps = [randomStamp(), randomStamp()]
+  old.exec(`
+    CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
+    CREATE TABLE queue (commitment BLOB PRIMARY KEY) WITHOUT ROWID;
+    CREATE TABLE list (position INTEGER PRIMARY KEY, commitment BLOB NOT NULL);
+    CREATE TABLE roots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL, notes TEXT);
+  `)
+  stamps.forEach((s, i) => old.prepare('INSERT INTO list (position, commitment) VALUES (?, ?)').run(i, toBytes32(s)))
+  old.prepare('INSERT INTO roots (size, root, time, notes) VALUES (?, ?, ?, ?)').run(2, toBytes32(listRoot(stamps)), 1_790_000_000_000, 'sig1 sig2')
+  old.close()
+
+  const h = await start({ dbPath })
+  try {
+    const { stamps: listed, file } = await readFile(h)
+    assert.deepEqual(listed, stamps)
+    assert.deepEqual(file.snapshots.map((s) => s.size), [2])
+    await submit(h, await h.session(), randomStamp())
+    await h.issuer.batcher.flush()
+    assert.equal((await readFile(h)).stamps.length, 3)
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('the store queues a stamp only with an unused session, in one step', () => {
   const store = new Store(join(tempDir(), 'store.sqlite'))
   try {
     const session = crypto.randomUUID()
-    const c = randomCommitment()
+    const c = randomStamp()
     assert.equal(store.accept(session, c), 'queued')
-    assert.equal(store.accept(session, randomCommitment()), 'session_used')
-    assert.equal(store.accept(crypto.randomUUID(), c), 'commitment_queued')
+    assert.equal(store.accept(session, randomStamp()), 'session_used')
+    assert.equal(store.accept(crypto.randomUUID(), c), 'stamp_queued')
     assert.deepEqual(store.queued(), [c], 'a refused accept leaves nothing behind')
     assert.equal(store.isUsed(session), true)
   } finally {
@@ -548,7 +559,7 @@ test('opening sessions is limited per address, and a refusal says only "try late
 
     // The address is never written: not in the log, not in the file.
     const sessionId = await h.session()
-    assert.equal((await h.post('/submit', { sessionId, commitment: randomCommitment().toString() }, { 'x-real-ip': '203.0.113.7' })).status, 202)
+    assert.equal((await h.post('/submit', { sessionId, stamp: randomStamp().toString() }, { 'x-real-ip': '203.0.113.7' })).status, 202)
     await h.issuer.batcher.flush()
     assert.deepEqual(h.logs, ['issuer: batch of 1 added to the list'])
     const file = readFileSync(h.dbPath)
