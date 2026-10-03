@@ -59,27 +59,23 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 
 ### The latest run
 
-2026-10-02, 18:59 to 19:00 UTC, against all five services as they were before the forest pin moved
-to forest's 3 October words: **passed** in 76 seconds. Its record is
-[`runs/2026-10-02T18-59-03-198Z.json`](runs/2026-10-02T18-59-03-198Z.json), written under the old
-names. It has not run since.
+2026-10-03, 23:40 to 23:41 UTC, against all five services as deployed from `main` at `f0e3da8`
+(forest at `7adf341`): **passed** in 62 seconds. Its record is
+[`runs/2026-10-03T23-40-27-219Z.json`](runs/2026-10-03T23-40-27-219Z.json).
 
 | Step | What happened |
 |---|---|
-| People | Seller `9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN`, buyer `7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ` |
-| The list | Both stamped in one batch: 14 stamps, snapshot root `22299dca…`, signed by the issuer `7zPD6AZc…` |
+| People | Seller `2kqhNQm3tn7YCiHyc99JiDyXEtEFXBEUxQDuWyWGGHP1`, buyer `394TwRgAmEmRiqoA2EJXhWuLdzBRrCwchFf4DpjxuiRR` |
+| The list | Both stamped in one batch: 16 stamps, snapshot root `238c5309…`, signed by the issuer `7zPD6AZc…` |
 | Rows, through the fee payer | `tutoring/seller`, 796 bytes, charged 1.77784 test dollars; `tutoring/buyer`, 795 bytes, charged 1.77276 |
-| Access keys | Seller's assistant `7am4FVFv…`, buyer's `H2qDubZk…`, each on its profile's permissions list |
-| Records | The seller's offer `offer/maths`; the buyer's private message, 4,388 bytes, opened by the seller's reading key; two reviews |
-| The deal | Escrow `3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF`, one tap, 715 bytes, charged 3.69808 test dollars |
-| The index | Both rows counted under "Forest Foundation issuer (devnet)"; the offer listed; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1). Seller and buyer each rating 10 |
+| Access keys | Seller's assistant `E32PeXp7…`, buyer's `ofRSpzc8…`, each on its profile's permissions list |
+| Records | The seller's offer `offer/maths`, signed by the access key; the buyer's private message, 4,388 bytes, opened by the seller's reading key; two reviews |
+| The deal | Escrow `ChakmuTfUTsyzPZdTZ4wCHQdqYGFwVPgbSCSWWrFVGhC`, one tap, 715 bytes, charged 3.69808 test dollars |
+| The index | Both rows counted under "Soil issuer (devnet)"; the offer listed; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1). Seller and buyer each rating 10 |
 
-Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN),
-[the buyer](https://index-production-1b6e.up.railway.app/profiles/7M3oEDyFTgy9kyucGzvAsKbofFADcXYFEGLZV36ciYdZ),
-[the deal](https://index-production-1b6e.up.railway.app/deals/3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF).
-Once the services run this repo's code, those pages lose the run's offer and both reviews: the two
-access keys that posted them are listed in permissions records of the old shape, which forest now
-reads as listing no access key. The rows, the deal and the receipt stay.
+Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/2kqhNQm3tn7YCiHyc99JiDyXEtEFXBEUxQDuWyWGGHP1),
+[the buyer](https://index-production-1b6e.up.railway.app/profiles/394TwRgAmEmRiqoA2EJXhWuLdzBRrCwchFf4DpjxuiRR),
+[the deal](https://index-production-1b6e.up.railway.app/deals/ChakmuTfUTsyzPZdTZ4wCHQdqYGFwVPgbSCSWWrFVGhC).
 
 ## Promises
 

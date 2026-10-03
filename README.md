@@ -17,7 +17,7 @@ is shipped.
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured: pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold | Soil | Running, paid in two test dollars |
 | [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | Soil | Running |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-02, before the pin moved; not run since |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-03 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -129,8 +129,8 @@ none is in this repo. The first escrow, `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
 Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/9mri3A3NyUGjKQH8cfByYfEWCtGALiPBhnBCQLQfovnN)
-and [deal](https://index-production-1b6e.up.railway.app/deals/3zmphLyirt3mG1yyQseu6xCbqqxxmE72QprnNXdMroKF),
+[seller](https://index-production-1b6e.up.railway.app/profiles/2kqhNQm3tn7YCiHyc99JiDyXEtEFXBEUxQDuWyWGGHP1)
+and [deal](https://index-production-1b6e.up.railway.app/deals/ChakmuTfUTsyzPZdTZ4wCHQdqYGFwVPgbSCSWWrFVGhC),
 [the issuer's list](https://issuer-production-4976.up.railway.app/list.json).
 
 ## Promises
