@@ -169,7 +169,7 @@ at https://relayer-production-8d40.up.railway.app (Kora's JSON-RPC at `/`, POST;
 
 | Variable | On devnet | Sealed |
 |---|---|---|
-| `FOREST_FEE_PAYER_KEY` | the `payer` key, as its JSON array | yes |
+| `FOREST_RELAYER_KEY` | the `payer` key, as its JSON array; `run.sh` passes it to Kora as `FOREST_FEE_PAYER_KEY` | yes |
 | `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
 | `RUST_LOG` | `warn` | no |
 | `PORT` | `8080` | no |
