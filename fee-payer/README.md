@@ -113,7 +113,7 @@ signatures, no priority fee.
 
 | Variable | What |
 |---|---|
-| `FOREST_FEE_PAYER_KEY` | The fee payer's key: a path to a keypair file (the Solana CLI's JSON form) outside this repo, or, where a hosting platform has no files, the key itself, as that JSON array or base58. Kora 2.0.5 built `--locked` uses solana-keychain 0.1.0, which reads a path first and otherwise takes the key itself |
+| `FOREST_FEE_PAYER_KEY` | The fee payer's key: a path to a keypair file (the Solana CLI's JSON form) outside this repo, or, where a hosting platform has no files, the key itself, as that JSON array or base58. Kora 2.0.5 built `--locked` uses solana-keychain 0.1.0, which reads a path first and otherwise takes the key itself. If it is unset, `run.sh` takes it from `FOREST_RELAYER_KEY`, because Railway still holds the key under that old name and sealed values cannot be moved |
 | `RPC_URL` | The Solana RPC Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
 | `JUPITER_API_KEY` | For `price_source = "Jupiter"` |
 | `PORT` | Default `8080` |
