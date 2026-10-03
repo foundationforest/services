@@ -12,6 +12,8 @@ cd "$(dirname "$0")"
 here="$PWD"
 root="$(cd .. && pwd)"
 
+# Railway still holds the key under its old name; sealed values cannot be moved.
+if [ -z "${FOREST_FEE_PAYER_KEY:-}" ] && [ -n "${FOREST_RELAYER_KEY:-}" ]; then export FOREST_FEE_PAYER_KEY="$FOREST_RELAYER_KEY"; fi
 : "${FOREST_FEE_PAYER_KEY:?set FOREST_FEE_PAYER_KEY to the path of its keypair file}"
 : "${RPC_URL:?set RPC_URL to a Solana RPC}"
 if [ -f "$FOREST_FEE_PAYER_KEY" ]; then
