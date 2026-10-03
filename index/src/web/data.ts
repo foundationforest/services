@@ -235,7 +235,7 @@ export async function home(ctx: Ctx) {
     ...self(ctx, 'home', ctx.urls.home()),
     index: {
       name: 'Forest index',
-      about: 'Profiles, offers, reviews and payment receipts, read from signed records on the hosts it lists, the registry’s rows of the keepers it trusts, and the escrow’s own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
+      about: 'Profiles, offers, reviews and payment receipts, read from signed records on the hosts it lists, the registry’s rows of the issuers it trusts, and the escrow’s own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
       scoring: { version: 'v2', rules: SCORING_DOC },
       payLink: PAYLINK_DOC,
       source: SOURCE,
@@ -288,7 +288,7 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
     ctx.db.query(
       `select r.profile, r.label, p.market as profile_market, p.role as profile_role
        from rows r join profiles p on p.address = r.profile where r.market = $2 and ${COUNTED}`,
-      [Object.keys(ctx.config.keepers), name],
+      [Object.keys(ctx.config.issuers), name],
     ),
     offers(ctx, 'pr.market = $1', [name], PAGE_SIZE, offset, near),
   ])
@@ -318,8 +318,8 @@ export async function profile(ctx: Ctx, address: string) {
   const p = rows[0]
   const r = p.record
   const [stamps, scores, posts, received, given] = await Promise.all([
-    // Each row of a trusted keeper whose signature checks. Any other row counts for nothing here.
-    ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.keeper, r.address`, [Object.keys(ctx.config.keepers), address]),
+    // Each row of a trusted issuer whose signature checks. Any other row counts for nothing here.
+    ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.issuer, r.address`, [Object.keys(ctx.config.issuers), address]),
     ctx.db.query('select * from scores where profile = $1 order by kind, label', [address]),
     ctx.db.query(`${OFFER_SELECT} where p.profile = $1 order by p.created_at desc nulls last, p.uri`, [address]),
     reviews(ctx, 'v.subject = $1', [address]),
@@ -343,7 +343,6 @@ export async function profile(ctx: Ctx, address: string) {
       /** The plain word for its side: the market's role name, the role itself, or null in a one-sided market. */
       side: home?.sides === 'two' && (p.role === 'seller' || p.role === 'buyer') ? ctx.directory.sideWord(p.market, p.role) : null,
       about: (r.about ?? null) as string | null,
-      contact: (r.contact ?? null) as string | null,
       /** Its reading key, for whoever makes a private record for it; null when it publishes none. */
       read: (r.read ?? null) as string | null,
       /** By the SHA-256 of its bytes. The index never fetches it. */
@@ -352,7 +351,7 @@ export async function profile(ctx: Ctx, address: string) {
       /** The id of the record that holds the profile card now. */
       id: p.id as string,
     },
-    /** Each row of a keeper this index trusts: a market stamp on its list, under a label. */
+    /** Each row of an issuer this index trusts: a market stamp on its list, under a label. */
     stamps: stamps.rows.map((b) => {
       const status = stampStatus({ label: b.label }, { label: labelOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
@@ -363,17 +362,17 @@ export async function profile(ctx: Ctx, address: string) {
         role: b.role as string | null,
         /** The plain word for the role: the market's role name, the role itself, or null in a one-sided market. */
         side: status.counted && file?.sides === 'two' ? ctx.directory.sideWord(b.market, status.role as 'seller' | 'buyer') : null,
-        keeper: {
-          address: b.keeper as string,
-          name: (ctx.config.keepers[b.keeper]?.name ?? null) as string | null,
-          weight: (ctx.config.keepers[b.keeper]?.weight ?? 0) as number,
+        issuer: {
+          address: b.issuer as string,
+          name: (ctx.config.issuers[b.issuer]?.name ?? null) as string | null,
+          weight: (ctx.config.issuers[b.issuer]?.weight ?? 0) as number,
         },
         counted: status.counted,
         why: status.counted ? null : status.why,
         /** The row's address: the registry account anyone can read to check it. */
         row: b.address as string,
         root: b.root as string,
-        keeperSignature: b.keeper_signature as string,
+        issuerSignature: b.issuer_signature as string,
       }
     }),
     scores: {

@@ -1,0 +1,6 @@
+{
+  "about": "The issuers whose lists the foundation's index trusts, by the issuer's address, each with the index's weight for it from 0 to 1. A registry row counts here only when its issuer is named here and the issuer's signature on the row's root checks. This is the index's opinion, not a rule: another index trusts other issuers. On devnet, the one issuer is Soil's devnet issuer, built from issuer/.",
+  "issuers": {
+    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Soil issuer (devnet)", "weight": 1 }
+  }
+}

@@ -1,17 +1,17 @@
 // The index end to end, on real pieces: forest's reference host (forest/records), a local validator
 // running the registry and the escrow (forest/registry, forest/escrow), the issuer's own list file
-// (issuer/src/list.ts) for the keeper the index trusts and for a stranger, and a local Postgres.
+// (issuer/src/list.ts) for the issuer the index trusts and for a stranger, and a local Postgres.
 // Nothing is mocked.
 //
 // The story:
 //   1. Ana tutors, Ben is her student, Cleo is a stranger. Each app writes its hosts record, card,
 //      and (Ana) an offer on the host the index reads in full. Nobody holds a row yet: the index
 //      keeps the records and shows no one.
-//   2. Ana and Ben are on the foundation keeper's list, Cleo on a stranger's. Each registers a row,
-//      proven against its keeper's newest snapshot and carrying its signature. The index reads the
-//      rows of the keepers it trusts: Ana and Ben appear, from the records it already held; Cleo,
-//      whose keeper it does not trust, does not.
-//   3. Ana lets a writer key write offers: its offer counts. Ben writes a private record: the index
+//   2. Ana and Ben are on the foundation issuer's list, Cleo on a stranger's. Each registers a row,
+//      proven against its issuer's newest snapshot and carrying its signature. The index reads the
+//      rows of the issuers it trusts: Ana and Ben appear, from the records it already held; Cleo,
+//      whose issuer it does not trust, does not.
+//   3. Ana lets an access key write offers: its offer counts. Ben writes a private record: the index
 //      leaves it alone.
 //   4. A paid deal: Ben pays Ana in one tap through the escrow; they review each other.
 //   5. The scores, signed, and the pages.
@@ -36,9 +36,9 @@ import { MINT_SIZE, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInst
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js'
 import pg from 'pg'
 
-import { listSecret, profileKey, type ProfileKey } from '../../forest/keys/src/index.ts'
+import { listSecret, mainKey, type MainKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
-import { base58, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, writerRecord } from '../../forest/records/src/index.ts'
+import { base58, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, accessRecord } from '../../forest/records/src/index.ts'
 import { PROGRAM_ID as REGISTRY_ID, buildRegistration } from '../../forest/registry/client/src/index.ts'
 import { PROGRAM_ID as ESCROW_ID, payInOneTap, termsFor, keysFor } from '../../forest/escrow/client/src/index.ts'
 
@@ -158,21 +158,21 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     }
     await confirm(await connection.requestAirdrop(payer.publicKey, 100 * LAMPORTS_PER_SOL))
 
-    // --- Two keepers, each its own list file as the issuer keeps it -----------------------------
-    const keeper = (name: string) => {
+    // --- Two issuers, each its own list file as the issuer keeps it -----------------------------
+    const issuer = (name: string) => {
       const secret = randomBytes(32)
       const key = parseKeypair(JSON.stringify([...secret, ...ed25519.getPublicKey(secret)]), name)
       return { key, address: key.address as string, list: new IssuerList(new Store(join(scratch, `${name}.sqlite`)), key) }
     }
-    const foundation = keeper('foundation')
-    const stranger = keeper('stranger')
+    const foundation = issuer('foundation')
+    const stranger = issuer('stranger')
 
-    // --- People: a seed each, a profile per label, a secret per keeper's list -------------------
-    type Person = { profile: ProfileKey; signer: Keypair; secret: Uint8Array; stamp: bigint; name: string }
-    const person = async (label: string, name: string, keeperAddress: string): Promise<Person> => {
+    // --- People: a seed each, a profile per label, a secret per issuer's list -------------------
+    type Person = { profile: MainKey; signer: Keypair; secret: Uint8Array; stamp: bigint; name: string }
+    const person = async (label: string, name: string, issuerAddress: string): Promise<Person> => {
       const seed = new Uint8Array(randomBytes(32))
-      const profile = await profileKey(seed, label)
-      const list = await listSecret(seed, keeperAddress)
+      const profile = await mainKey(seed, label)
+      const list = await listSecret(seed, issuerAddress)
       return { profile, signer: Keypair.fromSeed(profile.privateKey), secret: list.secret, stamp: list.stamp, name }
     }
     const ana = await person(SELLER, 'Ana', foundation.address)
@@ -187,13 +187,13 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     cleanups.push(() => markets.close())
     writeFileSync(join(scratch, 'hosts.json'), JSON.stringify({ hosts: [hostUrl] }))
     writeFileSync(join(scratch, 'markets.json'), JSON.stringify({ directory: markets.url, markets: ['online-tutors', 'language-exchange'] }))
-    writeFileSync(join(scratch, 'keepers.json'), JSON.stringify({ keepers: { [foundation.address]: { name: 'Forest Foundation', weight: 1 } } }))
+    writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.address]: { name: 'Forest Foundation', weight: 1 } } }))
     const config = loadConfig({
       DATABASE_URL: dbUrl.toString(),
       INDEX_SIGNING_SEED: '09'.repeat(32),
       HOSTS_FILE: join(scratch, 'hosts.json'),
       MARKETS_FILE: join(scratch, 'markets.json'),
-      KEEPERS_FILE: join(scratch, 'keepers.json'),
+      ISSUERS_FILE: join(scratch, 'issuers.json'),
       SOLANA_RPC_URL: RPC,
       REGISTRY_PROGRAM_ID: REGISTRY_ID.toBase58(),
       ESCROW_PROGRAM_ID: ESCROW_ID.toBase58(),
@@ -225,19 +225,19 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     for (const p of [ana, ben, cleo]) assert.equal((await page(`/profiles/${p.profile.address}.json`)).status, 404, 'no row yet: no profile shown')
     assert.equal((await index.db.query('select count(*)::int as n from host_records')).rows[0].n, 7, 'every record kept')
 
-    // --- 2. Rows, each proven against its keeper's newest snapshot, carrying its signature --------
+    // --- 2. Rows, each proven against its issuer's newest snapshot, carrying its signature --------
     foundation.list.append([ana.stamp, ben.stamp, ...[1n, 2n, 3n].map((n) => n * 1_000_003n)], [], Date.now())
     stranger.list.append([cleo.stamp], [], Date.now())
-    const register = async (p: Person, label: string, k: ReturnType<typeof keeper>) => {
+    const register = async (p: Person, label: string, k: ReturnType<typeof issuer>) => {
       const file = JSON.parse(k.list.file())
       const newest = file.snapshots.at(-1)
       const r = await buildRegistration({
         secret: p.secret,
         label,
         profile: p.signer.publicKey as never,
-        keeper: base58.decode(k.address) as never,
+        issuer: base58.decode(k.address) as never,
         stamps: file.stamps.slice(0, newest.size).map(BigInt),
-        keeperSignature: hex.decode(newest.signature),
+        issuerSignature: hex.decode(newest.signature),
         artifacts: ARTIFACTS,
         payer: payer.publicKey as never,
         recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
@@ -250,21 +250,21 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     await register(cleo, SELLER, stranger)
     await read()
     const anaPage = (await page(`/profiles/${ana.profile.address}.json`)).body
-    assert.deepEqual(anaPage.stamps.map((s: any) => [s.label, s.counted, s.keeper.address, s.row]), [[SELLER, true, foundation.address, anaRow]])
+    assert.deepEqual(anaPage.stamps.map((s: any) => [s.label, s.counted, s.issuer.address, s.row]), [[SELLER, true, foundation.address, anaRow]])
     assert.deepEqual(anaPage.offers.map((o: any) => o.uri), [`${ana.profile.address}/offer/portuguese`], 'from the records it already held')
     assert.equal((await page(`/profiles/${ben.profile.address}.json`)).status, 200)
-    assert.equal((await page(`/profiles/${cleo.profile.address}.json`)).status, 404, 'a keeper the index does not trust: no row counts')
-    assert.equal((await index.db.query('select count(*)::int as n from rows')).rows[0].n, 2, 'only the trusted keeper’s rows are read')
+    assert.equal((await page(`/profiles/${cleo.profile.address}.json`)).status, 404, 'an issuer the index does not trust: no row counts')
+    assert.equal((await index.db.query('select count(*)::int as n from rows')).rows[0].n, 2, 'only the trusted issuer’s rows are read')
 
-    // --- 3. A writer key's offer, and a private record ---------------------------------------
-    const writer = keyFromPrivate(new Uint8Array(randomBytes(32)))
+    // --- 3. An access key's offer, and a private record ------------------------------------
+    const access = keyFromPrivate(new Uint8Array(randomBytes(32)))
     const t1 = Date.now()
-    await publish([hostUrl], [permissionsRecord(ana.profile, [{ key: writer.address, paths: ['offer'], until: t1 + 86_400_000 }], t1)])
-    await publish([hostUrl], [writerRecord(writer, ana.profile.address, 'offer/physics', { ...offer, description: 'Physics, online.', subjects: ['physics'] }, t1 + 1)])
+    await publish([hostUrl], [permissionsRecord(ana.profile, [{ key: access.address, paths: ['offer'], until: t1 + 86_400_000 }], t1)])
+    await publish([hostUrl], [accessRecord(access, ana.profile.address, 'offer/physics', { ...offer, description: 'Physics, online.', subjects: ['physics'] }, t1 + 1)])
     await publish([hostUrl], [ownerRecord(ben.profile, 'message/ana', { private: Buffer.from(randomBytes(64)).toString('base64url') }, t1)])
     await read()
     const offers = (await page(`/profiles/${ana.profile.address}.json`)).body.offers.map((o: any) => o.uri).sort()
-    assert.deepEqual(offers, [`${ana.profile.address}/offer/physics`, `${ana.profile.address}/offer/portuguese`], 'the writer key’s offer counts')
+    assert.deepEqual(offers, [`${ana.profile.address}/offer/physics`, `${ana.profile.address}/offer/portuguese`], 'the access key’s offer counts')
     assert.equal(JSON.stringify((await page(`/profiles/${ben.profile.address}.json`)).body).includes('message/ana'), false, 'the private record is not shown')
 
     // --- 4. A paid deal, and reviews both ways --------------------------------------------------

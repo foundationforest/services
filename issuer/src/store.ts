@@ -35,7 +35,7 @@ export type Accepted = 'queued' | 'session_used' | 'stamp_queued'
 export type Snapshot = { root: bigint; size: number; time: number }
 
 /**
- * A file written before the issuer was a keeper names things as it did then: `commitment` for a
+ * A file written before the list moved off chain names things as it did then: `commitment` for a
  * stamp, `roots` for the snapshots, and a `notes` column for the batches it wrote on chain. The same
  * rows, under today's names; the notes, which only said where on chain a batch was, go.
  */

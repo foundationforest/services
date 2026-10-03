@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs Kora, unchanged, at the version in KORA, into relayer/.kora (not committed). Needs
+# Installs Kora, unchanged, at the version in KORA, into fee-payer/.kora (not committed). Needs
 # Rust (cargo) and the network for crates.io. `--locked` takes the dependency versions Kora
 # published with, which is what makes the key's environment variable accept a file path
 # (solana-keychain 0.1.0; see README.md).

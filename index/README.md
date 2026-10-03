@@ -1,27 +1,20 @@
 # index
 
-Devnet only: the foundation's index reads Solana devnet and a test host. Nothing is on mainnet, and
-nothing is shipped.
+The index reads what profiles publish, the registry's rows and the escrow's receipts, scores each
+profile, and serves it all at open URLs, as pages for people and as JSON for AI agents.
 
-Up: [the repo](../README.md).
+The foundation runs this one, on devnet: it reads Solana devnet and Soil's host. Anyone can run
+another, from this code or their own. What this one reads and how it weighs it are files in this
+directory (Policy), so anyone can rebuild what it shows from them, the hosts and the chain. Nothing
+is on mainnet, and nothing is shipped.
 
-## What it is
-
-The index reads what is public about profiles: their records on the hosts it lists, their rows in
-the registry, and the receipts the escrow writes on chain. It counts a profile only when the profile
-holds a row from a keeper it trusts, scores each counted profile on its own, and serves everything
-at open URLs, with no login, twice over: as pages for people and as JSON for AI agents.
-
-This is the foundation's first index. Anyone can run another, from this code or their own. What it
-reads is three public lists in [`lists/`](lists/), and what it thinks is two files in
-[`config/`](config/); both are its opinion, not a rule, and another index uses its own. Anyone can
-rebuild what this one shows from those five files, the hosts and the chain.
+Up: [the repo](../README.md). How an AI agent reads it: [`skill.md`](skill.md).
 
 ## How it works
 
 ```
-lists/hosts.json ── each host, in full ── records ──▶ forest's view (the writer rule) ──┐
-lists/keepers.json ── registry rows of those keepers, signature checked ───────────────┼─▶ scores ─▶ pages + JSON
+lists/hosts.json ── each host, in full ── records ──▶ forest's view (the access rule) ──┐
+lists/issuers.json ── registry rows of those issuers, signature checked ───────────────┼─▶ scores ─▶ pages + JSON
 the escrow's own events ── receipts ───────────────────────────────────────────────────┤
 lists/markets.json ── each market's file, from the markets directory ──────────────────┘
 ```
@@ -35,20 +28,20 @@ lists/markets.json ── each market's file, from the markets directory ──�
   - Every record is checked by forest's reader (`readPage`): its canonical text and its signature.
     One that fails is dropped and reported. Every record that checks is kept, as its text, per
     host.
-  - Each profile is viewed with forest's own `viewProfile`, which applies the writer rule: a writer
+  - Each profile is viewed with forest's own `viewProfile`, which applies the access rule: an access
     key's record counts while the profile's permissions record lists it for that path, judged by
-    the record's own date against the writer's `until`; the owner's record wins over a writer's at
-    the same path.
+    the record's own date against the key's `until`; the main key's record wins over an access
+    key's at the same path.
   - Three shapes are read, by path: `profile`, `offer/<id>` and `review/<id>`. Each live body is
     checked against forest's shape for it (`forest/records/schemas/`); one that fails is not
     stored. A private record (a body that is only `{private}`) is left alone: only its readers can
     open it. Every other path is not this index's.
   - Only a profile holding a counted row is stored; any other's records wait in the kept records,
     so the day its row is read it is stored with nothing to read again.
-- **Rows, from the registry.** Every row of each keeper in `lists/keepers.json`, from the program's
-  own accounts (`fetchRows`, filtered on the keeper), on every poll. A row never changes, so only new
-  ones are stored. A row counts when its keeper's signature on its root checks (`keeperSigned`); it
-  needs nothing else, no file from the keeper.
+- **Rows, from the registry.** Every row of each issuer in `lists/issuers.json`, from the program's
+  own accounts (`fetchRows`, filtered on the issuer), on every poll. A row never changes, so only
+  new ones are stored. A row counts when its issuer's signature on its root checks (`issuerSigned`);
+  it needs nothing else, no file from the issuer.
 - **Receipts, from the escrow's own events.** Every transaction that named the escrow, oldest first;
   failed ones skipped. Each transaction's log lines are kept in the index's own archive
   (`chain_transactions`), since RPC nodes are not an archive. Only events the program itself wrote
@@ -68,7 +61,7 @@ and accountable, not good. The code is `src/scores/compute.ts`, and it says the 
 
 **Which rows count.** A row counts for a profile only if all of these hold:
 
-1. **Its keeper is in `lists/keepers.json`, and the keeper's signature on its root checks.**
+1. **Its issuer is in `lists/issuers.json`, and the issuer's signature on its root checks.**
 2. **Its label is `market/role`, the market one this index uses, byte for byte,** and the role one
    the market's sides allow: `seller` or `buyer` in a two-sided market, `peer` in a one-sided one. A
    market's role names (`teacher`, `student`) are words for pages, never roles. A plain market, with
@@ -78,21 +71,21 @@ and accountable, not good. The code is `src/scores/compute.ts`, and it says the 
    market, or on the other side of the same one, holds a second profile.
 
 **Uniqueness,** per counted label, from 0 to 1: how sure this index is that the profile is one real
-person there. Each keeper has a weight from 0 to 1 in `lists/keepers.json`; for the keepers whose
+person there. Each issuer has a weight from 0 to 1 in `lists/issuers.json`; for the issuers whose
 counted rows the profile holds under that label,
 
     uniqueness = 1 − (1 − w1) × (1 − w2) × …
 
-One keeper at weight w gives w; two independent keepers give more than either and never more than
-1 (two at 0.5 give 0.75); a keeper at 0 adds nothing.
+One issuer at weight w gives w; two independent issuers give more than either and never more than
+1 (two at 0.5 give 0.75); an issuer at 0 adds nothing.
 
 **Evidence: what backs a review.** A review can name a deal with its `dealId`. When that id is an
 escrow's address, the index reads that escrow's receipt. It counts only if the reviewer and the
-reviewed are the escrow's buyer and seller, in either order (a profile's address is its wallet), and
-its token is one this index counts (`countedMints` in `config/scoring.json`). Then the index asks
-who said yes. The escrow has no accept step: the seller says yes by signing for the deal, that is
-creating the escrow (an invoice), signing its ending (a split, or a release back to the buyer), or
-reviewing the deal.
+reviewed are the escrow's buyer and seller, in either order (a profile's address is where it is
+paid), and its token is one this index counts (`countedMints` in `config/scoring.json`). Then the
+index asks who said yes. The escrow has no accept step: the seller says yes by signing for the deal,
+that is creating the escrow (an invoice), signing its ending (a split, or a release back to the
+buyer), or reviewing the deal.
 
 | What the receipt shows | Evidence | Weight |
 |---|---|---|
@@ -160,7 +153,7 @@ crypto word; the twins keep the records' own field names (`mint`), since they ar
 | `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's two public keys, how its scores are signed, and its three lists |
 | `/folders/{folder}` | `.json` | One folder's markets |
 | `/markets/{market}?near=&km=&offset=` | `.json` | The market file, counts, and its live offers, 50 a page. `near=lat,lon&km=N` keeps offers within N km |
-| `/profiles/{address}` | `.json` | A counted profile: its rows, counted or not and why, and their keepers; its scores, apart and signed; offers and requests; reviews received and given, each with the payment behind it |
+| `/profiles/{address}` | `.json` | A counted profile: its rows, counted or not and why, and their issuers; its scores, apart and signed; offers and requests; reviews received and given, each with the payment behind it |
 | `/deals/{dealId}` | `.json` | The receipt in plain words (or none), the two profiles with their scores, and the reviews that name it |
 | `/search?q=&near=&km=` | `/search.json?q=` | Markets whose name, folder, roles or role names contain `q`, and live offers by full-text search (Postgres's `simple` configuration) |
 | `/pay?…` | `/pay.json?…` | An offer's Pay link, checked against the offer as indexed |
@@ -169,7 +162,7 @@ Also `/llms.txt` (what Forest is, and where everything is), `/skill.md` (the rea
 agent searches, reads a profile, checks a row and a receipt), `/sitemap.xml` and `/robots.txt`;
 schema.org JSON-LD on every page; plain GET and HEAD only, `access-control-allow-origin: *`,
 `cache-control: public, max-age=30, stale-while-revalidate=300`. `llms.txt` and `skill.md` are files
-in this folder, written for `https://forest.foundation`; each index serves them with its own
+in this directory, written for `https://forest.foundation`; each index serves them with its own
 `PUBLIC_URL` in that place. A live offer is an offer, not expired, from a profile whose market this
 index uses. Search results, pay links, a market filtered by `near`, and deals with no receipt say
 `noindex` and are left out of the sitemap.
@@ -208,14 +201,14 @@ Environment variables, read once at start; a change means a restart.
 | `POLL_MS` | no | `5000` | How often the readers look for anything new |
 | `PUBLIC_URL` | no | `https://forest.foundation` | Where the pages are published: an origin, no path |
 | `PORT` | no | `8080` | |
-| `HOSTS_FILE`, `MARKETS_FILE`, `KEEPERS_FILE` | no | the files in `lists/` | Another index's lists |
+| `HOSTS_FILE`, `MARKETS_FILE`, `ISSUERS_FILE` | no | the files in `lists/` | Another index's lists |
 | `SCORING_FILE`, `CURRENCIES_FILE` | no | the files in `config/` | Another index's opinions |
 
 | File | What it says |
 |---|---|
 | `lists/hosts.json` | The hosts it reads, each in full |
 | `lists/markets.json` | The markets it uses, by name, and the directory their files are read from |
-| `lists/keepers.json` | The keepers it trusts, by address, each with a name and a weight from 0 to 1 |
+| `lists/issuers.json` | The issuers it trusts, by address, each with a name and a weight from 0 to 1 |
 | `config/scoring.json` | The evidence weights, the floor for a reviewer with no counted row, and `countedMints`: the tokens whose receipts count |
 | `config/currencies.json` | Which tokens the pages show as which currency, and their decimals |
 
@@ -262,9 +255,9 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   they check that every page and twin renders, every JSON-LD block validates against schema.org's
   vocabulary, each twin matches its page, the sitemap lists every page, every URL in the read skill
   and `llms.txt` resolves, no page says a crypto word, the Pay link reads back to the offer, a
-  writer key's record counts only before its `until`, and a private record is never stored.
+  access key's record counts only before its `until`, and a private record is never stored.
 - **The end-to-end test** (`test/e2e.test.ts`) runs forest's reference host, a local validator with
-  the registry and the escrow, two keepers' lists made by the issuer's own code, and the index, in
+  the registry and the escrow, two issuers' lists made by issuer/'s own code, and the index, in
   about 15 seconds. It needs the two programs built (`cargo build-sbf --arch v3` in
   `forest/registry/program` and `forest/escrow/program`), the proving files (`npm run fetch` in
   `forest/registry/artifacts`), `npm ci` in `../issuer`, `solana-test-validator` on the PATH and a
@@ -284,7 +277,7 @@ at https://index-production-1b6e.up.railway.app:
 - **One replica,** health check `GET /`, a public domain to port 8080, no volume: its state is in
   Postgres, on Supabase (project `forest-devnet`), through the session pooler, with TLS verified
   against Supabase's public root, `deploy/supabase-root-2021.crt` (`NODE_EXTRA_CA_CERTS`).
-- **What it reads:** the test host (`e2e/host`), the devnet issuer's rows, the devnet registry and
+- **What it reads:** Soil's host (`host/`), the devnet issuer's rows, the devnet registry and
   escrow, and the markets directory's `main`.
 
 | Variable | On devnet | Sealed |
@@ -300,13 +293,33 @@ at https://index-production-1b6e.up.railway.app:
 A new `INDEX_SIGNING_SEED` is a new signing identity: every score is signed again under new public
 keys.
 
+## Policy
+
+Each of these is this index's opinion, not a rule, and a file in this directory, read at start.
+Another index holds its own.
+
+- **Which hosts count:** the hosts in `lists/hosts.json`, each read in full. Today: Soil's host on
+  devnet.
+- **Which issuers count, and how much:** `lists/issuers.json`, each with a weight from 0 to 1. No
+  issuer counts unless it is named there. Today: Soil's devnet issuer, at 1.
+- **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
+  `main`.
+- **How reviews weigh:** `config/scoring.json`. Evidence: `both` 1, `oneSided` 0.5, `none` 0.05; a
+  reviewer with no counted row starts at 0.05. A receipt counts in USDC, devnet USDC and the two
+  devnet test dollars (`countedMints`). Standing settles within 100 rounds, to 10⁻⁹.
+- **What the pages show as money:** `config/currencies.json`: those four tokens, as dollars.
+- **No request logs.** The pages log only a failed request's path and its error.
+- **Not built:** the hosts request (forest's
+  [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Indexes") and
+  reading any host a verified profile names are the next session's.
+
 ## Promises
 
 - **It holds no key of anyone's** but its own signing seed, and no account: everything it serves is
   open to anyone, with no login.
 - **It keeps no network address.** The pages log only a failed request's path and its error, never
   an address or a query.
-- **What it reads is public, and listed in this repo:** the hosts, the markets and the keepers it
+- **What it reads is public, and listed in this repo:** the hosts, the markets and the issuers it
   uses are three files in `lists/`, and its weights are files in `config/`.
 - **It scores each profile on its own.** Nothing here links two profiles; nothing ties a profile to
   a person.
@@ -315,7 +328,7 @@ keys.
 
 ## Limits
 
-- **It trusts its keepers** to put on their lists only the stamps they say they do (the devnet
+- **It trusts its issuers** to put on their lists only the stamps they say they do (Soil's devnet
   issuer: one per face, with a stand-in face check that passes everyone). It cannot tell.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
@@ -328,40 +341,42 @@ keys.
   transaction.
 - **Scale:** one sitemap file (past 50,000 pages it needs a sitemap index); a profile page lists
   every review; `near` measures every live offer in the market; a pool of 10 connections per
-  process; every keeper's rows are read again on every poll.
+  process; every issuer's rows are read again on every poll.
 - **On devnet, readers and pages are one process,** so the pages hold the signing seed.
 - **Pages in English only.**
 - **Address logs.** A hosting provider's own request logs are the operator's choice; on Railway they
   exist, with each request's client address and path.
 
+## Who decides what
+
+- **The standard (forest):** what a record, a row and a receipt are, and the access rule.
+- **This index, by its policy:** which hosts, issuers and markets count, how much each review
+  weighs, and what its pages show.
+- **The markets directory:** each market's name and the fields it adds; which of them this index
+  uses is its own.
+- **A person, through their app:** where their records live, and which index they read.
+
 ## FAQ
 
 **Why three lists in the repo, and not settings on the server?**
-So anyone can rebuild what this index shows: the lists say exactly which hosts, markets and keepers
+So anyone can rebuild what this index shows: the lists say exactly which hosts, markets and issuers
 it uses, and the rest is public on the hosts and the chain.
 
 **Why read each listed host in full, and not follow the hosts each profile names?**
 Reading what is new on the whole host finds new people the first time they write there, and what
 the index reads stays a list anyone can see, instead of growing with whatever profiles name.
 
-**Why keep the records of profiles it does not count?**
-The day a profile's row is read, it is stored from what the index already holds, with nothing to
-read again.
+**Why does a row count by its issuer's signature alone?**
+The row carries the root and the issuer's signature on it, so anyone can check it forever without
+asking the issuer. Which issuers to trust is the reader's call: `lists/issuers.json` is this one's.
 
-**Why does a row count by its keeper's signature alone?**
-The row carries the root and the keeper's signature on it, so anyone can check it forever without
-asking the keeper. Which keepers to trust is the reader's call: `lists/keepers.json` is this one's.
-
-**Why apply the writer rule with forest's own view?**
+**Why apply the access rule with forest's own view?**
 Every reader computes the same view from the same records, so this index counts exactly what any
 other reader counts.
 
 **Why leave private records alone?**
 Only their readers can open them; an index is not one of them. Anyone can still see that one
 exists.
-
-**Why does a row count only as `market/role`, under the profile's own market and role?**
-Any other spelling counting would give one person two rows in one market.
 
 **Why is the markets directory read from the markets repo itself, never copied?**
 One source of names, and only the fields the index reads are checked.
@@ -376,10 +391,6 @@ the page renders.
 
 **Why do the pages say nothing about an offer's or a receipt's escrow options?**
 What to advise is each app's.
-
-**Why does the Pay link name the offer and its record id, and no other key?**
-The seller is the profile the offer names, paid at its address, so a forged link cannot redirect
-money.
 
 **Why are escrow events read only as the program itself wrote them, and their logs archived here?**
 Another program can print the same bytes, and RPC nodes are not an archive.

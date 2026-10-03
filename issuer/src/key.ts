@@ -1,6 +1,6 @@
-// The keeper key: an Ed25519 key that signs each snapshot of the list and nothing else. Its address
-// (base58 of its 32-byte public key) is the keeper's name: what a registry row records and what a
-// reader trusts (forest/keys/README.md, "The list secret and the stamps").
+// The issuer's key: an Ed25519 key that signs each snapshot of the list and nothing else. Its address
+// (base58 of its 32-byte public key) is the issuer's name: what a registry row records and what a
+// reader trusts (forest/keys/README.md, "The recipe").
 //
 // It is written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret
 // then the 32-byte public key. Signing is Node's own Ed25519 (RFC 8032, deterministic).
@@ -14,7 +14,7 @@ import { base58 } from '../../forest/records/src/bytes.ts'
 
 export type IssuerKey = {
   publicKey: Uint8Array
-  /** The keeper's name: its public key in base58. */
+  /** The issuer's name: its public key in base58. */
   address: string
   sign(message: Uint8Array): Uint8Array
 }

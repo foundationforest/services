@@ -56,10 +56,10 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   scorer.onError = onError
   await scorer.now()
 
-  const keepers = Object.keys(config.keepers)
+  const issuers = Object.keys(config.issuers)
   let records: HostReader | null = null
   if (config.hosts.length) {
-    records = new HostReader({ db, hosts: config.hosts, keepers, onChange: () => scorer.schedule(), onError })
+    records = new HostReader({ db, hosts: config.hosts, issuers, onChange: () => scorer.schedule(), onError })
     await records.start(config.pollMs)
   }
 
@@ -70,7 +70,7 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
       rpcUrl: config.rpcUrl,
       registry: config.registryProgramId,
       escrow: config.escrowProgramId,
-      keepers,
+      issuers,
       // A profile with a new row: what its hosts already gave this index is stored now.
       onChange: (profiles) => {
         if (profiles.length && records) void records.merge(profiles).catch(onError)

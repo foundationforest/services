@@ -9,7 +9,7 @@
 // Postgres, says where to resume.
 //
 // After each read, each profile that changed is viewed with forest's own `viewProfile`, which
-// applies the writer rule (a writer key's record counts while its permissions record lists it, by
+// applies the access rule (an access key's record counts while the permissions record lists it, by
 // the record's own date; the owner wins), and what the view holds now replaces what the index held
 // for it (store.ts). Only a profile holding a counted row is stored; any other's records wait in
 // `host_records`, so the day its row is read it is stored with nothing to read again.
@@ -41,8 +41,8 @@ export class HostReader {
   private readonly db: Db
   /** The hosts read, each in full. */
   readonly hosts: string[]
-  /** The keepers this index trusts, by address. */
-  private readonly keepers: string[]
+  /** The issuers this index trusts, by address. */
+  private readonly issuers: string[]
   /** Profiles holding records dated ahead, which the view holds back, and when they come due. */
   private readonly due = new Map<string, number>()
   private readonly onChange: () => void
@@ -54,10 +54,10 @@ export class HostReader {
   private merging: Promise<void> = Promise.resolve()
   private stopped = false
 
-  constructor(args: { db: Db; hosts: string[]; keepers: string[]; onChange: () => void; onError: (err: unknown) => void; now?: () => number }) {
+  constructor(args: { db: Db; hosts: string[]; issuers: string[]; onChange: () => void; onError: (err: unknown) => void; now?: () => number }) {
     this.db = args.db
     this.hosts = args.hosts
-    this.keepers = args.keepers
+    this.issuers = args.issuers
     this.onChange = args.onChange
     this.onError = args.onError
     this.now = args.now ?? Date.now
@@ -152,7 +152,7 @@ export class HostReader {
 
   private async mergeNow(list: string[]): Promise<void> {
     if (!list.length) return
-    const counted = await countedProfiles(this.db, this.keepers, list)
+    const counted = await countedProfiles(this.db, this.issuers, list)
     for (const profile of list) {
       const now = this.now()
       // Each was checked when it was taken in; its signature is not checked again.
@@ -178,9 +178,9 @@ export class HostReader {
  * Records straight into the store as one host's, then viewed: what the reader does with a page,
  * for callers that already hold checked records (the page tests' fixture).
  */
-export async function takeIn(db: Db, host: string, records: Checked[], keepers: string[], onError: (err: unknown) => void = () => {}): Promise<number> {
+export async function takeIn(db: Db, host: string, records: Checked[], issuers: string[], onError: (err: unknown) => void = () => {}): Promise<number> {
   const n = await insert(db, host, records)
-  const reader = new HostReader({ db, hosts: [], keepers, onChange: () => {}, onError })
+  const reader = new HostReader({ db, hosts: [], issuers, onChange: () => {}, onError })
   await reader.merge(records.map((c) => c.record.profile))
   return n
 }

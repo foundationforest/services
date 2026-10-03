@@ -1,10 +1,10 @@
 // The two tools an assistant gets on a connection: post an offer, post a review. Each record is
-// signed by the connection's writer key, never the profile's, and posted to every host the profile's
-// own hosts record names (forest/records/README.md, "Writers" and "Apps that write records").
+// signed by the connection's access key, never the main key, and posted to every host the profile's
+// own hosts record names (forest/records/README.md, "Access keys" and "Apps that write records").
 //
 // Before signing, the profile is read where it lives: from the hosts this service looks at first,
 // then every host its hosts record names (forest's `readProfile`). The record goes out only if the
-// profile's current permissions record lists this writer key for its path now, the profile's own key
+// profile's current permissions record lists this access key for its path now, the main key
 // has not written there (the owner wins), and the body fits forest's shape for it. The shapes are
 // forest's own JSON Schemas, served to the assistant as each tool's input.
 
@@ -17,7 +17,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } fr
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 
-import { type Body, allowsArrival, keyFromPrivate, nextTime, publish, readProfile, writerRecord } from '../../forest/records/src/index.ts'
+import { type Body, allowsArrival, keyFromPrivate, nextTime, publish, readProfile, accessRecord } from '../../forest/records/src/index.ts'
 
 import { FOREST } from './paths.ts'
 
@@ -47,7 +47,7 @@ function inputSchema(kind: Kind): Record<string, unknown> {
   }
 }
 
-export type ToolConnection = { profile: string; writerKey: Uint8Array }
+export type ToolConnection = { profile: string; accessKey: Uint8Array }
 
 const fail = (text: string): CallToolResult => ({ isError: true, content: [{ type: 'text', text }] })
 
@@ -61,14 +61,14 @@ export async function post(connection: ToolConnection, kind: Kind, args: Record<
   const validate = validators[kind]
   if (!validate(body)) return fail(`not a valid ${kind}: ${ajv.errorsText(validate.errors, { dataVar: kind })}`)
 
-  const writer = keyFromPrivate(connection.writerKey)
+  const key = keyFromPrivate(connection.accessKey)
   const path = `${kind}/${id}`
   const view = await readProfile(hosts, connection.profile, now)
   if (!view.hosts.length) return fail('the profile names no hosts: its app has not published its hosts record where this service looks')
-  if (view.current.get(path)?.record.by === undefined && view.current.has(path)) return fail(`the profile's own key wrote ${path}; a writer key cannot replace it. Use another id.`)
-  const record = writerRecord(writer, connection.profile, path, body, nextTime(now, view, path))
-  if (!allowsArrival(view.writers, record, now)) {
-    return fail(`this connection's writer key (${writer.address}) is not on the profile's permissions list for ${path}, or its time is up. The person adds it in their app, or connects again.`)
+  if (view.current.get(path)?.record.by === undefined && view.current.has(path)) return fail(`the profile's main key wrote ${path}; an access key cannot replace it. Use another id.`)
+  const record = accessRecord(key, connection.profile, path, body, nextTime(now, view, path))
+  if (!allowsArrival(view.access, record, now)) {
+    return fail(`this connection's access key (${key.address}) is not on the profile's permissions list for ${path}, or its time is up. The person adds it in their app, or connects again.`)
   }
   const outcomes = await publish(view.hosts, [record])
   const took = outcomes.filter((o) => o.results[0]?.ok)
@@ -88,13 +88,13 @@ export function toolServer(connection: ToolConnection, hosts: string[]): Server 
       {
         name: KINDS.offer,
         title: 'Post an offer',
-        description: `Post an offer or a request for the profile this connection writes for (${connection.profile}), signed by its writer key, to the hosts its profile names. The market and side are the profile's own.`,
+        description: `Post an offer or a request for the profile this connection writes for (${connection.profile}), signed by its access key, to the hosts its profile names. The market and side are the profile's own.`,
         inputSchema: inputSchema('offer') as never,
       },
       {
         name: KINDS.review,
         title: 'Post a review',
-        description: `Post a review of another profile, by the profile this connection writes for (${connection.profile}), signed by its writer key. Name the deal it is about with dealId: the escrow's address.`,
+        description: `Post a review of another profile, by the profile this connection writes for (${connection.profile}), signed by its access key. Name the deal it is about with dealId: the escrow's address.`,
         inputSchema: inputSchema('review') as never,
       },
     ],

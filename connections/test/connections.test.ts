@@ -1,6 +1,6 @@
 // Connections end to end on loopback: forest's reference host, this service, an assistant doing
 // OAuth with PKCE and calling the tools over MCP, and the person's app adding and removing the
-// writer key with the profile's own key.
+// access key with the main key.
 //
 //   npm test
 
@@ -11,16 +11,18 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-import { profileKey } from '../../forest/keys/src/index.ts'
+import { mainKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
 import { hostsRecord, ownerRecord, permissionsRecord, publish, readProfile } from '../../forest/records/src/index.ts'
 
 import { readConfig, startConnections } from '../src/service.ts'
+import { Store } from '../src/store.ts'
 
 const dirs: string[] = []
 after(() => {
@@ -39,7 +41,7 @@ const b64u = (b: Buffer) => b.toString('base64url')
 const BANNED = /\b(wallets?|usdc|chains?|blockchains?|gas|crypto(currency)?|tokens?|solana|mints?|seed)\b/i
 const readable = (html: string) => html.replace(/<style[\s\S]*?<\/style>/g, ' ').replace(/<[^>]+>/g, ' ')
 
-test('an assistant connects with OAuth, the person adds its writer key, and it posts an offer and a review', async () => {
+test('an assistant connects with OAuth, the person adds its access key, and it posts an offer and a review', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'forest-connections-'))
   dirs.push(dir)
   const host = new Host()
@@ -50,8 +52,8 @@ test('an assistant connects with OAuth, the person adds its writer key, and it p
   const service = await startConnections(readConfig({ PUBLIC_URL: base, HOSTS: hostUrl, DATABASE_PATH: dbPath, PORT: String(port) }))
   try {
     // The person's app: a profile, and its hosts record on the host.
-    const me = await profileKey(randomBytes(32), 'tutoring/seller')
-    const them = await profileKey(randomBytes(32), 'tutoring/buyer')
+    const me = await mainKey(randomBytes(32), 'tutoring/seller')
+    const them = await mainKey(randomBytes(32), 'tutoring/buyer')
     const t0 = Date.now()
     assert.ok((await publish([hostUrl], [hostsRecord(me, [hostUrl], t0), ownerRecord(me, 'profile', { name: 'Ana', market: 'tutoring', role: 'seller', createdAt: new Date(t0).toISOString() }, t0)]))[0]!.results.every((r) => r.ok))
 
@@ -88,21 +90,21 @@ test('an assistant connects with OAuth, the person adds its writer key, and it p
     const connect = /action="(\/connect\/[^"]+)"/.exec(firstPage)![1]!
     assert.ok(!connect.includes(me.address), 'the page carries a random id, never the profile')
 
-    // The person names the profile, in the form's body: a writer key is made, and shown.
+    // The person names the profile, in the form's body: an access key is made, and shown.
     const bad = await fetch(base + connect, { method: 'POST', body: new URLSearchParams({ profile: 'not-an-address' }), redirect: 'manual' })
     assert.equal(bad.status, 400)
     const named = await fetch(base + connect, { method: 'POST', body: new URLSearchParams({ profile: me.address }), redirect: 'manual' })
     assert.equal(named.status, 303)
     assert.equal(named.headers.get('location'), connect)
     const waiting = await (await fetch(base + connect, { redirect: 'manual' })).text()
-    const writer = /<code>([1-9A-HJ-NP-Za-km-z]{32,44})<\/code>/.exec(waiting)![1]!
+    const access = /<code>([1-9A-HJ-NP-Za-km-z]{32,44})<\/code>/.exec(waiting)![1]!
     assert.match(waiting, /http-equiv="refresh"/)
     for (const html of [firstPage, waiting]) assert.equal(BANNED.exec(readable(html)), null, 'no crypto word on a page a person reads')
     assert.equal((await fetch(base + connect, { redirect: 'manual' })).status, 200, 'still waiting: the profile does not list the key yet')
 
-    // The person's app adds the writer key, signed with the profile's own key; the grant goes through.
+    // The person's app adds the access key, signed with the main key; the grant goes through.
     const t1 = Date.now()
-    await publish([hostUrl], [permissionsRecord(me, [{ key: writer, paths: ['offer', 'review'], until: t1 + 30 * 86_400_000 }], t1)])
+    await publish([hostUrl], [permissionsRecord(me, [{ key: access, paths: ['offer', 'review'], until: t1 + 30 * 86_400_000 }], t1)])
     const granted = await fetch(base + connect, { redirect: 'manual' })
     assert.equal(granted.status, 302)
     const back = new URL(granted.headers.get('location')!)
@@ -137,28 +139,28 @@ test('an assistant connects with OAuth, the person adds its writer key, and it p
     const review = await assistant.callTool({ name: 'post_review', arguments: { review: { subject: them.address, ratings: { overall: '9' }, text: 'Paid on time.' } } })
     assert.equal(review.isError, undefined, JSON.stringify(review))
 
-    // On the host: signed by the writer key, for the profile, counted by forest's view.
+    // On the host: signed by the access key, for the profile, counted by forest's view.
     const view = await readProfile([hostUrl], me.address, Date.now())
     const maths = view.current.get('offer/maths')!.record
-    assert.equal(maths.by, writer)
+    assert.equal(maths.by, access)
     assert.equal(maths.profile, me.address)
     assert.deepEqual((maths.body as any).price, offer.price)
     assert.ok([...view.current.keys()].some((p) => p.startsWith('review/')))
 
-    // What it may not do: a body that is not an offer, and a path the profile's own key wrote.
+    // What it may not do: a body that is not an offer, and a path the main key wrote.
     assert.equal((await assistant.callTool({ name: 'post_offer', arguments: { offer: { direction: 'sell' } } })).isError, true)
     await publish([hostUrl], [ownerRecord(me, 'offer/mine', { direction: 'offer', description: 'Mine.', createdAt: new Date().toISOString() }, Date.now())])
     const owners = await assistant.callTool({ name: 'post_offer', arguments: { id: 'mine', offer } })
     assert.equal(owners.isError, true)
-    assert.match(JSON.stringify(owners), /own key wrote offer\/mine/)
+    assert.match(JSON.stringify(owners), /main key wrote offer\/mine/)
 
-    // The person removes the writer key in their app: from then on the tools refuse; what it wrote stays.
+    // The person removes the access key in their app: from then on the tools refuse; what it wrote stays.
     const t2 = Date.now()
-    await publish([hostUrl], [permissionsRecord(me, [{ key: writer, paths: ['offer', 'review'], until: t2 }], t2 + 1)])
+    await publish([hostUrl], [permissionsRecord(me, [{ key: access, paths: ['offer', 'review'], until: t2 }], t2 + 1)])
     const refused = await assistant.callTool({ name: 'post_offer', arguments: { id: 'later', offer } })
     assert.equal(refused.isError, true)
     assert.match(JSON.stringify(refused), /not on the profile's permissions list/)
-    assert.equal((await readProfile([hostUrl], me.address, Date.now())).current.get('offer/maths')!.record.by, writer, 'what it wrote stays')
+    assert.equal((await readProfile([hostUrl], me.address, Date.now())).current.get('offer/maths')!.record.by, access, 'what it wrote stays')
     await assistant.close()
 
     // Refreshing gives a new token and spends the old refresh token; a revoked token is refused.
@@ -169,7 +171,7 @@ test('an assistant connects with OAuth, the person adds its writer key, and it p
     const revoked = await fetch(mcpUrl, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${refreshed.access_token}` }, body: '{}' })
     assert.equal(revoked.status, 401)
 
-    // The file holds no token, code or profile key in the clear.
+    // The file holds no token, code or main key in the clear.
     const file = readFileSync(dbPath)
     for (const secret of [tokens.access_token, tokens.refresh_token, refreshed.access_token, refreshed.refresh_token, code]) assert.equal(file.includes(Buffer.from(secret)), false)
     assert.equal(file.includes(Buffer.from(me.privateKey)), false)
@@ -185,4 +187,24 @@ test('the configuration names what is missing, and takes origins only', () => {
   assert.throws(() => readConfig({ PUBLIC_URL: 'https://c.example', HOSTS: 'https://h.example/path' }), /HOSTS/)
   const c = readConfig({ PUBLIC_URL: 'https://c.example', HOSTS: 'https://h.example, https://i.example' })
   assert.deepEqual([c.publicUrl, c.hosts, c.port], ['https://c.example', ['https://h.example', 'https://i.example'], 8080])
+})
+
+test('a file written before the 3 October words opens with its keys under the new name', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forest-connections-'))
+  dirs.push(dir)
+  const dbPath = join(dir, 'old.sqlite')
+  const key = new Uint8Array(randomBytes(32))
+  const old = new DatabaseSync(dbPath)
+  old.exec(`CREATE TABLE connections (
+    id TEXT PRIMARY KEY, client TEXT NOT NULL, profile TEXT, writer_key BLOB,
+    granted INTEGER NOT NULL DEFAULT 0, pending TEXT, expires INTEGER NOT NULL
+  )`)
+  old.prepare('INSERT INTO connections (id, client, profile, writer_key, granted, expires) VALUES (?, ?, ?, ?, 1, ?)').run('c1', 'a', 'p', key, Date.now() + 60_000)
+  old.close()
+  const store = new Store(dbPath)
+  try {
+    assert.deepEqual(store.connection('c1')!.accessKey, key)
+  } finally {
+    store.close()
+  }
 })

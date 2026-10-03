@@ -14,7 +14,7 @@ import { BN254_R, toBytes32 } from '../../forest/registry/client/src/field.ts'
 import { listRoot } from '../../forest/registry/client/src/proof.ts'
 import { base58, hex } from '../../forest/records/src/bytes.ts'
 import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
-import { keeperSigned } from '../../forest/registry/client/src/keeper.ts'
+import { issuerSigned } from '../../forest/registry/client/src/issuer.ts'
 
 import { shuffle } from '../src/batch.ts'
 import { loadKeypair, writeKeyFile } from '../src/key.ts'
@@ -218,7 +218,7 @@ test('every other refusal, and malformed requests', async () => {
       [{ sessionId: good, stamp: '-5' }, 'bad_stamp'],
       [{ sessionId: good, stamp: BN254_R.toString() }, 'bad_stamp'],
       [{ sessionId: good, stamp: 5 }, 'expected_exactly_sessionId_and_stamp'],
-      [{ sessionId: good, stamp: '5', wallet: 'x' }, 'expected_exactly_sessionId_and_stamp'],
+      [{ sessionId: good, stamp: '5', extra: 'x' }, 'expected_exactly_sessionId_and_stamp'],
       [{ sessionId: good }, 'expected_exactly_sessionId_and_stamp'],
       ['not json', 'not_json'],
       ['[1]', 'not_an_object'],
@@ -403,11 +403,11 @@ test('after the batch, the file holds the list and no link from a session to a s
 })
 
 type Snapshot = { root: string; signature: string; size: number; time: number }
-type ListFile = { v: number; keeper: string; stamps: string[]; snapshots: Snapshot[] }
+type ListFile = { v: number; issuer: string; stamps: string[]; snapshots: Snapshot[] }
 
-/** Whether a snapshot is signed by this keeper, checked as a registry reader checks a row: `keeperSigned`. */
-function signed(keeper: string, s: Snapshot): boolean {
-  return keeperSigned({ keeper: base58.decode(keeper), root: hex.decode(s.root), keeperSignature: hex.decode(s.signature) })
+/** Whether a snapshot is signed by this issuer, checked as a registry reader checks a row: `issuerSigned`. */
+function signed(issuer: string, s: Snapshot): boolean {
+  return issuerSigned({ issuer: base58.decode(issuer), root: hex.decode(s.root), issuerSignature: hex.decode(s.signature) })
 }
 
 /** The list file as a reader takes it: canonical text, the fields README.md names, every snapshot its prefix's and signed. */
@@ -415,20 +415,20 @@ async function readFile(h: Harness): Promise<{ text: string; stamps: bigint[]; f
   const text = await (await h.get('/list.json')).text()
   const file = parseCanonical(text) as ListFile
   assert.equal(canonical(file), text, 'canonical text')
-  assert.deepEqual(Object.keys(file).sort(), ['keeper', 'snapshots', 'stamps', 'v'])
+  assert.deepEqual(Object.keys(file).sort(), ['issuer', 'snapshots', 'stamps', 'v'])
   assert.equal(file.v, 1)
   const stamps = file.stamps.map((s) => BigInt(s))
   for (const s of file.snapshots) {
     assert.deepEqual(Object.keys(s).sort(), ['root', 'signature', 'size', 'time'])
     assert.match(s.root, /^[0-9a-f]{64}$/)
     assert.equal(BigInt('0x' + s.root), listRoot(stamps.slice(0, s.size)), "each root is forest's listRoot of its first `size` stamps")
-    assert.ok(signed(file.keeper, s), 'signed by the keeper the file names, over the root as 32 big-endian bytes')
+    assert.ok(signed(file.issuer, s), 'signed by the issuer the file names, over the root as 32 big-endian bytes')
   }
   assert.equal(file.snapshots.at(-1)?.size ?? 0, stamps.length, "the newest snapshot is the whole list's")
   return { text, stamps, file }
 }
 
-test("the list file: the stamps in order, and each snapshot signed with the keeper key", async () => {
+test("the list file: the stamps in order, and each snapshot signed with the issuer's key", async () => {
   let now = 1_790_000_000_000
   const key = keypairJson()
   const h = await start({ key: key.json, now: () => now })
@@ -437,7 +437,7 @@ test("the list file: the stamps in order, and each snapshot signed with the keep
     const empty = await readFile(h)
     assert.deepEqual(empty.stamps, [], 'an empty list at first')
     assert.deepEqual(empty.file.snapshots, [], 'and no snapshot')
-    assert.equal(empty.file.keeper, base58.encode(key.publicKey), "the keeper is named by its key's address")
+    assert.equal(empty.file.issuer, base58.encode(key.publicKey), "the issuer is named by its key's address")
 
     for (let i = 0; i < 3; i++) await submit(h, await h.session(), randomStamp())
     await h.issuer.batcher.flush()
@@ -459,9 +459,9 @@ test("the list file: the stamps in order, and each snapshot signed with the keep
     assert.equal(res.headers.get('cache-control'), 'no-cache')
     assert.equal(res.headers.get('access-control-allow-origin'), '*', 'any page may read it')
 
-    // A signature counts for its own root and keeper only.
+    // A signature counts for its own root and issuer only.
     const [a, b] = before.file.snapshots as [Snapshot, Snapshot]
-    assert.equal(signed(before.file.keeper, { ...a, root: b.root }), false)
+    assert.equal(signed(before.file.issuer, { ...a, root: b.root }), false)
     assert.equal(signed(base58.encode(keypairJson().publicKey), a), false)
 
     assert.deepEqual(await h.post('/list.json'), { status: 405, body: { error: 'get_only' } })
@@ -482,7 +482,7 @@ test("the list file: the stamps in order, and each snapshot signed with the keep
   }
 })
 
-test('a file written before the issuer was a keeper opens under the new names, its list kept', async () => {
+test('a file written before the list moved off chain opens under the new names, its list kept', async () => {
   const dbPath = join(tempDir(), 'old.sqlite')
   const old = new DatabaseSync(dbPath)
   const stamps = [randomStamp(), randomStamp()]

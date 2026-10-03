@@ -1,5 +1,5 @@
 // Plain words for people. Everything a person reads on a page goes through here or is the
-// people's own text; none of it says wallet, USDC, chain, gas, token or any other crypto word.
+// people's own text; none of it says a crypto word.
 // The JSON twins keep the records' own field names, which are for machines.
 
 import type { CurrencyConfig } from '../config.ts'
@@ -130,7 +130,7 @@ export function field(name: string, value: unknown): string {
 
 export const REAL_PERSON = 'Verified real person, one per market'
 
-/** Who checked it, by the names this index gives the keepers it trusts. */
+/** Who checked it, by the names this index gives the issuers it trusts. */
 export function checkedBy(names: (string | null)[]): string {
   const known = names.map((n) => n ?? 'someone this index trusts but gives no name')
   if (!known.length) return 'nobody this index trusts'

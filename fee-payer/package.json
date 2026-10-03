@@ -1,14 +1,14 @@
 {
-  "name": "@forest/relayer",
+  "name": "@forest/fee-payer",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest relayer: Kora, configured, with no custom code. Co-signs a person's transaction and charges its network fee and storage deposits in the token they pay in.",
+  "description": "The fee payer: Kora, configured, with no custom code. Co-signs a person's transaction as its fee payer and charges its network fee and storage deposits in the token they pay in.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "build": "./build.sh",
     "start": "./run.sh",
-    "test:local": "node --test --test-force-exit test/relayer.test.ts",
+    "test:local": "node --test --test-force-exit test/fee-payer.test.ts",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

@@ -29,7 +29,7 @@ const directory = new Directory([
 ])
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 const FOUNDATION = '7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7'
-const OTHER_KEEPER = '5tUPxWGKqNbFctBXKS8LgnkM8A1Jfn5qVrUGxKjFXozB'
+const OTHER_ISSUER = '5tUPxWGKqNbFctBXKS8LgnkM8A1Jfn5qVrUGxKjFXozB'
 const scoring = {
   evidence: { both: 1, oneSided: 0.5, none: 0.05 },
   unstampedReviewer: 0.05,
@@ -37,13 +37,13 @@ const scoring = {
   maxRounds: 100,
   tolerance: 1e-9,
 }
-const settings = { directory, keepers: { [FOUNDATION]: { name: 'Forest Foundation', weight: 1 } }, scoring }
+const settings = { directory, issuers: { [FOUNDATION]: { name: 'Forest Foundation', weight: 1 } }, scoring }
 
-// Each profile lives in one label, as its record names it. Its address is its name and its wallet.
+// Each profile lives in one label, as its record names it. Its address is its name and its Solana address.
 const ana = { address: 'AnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAn', label: 'online-tutors/seller' }
 const ben = { address: 'BenBenBenBenBenBenBenBenBenBenBenBenBenBenBe', label: 'online-tutors/buyer' }
 const cleo = { address: 'CLeoCLeoCLeoCLeoCLeoCLeoCLeoCLeoCLeoCLeoCLe', label: 'online-tutors/seller' }
-const stamp = (profile: string, label = 'online-tutors/seller', keeper = FOUNDATION): StampIn => ({ profile, label, keeper })
+const stamp = (profile: string, label = 'online-tutors/seller', issuer = FOUNDATION): StampIn => ({ profile, label, issuer })
 /** A row's status for a profile living in `label` (the row's own, unless another is named). */
 const own = (b: StampIn, label: string | null = b.label) => stampStatus(b, { label }, directory)
 // Ana invoiced Ben (the seller created it), and Ben paid in one tap: no funding mark, released.
@@ -151,21 +151,21 @@ test('a row counts only under its profile’s own label: one market, one side', 
   assert.deepEqual(u.map((x) => x.label), ['online-tutors/seller'])
 })
 
-test('uniqueness: keepers combine, a keeper at 0 adds nothing', () => {
+test('uniqueness: issuers combine, an issuer at 0 adds nothing', () => {
   const one = uniqueness({ profiles: [ana], stamps: [stamp(ana.address)] }, settings)
   assert.equal(one.length, 1)
   assert.equal(one[0].value, 1)
-  assert.deepEqual(one[0].keepers, [{ keeper: FOUNDATION, name: 'Forest Foundation', weight: 1 }])
+  assert.deepEqual(one[0].issuers, [{ issuer: FOUNDATION, name: 'Forest Foundation', weight: 1 }])
 
-  const unknown = uniqueness({ profiles: [ana], stamps: [stamp(ana.address, 'online-tutors/seller', OTHER_KEEPER)] }, settings)
+  const unknown = uniqueness({ profiles: [ana], stamps: [stamp(ana.address, 'online-tutors/seller', OTHER_ISSUER)] }, settings)
   assert.equal(unknown[0].value, 0, 'others start at 0')
 
-  const halves = { ...settings, keepers: { [FOUNDATION]: { name: 'F', weight: 0.5 }, [OTHER_KEEPER]: { name: 'O', weight: 0.5 } } }
+  const halves = { ...settings, issuers: { [FOUNDATION]: { name: 'F', weight: 0.5 }, [OTHER_ISSUER]: { name: 'O', weight: 0.5 } } }
   const two = uniqueness(
-    { profiles: [ana], stamps: [stamp(ana.address), stamp(ana.address, 'online-tutors/seller', OTHER_KEEPER)] },
+    { profiles: [ana], stamps: [stamp(ana.address), stamp(ana.address, 'online-tutors/seller', OTHER_ISSUER)] },
     halves,
   )
-  assert.equal(two[0].value, 0.75, 'two keepers at 0.5: 1 − 0.5 × 0.5')
+  assert.equal(two[0].value, 0.75, 'two issuers at 0.5: 1 − 0.5 × 0.5')
 })
 
 test('standing: everyone starts at zero; the scenario the end-to-end test runs', () => {

@@ -17,5 +17,5 @@ Every page has a JSON twin at the same address with `.json`. Reading needs no ke
 
 - [How the scores work](https://github.com/foundationforest/services/blob/main/index/README.md#how-it-scores)
 - [The Pay link](https://github.com/foundationforest/services/blob/main/index/README.md#the-pay-link): the one format for paying for an offer from any app
-- [What this index reads](https://github.com/foundationforest/services/tree/main/index/lists): the hosts, the markets and the keepers, three public lists
+- [What this index reads](https://github.com/foundationforest/services/tree/main/index/lists): the hosts, the markets and the issuers, three public lists
 - [Source](https://github.com/foundationforest/services): all of it open; anyone may run another index

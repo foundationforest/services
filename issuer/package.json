@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "The foundation's issuer: the keeper of the human list. A passed Didit face check puts a stamp on its list, in shuffled batches; the list and its snapshots, each signed with the keeper key, are published as one file.",
+  "description": "Soil's issuer: it keeps the human list. A passed Didit face check puts a stamp on its list, in shuffled batches; the list and its snapshots, each signed with the issuer's key, are published as one file.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
