@@ -6,7 +6,7 @@
 // Three shapes are read, by path: `profile`, `offer/<id>` and `review/<id>`. A private record (its
 // body only `{private}`) is left alone: its readers open it, an index cannot. Every other path is not
 // this index's. A record's address is `<profile>/<path>`; its `id` is the id of the record that holds
-// the path now. The profile's address is its name and its wallet.
+// the path now. The profile's address is its name and its Solana address.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

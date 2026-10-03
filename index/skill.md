@@ -59,13 +59,13 @@ A profile is one key: its address is its permanent name, and also where it is pa
 hold several profiles; they are linked only if the person chose to link them. The answer carries:
 
 - `address`, and `profile`: `name`, the one `market` it lives in and its `role` there (with `side`,
-  the market's word for it), `about`, `contact`, and `read`, its reading key, for whoever makes a
-  private record for it. A profile lives in one market, under one label (`market/role`); a person
-  in two markets holds two profiles.
-- `stamps`: every registry row of this profile's whose keeper this index trusts, counted or not.
+  the market's word for it), `about`, and `read`, its reading key, for whoever makes a private
+  record for it. A profile lives in one market, under one label (`market/role`); a person in two
+  markets holds two profiles.
+- `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not.
 - `scores`: `uniqueness` (one per counted label), `rating` and `standing`, each signed.
-- `offers` and `requests`: its live offers, whether its own key or a writer key it allowed signed
-  them.
+- `offers` and `requests`: its live offers, whether its main key or an access key it allowed
+  signed them.
 - `reviews.received` and `reviews.given`: each with its `ratings` (by name, 1 to 10), its
   `evidence` (what payment backs it), the reviewer's weight, and what it added to standing. A
   review's market is the market of the profile it is about; `fields` are the ones that market's
@@ -76,16 +76,16 @@ Private records are not here: only their readers can open them.
 
 ## Check a real person
 
-A keeper keeps a list of stamps; the foundation's issuer keeps the human list, putting a person on
+An issuer keeps a list of stamps; Soil's issuer keeps the human list, putting a person on
 it once, after a face check. A profile shows it is on a list with a row in the registry, which names
-the profile, the keeper, the label and the root of the list it proved against, without saying which
-stamp is the person's. One person gets at most one row per keeper per label, so a second profile in
-the same market needs a second person, or a second keeper. It means real and accountable, not good.
+the profile, the issuer, the label and the root of the list it proved against, without saying which
+stamp is the person's. One person gets at most one row per issuer per label, so a second profile in
+the same market needs a second person, or a second issuer. It means real and accountable, not good.
 
 In `stamps[]`:
 
 - `counted: true` means this index counts it. It counts only if all of these hold:
-  - its `keeper` is one this index trusts (`keeper.name`, `keeper.weight`), and the keeper's
+  - its `issuer` is one this index trusts (`issuer.name`, `issuer.weight`), and the issuer's
     signature on the row's `root` checks;
   - its `label` is a market this index uses and a role its sides allow, exactly
     (`online-tutors/seller`, `language-exchange/peer`); a plain market with no role counts for
@@ -93,14 +93,14 @@ In `stamps[]`:
   - it is the profile's own label: `profile.market` and `profile.role`.
 - `why` says why not when it doesn't: `notAMarketHere`, `noRole` or `notTheProfilesLabel`
   (registered under another market or side than the one the profile lives in).
-- `scores.uniqueness[]` combines the keepers of each counted label into one number from 0 to 1.
+- `scores.uniqueness[]` combines the issuers of each counted label into one number from 0 to 1.
 
 To check it yourself, without trusting this index: `row` is the address of the row's account in the
-registry program on Solana. Read it: it names the profile's key, the keeper, the root, the keeper's
-signature on the root (`keeperSignature`) and the label. Check that signature with the keeper's key:
-it is ed25519 over the root's 32 bytes. Then decide whether you trust that keeper. This index's
-keepers are listed at
-https://github.com/foundationforest/services/blob/main/index/lists/keepers.json.
+registry program on Solana. Read it: it names the profile's key, the issuer, the root, the issuer's
+signature on the root (`issuerSignature`) and the label. Check that signature with the issuer's key:
+it is ed25519 over the root's 32 bytes. Then decide whether you trust that issuer. This index's
+issuers are listed at
+https://github.com/foundationforest/services/blob/main/index/lists/issuers.json.
 
 ## Check a receipt
 
@@ -137,7 +137,7 @@ the escrow program's own events for it (`Created`, `Funded`, `Ended`, `Closed`, 
 Three scores. They are never added together.
 
 - **Uniqueness**, per label, 0 to 1: how sure this index is that the profile is one real person
-  there. `1 − (1 − w1) × (1 − w2) × …` over the weights of the keepers whose counted rows it holds.
+  there. `1 − (1 − w1) × (1 − w2) × …` over the weights of the issuers whose counted rows it holds.
 - **Rating**, per profile, 1.0 to 10.0: the `overall` ratings of the reviews that count,
   averaged, each weighed by its reviewer and by the payment behind it. No review that counts gives
   one: no rating, not zero.

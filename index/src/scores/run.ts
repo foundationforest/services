@@ -6,16 +6,16 @@
 // later work (README.md, "Limits").
 
 import { COUNTED } from '../chain/registry.ts'
-import type { Config, KeeperConfig } from '../config.ts'
+import type { Config, IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import type { Directory } from '../markets.ts'
 import { type Inputs, type Scores, compute, toMicro } from './compute.ts'
 import { type IndexKeys, type Kind, sign } from './sign.ts'
 
-export async function loadInputs(db: Db, keepers: KeeperConfig, escrow: string): Promise<Inputs> {
+export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string): Promise<Inputs> {
   const [profiles, stamps, receipts, reviews] = await Promise.all([
     db.query('select address, market, role from profiles'),
-    db.query(`select r.profile, r.label, r.keeper from rows r where ${COUNTED}`, [Object.keys(keepers)]),
+    db.query(`select r.profile, r.label, r.issuer from rows r where ${COUNTED}`, [Object.keys(issuers)]),
     db.query(
       `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts where program_id = $1`,
       [escrow],
@@ -24,7 +24,7 @@ export async function loadInputs(db: Db, keepers: KeeperConfig, escrow: string):
   ])
   return {
     profiles: profiles.rows.map((r) => ({ address: r.address, label: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, keeper: r.keeper })),
+    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, issuer: r.issuer })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,
@@ -53,10 +53,10 @@ export async function recompute(
   settings: { directory: Directory; config: Config; keys: IndexKeys },
   now: () => bigint = () => BigInt(Math.floor(Date.now() / 1000)),
 ): Promise<Scores> {
-  const inputs = await loadInputs(db, settings.config.keepers, settings.config.escrowProgramId)
+  const inputs = await loadInputs(db, settings.config.issuers, settings.config.escrowProgramId)
   const scores = compute(inputs, {
     directory: settings.directory,
-    keepers: settings.config.keepers,
+    issuers: settings.config.issuers,
     scoring: settings.config.scoring,
   })
 
@@ -66,7 +66,7 @@ export async function recompute(
       kind: 'uniqueness' as const,
       label: u.label,
       value: toMicro(u.value),
-      details: { market: u.market, role: u.role, keepers: u.keepers },
+      details: { market: u.market, role: u.role, issuers: u.issuers },
     })),
     ...scores.standing.map((t) => ({
       profile: t.profile,

@@ -1,53 +1,53 @@
-# The Forest relayer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
+# The fee payer: Kora 2.0.5 (the version in KORA), configured. Nothing custom.
 #
 # It co-signs a person's transaction as its payer and charges, in the token they pay in, what that
 # transaction costs it: the network fee plus every storage deposit it puts down, including the ones
 # a program makes inside the transaction. When Solana cuts its storage price, part of a deposit it
-# put down is freed, and the relayer keeps that refund. It refuses anything that calls a program not
-# listed here, and anything that would move its own SOL or tokens except to create an account it is
-# paid for.
+# put down is freed, and the fee payer keeps that refund. It refuses anything that calls a program
+# not listed here, and anything that would move its own SOL or tokens except to create an account it
+# is paid for.
 #
 # It allows two Forest programs, the registry and the escrow, at their devnet addresses
 # (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json): nothing of Forest's is on
 # mainnet. The tokens it is paid in and its price source are mainnet's; deploy/devnet-config.sh
-# swaps those for devnet's. The local run (test/relayer.test.ts) copies this file and changes one
+# swaps those for devnet's. The local run (test/fee-payer.test.ts) copies this file and changes one
 # line, `price_source`, to "Mock". Every key Kora 2.0.5 requires in a table is written out, so
 # nothing here is a default someone has to look up.
 
 [kora]
 # Requests per second, across all callers (Kora's own global limiter). Kora's example value.
 rate_limit = 100
-# Payments go to token accounts the relayer's own key owns (`payment_address` unset).
+# Payments go to token accounts the fee payer's own key owns (`payment_address` unset).
 
 [validation]
-# The most SOL one transaction may take from the relayer beyond its network fee: storage deposits.
+# The most SOL one transaction may take from the fee payer beyond its network fee: storage deposits.
 # 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
 # 0.0037 at today's rent (forest/escrow/README.md); a registry row, about 0.0018.
 max_allowed_lamports = 10000000
-# The relayer, and an escrow's two parties when both sign a split. A registration needs two: the
-# relayer, and the profile, which signs the row and its payment.
+# The fee payer, and an escrow's two parties when both sign a split. A registration needs two: the
+# fee payer, and the main key, which signs the row and its payment.
 max_signatures = 3
 # Kora checks these against every program a transaction calls, the ones called from inside other
 # programs included. No compute budget program: a registration fits the default compute limit, and
-# the relayer never pays a priority fee it did not agree to.
+# the fee payer never pays a priority fee it did not agree to.
 allowed_programs = [
   "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC", # the Forest registry, on devnet
   "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8", # the Forest escrow, on devnet
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
-  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the relayer's key may do nothing in it (below)
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the fee payer's key may do nothing in it (below)
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
   "11111111111111111111111111111111",            # System
 ]
-# The tokens people pay in, in this order, each its issuer's own mint on mainnet:
+# The tokens people pay in, in this order, each its maker's own mint on mainnet:
 #   USDC      EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  Circle; SPL Token
 #   USDT      Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB  Tether; SPL Token
 #   Open USD  ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB   Bridge; Token-2022, no transfer fee
 #   EURC      HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr  Circle; SPL Token, a euro
 # All six decimals. Jupiter prices each against SOL, so the charge is the same SOL cost in whichever
-# is paid, EURC at the euro's rate. Each issuer can freeze the relayer's account in its token, and
-# Open USD's also holds a permanent delegate that can take back what the relayer collected in it;
-# the foundation accepts both. In 2.0.5 `allowed_tokens` gates only Kora's own transferTransaction
-# helper; an escrow in another token still passes.
+# is paid, EURC at the euro's rate. Each dollar's maker can freeze the fee payer's account in its
+# token, and Open USD's also holds a permanent delegate that can take back what the fee payer
+# collected in it; both are accepted (README.md, Policy). In 2.0.5 `allowed_tokens` gates only
+# Kora's own transferTransaction helper; an escrow in another token still passes.
 allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
 allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
 disallowed_accounts = []
@@ -59,7 +59,7 @@ price_source = "Jupiter"
 type = "margin"
 margin = 0.0
 
-# What the relayer's own key may do inside a transaction. Only one thing: pay for a new account
+# What the fee payer's own key may do inside a transaction. Only one thing: pay for a new account
 # (a registry row, an escrow's account and its deposit address, a token account),
 # which Kora then counts in the charge. It may not send its SOL or its tokens anywhere, assign or
 # allocate its own account, or act as the owner or authority of any token account or mint.

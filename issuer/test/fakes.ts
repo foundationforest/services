@@ -1,4 +1,4 @@
-// A stand-in for Didit, a fresh keeper key, and the check that the file keeps no link.
+// A stand-in for Didit, a fresh issuer key, and the check that the file keeps no link.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'

@@ -8,7 +8,7 @@
 //
 // The public file, which anyone reads (list.ts):
 //
-//   GET  /list.json     every stamp on the list, in order, and every snapshot, signed by the keeper key
+//   GET  /list.json     every stamp on the list, in order, and every snapshot, signed by the issuer's key
 //
 // Errors are `{error: <code>}`: 400 a malformed body, 403 a face check that does not count (the code
 // says why), 409 a session already used or a stamp already queued or listed, 413 a body over 1 KB,

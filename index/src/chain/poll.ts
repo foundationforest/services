@@ -1,6 +1,6 @@
 // The chain reader, from an RPC (a local validator in tests). Two programs.
 //
-// The registry: every poll, every row of each keeper this index trusts, from the program's own
+// The registry: every poll, every row of each issuer this index trusts, from the program's own
 // accounts (registry.ts). A row never changes, so only new ones are stored.
 //
 // The escrow: every transaction that named it since the last one read, oldest first. A transaction
@@ -21,7 +21,7 @@ export class ChainReader {
   private readonly db: Db
   private readonly registry: string
   private readonly escrow: string
-  private readonly keepers: string[]
+  private readonly issuers: string[]
   /** Called with the profiles of new rows, after anything new was read. */
   private readonly onChange: (profiles: string[]) => void
   private readonly commitment: Commitment
@@ -33,7 +33,7 @@ export class ChainReader {
     rpcUrl: string
     registry: string
     escrow: string
-    keepers: string[]
+    issuers: string[]
     onChange: (profiles: string[]) => void
     commitment?: Commitment
     onError?: (err: unknown) => void
@@ -41,7 +41,7 @@ export class ChainReader {
     this.db = args.db
     this.registry = args.registry
     this.escrow = args.escrow
-    this.keepers = args.keepers
+    this.issuers = args.issuers
     this.onChange = args.onChange
     this.commitment = args.commitment ?? 'finalized'
     this.onError = args.onError ?? ((err) => console.error('chain read failed', err))
@@ -55,7 +55,7 @@ export class ChainReader {
         let n = 0
         const profiles: string[] = []
         try {
-          for (const row of await readRows(this.connection, this.registry, this.keepers, this.commitment)) {
+          for (const row of await readRows(this.connection, this.registry, this.issuers, this.commitment)) {
             if (await storeRow(this.db, row)) {
               n++
               profiles.push(row.profile)

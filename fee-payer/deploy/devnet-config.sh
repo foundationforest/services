@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Prints the devnet relayer's kora.toml: relayer/kora.toml with exactly these lines changed, and
+# Prints the devnet fee payer's kora.toml: fee-payer/kora.toml with exactly these lines changed, and
 # nothing else. Each old line must appear exactly once, or it stops. The programs it allows are
 # already devnet's, in kora.toml itself.
 #
 #   the four paid tokens -> the classic test dollar and the one shaped like Open USD
 #   (USDC, USDT, Open USD,  (forest/escrow/devnet/devnet.json: testDollar, openUsdShaped): devnet's
-#   EURC)                   relayer is paid in those two only
-#   Jupiter's price      -> Kora's mock, since Jupiter prices mainnet only (relayer/README.md). The
+#   EURC)                   fee payer is paid in those two only
+#   Jupiter's price      -> Kora's mock, since Jupiter prices mainnet only (fee-payer/README.md). The
 #                           mock values the test dollar at 0.001 SOL a whole token: one base unit
 #                           buys one lamport.
 set -euo pipefail

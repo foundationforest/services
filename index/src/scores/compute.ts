@@ -2,7 +2,7 @@
 // rule here is written out in plain words in README.md; the two must say the same thing.
 //
 // Three scores, never blended into one number:
-//   uniqueness  per label: which trusted keepers' rows the profile holds under it, by their weights
+//   uniqueness  per label: which trusted issuers' rows the profile holds under it, by their weights
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
@@ -11,16 +11,16 @@
 // "weighted by the reviewer's own standing" with everyone starting at zero would leave every score at
 // zero forever.
 //
-// A profile is named by its address, which is also its wallet: the escrow's buyer and seller are
-// compared with it directly.
+// A profile is named by its address, which is also its Solana address: the escrow's buyer and seller
+// are compared with it directly.
 
-import type { KeeperConfig, ScoringConfig } from '../config.ts'
+import type { IssuerConfig, ScoringConfig } from '../config.ts'
 import { type Directory, splitLabel } from '../markets.ts'
 
 /** A profile, and the one label it lives in (`market/role`, from its record). */
 export type ProfileIn = { address: string; label: string | null }
-/** A counted row: a trusted keeper's, its signature on the root checked. */
-export type StampIn = { profile: string; label: string; keeper: string }
+/** A counted row: a trusted issuer's, its signature on the root checked. */
+export type StampIn = { profile: string; label: string; issuer: string }
 export type ReceiptIn = {
   escrow: string
   buyer: string
@@ -53,7 +53,7 @@ export type Inputs = {
 
 export type Settings = {
   directory: Directory
-  keepers: KeeperConfig
+  issuers: IssuerConfig
   scoring: ScoringConfig
 }
 
@@ -81,8 +81,8 @@ export function stampStatus(stamp: Pick<StampIn, 'label'>, profile: { label: str
   return { counted: true, ...label }
 }
 
-export function keeperWeight(keepers: KeeperConfig, keeper: string): number {
-  const w = keepers[keeper]?.weight ?? 0
+export function issuerWeight(issuers: IssuerConfig, issuer: string): number {
+  const w = issuers[issuer]?.weight ?? 0
   return Math.min(1, Math.max(0, w))
 }
 
@@ -92,36 +92,36 @@ export type Uniqueness = {
   market: string
   role: string
   value: number
-  keepers: { keeper: string; name: string | null; weight: number }[]
+  issuers: { issuer: string; name: string | null; weight: number }[]
 }
 
 /**
- * Per profile and label: the distinct keepers whose counted rows the profile holds under it,
- * combined as 1 − Π(1 − weight). One keeper at weight w gives w; two independent keepers give more
- * than either and never more than 1; a keeper at 0 adds nothing.
+ * Per profile and label: the distinct issuers whose counted rows the profile holds under it,
+ * combined as 1 − Π(1 − weight). One issuer at weight w gives w; two independent issuers give more
+ * than either and never more than 1; an issuer at 0 adds nothing.
  */
 export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'stamps'>, settings: Settings): Uniqueness[] {
   const profiles = new Map(inputs.profiles.map((p) => [p.address, p]))
-  const groups = new Map<string, { profile: string; label: string; market: string; role: string; keepers: Set<string> }>()
+  const groups = new Map<string, { profile: string; label: string; market: string; role: string; issuers: Set<string> }>()
   for (const st of inputs.stamps) {
     const profile = profiles.get(st.profile)
     if (!profile) continue
     const status = stampStatus(st, profile, settings.directory)
     if (!status.counted) continue
     const key = `${st.profile}\u0000${st.label}`
-    const g = groups.get(key) ?? { profile: st.profile, label: st.label, market: status.market, role: status.role, keepers: new Set() }
-    g.keepers.add(st.keeper)
+    const g = groups.get(key) ?? { profile: st.profile, label: st.label, market: status.market, role: status.role, issuers: new Set() }
+    g.issuers.add(st.issuer)
     groups.set(key, g)
   }
   const out: Uniqueness[] = []
   for (const g of groups.values()) {
-    const keepers = [...g.keepers].sort().map((keeper) => ({
-      keeper,
-      name: settings.keepers[keeper]?.name ?? null,
-      weight: keeperWeight(settings.keepers, keeper),
+    const issuers = [...g.issuers].sort().map((issuer) => ({
+      issuer,
+      name: settings.issuers[issuer]?.name ?? null,
+      weight: issuerWeight(settings.issuers, issuer),
     }))
-    const value = 1 - keepers.reduce((p, k) => p * (1 - k.weight), 1)
-    out.push({ profile: g.profile, label: g.label, market: g.market, role: g.role, value, keepers })
+    const value = 1 - issuers.reduce((p, k) => p * (1 - k.weight), 1)
+    out.push({ profile: g.profile, label: g.label, market: g.market, role: g.role, value, issuers })
   }
   return out.sort((a, b) => cmp(a.profile, b.profile) || cmp(a.label, b.label))
 }
@@ -182,7 +182,7 @@ export function evidenceFor(
 /** The endings the seller signs: a split (both sign) and a release back to the buyer (a refund). */
 const SELLER_SIGNS = new Set(['split', 'releasedToBuyer'])
 
-/** The reviewer and the subject are the escrow's two parties, either way round: a profile's address is its wallet. */
+/** The reviewer and the subject are the escrow's two parties, either way round: a profile's address is where the escrow pays it. */
 function partiesMatch(r: ReceiptIn, reviewer: string, subject: string): boolean {
   if (reviewer === subject) return false
   return (reviewer === r.buyer && subject === r.seller) || (reviewer === r.seller && subject === r.buyer)

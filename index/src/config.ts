@@ -1,5 +1,5 @@
 // Everything the index is told from outside. Its inputs are three public lists, files in lists/:
-// the hosts it reads, the markets it uses and the keepers it trusts, so anyone can rebuild what it
+// the hosts it reads, the markets it uses and the issuers it trusts, so anyone can rebuild what it
 // shows from them, the hosts and the chain. Its opinions are two more files, in config/: the scoring
 // weights and the currencies its pages show. Environment variables say where things run. Everything
 // is read once at start; a change means a restart.
@@ -13,8 +13,8 @@ import { normalizeOrigin, publicKeyFromAddress } from '../../forest/records/src/
 const here = dirname(fileURLToPath(import.meta.url))
 export const INDEX_ROOT = resolve(here, '..')
 
-/** The keepers this index trusts, by address, each with this index's weight for it, from 0 to 1. */
-export type KeeperConfig = Record<string, { name: string; weight: number }>
+/** The issuers this index trusts, by address, each with this index's weight for it, from 0 to 1. */
+export type IssuerConfig = Record<string, { name: string; weight: number }>
 /** The markets this index uses: their names, and the directory their files are read from. */
 export type MarketsList = { directory: string; markets: string[] }
 /** A token the pages show as money: its ISO 4217 code, its symbol, and its base units' decimals. */
@@ -39,7 +39,7 @@ export type Config = {
   /** The hosts this index reads, each in full, as origins. Empty: no record reader. */
   hosts: string[]
   markets: MarketsList
-  keepers: KeeperConfig
+  issuers: IssuerConfig
   /** A Solana RPC. Unset: no chain reader. */
   rpcUrl: string | null
   registryProgramId: string
@@ -88,14 +88,14 @@ export function readMarkets(path: string): MarketsList {
   return { directory: directory.replace(/\/+$/, ''), markets: [...new Set(markets as string[])] }
 }
 
-/** The keepers list: every key an address, every weight from 0 to 1. */
-export function readKeepers(path: string): KeeperConfig {
-  const keepers = field<KeeperConfig>(path, readJson(path), 'keepers')
-  for (const [address, k] of Object.entries(keepers)) {
-    if (!publicKeyFromAddress(address)) throw new Error(`${path}: ${address} is not a keeper's address`)
+/** The issuers list: every key an address, every weight from 0 to 1. */
+export function readIssuers(path: string): IssuerConfig {
+  const issuers = field<IssuerConfig>(path, readJson(path), 'issuers')
+  for (const [address, k] of Object.entries(issuers)) {
+    if (!publicKeyFromAddress(address)) throw new Error(`${path}: ${address} is not an issuer's address`)
     if (typeof k.weight !== 'number' || !(k.weight >= 0 && k.weight <= 1)) throw new Error(`${path}: ${address}'s weight is not from 0 to 1`)
   }
-  return keepers
+  return issuers
 }
 
 function readScoring(path: string): ScoringConfig {
@@ -129,7 +129,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     databaseUrl: env.DATABASE_URL,
     hosts: readHosts(env.HOSTS_FILE || join(INDEX_ROOT, 'lists/hosts.json')),
     markets: readMarkets(env.MARKETS_FILE || join(INDEX_ROOT, 'lists/markets.json')),
-    keepers: readKeepers(env.KEEPERS_FILE || join(INDEX_ROOT, 'lists/keepers.json')),
+    issuers: readIssuers(env.ISSUERS_FILE || join(INDEX_ROOT, 'lists/issuers.json')),
     rpcUrl: env.SOLANA_RPC_URL || null,
     registryProgramId: env.REGISTRY_PROGRAM_ID || DEVNET.registry,
     escrowProgramId: env.ESCROW_PROGRAM_ID || DEVNET.escrow,

@@ -1,12 +1,12 @@
 // The human list, and the one file the issuer publishes about it: what apps read to register.
 //
-//   GET /list.json   {"keeper":"<address>","snapshots":[{"root":"<64 hex>","signature":"<128 hex>",
+//   GET /list.json   {"issuer":"<address>","snapshots":[{"root":"<64 hex>","signature":"<128 hex>",
 //                     "size":n,"time":ms},…],"stamps":["<decimal>",…],"v":1}
 //
 // `stamps` is every stamp on the list, in list order. Each snapshot is the root of the list's first
-// `size` stamps, as forest/registry/client's `listRoot` builds it, signed by the keeper key: ed25519
+// `size` stamps, as forest/registry/client's `listRoot` builds it, signed by the issuer's key: ed25519
 // over the root as 32 big-endian bytes, which is what a registry row carries and what
-// `keeperSigned` checks (forest/registry/README.md). An app proves against the newest snapshot: its
+// `issuerSigned` checks (forest/registry/README.md). An app proves against the newest snapshot: its
 // stamps are the first `size`, its signature goes into the row. One file holds both, so an app never
 // reads a list and a signature from two different moments.
 //
@@ -81,7 +81,7 @@ export class IssuerList {
     return this.#file
   }
 
-  /** The keeper key's signature on a snapshot: ed25519 over its root as 32 big-endian bytes. */
+  /** Its key's signature on a snapshot: ed25519 over its root as 32 big-endian bytes. */
   #signed(s: Snapshot): Snapshot & { signature: string } {
     return { ...s, signature: hex.encode(this.#key.sign(toBytes32(s.root))) }
   }
@@ -89,7 +89,7 @@ export class IssuerList {
   #publish(): void {
     this.#file = canonical({
       v: 1,
-      keeper: this.#key.address,
+      issuer: this.#key.address,
       stamps: this.#stamps.map(String),
       snapshots: this.#snapshots.map((s) => ({ root: hex.encode(toBytes32(s.root)), signature: s.signature, size: s.size, time: s.time })),
     })

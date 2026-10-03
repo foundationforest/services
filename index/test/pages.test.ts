@@ -11,7 +11,7 @@
 //   9. markets: two numbers, one label per profile, role names, near, no price, review fields, and
 //      no word of the index's own on an offer's or a receipt's options (a market's own text may say
 //      anything);
-//  10. records: the writer rule, by forest's view, and private records left alone.
+//  10. records: the access rule, by forest's view, and private records left alone.
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
@@ -24,7 +24,7 @@ import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { BUYER, DEAL, EXCHANGE, FOLDER, KEEPER, KEEPER_NAME, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
+import { BUYER, DEAL, EXCHANGE, FOLDER, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -192,7 +192,6 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
             facts.push(twin.profile.name, w.score(twin.scores.standing.value))
             if (twin.scores.rating) facts.push(`${w.outOf10(twin.scores.rating.value)} of 10`)
             if (twin.profile.about) facts.push(twin.profile.about)
-            if (twin.profile.contact) facts.push(twin.profile.contact)
             for (const u of twin.scores.uniqueness) facts.push(w.percent(u.value))
             for (const b of twin.stamps) facts.push(w.title(b.market), ...(b.counted ? [w.REAL_PERSON] : [w.stampWhyNot(b.why)]))
             twin.offers.forEach(offer)
@@ -361,15 +360,15 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // be another profile, as Dara's is. A review of him takes online-tutors' review fields.
       const benTwin = await json(`/profiles/${ben.address}.json`)
       assert.equal(benTwin.reviews.received[0].market, MARKET)
-      // A row counts when its keeper is one this index trusts and the keeper's signature checks.
-      assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.keeper]), [
-        [SELLER, true, { address: KEEPER.address, name: KEEPER_NAME, weight: 1 }],
+      // A row counts when its issuer is one this index trusts and the issuer's signature checks.
+      assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.issuer]), [
+        [SELLER, true, { address: ISSUER.address, name: ISSUER_NAME, weight: 1 }],
       ])
-      assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.label, u.value, u.details.keepers]), [
-        [SELLER, 1, [{ keeper: KEEPER.address, name: KEEPER_NAME, weight: 1 }]],
+      assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.label, u.value, u.details.issuers]), [
+        [SELLER, 1, [{ issuer: ISSUER.address, name: ISSUER_NAME, weight: 1 }]],
       ])
-      assert.ok(anaPage.includes(`Checked by ${KEEPER_NAME}.`))
-      // Eve's row: its keeper's signature does not check, so it counts for nothing, and nothing of
+      assert.ok(anaPage.includes(`Checked by ${ISSUER_NAME}.`))
+      // Eve's row: its issuer's signature does not check, so it counts for nothing, and nothing of
       // hers is stored: no page, no offer, no review, no count.
       assert.equal((await get(`/profiles/${eve.address}`)).status, 404)
       assert.equal((await get(`/profiles/${eve.address}.json`)).status, 404)
@@ -420,12 +419,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       }
     })
 
-    await t.test('10. records: the writer rule, by forest’s view, and private records left alone', async () => {
-      // The writer key wrote two offers into Ana's profile: one dated before its `until`, which
+    await t.test('10. records: the access rule, by forest’s view, and private records left alone', async () => {
+      // The access key wrote two offers into Ana's profile: one dated before its `until`, which
       // counts, and one after, which does not. Neither is her own record, and the first counts in
       // full: an offer is an offer, whoever signed it for her.
       const uris = anaTwin.offers.map((o: any) => o.uri)
-      assert.ok(uris.includes(OFFERS.french.uri), 'the writer key’s offer from before its until')
+      assert.ok(uris.includes(OFFERS.french.uri), 'the access key’s offer from before its until')
       assert.equal(uris.includes(`${ana.address}/offer/german`), false, 'its offer from after does not count')
       // A private record at an offer's path: its readers open it, the index never stores it.
       assert.equal(uris.includes(`${ana.address}/offer/private`), false)

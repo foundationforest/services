@@ -5,19 +5,19 @@
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 //
 // Two new people, a seller and a buyer, each the way their app would do it:
-//   1. a seed from 24 words, and from it the profile key, the reading key and the list secret;
+//   1. a seed from 24 words, and from it the main key, the reading key and the list secret;
 //   2. setup: their test-dollar accounts and some dollars (the deploy key pays; nothing a person does
 //      later needs SOL);
 //   3. stamped by the issuer: a face check (the stand-in passes it), the stamp submitted, and listed;
-//   4. registered: a row for each, proven against the keeper's newest snapshot and carrying its
-//      signature, sent through the relayer, paid in the test dollar;
+//   4. registered: a row for each, proven against the issuer's newest snapshot and carrying its
+//      signature, sent through the fee payer, paid in the test dollar;
 //   5. each app publishes the profile's hosts record and card, with its reading key;
-//   6. an assistant connects to each through connections (OAuth): the app adds the writer key it
+//   6. an assistant connects to each through connections (OAuth): the app adds the access key it
 //      shows to the profile's permissions record, and the seller's assistant posts an offer;
 //   7. one private record: the buyer writes the seller a message only the two of them can open;
-//   8. the buyer pays through the escrow, in one tap, through the relayer;
+//   8. the buyer pays through the escrow, in one tap, through the fee payer;
 //   9. each assistant posts a review of the other, naming the escrow;
-//  10. the index shows it: both profiles, their counted rows and keeper, the offer, the deal and both
+//  10. the index shows it: both profiles, their counted rows and issuer, the offer, the deal and both
 //      reviews at full weight; and not the private message.
 // Everything it did goes to runs/<time>.json.
 
@@ -32,10 +32,10 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
-import { exportWords, importWords, listSecret, newSeed, profileKey, readingKey, type ProfileKey, type ReadingKey } from '../forest/keys/src/index.ts'
+import { exportWords, importWords, listSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
 import { base58, hex, hostsRecord, ownerRecord, permissionsRecord, publish, readProfile } from '../forest/records/src/index.ts'
 import { makePrivate, openPrivate } from '../forest/records/src/private.ts'
-import { buildRegistration, fetchRow, keeperSigned, listRoot, marketStampOf, toBytes32 } from '../forest/registry/client/src/index.ts'
+import { buildRegistration, fetchRow, issuerSigned, listRoot, marketStampOf, toBytes32 } from '../forest/registry/client/src/index.ts'
 import * as escrow from '../forest/escrow/client/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -112,11 +112,11 @@ async function json(url: string, init?: RequestInit): Promise<{ status: number; 
 }
 const post = (url: string, body: unknown) => json(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-// ---- The relayer, as a person's app calls it ----
+// ---- The fee payer, as a person's app calls it ----
 
 class KoraError extends Error {}
 async function kora<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-  const { body } = await post(cfg.relayer!, { jsonrpc: '2.0', id: 1, method, params })
+  const { body } = await post(cfg.feePayer!, { jsonrpc: '2.0', id: 1, method, params })
   if (body.error) throw new KoraError(`${method}: ${body.error.message} ${JSON.stringify(body.error.data ?? '')}`)
   return body.result as T
 }
@@ -124,19 +124,19 @@ async function kora<T>(method: string, params: Record<string, unknown> = {}): Pr
 type Paid = { signature: string; charge: string; bytes: number }
 
 /**
- * What a person's app does to send through the relayer: the transaction with the relayer as payer and
- * a payment to it in the test dollar already in place (Kora's price counts it), the price asked, the
- * payment set to exactly that, the profile's key signs, Kora checks, co-signs and sends.
+ * What a person's app does to send through the fee payer: the transaction with the fee payer as
+ * payer and a payment to it in the test dollar already in place (Kora's price counts it), the price
+ * asked, the payment set to exactly that, the main key signs, Kora checks, co-signs and sends.
  */
 async function throughKora(signer: Keypair, instructions: TransactionInstruction[], token: escrow.Token): Promise<Paid> {
   const payer = await kora<{ signer_address: string; payment_address: string }>('getPayerSigner')
-  const relayer = new PublicKey(payer.signer_address)
+  const feePayer = new PublicKey(payer.signer_address)
   const paymentTo = escrow.associatedTokenAddress(new PublicKey(payer.payment_address), token.mint, token.program)
   const payFrom = escrow.associatedTokenAddress(signer.publicKey, token.mint, token.program)
   const pay = (amount: bigint) => escrow.transferIx({ from: payFrom, to: paymentTo, owner: signer.publicKey, mint: token.mint, amount, decimals: token.decimals, tokenProgram: token.program })
   const blockhash = (await connection.getLatestBlockhash('confirmed')).blockhash
   const compile = (ixs: TransactionInstruction[]) =>
-    new VersionedTransaction(new TransactionMessage({ payerKey: relayer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message())
+    new VersionedTransaction(new TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions: ixs }).compileToV0Message())
   const estimate = await kora<{ fee_in_token: number | null }>('estimateTransactionFee', {
     transaction: Buffer.from(compile([...instructions, pay(0n)]).serialize()).toString('base64'),
     fee_token: token.mint.toBase58(),
@@ -158,24 +158,24 @@ type Person = {
   role: 'seller' | 'buyer'
   name: string
   label: string
-  profile: ProfileKey
-  /** The profile key as a Solana signer: the same key. */
+  profile: MainKey
+  /** The main key as a Solana signer: the same key. */
   signer: Keypair
   reading: ReadingKey
   stamp: bigint
   secret: Uint8Array
 }
 
-async function newPerson(role: Person['role'], name: string, keeper: string): Promise<Person> {
+async function newPerson(role: Person['role'], name: string, issuer: string): Promise<Person> {
   const words = exportWords(newSeed())
   // The person keeps the words; the app asks for them, mixes what it needs, and forgets them.
   const seed = importWords(words)
   assert.equal(exportWords(seed), words, 'the words give the seed back')
   const label = `${cfg.market}/${role}`
-  const profile = await profileKey(seed, label)
-  assert.equal((await profileKey(importWords(words.toUpperCase().split(' ').join('  '))!, label)).address, profile.address, 'case and spacing do not matter')
+  const profile = await mainKey(seed, label)
+  assert.equal((await mainKey(importWords(words.toUpperCase().split(' ').join('  '))!, label)).address, profile.address, 'case and spacing do not matter')
   const reading = await readingKey(profile.privateKey)
-  const list = await listSecret(seed, keeper)
+  const list = await listSecret(seed, issuer)
   seed.fill(0)
   return { role, name, label, profile, signer: Keypair.fromSeed(profile.privateKey), reading, stamp: list.stamp, secret: list.secret }
 }
@@ -202,7 +202,7 @@ async function setup(people: Person[]): Promise<escrow.Token> {
   return token
 }
 
-type ListFile = { v: 1; keeper: string; stamps: string[]; snapshots: { root: string; signature: string; size: number; time: number }[] }
+type ListFile = { v: 1; issuer: string; stamps: string[]; snapshots: { root: string; signature: string; size: number; time: number }[] }
 
 async function stamped(people: Person[]): Promise<ListFile> {
   say('the issuer: a face check each (the stand-in passes it), then each stamp submitted')
@@ -217,13 +217,13 @@ async function stamped(people: Person[]): Promise<ListFile> {
     await waitFor('the stamp on the list', 600_000, async () => (await post(`${cfg.issuer}/status`, { stamp: p.stamp.toString() })).body.status === 'listed', 10_000)
   }
   const list = (await json(`${cfg.issuer}/list.json`)).body as ListFile
-  assert.equal(list.keeper, cfg.keeper, 'the keeper the index trusts')
+  assert.equal(list.issuer, cfg.issuerAddress, 'the issuer the index trusts')
   const newest = list.snapshots.at(-1)!
   assert.equal(newest.size, list.stamps.length, 'the newest snapshot is the whole list')
   assert.equal(hex.encode(toBytes32(listRoot(list.stamps.map(BigInt)))), newest.root, 'its root is the list’s')
-  assert.ok(keeperSigned({ keeper: base58.decode(list.keeper), root: hex.decode(newest.root), keeperSignature: hex.decode(newest.signature) }), 'signed by the keeper')
+  assert.ok(issuerSigned({ issuer: base58.decode(list.issuer), root: hex.decode(newest.root), issuerSignature: hex.decode(newest.signature) }), 'signed by the issuer')
   for (const p of people) assert.ok(list.stamps.includes(p.stamp.toString()), 'each stamp is on the list')
-  steps.list = { keeper: list.keeper, stamps: list.stamps.length, snapshot: newest }
+  steps.list = { issuer: list.issuer, stamps: list.stamps.length, snapshot: newest }
   say(`both on the list: ${list.stamps.length} stamps, root ${newest.root.slice(0, 12)}…`)
   return list
 }
@@ -236,9 +236,9 @@ async function register(p: Person, list: ListFile, token: escrow.Token) {
     label: p.label,
     profile: new PublicKey(p.profile.publicKey) as never,
     // As its 32 bytes: the client checks a key against its own copy of web3.js.
-    keeper: base58.decode(list.keeper) as never,
+    issuer: base58.decode(list.issuer) as never,
     stamps: list.stamps.slice(0, newest.size).map(BigInt),
-    keeperSignature: hex.decode(newest.signature),
+    issuerSignature: hex.decode(newest.signature),
     artifacts: ARTIFACTS,
     payer: new PublicKey(payer.signer_address) as never,
     recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
@@ -249,9 +249,9 @@ async function register(p: Person, list: ListFile, token: escrow.Token) {
   assert.ok(row, 'the row is there')
   assert.equal(row.label, p.label)
   assert.equal(row.profile.toBase58(), p.profile.address, 'it names the profile')
-  assert.equal(row.keeper.toBase58(), list.keeper, 'and the keeper')
-  assert.ok(keeperSigned(row), "with the keeper's signature on its root")
-  say(`${p.role}: row ${p.label} through the relayer, ${paid.signature}`)
+  assert.equal(row.issuer.toBase58(), list.issuer, 'and the issuer')
+  assert.ok(issuerSigned(row), "with the issuer's signature on its root")
+  say(`${p.role}: row ${p.label} through the fee payer, ${paid.signature}`)
   return { label: p.label, row: registration.row.toBase58(), ...paid }
 }
 
@@ -267,15 +267,15 @@ async function publishCard(p: Person) {
   }
   const [outcome] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
   assert.ok(outcome!.results.every((r) => r.ok), `the host took the hosts record and the card: ${JSON.stringify(outcome)}`)
-  say(`${p.role}: hosts record and card on the test host, as ${p.profile.address}`)
+  say(`${p.role}: hosts record and card on the host, as ${p.profile.address}`)
 }
 
 /**
  * An assistant connects through connections: OAuth with PKCE, the person names the profile, the
- * app adds the writer key the page shows to the permissions record, signed with the profile's key,
+ * app adds the access key the page shows to the permissions record, signed with the main key,
  * and the grant goes through. Returns an MCP client holding the token.
  */
-async function connect(p: Person): Promise<{ client: Client; writer: string }> {
+async function connect(p: Person): Promise<{ client: Client; access: string }> {
   const meta = (await json(`${cfg.connections}/.well-known/oauth-authorization-server`)).body
   const reg = await post(meta.registration_endpoint, { redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none', client_name: 'e2e assistant', grant_types: ['authorization_code', 'refresh_token'] })
   assert.equal(reg.status, 201, JSON.stringify(reg.body))
@@ -295,11 +295,11 @@ async function connect(p: Person): Promise<{ client: Client; writer: string }> {
   const path = /action="(\/connect\/[^"]+)"/.exec(page)![1]!
   const named = await fetch(cfg.connections + path, { method: 'POST', body: new URLSearchParams({ profile: p.profile.address }), redirect: 'manual' })
   assert.equal(named.status, 303)
-  const writer = /<code>([1-9A-HJ-NP-Za-km-z]{32,44})<\/code>/.exec(await (await fetch(cfg.connections + path, { redirect: 'manual' })).text())![1]!
+  const access = /<code>([1-9A-HJ-NP-Za-km-z]{32,44})<\/code>/.exec(await (await fetch(cfg.connections + path, { redirect: 'manual' })).text())![1]!
 
-  // The app: the writer key on the permissions list, for offers and reviews, for 30 days.
+  // The app: the access key on the permissions list, for offers and reviews, for 30 days.
   const now = Date.now()
-  const [outcome] = await publish([cfg.host!], [permissionsRecord(p.profile, [{ key: writer, paths: ['offer', 'review'], until: now + 30 * 86_400_000 }], now)])
+  const [outcome] = await publish([cfg.host!], [permissionsRecord(p.profile, [{ key: access, paths: ['offer', 'review'], until: now + 30 * 86_400_000 }], now)])
   assert.ok(outcome!.results[0]!.ok, JSON.stringify(outcome))
 
   const granted = await waitFor('the grant', 60_000, async () => {
@@ -315,8 +315,8 @@ async function connect(p: Person): Promise<{ client: Client; writer: string }> {
   assert.equal(tokens.status, 200, JSON.stringify(tokens.body))
   const client = new Client({ name: 'e2e-assistant', version: '0.0.0' })
   await client.connect(new StreamableHTTPClientTransport(new URL(`${cfg.connections}/mcp`), { requestInit: { headers: { authorization: `Bearer ${tokens.body.access_token}` } } }))
-  say(`${p.role}: an assistant connected, its writer key ${writer} on the profile's permissions list`)
-  return { client, writer }
+  say(`${p.role}: an assistant connected, its access key ${access} on the profile's permissions list`)
+  return { client, access }
 }
 
 async function tool(client: Client, name: string, args: Record<string, unknown>) {
@@ -366,7 +366,7 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
     if (s.status !== 200 || b.status !== 200) return null
     for (const [p, v] of [[seller, s.body], [buyer, b.body]] as const) {
       const row = v.stamps.find((x: any) => x.label === p.label)
-      if (!row?.counted || row.keeper.address !== cfg.keeper) return null
+      if (!row?.counted || row.issuer.address !== cfg.issuerAddress) return null
       // Full evidence: the buyer opened the escrow, and the seller reviewed the deal (`oneSidedConfirmed`).
       if (v.reviews.received.length < 1 || !v.reviews.received.every((r: any) => r.counted && r.evidence.kind === 'oneSidedConfirmed' && r.evidence.weight === 1)) return null
     }
@@ -378,7 +378,7 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
   assert.equal(JSON.stringify(shown).includes(privateText), false, 'the private message is nowhere in the index')
   const summary = (v: any) => ({
     url: `${cfg.index}/profiles/${v.address}`,
-    stamps: v.stamps.map((b: any) => ({ label: b.label, counted: b.counted, keeper: b.keeper.name, row: b.row })),
+    stamps: v.stamps.map((b: any) => ({ label: b.label, counted: b.counted, issuer: b.issuer.name, row: b.row })),
     rating: v.scores.rating?.value ?? null,
     standing: v.scores.standing?.value ?? null,
     offers: v.offers.map((o: any) => o.uri),
@@ -394,8 +394,8 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
 async function main() {
   const list0 = (await json(`${cfg.issuer}/list.json`)).body as ListFile
   const run = started.toISOString().slice(0, 16).replace(/[-:T]/g, '')
-  const seller = await newPerson('seller', `e2e teacher ${run}`, list0.keeper)
-  const buyer = await newPerson('buyer', `e2e student ${run}`, list0.keeper)
+  const seller = await newPerson('seller', `e2e teacher ${run}`, list0.issuer)
+  const buyer = await newPerson('buyer', `e2e student ${run}`, list0.issuer)
   const people = [seller, buyer]
   record.people = Object.fromEntries(people.map((p) => [p.role, { profile: p.profile.address, label: p.label }]))
   say(`two people, each from 24 words: seller ${seller.profile.address}, buyer ${buyer.profile.address}`)
@@ -417,9 +417,9 @@ async function main() {
   const posted = await tool(sellerAssistant.client, 'post_offer', { id: 'maths', offer })
   const offerUri = `${seller.profile.address}/${posted.path}`
   const view = await readProfile([cfg.host!], seller.profile.address, Date.now())
-  assert.equal(view.current.get('offer/maths')!.record.by, sellerAssistant.writer, 'the offer is signed by the writer key, not the profile key')
-  say(`seller: offer posted by the assistant, signed by its writer key: ${offerUri}`)
-  steps.records = { sellerWriter: sellerAssistant.writer, buyerWriter: buyerAssistant.writer, offer: offerUri }
+  assert.equal(view.current.get('offer/maths')!.record.by, sellerAssistant.access, 'the offer is signed by the access key, not the main key')
+  say(`seller: offer posted by the assistant, signed by its access key: ${offerUri}`)
+  steps.records = { sellerAccessKey: sellerAssistant.access, buyerAccessKey: buyerAssistant.access, offer: offerUri }
 
   steps.private = await privateMessage(buyer, seller)
   const deal = await pay(buyer, seller, offer, token)

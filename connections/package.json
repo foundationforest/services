@@ -2,7 +2,7 @@
   "name": "@forest/connections",
   "version": "0.0.0",
   "private": true,
-  "description": "The connections service: an MCP server an assistant connects to with OAuth. Each connection holds one writer key, which the person adds to their profile in their own app, and offers two tools: post an offer and post a review, to the hosts the profile names. It never holds a profile's key.",
+  "description": "The connections service: an MCP server an assistant connects to with OAuth. Each connection holds one access key, which the person adds to their profile in their own app, and offers two tools: post an offer and post a review, to the hosts the profile names. It never holds a main key.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

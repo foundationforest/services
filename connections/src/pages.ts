@@ -1,5 +1,5 @@
 // The pages a person sees while connecting an assistant: plain HTML, no script, no outside file.
-// Every word is plain: a profile, its app, a writer key, offers and reviews.
+// Every word is plain: a profile, its app, an access key, offers and reviews.
 
 /** Its own inline style only, no script, forms posting back here only, never in a frame. */
 export const PAGE_POLICY = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
@@ -36,7 +36,7 @@ export function namePage(id: string, assistant: string | null, problem: string |
   return layout(
     'Connect an assistant · Forest',
     `<h1>Connect an assistant</h1>
-<p>${who} asks to post offers and reviews for one of your profiles. It will never hold your profile’s key: it gets a writer key of its own, which your app adds to your profile, and which you can remove there at any time.</p>
+<p>${who} asks to post offers and reviews for one of your profiles. It will never hold your main key: it gets an access key of its own, which your app adds to your profile, and which you can remove there at any time.</p>
 <form method="post" action="/connect/${esc(id)}">
 <label for="profile">Your profile’s address, from your Forest app:</label>
 <input id="profile" name="profile" autocomplete="off" spellcheck="false" required>
@@ -46,15 +46,15 @@ ${problem ? `<p>${esc(problem)}</p>` : ''}
   )
 }
 
-/** The second page: add this writer key in the app; it moves on by itself once the profile lists it. */
-export function waitPage(id: string, profile: string, writer: string, paths: string[]): string {
+/** The second page: add this access key in the app; it moves on by itself once the profile lists it. */
+export function waitPage(id: string, profile: string, key: string, paths: string[]): string {
   return layout(
-    'Add the writer key · Forest',
-    `<h1>Add this writer key in your app</h1>
-<p>In your Forest app, add this writer key to the profile ending ${esc(profile.slice(-6))}, for ${paths.map((p) => `${esc(p)}s`).join(' and ')}:</p>
-<code>${esc(writer)}</code>
-<p>Your app signs that change with your profile’s key. This page moves on by itself once your profile lists the key.</p>
-<p class="muted">To end this connection later, remove the writer key in your app. What it already posted stays.</p>
+    'Add the access key · Forest',
+    `<h1>Add this access key in your app</h1>
+<p>In your Forest app, add this access key to the profile ending ${esc(profile.slice(-6))}, for ${paths.map((p) => `${esc(p)}s`).join(' and ')}:</p>
+<code>${esc(key)}</code>
+<p>Your app signs that change with your main key. This page moves on by itself once your profile lists the key.</p>
+<p class="muted">To end this connection later, remove the access key in your app. What it already posted stays.</p>
 <p class="muted"><a href="/connect/${esc(id)}">Check again</a></p>`,
     true,
   )

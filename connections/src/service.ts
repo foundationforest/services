@@ -1,13 +1,13 @@
 // The connections service: an MCP server an assistant connects to with OAuth, so it can post offers
-// and reviews for one profile without ever holding the profile's key.
+// and reviews for one profile without ever holding its main key.
 //
 // OAuth (the MCP SDK's own authorization server router, unchanged): the assistant registers itself,
 // then sends the person to /authorize. The person names their profile; this service makes one
-// writer key for the connection and shows its address. The person adds that writer key to their
-// profile's permissions record in their own app, which signs it with the profile's key. Once a host
+// access key for the connection and shows its address. The person adds that access key to their
+// profile's permissions record in their own app, which signs it with the main key. Once a host
 // the profile names shows the key on the list, for offers and reviews, the grant goes through and
 // the assistant gets its tokens. From then on its token is that connection: the profile and the
-// writer key, and nothing else (tools.ts).
+// access key, and nothing else (tools.ts).
 //
 // What a person sends goes in a form's body, never in a URL: hosting platforms log paths. The page
 // that waits for the permissions record carries only the connection's random id. No request is
@@ -40,12 +40,12 @@ export type Config = {
   publicUrl: string
   /** The hosts it reads a profile from first; it then reads the hosts the profile's hosts record names. */
   hosts: string[]
-  /** The one file: assistants, connections and their writer keys, codes and tokens. */
+  /** The one file: assistants, connections and their access keys, codes and tokens. */
   databasePath: string
   port: number
 }
 
-/** The paths a connection's writer key must be listed for. */
+/** The paths a connection's access key must be listed for. */
 export const PATHS = ['offer', 'review']
 
 function whole(name: string, value: string, min: number): number {
@@ -70,9 +70,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   }
 }
 
-/** Whether a profile's current permissions list this writer key for every path a connection needs, now. */
-export function listed(writers: { key: string; paths: string[]; until?: number }[], key: string, now: number): boolean {
-  return writers.some((w) => w.key === key && PATHS.every((p) => w.paths.some((q) => pathCovers(q, p))) && (w.until === undefined || now < w.until))
+/** Whether a profile's current permissions list this access key for every path a connection needs, now. */
+export function listed(access: { key: string; paths: string[]; until?: number }[], key: string, now: number): boolean {
+  return access.some((k) => k.key === key && PATHS.every((p) => k.paths.some((q) => pathCovers(q, p))) && (k.until === undefined || now < k.until))
 }
 
 /** The OAuth server: the SDK's router asks it everything, and it answers from the store. */
@@ -190,10 +190,10 @@ export async function startConnections(config: Config, options: { now?: () => nu
   app.get('/', (_req, res) => {
     res
       .type('text/plain')
-      .send('Forest connections: an MCP server at /mcp that lets an assistant post offers and reviews for a profile, with a writer key the profile allows. It holds no profile key.\n')
+      .send('Forest connections: an MCP server at /mcp that lets an assistant post offers and reviews for a profile, with an access key the profile allows. It holds no main key.\n')
   })
 
-  // The person names the profile: a writer key is made for this connection, once.
+  // The person names the profile: an access key is made for this connection, once.
   app.post('/connect/:id', express.urlencoded({ extended: false, limit: '2kb' }), (req, res) => {
     const c = store.connection(req.params.id)
     if (!c || c.granted || c.expires <= now()) return page(res, 404, gonePage())
@@ -203,21 +203,21 @@ export async function startConnections(config: Config, options: { now?: () => nu
     res.redirect(303, `/connect/${c.id}`)
   })
 
-  // Waiting for the profile's permissions record to list the writer key; then the grant.
+  // Waiting for the profile's permissions record to list the access key; then the grant.
   app.get('/connect/:id', async (req, res) => {
     const c = store.connection(req.params.id)
     if (!c || c.expires <= now() || !c.pending) return page(res, 404, gonePage())
-    if (!c.profile || !c.writerKey) return page(res, 200, namePage(c.id, null))
+    if (!c.profile || !c.accessKey) return page(res, 200, namePage(c.id, null))
     if (c.granted) return page(res, 200, connectedPage())
-    const writer = keyFromPrivate(c.writerKey).address
+    const key = keyFromPrivate(c.accessKey).address
     let ok = false
     try {
       const view = await readProfile(config.hosts, c.profile, now())
-      ok = listed(view.writers, writer, now())
+      ok = listed(view.access, key, now())
     } catch {
       ok = false
     }
-    if (!ok) return page(res, 200, waitPage(c.id, c.profile, writer, PATHS))
+    if (!ok) return page(res, 200, waitPage(c.id, c.profile, key, PATHS))
     const code = store.grant(c.id, now())
     const back = new URL(c.pending.redirectUri)
     back.searchParams.set('code', code)
@@ -231,9 +231,9 @@ export async function startConnections(config: Config, options: { now?: () => nu
     express.json({ limit: '128kb' }),
     async (req, res) => {
       const c = store.connection(String(req.auth?.extra?.connection ?? ''))
-      if (!c?.granted || !c.profile || !c.writerKey) return void res.status(401).json({ error: 'invalid_token' })
+      if (!c?.granted || !c.profile || !c.accessKey) return void res.status(401).json({ error: 'invalid_token' })
       // Stateless: one server and one transport per request, answered as JSON.
-      const server = toolServer({ profile: c.profile, writerKey: c.writerKey }, config.hosts)
+      const server = toolServer({ profile: c.profile, accessKey: c.accessKey }, config.hosts)
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
       res.on('close', () => {
         void transport.close()

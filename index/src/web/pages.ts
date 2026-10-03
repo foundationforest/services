@@ -1,5 +1,5 @@
 // Pages for people: plain HTML rendered on the server from the page models in data.ts, readable on a
-// phone, with no JavaScript. Every word here is plain: no wallet, no token, no chain.
+// phone, with no JavaScript. Every word here is plain: no crypto word.
 
 import type { CurrencyConfig } from '../config.ts'
 import type { DealModel, FolderModel, HomeModel, MarketModel, Numbers, Offer, ProfileModel, Review, SearchModel } from './data.ts'
@@ -121,7 +121,6 @@ export function profilePage(v: View, m: ProfileModel): string {
   const body = html`<h1>${p.name}</h1>
 ${home}
 ${p.about ? html`<p>${p.about}</p>` : ''}
-${p.contact ? html`<p><strong>Contact:</strong> ${p.contact}</p>` : ''}
 
 <h2>Real person</h2>
 ${counted.length
@@ -129,7 +128,7 @@ ${counted.length
         const b = counted.find((x) => x.label === label)!
         return html`<li><h3>${w.REAL_PERSON}</h3>
 <p>In <a href="${b.marketUrl}">${w.title(b.market)}</a>${b.side ? `, as ${b.side}` : ''}</p>
-<p class="small muted">Checked by ${w.checkedBy(counted.filter((x) => x.label === label).map((x) => x.keeper.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(label) ?? 0)}</span></p></li>`
+<p class="small muted">Checked by ${w.checkedBy(counted.filter((x) => x.label === label).map((x) => x.issuer.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(label) ?? 0)}</span></p></li>`
       })}</ul>`
     : html`<p class="muted">Not counted as a verified real person.</p>`}
 ${uncounted.map((b) => html`<p class="small warn">Registered for ${w.title(b.market)}: ${w.stampWhyNot(b.why)}</p>`)}

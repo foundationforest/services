@@ -1,4 +1,4 @@
 {
-  "about": "The hosts the foundation's index reads, each in full: everything new on the host, for every profile. The index reads no other host, and finds no host by following a profile's hosts record. This is the index's opinion, not a rule: another index reads other hosts. On devnet, the one host is the test host in e2e/host.",
+  "about": "The hosts the foundation's index reads, each in full: everything new on the host, for every profile. The index reads no other host, and finds no host by following a profile's hosts record. This is the index's opinion, not a rule: another index reads other hosts. On devnet, the one host is Soil's, built from host/.",
   "hosts": ["https://board-devnet-test-production.up.railway.app"]
 }

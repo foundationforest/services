@@ -78,7 +78,7 @@ export const PAYLINK_DOC = `${SOURCE}/blob/main/index/README.md#the-pay-link`
 export const LISTS = {
   hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,
   markets: `${SOURCE}/blob/main/index/lists/markets.json`,
-  keepers: `${SOURCE}/blob/main/index/lists/keepers.json`,
+  issuers: `${SOURCE}/blob/main/index/lists/issuers.json`,
 }
 
 // -----------------------------------------------------------------------------------------------
