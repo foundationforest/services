@@ -328,12 +328,6 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
 
 ## Limits
 
-- **Vouchers are sound only once `FOREST` moves to forest's fixed membership circuit.** At the
-  current pin, a Semaphore 4.0.0 membership proof can be forged; forest is moving the registry to a
-  fixed circuit, with a new verifying key. The pre-check checks every voucher with forest's own
-  `verifyStamp`, so moving the pin is the whole change it needs. Until then, whoever can forge a
-  proof can make vouchers with no stamp, and only the rate limit and the float bound what the
-  sponsored node pays.
 - **Why the sponsored node is not a faucet, and what bounds it.** A node that pays for anyone is a
   faucet: whoever can make it pay takes the SOL. This one pays only for a registry row, and a row's
   deposit stays in the row, which never closes; nobody can move it out but `refund`, which sends only
