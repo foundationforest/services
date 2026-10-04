@@ -19,12 +19,15 @@ it:
 1. **A seed from 24 words,** and from it the main key, the reading key and the stamp for the issuer
    (forest's keys).
 2. **Setup:** each gets a test-dollar account and some test dollars, paid by the devnet deploy key.
-   Nothing a person does after this needs anything but test dollars.
+   Nothing a person does after this needs anything but test dollars, and the seller's row not even
+   those.
 3. **Stamped by the issuer:** a face check (the devnet stand-in passes it), the stamp submitted,
    then polled until it is on the list.
 4. **A row each in the registry,** proven against the issuer's newest snapshot and carrying the
-   issuer's signature on its root, sent through the fee payer and paid in test dollars. The run
-   reads the row back and checks the signature.
+   issuer's signature on its root. The seller's goes through the fee payer's sponsored node with a
+   voucher (a second proof from the same stamp, under `sponsor/1`) and costs the seller nothing; the
+   buyer's goes through its general node, paid in test dollars. The run reads each row back and
+   checks the signature and that the fee payer paid for it.
 5. **Each app publishes** the profile's hosts record and its profile record on the host.
 6. **An assistant connects to each** through connections, with OAuth. The app adds the access key
    the connection shows to the profile's permissions record. The seller's assistant posts an offer
@@ -61,7 +64,8 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 
 2026-10-03, 23:40 to 23:41 UTC, against all five services as deployed from `main` at `f0e3da8`
 (forest at `7adf341`): **passed** in 62 seconds. Its record is
-[`runs/2026-10-03T23-40-27-219Z.json`](runs/2026-10-03T23-40-27-219Z.json).
+[`runs/2026-10-03T23-40-27-219Z.json`](runs/2026-10-03T23-40-27-219Z.json). It ran before the
+sponsored node existed, so both rows were paid; no run has used a voucher yet.
 
 | Step | What happened |
 |---|---|

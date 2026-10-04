@@ -3,7 +3,8 @@
 #
 #   issuer       its type-check (the stand-in Didit included) and its tests
 #   index        its type-check, and its unit and page tests on a Postgres service
-#   fee-payer    its type-check, and the devnet kora.toml its Dockerfile makes from kora.toml
+#   fee-payer    its type-check, the devnet kora.toml its two Dockerfiles make from general/ and
+#                sponsored/, and the pre-check's type-check and tests (real proofs: the proving files)
 #   connections  its type-check, and its tests against forest's reference host
 #   host         Soil's host: its type-check and its tests
 #   e2e          the devnet run's type-check
@@ -93,13 +94,25 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh registry/client escrow/client
+          ./forest.sh registry/client registry/artifacts escrow/client
+          (cd forest/registry/artifacts && npm run fetch)
           (cd fee-payer && npm ci --no-audit --no-fund)
+          (cd fee-payer/sponsor && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: fee-payer
         run: npm run check
-      - name: The devnet kora.toml
-        run: bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
+      - name: The devnet kora.toml, for both nodes
+        run: |
+          bash fee-payer/deploy/devnet-config.sh fee-payer/general/kora.toml > /dev/null
+          bash fee-payer/deploy/devnet-config.sh fee-payer/sponsored/kora.toml > /dev/null
+      - name: The pre-check's type-check
+        working-directory: fee-payer/sponsor
+        run: npm run check
+      - name: The pre-check's tests
+        working-directory: fee-payer/sponsor
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   connections:
     runs-on: ubuntu-latest
