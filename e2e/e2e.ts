@@ -12,6 +12,9 @@
 //   4. registered: a row for each, proven against the issuer's newest snapshot and carrying its
 //      signature: the seller's through the fee payer's sponsored node with a voucher, free; the
 //      buyer's through its general node, paid in the test dollar;
+//      then the seller passes the issuer's ID check (the stand-in passes it too), lands on the ID
+//      list, and registers its profile again, a second row for the same main key, proven against the
+//      ID list, through the sponsored node with an ID-list voucher (`sponsor/10`);
 //   5. each app publishes the profile's hosts record and card, with its reading key; the seller's
 //      card declares an inbox: senders holding a row from the devnet issuer, one message each;
 //   6. an assistant connects to each through connections (OAuth): the app adds the access key it
@@ -21,8 +24,9 @@
 //      (one each); the seller pulls it with a pull its main key signs, and opens it;
 //   8. the buyer pays through the escrow, in one tap, through the fee payer;
 //   9. each assistant posts a review of the other, naming the escrow;
-//  10. the index shows it: both profiles, their counted rows and issuer, the offer with its photo
-//      from the host, the deal and both reviews at full weight; and not the message.
+//  10. the index shows it: both profiles, their counted rows and issuers (the seller ID-checked), the
+//      offer with its photo from the host, the deal and both reviews at full weight; and not the
+//      message.
 // Everything it did goes to runs/<time>.json.
 
 import assert from 'node:assert/strict'
@@ -169,9 +173,11 @@ type Person = {
   reading: ReadingKey
   stamp: bigint
   secret: Uint8Array
+  /** The stamp and secret for the issuer's ID list: one more mix from the seed, under the ID list's key. */
+  id: { stamp: bigint; secret: Uint8Array }
 }
 
-async function newPerson(role: Person['role'], name: string, issuer: string): Promise<Person> {
+async function newPerson(role: Person['role'], name: string, issuer: string, idIssuer: string): Promise<Person> {
   const words = exportWords(newSeed())
   // The person keeps the words; the app asks for them, mixes what it needs, and forgets them.
   const seed = importWords(words)
@@ -181,8 +187,9 @@ async function newPerson(role: Person['role'], name: string, issuer: string): Pr
   assert.equal((await mainKey(importWords(words.toUpperCase().split(' ').join('  '))!, label)).address, profile.address, 'case and spacing do not matter')
   const reading = await readingKey(profile.privateKey)
   const list = await listSecret(seed, issuer)
+  const idList = await listSecret(seed, idIssuer)
   seed.fill(0)
-  return { role, name, label, profile, signer: Keypair.fromSeed(profile.privateKey), reading, stamp: list.stamp, secret: list.secret }
+  return { role, name, label, profile, signer: Keypair.fromSeed(profile.privateKey), reading, stamp: list.stamp, secret: list.secret, id: { stamp: idList.stamp, secret: idList.secret } }
 }
 
 // ---- Steps ----
@@ -221,28 +228,54 @@ async function stamped(people: Person[]): Promise<ListFile> {
   for (const p of people) {
     await waitFor('the stamp on the list', 600_000, async () => (await post(`${cfg.issuer}/status`, { stamp: p.stamp.toString() })).body.status === 'listed', 10_000)
   }
-  const list = (await json(`${cfg.issuer}/list.json`)).body as ListFile
-  assert.equal(list.issuer, cfg.issuerAddress, 'the issuer the index trusts')
+  const list = await readList('/list.json', cfg.issuerAddress!, people.map((p) => p.stamp))
+  steps.list = { issuer: list.issuer, stamps: list.stamps.length, snapshot: list.snapshots.at(-1) }
+  say(`both on the list: ${list.stamps.length} stamps, root ${list.snapshots.at(-1)!.root.slice(0, 12)}…`)
+  return list
+}
+
+/** One of the issuer's list files, checked as an app checks it: the issuer the index trusts, the newest snapshot the whole list, its root, its signature, these stamps on it. */
+async function readList(path: string, issuer: string, stamps: bigint[]): Promise<ListFile> {
+  const list = (await json(`${cfg.issuer}${path}`)).body as ListFile
+  assert.equal(list.issuer, issuer, 'the issuer the index trusts')
   const newest = list.snapshots.at(-1)!
   assert.equal(newest.size, list.stamps.length, 'the newest snapshot is the whole list')
   assert.equal(hex.encode(toBytes32(listRoot(list.stamps.map(BigInt)))), newest.root, 'its root is the list’s')
   assert.ok(issuerSigned({ issuer: base58.decode(list.issuer), root: hex.decode(newest.root), issuerSignature: hex.decode(newest.signature) }), 'signed by the issuer')
-  for (const p of people) assert.ok(list.stamps.includes(p.stamp.toString()), 'each stamp is on the list')
-  steps.list = { issuer: list.issuer, stamps: list.stamps.length, snapshot: newest }
-  say(`both on the list: ${list.stamps.length} stamps, root ${newest.root.slice(0, 12)}…`)
+  for (const stamp of stamps) assert.ok(list.stamps.includes(stamp.toString()), 'each stamp is on the list')
   return list
 }
 
 /**
+ * The ID check, as the seller's app does it: a session on the ID check (free on devnet), the stamp
+ * for the ID list submitted, polled until listed, and the ID list read.
+ */
+async function idChecked(p: Person): Promise<ListFile> {
+  say(`${p.role}: the ID check (the stand-in passes it), then the stamp for the ID list submitted`)
+  const session = await post(`${cfg.issuer}/id/session`, {})
+  assert.equal(session.status, 201, `an ID session, free on devnet: ${JSON.stringify(session.body)}`)
+  const submitted = await post(`${cfg.issuer}/id/submit`, { sessionId: session.body.sessionId, stamp: p.id.stamp.toString() })
+  assert.equal(submitted.status, 202, `submitted: ${JSON.stringify(submitted.body)}`)
+  await waitFor('the stamp on the ID list', 600_000, async () => (await post(`${cfg.issuer}/id/status`, { stamp: p.id.stamp.toString() })).body.status === 'listed', 10_000)
+  const list = await readList('/id/list.json', cfg.idIssuerAddress!, [p.id.stamp])
+  steps.idList = { issuer: list.issuer, stamps: list.stamps.length, snapshot: list.snapshots.at(-1) }
+  say(`${p.role}: on the ID list: ${list.stamps.length} stamps, signed by ${list.issuer}`)
+  return list
+}
+
+/** Which list's stamp a row and its voucher are proven from: the list's secret, and the voucher's label. */
+type Voucher = { secret: Uint8Array; label: string }
+
+/**
  * What a person's app does to have a row sponsored: a voucher, which is a second proof from the same
- * stamp on the issuer's list under `sponsor/1`, naming the same main key; the row's transaction with
+ * stamp on the list the row is proven against, under a `sponsor/` label, naming the same main key; the row's transaction with
  * the fee payer as payer, signed by the main key; both to the sponsored node. It costs the person
  * nothing: no SOL, no dollar.
  */
-async function throughSponsor(p: Person, register: TransactionInstruction, feePayer: PublicKey, stamps: bigint[], snapshot: ListFile['snapshots'][number], token: escrow.Token): Promise<Paid> {
+async function throughSponsor(p: Person, register: TransactionInstruction, feePayer: PublicKey, stamps: bigint[], snapshot: ListFile['snapshots'][number], token: escrow.Token, from: Voucher): Promise<Paid> {
   assert.ok(URL.canParse(cfg.sponsor!), 'devnet.json names the sponsored node')
-  const v = await proveStamp({ secret: p.secret, label: 'sponsor/1', profile: p.profile.publicKey, stamps, artifacts: ARTIFACTS })
-  const voucher = { proof: v.raw, root: hex.encode(toBytes32(v.root)), issuerSignature: snapshot.signature, label: 'sponsor/1', marketStamp: hex.encode(toBytes32(v.marketStamp)) }
+  const v = await proveStamp({ secret: from.secret, label: from.label, profile: p.profile.publicKey, stamps, artifacts: ARTIFACTS })
+  const voucher = { proof: v.raw, root: hex.encode(toBytes32(v.root)), issuerSignature: snapshot.signature, label: from.label, marketStamp: hex.encode(toBytes32(v.marketStamp)) }
   const blockhash = (await connection.getLatestBlockhash('confirmed')).blockhash
   const tx = new VersionedTransaction(new TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions: [register] }).compileToV0Message())
   tx.sign([p.signer])
@@ -257,14 +290,14 @@ async function throughSponsor(p: Person, register: TransactionInstruction, feePa
   return { signature: body.signature, charge: '0', bytes: wire.length }
 }
 
-async function register(p: Person, list: ListFile, token: escrow.Token, path: 'voucher' | 'paid') {
+async function register(p: Person, list: ListFile, token: escrow.Token, path: 'voucher' | 'paid', from: Voucher = { secret: p.secret, label: 'sponsor/1' }) {
   const newest = list.snapshots.at(-1)!
   const stamps = list.stamps.slice(0, newest.size).map(BigInt)
   // Both nodes sign with the general node's key.
   const payer = await kora<{ signer_address: string }>('getPayerSigner')
   const feePayer = new PublicKey(payer.signer_address)
   const registration = await buildRegistration({
-    secret: p.secret,
+    secret: from.secret,
     label: p.label,
     profile: new PublicKey(p.profile.publicKey) as never,
     // As its 32 bytes: the client checks a key against its own copy of web3.js.
@@ -277,16 +310,16 @@ async function register(p: Person, list: ListFile, token: escrow.Token, path: 'v
     programId: REGISTRY as never,
   })
   const ix = registration.instruction as never as TransactionInstruction
-  const paid = path === 'voucher' ? await throughSponsor(p, ix, feePayer, stamps, newest, token) : await throughKora(p.signer, [ix], token)
-  const row = await fetchRow(connection as never, marketStampOf(p.secret, p.label), { programId: REGISTRY as never })
+  const paid = path === 'voucher' ? await throughSponsor(p, ix, feePayer, stamps, newest, token, from) : await throughKora(p.signer, [ix], token)
+  const row = await fetchRow(connection as never, marketStampOf(from.secret, p.label), { programId: REGISTRY as never })
   assert.ok(row, 'the row is there')
   assert.equal(row.label, p.label)
   assert.equal(row.profile.toBase58(), p.profile.address, 'it names the profile')
   assert.equal(row.issuer.toBase58(), list.issuer, 'and the issuer')
   assert.equal(row.payer.toBase58(), payer.signer_address, 'and the fee payer as its payer')
   assert.ok(issuerSigned(row), "with the issuer's signature on its root")
-  say(`${p.role}: row ${p.label} through the fee payer's ${path === 'voucher' ? 'sponsored node, with a voucher' : 'general node, paid'}, ${paid.signature}`)
-  return { label: p.label, path, row: registration.row.toBase58(), ...paid }
+  say(`${p.role}: row ${p.label} under ${list.issuer} through the fee payer's ${path === 'voucher' ? `sponsored node, with the voucher ${from.label}` : 'general node, paid'}, ${paid.signature}`)
+  return { label: p.label, issuer: list.issuer, path, ...(path === 'voucher' ? { voucher: from.label } : {}), row: registration.row.toBase58(), ...paid }
 }
 
 async function publishCard(p: Person) {
@@ -434,9 +467,10 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
   const shown = await waitFor('the index to show it all', 900_000, async () => {
     const [s, b] = await Promise.all([profile(seller), profile(buyer)])
     if (s.status !== 200 || b.status !== 200) return null
-    for (const [p, v] of [[seller, s.body], [buyer, b.body]] as const) {
-      const row = v.stamps.find((x: any) => x.label === p.label)
-      if (!row?.counted || row.issuer.address !== cfg.issuerAddress) return null
+    // Each profile's counted rows, by issuer: the seller's under both lists, so ID-checked; the buyer's under the face list.
+    for (const [p, v, issuers] of [[seller, s.body, [cfg.issuerAddress, cfg.idIssuerAddress]], [buyer, b.body, [cfg.issuerAddress]]] as const) {
+      const counted = v.stamps.filter((x: any) => x.label === p.label && x.counted && x.issuer.name !== null)
+      if (JSON.stringify(counted.map((x: any) => x.issuer.address).sort()) !== JSON.stringify([...issuers].sort())) return null
       // Full evidence: the buyer opened the escrow, and the seller reviewed the deal (`oneSidedConfirmed`).
       if (v.reviews.received.length < 1 || !v.reviews.received.every((r: any) => r.counted && r.evidence.kind === 'oneSidedConfirmed' && r.evidence.weight === 1)) return null
     }
@@ -450,11 +484,15 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
   assert.equal(JSON.stringify(shown).includes(messageText), false, 'the message is nowhere in the index')
   const page = await (await fetch(`${cfg.index}/profiles/${seller.profile.address}`)).text()
   assert.ok(page.includes(`<img src="${pictureUrl}"`), 'the seller’s page shows the photo from the host')
+  const idName = shown.seller.stamps.find((x: any) => x.issuer.address === cfg.idIssuerAddress).issuer.name as string
+  const checkedBy = /Checked by ([^<]*)\. How sure/.exec(page)?.[1] ?? ''
+  assert.ok(checkedBy.includes(idName), `the seller’s page shows it ID-checked: checked by ${checkedBy}`)
   const bytes = await getBlob([cfg.host!], picture.sha256)
   assert.equal(bytes?.type, picture.mimeType, 'the host serves the bytes the offer names')
   const summary = (v: any) => ({
     url: `${cfg.index}/profiles/${v.address}`,
     stamps: v.stamps.map((b: any) => ({ label: b.label, counted: b.counted, issuer: b.issuer.name, row: b.row })),
+    uniqueness: v.scores.uniqueness.map((u: any) => ({ label: u.label, value: u.value })),
     rating: v.scores.rating?.value ?? null,
     standing: v.scores.standing?.value ?? null,
     offers: v.offers.map((o: any) => o.uri),
@@ -470,9 +508,10 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
 
 async function main() {
   const list0 = (await json(`${cfg.issuer}/list.json`)).body as ListFile
+  const idList0 = (await json(`${cfg.issuer}/id/list.json`)).body as ListFile
   const run = started.toISOString().slice(0, 16).replace(/[-:T]/g, '')
-  const seller = await newPerson('seller', `e2e teacher ${run}`, list0.issuer)
-  const buyer = await newPerson('buyer', `e2e student ${run}`, list0.issuer)
+  const seller = await newPerson('seller', `e2e teacher ${run}`, list0.issuer, idList0.issuer)
+  const buyer = await newPerson('buyer', `e2e student ${run}`, list0.issuer, idList0.issuer)
   const people = [seller, buyer]
   record.people = Object.fromEntries(people.map((p) => [p.role, { profile: p.profile.address, label: p.label }]))
   say(`two people, each from 24 words: seller ${seller.profile.address}, buyer ${buyer.profile.address}`)
@@ -480,6 +519,9 @@ async function main() {
   const token = await setup(people)
   const list = await stamped(people)
   steps.rows = { seller: await register(seller, list, token, 'voucher'), buyer: await register(buyer, list, token, 'paid') }
+  // The seller moves up: the ID check, and a second row for the same main key, against the ID list.
+  const idList = await idChecked(seller)
+  steps.idRow = await register(seller, idList, token, 'voucher', { secret: seller.id.secret, label: 'sponsor/10' })
 
   await publishCard(seller)
   await publishCard(buyer)

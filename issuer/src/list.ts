@@ -1,10 +1,11 @@
-// The human list, and the one file the issuer publishes about it: what apps read to register.
+// One of the issuer's lists, the face list or the ID list, and the one file the issuer publishes
+// about it: what apps read to register. Each list has its own key, which the file names as `issuer`.
 //
-//   GET /list.json   {"issuer":"<address>","snapshots":[{"root":"<64 hex>","signature":"<128 hex>",
-//                     "size":n,"time":ms},…],"stamps":["<decimal>",…],"v":1}
+//   GET /list.json, /id/list.json   {"issuer":"<address>","snapshots":[{"root":"<64 hex>","signature":"<128 hex>",
+//                                    "size":n,"time":ms},…],"stamps":["<decimal>",…],"v":1}
 //
 // `stamps` is every stamp on the list, in list order. Each snapshot is the root of the list's first
-// `size` stamps, as forest/registry/client's `listRoot` builds it, signed by the issuer's key: ed25519
+// `size` stamps, as forest/registry/client's `listRoot` builds it, signed by the list's key: ed25519
 // over the root as 32 big-endian bytes, which is what a registry row carries and what
 // `issuerSigned` checks (forest/registry/README.md). An app proves against the newest snapshot: its
 // stamps are the first `size`, its signature goes into the row. One file holds both, so an app never

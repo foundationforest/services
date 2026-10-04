@@ -98,8 +98,9 @@ record names (`POST /v1/inbox`). A host refuses a message the inbox does not all
 
 ## Check a real person
 
-An issuer keeps a list of stamps; Soil's issuer keeps the human list, putting a person on
-it once, after a face check. A profile shows it is on a list with a row in the registry, which names
+An issuer keeps a list of stamps; Soil's issuer keeps two, putting a person on each once: its
+face list after a face check, its ID list after a check of face and a government ID, each signed by
+its own key, so each is an issuer here with its own weight. A profile shows it is on a list with a row in the registry, which names
 the profile, the issuer, the label and the root of the list it proved against, without saying which
 stamp is the person's. One person gets at most one row per issuer per label, so a second profile in
 the same market needs a second person, or a second issuer. It means real and accountable, not good.

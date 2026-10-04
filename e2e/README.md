@@ -5,7 +5,8 @@ this repo deploys, and the run checks that the index shows the result.
 
 It is not a service: anyone runs it by hand, with the devnet phrase. It tests Soil's host, issuer,
 fee payer and connections and the foundation's index; anyone running their own can point
-`devnet.json` at theirs. It runs on Solana's devnet, with test dollars and a stand-in face check.
+`devnet.json` at theirs. It runs on Solana's devnet, with test dollars and the stand-in for both of
+the issuer's checks.
 Nothing is on mainnet, and nothing is shipped.
 
 Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md).
@@ -16,8 +17,8 @@ Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md
 `runs/`. Two people, a seller and a buyer, in the market `tutoring`, each the way their app would do
 it:
 
-1. **A seed from 24 words,** and from it the main key, the reading key and the stamp for the issuer
-   (forest's keys).
+1. **A seed from 24 words,** and from it the main key, the reading key and a stamp for each of the
+   issuer's two lists (forest's keys).
 2. **Setup:** each gets a test-dollar account and some test dollars, paid by the devnet deploy key.
    Nothing a person does after this needs anything but test dollars, and the seller's row not even
    those.
@@ -26,8 +27,11 @@ it:
 4. **A row each in the registry,** proven against the issuer's newest snapshot and carrying the
    issuer's signature on its root. The seller's goes through the fee payer's sponsored node with a
    voucher (a second proof from the same stamp, under `sponsor/1`) and costs the seller nothing; the
-   buyer's goes through its general node, paid in test dollars. The run reads each row back and
-   checks the signature and that the fee payer paid for it.
+   buyer's goes through its general node, paid in test dollars. Then the seller takes the issuer's
+   ID check (the stand-in passes it too), its stamp for the ID list goes onto that list, and it
+   registers its profile again: a second row for the same main key, proven against the ID list,
+   through the sponsored node with an ID-list voucher (`sponsor/10`). The run reads each row back
+   and checks the signature and that the fee payer paid for it.
 5. **Each app publishes** the profile's hosts record and its profile record on the host. The
    seller's declares an inbox: senders holding a row from the devnet issuer, one message from each.
 6. **An assistant connects to each** through connections, with OAuth. The app adds the access key
@@ -41,9 +45,10 @@ it:
 8. **The buyer pays through the escrow** in one tap: pay and release in one transaction, through
    the fee payer, paid in test dollars.
 9. **Each assistant posts a review** of the other, naming the deal.
-10. **The index shows it:** both profiles with their rows counted under the trusted issuer, the
-    offer with its photo shown from the host, the deal released to the seller, and both reviews
-    counted at full weight. Not the message.
+10. **The index shows it:** both profiles with their rows counted, the seller's under both of the
+    issuer's lists, so its page shows it ID-checked, and the buyer's under the face list; the offer
+    with its photo shown from the host, the deal released to the seller, and both reviews counted at
+    full weight. Not the message.
 
 Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
 step passed.
@@ -67,7 +72,9 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 Run it against the services as deployed from `main`: the index step waits for the deployed index
 to show the offer's photo. The first run with the inbox and the photo also needs the registration
 step's own change, which comes in its own pull request; until both are deployed, the latest run
-below is the one before them.
+below is the one before them. The ID step also needs the issuer and the index as deployed from the
+ID tier's change, and the sponsored node created with both of the issuer's lists in
+`VOUCHER_ISSUERS`.
 
 ### The latest run
 
@@ -106,7 +113,8 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/2k
   type-checks it. It runs by hand, and its records in `runs/` say when it last passed.
 - **Every run leaves its people on devnet for good:** their rows, their deal and their stamps on the
   issuer's list. Their records stay on the host until it is wiped.
-- **The face check is the stand-in,** so a run says nothing about Didit.
+- **Both checks are the stand-in,** so a run says nothing about Didit; and the ID check is free on
+  devnet, so a run says nothing about its payment.
 - **One market, one test dollar, one tap.** It does not pay in the Open-USD-shaped test dollar
   (the fee payer's test does, on a local validator, and its README says why a one tap in it fails
   through Kora), and it does not test a refund.

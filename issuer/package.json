@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "Soil's issuer: it keeps the human list. A passed Didit face check puts a stamp on its list, in shuffled batches; the list and its snapshots, each signed with the issuer's key, are published as one file.",
+  "description": "Soil's issuer: it keeps two lists. A passed Didit face check puts a stamp on the face list, a passed face and ID check on the ID list, in shuffled batches; each list and its snapshots, signed with that list's key, are published as one file.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/payment.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

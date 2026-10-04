@@ -1,5 +1,5 @@
 {
-  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer's general node is feePayer, its sponsored node sponsor), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer the devnet index trusts (index/lists/issuers.json), the classic test dollar and the market. Devnet only.",
+  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer's general node is feePayer, its sponsored node sponsor), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's two lists the devnet index trusts (index/lists/issuers.json: issuerAddress signs the face list, idIssuerAddress the ID list), the classic test dollar and the market. Devnet only.",
   "issuer": "https://issuer-production-4976.up.railway.app",
   "feePayer": "https://relayer-production-8d40.up.railway.app",
   "sponsor": "PLACEHOLDER: the sponsor service's Railway address, once it exists",
@@ -10,6 +10,7 @@
   "registry": "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC",
   "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
   "issuerAddress": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+  "idIssuerAddress": "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4",
   "testDollar": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
   "market": "tutoring"
 }

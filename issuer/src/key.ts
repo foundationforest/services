@@ -1,15 +1,20 @@
-// The issuer's key: an Ed25519 key that signs each snapshot of the list and nothing else. Its address
-// (base58 of its 32-byte public key) is the issuer's name: what a registry row records and what a
-// reader trusts (forest/keys/README.md, "The recipe").
+// The issuer's key: an Ed25519 key that signs each snapshot of the face list and nothing else. Its
+// address (base58 of its 32-byte public key) is the issuer's name: what a registry row records and
+// what a reader trusts (forest/keys/README.md, "The recipe").
 //
 // It is written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret
 // then the 32-byte public key. Signing is Node's own Ed25519 (RFC 8032, deterministic).
+//
+// Its 32-byte secret is also the seed of the issuer's other keys, mixed by forest's own recipe for a
+// key under a label (`mainKey`): `id`, the key that signs the ID list, and `reference/<n>`, the
+// address a payment for one ID check names. The same seed and label always give the same key.
 
 import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { mainKey } from '../../forest/keys/src/profile.ts'
 import { base58 } from '../../forest/records/src/bytes.ts'
 
 export type IssuerKey = {
@@ -17,6 +22,8 @@ export type IssuerKey = {
   /** The issuer's name: its public key in base58. */
   address: string
   sign(message: Uint8Array): Uint8Array
+  /** The key forest's `mainKey` mixes from this key's secret under `label`. */
+  derive(label: string): Promise<IssuerKey>
 }
 
 /** PKCS #8 for an Ed25519 secret (RFC 8410): this fixed header, then the 32 bytes. */
@@ -49,15 +56,22 @@ export function parseKeypair(text: string, source: string): IssuerKey {
     numbers.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
   if (!valid) throw new Error(`${source} is not a Solana keypair: a JSON list of 64 numbers`)
   const bytes = Uint8Array.from(numbers as number[])
-  const key = privateKey(bytes.subarray(0, 32))
-  const publicKey = publicKeyOf(key)
-  if (!Buffer.from(publicKey).equals(bytes.subarray(32))) {
+  const issuer = fromSecret(bytes.slice(0, 32))
+  if (!Buffer.from(issuer.publicKey).equals(bytes.subarray(32))) {
     throw new Error(`${source} is not a Solana keypair: its two halves do not match`)
   }
+  return issuer
+}
+
+/** A key from its 32-byte secret. The secret stays inside, for signing and for mixing other keys. */
+function fromSecret(secret: Uint8Array): IssuerKey {
+  const key = privateKey(secret)
+  const publicKey = publicKeyOf(key)
   return {
     publicKey,
     address: base58.encode(publicKey),
     sign: (message) => new Uint8Array(sign(null, message, key)),
+    derive: async (label) => fromSecret((await mainKey(secret, label)).privateKey),
   }
 }
 

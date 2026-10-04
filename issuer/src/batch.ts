@@ -32,6 +32,7 @@ export class Batcher {
   readonly #max: number
   readonly #intervalMs: number
   readonly #log: (line: string) => void
+  readonly #name: string
   readonly #now: () => number
   #timer: NodeJS.Timeout | undefined
   #running: Promise<void> | undefined
@@ -40,13 +41,15 @@ export class Batcher {
   constructor(
     store: Store,
     list: IssuerList,
-    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number },
+    options: { max: number; intervalMs: number; log?: (line: string) => void; now?: () => number; name?: string },
   ) {
     this.#store = store
     this.#list = list
     this.#max = options.max
     this.#intervalMs = options.intervalMs
     this.#log = options.log ?? ((line) => console.log(line))
+    /** Which list, in the log: `list` or `ID list`. */
+    this.#name = options.name ?? 'list'
     this.#now = options.now ?? Date.now
   }
 
@@ -92,9 +95,9 @@ export class Batcher {
       // leaves the queue without being added twice.
       const added = shuffle(pending.filter((s) => !this.#list.has(s)))
       this.#list.append(added, pending, this.#now())
-      this.#log(`issuer: batch of ${added.length} added to the list`)
+      this.#log(`issuer: batch of ${added.length} added to the ${this.#name}`)
     } catch (error) {
-      this.#log(`issuer: batch of ${waiting} not added (${errorKind(error)}); all wait`)
+      this.#log(`issuer: batch of ${waiting} not added to the ${this.#name} (${errorKind(error)}); all wait`)
     } finally {
       if (waiting > 0) {
         try {

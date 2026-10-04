@@ -294,8 +294,8 @@ at https://index-production-1b6e.up.railway.app:
 - **One replica,** health check `GET /`, a public domain to port 8080, no volume: its state is in
   Postgres, on Supabase (project `forest-devnet`), through the session pooler, with TLS verified
   against Supabase's public root, `deploy/supabase-root-2021.crt` (`NODE_EXTRA_CA_CERTS`).
-- **What it reads:** Soil's host (`host/`), the devnet issuer's rows, the devnet registry and
-  escrow, and the markets directory's `main`.
+- **What it reads:** Soil's host (`host/`), the rows of the devnet issuer's two lists, the devnet
+  registry and escrow, and the markets directory's `main`.
 
 | Variable | On devnet | Sealed |
 |---|---|---|
@@ -321,7 +321,9 @@ Another index holds its own.
   no profile can ask it to read another host. Reading any host a verified profile names is a later
   feature.
 - **Which issuers count, and how much:** `lists/issuers.json`, each with a weight from 0 to 1. No
-  issuer counts unless it is named there. Today: Soil's devnet issuer, at 1.
+  issuer counts unless it is named there. Today: Soil's devnet issuer's two lists, its face list at
+  0.7 and its ID list (face and a government ID) at 0.9, so a profile with a row from each scores
+  0.97.
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
   `main`.
 - **How reviews weigh:** `config/scoring.json`. Evidence: `both` 1, `oneSided` 0.5, `none` 0.05; a
@@ -350,7 +352,8 @@ Another index holds its own.
 ## Limits
 
 - **It trusts its issuers** to put on their lists only the stamps they say they do (Soil's devnet
-  issuer: one per face, with a stand-in face check that passes everyone). It cannot tell.
+  issuer: one per face on its face list, one per face that passed an ID check on its ID list, with a
+  stand-in that passes everyone on both). It cannot tell.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
   here, whatever its rows.
