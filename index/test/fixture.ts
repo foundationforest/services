@@ -8,6 +8,9 @@
 //     is. Ana lets an access key write offers until 6 September: its offer from before counts, its
 //     offer from after does not. Ana also keeps a private record at an offer's path: the index leaves
 //     it alone.
+//   - Pictures: Ben's review of Ana carries a photo, Dara's offer a video, Ana's card a photo. The
+//     three records are also on a second host, forest's reference host on loopback, which holds the
+//     bytes of the first two and never gets the third. The readers ask it, as they ask every host.
 //   - Rows go in as the chain reader stores them, signed by the test issuer over a fixed root; the
 //     receipt as the escrow reader stores it.
 //   - Scores come from the real recompute, signed with a fixed seed.
@@ -21,9 +24,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { ed25519 } from '@noble/curves/ed25519.js'
+import { sha256 } from '@noble/hashes/sha2.js'
 import pg from 'pg'
 
 import { type MainKey, mainKey } from '../../forest/keys/src/index.ts'
+import { Host } from '../../forest/records/src/host.ts'
 import {
   type Body,
   type Checked,
@@ -34,6 +39,8 @@ import {
   keyFromPrivate,
   ownerRecord,
   permissionsRecord,
+  publish,
+  putBlob,
   recordId,
   unsignedOf,
   accessRecord,
@@ -45,6 +52,7 @@ import { type Config, loadConfig } from '../src/config.ts'
 import { type Db, createPool } from '../src/db.ts'
 import { startReaders } from '../src/main.ts'
 import { splitLabel } from '../src/markets.ts'
+import { checkBlobs } from '../src/records/blobs.ts'
 import { takeIn } from '../src/records/hosts.ts'
 import { serveMarkets } from './markets-repo.ts'
 
@@ -86,8 +94,16 @@ export const ACCESS = keyFromPrivate(new Uint8Array(32).fill(42))
 export const DEAL = 'CJfRUQxyonG6B5mnztsNUqxknbFT89DJdrdrzV9F96mU'
 export const ESCROW_PROGRAM = 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8'
 export const MADE_UP_DEAL = 'cd'.repeat(32)
-/** The photo Ben's review carries, by the SHA-256 of its bytes. The index never fetches it. */
-export const PHOTO = { sha256: '5e3b1f3c2a8a8f2b6c4e9d0a7b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a3b5c', mimeType: 'image/jpeg', size: 20 }
+/** A picture as a record names it: by the SHA-256 of its bytes, with its type and size. */
+const picture = (bytes: Uint8Array, mimeType: string) => ({ sha256: hex.encode(sha256(bytes)), mimeType, size: bytes.length })
+const PHOTO_BYTES = new TextEncoder().encode('A photo of a lesson.')
+const CLIP_BYTES = new TextEncoder().encode('A short video of an exchange.')
+/** The photo Ben's review carries: the second host holds it. */
+export const PHOTO = picture(PHOTO_BYTES, 'image/jpeg')
+/** The video Dara's offer carries: the second host holds it. */
+export const CLIP = picture(CLIP_BYTES, 'video/mp4')
+/** The photo Ana's card names: no host holds it, so no page shows it. */
+export const NO_PHOTO = picture(new TextEncoder().encode('A photo no host was given.'), 'image/png')
 export const SIGNING_SEED = '09'.repeat(32)
 
 const day = (d: number) => `2026-09-${String(d).padStart(2, '0')}T10:00:00.000Z`
@@ -122,7 +138,7 @@ const review = (subject: string, ratings: Record<string, string>, dealId: string
 })
 
 const { remote: _r, ...spanish } = offer('Spanish grammar, one hour, homework optional.', '12.50', { terms: { timer: { days: 30, to: 'buyer' } }, subjects: ['spanish'] })
-const { price: _p, remote: _q, ...exchange } = offer('English for Portuguese, an hour each way, in a café.', '0', { location: LISBON, speaks: ['en'] })
+const { price: _p, remote: _q, ...exchange } = offer('English for Portuguese, an hour each way, in a café.', '0', { location: LISBON, speaks: ['en'], media: [CLIP] })
 
 const records = (p: Person, d: number, card: Record<string, unknown>, rest: [string, Record<string, unknown>, number][]): SignedRecord[] => [
   hostsRecord(p.key, [HOST], at(d)),
@@ -131,7 +147,7 @@ const records = (p: Person, d: number, card: Record<string, unknown>, rest: [str
 ]
 
 export const RECORDS: SignedRecord[] = [
-  ...records(ana, 1, profile(SELLER, 'Portuguese and Spanish tutor. Ten years teaching adults online.', 1), [
+  ...records(ana, 1, { ...profile(SELLER, 'Portuguese and Spanish tutor. Ten years teaching adults online.', 1), photo: NO_PHOTO }, [
     ['offer/portuguese', offer('Portuguese conversation for adults, A1 to B2.', '25', { availability: 'Weekday evenings, Lisbon time.', subjects: ['portuguese'] }), 4],
     // With a timer that sends the money back to the buyer (which no page speaks of), and saying
     // nothing of where (`remote` is optional).
@@ -157,7 +173,8 @@ export const RECORDS: SignedRecord[] = [
   ]),
 ]
 
-const idAt = (address: string, path: string) => recordId(unsignedOf(RECORDS.find((r) => r.profile === address && r.path === path)!))
+const recordAt = (address: string, path: string) => RECORDS.find((r) => r.profile === address && r.path === path)!
+const idAt = (address: string, path: string) => recordId(unsignedOf(recordAt(address, path)))
 const offerAt = (address: string, path: string) => ({ path, uri: `${address}/${path}`, id: idAt(address, path) })
 export const OFFERS = {
   portuguese: offerAt(ana.address, 'offer/portuguese'),
@@ -166,7 +183,8 @@ export const OFFERS = {
   exchange: offerAt(dara.address, 'offer/exchange'),
 }
 
-export type Fixture = { db: Db; config: (env?: Record<string, string>) => Config; drop: () => Promise<void> }
+/** `host`: the second host, which holds two of the pictures. */
+export type Fixture = { db: Db; config: (env?: Record<string, string>) => Config; host: string; drop: () => Promise<void> }
 
 /** A fresh database with the story in it and its scores computed. `drop` removes it. */
 export async function makeFixture(adminUrl: string): Promise<Fixture> {
@@ -226,6 +244,21 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   await takeIn(db, HOST, checked, [ISSUER.address], (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
 
+  // The second host: the three records that name pictures, posted there too, then the bytes of two
+  // of them. The readers ask it for the pictures, as they ask every host they read.
+  const host = new Host()
+  const hostUrl = await host.listen(0)
+  const pictured = [recordAt(ana.address, 'profile'), recordAt(ben.address, 'review/ana'), recordAt(dara.address, 'offer/exchange')]
+  const [posted] = await publish([hostUrl], pictured)
+  if (!posted!.results.every((r) => r.ok)) throw new Error(`the second host refused: ${JSON.stringify(posted)}`)
+  for (const [bytes, type] of [[PHOTO_BYTES, PHOTO.mimeType], [CLIP_BYTES, CLIP.mimeType]] as const) {
+    const [put] = await putBlob([hostUrl], bytes, type)
+    if (!put!.ok) throw new Error(`the second host refused the bytes: ${JSON.stringify(put)}`)
+  }
+  await takeIn(db, hostUrl, pictured.map((record) => ({ record, id: recordId(unsignedOf(record)) })), [ISSUER.address], (err) => refused.push(err))
+  if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
+  await checkBlobs(db, [hostUrl])
+
   // The receipt: $25 from Ben to Ana, which she asked for. Ben objected, then released it to her.
   await db.query(
     `insert into escrow_receipts (escrow, program_id, buyer, seller, creator, mint, amount, created_at, funded_at, ended_at, outcome,
@@ -240,7 +273,9 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   return {
     db,
     config,
+    host: hostUrl,
     drop: async () => {
+      await host.close()
       // pg's pool resolves `end()` before its sockets have closed; dropping the database under a
       // closing connection makes it report an error nobody is listening for. Wait for them to go.
       await db.end()

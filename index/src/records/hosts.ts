@@ -13,6 +13,8 @@
 // the record's own date; the owner wins), and what the view holds now replaces what the index held
 // for it (store.ts). Only a profile holding a counted row is stored; any other's records wait in
 // `host_records`, so the day its row is read it is stored with nothing to read again.
+//
+// Then the pictures stored records name are asked for on the hosts that served them (blobs.ts).
 
 import { readPage } from '../../../forest/records/src/client.ts'
 import { type Checked, MAX_FUTURE_MS, type SignedRecord, encodeRecord } from '../../../forest/records/src/record.ts'
@@ -20,6 +22,7 @@ import { viewProfile } from '../../../forest/records/src/view.ts'
 
 import { countedProfiles } from '../chain/registry.ts'
 import { type Db, type Queryable, getCursor, setCursor } from '../db.ts'
+import { checkBlobs } from './blobs.ts'
 import { project } from './store.ts'
 
 /** How long one host may take to serve a page. Past that the read fails, and the next poll tries again. */
@@ -86,8 +89,8 @@ export class HostReader {
 
   /**
    * Read every host once, from its cursor to its end, then view what changed, and every profile
-   * whose records dated ahead came due. Returns how many records were taken in. A host that fails is
-   * reported and skipped: the others count.
+   * whose records dated ahead came due, then ask for the pictures not yet held. Returns how many
+   * records were taken in. A host that fails is reported and skipped: the others count.
    */
   pollOnce(): Promise<number> {
     if (!this.polling) {
@@ -105,6 +108,7 @@ export class HostReader {
           const now = this.now()
           for (const [p, at] of this.due) if (at <= now) touched.add(p)
           if (touched.size) await this.merge(touched)
+          await checkBlobs(this.db, this.hosts)
         } finally {
           this.polling = null
         }

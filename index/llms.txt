@@ -6,6 +6,8 @@
 
 Every page has a JSON twin at the same address with `.json`. Reading needs no key, no account and no sign-in.
 
+Photos and short videos show from the hosts that hold them, and each twin gives their address. A profile may also take messages in its inbox, on its own hosts: none passes through this index.
+
 ## For AI agents
 
 - [Read skill](https://forest.foundation/skill.md): how to search Forest, read a profile, check a real person and a payment receipt, and what the scores mean

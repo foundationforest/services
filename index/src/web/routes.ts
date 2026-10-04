@@ -43,8 +43,9 @@ const SECURITY = {
   'access-control-allow-origin': '*',
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
-  // No script runs on any page: the JSON-LD block is data, which this does not block.
-  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; form-action 'self'; base-uri 'none'; frame-ancestors *",
+  // No script runs on any page: the JSON-LD block is data, which this does not block. Pictures and
+  // videos load from the hosts that hold them.
+  'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' https: data:; media-src https:; form-action 'self'; base-uri 'none'; frame-ancestors *",
 }
 
 function respond(status: number, type: string, body: string, headers: Record<string, string> = {}): Response {

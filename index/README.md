@@ -38,6 +38,13 @@ lists/markets.json ── each market's file, from the markets directory ──�
     open it. Every other path is not this index's.
   - Only a profile holding a counted row is stored; any other's records wait in the kept records,
     so the day its row is read it is stored with nothing to read again.
+- **Pictures, from the same hosts.** A profile's `photo`, and the `media` of an offer or a review,
+  name bytes by their SHA-256, with a type and a size (forest's records, "Blobs"). After each read,
+  for every picture a stored record names, the readers ask each listed host that served that record
+  for the bytes (`GET /v1/blobs/<sha256>`, forest's `getBlob`, which hashes them), and keep the
+  host, the hash and the type the host serves them as, never the bytes (`src/records/blobs.ts`).
+  Bytes that are not their hash count as not there. A picture not there yet is asked for again
+  after the next read.
 - **Rows, from the registry.** Every row of each issuer in `lists/issuers.json`, from the program's
   own accounts (`fetchRows`, filtered on the issuer), on every poll. A row never changes, so only
   new ones are stored. A row counts when its issuer's signature on its root checks (`issuerSigned`);
@@ -167,6 +174,14 @@ in this directory, written for `https://forest.foundation`; each index serves th
 index uses. Search results, pay links, a market filtered by `near`, and deals with no receipt say
 `noindex` and are left out of the sitemap.
 
+**Pictures** show from the host that holds them, never from the index: an image for a png or a
+jpeg, a video for an mp4, with the type the record names. A page shows a picture only when a listed
+host that served its record holds the bytes as that type; otherwise it shows nothing. Each twin
+gives every picture as its record names it (`sha256`, `mimeType`) with its `url` on that host, or
+null. A profile's twin also gives its card's `inbox`: who may deliver it a message. A message goes
+to the profile's own hosts, in an envelope only its reading key opens, and only its main key pulls
+it: no message passes through the index.
+
 ### The Pay link
 
 The one format for paying for an offer from any app. The index shows it on every live offer with a
@@ -220,7 +235,7 @@ devnet.
 | | Readers | Pages |
 |---|---|---|
 | Command | `node src/main.ts readers` | `node src/main.ts web` |
-| Does | Applies migrations; reads the hosts and the chain; recomputes and signs scores; writes the public keys for the pages | Serves every page, its twin, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
+| Does | Applies migrations; reads the hosts (records and which pictures they hold) and the chain; recomputes and signs scores; writes the public keys for the pages | Serves every page, its twin, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
 | Runs | Always, exactly one copy | As many copies as wanted |
 | Database | Reads and writes | Reads only |
 | Holds the signing seed | Yes | No |
@@ -255,7 +270,9 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   they check that every page and twin renders, every JSON-LD block validates against schema.org's
   vocabulary, each twin matches its page, the sitemap lists every page, every URL in the read skill
   and `llms.txt` resolves, no page says a crypto word, the Pay link reads back to the offer, a
-  access key's record counts only before its `until`, and a private record is never stored.
+  access key's record counts only before its `until`, a private record is never stored, and a
+  picture shows from the host that holds it with the type its record names, and not at all when no
+  host does (forest's reference host, on loopback).
 - **The end-to-end test** (`test/e2e.test.ts`) runs forest's reference host, a local validator with
   the registry and the escrow, two issuers' lists made by issuer/'s own code, and the index, in
   about 15 seconds. It needs the two programs built (`cargo build-sbf --arch v3` in
@@ -299,7 +316,10 @@ Each of these is this index's opinion, not a rule, and a file in this directory,
 Another index holds its own.
 
 - **Which hosts count:** the hosts in `lists/hosts.json`, each read in full. Today: Soil's host on
-  devnet.
+  devnet. It does not answer the hosts request (forest's
+  [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Indexes"), so
+  no profile can ask it to read another host. Reading any host a verified profile names is a later
+  feature.
 - **Which issuers count, and how much:** `lists/issuers.json`, each with a weight from 0 to 1. No
   issuer counts unless it is named there. Today: Soil's devnet issuer, at 1.
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
@@ -308,10 +328,11 @@ Another index holds its own.
   reviewer with no counted row starts at 0.05. A receipt counts in USDC, devnet USDC and the two
   devnet test dollars (`countedMints`). Standing settles within 100 rounds, to 10⁻⁹.
 - **What the pages show as money:** `config/currencies.json`: those four tokens, as dollars.
+- **Pictures:** shown only from a listed host that served the record and holds the bytes, checked
+  against their SHA-256, as the type the record names. The readers fetch each picture once per host
+  to check it, and keep the host, the hash and the type, never the bytes. One not there yet is asked
+  for again after every read.
 - **No request logs.** The pages log only a failed request's path and its error.
-- **Not built:** the hosts request (forest's
-  [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Indexes") and
-  reading any host a verified profile names are the next session's.
 
 ## Promises
 
@@ -333,6 +354,11 @@ Another index holds its own.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
   here, whatever its rows.
+- **A page with a picture has the reader's browser fetch it from the host,** which sees the
+  reader's network address, though not the page: no referrer is sent. Soil's host keeps no address
+  (`host/`); on Railway, Railway's own request logs do.
+- **A picture is checked once.** A host that loses the bytes after that leaves a broken picture on
+  the page.
 - **It keeps every record its hosts serve,** for every profile, counted or not, and every version
   it saw. A host can make it keep junk.
 - **The markets are read once, at start.** A change in the markets directory reaches the index at
@@ -341,7 +367,8 @@ Another index holds its own.
   transaction.
 - **Scale:** one sitemap file (past 50,000 pages it needs a sitemap index); a profile page lists
   every review; `near` measures every live offer in the market; a pool of 10 connections per
-  process; every issuer's rows are read again on every poll.
+  process; every issuer's rows are read again on every poll; after every read, every stored record
+  is looked through for pictures not yet found, and each is asked for again.
 - **On devnet, readers and pages are one process,** so the pages hold the signing seed.
 - **Pages in English only.**
 - **Address logs.** A hosting provider's own request logs are the operator's choice; on Railway they
@@ -373,6 +400,13 @@ asking the issuer. Which issuers to trust is the reader's call: `lists/issuers.j
 **Why apply the access rule with forest's own view?**
 Every reader computes the same view from the same records, so this index counts exactly what any
 other reader counts.
+
+**Why does the index fetch a picture it never keeps?**
+To check that the bytes are their hash, served as the type the record names, before a page shows
+them. A reader of forest's blobs checks the hash itself; a page here shows only what checked.
+
+**Why is a picture not there yet asked for again after every read?**
+An app posts the record first and the bytes after it, so the first look often finds nothing.
 
 **Why leave private records alone?**
 Only their readers can open them; an index is not one of them. Anyone can still see that one
