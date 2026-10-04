@@ -28,18 +28,22 @@ it:
    voucher (a second proof from the same stamp, under `sponsor/1`) and costs the seller nothing; the
    buyer's goes through its general node, paid in test dollars. The run reads each row back and
    checks the signature and that the fee payer paid for it.
-5. **Each app publishes** the profile's hosts record and its profile record on the host.
+5. **Each app publishes** the profile's hosts record and its profile record on the host. The
+   seller's declares an inbox: senders holding a row from the devnet issuer, one message from each.
 6. **An assistant connects to each** through connections, with OAuth. The app adds the access key
    the connection shows to the profile's permissions record. The seller's assistant posts an offer
-   through MCP, signed by its access key.
-7. **One private record:** the buyer writes the seller a message only the seller's reading key
-   opens. The run reads it back from the host and opens it.
+   with a photo through MCP, signed by its access key; the seller's app then puts the photo's bytes
+   on the host, which takes them because the offer names them.
+7. **The inbox:** the buyer's app reads the seller's card, puts a message in an envelope only the
+   seller's reading key opens, signs it and delivers it to the seller's host, which checks that the
+   buyer holds a row from the devnet issuer. A second message is refused (`once`). The seller's app
+   pulls its inbox with a pull its main key signs, and opens the one message.
 8. **The buyer pays through the escrow** in one tap: pay and release in one transaction, through
    the fee payer, paid in test dollars.
 9. **Each assistant posts a review** of the other, naming the deal.
 10. **The index shows it:** both profiles with their rows counted under the trusted issuer, the
-    offer, the deal released to the seller, and both reviews counted at full weight. Not the private
-    message.
+    offer with its photo shown from the host, the deal released to the seller, and both reviews
+    counted at full weight. Not the message.
 
 Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
 step passed.
@@ -60,12 +64,18 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 | `FOREST_DEVNET_SEED` | yes | The devnet phrase. Its `deploy` key pays the setup; its `test-dollar-authority` key mints the test dollars. Never in this repo |
 | `HELIUS_API_KEY` | no | Reads and sends through Helius's devnet RPC instead of `api.devnet.solana.com`; the key never goes into a run's record |
 
+Run it against the services as deployed from `main`: the index step waits for the deployed index
+to show the offer's photo. The first run with the inbox and the photo also needs the registration
+step's own change, which comes in its own pull request; until both are deployed, the latest run
+below is the one before them.
+
 ### The latest run
 
 2026-10-03, 23:40 to 23:41 UTC, against all five services as deployed from `main` at `f0e3da8`
 (forest at `7adf341`): **passed** in 62 seconds. Its record is
-[`runs/2026-10-03T23-40-27-219Z.json`](runs/2026-10-03T23-40-27-219Z.json). It ran before the
-sponsored node existed, so both rows were paid; no run has used a voucher yet.
+[`runs/2026-10-03T23-40-27-219Z.json`](runs/2026-10-03T23-40-27-219Z.json). It ran the loop as it
+was then: a private record where the inbox is now, no photo, and both rows paid, since the sponsored
+node did not exist; no run has used a voucher yet.
 
 | Step | What happened |
 |---|---|
@@ -100,7 +110,9 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/2k
 - **One market, one test dollar, one tap.** It does not pay in the Open-USD-shaped test dollar
   (the fee payer's test does, on a local validator, and its README says why a one tap in it fails
   through Kora), and it does not test a refund.
-- **No inbox and no blobs.** It sends no message to an inbox and puts no photo on the host.
+- **One inbox rule and one photo.** It tests an inbox open to one issuer's rows, one message from
+  each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a profile's photo or a
+  video.
 - **The index step waits up to 15 minutes** for the index's next read of the host and the chain;
   a slower devnet fails the run.
 
@@ -114,6 +126,11 @@ and the services talking to each other over the internet.
 **Why does the deploy key pay the setup?**
 A new person has no test dollars. On mainnet they would come in at a ramp; on devnet the deploy key
 makes the accounts and the test dollar's own authority mints them. Nothing after setup touches SOL.
+
+**Why does the buyer write to the seller's inbox, and no longer a private record?**
+forest's records say a message is not a record in the sender's folder: anyone reads a folder, so
+who wrote to whom would be public. A message goes to the recipient's hosts, and only its main key
+pulls it. The index's page tests still check that a private record is left alone.
 
 **Why keep every run's record in the repo?**
 So anyone can check, on devnet itself, what the latest run did: every address and signature in it

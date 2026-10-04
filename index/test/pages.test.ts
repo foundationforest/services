@@ -11,11 +11,14 @@
 //   9. markets: two numbers, one label per profile, role names, near, no price, review fields, and
 //      no word of the index's own on an offer's or a receipt's options (a market's own text may say
 //      anything);
-//  10. records: the access rule, by forest's view, and private records left alone.
+//  10. records: the access rule, by forest's view, and private records left alone;
+//  11. pictures: shown from a host that holds them, with the type the record names; none when no
+//      host does.
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 
@@ -24,7 +27,7 @@ import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { BUYER, DEAL, EXCHANGE, FOLDER, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
+import { BUYER, CLIP, DEAL, EXCHANGE, FOLDER, HOST, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, NO_PHOTO, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -352,7 +355,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // A review's market is its subject's: Ana lives in online-tutors, whose file adds `sessions`.
       const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.address)
       assert.deepEqual([byBen.market, byBen.fields, byBen.ratings, byBen.overall], [MARKET, { sessions: 8 }, { overall: 10, patience: 10 }, 10])
-      assert.deepEqual(byBen.media, [{ sha256: PHOTO.sha256, mimeType: 'image/jpeg' }])
+      assert.deepEqual(byBen.media, [{ sha256: PHOTO.sha256, mimeType: 'image/jpeg', url: `${fixture.host}/v1/blobs/${PHOTO.sha256}` }])
       assert.ok(anaPage.includes('Overall 10.0 of 10 · Patience 10.0 of 10'))
       assert.ok(anaPage.includes('Sessions: 8 · With 1 photo'))
       // One label per profile: Ben lives in online-tutors as a buyer. His row in the language
@@ -430,7 +433,34 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.equal(uris.includes(`${ana.address}/offer/private`), false)
       assert.equal((await fixture.db.query("select count(*)::int as n from offers where uri like '%/offer/private'")).rows[0].n, 0)
       // Every record is kept as the host served it, the ones that do not count too.
-      assert.equal((await fixture.db.query('select count(*)::int as n from host_records where profile = $1', [ana.address])).rows[0].n, 9)
+      assert.equal((await fixture.db.query('select count(*)::int as n from host_records where profile = $1 and host = $2', [ana.address, HOST])).rows[0].n, 9)
+    })
+
+    await t.test('11. pictures: from a host that holds them, with the type the record names', async () => {
+      const at = (p: { sha256: string }) => `${fixture.host}/v1/blobs/${p.sha256}`
+      // Ben's photo of Ana's lesson: an image, from the host that holds it, whose bytes are its hash.
+      const anaPage = rendered.get(`/profiles/${ana.address}`)!
+      const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.address)
+      assert.deepEqual(byBen.media, [{ sha256: PHOTO.sha256, mimeType: 'image/jpeg', url: at(PHOTO) }])
+      assert.ok(anaPage.includes(`<img src="${at(PHOTO)}" alt="A photo with this review" loading="lazy">`))
+      const res = await fetch(at(PHOTO))
+      assert.equal(res.headers.get('content-type'), 'image/jpeg')
+      assert.equal(createHash('sha256').update(new Uint8Array(await res.arrayBuffer())).digest('hex'), PHOTO.sha256)
+      // Dara's video: played with the type her offer names, wherever the offer is shown.
+      assert.deepEqual((await json(`/markets/${EXCHANGE}.json`)).offers[0].media, [{ sha256: CLIP.sha256, mimeType: 'video/mp4', url: at(CLIP) }])
+      for (const path of [`/markets/${EXCHANGE}`, `/profiles/${dara.address}`]) {
+        assert.ok(rendered.get(path)!.includes(`<video controls preload="none"><source src="${at(CLIP)}" type="video/mp4"></video>`), path)
+      }
+      // Ana's photo: her card names it, no host holds it, so no page shows it.
+      assert.deepEqual(anaTwin.profile.photo, { sha256: NO_PHOTO.sha256, mimeType: 'image/png', url: null })
+      assert.equal(anaPage.includes(NO_PHOTO.sha256), false)
+      assert.equal([...anaPage.matchAll(/<img\b/g)].length, 1, 'only Ben’s photo')
+      // What the index keeps: which host holds which bytes, as which type. Never the bytes.
+      const { rows } = await fixture.db.query('select sha256, host, type from blobs order by type')
+      assert.deepEqual(rows, [
+        { sha256: PHOTO.sha256, host: fixture.host, type: 'image/jpeg' },
+        { sha256: CLIP.sha256, host: fixture.host, type: 'video/mp4' },
+      ])
     })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))

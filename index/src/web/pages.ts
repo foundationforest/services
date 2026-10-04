@@ -2,7 +2,7 @@
 // phone, with no JavaScript. Every word here is plain: no crypto word.
 
 import type { CurrencyConfig } from '../config.ts'
-import type { DealModel, FolderModel, HomeModel, MarketModel, Numbers, Offer, ProfileModel, Review, SearchModel } from './data.ts'
+import type { DealModel, FolderModel, HomeModel, MarketModel, Numbers, Offer, Picture, ProfileModel, Review, SearchModel } from './data.ts'
 import { type Near, type Raw, type Urls, SCORING_DOC, html, layout } from './html.ts'
 import { dealLd, folderLd, homeLd, marketLd, payLd, profileLd, searchLd } from './jsonld.ts'
 import type { PayModel } from './pay.ts'
@@ -30,6 +30,20 @@ function where(o: Offer): string {
   return o.location.precisionKm > 0 ? `${o.location.area} (within ${o.location.precisionKm} km)` : o.location.area
 }
 
+/**
+ * The pictures a host holds, from that host: a photo as an image, a video to play with the type the
+ * record names. A picture no host holds is not shown.
+ */
+function pictures(media: Picture[], alt: string, kind = 'pictures'): Raw | string {
+  const shown = media.filter((m) => m.url)
+  if (!shown.length) return ''
+  return html`<p class="${kind}">${shown.map((m) =>
+    m.mimeType.startsWith('video/')
+      ? html`<video controls preload="none"><source src="${m.url}" type="${m.mimeType}"></video>`
+      : html`<img src="${m.url}" alt="${alt}" loading="lazy">`,
+  )}</p>`
+}
+
 function offerCard(v: View, o: Offer, showSeller: boolean): Raw {
   const place = where(o)
   const price = w.price(o.price, v.currencies)
@@ -37,6 +51,7 @@ function offerCard(v: View, o: Offer, showSeller: boolean): Raw {
 ${showSeller ? html`<h3><a href="${o.profileUrl}">${o.name ?? 'A profile with no name'}</a></h3>${numbersLine(o, realPersonWord(o))}` : ''}
 ${!showSeller && o.marketUrl ? html`<p class="small"><a href="${o.marketUrl}">${w.title(o.market!)}</a></p>` : ''}
 <p>${o.description}</p>
+${pictures(o.media, 'A photo of this offer')}
 <p class="row">${price ? html`<strong>${price}</strong>` : ''}${place ? html`<span class="muted">${place}</span>` : ''}${o.availability ? html`<span class="muted">${o.availability}</span>` : ''}</p>
 ${o.payLink ? html`<p><a class="pay" href="${o.payLink}" rel="nofollow">Pay</a></p>` : ''}
 </li>`
@@ -55,6 +70,7 @@ function reviewCard(r: Review, show: 'author' | 'subject' | 'both'): Raw {
   return html`<li>
 <p class="row"><span>${w.ratings(r.ratings)}</span><span class="muted small">${who}${r.createdAt ? ` · ${w.date(r.createdAt)}` : ''}</span></p>
 ${r.text ? html`<p>${r.text}</p>` : ''}
+${pictures(r.media, 'A photo with this review')}
 ${fields.length || media ? html`<p class="small muted">${[...fields, ...(media ? [media] : [])].join(' · ')}</p>` : ''}
 <p class="small muted">${w.evidence(r.evidence.kind, r.evidence.note)} ${show !== 'both' && r.dealUrl && r.hasReceipt ? html`<a href="${r.dealUrl}">See the receipt</a>` : ''}</p>
 ${show !== 'both' && r.objection ? html`<p class="small muted">${w.objected(r.objection.side, r.objection.at)}</p>` : ''}
@@ -119,6 +135,7 @@ export function profilePage(v: View, m: ProfileModel): string {
   const rating = { value: m.scores.rating?.value ?? null, reviews: (m.scores.rating?.details as { reviews: number } | undefined)?.reviews ?? 0 }
   const home = p.market && p.marketUrl ? html`<p class="small">${p.side ? `${w.title(p.side)} in ` : 'In '}<a href="${p.marketUrl}">${w.title(p.market)}</a></p>` : ''
   const body = html`<h1>${p.name}</h1>
+${p.photo ? pictures([p.photo], `Photo of ${p.name}`, 'photo') : ''}
 ${home}
 ${p.about ? html`<p>${p.about}</p>` : ''}
 
