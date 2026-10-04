@@ -11,14 +11,17 @@
 //   3. stamped by the issuer: a face check (the stand-in passes it), the stamp submitted, and listed;
 //   4. registered: a row for each, proven against the issuer's newest snapshot and carrying its
 //      signature, sent through the fee payer, paid in the test dollar;
-//   5. each app publishes the profile's hosts record and card, with its reading key;
+//   5. each app publishes the profile's hosts record and card, with its reading key; the seller's
+//      card declares an inbox: senders holding a row from the devnet issuer, one message each;
 //   6. an assistant connects to each through connections (OAuth): the app adds the access key it
-//      shows to the profile's permissions record, and the seller's assistant posts an offer;
-//   7. one private record: the buyer writes the seller a message only the two of them can open;
+//      shows to the profile's permissions record, and the seller's assistant posts an offer with a
+//      photo; the seller's app then puts the photo's bytes on the host;
+//   7. the inbox: the buyer delivers a message to the seller's inbox, and a second one is refused
+//      (one each); the seller pulls it with a pull its main key signs, and opens it;
 //   8. the buyer pays through the escrow, in one tap, through the fee payer;
 //   9. each assistant posts a review of the other, naming the escrow;
-//  10. the index shows it: both profiles, their counted rows and issuer, the offer, the deal and both
-//      reviews at full weight; and not the private message.
+//  10. the index shows it: both profiles, their counted rows and issuer, the offer with its photo
+//      from the host, the deal and both reviews at full weight; and not the message.
 // Everything it did goes to runs/<time>.json.
 
 import assert from 'node:assert/strict'
@@ -26,6 +29,7 @@ import { createHash, pbkdf2Sync, randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { crc32, deflateSync } from 'node:zlib'
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -33,8 +37,8 @@ import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedI
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 import { exportWords, importWords, listSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
-import { base58, hex, hostsRecord, ownerRecord, permissionsRecord, publish, readProfile } from '../forest/records/src/index.ts'
-import { makePrivate, openPrivate } from '../forest/records/src/private.ts'
+import { base58, deliver, encodeMessage, getBlob, hex, hostsRecord, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
+import { message, openMessage } from '../forest/records/src/private.ts'
 import { buildRegistration, fetchRow, issuerSigned, listRoot, marketStampOf, toBytes32 } from '../forest/registry/client/src/index.ts'
 import * as escrow from '../forest/escrow/client/src/index.ts'
 
@@ -263,6 +267,8 @@ async function publishCard(p: Person) {
     role: p.role,
     about: p.role === 'seller' ? 'Maths lessons online. A devnet test profile, made by e2e.' : 'A devnet test profile, made by e2e.',
     read: p.reading.recipient,
+    // The seller takes messages: from keys holding a row from the devnet issuer, one from each.
+    ...(p.role === 'seller' ? { inbox: { senders: { issuer: cfg.issuerAddress! }, once: true } } : {}),
     createdAt: new Date(now).toISOString().replace(/\.\d{3}Z$/, 'Z'),
   }
   const [outcome] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
@@ -325,22 +331,55 @@ async function tool(client: Client, name: string, args: Record<string, unknown>)
   return result.structuredContent as { path: string; id: string; time: number }
 }
 
-async function privateMessage(from: Person, to: Person) {
-  // The buyer's app reads the seller's card for its reading key, and makes the record for both.
+/** A 16 by 16 PNG of one colour, chosen at random, so each run's photo is new bytes with a new hash. */
+function photo(): Uint8Array {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const out = Buffer.alloc(data.length + 12)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc32(body), data.length + 8)
+    return out
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(16, 0)
+  header.writeUInt32BE(16, 4)
+  header[8] = 8 // bits per sample
+  header[9] = 2 // RGB
+  const line = Buffer.concat([Buffer.of(0), Buffer.alloc(16 * 3, randomBytes(3))])
+  const pixels = deflateSync(Buffer.concat(Array.from({ length: 16 }, () => line)))
+  return Buffer.concat([Buffer.of(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a), chunk('IHDR', header), chunk('IDAT', pixels), chunk('IEND', Buffer.alloc(0))])
+}
+
+/**
+ * The inbox: the buyer's app reads the seller's card for its inbox and reading key, puts a message
+ * in an envelope for that key alone, signs it with the buyer's main key and delivers it to the
+ * seller's hosts. A second one is refused: one from each sender. The seller's app pulls its inbox
+ * with a pull its main key signs, and opens the one message with its reading key.
+ */
+async function inbox(from: Person, to: Person) {
   const seller = await readProfile([cfg.host!], to.profile.address, Date.now())
-  const read = (seller.current.get('profile')!.record.body as { read: string }).read
-  assert.equal(read, to.reading.recipient)
+  const card = seller.current.get('profile')!.record.body as { read: string; inbox: unknown }
+  assert.deepEqual(card.inbox, { senders: { issuer: cfg.issuerAddress }, once: true }, 'the seller’s card declares the inbox')
+  assert.equal(card.read, to.reading.recipient)
   const text = 'Tuesday at six works for me. A devnet test message, made by e2e.'
-  const body = await makePrivate({ text }, [read, from.reading.recipient])
-  const now = Date.now()
-  const [outcome] = await publish([cfg.host!], [ownerRecord(from.profile, 'message/lesson', body, now)])
-  assert.ok(outcome!.results[0]!.ok, JSON.stringify(outcome))
-  // The seller's app reads it back from the buyer's hosts and opens it with its reading key.
-  const view = await readProfile([cfg.host!], from.profile.address, Date.now())
-  const opened = await openPrivate(view.current.get('message/lesson')!.record.body!, to.reading.identity)
-  assert.deepEqual(opened, { text })
-  say('buyer: a private message to the seller, opened by the seller’s reading key')
-  return { path: `${from.profile.address}/message/lesson`, bytes: (body.private as string).length, text }
+  const first = await message(from.profile, to.profile.address, { text }, Date.now(), card.read)
+  // A row lookup the host could not make is the sender's to try again.
+  const [taken] = await waitFor('the seller’s host to take the message', 60_000, async () => {
+    const out = await deliver(seller.hosts, [first])
+    return out[0]?.results[0]?.error === 'lookup' ? null : out
+  })
+  assert.ok(taken!.results[0]?.ok, `the seller’s host took the message: ${JSON.stringify(taken)}`)
+  const second = await message(from.profile, to.profile.address, { text: 'And Thursday? A devnet test message, made by e2e.' }, Date.now(), card.read)
+  const [refused] = await deliver(seller.hosts, [second])
+  assert.equal(refused!.results[0]?.error, 'once', `a second message from the buyer is refused: ${JSON.stringify(refused)}`)
+
+  const page = await pull(cfg.host!, pullRequest(to.profile, 0, Date.now()))
+  assert.equal(page.messages.length, 1, 'one message in the seller’s inbox')
+  const opened = await openMessage(page.messages[0]!.message, to.reading.identity)
+  assert.deepEqual([opened.from, opened.body], [from.profile.address, { text }], 'from the buyer, opened by the seller’s reading key')
+  say('buyer: a message to the seller’s inbox, a second refused (one each); the seller pulled it and opened it')
+  return { to: to.profile.address, from: from.profile.address, rule: card.inbox, message: taken!.results[0]!.id, bytes: Buffer.byteLength(encodeMessage(first)), second: 'once', pulled: page.messages.length, text }
 }
 
 async function pay(buyer: Person, seller: Person, offer: { price: { amount: string } }, token: escrow.Token) {
@@ -358,8 +397,9 @@ async function pay(buyer: Person, seller: Person, offer: { price: { amount: stri
   return { escrow: keys.escrow.toBase58(), ...paid }
 }
 
-async function indexShows(seller: Person, buyer: Person, deal: string, offerUri: string, privateText: string) {
-  say('the index: waiting for both profiles, their rows, the offer, the deal and both reviews')
+async function indexShows(seller: Person, buyer: Person, deal: string, offerUri: string, picture: { sha256: string; mimeType: string }, messageText: string) {
+  say('the index: waiting for both profiles, their rows, the offer and its photo, the deal and both reviews')
+  const pictureUrl = `${cfg.host}/v1/blobs/${picture.sha256}`
   const profile = (p: Person) => json(`${cfg.index}/profiles/${p.profile.address}.json`)
   const shown = await waitFor('the index to show it all', 900_000, async () => {
     const [s, b] = await Promise.all([profile(seller), profile(buyer)])
@@ -370,18 +410,25 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
       // Full evidence: the buyer opened the escrow, and the seller reviewed the deal (`oneSidedConfirmed`).
       if (v.reviews.received.length < 1 || !v.reviews.received.every((r: any) => r.counted && r.evidence.kind === 'oneSidedConfirmed' && r.evidence.weight === 1)) return null
     }
-    if (!s.body.offers.some((o: any) => o.uri === offerUri)) return null
+    // The offer, with its photo shown from the host that holds it, as the type the offer names.
+    const offer = s.body.offers.find((o: any) => o.uri === offerUri)
+    if (offer?.media?.[0]?.url !== pictureUrl || offer.media[0].mimeType !== picture.mimeType) return null
     const d = await json(`${cfg.index}/deals/${deal}.json`)
     if (d.status !== 200 || d.body.receipt?.outcome !== 'releasedToSeller' || d.body.reviews.length !== 2) return null
     return { seller: s.body, buyer: b.body, deal: d.body }
   }, 15_000)
-  assert.equal(JSON.stringify(shown).includes(privateText), false, 'the private message is nowhere in the index')
+  assert.equal(JSON.stringify(shown).includes(messageText), false, 'the message is nowhere in the index')
+  const page = await (await fetch(`${cfg.index}/profiles/${seller.profile.address}`)).text()
+  assert.ok(page.includes(`<img src="${pictureUrl}"`), 'the seller’s page shows the photo from the host')
+  const bytes = await getBlob([cfg.host!], picture.sha256)
+  assert.equal(bytes?.type, picture.mimeType, 'the host serves the bytes the offer names')
   const summary = (v: any) => ({
     url: `${cfg.index}/profiles/${v.address}`,
     stamps: v.stamps.map((b: any) => ({ label: b.label, counted: b.counted, issuer: b.issuer.name, row: b.row })),
     rating: v.scores.rating?.value ?? null,
     standing: v.scores.standing?.value ?? null,
     offers: v.offers.map((o: any) => o.uri),
+    pictures: v.offers.flatMap((o: any) => o.media.map((m: any) => m.url)),
     reviewsReceived: v.reviews.received.map((r: any) => ({ uri: r.uri, dealId: r.dealId, counted: r.counted, evidence: r.evidence.kind, weight: r.evidence.weight })),
   })
   steps.index = {
@@ -408,20 +455,28 @@ async function main() {
   await publishCard(buyer)
   const sellerAssistant = await connect(seller)
   const buyerAssistant = await connect(buyer)
+  const bytes = photo()
+  const picture = { sha256: createHash('sha256').update(bytes).digest('hex'), mimeType: 'image/png', size: bytes.length }
   const offer = {
     direction: 'offer',
     description: 'One hour of maths tutoring, online. A devnet test offer, posted by an assistant through e2e.',
     price: { amount: '1', mint: DOLLAR_MINT.toBase58(), per: 'hour' },
     remote: true,
+    media: [picture],
   }
   const posted = await tool(sellerAssistant.client, 'post_offer', { id: 'maths', offer })
   const offerUri = `${seller.profile.address}/${posted.path}`
   const view = await readProfile([cfg.host!], seller.profile.address, Date.now())
   assert.equal(view.current.get('offer/maths')!.record.by, sellerAssistant.access, 'the offer is signed by the access key, not the main key')
   say(`seller: offer posted by the assistant, signed by its access key: ${offerUri}`)
-  steps.records = { sellerAccessKey: sellerAssistant.access, buyerAccessKey: buyerAssistant.access, offer: offerUri }
+  // The seller's app puts the photo on the profile's hosts, after the offer that names it.
+  const [put] = await putBlob(view.hosts, bytes, picture.mimeType)
+  assert.ok(put!.ok, `the host took the photo: ${JSON.stringify(put)}`)
+  assert.equal((await getBlob(view.hosts, picture.sha256))?.type, picture.mimeType, 'and serves it as the type the offer names')
+  say(`seller: the offer's photo on the host, ${picture.size} bytes, ${picture.sha256.slice(0, 12)}…`)
+  steps.records = { sellerAccessKey: sellerAssistant.access, buyerAccessKey: buyerAssistant.access, offer: offerUri, photo: picture }
 
-  steps.private = await privateMessage(buyer, seller)
+  steps.inbox = await inbox(buyer, seller)
   const deal = await pay(buyer, seller, offer, token)
   steps.deal = deal
 
@@ -433,7 +488,7 @@ async function main() {
   await sellerAssistant.client.close()
   await buyerAssistant.client.close()
 
-  await indexShows(seller, buyer, deal.escrow, offerUri, (steps.private as { text: string }).text)
+  await indexShows(seller, buyer, deal.escrow, offerUri, picture, (steps.inbox as { text: string }).text)
   say('the index shows it all')
 }
 

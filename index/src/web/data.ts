@@ -1,7 +1,9 @@
 // The page models. One function per page reads the database and returns one object: that object
 // is the page's JSON twin, and the HTML is rendered from it (pages.ts), so the two never say
 // different things. Field names such as `mint` are the records' own; they are for machines, and the
-// HTML shows none of them. A profile is named by its address.
+// HTML shows none of them. A profile is named by its address. A picture a record names is shown from
+// a host this index read the record from, when that host holds the bytes as the type the record
+// names (src/records/blobs.ts); the index never keeps the bytes.
 
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
@@ -28,9 +30,35 @@ export type Numbers = { rating: { value: number | null; reviews: number }; stand
 // Shared shapes
 // -----------------------------------------------------------------------------------------------
 
+/** A photo or a video, as a record names it: by the SHA-256 of its bytes, with its type. */
+type Named = { sha256: string; mimeType: string }
+/** A picture and where to see it: on a host that served the record and holds the bytes as that type; null when none does. */
+export type Picture = Named & { url: string | null }
+
+const mediaOf = (r: any): Named[] => (r.media ?? []) as Named[]
+const photoOf = (r: any): Named[] => (r.photo ? [r.photo as Named] : [])
+
+/** Where each picture these records name can be seen, as found by the readers (`blobs`). */
+async function pictures(ctx: Ctx, records: { id: string; named: Named[] }[]): Promise<(id: string, n: Named) => Picture> {
+  const named = records.filter((r) => r.named.length)
+  const held = new Map<string, string>()
+  if (named.length) {
+    const { rows } = await ctx.db.query(
+      `select h.id, b.sha256, b.type, b.host from blobs b join host_records h on h.host = b.host and h.id = any($1)
+       where b.sha256 = any($2) order by b.host`,
+      [named.map((r) => r.id), [...new Set(named.flatMap((r) => r.named.map((n) => n.sha256)))]],
+    )
+    for (const r of rows) {
+      const key = `${r.id} ${r.sha256} ${r.type}`
+      if (!held.has(key)) held.set(key, `${r.host}/v1/blobs/${r.sha256}`)
+    }
+  }
+  return (id, n) => ({ sha256: n.sha256, mimeType: n.mimeType, url: held.get(`${id} ${n.sha256} ${n.mimeType}`) ?? null })
+}
+
 export type Offer = ReturnType<typeof offerOut>
 
-function offerOut(ctx: Ctx, row: any) {
+function offerOut(ctx: Ctx, row: any, seen: (id: string, n: Named) => Picture) {
   const r = row.record
   // A post names no market or side: they are its author profile's.
   const market = ctx.directory.markets.has(row.profile_market) ? (row.profile_market as string) : null
@@ -56,6 +84,8 @@ function offerOut(ctx: Ctx, row: any) {
     remote: (row.remote ?? null) as boolean | null,
     /** As the post wrote it: degrees as decimal text, how far the real place may be, and the place. */
     location: (r.location ?? null) as { lat: string; lon: string; precisionKm: number; area: string } | null,
+    /** Its photos and videos. */
+    media: mediaOf(r).map((m) => seen(row.id, m)),
     expires: iso(row.expires),
     createdAt: iso(row.created_at),
     /** The seller's best uniqueness on a counted row in this offer's market, and their two numbers. Side by side, never one number. */
@@ -65,6 +95,11 @@ function offerOut(ctx: Ctx, row: any) {
     /** The Pay link (README.md, "The Pay link"): only on a live offer with a price. The profile's address is where it is paid. */
     payLink: live && r.price ? payLink(ctx.urls.base, { uri: row.uri, id: row.id, record: r }) : null,
   }
+}
+
+async function offersOut(ctx: Ctx, rows: any[]): Promise<Offer[]> {
+  const seen = await pictures(ctx, rows.map((r) => ({ id: r.id, named: mediaOf(r.record) })))
+  return rows.map((r) => offerOut(ctx, r, seen))
 }
 
 const OFFER_SELECT = `select p.*, pr.name, pr.market as profile_market, pr.role as profile_role,
@@ -108,7 +143,7 @@ async function offers(ctx: Ctx, where: string, params: unknown[], limit: number,
      limit ${limit} offset ${offset}`,
     all,
   )
-  return { total: rows.length ? Number(rows[0].total) : 0, offers: rows.map((r) => offerOut(ctx, r)) }
+  return { total: rows.length ? Number(rows[0].total) : 0, offers: await offersOut(ctx, rows) }
 }
 
 /**
@@ -157,7 +192,10 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
      where ${where} order by v.created_at desc nulls last, v.uri`,
     [...params, ctx.config.escrowProgramId],
   )
-  const markets = await profileMarkets(ctx, [...new Set(rows.map((r) => r.subject as string))])
+  const [markets, seen] = await Promise.all([
+    profileMarkets(ctx, [...new Set(rows.map((r) => r.subject as string))]),
+    pictures(ctx, rows.map((r) => ({ id: r.id, named: mediaOf(r.record) }))),
+  ])
   return rows.map((row) => {
     const r = row.record
     const market = markets.get(row.subject) ?? null
@@ -176,8 +214,8 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
       /** Every rating the review gives, by name, from 1 to 10. */
       ratings: Object.fromEntries(Object.entries((r.ratings ?? {}) as Record<string, string>).map(([k, v]) => [k, Number(v)])),
       text: row.text as string | null,
-      /** Each photo or video by the SHA-256 of its bytes. The index never fetches them. */
-      media: ((r.media ?? []) as { sha256: string; mimeType: string }[]).map((m) => ({ sha256: m.sha256, mimeType: m.mimeType })),
+      /** Its photos and videos. */
+      media: mediaOf(r).map((m) => seen(row.id, m)),
       /** The market's review fields this review fills in. */
       fields: Object.fromEntries(defined.filter((k) => r[k] !== undefined).map((k) => [k, r[k] as FieldValue])),
       dealId: row.deal_id as string | null,
@@ -327,7 +365,8 @@ export async function profile(ctx: Ctx, address: string) {
   ])
   const standing = scores.rows.find((s) => s.kind === 'standing')
   const rating = scores.rows.find((s) => s.kind === 'rating')
-  const allPosts = posts.rows.map((row) => offerOut(ctx, row))
+  const seen = await pictures(ctx, [{ id: p.id, named: photoOf(r) }, ...posts.rows.map((row) => ({ id: row.id, named: mediaOf(row.record) }))])
+  const allPosts = posts.rows.map((row) => offerOut(ctx, row, seen))
   const isLive = (o: Offer) => o.market !== null && (o.expires === null || new Date(o.expires) > new Date())
   const home = ctx.directory.markets.get(p.market)
   return {
@@ -343,10 +382,12 @@ export async function profile(ctx: Ctx, address: string) {
       /** The plain word for its side: the market's role name, the role itself, or null in a one-sided market. */
       side: home?.sides === 'two' && (p.role === 'seller' || p.role === 'buyer') ? ctx.directory.sideWord(p.market, p.role) : null,
       about: (r.about ?? null) as string | null,
-      /** Its reading key, for whoever makes a private record for it; null when it publishes none. */
+      /** Its reading key, for whoever makes a private record for it or sends it a message; null when it publishes none. */
       read: (r.read ?? null) as string | null,
-      /** By the SHA-256 of its bytes. The index never fetches it. */
-      photo: r.photo ? { sha256: r.photo.sha256 as string, mimeType: r.photo.mimeType as string } : null,
+      /** Who may deliver a message to it, as its card says; null when it takes none. Messages go to its hosts, never here. */
+      inbox: (r.inbox ?? null) as { senders: 'anyone' | { issuer: string }; once?: true; maxBytes?: number } | null,
+      /** Its photo, and where to see it. */
+      photo: photoOf(r).map((m) => seen(p.id, m))[0] ?? null,
       createdAt: iso(p.created_at),
       /** The id of the record that holds the profile card now. */
       id: p.id as string,
@@ -478,7 +519,7 @@ export async function pages(ctx: Ctx): Promise<string[]> {
 /** One offer, by its record address, for the pay page. */
 export async function offerByUri(ctx: Ctx, uri: string): Promise<Offer | null> {
   const { rows } = await ctx.db.query(`${OFFER_SELECT} where p.uri = $1`, [uri])
-  return rows.length ? offerOut(ctx, rows[0]) : null
+  return rows.length ? (await offersOut(ctx, rows))[0]! : null
 }
 
 export type HomeModel = Awaited<ReturnType<typeof home>>

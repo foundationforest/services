@@ -111,6 +111,8 @@ ul.cards>li{background:var(--card);border:1px solid var(--line);border-radius:8p
 .id{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.8rem;word-break:break-all;color:var(--muted)}
 dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;margin:8px 0}
 dt{color:var(--muted)}dd{margin:0}
+.pictures img,.pictures video,.photo img{display:block;max-width:100%;height:auto;border-radius:6px;margin:8px 0}
+.photo img{max-width:8rem}
 footer{margin-top:40px;padding-top:12px;padding-bottom:32px;border-top:1px solid var(--line);font-size:.875rem;color:var(--muted)}
 `
 

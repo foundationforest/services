@@ -47,9 +47,10 @@ there carry.
 Each offer carries `description`, `price` (`amount`, the currency as `mint`, and `per`: hour, day
 or job; null when it names none), `terms` (optional: an `arbiter`, and a `timer` of `days`
 to the `seller` or `buyer`; absent, neither), `availability`, `remote` and `location` (`lat`, `lon`,
-`precisionKm`, `area`; either may be missing), `expires`, the seller's `profile`, `name` and
-`profileUrl`, its `market` and `role` (its author profile's: an offer names neither), the seller's
-`uniqueness`, `rating` and `standing`, and a `payLink` (none when it names no price).
+`precisionKm`, `area`; either may be missing), `media` (its photos and videos, under Pictures
+below), `expires`, the seller's `profile`, `name` and `profileUrl`, its `market` and `role` (its
+author profile's: an offer names neither), the seller's `uniqueness`, `rating` and `standing`, and
+a `payLink` (none when it names no price).
 
 ## Read a profile
 
@@ -59,9 +60,10 @@ A profile is one key: its address is its permanent name, and also where it is pa
 hold several profiles; they are linked only if the person chose to link them. The answer carries:
 
 - `address`, and `profile`: `name`, the one `market` it lives in and its `role` there (with `side`,
-  the market's word for it), `about`, and `read`, its reading key, for whoever makes a private
-  record for it. A profile lives in one market, under one label (`market/role`); a person in two
-  markets holds two profiles.
+  the market's word for it), `about`, `photo` (under Pictures below), `read`, its reading key, for
+  whoever makes a private record for it or writes it a message, and `inbox`, who may write it one
+  (under Write to a profile below; null when it takes none). A profile lives in one market, under
+  one label (`market/role`); a person in two markets holds two profiles.
 - `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not.
 - `scores`: `uniqueness` (one per counted label), `rating` and `standing`, each signed.
 - `offers` and `requests`: its live offers, whether its main key or an access key it allowed
@@ -69,10 +71,30 @@ hold several profiles; they are linked only if the person chose to link them. Th
 - `reviews.received` and `reviews.given`: each with its `ratings` (by name, 1 to 10), its
   `evidence` (what payment backs it), the reviewer's weight, and what it added to standing. A
   review's market is the market of the profile it is about; `fields` are the ones that market's
-  file adds to a review. `media` lists its photos and videos by the SHA-256 of their bytes; this
-  index does not fetch them.
+  file adds to a review. `media` lists its photos and videos.
 
 Private records are not here: only their readers can open them.
+
+## Pictures
+
+A profile's `photo`, and each `media` of an offer or a review, is a photo or a short video:
+`sha256`, the SHA-256 of its bytes; `mimeType`, `image/png`, `image/jpeg` or `video/mp4`; and
+`url`, where a host that holds it serves it, or null when no host this index reads holds it. The
+bytes are on the hosts, never here. Check the SHA-256 of what you fetch yourself.
+
+## Write to a profile
+
+A profile whose `profile.inbox` is set takes messages: notes delivered to its own hosts, which only
+its main key pulls. `inbox.senders` is `anyone`, or `{ "issuer": <address> }`: the sender's key
+must hold a registry row from that issuer, under any label. `once` means one message from each
+sender, ever; `maxBytes` is the largest it takes, in bytes. No message passes through this index,
+and it never sees one.
+
+To send one, with forest's records ("Inbox"): read the profile's card and hosts record from its
+hosts (the ones this index reads are in
+https://github.com/foundationforest/services/blob/main/index/lists/hosts.json), put the message in
+an envelope for `profile.read` alone, sign it with your key, and deliver it to each host its hosts
+record names (`POST /v1/inbox`). A host refuses a message the inbox does not allow.
 
 ## Check a real person
 
