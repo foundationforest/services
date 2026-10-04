@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Prints the devnet fee payer's kora.toml: fee-payer/kora.toml with exactly these lines changed, and
-# nothing else. Each old line must appear exactly once, or it stops. The programs it allows are
-# already devnet's, in kora.toml itself.
+# Prints a devnet node's kora.toml: fee-payer/general/kora.toml or fee-payer/sponsored/kora.toml with
+# exactly these lines changed, and nothing else. Each old line must appear exactly once, or it stops.
+# The programs each allows are already devnet's, in the file itself.
 #
 #   the four paid tokens -> the classic test dollar and the one shaped like Open USD
 #   (USDC, USDT, Open USD,  (forest/escrow/devnet/devnet.json: testDollar, openUsdShaped): devnet's

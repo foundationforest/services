@@ -10,7 +10,8 @@
 //      later needs SOL);
 //   3. stamped by the issuer: a face check (the stand-in passes it), the stamp submitted, and listed;
 //   4. registered: a row for each, proven against the issuer's newest snapshot and carrying its
-//      signature, sent through the fee payer, paid in the test dollar;
+//      signature: the seller's through the fee payer's sponsored node with a voucher, free; the
+//      buyer's through its general node, paid in the test dollar;
 //   5. each app publishes the profile's hosts record and card, with its reading key; the seller's
 //      card declares an inbox: senders holding a row from the devnet issuer, one message each;
 //   6. an assistant connects to each through connections (OAuth): the app adds the access key it
@@ -39,7 +40,7 @@ import { Connection, Keypair, PublicKey, Transaction, type TransactionInstructio
 import { exportWords, importWords, listSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
 import { base58, deliver, encodeMessage, getBlob, hex, hostsRecord, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
 import { message, openMessage } from '../forest/records/src/private.ts'
-import { buildRegistration, fetchRow, issuerSigned, listRoot, marketStampOf, toBytes32 } from '../forest/registry/client/src/index.ts'
+import { buildRegistration, fetchRow, issuerSigned, listRoot, marketStampOf, proveStamp, toBytes32 } from '../forest/registry/client/src/index.ts'
 import * as escrow from '../forest/escrow/client/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -232,31 +233,60 @@ async function stamped(people: Person[]): Promise<ListFile> {
   return list
 }
 
-async function register(p: Person, list: ListFile, token: escrow.Token) {
+/**
+ * What a person's app does to have a row sponsored: a voucher, which is a second proof from the same
+ * stamp on the issuer's list under `sponsor/1`, naming the same main key; the row's transaction with
+ * the fee payer as payer, signed by the main key; both to the sponsored node. It costs the person
+ * nothing: no SOL, no dollar.
+ */
+async function throughSponsor(p: Person, register: TransactionInstruction, feePayer: PublicKey, stamps: bigint[], snapshot: ListFile['snapshots'][number], token: escrow.Token): Promise<Paid> {
+  assert.ok(URL.canParse(cfg.sponsor!), 'devnet.json names the sponsored node')
+  const v = await proveStamp({ secret: p.secret, label: 'sponsor/1', profile: p.profile.publicKey, stamps, artifacts: ARTIFACTS })
+  const voucher = { proof: v.raw, root: hex.encode(toBytes32(v.root)), issuerSignature: snapshot.signature, label: 'sponsor/1', marketStamp: hex.encode(toBytes32(v.marketStamp)) }
+  const blockhash = (await connection.getLatestBlockhash('confirmed')).blockhash
+  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions: [register] }).compileToV0Message())
+  tx.sign([p.signer])
+  const wire = tx.serialize()
+  const dollars = async () => (await connection.getTokenAccountBalance(escrow.associatedTokenAddress(p.signer.publicKey, token.mint, token.program))).value.amount
+  const before = await dollars()
+  const { status, body } = await post(`${cfg.sponsor}/sponsor`, { transaction: Buffer.from(wire).toString('base64'), voucher })
+  assert.equal(status, 200, `the sponsored node: ${JSON.stringify(body)}`)
+  await confirm(body.signature)
+  assert.equal(await connection.getBalance(p.signer.publicKey), 0, 'the person still holds no SOL')
+  assert.equal(await dollars(), before, 'and paid no dollar')
+  return { signature: body.signature, charge: '0', bytes: wire.length }
+}
+
+async function register(p: Person, list: ListFile, token: escrow.Token, path: 'voucher' | 'paid') {
   const newest = list.snapshots.at(-1)!
+  const stamps = list.stamps.slice(0, newest.size).map(BigInt)
+  // Both nodes sign with the general node's key.
   const payer = await kora<{ signer_address: string }>('getPayerSigner')
+  const feePayer = new PublicKey(payer.signer_address)
   const registration = await buildRegistration({
     secret: p.secret,
     label: p.label,
     profile: new PublicKey(p.profile.publicKey) as never,
     // As its 32 bytes: the client checks a key against its own copy of web3.js.
     issuer: base58.decode(list.issuer) as never,
-    stamps: list.stamps.slice(0, newest.size).map(BigInt),
+    stamps,
     issuerSignature: hex.decode(newest.signature),
     artifacts: ARTIFACTS,
-    payer: new PublicKey(payer.signer_address) as never,
+    payer: feePayer as never,
     recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
     programId: REGISTRY as never,
   })
-  const paid = await throughKora(p.signer, [registration.instruction as never], token)
+  const ix = registration.instruction as never as TransactionInstruction
+  const paid = path === 'voucher' ? await throughSponsor(p, ix, feePayer, stamps, newest, token) : await throughKora(p.signer, [ix], token)
   const row = await fetchRow(connection as never, marketStampOf(p.secret, p.label), { programId: REGISTRY as never })
   assert.ok(row, 'the row is there')
   assert.equal(row.label, p.label)
   assert.equal(row.profile.toBase58(), p.profile.address, 'it names the profile')
   assert.equal(row.issuer.toBase58(), list.issuer, 'and the issuer')
+  assert.equal(row.payer.toBase58(), payer.signer_address, 'and the fee payer as its payer')
   assert.ok(issuerSigned(row), "with the issuer's signature on its root")
-  say(`${p.role}: row ${p.label} through the fee payer, ${paid.signature}`)
-  return { label: p.label, row: registration.row.toBase58(), ...paid }
+  say(`${p.role}: row ${p.label} through the fee payer's ${path === 'voucher' ? 'sponsored node, with a voucher' : 'general node, paid'}, ${paid.signature}`)
+  return { label: p.label, path, row: registration.row.toBase58(), ...paid }
 }
 
 async function publishCard(p: Person) {
@@ -449,7 +479,7 @@ async function main() {
 
   const token = await setup(people)
   const list = await stamped(people)
-  steps.rows = { seller: await register(seller, list, token), buyer: await register(buyer, list, token) }
+  steps.rows = { seller: await register(seller, list, token, 'voucher'), buyer: await register(buyer, list, token, 'paid') }
 
   await publishCard(seller)
   await publishCard(buyer)

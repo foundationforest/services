@@ -14,7 +14,7 @@
 // escrow/client`) and Kora (`./build.sh`). If any is missing the test says which and skips.
 //
 // The programs run here at the ids in their source, as a local build has them. Kora runs on a copy
-// of kora.toml with exactly these lines changed: its two Forest programs from their devnet ids to
+// of general/kora.toml with exactly these lines changed: its two Forest programs from their devnet ids to
 // those, and prices from Kora's own mock ("Mock") instead of Jupiter. The rules are the file's own.
 // The test dollar is a six-decimal mint planted at USDC's address, one of the tokens kora.toml
 // accepts payment in. The mock values any mint but two at 0.001 SOL per whole token, so here one
@@ -299,8 +299,8 @@ before(
     // The fee payer's key: a file outside the repo, read by Kora through FOREST_FEE_PAYER_KEY.
     const keyFile = join(work, 'fee-payer.json')
     writeFileSync(keyFile, JSON.stringify(Array.from(feePayer.secretKey)), { mode: 0o600 })
-    // kora.toml with three lines changed, each checked to appear exactly once.
-    let config = readFileSync(join(here, '../kora.toml'), 'utf8')
+    // general/kora.toml with three lines changed, each checked to appear exactly once.
+    let config = readFileSync(join(here, '../general/kora.toml'), 'utf8')
     for (const [from, to] of [
       ['price_source = "Jupiter"', 'price_source = "Mock"'],
       [DEVNET.registry, REGISTRY_ID.toBase58()],
