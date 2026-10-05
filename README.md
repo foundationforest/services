@@ -169,9 +169,6 @@ These hold for every service here; each README adds its own.
   service is one replica on Railway.
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC,
   connections the hosts, the host its RPC. Each README says how.
-- **Vouchers are not sound yet.** At the pinned forest, a membership proof can be forged, so until
-  `FOREST` moves to forest's fixed circuit the fee payer's sponsored node can be made to pay for rows
-  with no real stamp behind them ([`fee-payer/`](fee-payer/README.md), Limits).
 
 ## FAQ
 
