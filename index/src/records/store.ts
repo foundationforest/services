@@ -7,6 +7,10 @@
 // body only `{private}`) is left alone: its readers open it, an index cannot. Every other path is not
 // this index's. A record's address is `<profile>/<path>`; its `id` is the id of the record that holds
 // the path now. The profile's address is its name and its Solana address.
+//
+// A profile's reputation proofs (forest/records/README.md, "Proofs") are checked here, once per
+// version of its card, and the ones that check are stored with it (`checkProofs`). Whether a page
+// shows one is decided when the page is made, from the roots (web/data.ts).
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -14,7 +18,8 @@ import { join } from 'node:path'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
-import { type View, isPrivate, liveContent } from '../../../forest/records/src/index.ts'
+import { verifyReputation } from '../../../forest/circuits/reputation/src/index.ts'
+import { type View, b64u, base58, isPrivate, liveContent } from '../../../forest/records/src/index.ts'
 
 import { INDEX_ROOT } from '../config.ts'
 import type { Db } from '../db.ts'
@@ -46,11 +51,46 @@ const ts = (v: unknown): string | null => (typeof v === 'string' ? v : null)
 
 export type Projected = { stored: number; refused: { path: string; why: string }[] }
 
+/** A reputation proof on a card that checked: the fields the card gives, but the proof's bytes. */
+export type StoredProof = { index: string; root: string; time: number; signature: string; score: number; label: string | null }
+
+/**
+ * The reputation proofs on a card that check: each from an index in `indexes`, for this profile's
+ * main key and the label it shows, under the root and time that index signed. circuits'
+ * `verifyReputation` checks it all, reading the proof's 256 bytes with `proofFromBytes`. A proof
+ * that fails, or names an index not listed, is left out; it is not an error. A proof of a circuit
+ * this index does not know is left alone.
+ */
+export async function checkProofs(profile: string, card: Record<string, any>, indexes: string[]): Promise<StoredProof[]> {
+  const out: StoredProof[] = []
+  for (const p of Array.isArray(card.proofs) ? card.proofs : []) {
+    if (p?.circuit !== 'reputation' || !indexes.includes(p.index)) continue
+    let ok = false
+    try {
+      ok = await verifyReputation({
+        proof: b64u.decode(p.proof),
+        root: BigInt(`0x${p.root}`),
+        score: BigInt(p.score),
+        profile: base58.decode(profile),
+        ...(p.label === undefined ? {} : { label: p.label }),
+        index: base58.decode(p.index),
+        time: p.time,
+        signature: b64u.decode(p.signature),
+      })
+    } catch {
+      // Bytes that do not decode are a proof that does not check.
+    }
+    if (ok) out.push({ index: p.index, root: p.root, time: p.time, signature: p.signature, score: p.score, label: p.label ?? null })
+  }
+  return out
+}
+
 /**
  * Replace everything the index holds for one profile with what its view says now. Only a profile
- * holding a counted row (`keep`) is stored; any other keeps nothing here.
+ * holding a counted row (`keep`) is stored; any other keeps nothing here. `indexes`: the indexes
+ * whose reputation proofs count here.
  */
-export async function project(db: Db, view: View, keep: boolean): Promise<Projected> {
+export async function project(db: Db, view: View, keep: boolean, indexes: string[]): Promise<Projected> {
   const profile = view.profile
   const content = keep ? liveContent(view) : new Map()
   const out: Projected = { stored: 0, refused: [] }
@@ -77,9 +117,9 @@ export async function project(db: Db, view: View, keep: boolean): Promise<Projec
       switch (kind) {
         case 'profile':
           await client.query(
-            `insert into profiles (address, id, record, name, market, role, created_at, indexed_at)
-             values ($1, $2, $3, $4, $5, $6, $7, now())`,
-            [profile, c.id, r, r.name, r.market, r.role, ts(r.createdAt)],
+            `insert into profiles (address, id, record, name, market, role, created_at, proofs, indexed_at)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
+            [profile, c.id, r, r.name, r.market, r.role, ts(r.createdAt), JSON.stringify(await checkProofs(profile, r, indexes))],
           )
           break
         case 'offer':

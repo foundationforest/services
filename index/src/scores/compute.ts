@@ -20,7 +20,13 @@ import { type Directory, splitLabel } from '../markets.ts'
 /** A profile, and the one label it lives in (`market/role`, from its record). */
 export type ProfileIn = { address: string; label: string | null }
 /** A counted row: a trusted issuer's, its signature on the root checked. */
-export type StampIn = { profile: string; label: string; issuer: string }
+export type StampIn = {
+  profile: string
+  label: string
+  issuer: string
+  /** Its market stamp, 64 hex, once read: only the reputation tree uses it (reputation.ts). */
+  marketStamp?: string | null
+}
 export type ReceiptIn = {
   escrow: string
   buyer: string

@@ -11,9 +11,11 @@
 //   - Pictures: Ben's review of Ana carries a photo, Dara's offer a video, Ana's card a photo. The
 //     three records are also on a second host, forest's reference host on loopback, which holds the
 //     bytes of the first two and never gets the third. The readers ask it, as they ask every host.
-//   - Rows go in as the chain reader stores them, signed by the test issuer over a fixed root; the
-//     receipt as the escrow reader stores it.
-//   - Scores come from the real recompute, signed with a fixed seed.
+//   - Rows go in as the chain reader stores them, signed by the test issuer over a fixed root, each
+//     with the market stamp its person's list secret gives under its label; the receipt as the
+//     escrow reader stores it.
+//   - Scores come from the real recompute, signed with a fixed seed, and so does the reputation tree.
+//     The index's own lists name it as the one index whose proofs count, two roots back.
 //
 // The keys are fixed (each profile's from a fixed seed and its label), so the addresses are too, and
 // the read skill (index/skill.md) uses them as its examples.
@@ -27,7 +29,7 @@ import { ed25519 } from '@noble/curves/ed25519.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import pg from 'pg'
 
-import { type MainKey, mainKey } from '../../forest/keys/src/index.ts'
+import { type MainKey, listSecret, mainKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
 import {
   type Body,
@@ -44,16 +46,20 @@ import {
   recordId,
   unsignedOf,
   accessRecord,
+  base58,
 } from '../../forest/records/src/index.ts'
 import { issuerSigned } from '../../forest/registry/client/src/issuer.ts'
+import { marketStampOf } from '../../forest/registry/client/src/stamp.ts'
 
 import { storeRow } from '../src/chain/registry.ts'
-import { type Config, loadConfig } from '../src/config.ts'
+import { type Config, hexSeed, loadConfig } from '../src/config.ts'
 import { type Db, createPool } from '../src/db.ts'
 import { startReaders } from '../src/main.ts'
 import { splitLabel } from '../src/markets.ts'
 import { checkBlobs } from '../src/records/blobs.ts'
 import { takeIn } from '../src/records/hosts.ts'
+import { hex64 } from '../src/scores/reputation.ts'
+import { indexKeys } from '../src/scores/sign.ts'
 import { serveMarkets } from './markets-repo.ts'
 
 export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
@@ -76,10 +82,12 @@ export const LISBON = { lat: '38.72', lon: '-9.14', precisionKm: 2, area: 'Arroi
 /** The host the story's hosts records name. Nothing is served there: the records go straight in. */
 export const HOST = 'https://host.example'
 
-type Person = { key: MainKey; address: string; name: string }
+/** `secret`: the person's secret for the test issuer's list, which their market stamps come from. */
+type Person = { key: MainKey; address: string; name: string; secret: Uint8Array }
 const person = async (fill: number, label: string, name: string): Promise<Person> => {
-  const key = await mainKey(new Uint8Array(32).fill(fill), label)
-  return { key, address: key.address, name }
+  const seed = new Uint8Array(32).fill(fill)
+  const key = await mainKey(seed, label)
+  return { key, address: key.address, name, secret: (await listSecret(seed, ISSUER.address)).secret }
 }
 export const ana = await person(21, SELLER, 'Ana Ribeiro')
 export const ben = await person(22, BUYER, 'Ben Okafor')
@@ -105,6 +113,11 @@ export const CLIP = picture(CLIP_BYTES, 'video/mp4')
 /** The photo Ana's card names: no host holds it, so no page shows it. */
 export const NO_PHOTO = picture(new TextEncoder().encode('A photo no host was given.'), 'image/png')
 export const SIGNING_SEED = '09'.repeat(32)
+/** The index's own signing key as an address, and its name in its own indexes list. */
+export const INDEX = base58.encode(indexKeys(hexSeed(SIGNING_SEED)).ed25519.publicKey)
+export const INDEX_NAME = 'Forest index (test key)'
+/** How many roots back a proof shown here may be: the newest and the one before. */
+export const ROOTS = 2
 
 const day = (d: number) => `2026-09-${String(d).padStart(2, '0')}T10:00:00.000Z`
 const at = (d: number) => Date.parse(day(d))
@@ -183,8 +196,8 @@ export const OFFERS = {
   exchange: offerAt(dara.address, 'offer/exchange'),
 }
 
-/** `host`: the second host, which holds two of the pictures. */
-export type Fixture = { db: Db; config: (env?: Record<string, string>) => Config; host: string; drop: () => Promise<void> }
+/** `host`: the second host, which holds two of the pictures. `rescore`: the recompute, after more records go in. */
+export type Fixture = { db: Db; config: (env?: Record<string, string>) => Config; host: string; rescore: () => Promise<void>; drop: () => Promise<void> }
 
 /** A fresh database with the story in it and its scores computed. `drop` removes it. */
 export async function makeFixture(adminUrl: string): Promise<Fixture> {
@@ -195,17 +208,20 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const url = new URL(adminUrl)
   url.pathname = `/${name}`
   const markets = await serveMarkets()
-  // The three lists, as files: no host (the records go straight in), the test markets, the test issuer.
+  // The four lists, as files: no host (the records go straight in), the test markets, the test
+  // issuer, and the index itself as the one whose proofs count.
   const lists = mkdtempSync(join(tmpdir(), 'forest-index-lists-'))
   writeFileSync(join(lists, 'hosts.json'), JSON.stringify({ hosts: [] }))
   writeFileSync(join(lists, 'markets.json'), JSON.stringify({ directory: markets.url, markets: [MARKET, EXCHANGE] }))
   writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER.address]: { name: ISSUER_NAME, weight: 1 } } }))
+  writeFileSync(join(lists, 'indexes.json'), JSON.stringify({ roots: ROOTS, indexes: { [INDEX]: { name: INDEX_NAME } } }))
   const env = {
     DATABASE_URL: url.toString(),
     INDEX_SIGNING_SEED: SIGNING_SEED,
     HOSTS_FILE: join(lists, 'hosts.json'),
     MARKETS_FILE: join(lists, 'markets.json'),
     ISSUERS_FILE: join(lists, 'issuers.json'),
+    INDEXES_FILE: join(lists, 'indexes.json'),
     ESCROW_PROGRAM_ID: ESCROW_PROGRAM,
   }
   const config = (more: Record<string, string> = {}) => loadConfig({ ...env, ...more })
@@ -228,6 +244,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
       payer: 'ExamplePayer'.padEnd(44, '1'),
       label,
       ...splitLabel(label),
+      marketStamp: hex64(marketStampOf(p.secret, label)),
     })
   }
   await row(1, ana, SELLER)
@@ -241,7 +258,8 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   // Eve's are kept but never stored.
   const refused: unknown[] = []
   const checked: Checked[] = RECORDS.map((record) => ({ record, id: recordId(unsignedOf(record)) }))
-  await takeIn(db, HOST, checked, [ISSUER.address], (err) => refused.push(err))
+  const trusted = { issuers: [ISSUER.address], indexes: [INDEX] }
+  await takeIn(db, HOST, checked, trusted, (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
 
   // The second host: the three records that name pictures, posted there too, then the bytes of two
@@ -255,7 +273,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
     const [put] = await putBlob([hostUrl], bytes, type)
     if (!put!.ok) throw new Error(`the second host refused the bytes: ${JSON.stringify(put)}`)
   }
-  await takeIn(db, hostUrl, pictured.map((record) => ({ record, id: recordId(unsignedOf(record)) })), [ISSUER.address], (err) => refused.push(err))
+  await takeIn(db, hostUrl, pictured.map((record) => ({ record, id: recordId(unsignedOf(record)) })), trusted, (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
   await checkBlobs(db, [hostUrl])
 
@@ -274,6 +292,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
     db,
     config,
     host: hostUrl,
+    rescore: () => readers.scorer.now(),
     drop: async () => {
       await host.close()
       // pg's pool resolves `end()` before its sockets have closed; dropping the database under a

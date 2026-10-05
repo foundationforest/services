@@ -1,7 +1,8 @@
 // The chain reader, from an RPC (a local validator in tests). Two programs.
 //
 // The registry: every poll, every row of each issuer this index trusts, from the program's own
-// accounts (registry.ts). A row never changes, so only new ones are stored.
+// accounts (registry.ts). A row never changes, so only new ones are stored. Each counted row's market
+// stamp, from the transaction that wrote it, until it is found (`readStamp`).
 //
 // The escrow: every transaction that named it since the last one read, oldest first. A transaction
 // that failed is skipped. One that succeeded is archived whole (its log lines), then read through
@@ -13,7 +14,7 @@ import type pg from 'pg'
 
 import { type Db, getCursor, setCursor } from '../db.ts'
 import { type EscrowFact, decodeEscrowFacts } from './escrow.ts'
-import { readRows, storeRow } from './registry.ts'
+import { COUNTED, readRows, readStamp, storeRow } from './registry.ts'
 
 export class ChainReader {
   private timer: NodeJS.Timeout | null = null
@@ -62,6 +63,7 @@ export class ChainReader {
             }
           }
           n += await this.readEscrow()
+          n += await this.readStamps()
         } finally {
           this.polling = null
         }
@@ -87,6 +89,27 @@ export class ChainReader {
   stop(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = null
+  }
+
+  /**
+   * The market stamp of each counted row that has none yet, from the transaction that wrote it. A row
+   * whose stamp the RPC does not serve yet is looked for again on the next poll; one that fails is
+   * reported, and the others go on.
+   */
+  private async readStamps(): Promise<number> {
+    const { rows } = await this.db.query(`select r.address from rows r where r.market_stamp is null and ${COUNTED}`, [this.issuers])
+    let n = 0
+    for (const { address } of rows) {
+      try {
+        const stamp = await readStamp(this.connection, this.registry, address, this.commitment as 'confirmed' | 'finalized')
+        if (!stamp) continue
+        await this.db.query('update rows set market_stamp = $2 where address = $1', [address, stamp])
+        n++
+      } catch (err) {
+        this.onError(new Error(`reading the market stamp of row ${address}: ${(err as Error).message}`, { cause: err }))
+      }
+    }
+    return n
   }
 
   private async readEscrow(): Promise<number> {

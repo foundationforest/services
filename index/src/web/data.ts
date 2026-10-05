@@ -5,10 +5,13 @@
 // a host this index read the record from, when that host holds the bytes as the type the record
 // names (src/records/blobs.ts); the index never keeps the bytes.
 
+import { base58, hex } from '../../../forest/records/src/index.ts'
+
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
 import { COUNTED } from '../chain/registry.ts'
-import type { Directory, MarketFile } from '../markets.ts'
+import { type Directory, type MarketFile, splitLabel } from '../markets.ts'
+import type { StoredProof } from '../records/store.ts'
 import { stampStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
 import { type Near, type Urls, LISTS, PAYLINK_DOC, SCORING_DOC, SOURCE } from './html.ts'
@@ -291,6 +294,7 @@ export async function home(ctx: Ctx) {
         llms: ctx.urls.file('llms.txt'),
         skill: ctx.urls.file('skill.md'),
         search: `${ctx.urls.base}/search.json?q={q}`,
+        reputation: ctx.urls.file('v1/reputation'),
       },
     },
     folders: [...ctx.directory.folders()].map(([folder, names]) => ({
@@ -350,18 +354,71 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
   }
 }
 
+/** This index's signing key as an address: the `index` a reputation proof made against its tree names. */
+async function ownIndex(ctx: Ctx): Promise<string | null> {
+  const { rows } = await ctx.db.query(`select value from index_meta where key = 'publicKeys'`)
+  return rows[0] ? base58.encode(hex.decode(rows[0].value.ed25519)) : null
+}
+
+/**
+ * The reputation proofs a profile shows: the ones that checked when its card was stored (store.ts),
+ * from an index in lists/indexes.json, against one of that index's newest `roots` roots. This index
+ * knows only its own roots, so a proof from any other index shows nothing.
+ */
+async function proofsShown(ctx: Ctx, stored: StoredProof[]) {
+  if (!stored.length) return []
+  const own = await ownIndex(ctx)
+  const { rows } = await ctx.db.query('select root from reputation_roots order by id desc limit $1', [ctx.config.roots])
+  const roots = new Set(rows.map((r) => r.root as string))
+  return stored
+    .filter((x) => x.index === own && ctx.config.indexes[x.index] && roots.has(x.root))
+    .map((x) => ({
+      circuit: 'reputation' as const,
+      /** Out of 10: the proof's score, which is ten times it. */
+      score: x.score / 10,
+      /** The label the proof shows, or null when it counts profiles it does not name. */
+      label: x.label,
+      market: x.label === null ? null : splitLabel(x.label).market,
+      index: { address: x.index, name: ctx.config.indexes[x.index]!.name },
+      root: x.root,
+      /** When the index signed the root. */
+      time: new Date(x.time).toISOString(),
+    }))
+}
+
+/** The newest reputation tree: its root, when the index signed it, the signature, and how many leaves. Null with no tree. */
+export async function reputation(ctx: Ctx) {
+  const { rows } = await ctx.db.query(
+    'select root, time, signature, leaves from reputation_roots where exists (select 1 from reputation_leaves) order by id desc limit 1',
+  )
+  if (!rows.length) return null
+  return { index: await ownIndex(ctx), root: rows[0].root as string, time: Number(rows[0].time), signature: rows[0].signature as string, leaves: rows[0].leaves as number }
+}
+
+/** The newest tree's every leaf, in its order, and the root they make. One statement, so the two always match. */
+export async function reputationLeaves(ctx: Ctx) {
+  const { rows } = await ctx.db.query(
+    `select (select root from reputation_roots order by id desc limit 1) as root,
+            coalesce(json_agg(json_build_object('stamp', stamp, 'scope', scope, 'score', score, 'count', count) order by position), '[]') as leaves
+     from reputation_leaves`,
+  )
+  const leaves = rows[0].leaves as { stamp: string; scope: string; score: number; count: number }[]
+  return leaves.length ? { root: rows[0].root as string, leaves } : null
+}
+
 export async function profile(ctx: Ctx, address: string) {
   const { rows } = await ctx.db.query('select * from profiles where address = $1', [address])
   if (!rows.length) return null
   const p = rows[0]
   const r = p.record
-  const [stamps, scores, posts, received, given] = await Promise.all([
+  const [stamps, scores, posts, received, given, proofs] = await Promise.all([
     // Each row of a trusted issuer whose signature checks. Any other row counts for nothing here.
     ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.issuer, r.address`, [Object.keys(ctx.config.issuers), address]),
     ctx.db.query('select * from scores where profile = $1 order by kind, label', [address]),
     ctx.db.query(`${OFFER_SELECT} where p.profile = $1 order by p.created_at desc nulls last, p.uri`, [address]),
     reviews(ctx, 'v.subject = $1', [address]),
     reviews(ctx, 'v.reviewer = $1', [address]),
+    proofsShown(ctx, p.proofs as StoredProof[]),
   ])
   const standing = scores.rows.find((s) => s.kind === 'standing')
   const rating = scores.rows.find((s) => s.kind === 'rating')
@@ -421,6 +478,8 @@ export async function profile(ctx: Ctx, address: string) {
       standing: standing ? scoreOut(standing) : null,
       rating: rating ? scoreOut(rating) : null,
     },
+    /** The reputation proofs its card carries that this index shows: a score from profiles of the same person, naming none of them. */
+    proofs,
     offers: allPosts.filter((o) => o.direction === 'offer' && isLive(o)),
     requests: allPosts.filter((o) => o.direction === 'request' && isLive(o)),
     reviews: { received, given },
