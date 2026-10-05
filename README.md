@@ -17,7 +17,7 @@ is shipped.
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, in two nodes: the general node pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold; the sponsored node pays for a person's registry rows, against a voucher: three per stamp on Soil's issuer's face list, ten per stamp on its ID list | Soil | Both running; the general node paid in two test dollars |
 | [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | Soil | Running |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-03 |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-05 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -144,8 +144,8 @@ deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
 Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/2kqhNQm3tn7YCiHyc99JiDyXEtEFXBEUxQDuWyWGGHP1)
-and [deal](https://index-production-1b6e.up.railway.app/deals/ChakmuTfUTsyzPZdTZ4wCHQdqYGFwVPgbSCSWWrFVGhC),
+[seller](https://index-production-1b6e.up.railway.app/profiles/9m6Vki3PmxGF5WN2kHxwdUKd1sMZNbLUzW6i7ynQT4dW)
+and [deal](https://index-production-1b6e.up.railway.app/deals/7dqTiBEwtaDBXEsGRS112jaYfz9KK64DVECK88RAz3DH),
 the issuer's [face list](https://issuer-production-4976.up.railway.app/list.json) and
 [ID list](https://issuer-production-4976.up.railway.app/id/list.json).
 

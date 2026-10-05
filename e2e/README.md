@@ -82,27 +82,28 @@ ID step needs the sponsored node with both of the issuer's lists in `VOUCHER_ISS
 
 ### The latest run
 
-2026-10-05, 00:46 to 00:50 UTC, against all five services as deployed from `main` at `5a373fc`
-(forest at `0b10160`), the fee payer's two nodes included: **passed** in 270 seconds, most of it
+2026-10-05, 02:09 to 02:13 UTC, against all five services as deployed from `main` at `edb9d68`
+(forest at `09b5b96`), the fee payer's two nodes included: **passed** in 230 seconds, most of it
 waiting for the issuer's two batches. Its record is
-[`runs/2026-10-05T00-46-26-664Z.json`](runs/2026-10-05T00-46-26-664Z.json). It is the first run
-through the sponsored node with vouchers, the inbox, a photo and the ID list. It came before step
-11, the reputation proof, which has not run on devnet yet.
+[`runs/2026-10-05T02-09-34-894Z.json`](runs/2026-10-05T02-09-34-894Z.json). It is the first run
+with step 11: the seller proved its rating on the device, and the index checked the proof and shows
+it.
 
 | Step | What happened |
 |---|---|
-| People | Seller `DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE`, buyer `EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP` |
-| The lists | Both stamped in one batch on the face list: 18 stamps, snapshot root `026b4f2a…`, signed by `7zPD6AZc…`. Then the seller on the ID list: 1 stamp, root `0028e55a…`, signed by `BVT1PcgV…` |
+| People | Seller `9m6Vki3PmxGF5WN2kHxwdUKd1sMZNbLUzW6i7ynQT4dW`, buyer `hYtSXUuWTP8XWDxwGioyaX4sMn11nF19pvcnm6Lxa4n` |
+| The lists | Both stamped in one batch on the face list: 20 stamps, snapshot root `3014e388…`, signed by `7zPD6AZc…`. Then the seller on the ID list: 2 stamps, root `1bae2ace…`, signed by `BVT1PcgV…` |
 | Rows, through the fee payer | `tutoring/seller` through the sponsored node with the voucher `sponsor/1`, 651 bytes, charged nothing; `tutoring/buyer` through the general node, 795 bytes, charged 1.77276 test dollars; the seller's second `tutoring/seller`, against the ID list, through the sponsored node with `sponsor/10`, 651 bytes, charged nothing. The seller held no SOL and paid no dollar for either |
-| Access keys | Seller's assistant `DMqrQtcX…`, buyer's `C8n6REP1…`, each on its profile's permissions list |
+| Access keys | Seller's assistant `FntAGQHD…`, buyer's `99xAEe7n…`, each on its profile's permissions list |
 | Records | The seller's offer `offer/maths`, signed by the access key, and its photo, 79 bytes, on the host; two reviews |
-| The inbox | The buyer's message, 2,563 bytes, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its reading key |
-| The deal | Escrow `4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW`, one tap, 715 bytes, charged 3.69808 test dollars |
+| The inbox | The buyer's message, 2,562 bytes, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its reading key |
+| The deal | Escrow `7dqTiBEwtaDBXEsGRS112jaYfz9KK64DVECK88RAz3DH`, one tap, 715 bytes, charged 3.69808 test dollars |
 | The index | The seller's rows counted under "Soil issuer (devnet)" and "Soil issuer, ID (devnet)", its page showing it ID-checked; the buyer's under "Soil issuer (devnet)"; the offer listed with its photo from the host; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); the message nowhere. Seller and buyer each rating 10 |
+| The proof | The seller's leaf found by its market stamp `1a914296…` among the index's 8 leaves, scored 100 tenths from one review; proven on the device against root `0e0344d1…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), 5 Oct 2026)" |
 
-Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE),
-[the buyer](https://index-production-1b6e.up.railway.app/profiles/EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP),
-[the deal](https://index-production-1b6e.up.railway.app/deals/4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW).
+Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/9m6Vki3PmxGF5WN2kHxwdUKd1sMZNbLUzW6i7ynQT4dW),
+[the buyer](https://index-production-1b6e.up.railway.app/profiles/hYtSXUuWTP8XWDxwGioyaX4sMn11nF19pvcnm6Lxa4n),
+[the deal](https://index-production-1b6e.up.railway.app/deals/7dqTiBEwtaDBXEsGRS112jaYfz9KK64DVECK88RAz3DH).
 
 ## Promises
 
