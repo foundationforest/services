@@ -1,0 +1,7 @@
+{
+  "about": "The indexes whose reputation proofs the foundation's index shows on a profile's page, by the address of each index's signing key, each with a name; and how many of an index's newest roots a proof may be made against (roots: 10 is the newest and the nine before it). A proof counts here only when its index is named here, its signature and its proof check for the profile that carries it, and its root is one of those. This is the index's opinion, not a rule: another index trusts other indexes. On devnet, the one is this index itself, its signing key as an address; it knows only its own roots.",
+  "roots": 10,
+  "indexes": {
+    "8117HhEbnw4z1KVE1sryQfoqTRVsruNpLRZvqWWJnJvC": { "name": "Forest index (devnet)" }
+  }
+}

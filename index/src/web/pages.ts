@@ -153,6 +153,7 @@ ${uncounted.map((b) => html`<p class="small warn">Registered for ${w.title(b.mar
 <h2>Rating</h2>
 <p><span class="score">${rating.value === null ? 'None yet' : `${w.outOf10(rating.value)} of 10`}</span> <span class="muted">${rating.value === null ? 'No review that counts gives an overall rating yet.' : `from ${w.plural(rating.reviews, 'review')}`}</span></p>
 <p class="small muted">The overall ratings in the reviews that count, averaged with the same weights as standing: by who wrote each and the payment behind it.</p>
+${m.proofs.map((x) => html`<p>${w.proven(x)}</p>`)}
 
 <h2>Standing</h2>
 <p><span class="score">${w.score(t?.value ?? 0)}</span> <span class="muted">${details.reviews.counted === 0 ? 'No reviews counted yet.' : `from ${w.plural(details.reviews.counted, 'review')}, ${details.reviews.withReceipt} backed by a payment`}</span></p>

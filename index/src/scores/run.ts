@@ -3,19 +3,21 @@
 // cache and a signature someone already holds stay good; only changed values are signed again.
 //
 // Everything is recomputed each time. That is fine at this size; an incremental recompute is
-// later work (README.md, "Limits").
+// later work (README.md, "Limits"). Then the reputation tree is rebuilt from the ratings, in the
+// same transaction (reputation.ts).
 
 import { COUNTED } from '../chain/registry.ts'
 import type { Config, IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import type { Directory } from '../markets.ts'
 import { type Inputs, type Scores, compute, toMicro } from './compute.ts'
+import { rebuild, reputationLeaves } from './reputation.ts'
 import { type IndexKeys, type Kind, sign } from './sign.ts'
 
 export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string): Promise<Inputs> {
   const [profiles, stamps, receipts, reviews] = await Promise.all([
     db.query('select address, market, role from profiles'),
-    db.query(`select r.profile, r.label, r.issuer from rows r where ${COUNTED}`, [Object.keys(issuers)]),
+    db.query(`select r.profile, r.label, r.issuer, r.market_stamp from rows r where ${COUNTED}`, [Object.keys(issuers)]),
     db.query(
       `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts where program_id = $1`,
       [escrow],
@@ -24,7 +26,7 @@ export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string):
   ])
   return {
     profiles: profiles.rows.map((r) => ({ address: r.address, label: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, issuer: r.issuer })),
+    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, issuer: r.issuer, marketStamp: r.market_stamp })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,
@@ -136,6 +138,7 @@ export async function recompute(
         [v.uri, v.counted, v.skipped ?? null, v.evidence.kind, v.evidence.note ?? null, v.evidence.weight, v.reviewerWeight, v.contribution],
       )
     }
+    await rebuild(client, reputationLeaves(inputs, scores.rating, settings.directory), settings.keys, Date.now())
     await client.query('commit')
   } catch (err) {
     await client.query('rollback')

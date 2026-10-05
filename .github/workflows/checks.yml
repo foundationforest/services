@@ -2,7 +2,8 @@
 # first fetches forest at the commit in FOREST (forest.sh) and installs the forest packages it uses.
 #
 #   issuer       its type-check (the stand-in Didit included) and its tests
-#   index        its type-check, and its unit and page tests on a Postgres service
+#   index        its type-check, and its unit, page and reputation tests on a Postgres service (real
+#                reputation proofs: circuits' proving files)
 #   fee-payer    its type-check, the devnet kora.toml its two Dockerfiles make from general/ and
 #                sponsored/, and the pre-check's type-check and tests (real proofs: the proving files)
 #   connections  its type-check, and its tests against forest's reference host
@@ -73,7 +74,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh keys records registry/client escrow/client
+          ./forest.sh keys records registry/client escrow/client circuits/reputation
+          (cd forest/circuits/reputation && npm run fetch)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
@@ -81,7 +83,7 @@ jobs:
       - name: Test (everything but the end-to-end test)
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts | tee "$RUNNER_TEMP/tap"
+          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   fee-payer:
@@ -166,7 +168,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./forest.sh keys records registry/client escrow/client
+          ./forest.sh keys records registry/client escrow/client circuits/reputation
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: e2e

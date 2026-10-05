@@ -16,7 +16,7 @@ is shipped.
 | [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | Soil | Running, with a stand-in that passes everyone on both checks; the ID check free |
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, in two nodes: the general node pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold; the sponsored node pays for a person's registry rows, against a voucher: three per stamp on Soil's issuer's face list, ten per stamp on its ID list | Soil | Both running; the general node paid in two test dollars |
 | [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | Soil | Running |
-| [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
+| [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
 | [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-03 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
@@ -56,7 +56,9 @@ signs the profile's records with the main key and posts them to the host its hos
 AI assistant posts offers and reviews through connections, signed by an access key the person lists
 in the profile's permissions record. A buyer pays into an escrow through the fee payer, and the
 money moves only as the escrow allows. The index reads the host, the rows of the issuers it trusts
-and the escrow's receipts, scores each profile, and serves every page as HTML and as JSON.
+and the escrow's receipts, scores each profile, and serves every page as HTML and as JSON. It also
+publishes its ratings as a tree: the seller's app proves its rating from it on the device, puts the
+proof on its card, and the index shows it.
 [`e2e/`](e2e/README.md) runs this loop on devnet.
 
 Each arrow is open: an app can use another issuer, fee payer, host or index, and each reader decides
@@ -89,8 +91,9 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./forest.sh keys records registry/client registry/artifacts escrow/client
+./forest.sh keys records registry/client registry/artifacts escrow/client circuits/reputation
 (cd forest/registry/artifacts && npm run fetch)
+(cd forest/circuits/reputation && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run check && npm test)
@@ -100,7 +103,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
   && bash fee-payer/deploy/devnet-config.sh fee-payer/sponsored/kora.toml > /dev/null
 (cd fee-payer/sponsor && npm ci && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
-  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts)
+  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts)
 ```
 
 A test that cannot find what it needs skips; the workflow fails on any skip. Not in CI: the index's

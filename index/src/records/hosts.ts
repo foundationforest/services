@@ -46,6 +46,8 @@ export class HostReader {
   readonly hosts: string[]
   /** The issuers this index trusts, by address. */
   private readonly issuers: string[]
+  /** The indexes whose reputation proofs count here, by address. */
+  private readonly indexes: string[]
   /** Profiles holding records dated ahead, which the view holds back, and when they come due. */
   private readonly due = new Map<string, number>()
   private readonly onChange: () => void
@@ -57,10 +59,19 @@ export class HostReader {
   private merging: Promise<void> = Promise.resolve()
   private stopped = false
 
-  constructor(args: { db: Db; hosts: string[]; issuers: string[]; onChange: () => void; onError: (err: unknown) => void; now?: () => number }) {
+  constructor(args: {
+    db: Db
+    hosts: string[]
+    issuers: string[]
+    indexes: string[]
+    onChange: () => void
+    onError: (err: unknown) => void
+    now?: () => number
+  }) {
     this.db = args.db
     this.hosts = args.hosts
     this.issuers = args.issuers
+    this.indexes = args.indexes
     this.onChange = args.onChange
     this.onError = args.onError
     this.now = args.now ?? Date.now
@@ -166,7 +177,7 @@ export class HostReader {
       const ahead = records.map((c) => c.record.time).filter((t) => t > now + MAX_FUTURE_MS)
       if (ahead.length) this.due.set(profile, Math.min(...ahead) - MAX_FUTURE_MS)
       else this.due.delete(profile)
-      const out = await project(this.db, view, counted.has(profile))
+      const out = await project(this.db, view, counted.has(profile), this.indexes)
       for (const r of out.refused) this.onError(new Error(`refused ${profile}/${r.path}: ${r.why}`))
     }
     this.onChange()
@@ -182,9 +193,15 @@ export class HostReader {
  * Records straight into the store as one host's, then viewed: what the reader does with a page,
  * for callers that already hold checked records (the page tests' fixture).
  */
-export async function takeIn(db: Db, host: string, records: Checked[], issuers: string[], onError: (err: unknown) => void = () => {}): Promise<number> {
+export async function takeIn(
+  db: Db,
+  host: string,
+  records: Checked[],
+  lists: { issuers: string[]; indexes: string[] },
+  onError: (err: unknown) => void = () => {},
+): Promise<number> {
   const n = await insert(db, host, records)
-  const reader = new HostReader({ db, hosts: [], issuers, onChange: () => {}, onError })
+  const reader = new HostReader({ db, hosts: [], ...lists, onChange: () => {}, onError })
   await reader.merge(records.map((c) => c.record.profile))
   return n
 }

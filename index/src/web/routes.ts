@@ -4,7 +4,8 @@
 // function unchanged.
 //
 // A page lives at its path and its JSON twin at the same path with `.json` (the home page's is
-// /index.json); the twin is the very object the page is rendered from.
+// /index.json); the twin is the very object the page is rendered from. The reputation tree is JSON
+// only, for apps: `/v1/reputation` and `/v1/reputation/leaves` (scores/reputation.ts).
 
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
@@ -87,6 +88,11 @@ export function createWeb(ctx: { db: Db; directory: Directory; config: Config })
     if (path === '/sitemap.xml') return respond(200, 'application/xml; charset=utf-8', sitemap(await data.pages(c)))
     if (path === '/llms.txt') return respond(200, 'text/markdown; charset=utf-8', files.llms)
     if (path === '/skill.md') return respond(200, 'text/markdown; charset=utf-8', files.skill)
+    if (path === '/v1/reputation' || path === '/v1/reputation/leaves') {
+      const m = path === '/v1/reputation' ? await data.reputation(c) : await data.reputationLeaves(c)
+      if (m) return respond(200, JSON_TYPE, jsonText(m))
+      return respond(404, JSON_TYPE, jsonText({ error: 'NotFound', message: 'No reputation tree yet: no profile in this index has a rating.' }))
+    }
 
     const asJson = path.endsWith('.json')
     if (asJson) path = path === '/index.json' ? '/' : path.slice(0, -'.json'.length)

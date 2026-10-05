@@ -66,6 +66,8 @@ hold several profiles; they are linked only if the person chose to link them. Th
   one label (`market/role`); a person in two markets holds two profiles.
 - `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not.
 - `scores`: `uniqueness` (one per counted label), `rating` and `standing`, each signed.
+- `proofs`: the reputation proofs its card carries that this index shows (under Check a reputation
+  proof below).
 - `offers` and `requests`: its live offers, whether its main key or an access key it allowed
   signed them.
 - `reviews.received` and `reviews.given`: each with its `ratings` (by name, 1 to 10), its
@@ -178,6 +180,35 @@ Every score is signed twice. Each score's `signed.statement` is the text signed 
 `signed.eddsaPoseidon` a second signature for later zero-knowledge proofs. The public keys and the
 statement format are in `https://forest.foundation/index.json` under `index.keys` and
 `index.statement`.
+
+## Check a reputation proof
+
+Nothing public links one person's profiles. A person may still show, on one profile, a rating
+proven from their own profiles in an index's reputation tree, naming none of them: a reputation
+proof (forest's circuits). Each of `proofs[]` gives `score`, out of 10; `label` and `market` when it
+shows one market, or null when it counts profiles it does not name; `index`, whose tree it was made
+from, with its `name`; and `root` and `time`, the root that index signed and when. The page says
+"Rated 9.5 of 10 in Online tutors (per …, 5 Oct 2026)", or "across their profiles".
+
+This index shows a proof only when it checks for this profile's own key, its index is in
+https://github.com/foundationforest/services/blob/main/index/lists/indexes.json, and its root is one
+of that index's newest roots (`roots` in that list). One that fails, or is too old, shows nothing:
+that is not an error. To check one yourself, take the proof from the profile's card on its hosts and
+run forest's `verifyReputation` with the profile's address.
+
+This index's own tree:
+
+    GET https://forest.foundation/v1/reputation
+
+gives `index` (its signing key, as an address), `root` (64 hex), `time` (ms), `signature` (ed25519
+over forest's signed bytes for the root and the time, base64url) and how many `leaves`.
+
+    GET https://forest.foundation/v1/reputation/leaves
+
+gives every leaf in the tree's order, with the `root` they make: `stamp` and `scope` (64 hex),
+`score` (the rating times ten) and `count` (the reviews it comes from). One leaf per market stamp of
+a counted row of a profile with a rating. An app finds its person's own leaves here and proves on
+the device; it never asks for one leaf, so this index never learns which are theirs.
 
 ## Paying
 

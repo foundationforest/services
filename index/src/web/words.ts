@@ -104,6 +104,14 @@ export function rating(r: { value: number | null; reviews: number }): string {
   return r.value === null ? 'No rating yet' : `Rated ${outOf10(r.value)} of 10 from ${plural(r.reviews, 'review')}`
 }
 
+/**
+ * A reputation proof a profile shows: `Rated 9.5 of 10 in Tutoring (per Forest index, 5 Oct 2026)`,
+ * or `across their profiles` when it names no market.
+ */
+export function proven(p: { score: number; market: string | null; index: { name: string }; time: string }): string {
+  return `Rated ${outOf10(p.score)} of 10 ${p.market === null ? 'across their profiles' : `in ${title(p.market)}`} (per ${p.index.name}, ${date(p.time)})`
+}
+
 /** A review's own ratings, overall first: `Overall 9.5 of 10 · Patience 10.0 of 10`. */
 export function ratings(rs: Record<string, number>): string {
   const names = Object.keys(rs).sort((a, b) => (a === 'overall' ? -1 : b === 'overall' ? 1 : a < b ? -1 : 1))

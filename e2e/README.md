@@ -49,17 +49,24 @@ it:
     issuer's lists, so its page shows it ID-checked, and the buyer's under the face list; the offer
     with its photo shown from the host, the deal released to the seller, and both reviews counted at
     full weight. Not the message.
+11. **The loop proves:** the seller's app finds its own leaf among the index's reputation leaves
+    (`/v1/reputation/leaves`), by the market stamp its face-list secret gives, scored 10 from one
+    review. It proves that rating in its market on the device, with forest's circuits (one profile,
+    its market shown), puts the proof on its card and publishes the card again. The index checks the
+    proof and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
 
 Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
 step passed.
 
 ### Run it
 
-Node 22.18 or later, with forest fetched at the commit in `FOREST` and the registry's proving files:
+Node 22.18 or later, with forest fetched at the commit in `FOREST`, and the registry's and the
+reputation circuit's proving files:
 
 ```sh
-./forest.sh keys records registry/client registry/artifacts escrow/client
+./forest.sh keys records registry/client registry/artifacts escrow/client circuits/reputation
 (cd forest/registry/artifacts && npm run fetch)
+(cd forest/circuits/reputation && npm run fetch)
 cd e2e && npm ci
 FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
@@ -70,8 +77,8 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 | `HELIUS_API_KEY` | no | Reads and sends through Helius's devnet RPC instead of `api.devnet.solana.com`; the key never goes into a run's record |
 
 Run it against the services as deployed from `main`: the index step waits for the deployed index
-to show the offer's photo and the seller's ID row. The ID step needs the sponsored node with both
-of the issuer's lists in `VOUCHER_ISSUERS`.
+to show the offer's photo and the seller's ID row, and the proof step for its reputation tree. The
+ID step needs the sponsored node with both of the issuer's lists in `VOUCHER_ISSUERS`.
 
 ### The latest run
 
@@ -79,7 +86,8 @@ of the issuer's lists in `VOUCHER_ISSUERS`.
 (forest at `0b10160`), the fee payer's two nodes included: **passed** in 270 seconds, most of it
 waiting for the issuer's two batches. Its record is
 [`runs/2026-10-05T00-46-26-664Z.json`](runs/2026-10-05T00-46-26-664Z.json). It is the first run
-through the sponsored node with vouchers, the inbox, a photo and the ID list.
+through the sponsored node with vouchers, the inbox, a photo and the ID list. It came before step
+11, the reputation proof, which has not run on devnet yet.
 
 | Step | What happened |
 |---|---|
@@ -101,7 +109,7 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/DS
 - **No key, phrase or keyed URL in this directory.** The devnet phrase comes from the environment,
   and a run's record holds addresses, signatures and charges only.
 - **It does what an app would,** with forest's own pieces: keys, records, the registry and escrow
-  clients. Nothing in it reaches around a service.
+  clients, and the reputation circuit's client. Nothing in it reaches around a service.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
   and the error.
 
@@ -119,8 +127,10 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/DS
 - **One inbox rule and one photo.** It tests an inbox open to one issuer's rows, one message from
   each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a profile's photo or a
   video.
-- **The index step waits up to 15 minutes** for the index's next read of the host and the chain;
-  a slower devnet fails the run.
+- **One proof:** the seller's own rating in its own market, from one profile. It does not prove
+  across several profiles or hide the market.
+- **Each wait on the index is up to 15 minutes:** the index step's, and the proof step's two (for
+  the seller's leaf, then for the proof to show). A slower devnet fails the run.
 
 ## FAQ
 

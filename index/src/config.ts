@@ -1,6 +1,7 @@
 // Everything the index is told from outside. Its inputs are three public lists, files in lists/:
 // the hosts it reads, the markets it uses and the issuers it trusts, so anyone can rebuild what it
-// shows from them, the hosts and the chain. Its opinions are two more files, in config/: the scoring
+// shows from them, the hosts and the chain. A fourth, lists/indexes.json, names the indexes whose
+// reputation proofs its pages show. Its opinions are two more files, in config/: the scoring
 // weights and the currencies its pages show. Environment variables say where things run. Everything
 // is read once at start; a change means a restart.
 
@@ -15,6 +16,8 @@ export const INDEX_ROOT = resolve(here, '..')
 
 /** The issuers this index trusts, by address, each with this index's weight for it, from 0 to 1. */
 export type IssuerConfig = Record<string, { name: string; weight: number }>
+/** The indexes whose reputation proofs this index shows, by the address of their signing key, each with a name. */
+export type IndexConfig = Record<string, { name: string }>
 /** The markets this index uses: their names, and the directory their files are read from. */
 export type MarketsList = { directory: string; markets: string[] }
 /** A token the pages show as money: its ISO 4217 code, its symbol, and its base units' decimals. */
@@ -40,6 +43,9 @@ export type Config = {
   hosts: string[]
   markets: MarketsList
   issuers: IssuerConfig
+  indexes: IndexConfig
+  /** How many of an index's newest roots a proof shown here may be made against: the newest and the ones before it. */
+  roots: number
   /** A Solana RPC. Unset: no chain reader. */
   rpcUrl: string | null
   registryProgramId: string
@@ -98,6 +104,19 @@ export function readIssuers(path: string): IssuerConfig {
   return issuers
 }
 
+/** The indexes list: every key an address, every index named; and how many roots back a proof may be. */
+export function readIndexes(path: string): { indexes: IndexConfig; roots: number } {
+  const file = readJson(path)
+  const roots = field<number>(path, file, 'roots')
+  if (!Number.isInteger(roots) || roots < 1) throw new Error(`${path}: roots is a whole number, 1 or more`)
+  const indexes = field<IndexConfig>(path, file, 'indexes')
+  for (const [address, k] of Object.entries(indexes)) {
+    if (!publicKeyFromAddress(address)) throw new Error(`${path}: ${address} is not an index's address`)
+    if (typeof k.name !== 'string' || k.name === '') throw new Error(`${path}: ${address} has no name`)
+  }
+  return { indexes, roots }
+}
+
 function readScoring(path: string): ScoringConfig {
   const { about: _about, ...rest } = readJson(path)
   return rest as ScoringConfig
@@ -130,6 +149,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     hosts: readHosts(env.HOSTS_FILE || join(INDEX_ROOT, 'lists/hosts.json')),
     markets: readMarkets(env.MARKETS_FILE || join(INDEX_ROOT, 'lists/markets.json')),
     issuers: readIssuers(env.ISSUERS_FILE || join(INDEX_ROOT, 'lists/issuers.json')),
+    ...readIndexes(env.INDEXES_FILE || join(INDEX_ROOT, 'lists/indexes.json')),
     rpcUrl: env.SOLANA_RPC_URL || null,
     registryProgramId: env.REGISTRY_PROGRAM_ID || DEVNET.registry,
     escrowProgramId: env.ESCROW_PROGRAM_ID || DEVNET.escrow,

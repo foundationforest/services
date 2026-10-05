@@ -1,5 +1,6 @@
 # The index (index/): its readers and its pages. The build context is the repo root, because the
-# index imports forest's records, registry client and escrow client by relative path; forest.sh
+# index imports forest's records, registry client, escrow client and reputation circuit's client
+# (its committed verification key; no proving file) by relative path; forest.sh
 # fetches them into forest/ at the commit in FOREST, and needs git. What it reads is its three lists
 # in index/lists/, and its opinions are index/config/: both are in the image.
 FROM node:22.22.2-bookworm-slim
@@ -7,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services
 COPY FOREST forest.sh ./
-RUN ./forest.sh records registry/client escrow/client
+RUN ./forest.sh records registry/client escrow/client circuits/reputation
 COPY index/ index/
 RUN cd index && npm ci --no-audit --no-fund
 # Supabase's pooler presents a certificate from Supabase's own root CA, which Node does not carry.

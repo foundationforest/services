@@ -1,7 +1,7 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
-//   ../forest.sh keys records registry/client registry/artifacts escrow/client
-//   (cd ../forest/registry/artifacts && npm run fetch)
+//   ../forest.sh keys records registry/client registry/artifacts escrow/client circuits/reputation
+//   (cd ../forest/registry/artifacts && npm run fetch) && (cd ../forest/circuits/reputation && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 //
 // Two new people, a seller and a buyer, each the way their app would do it:
@@ -26,7 +26,10 @@
 //   9. each assistant posts a review of the other, naming the escrow;
 //  10. the index shows it: both profiles, their counted rows and issuers (the seller ID-checked), the
 //      offer with its photo from the host, the deal and both reviews at full weight; and not the
-//      message.
+//      message;
+//  11. the loop proves: the seller's app finds its leaf among the index's reputation leaves, proves
+//      its own rating in its market on the device (forest's circuits), writes the proof into its card
+//      and publishes it again, and the index shows it.
 // Everything it did goes to runs/<time>.json.
 
 import assert from 'node:assert/strict'
@@ -42,15 +45,17 @@ import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedI
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 import { exportWords, importWords, listSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
-import { base58, deliver, encodeMessage, getBlob, hex, hostsRecord, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
+import { b64u, base58, deliver, encodeMessage, getBlob, hex, hostsRecord, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
 import { message, openMessage } from '../forest/records/src/private.ts'
 import { buildRegistration, fetchRow, issuerSigned, listRoot, marketStampOf, proveStamp, toBytes32 } from '../forest/registry/client/src/index.ts'
 import * as escrow from '../forest/escrow/client/src/index.ts'
+import { proofBytes, proveReputation } from '../forest/circuits/reputation/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cfg = JSON.parse(readFileSync(join(here, 'devnet.json'), 'utf8')) as Record<string, string>
 const RPC = process.env.HELIUS_API_KEY ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : cfg.rpc!
 const ARTIFACTS = { wasm: join(here, '../forest/registry/artifacts/semaphore-32.wasm'), zkey: join(here, '../forest/registry/artifacts/semaphore-32.zkey') }
+const REPUTATION = { wasm: join(here, '../forest/circuits/reputation/devnet/reputation.wasm'), zkey: join(here, '../forest/circuits/reputation/devnet/reputation.zkey') }
 const DOLLAR = 1_000_000n
 const REDIRECT = 'http://127.0.0.1:9/callback'
 
@@ -322,6 +327,7 @@ async function register(p: Person, list: ListFile, token: escrow.Token, path: 'v
   return { label: p.label, issuer: list.issuer, path, ...(path === 'voucher' ? { voucher: from.label } : {}), row: registration.row.toBase58(), ...paid }
 }
 
+/** The card, as the app publishes it. Returned, so the app can publish it again with a proof on it. */
 async function publishCard(p: Person) {
   const now = Date.now()
   const card = {
@@ -337,6 +343,7 @@ async function publishCard(p: Person) {
   const [outcome] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
   assert.ok(outcome!.results.every((r) => r.ok), `the host took the hosts record and the card: ${JSON.stringify(outcome)}`)
   say(`${p.role}: hosts record and card on the host, as ${p.profile.address}`)
+  return card
 }
 
 /**
@@ -506,6 +513,65 @@ async function indexShows(seller: Person, buyer: Person, deal: string, offerUri:
   }
 }
 
+/**
+ * The loop proves. The seller's app finds its leaf among the index's leaves by the market stamp its
+ * list secret gives (it never asks the index for one leaf), proves its own rating in its market on
+ * the device, puts the proof on its card and publishes the card again; the index checks the proof
+ * and shows it on the seller's page.
+ */
+async function proves(p: Person, card: Awaited<ReturnType<typeof publishCard>>) {
+  say('seller: waiting for its leaf in the index’s reputation tree, scored')
+  const stamp = hex.encode(toBytes32(marketStampOf(p.secret, p.label)))
+  const { tree, leaves } = await waitFor('the seller’s leaf, scored', 900_000, async () => {
+    const [t, l] = await Promise.all([json(`${cfg.index}/v1/reputation`), json(`${cfg.index}/v1/reputation/leaves`)])
+    // The root the index signs and the leaves it serves are read apart: the same root, or read again.
+    if (t.status !== 200 || l.status !== 200 || t.body.root !== l.body.root) return null
+    const mine = l.body.leaves.find((x: any) => x.stamp === stamp)
+    return mine?.score === 100 && mine.count === 1 ? { tree: t.body, leaves: l.body.leaves as { stamp: string; scope: string; score: number; count: number }[] } : null
+  }, 15_000)
+  const proof = await proveReputation({
+    secret: p.secret,
+    labels: [p.label],
+    leaves: leaves.map((l) => ({ stamp: BigInt(`0x${l.stamp}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) })),
+    profile: p.profile.publicKey,
+    show: true,
+    artifacts: REPUTATION,
+  })
+  assert.equal(hex.encode(toBytes32(proof.root)), tree.root, 'the proof is against the root the index signed')
+  const entry = {
+    circuit: 'reputation',
+    index: tree.index,
+    root: tree.root,
+    time: tree.time,
+    signature: tree.signature,
+    score: Number(proof.score),
+    label: p.label,
+    proof: b64u.encode(proofBytes(proof.proof)),
+  }
+  const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', { ...card, proofs: [entry] }, Date.now())])
+  assert.ok(outcome!.results.every((r) => r.ok), `the host took the card with the proof: ${JSON.stringify(outcome)}`)
+  say(`seller: its rating in ${cfg.market} proven on the device (${proof.score} tenths) against root ${tree.root.slice(0, 12)}…, ${leaves.length} leaves, and on its card`)
+
+  const market = cfg.market!.charAt(0).toUpperCase() + cfg.market!.slice(1).replace(/-/g, ' ')
+  const shown = await waitFor('the index to show the proof', 900_000, async () => {
+    const v = await json(`${cfg.index}/profiles/${p.profile.address}.json`)
+    const x = v.status === 200 ? v.body.proofs?.find((x: any) => x.root === tree.root) : null
+    return x?.score === 10 && x.label === p.label ? x : null
+  }, 15_000)
+  const page = await (await fetch(`${cfg.index}/profiles/${p.profile.address}`)).text()
+  const line = `Rated 10.0 of 10 in ${market} (per ${shown.index.name}, `
+  assert.ok(page.includes(line), `the seller’s page says ${line}…`)
+  steps.reputation = {
+    stamp,
+    root: tree.root,
+    time: tree.time,
+    leaves: leaves.length,
+    score: Number(proof.score),
+    label: p.label,
+    shown: { url: `${cfg.index}/profiles/${p.profile.address}`, index: shown.index, time: shown.time },
+  }
+}
+
 async function main() {
   const list0 = (await json(`${cfg.issuer}/list.json`)).body as ListFile
   const idList0 = (await json(`${cfg.issuer}/id/list.json`)).body as ListFile
@@ -523,7 +589,7 @@ async function main() {
   const idList = await idChecked(seller)
   steps.idRow = await register(seller, idList, token, 'voucher', { secret: seller.id.secret, label: 'sponsor/10' })
 
-  await publishCard(seller)
+  const sellerCard = await publishCard(seller)
   await publishCard(buyer)
   const sellerAssistant = await connect(seller)
   const buyerAssistant = await connect(buyer)
@@ -562,6 +628,9 @@ async function main() {
 
   await indexShows(seller, buyer, deal.escrow, offerUri, picture, (steps.inbox as { text: string }).text)
   say('the index shows it all')
+
+  await proves(seller, sellerCard)
+  say('the index shows the seller’s rating, proven')
 }
 
 try {
