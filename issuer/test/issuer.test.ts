@@ -324,28 +324,29 @@ test("a passed ID check puts the stamp on the ID list, signed by the key mixed f
   }
 })
 
-test('an ID check refuses a face seen in an earlier ID check, and takes one seen only in face checks', async () => {
+test('face first: an ID check needs a face seen in a face check, and refuses one seen in an earlier ID check', async () => {
   const h = await start()
   try {
     const earlierFace = `face-${crypto.randomUUID()}`
     const earlierId = `id-${crypto.randomUUID()}`
     const flagged = { risks: ['DUPLICATED_FACE'] }
-    const cases: [ReturnType<typeof passed>, number][] = [
-      // The same person moving up from the face list: Didit flags the face, the match says where from.
+    const cases: [ReturnType<typeof passed>, number, string?][] = [
+      // A person on the face list moving up: Didit flags the face, the match says it was a face check.
       [passedId({ ...flagged, matches: [earlierFace] }), 202],
-      // A face session from before the tags, its vendor_data a bare uuid.
-      [passedId({ risks: ['POSSIBLE_DUPLICATED_FACE'], matches: [crypto.randomUUID()] }), 202],
+      [passedId({ risks: ['POSSIBLE_DUPLICATED_FACE'], matches: [earlierFace, `face-${crypto.randomUUID()}`] }), 202],
+      // No face check before: get your face stamp first.
+      [passedId({ risks: [], matches: [] }), 403, 'face_stamp_first'],
+      [passedId({ ...flagged, matches: [] }), 403, 'face_stamp_first'],
+      // A face session from before the tags, its vendor_data a bare uuid, is no face check here.
+      [passedId({ ...flagged, matches: [crypto.randomUUID()] }), 403, 'face_stamp_first'],
       // A second try at the ID list, with any document: refused, even if Didit approved it.
-      [passedId({ ...flagged, matches: [earlierId] }), 403],
-      [passedId({ ...flagged, matches: [earlierFace, earlierId] }), 403],
-      [passedId({ matches: [earlierId] }), 403],
-      // Flagged, with no match to say which check saw it: refused.
-      [passedId({ ...flagged }), 403],
+      [passedId({ ...flagged, matches: [earlierId] }), 403, 'duplicate_face'],
+      [passedId({ ...flagged, matches: [earlierFace, earlierId] }), 403, 'duplicate_face'],
     ]
-    for (const [decision, status] of cases) {
+    for (const [decision, status, error] of cases) {
       const answer = await submitId(h, await h.idSession(decision), randomStamp())
       assert.equal(answer.status, status, JSON.stringify(decision))
-      if (status === 403) assert.deepEqual(answer.body, { error: 'duplicate_face' })
+      if (error) assert.deepEqual(answer.body, { error })
     }
 
     // The face check is unchanged: any duplicate refuses, whichever check saw the face.
@@ -360,6 +361,7 @@ test('every ID refusal, and a session counts only on the list its check fills', 
   const h = await start()
   try {
     const cases: [ReturnType<typeof passed>, string][] = [
+      [passedId({ matches: [] }), 'face_stamp_first'],
       [passedId({ documents: [] }), 'no_document'],
       [passedId({ documents: [{ status: 'Declined' }] }), 'document_not_passed'],
       [passedId({ documents: [{ status: 'Approved' }, { status: 'In Review' }] }), 'document_not_passed'],

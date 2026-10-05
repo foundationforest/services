@@ -196,16 +196,19 @@ test('the rule, in order', () => {
   assert.equal(judge({ ...ok, status: 'In Review' }, WORKFLOW), 'not_approved')
   assert.equal(judge(parseDecision({}), WORKFLOW), 'wrong_workflow', 'an empty answer counts for nothing')
 
-  // The ID check: the same, then every document step and every face match.
-  const id = { ...ok, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }] }
+  // The ID check: face first, then the same, then every document step and every face match.
+  const id = { ...ok, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }], matches: ['face-x'] }
   assert.equal(judge(id, WORKFLOW, 'id'), null)
-  assert.equal(judge(ok, WORKFLOW, 'id'), 'no_document', 'a face check is not an ID check')
+  assert.equal(judge({ ...id, matches: [] }, WORKFLOW, 'id'), 'face_stamp_first', 'no face check before it')
+  assert.equal(judge({ ...id, matches: ['x'] }, WORKFLOW, 'id'), 'face_stamp_first', 'a match with no tag is no face check')
+  assert.equal(judge({ ...id, matches: [], liveness: [] }, WORKFLOW, 'id'), 'face_stamp_first', 'face first before the steps')
+  assert.equal(judge({ ...ok, matches: ['face-x'] }, WORKFLOW, 'id'), 'no_document', 'a face check is not an ID check')
   assert.equal(judge({ ...id, liveness: [] }, WORKFLOW, 'id'), 'no_liveness', 'liveness before the document')
   assert.equal(judge({ ...id, documents: [{ status: 'Declined' }] }, WORKFLOW, 'id'), 'document_not_passed')
   assert.equal(judge({ ...id, faceMatches: [] }, WORKFLOW, 'id'), 'no_face_match')
   assert.equal(judge({ ...id, faceMatches: [{ status: 'In Review' }] }, WORKFLOW, 'id'), 'face_match_not_passed')
   assert.equal(judge({ ...id, status: 'In Review' }, WORKFLOW, 'id'), 'not_approved')
-  assert.equal(judge({ ...id, risks: ['DUPLICATED_FACE'], matches: ['face-x'] }, WORKFLOW, 'id'), null)
-  assert.equal(judge({ ...id, risks: ['POSSIBLE_DUPLICATED_FACE'] }, WORKFLOW, 'id'), 'duplicate_face', 'flagged, and no match says where')
+  assert.equal(judge({ ...id, risks: ['DUPLICATED_FACE'] }, WORKFLOW, 'id'), null, 'the face check it moves up from')
+  assert.equal(judge({ ...id, matches: ['face-x', 'id-y'] }, WORKFLOW, 'id'), 'duplicate_face')
   assert.equal(judge({ ...id, matches: ['id-x'], status: 'Declined' }, WORKFLOW, 'id'), 'duplicate_face', 'the real reason first')
 })

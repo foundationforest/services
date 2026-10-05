@@ -73,8 +73,7 @@ Run it against the services as deployed from `main`: the index step waits for th
 to show the offer's photo. The first run with the inbox and the photo also needs the registration
 step's own change, which comes in its own pull request; until both are deployed, the latest run
 below is the one before them. The ID step also needs the issuer and the index as deployed from the
-ID tier's change, and the sponsored node created with both of the issuer's lists in
-`VOUCHER_ISSUERS`.
+ID tier's change, and the sponsored node with both of the issuer's lists in `VOUCHER_ISSUERS`.
 
 ### The latest run
 

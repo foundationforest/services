@@ -13,8 +13,8 @@ is shipped.
 | Directory | What it is | Who runs it | On devnet |
 |---|---|---|---|
 | [`host/`](host/README.md) | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | Soil | Running |
-| [`issuer/`](issuer/README.md) | Checks once that a person is one real human, by face, or by face and a government ID, and puts their stamp on that check's list, which it publishes with signed snapshots | Soil | Running, with a stand-in that passes everyone on both checks; the ID check free |
-| [`fee-payer/`](fee-payer/README.md) | Kora, configured, in two nodes: the general node pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold; the sponsored node pays for a person's registry rows, against a voucher: three per stamp on Soil's issuer's face list, ten per stamp on its ID list | Soil | The general node running, paid in two test dollars; the sponsored node not yet created |
+| [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | Soil | Running, with a stand-in that passes everyone on both checks; the ID check free |
+| [`fee-payer/`](fee-payer/README.md) | Kora, configured, in two nodes: the general node pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold; the sponsored node pays for a person's registry rows, against a voucher: three per stamp on Soil's issuer's face list, ten per stamp on its ID list | Soil | Both running; the general node paid in two test dollars |
 | [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | Soil | Running |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
 | [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-03 |
@@ -33,7 +33,7 @@ records and rows.
 ## How it works
 
 ```
-             face, or face and ID (Didit), stamp
+             face, then face and ID (Didit), stamp
   person's app ─────────────────────────────▶ issuer ── two lists: stamps, signed snapshots ──▶ apps
        │
        │ transaction: a row, a payment (a row with a voucher: free)
@@ -48,9 +48,10 @@ records and rows.
 `tutoring/seller`, and a stamp for the issuer. The issuer checks their face once and puts the stamp
 on its list; the app proves against the list's newest snapshot and writes one row in the registry,
 through the fee payer, paid in a dollar, or free with a voucher: a second proof from the same stamp,
-three per stamp. A person may also pass the issuer's ID check, by face and a government ID: it puts
-a second stamp on a second list, signed by a second key so a reader can weigh it higher, and the app
-registers the same profile again against that list, with a voucher from it (ten per stamp). The app
+three per stamp. A person on the face list may then pass the issuer's ID check, by face and a
+government ID: it puts a second stamp on a second list, signed by a second key so a reader can weigh
+it higher, and the app registers the same profile again against that list, with a voucher from it
+(ten per stamp). The app
 signs the profile's records with the main key and posts them to the host its hosts record names; an
 AI assistant posts offers and reviews through connections, signed by an access key the person lists
 in the profile's permissions record. A buyer pays into an escrow through the fee payer, and the
@@ -109,16 +110,15 @@ phrase. Each directory's README says how to run them.
 
 ### On devnet
 
-Five services on Railway, project `forest-devnet`, environment `production`, each built from this
-repo's `main` and redeployed on every push to it; a sixth, `sponsor`, is not created yet. Each
-directory's README lists its settings.
+Six services on Railway, project `forest-devnet`, environment `production`, each built from this
+repo's `main` and redeployed on every push to it. Each directory's README lists its settings.
 
 | Service | Address | Railway id | Dockerfile | Volume |
 |---|---|---|---|---|
 | `index` | https://index-production-1b6e.up.railway.app | `37f23042-b2a0-4ff0-90c6-e0521fc811d2` | `index/deploy/Dockerfile` | none: Postgres on Supabase |
 | `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
 | `relayer` (the fee payer's general node) | https://relayer-production-8d40.up.railway.app | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | none |
-| `sponsor` (the fee payer's sponsored node) | not created yet | | `fee-payer/sponsor/deploy/Dockerfile` | `/data` |
+| `sponsor` (the fee payer's sponsored node) | https://sponsor-production-94d3.up.railway.app | `154e4cb8-c4f7-45dd-9c7b-98745c955805` | `fee-payer/sponsor/deploy/Dockerfile` | `/data` |
 | `connections` | https://connections-production-ebc4.up.railway.app | `5f024a9d-b760-4a5a-8613-0ae014b12661` | `connections/deploy/Dockerfile` | `/data` |
 | `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data` |
 
@@ -155,10 +155,8 @@ These hold for every service here; each README adds its own.
 - **No accounts.** There are keys, records and rows.
 - **No address logs in this code.** No service here keeps a network address. A hosting provider's
   own request logs are the operator's choice; on Railway they exist.
-- **Charges are costs.** The fee payer's general node charges what a transaction costs it, with no
-  margin. Its sponsored node charges nothing and pays only for registry rows, one per voucher. The
-  issuer's ID check costs the price its Policy sets, 0 on devnet. Nothing else here charges
-  anything.
+- **Everything here competes.** Anyone can run another of each; prices and margins are each
+  service's own policy, written in its README.
 - **Reputation is per profile.** Nothing here links one person's profiles, and nothing server-side
   holds a person next to a profile.
 - **Never on chain:** seeds, private keys, records, issuers' lists, the index.

@@ -27,9 +27,19 @@ export const passed = (over: Partial<Decision> = {}): Decision => ({
   ...over,
 })
 
-/** What an ID check that passed looks like: the document, the liveness step and the face match, each approved. */
+/**
+ * What an ID check that passed looks like: the document, the liveness step and the face match, each
+ * approved, and the face found in an earlier face check, as face first requires.
+ */
 export const passedId = (over: Partial<Decision> = {}): Decision =>
-  passed({ workflowId: ID_WORKFLOW, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }], ...over })
+  passed({
+    workflowId: ID_WORKFLOW,
+    documents: [{ status: 'Approved' }],
+    faceMatches: [{ status: 'Approved' }],
+    risks: ['DUPLICATED_FACE'],
+    matches: [`face-${randomUUID()}`],
+    ...over,
+  })
 
 /** The RPC, as far as the issuer sees it: the paying transactions each reference has, set by the test. */
 export class FakePayments implements Payments {

@@ -17,8 +17,8 @@
 //
 // Each session's `vendor_data` is its list's tag and a fresh random id: `face-<uuid>` or `id-<uuid>`.
 // It names nobody, and it tells a later ID check which list an earlier session with the same face was
-// for: a face seen in a face check is the same person moving up; a face seen in an ID check is a
-// second try at the ID list.
+// for. The ID check is an addition for a person already on the face list: it needs a face seen in a
+// face check, and refuses a face seen in an ID check, a second try at the ID list.
 
 import { randomUUID } from 'node:crypto'
 
@@ -56,6 +56,7 @@ export type Refusal =
   | 'unknown_session'
   | 'wrong_workflow'
   | 'duplicate_face'
+  | 'face_stamp_first'
   | 'no_liveness'
   | 'liveness_not_passed'
   | 'no_document'
@@ -77,29 +78,30 @@ function steps(list: { status: string }[], none: Refusal, failed: Refusal): Refu
 }
 
 /**
- * Whether the face was seen before, by each check's rule. The face check: any duplicate risk code,
- * whichever check saw it. The ID check: an earlier ID session in the matches, so one face gets one ID
- * stamp, whatever documents it brings; a face seen only in face checks is the same person moving up.
- * A duplicate risk code with no match listed refuses too: then nothing says which check saw it.
+ * Where the face was seen before, by each check's rule. The face check: any duplicate risk code,
+ * whichever check saw it, refuses. The ID check: an earlier ID session in the matches refuses, so one
+ * face gets one ID stamp, whatever documents it brings; and so does no earlier face session, since
+ * the ID check is for a person already checked by face: face first.
  */
-function seenBefore(decision: Decision, tier: Tier): boolean {
-  const flagged = decision.risks.some((risk) => DUPLICATE_RISKS.includes(risk))
-  if (tier === 'face') return flagged
-  return decision.matches.some((data) => data.startsWith('id-')) || (flagged && decision.matches.length === 0)
+function seenBefore(decision: Decision, tier: Tier): Refusal | null {
+  if (tier === 'face') return decision.risks.some((risk) => DUPLICATE_RISKS.includes(risk)) ? 'duplicate_face' : null
+  if (decision.matches.some((data) => data.startsWith('id-'))) return 'duplicate_face'
+  if (!decision.matches.some((data) => data.startsWith('face-'))) return 'face_stamp_first'
+  return null
 }
 
 /**
- * The issuer's rule: a session on the check's own workflow, not a face seen before (`seenBefore`),
- * every liveness step passed; for the ID check, every document step and every face match passed too;
- * and the session approved as a whole. Null means accepted. A duplicate is checked before the
- * statuses, because Didit declines a duplicate's liveness step too and the reason given should be the
- * real one.
+ * The issuer's rule: a session on the check's own workflow, the face's history as its check requires
+ * (`seenBefore`), every liveness step passed; for the ID check, every document step and every face
+ * match passed too; and the session approved as a whole. Null means accepted. The face's history is
+ * checked before the statuses, because Didit declines a duplicate's liveness step too and the reason
+ * given should be the real one.
  */
 export function judge(decision: Decision | null, workflowId: string, tier: Tier = 'face'): Refusal | null {
   if (!decision) return 'unknown_session'
   if (decision.workflowId !== workflowId) return 'wrong_workflow'
-  if (seenBefore(decision, tier)) return 'duplicate_face'
   const refusal =
+    seenBefore(decision, tier) ??
     steps(decision.liveness, 'no_liveness', 'liveness_not_passed') ??
     (tier === 'id'
       ? (steps(decision.documents, 'no_document', 'document_not_passed') ??

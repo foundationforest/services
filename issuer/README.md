@@ -1,7 +1,8 @@
 # issuer
 
-The issuer checks once that a person is one real human, by face, or by face and a government ID,
-and puts their stamp on a list anyone can read: one list for each check.
+The issuer checks once that a person is one real human, by face, and puts their stamp on a list
+anyone can read; for a person already on it, a second check, by face and a government ID, puts a
+stamp on a second list.
 
 Soil runs this one, on devnet, with a stand-in that passes everyone, on both checks. Anyone can run
 another, with this code or their own: an issuer is anyone who keeps a list of stamps, and each
@@ -21,6 +22,7 @@ Two checks, each with its own list and its own key, so a reader can weigh them a
 | | The face list | The ID list |
 |---|---|---|
 | The check, by Didit | Liveness, with a search for a face seen before | A government document, liveness with the same search, and a match between the selfie and the document's photo |
+| Who takes it | Anyone | A person already checked by face: face first |
 | Its workflow | `DIDIT_WORKFLOW_ID` | `DIDIT_ID_WORKFLOW_ID` |
 | Signed by | The issuer's key | The key mixed from the issuer's seed under `id` (forest's `mainKey`) |
 | Its routes | `/session`, `/submit`, `/status`, `/list.json` | `/id/session`, `/id/submit`, `/id/status`, `/id/list.json` |
@@ -50,8 +52,8 @@ Two checks, each with its own list and its own key, so a reader can weigh them a
 
 ### The ID list
 
-The same six steps under `/id/`, on the ID list's own tables, batches and key, with these
-differences:
+The ID tier is an addition for a person already on the face list. It takes the same six steps under
+`/id/`, on the ID list's own tables, batches and key, with these differences:
 
 1. **`POST /id/session`** opens a Didit session on the ID workflow: a government document (Didit
    declines a document it has seen before), then liveness with face search, then a face match
@@ -59,17 +61,16 @@ differences:
    ([Payment](#payment)).
 2. **The stamp** is made from the seed and the ID list's address, so it is unrelated to the same
    person's stamp on the face list.
-3. **The issuer accepts the session only if:** it is on the ID workflow; no earlier ID session has
-   this face; every liveness step, every document step and every face match passed; the session is
-   approved.
+3. **The issuer accepts the session only if:** it is on the ID workflow; Didit's face search found
+   this face in an earlier face check, and in no earlier ID check; every liveness step, every
+   document step and every face match passed; the session is approved.
 
 **Which check saw a face.** Didit's face search covers every workflow in its application, and for
 each earlier session with the same face it returns that session's `vendor_data`. The issuer sets
 each session's `vendor_data` to its list's tag and a fresh random id, `face-<uuid>` or `id-<uuid>`.
-An ID session whose matches include an `id-` session is refused: one face gets one ID stamp,
-whatever documents it brings. A match with face sessions only is the same person moving up from the
-face list, and passes. A duplicate risk code with no match listed is refused, since nothing then
-says which check saw the face.
+An ID session is refused `face_stamp_first` when no match is a `face-` session: the person takes
+the face check first. It is refused `duplicate_face` when any match is an `id-` session: one face
+gets one ID stamp, whatever documents it brings.
 
 ### Payment
 
@@ -113,7 +114,7 @@ Errors are `{"error": "<code>"}`:
 |---|---|
 | `400` | `bad_session_id`, `bad_stamp`, `bad_payment`, `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_sessionId_and_stamp`, `expected_exactly_stamp`, `expected_exactly_payment` |
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
-| `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `duplicate_face`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `not_approved` |
+| `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `duplicate_face`, `face_stamp_first`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `not_approved` |
 | `409` | `session_used`, `stamp_queued`, `already_listed`, `payment_used` |
 | `429` | `try_later`: this address opened its share of sessions this hour |
 | other | `404 not_found`, `405 post_only`, `405 get_only`, `413 too_large` (bodies over 1 KB), `502 face_check_unavailable`, `502 payment_check_unavailable`, `500 internal` |
@@ -192,7 +193,10 @@ and the lists are one SQLite file. **A volume** for `DATABASE_PATH`, or each dep
 The build context is the repo root. `deploy/Dockerfile` builds it (Node 22.22.2 and git,
 `forest.sh registry/client records keys`, `npm ci`) and runs `deploy/start.sh`: with no
 `DIDIT_API_KEY`, that first starts `deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that
-approves every session it opens, on both workflows, points the issuer at it, and says so.
+approves every session it opens, on both workflows, points the issuer at it, and says so. It sees no
+faces, so for face first it takes the newest face session it opened as the face each later ID
+session's search finds: an ID session opened before any face session, or since a restart, finds
+none and is refused.
 
 Soil's devnet issuer runs that image on Railway, project `forest-devnet`, service `issuer`, at
 https://issuer-production-4976.up.railway.app:
@@ -268,8 +272,8 @@ it started, and of the runs before its list moved off chain, kept under its new 
   used, the stamps and snapshots, and the transaction signature of each payment used. Didit keeps
   what it holds for as long as its retention setting says; that setting is in Didit, not in this
   code. The issuer never asks Didit to delete a session: the duplicate search needs the face and the
-  document. On devnet the stand-in keeps the ids of the sessions it opened, in memory, and nothing
-  else.
+  document. On devnet the stand-in keeps the ids of the sessions it opened and the newest face
+  session's `vendor_data`, in memory, and nothing else.
 - **Data law:** Forest is the responsible party for both checks, so three things sit outside this
   code: a processing agreement with Didit, the consent screen above, and Didit's retention setting.
   Paperwork and settings; nothing here does them.
@@ -297,12 +301,12 @@ it started, and of the runs before its list moved off chain, kept under its new 
 ## Limits
 
 - **On devnet, anyone passes.** The stand-in approves every session, on both checks, so anyone who
-  asks can put a stamp on either devnet list.
+  asks can put a stamp on the devnet face list, and then on its ID list.
 - **Payment is off until an entity exists.** The price is 0 on devnet, and nothing receives money
   until an entity can. The payment path runs in this code's tests only, against a stand-in RPC.
-- **Whoever takes the ID check first can never join the face list.** Face search covers both
-  checks, and the face workflow declines any face Didit has seen, in either check. An app offers
-  the face check first.
+- **Face first is checked by face, not by stamp.** The issuer keeps no link from a session to a
+  stamp, so it takes any earlier face check Didit's search finds, whether or not that check's stamp
+  reached the face list.
 - **It trusts Didit's decision,** for a session on the check's own workflow: status, each step's
   status, risk codes, and the `vendor_data` of each face-search match. It reads those and drops
   everything else Didit returns. It cannot see the workflows' setup: a liveness step with face search
@@ -339,7 +343,7 @@ it started, and of the runs before its list moved off chain, kept under its new 
 - **The standard (forest):** the list secret and the stamp, the recipe a key is mixed by, and the
   root and signature a row carries.
 - **This issuer, by its policy:** who goes on each list (one face check per person, by Didit; one ID
-  check per face, by Didit), the ID check's price and where it is paid, when it publishes, and its
+  check per face, after a face check, by Didit), the ID check's price and where it is paid, when it publishes, and its
   limits.
 - **Readers, by their own policy:** whether an index or a host trusts each list, and how much.
 - **The person, through their app:** whether to be checked, by which check and which issuers, and
@@ -361,9 +365,10 @@ A row names one issuer by its key, and nothing else about how its holder was che
 for both lists, a reader could not weigh an ID-checked row above a face-checked one. Mixed from the
 issuer's seed by forest's own recipe, the second key needs no secret of its own.
 
-**Why may someone on the face list take the ID check, but not someone who took it before?**
-Moving up is the point: one person, one stamp on each list. A face seen in an earlier ID check is a
-second ID stamp for the same person, whatever document it brings. The tag in `vendor_data` is how
+**Why does the ID check need a face check first, and refuse a face seen in an earlier ID check?**
+The ID tier is an addition for a person already on the face list: one person, one stamp on each
+list, the ID stamp on top of the face stamp. A face seen in an earlier ID check is a second ID stamp
+for the same person, whatever document it brings. The tag in `vendor_data` is how
 the issuer tells the two apart: Didit's face search spans both checks and names only the earlier
 sessions it matched.
 

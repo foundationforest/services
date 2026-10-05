@@ -3,10 +3,10 @@
 The fee payer pays Solana's costs for a person's transactions: at cost, paid back in the dollar the
 person holds, or, for the person's registry rows, free against a voucher.
 
-Soil runs this one on devnet: the general node, paid in two test dollars, and the sponsored node,
-once its Railway service is created (On devnet). Anyone can run another, from this configuration or
-their own: whoever signs a transaction as payer pays for it, and the programs care nothing for who
-that is. Nothing is on mainnet, and nothing is shipped.
+Soil runs this one on devnet: the general node, paid in two test dollars, and the sponsored node.
+Anyone can run another, from this configuration or their own: whoever signs a transaction as payer
+pays for it, and the programs care nothing for who that is. Nothing is on mainnet, and nothing is
+shipped.
 
 Up: [the repo](../README.md).
 
@@ -272,8 +272,8 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
 The sponsored node: `sponsor/deploy/Dockerfile` builds one container from Node's image, Kora's binary
 copied from the same pinned image (and checked against `KORA`), `sponsored/kora.toml` with the devnet
 lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on Railway, project
-`forest-devnet`, service `sponsor`, which is not created yet; its address goes in
-[`../e2e/devnet.json`](../e2e/devnet.json) once it is (`POST /sponsor`):
+`forest-devnet`, service `sponsor`, at https://sponsor-production-94d3.up.railway.app (`POST /sponsor`), the address
+[`../e2e/devnet.json`](../e2e/devnet.json) names:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=fee-payer/sponsor/deploy/Dockerfile`.
 - **One replica,** a public domain to port 8080, a volume at `/data` for the used set, no health
@@ -317,11 +317,10 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
 
 ## Promises
 
-- **The general node charges what a transaction costs it,** the network fee and every storage
-  deposit it puts down, in the token the person pays with, with no margin.
-- **The general node pays for no one:** a transaction that does not pay its cost is refused. **The
-  sponsored node pays only for registry rows:** one per voucher, three vouchers per stamp on Soil's
-  face list and ten per stamp on its ID list.
+- **Everything here competes.** Anyone can run another of each; prices and margins are each
+  service's own policy, written in its README.
+- **The sponsored node pays only for registry rows:** one per voucher, three vouchers per stamp on
+  Soil's face list and ten per stamp on its ID list.
 - **It holds no key of the person's.** The person signs on their own device; the fee payer adds only
   its own signature as payer.
 - **Its key can do one thing in a transaction:** fund a new account; in the general node one it is
