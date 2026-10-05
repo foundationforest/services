@@ -109,7 +109,7 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/DS
 - **No key, phrase or keyed URL in this directory.** The devnet phrase comes from the environment,
   and a run's record holds addresses, signatures and charges only.
 - **It does what an app would,** with forest's own pieces: keys, records, the registry and escrow
-  clients. Nothing in it reaches around a service.
+  clients, and the reputation circuit's client. Nothing in it reaches around a service.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
   and the error.
 
