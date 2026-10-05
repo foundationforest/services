@@ -1,0 +1,203 @@
+{
+  "started": "2026-10-05T00:46:26.664Z",
+  "services": {
+    "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer's general node is feePayer, its sponsored node sponsor), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's two lists the devnet index trusts (index/lists/issuers.json: issuerAddress signs the face list, idIssuerAddress the ID list), the classic test dollar and the market. Devnet only.",
+    "issuer": "https://issuer-production-4976.up.railway.app",
+    "feePayer": "https://relayer-production-8d40.up.railway.app",
+    "sponsor": "https://sponsor-production-94d3.up.railway.app",
+    "connections": "https://connections-production-ebc4.up.railway.app",
+    "host": "https://board-devnet-test-production.up.railway.app",
+    "index": "https://index-production-1b6e.up.railway.app",
+    "rpc": "https://api.devnet.solana.com",
+    "registry": "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC",
+    "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+    "issuerAddress": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+    "idIssuerAddress": "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4",
+    "testDollar": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+    "market": "tutoring"
+  },
+  "steps": {
+    "setup": {
+      "accounts": "26jWzXhumtjmqoD77G51YdivRdhQr9jUxcSKd7vPCsFTpytGaRHUDFN56ZoE5fwNBvu7H72m9G38XzHNMBn5hhnP",
+      "minted": "67RsoQC7ogjk8Y2meuFdiu6bBdHXXyXnMt4bq7ESXf63FwGhQ9aTZiX8neALgagoraYwibX8qTbFNQ7R3QRVKzyC",
+      "seller": "5.00",
+      "buyer": "10.00"
+    },
+    "list": {
+      "issuer": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+      "stamps": 18,
+      "snapshot": {
+        "root": "026b4f2ad3316bc4bfbe7bfee00d3c3c414b04b0e7804272a58b81db74746833",
+        "signature": "0f403894b477b5b6e8d72d72c7d51bf9c0f960f1f3d4ac179a08ef0412ce2c0df1b4f226a9ed9ee981d67fb061a775608b0958ba916209fa117e500781acb407",
+        "size": 18,
+        "time": 1791161304879
+      }
+    },
+    "rows": {
+      "seller": {
+        "label": "tutoring/seller",
+        "issuer": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+        "path": "voucher",
+        "voucher": "sponsor/1",
+        "row": "AUKJFZi66Q8WxpqK1QTUHeYJ1VKNXe8rwb3ZZvnR7vov",
+        "signature": "33Yo7PDPTtQhU2eoqEPiXJYRdxTCqjPNh87wT64faqEmFMsmdVyzMfD14LHbYBWqzTussXFuxhxcpYA9WZE7cFae",
+        "charge": "0",
+        "bytes": 651
+      },
+      "buyer": {
+        "label": "tutoring/buyer",
+        "issuer": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
+        "path": "paid",
+        "row": "2pJaUKD6rUPa33VSHrB4VUdQvd38WzxSHEfK86AfUwv2",
+        "signature": "8BEa4YbAUUefD9BKk6uS3jxx8AePjNFmtythSY4ZCe5F1zxLgc7rbd2frmPeo7bELSJvUtWVn59f1zNeqvupwnB",
+        "charge": "1772760",
+        "bytes": 795
+      }
+    },
+    "idList": {
+      "issuer": "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4",
+      "stamps": 1,
+      "snapshot": {
+        "root": "0028e55ac2964c728cdc676ecdce8df019610a4a6e015b534a45afb5dd72a595",
+        "signature": "5e4df0f28e63efb2e621fd865ef5ff46fc4eb496f6766ccdf79b4d18be036bfe9c6211bd26dfb6e413f381818c87be677268e537fd341c9f67e4a441485c5604",
+        "size": 1,
+        "time": 1791161424898
+      }
+    },
+    "idRow": {
+      "label": "tutoring/seller",
+      "issuer": "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4",
+      "path": "voucher",
+      "voucher": "sponsor/10",
+      "row": "2hvEyAhn2FQvAU9pnmXTNjDgXJ5wqd9KeNCT5PTKNGSu",
+      "signature": "5jUHUqBuMVu83NRgvXoLt8B9QFRGKjwHvU6khpmoKwz4mftS3AWjW7TLEpgkjvZ7FigiwAwc6fJCWWHkwWWU4t6y",
+      "charge": "0",
+      "bytes": 651
+    },
+    "records": {
+      "sellerAccessKey": "DMqrQtcXNsFSsdceEBeC1EhRGBwHTit39vdVKwSkSTKd",
+      "buyerAccessKey": "C8n6REP15PGXR5r59VkmQFB49Djw1xtPkgZ2YwjXSXri",
+      "offer": "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE/offer/maths",
+      "photo": {
+        "sha256": "694099876a6c334651cbcf6f9b0cd8aaf67b1f914848072251527a2282194d7b",
+        "mimeType": "image/png",
+        "size": 79
+      }
+    },
+    "inbox": {
+      "to": "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE",
+      "from": "EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP",
+      "rule": {
+        "once": true,
+        "senders": {
+          "issuer": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7"
+        }
+      },
+      "message": "1c8fb7f92c06411bdbc0a64d98aad07f82a059cd952d50f40f277231be98aab5",
+      "bytes": 2563,
+      "second": "once",
+      "pulled": 1,
+      "text": "Tuesday at six works for me. A devnet test message, made by e2e."
+    },
+    "deal": {
+      "escrow": "4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW",
+      "signature": "66h7XF6p9aMRPisCqjhfMi2kpf34W2L7fFA1WjQM7gkYeXJnj2Qiobda1ASvMX517EpDdET52seyw9wyrbAaSTk3",
+      "charge": "3698080",
+      "bytes": 715
+    },
+    "reviews": [
+      "EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP/review/maths",
+      "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE/review/maths"
+    ],
+    "index": {
+      "seller": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE",
+        "stamps": [
+          {
+            "label": "tutoring/seller",
+            "counted": true,
+            "issuer": "Soil issuer (devnet)",
+            "row": "AUKJFZi66Q8WxpqK1QTUHeYJ1VKNXe8rwb3ZZvnR7vov"
+          },
+          {
+            "label": "tutoring/seller",
+            "counted": true,
+            "issuer": "Soil issuer, ID (devnet)",
+            "row": "2hvEyAhn2FQvAU9pnmXTNjDgXJ5wqd9KeNCT5PTKNGSu"
+          }
+        ],
+        "uniqueness": [
+          {
+            "label": "tutoring/seller",
+            "value": 0.97
+          }
+        ],
+        "rating": 10,
+        "standing": 1.117971,
+        "offers": [
+          "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE/offer/maths"
+        ],
+        "pictures": [
+          "https://board-devnet-test-production.up.railway.app/v1/blobs/694099876a6c334651cbcf6f9b0cd8aaf67b1f914848072251527a2282194d7b"
+        ],
+        "reviewsReceived": [
+          {
+            "uri": "EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP/review/maths",
+            "dealId": "4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "buyer": {
+        "url": "https://index-production-1b6e.up.railway.app/profiles/EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP",
+        "stamps": [
+          {
+            "label": "tutoring/buyer",
+            "counted": true,
+            "issuer": "Soil issuer (devnet)",
+            "row": "2pJaUKD6rUPa33VSHrB4VUdQvd38WzxSHEfK86AfUwv2"
+          }
+        ],
+        "uniqueness": [
+          {
+            "label": "tutoring/buyer",
+            "value": 0.7
+          }
+        ],
+        "rating": 10,
+        "standing": 1.482015,
+        "offers": [],
+        "pictures": [],
+        "reviewsReceived": [
+          {
+            "uri": "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE/review/maths",
+            "dealId": "4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "deal": {
+        "url": "https://index-production-1b6e.up.railway.app/deals/4UL8QZESE8igcDduMoPsuwtZkcEuXUVm8rgHbhPpCaHW",
+        "outcome": "releasedToSeller",
+        "amount": "1000000",
+        "reviews": 2
+      }
+    }
+  },
+  "people": {
+    "seller": {
+      "profile": "DSSQN34ntLWr1iNzdAvUzKQXcRwRSaGC9wHdWsxLPGvE",
+      "label": "tutoring/seller"
+    },
+    "buyer": {
+      "profile": "EbF3dkGsopvxKoYLz6XRndeFgnKi6LxCxWq5bDvqgnEP",
+      "label": "tutoring/buyer"
+    }
+  },
+  "passed": true,
+  "ended": "2026-10-05T00:50:56.243Z"
+}
