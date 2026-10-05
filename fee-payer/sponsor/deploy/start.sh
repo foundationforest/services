@@ -9,7 +9,7 @@
 #
 #   FOREST_FEE_PAYER_KEY  the fee payer's key, as for the general node (fee-payer/run.sh)
 #   RPC_URL               the Solana RPC Kora simulates and sends through
-#   VOUCHER_ISSUER, REGISTRY_PROGRAM, DATABASE_PATH, PORT   the pre-check's (fee-payer/README.md)
+#   VOUCHER_ISSUERS, REGISTRY_PROGRAM, DATABASE_PATH, PORT   the pre-check's (fee-payer/README.md)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

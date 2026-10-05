@@ -1,4 +1,5 @@
-// A stand-in for Didit, a fresh issuer key, and the check that the file keeps no link.
+// A stand-in for Didit and for the RPC payments are found through, a fresh issuer key, and the check
+// that the file keeps no link.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
@@ -6,19 +7,56 @@ import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
+import { base58 } from '../../forest/records/src/bytes.ts'
 import type { Decision, FaceCheck } from '../src/didit.ts'
+import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
 export const WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
+export const ID_WORKFLOW = '0b6e2f1a-3c4d-4e5f-8a9b-1c2d3e4f5a6b'
 
-/** What a face check that passed looks like: one liveness step, approved, no risk codes. */
+/** What a face check that passed looks like: one liveness step, approved, no risk codes, no match. */
 export const passed = (over: Partial<Decision> = {}): Decision => ({
   workflowId: WORKFLOW,
   status: 'Approved',
   liveness: [{ status: 'Approved' }],
   risks: [],
+  documents: [],
+  faceMatches: [],
+  matches: [],
   ...over,
 })
+
+/**
+ * What an ID check that passed looks like: the document, the liveness step and the face match, each
+ * approved, and the face found in an earlier face check, as face first requires.
+ */
+export const passedId = (over: Partial<Decision> = {}): Decision =>
+  passed({
+    workflowId: ID_WORKFLOW,
+    documents: [{ status: 'Approved' }],
+    faceMatches: [{ status: 'Approved' }],
+    risks: ['DUPLICATED_FACE'],
+    matches: [`face-${randomUUID()}`],
+    ...over,
+  })
+
+/** The RPC, as far as the issuer sees it: the paying transactions each reference has, set by the test. */
+export class FakePayments implements Payments {
+  readonly paid = new Map<string, string[]>()
+  down = false
+  /** How many times it was asked. */
+  asked = 0
+
+  async landed(reference: string) {
+    this.asked++
+    if (this.down) throw new Error('down')
+    return this.paid.get(reference) ?? []
+  }
+}
+
+/** A transaction signature's shape: 64 random bytes in base58. */
+export const randomSignature = () => base58.encode(randomBytes(64))
 
 /** A stamp-shaped number: 31 random bytes, so always below the field order. */
 export const randomStamp = () => BigInt('0x' + randomBytes(31).toString('hex')) + 1n
@@ -89,52 +127,69 @@ export function assertFileHolds(path: string, stamps: bigint[]): void {
   for (const s of stamps) assert.ok(file.includes(Buffer.from(toBytes32(s))), 'a queued stamp is in the file')
 }
 
+/** What one list should hold after its batch: the sessions used, the stamps listed, the payments used. */
+export type Expected = { sessionIds: string[]; stamps: bigint[]; payments?: string[] }
+
+const TABLES = [
+  'CREATE TABLE id_list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
+  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE id_queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE id_snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
+  'CREATE TABLE id_used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
+  'CREATE TABLE queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
+  'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
+]
+
 /**
- * After a batch: the file holds each listed stamp exactly once, as its list row in list order, and
- * in no other form; no session id in the clear; and only the four tables, the queue empty and the
- * used sessions exactly the hashes of these sessions. No journal is left beside it.
+ * After a batch, for each list: the file holds each listed stamp exactly once, as its list row in
+ * list order, and in no other form; no session id in the clear; the queue empty and the used sessions
+ * exactly the hashes of these sessions; for the ID list, the payments used and nothing beside them.
+ * And only these nine tables, four per list and the ID list's payments. No journal is left beside it.
  */
-export function assertNoLink(path: string, sessionIds: string[], stamps: bigint[]): void {
+export function assertNoLink(path: string, face: Expected, id: Expected = { sessionIds: [], stamps: [] }): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
   const file = readFileSync(path)
-  for (const s of stamps) {
+  for (const s of [...face.stamps, ...id.stamps]) {
     const [bytes, ...others] = forms(s)
     assert.equal(file.indexOf(bytes), file.lastIndexOf(bytes), 'a listed stamp is in the file once: no stale copy')
     assert.ok(file.includes(bytes), 'as its list row')
     for (const form of others) assert.equal(file.includes(form), false, 'and in no other form')
   }
-  for (const id of sessionIds) assert.equal(file.includes(Buffer.from(id)), false, 'no session id is in the clear')
+  for (const sessionId of [...face.sessionIds, ...id.sessionIds]) {
+    assert.equal(file.includes(Buffer.from(sessionId)), false, 'no session id is in the clear')
+  }
 
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY name').all()
     assert.deepEqual(
-      schema.map((t) => `${t.type} ${t.name}`),
-      ['table list', 'table queue', 'table snapshots', 'table used_sessions'],
-      'four tables, and no index or other table beside them',
-    )
-    assert.deepEqual(
       schema.map((t) => t.sql),
-      [
-        'CREATE TABLE list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
-        'CREATE TABLE queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
-        'CREATE TABLE snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
-        'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
-      ],
+      TABLES,
+      'nine tables, and no index or other table beside them',
     )
-    assert.equal(db.prepare('SELECT count(*) AS n FROM queue').get()!.n, 0, 'the queue is empty')
-    const listed = db
-      .prepare('SELECT stamp FROM list ORDER BY position')
+    for (const [t, expected] of [['', face], ['id_', id]] as const) {
+      assert.equal(db.prepare(`SELECT count(*) AS n FROM ${t}queue`).get()!.n, 0, 'the queue is empty')
+      const listed = db
+        .prepare(`SELECT stamp FROM ${t}list ORDER BY position`)
+        .all()
+        .map((row) => fromBytes32(row.stamp as Uint8Array))
+      assert.deepEqual([...listed].sort(), [...expected.stamps].sort(), 'the list holds these stamps, each once')
+      const kept = db
+        .prepare(`SELECT hash FROM ${t}used_sessions`)
+        .all()
+        .map((row) => Buffer.from(row.hash as Uint8Array).toString('hex'))
+        .sort()
+      const hashes = expected.sessionIds.map((sessionId) => Buffer.from(sessionHash(sessionId)).toString('hex')).sort()
+      assert.deepEqual(kept, hashes, 'the used sessions are kept, hashed, and nothing else is')
+    }
+    const payments = db
+      .prepare('SELECT signature FROM id_payments')
       .all()
-      .map((row) => fromBytes32(row.stamp as Uint8Array))
-    assert.deepEqual([...listed].sort(), [...stamps].sort(), 'the list holds these stamps, each once')
-    const kept = db
-      .prepare('SELECT hash FROM used_sessions')
-      .all()
-      .map((row) => Buffer.from(row.hash as Uint8Array).toString('hex'))
+      .map((row) => base58.encode(row.signature as Uint8Array))
       .sort()
-    const expected = sessionIds.map((id) => Buffer.from(sessionHash(id)).toString('hex')).sort()
-    assert.deepEqual(kept, expected, 'the used sessions are kept, hashed, and nothing else is')
+    assert.deepEqual(payments, [...(id.payments ?? [])].sort(), 'the payments used, and nothing beside them')
   } finally {
     db.close()
   }

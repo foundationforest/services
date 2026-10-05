@@ -2,11 +2,11 @@
 // which pays for anything its rules allow and charges nothing, and lets through only a registry row
 // that comes with a voucher it has not seen before.
 //
-// A voucher is a second proof from the same stamp on Soil's issuer's list, made under a label
-// `sponsor/1`, `sponsor/2` or `sponsor/3`, for the main key that signs the row. Its market stamp is
-// the same every time for one stamp and one label, so a stamp has three, and each is spent once. The
-// proof names the main key, so a voucher seen in flight sponsors only that main key's row. The row
-// itself may be under any issuer and any label.
+// A voucher is a second proof from the same stamp on one of the lists it takes, made under a label
+// `sponsor/1` to `sponsor/n`, n that list's count (Soil's face list 3, its ID list 10), for the main
+// key that signs the row. Its market stamp is the same every time for one stamp and one label, so a
+// stamp has n, and each is spent once. The proof names the main key, so a voucher seen in flight
+// sponsors only that main key's row. The row itself may be under any issuer and any label.
 //
 // One request, POST /sponsor, checked in this order, each failure a named refusal; the voucher is
 // spent the moment it is forwarded, whatever Kora answers. What it keeps is the used set: each spent
@@ -28,8 +28,8 @@ export type Config = {
   koraUrl: string
   /** The key Kora asks for (`x-api-key`): made at each start, known only to this program and Kora. */
   koraApiKey: string
-  /** The issuer whose list vouchers are proven against: Soil's. */
-  issuer: Uint8Array
+  /** The issuers whose lists vouchers are proven against, each with how many vouchers a stamp on it earns. */
+  issuers: { issuer: Uint8Array; vouchers: number }[]
   /** The registry program a row is written by. */
   registry: PublicKey
   /** The used set's one file. */
@@ -37,8 +37,11 @@ export type Config = {
   port: number
 }
 
-/** The labels a voucher may be made under: three per stamp. */
-export const VOUCHER_LABELS = ['sponsor/1', 'sponsor/2', 'sponsor/3']
+/** Whether a voucher may be made under `label` on a list whose stamps earn `count`: `sponsor/1` to `sponsor/<count>`. */
+export function isVoucherLabel(label: string, count: number): boolean {
+  const n = /^sponsor\/([1-9][0-9]{0,8})$/.exec(label)
+  return n !== null && Number(n[1]) <= count
+}
 
 /** A request body larger than this is refused unread: a transaction is at most 1,232 bytes. */
 const MAX_BODY = 16 * 1024
@@ -59,16 +62,34 @@ export type Refusal =
 
 export type Voucher = { proof: SnarkjsProof; root: Uint8Array; issuerSignature: Uint8Array; label: string; marketStamp: Uint8Array }
 
+/**
+ * `VOUCHER_ISSUERS`: `<address>:<count>` for each issuer, comma-separated, as `7zPD…:3,BVT1…:10`.
+ * Each address once, each count a whole number above 0.
+ */
+export function readIssuers(text: string): Config['issuers'] {
+  const issuers = text.split(',').map((entry) => {
+    const [address, count, ...rest] = entry.trim().split(':')
+    if (!address || rest.length || !/^[1-9][0-9]{0,8}$/.test(count ?? '')) {
+      throw new Error('VOUCHER_ISSUERS must be <address>:<count>, comma-separated, each count a whole number above 0')
+    }
+    return { issuer: new PublicKey(address).toBytes(), vouchers: Number(count) }
+  })
+  if (new Set(issuers.map((i) => Buffer.from(i.issuer).toString('hex'))).size !== issuers.length) {
+    throw new Error('VOUCHER_ISSUERS names an issuer twice')
+  }
+  return issuers
+}
+
 /** Reads the variables fee-payer/README.md lists. Fails naming every required one that is missing. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const missing = ['KORA_URL', 'KORA_API_KEY', 'VOUCHER_ISSUER', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
+  const missing = ['KORA_URL', 'KORA_API_KEY', 'VOUCHER_ISSUERS', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   const port = Number(env.PORT || '8080')
   if (!Number.isSafeInteger(port) || port < 0) throw new Error('PORT must be a whole number')
   return {
     koraUrl: env.KORA_URL!.trim(),
     koraApiKey: env.KORA_API_KEY!.trim(),
-    issuer: new PublicKey(env.VOUCHER_ISSUER!.trim()).toBytes(),
+    issuers: readIssuers(env.VOUCHER_ISSUERS!.trim()),
     registry: new PublicKey(env.REGISTRY_PROGRAM!.trim()),
     databasePath: env.DATABASE_PATH || './data/sponsor.sqlite',
     port,
@@ -178,8 +199,10 @@ export async function sponsor(config: Config, used: UsedSet, body: unknown): Pro
   if (!signedBy(tx, at)) return refuse('not_signed_by_main_key')
   const profile = tx.message.staticAccountKeys[at]!.toBytes()
   const { voucher } = request
-  if (!VOUCHER_LABELS.includes(voucher.label)) return refuse('not_a_voucher_label')
-  if (!issuerSigned({ issuer: config.issuer, root: voucher.root, issuerSignature: voucher.issuerSignature })) return refuse('not_signed_by_issuer')
+  // The list the voucher is from: the one whose issuer signed its root.
+  const list = config.issuers.find(({ issuer }) => issuerSigned({ issuer, root: voucher.root, issuerSignature: voucher.issuerSignature }))
+  if (!list) return refuse('not_signed_by_issuer')
+  if (!isVoucherLabel(voucher.label, list.vouchers)) return refuse('not_a_voucher_label')
   const holds = await verifyStamp({ proof: voucher.proof, root: voucher.root, marketStamp: voucher.marketStamp, label: voucher.label, profile })
   if (!holds) return refuse('voucher_does_not_hold')
   // Checked and spent in one statement, with nothing awaited since the proof: two copies of one

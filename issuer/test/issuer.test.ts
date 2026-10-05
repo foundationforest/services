@@ -17,17 +17,21 @@ import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts
 import { issuerSigned } from '../../forest/registry/client/src/issuer.ts'
 
 import { shuffle } from '../src/batch.ts'
-import { loadKeypair, writeKeyFile } from '../src/key.ts'
+import { loadKeypair, parseKeypair, writeKeyFile } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
 import { readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import { Store } from '../src/store.ts'
 import {
   FakeFaceCheck,
+  FakePayments,
+  ID_WORKFLOW,
   WORKFLOW,
   assertFileHolds,
   assertNoLink,
   keypairJson,
   passed,
+  passedId,
+  randomSignature,
   randomStamp,
 } from './fakes.ts'
 
@@ -45,6 +49,9 @@ function tempDir(): string {
 type Harness = {
   issuer: Issuer
   faces: FakeFaceCheck
+  /** The ID check's Didit. */
+  ids: FakeFaceCheck
+  payments: FakePayments
   dbPath: string
   /** The list, in order, as the file holds it. */
   listed(): bigint[]
@@ -53,6 +60,8 @@ type Harness = {
   post(path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>
   /** A new session whose check came to `decision`; returns its id. */
   session(decision?: ReturnType<typeof passed>): Promise<string>
+  /** The same for the ID check, while it is free. */
+  idSession(decision?: ReturnType<typeof passed>): Promise<string>
 }
 
 async function start(
@@ -71,6 +80,7 @@ async function start(
   const config = readConfig({
     DIDIT_API_KEY: 'not-used',
     DIDIT_WORKFLOW_ID: WORKFLOW,
+    DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     ISSUER_KEYPAIR: options.key ?? keypairJson().json,
     DATABASE_PATH: dbPath,
     BATCH_MAX: String(options.batchMax ?? 1000),
@@ -81,8 +91,10 @@ async function start(
     ...options.env,
   })
   const faces = new FakeFaceCheck()
+  const ids = new FakeFaceCheck()
+  const payments = new FakePayments()
   const logs: string[] = []
-  const issuer = await startIssuer(config, { faceCheck: faces, log: (line) => logs.push(line), now: options.now })
+  const issuer = await startIssuer(config, { faceCheck: faces, idCheck: ids, payments, log: (line) => logs.push(line), now: options.now })
   const post = async (path: string, body: unknown = {}, headers: Record<string, string> = {}) => {
     const res = await fetch(issuer.url + path, {
       method: 'POST',
@@ -97,12 +109,38 @@ async function start(
     faces.set(body.sessionId, decision)
     return body.sessionId as string
   }
+  const idSession = async (decision = passedId()) => {
+    const { status, body } = await post('/id/session')
+    assert.equal(status, 201)
+    ids.set(body.sessionId, decision)
+    return body.sessionId as string
+  }
   const listed = () => issuer.store.stamps()
   const get = (path: string) => fetch(issuer.url + path)
-  return { issuer, faces, dbPath, listed, get, logs, post, session }
+  return { issuer, faces, ids, payments, dbPath, listed, get, logs, post, session, idSession }
 }
 
 const submit = (h: Harness, sessionId: string, stamp: bigint) => h.post('/submit', { sessionId, stamp: stamp.toString() })
+const submitId = (h: Harness, sessionId: string, stamp: bigint) => h.post('/id/submit', { sessionId, stamp: stamp.toString() })
+
+/** A price for the ID check, in the test dollar, paid to an address of its own. */
+const PRICED = {
+  ID_TIER_PRICE: '2500000',
+  ID_TIER_MINT: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa',
+  ID_TIER_PAY_TO: '3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH',
+  RPC_URL: 'http://127.0.0.1:1',
+}
+
+/** A paid ID session: a payment asked for, landed (as the test's RPC says), and the session opened with it. */
+async function paidIdSession(h: Harness, decision = passedId(), signature = randomSignature()): Promise<{ sessionId: string; signature: string }> {
+  const asked = await h.post('/id/session')
+  assert.equal(asked.status, 402)
+  h.payments.paid.set(asked.body.payment.reference, [signature])
+  const opened = await h.post('/id/session', { payment: asked.body.payment.id })
+  assert.equal(opened.status, 201)
+  h.ids.set(opened.body.sessionId, decision)
+  return { sessionId: opened.body.sessionId, signature }
+}
 
 test('a passed face check puts the stamp on the list', async () => {
   const h = await start()
@@ -256,6 +294,170 @@ test('every other refusal, and malformed requests', async () => {
   }
 })
 
+test("a passed ID check puts the stamp on the ID list, signed by the key mixed from the issuer's seed under `id`", async () => {
+  const key = keypairJson()
+  const h = await start({ key: key.json })
+  try {
+    const sessionId = await h.idSession()
+    const stamp = randomStamp()
+    assert.deepEqual(await submitId(h, sessionId, stamp), { status: 202, body: { status: 'queued' } })
+    assert.deepEqual((await h.post('/id/status', { stamp: stamp.toString() })).body, { status: 'queued' })
+    assert.deepEqual((await h.post('/status', { stamp: stamp.toString() })).body, { status: 'unknown' }, 'the face list knows nothing of it')
+
+    await h.issuer.id.batcher.flush()
+    assert.deepEqual(h.issuer.id.store.stamps(), [stamp])
+    assert.deepEqual(h.listed(), [], 'and it is not on the face list')
+    assert.deepEqual((await h.post('/id/status', { stamp: stamp.toString() })).body, { status: 'listed' })
+    assert.deepEqual(h.logs, ['issuer: batch of 1 added to the ID list'])
+
+    const { file, stamps } = await readFile(h, '/id/list.json')
+    const issuer = parseKeypair(key.json, 'test')
+    assert.equal(file.issuer, (await issuer.derive('id')).address, "its own key, mixed from the issuer's seed")
+    assert.notEqual(file.issuer, issuer.address)
+    assert.deepEqual(stamps, [stamp])
+    assert.equal((await readFile(h)).file.issuer, issuer.address, 'the face list is still signed by the issuer’s own key')
+
+    // The ID key is the same every time the issuer starts on its key.
+    assert.equal((await issuer.derive('id')).address, (await parseKeypair(key.json, 'again').derive('id')).address)
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('face first: an ID check needs a face seen in a face check, and refuses one seen in an earlier ID check', async () => {
+  const h = await start()
+  try {
+    const earlierFace = `face-${crypto.randomUUID()}`
+    const earlierId = `id-${crypto.randomUUID()}`
+    const flagged = { risks: ['DUPLICATED_FACE'] }
+    const cases: [ReturnType<typeof passed>, number, string?][] = [
+      // A person on the face list moving up: Didit flags the face, the match says it was a face check.
+      [passedId({ ...flagged, matches: [earlierFace] }), 202],
+      [passedId({ risks: ['POSSIBLE_DUPLICATED_FACE'], matches: [earlierFace, `face-${crypto.randomUUID()}`] }), 202],
+      // No face check before: get your face stamp first.
+      [passedId({ risks: [], matches: [] }), 403, 'face_stamp_first'],
+      [passedId({ ...flagged, matches: [] }), 403, 'face_stamp_first'],
+      // A face session from before the tags, its vendor_data a bare uuid, is no face check here.
+      [passedId({ ...flagged, matches: [crypto.randomUUID()] }), 403, 'face_stamp_first'],
+      // A second try at the ID list, with any document: refused, even if Didit approved it.
+      [passedId({ ...flagged, matches: [earlierId] }), 403, 'duplicate_face'],
+      [passedId({ ...flagged, matches: [earlierFace, earlierId] }), 403, 'duplicate_face'],
+    ]
+    for (const [decision, status, error] of cases) {
+      const answer = await submitId(h, await h.idSession(decision), randomStamp())
+      assert.equal(answer.status, status, JSON.stringify(decision))
+      if (error) assert.deepEqual(answer.body, { error })
+    }
+
+    // The face check is unchanged: any duplicate refuses, whichever check saw the face.
+    const moved = await h.session(passed({ ...flagged, matches: [earlierId] }))
+    assert.deepEqual(await submit(h, moved, randomStamp()), { status: 403, body: { error: 'duplicate_face' } })
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('every ID refusal, and a session counts only on the list its check fills', async () => {
+  const h = await start()
+  try {
+    const cases: [ReturnType<typeof passed>, string][] = [
+      [passedId({ matches: [] }), 'face_stamp_first'],
+      [passedId({ documents: [] }), 'no_document'],
+      [passedId({ documents: [{ status: 'Declined' }] }), 'document_not_passed'],
+      [passedId({ documents: [{ status: 'Approved' }, { status: 'In Review' }] }), 'document_not_passed'],
+      [passedId({ faceMatches: [] }), 'no_face_match'],
+      [passedId({ faceMatches: [{ status: 'Declined' }] }), 'face_match_not_passed'],
+      [passedId({ liveness: [] }), 'no_liveness'],
+      [passedId({ status: 'In Review' }), 'not_approved'],
+    ]
+    for (const [decision, error] of cases) {
+      assert.deepEqual(await submitId(h, await h.idSession(decision), randomStamp()), { status: 403, body: { error } })
+    }
+
+    // A face session sent to the ID list, or an ID session to the face list, is on the wrong workflow.
+    const faceSession = await h.session()
+    h.ids.set(faceSession, passed())
+    assert.deepEqual(await submitId(h, faceSession, randomStamp()), { status: 403, body: { error: 'wrong_workflow' } })
+    const idSession = await h.idSession()
+    h.faces.set(idSession, passedId())
+    assert.deepEqual(await submit(h, idSession, randomStamp()), { status: 403, body: { error: 'wrong_workflow' } })
+
+    // Free, the ID check takes an empty body and nothing else, and counts against the same limit.
+    assert.deepEqual(await h.post('/id/session', { payment: '0'.repeat(32) }), { status: 400, body: { error: 'expected_empty_body' } })
+    assert.equal(h.payments.asked, 0, 'free, nothing is looked for on chain')
+    assert.deepEqual(await h.post('/id/list.json'), { status: 405, body: { error: 'get_only' } })
+    assert.equal(h.issuer.id.store.count(), 0)
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('with a price, an ID check opens once a payment naming its reference has landed, and each payment opens one', async () => {
+  const key = keypairJson()
+  const h = await start({ key: key.json, env: PRICED })
+  try {
+    // Asked with nothing, it answers with a payment to make.
+    const asked = await h.post('/id/session')
+    assert.equal(asked.status, 402)
+    assert.equal(asked.body.error, 'payment_required')
+    const { payment } = asked.body
+    assert.deepEqual(Object.keys(payment).sort(), ['amount', 'id', 'mint', 'reference', 'to'])
+    assert.match(payment.id, /^[0-9a-f]{32}$/)
+    assert.deepEqual([payment.to, payment.mint, payment.amount], [PRICED.ID_TIER_PAY_TO, PRICED.ID_TIER_MINT, PRICED.ID_TIER_PRICE])
+    const issuer = parseKeypair(key.json, 'test')
+    assert.equal(payment.reference, (await issuer.derive(`reference/${payment.id}`)).address, "the reference: a key mixed from the issuer's seed")
+    const other = (await h.post('/id/session')).body.payment
+    assert.notEqual(other.id, payment.id)
+    assert.notEqual(other.reference, payment.reference, 'one reference per payment')
+    assert.equal(h.ids.created, 0, 'no session yet')
+    assert.equal((await h.post('/session')).status, 201, 'the face check stays free')
+
+    // Until a payment naming the reference has landed, nothing opens.
+    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 402, body: { error: 'not_paid' } })
+    h.payments.down = true
+    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 502, body: { error: 'payment_check_unavailable' } })
+    h.payments.down = false
+
+    // Landed: one session, and the payment is used.
+    const signature = randomSignature()
+    h.payments.paid.set(payment.reference, [signature])
+    const opened = await h.post('/id/session', { payment: payment.id })
+    assert.equal(opened.status, 201)
+    assert.match(opened.body.url, /^https:\/\//)
+    assert.equal(h.ids.created, 1)
+    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 409, body: { error: 'payment_used' } })
+    // One transaction naming two references still pays for one check.
+    h.payments.paid.set(other.reference, [signature])
+    assert.deepEqual(await h.post('/id/session', { payment: other.id }), { status: 409, body: { error: 'payment_used' } })
+    // A second payment naming the same reference opens a second.
+    h.payments.paid.set(payment.reference, [randomSignature(), signature])
+    assert.equal((await h.post('/id/session', { payment: payment.id })).status, 201)
+    assert.equal(h.ids.created, 2)
+
+    // Didit down: no session, and the payment is still good afterwards.
+    const third = (await h.post('/id/session')).body.payment
+    h.payments.paid.set(third.reference, [randomSignature()])
+    h.ids.down = true
+    assert.deepEqual(await h.post('/id/session', { payment: third.id }), { status: 502, body: { error: 'face_check_unavailable' } })
+    h.ids.down = false
+    assert.equal((await h.post('/id/session', { payment: third.id })).status, 201)
+
+    // The session it opened is an ID session like any other.
+    h.ids.set(opened.body.sessionId, passedId())
+    assert.equal((await submitId(h, opened.body.sessionId, randomStamp())).status, 202)
+
+    const bad: [unknown, number, string][] = [
+      [{ payment: 'ABC' }, 400, 'bad_payment'],
+      [{ payment: payment.id.toUpperCase() }, 400, 'bad_payment'],
+      [{ payment: payment.id, more: 'x' }, 400, 'expected_exactly_payment'],
+      [{ paid: payment.id }, 400, 'expected_exactly_payment'],
+    ]
+    for (const [body, status, error] of bad) assert.deepEqual(await h.post('/id/session', body), { status, body: { error } })
+  } finally {
+    await h.issuer.close()
+  }
+})
+
 test('a batch goes onto the list in random order', async () => {
   const h = await start()
   try {
@@ -358,7 +560,7 @@ test('a batch that fails adds nothing, and everything waits for the next', async
     assert.equal(h.issuer.store.count(), 10)
     assert.equal(h.issuer.list.size, 0)
     for (const c of all) assert.deepEqual((await h.post('/status', { stamp: c.toString() })).body, { status: 'queued' })
-    assert.match(h.logs.at(-1)!, /^issuer: batch of 10 not added \(RangeError\); all wait$/)
+    assert.match(h.logs.at(-1)!, /^issuer: batch of 10 not added to the list \(RangeError\); all wait$/)
     assert.deepEqual(JSON.parse(await (await h.get('/list.json')).text()).snapshots, [], 'no snapshot was published')
 
     h.issuer.store.append = append
@@ -371,11 +573,23 @@ test('a batch that fails adds nothing, and everything waits for the next', async
   }
 })
 
-test('after the batch, the file holds the list and no link from a session to a stamp', async () => {
-  const h = await start()
+test('after the batch, the file holds each list and no link from a session to a stamp', async () => {
+  const h = await start({ env: PRICED })
   const sessionIds: string[] = []
   const stamps: bigint[] = []
+  const id = { sessionIds: [] as string[], stamps: [] as bigint[], payments: [] as string[] }
   try {
+    // The ID list too, each check paid for: its stamps, its sessions and its payments, the same way.
+    for (let i = 0; i < 20; i++) {
+      const { sessionId, signature } = await paidIdSession(h)
+      const c = randomStamp()
+      assert.equal((await submitId(h, sessionId, c)).status, 202)
+      id.sessionIds.push(sessionId)
+      id.stamps.push(c)
+      id.payments.push(signature)
+    }
+    await h.issuer.id.batcher.flush()
+
     // 300 rows run the queue past one 4 KB page, so it has interior pages and has been rebalanced.
     for (let i = 0; i < 300; i++) {
       const sessionId = await h.session()
@@ -399,7 +613,7 @@ test('after the batch, the file holds the list and no link from a session to a s
   } finally {
     await h.issuer.close()
   }
-  assertNoLink(h.dbPath, sessionIds, stamps)
+  assertNoLink(h.dbPath, { sessionIds, stamps }, id)
 })
 
 type Snapshot = { root: string; signature: string; size: number; time: number }
@@ -411,8 +625,8 @@ function signed(issuer: string, s: Snapshot): boolean {
 }
 
 /** The list file as a reader takes it: canonical text, the fields README.md names, every snapshot its prefix's and signed. */
-async function readFile(h: Harness): Promise<{ text: string; stamps: bigint[]; file: ListFile }> {
-  const text = await (await h.get('/list.json')).text()
+async function readFile(h: Harness, path = '/list.json'): Promise<{ text: string; stamps: bigint[]; file: ListFile }> {
+  const text = await (await h.get(path)).text()
   const file = parseCanonical(text) as ListFile
   assert.equal(canonical(file), text, 'canonical text')
   assert.deepEqual(Object.keys(file).sort(), ['issuer', 'snapshots', 'stamps', 'v'])
@@ -525,8 +739,8 @@ test('the store queues a stamp only with an unused session, in one step', () => 
 })
 
 test('the configuration names what is missing', () => {
-  assert.throws(() => readConfig({}), /DIDIT_API_KEY, DIDIT_WORKFLOW_ID, ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH/)
-  const base = { DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', ISSUER_KEYPAIR_PATH: 'p' }
+  assert.throws(() => readConfig({}), /DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID, ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH/)
+  const base = { DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i', ISSUER_KEYPAIR_PATH: 'p' }
   assert.throws(() => readConfig({ ...base, BATCH_MAX: '0' }), /BATCH_MAX/)
   const config = readConfig(base)
   assert.equal(config.batchMax, 50)
@@ -535,6 +749,21 @@ test('the configuration names what is missing', () => {
   assert.equal(config.sessionLimitPerHour, 5)
   assert.equal(config.clientAddressHeader, undefined)
   assert.equal(readConfig({ ...base, CLIENT_ADDRESS_HEADER: 'X-Real-IP' }).clientAddressHeader, 'x-real-ip')
+  assert.equal(config.idTierPrice, 0n, 'the ID check is free unless a price is set')
+
+  // A price needs its dollar, the address it is paid to, and an RPC to find it through.
+  assert.throws(() => readConfig({ ...base, ID_TIER_PRICE: '2500000' }), /missing environment variables: ID_TIER_MINT, ID_TIER_PAY_TO, RPC_URL/)
+  for (const price of ['2.5', '-1', '01', 'free']) assert.throws(() => readConfig({ ...base, ID_TIER_PRICE: price }), /ID_TIER_PRICE must be a whole number/)
+  assert.throws(() => readConfig({ ...base, ...PRICED, ID_TIER_PAY_TO: 'not-an-address' }), /ID_TIER_PAY_TO is not an address/)
+  assert.equal(readConfig({ ...base, ...PRICED }).idTierPrice, 2_500_000n)
+})
+
+test("the ID check's price is never paid to one of the issuer's signing keys", async () => {
+  const key = keypairJson()
+  const issuer = parseKeypair(key.json, 'test')
+  for (const signer of [issuer.address, (await issuer.derive('id')).address]) {
+    await assert.rejects(start({ key: key.json, env: { ...PRICED, ID_TIER_PAY_TO: signer } }), /ID_TIER_PAY_TO is one of the issuer's signing keys/)
+  }
 })
 
 test('opening sessions is limited per address, and a refusal says only "try later"', async () => {
@@ -610,6 +839,7 @@ test('the key from a sealed variable: a private temporary file, loaded, then del
   const env: Record<string, string | undefined> = {
     DIDIT_API_KEY: 'k',
     DIDIT_WORKFLOW_ID: 'w',
+    DIDIT_ID_WORKFLOW_ID: 'i',
     ISSUER_KEYPAIR: contents,
   }
   const config = readConfig(env)

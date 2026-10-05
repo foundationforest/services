@@ -3,10 +3,10 @@
 The fee payer pays Solana's costs for a person's transactions: at cost, paid back in the dollar the
 person holds, or, for the person's registry rows, free against a voucher.
 
-Soil runs this one on devnet: the general node, paid in two test dollars, and the sponsored node,
-once its Railway service is created (On devnet). Anyone can run another, from this configuration or
-their own: whoever signs a transaction as payer pays for it, and the programs care nothing for who
-that is. Nothing is on mainnet, and nothing is shipped.
+Soil runs this one on devnet: the general node, paid in two test dollars, and the sponsored node.
+Anyone can run another, from this configuration or their own: whoever signs a transaction as payer
+pays for it, and the programs care nothing for who that is. Nothing is on mainnet, and nothing is
+shipped.
 
 Up: [the repo](../README.md).
 
@@ -119,9 +119,9 @@ signatures, no priority fee.
 
 The person's device:
 
-1. makes a voucher: a second proof from its stamp on Soil's issuer's list, under the label
-   `sponsor/1`, `sponsor/2` or `sponsor/3`, naming the main key the row is for (forest's
-   `proveStamp`, against the issuer's newest snapshot);
+1. makes a voucher: a second proof from its stamp on one of Soil's issuer's lists, under a label
+   `sponsor/1` to `sponsor/3` on the face list, or `sponsor/1` to `sponsor/10` on the ID list,
+   naming the main key the row is for (forest's `proveStamp`, against that list's newest snapshot);
 2. builds the row's transaction with the fee payer as payer (the general node's `getPayerSigner`
    names it: both nodes sign with one key), and signs it with the main key;
 3. sends both to the pre-check, `POST /sponsor`, as `{ transaction, voucher: { proof, root,
@@ -137,8 +137,8 @@ The pre-check checks, in this order, and refuses by name at the first that fails
 | The transaction decodes, whole, with nothing after it | `bad_transaction` (400) |
 | It is one instruction, `register`, to the registry, with its four accounts (the row, the main key, the payer, System), no address lookup table and no other account | `not_one_registration` (400) |
 | The main key it names signed it | `not_signed_by_main_key` (400) |
-| The voucher's label is `sponsor/1`, `sponsor/2` or `sponsor/3` | `not_a_voucher_label` (400) |
-| Soil's issuer signed the voucher's root (forest's `issuerSigned`) | `not_signed_by_issuer` (400) |
+| One of the lists it takes (`VOUCHER_ISSUERS`) signed the voucher's root, by its key (forest's `issuerSigned`) | `not_signed_by_issuer` (400) |
+| The voucher's label is `sponsor/1` to `sponsor/n`, n that list's count: 3 on Soil's face list, 10 on its ID list | `not_a_voucher_label` (400) |
 | The voucher's proof holds for that root, market stamp, label and main key (forest's `verifyStamp`) | `voucher_does_not_hold` (400) |
 | Its market stamp is not in the used set; it goes in now, spent | `voucher_used` (409) |
 
@@ -148,9 +148,10 @@ Kora checks the transaction against `sponsored/kora.toml`, adds its signature an
 payer pays the network fee and the row's deposit, and is recorded in the row as its payer.
 
 **A voucher** is the stamp's market stamp under a `sponsor/` label: the same every time for one
-stamp and one label, so each stamp has three, and nobody can tell from one whose stamp it is. Its
-proof names the main key, so a voucher seen in flight sponsors that main key's row and no other. The
-row itself may be under any issuer and any label.
+stamp and one label, so a stamp on the face list has three and a stamp on the ID list ten, and
+nobody can tell from one whose stamp it is. A person on both lists holds a different stamp on each,
+so their vouchers are different too. Its proof names the main key, so a voucher seen in flight
+sponsors that main key's row and no other. The row itself may be under any issuer and any label.
 
 ### What the sponsored node allows
 
@@ -201,7 +202,7 @@ The pre-check, `sponsor/`:
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `VOUCHER_ISSUER` | yes | | The issuer whose list vouchers are proven against: Soil's |
+| `VOUCHER_ISSUERS` | yes | | The lists vouchers are proven against, by their keys' addresses, each with how many vouchers a stamp on it earns: `<address>:<count>`, comma-separated |
 | `REGISTRY_PROGRAM` | yes | | The registry a row is written by: the one `sponsored/kora.toml` allows |
 | `KORA_URL`, `KORA_API_KEY` | yes | | The sponsored Kora and its key; `sponsor/deploy/start.sh` sets both |
 | `DATABASE_PATH` | no | `./data/sponsor.sqlite` | The used set's one file |
@@ -271,20 +272,21 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
 The sponsored node: `sponsor/deploy/Dockerfile` builds one container from Node's image, Kora's binary
 copied from the same pinned image (and checked against `KORA`), `sponsored/kora.toml` with the devnet
 lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on Railway, project
-`forest-devnet`, service `sponsor`, which is not created yet; its address goes in
-[`../e2e/devnet.json`](../e2e/devnet.json) once it is (`POST /sponsor`):
+`forest-devnet`, service `sponsor`, at https://sponsor-production-94d3.up.railway.app (`POST /sponsor`), the address
+[`../e2e/devnet.json`](../e2e/devnet.json) names:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=fee-payer/sponsor/deploy/Dockerfile`.
 - **One replica,** a public domain to port 8080, a volume at `/data` for the used set, no health
   check.
 - **Signs as** the general node's key, `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd`.
-- **Vouchers from** Soil's issuer, `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7`.
+- **Vouchers from** Soil's issuer's two lists: the face list, `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7`,
+  three a stamp; the ID list, `BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4`, ten a stamp.
 
 | Variable | On devnet | Sealed |
 |---|---|---|
 | `FOREST_FEE_PAYER_KEY` | the `payer` key, as its JSON array | yes |
 | `RPC_URL` | `https://api.devnet.solana.com`, which returns inner instructions from `simulateTransaction` | no |
-| `VOUCHER_ISSUER` | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` | no |
+| `VOUCHER_ISSUERS` | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7:3,BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4:10` | no |
 | `REGISTRY_PROGRAM` | `5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC` | no |
 | `DATABASE_PATH` | `/data/sponsor.sqlite` | no |
 | `PORT` | `8080` | no |
@@ -302,8 +304,9 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
   sponsored node a row), and nothing else; no priority fee.
 - **The sponsored node, rows only:** one `register` in a transaction and nothing else, the row under
   any issuer and any label; at most 0.0024 SOL a row beyond the network fee; two signatures.
-- **Three vouchers per stamp, from Soil's issuer:** `sponsor/1`, `sponsor/2` and `sponsor/3`, each
-  spent once, the moment the pre-check forwards it to Kora.
+- **Vouchers per stamp, by list:** three on Soil's face list (`sponsor/1` to `sponsor/3`), ten on
+  its ID list (`sponsor/1` to `sponsor/10`), the founder's choice, 2026-10-04. Each is spent once,
+  the moment the pre-check forwards it to Kora.
 - **The float:** the SOL in the one key, which both nodes spend. Nothing refills it but a person;
   when it runs out, both nodes refuse.
 - **The rate limit:** the sponsored node signs at most one transaction a second, across all callers;
@@ -314,11 +317,10 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
 
 ## Promises
 
-- **The general node charges what a transaction costs it,** the network fee and every storage
-  deposit it puts down, in the token the person pays with, with no margin.
-- **The general node pays for no one:** a transaction that does not pay its cost is refused. **The
-  sponsored node pays only for registry rows:** one per voucher, three vouchers per stamp on Soil's
-  issuer's list.
+- **Everything here competes.** Anyone can run another of each; prices and margins are each
+  service's own policy, written in its README.
+- **The sponsored node pays only for registry rows:** one per voucher, three vouchers per stamp on
+  Soil's face list and ten per stamp on its ID list.
 - **It holds no key of the person's.** The person signs on their own device; the fee payer adds only
   its own signature as payer.
 - **Its key can do one thing in a transaction:** fund a new account; in the general node one it is
@@ -332,12 +334,13 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
   faucet: whoever can make it pay takes the SOL. This one pays only for a registry row, and a row's
   deposit stays in the row, which never closes; nobody can move it out but `refund`, which sends only
   what Solana's storage price cuts free, and only to the fee payer. So nobody takes SOL out of it;
-  they can only make it lock SOL up in rows. Each row needs a voucher, three per stamp on Soil's
-  list, and Soil's issuer puts one stamp on its list per face. What the sponsored node can spend is
-  at most faces × 3 × (a row's deposit and its network fee): 2,351,880 lamports for the largest row
-  today, about 0.00706 SOL a face.
-- **On devnet the face check is the stand-in,** which passes everyone, so stamps, and vouchers, are
-  unlimited. There only the rate limit bounds it: one row a second, at most about 8.5 SOL an hour,
+  they can only make it lock SOL up in rows. Each row needs a voucher: three per stamp on Soil's
+  face list, which holds one stamp per face, and ten per stamp on its ID list, which holds one per
+  face that passed an ID check. What the sponsored node can spend is at most (face-list stamps × 3 +
+  ID-list stamps × 10) × (a row's deposit and its network fee): 2,351,880 lamports for the largest
+  row today, about 0.00706 SOL a face-list stamp and 0.0235 SOL an ID-list stamp.
+- **On devnet both of the issuer's checks are the stand-in,** which passes everyone, so stamps, and
+  vouchers, are unlimited. There only the rate limit bounds it: one row a second, at most about 8.5 SOL an hour,
   until the float is empty.
 - **The float is shared.** The sponsored node spends from the general node's key, so emptying it
   stops both.
@@ -368,7 +371,7 @@ lines, and the pre-check, with `RUST_LOG=warn` set in the image. Soil's runs on 
 - **The standard (forest):** nothing here. The registry and the escrow take no fee and care nothing
   for who pays.
 - **This fee payer, by its policy:** which programs and transactions it pays for, which tokens it is
-  paid in, and its price; which issuer's stamps earn vouchers, and how many.
+  paid in, and its price; which lists' stamps earn vouchers, and how many.
 - **An app, with the person:** which fee payer to use, or none, which token to pay in, and when to
   spend a voucher.
 
@@ -385,8 +388,8 @@ So no transaction can make it move its own SOL or tokens.
 A ticket, a code or a signed note handed to someone, ties whoever hands it out to whoever spends it:
 the issuer would know whose face it checked, and the fee payer which row the ticket paid for, and
 the two together would link a person to a profile. A voucher is a proof the person makes on their
-own device from the stamp they already hold. It says "a stamp on Soil's list, under `sponsor/1`, for
-this main key" without saying which stamp, and needs nothing new from the issuer. Its market stamp
+own device from the stamp they already hold. It says "a stamp on one of Soil's lists, under `sponsor/1`,
+for this main key" without saying which stamp, and needs nothing new from the issuer. Its market stamp
 is the same every time for one stamp and one label, so the fee payer can spend it once without
 knowing whose it is.
 
