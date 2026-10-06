@@ -1,7 +1,7 @@
 This repo is `services`: the first services on Forest's open standard, `forest`
-(github.com/foundationforest/forest), used here at the commit in `FOREST`. Soil runs the host, the
-issuer, the fee payer and connections; the Forest Foundation runs the index. Read `README.md` and
-the README of the directory you work in before any task.
+(github.com/foundationforest/forest), used here at the commit in `FOREST`. The Forest Foundation
+runs every service here. Read `README.md` and the README of the directory you work in before any
+task.
 
 ## Words
 
@@ -10,11 +10,14 @@ record, folder, host, access key, permissions, private, envelope, reading key, i
 receipt, deal, index, fee payer, connections, app, market, role, ramp, and sealed (for programs
 only). Plain words, no em-dashes.
 
-- issuer, never keeper; access key, never writer key; fee payer, never relayer; main key, never
-  profile key; address, never wallet, for a key ("a wallet app" is fine).
+- issuer, never keeper; access key, never writer key; fee payer, never relayer or sponsor; main
+  key, never profile key; address, never wallet, for a key ("a wallet app" is fine).
+- The foundation runs every service here, never Soil; the app is the Forest app.
+- The fee payer has two doors: the voucher door (free, with a voucher) and the at-cost door; behind
+  them, the free Kora and the at-cost Kora. A voucher's label stays `sponsor/n`: forest's word.
 - A token's issuer is "the dollar's maker".
 - A folder is what one main key signs on a host; this repo's folders are directories.
-- Never "replace every app"; never "the foundation runs none".
+- Never "replace every app".
 
 ## How to work in this repo
 

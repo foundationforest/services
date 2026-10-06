@@ -1,20 +1,22 @@
-// The pre-check: the one program of ours in the fee payer. It stands in front of the sponsored Kora,
-// which pays for anything its rules allow and charges nothing, and lets through only a registry row
-// that comes with a voucher it has not seen before.
+// The voucher check: the one program of ours in the fee payer, and its public front. It answers
+// `POST /vouchers`, the voucher door: it lets through to the free Kora, which pays for anything its
+// rules allow and charges nothing, only a registry row that comes with a voucher it has not seen
+// before. Every other request it forwards, unchanged, to the at-cost Kora: the at-cost door.
 //
 // A voucher is a second proof from the same stamp on one of the lists it takes, made under a label
-// `sponsor/1` to `sponsor/n`, n that list's count (Soil's face list 3, its ID list 10), for the main
-// key that signs the row. Its market stamp is the same every time for one stamp and one label, so a
-// stamp has n, and each is spent once. The proof names the main key, so a voucher seen in flight
-// sponsors only that main key's row. The row itself may be under any issuer and any label.
+// `sponsor/1` to `sponsor/n` (forest's word for it), n that list's count (the foundation's face
+// list 3, its ID list 10), for the main key that signs the row. Its market stamp is the same every
+// time for one stamp and one label, so a stamp has n, and each is spent once. The proof names the
+// main key, so a voucher seen in flight pays only for that main key's row. The row itself may be
+// under any issuer and any label.
 //
-// One request, POST /sponsor, checked in this order, each failure a named refusal; the voucher is
-// spent the moment it is forwarded, whatever Kora answers. What it keeps is the used set: each spent
-// voucher's market stamp, and nothing beside it. It logs nothing.
+// Each `POST /vouchers` is checked in this order, each failure a named refusal; the voucher is
+// spent the moment it is forwarded, whatever Kora answers. What it keeps is the used set: each
+// spent voucher's market stamp, and nothing beside it. It logs nothing.
 
 import { createPublicKey, verify } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { dirname } from 'node:path'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
@@ -24,10 +26,12 @@ import { PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 import { discriminator, issuerSigned, verifyStamp, type SnarkjsProof } from '../../../forest/registry/client/src/index.ts'
 
 export type Config = {
-  /** The sponsored Kora's JSON-RPC, on this container's loopback. */
-  koraUrl: string
-  /** The key Kora asks for (`x-api-key`): made at each start, known only to this program and Kora. */
-  koraApiKey: string
+  /** The free Kora's JSON-RPC, in this container. */
+  freeKoraUrl: string
+  /** The key the free Kora asks for (`x-api-key`): made at each start, known only to this program and that Kora. */
+  freeKoraApiKey: string
+  /** The at-cost Kora, in this container: every request but `/vouchers` goes to it, unchanged. */
+  atCostKoraUrl: string
   /** The issuers whose lists vouchers are proven against, each with how many vouchers a stamp on it earns. */
   issuers: { issuer: Uint8Array; vouchers: number }[]
   /** The registry program a row is written by. */
@@ -82,16 +86,17 @@ export function readIssuers(text: string): Config['issuers'] {
 
 /** Reads the variables fee-payer/README.md lists. Fails naming every required one that is missing. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const missing = ['KORA_URL', 'KORA_API_KEY', 'VOUCHER_ISSUERS', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
+  const missing = ['FREE_KORA_URL', 'FREE_KORA_API_KEY', 'AT_COST_KORA_URL', 'VOUCHER_ISSUERS', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   const port = Number(env.PORT || '8080')
   if (!Number.isSafeInteger(port) || port < 0) throw new Error('PORT must be a whole number')
   return {
-    koraUrl: env.KORA_URL!.trim(),
-    koraApiKey: env.KORA_API_KEY!.trim(),
+    freeKoraUrl: env.FREE_KORA_URL!.trim(),
+    freeKoraApiKey: env.FREE_KORA_API_KEY!.trim(),
+    atCostKoraUrl: env.AT_COST_KORA_URL!.trim(),
     issuers: readIssuers(env.VOUCHER_ISSUERS!.trim()),
     registry: new PublicKey(env.REGISTRY_PROGRAM!.trim()),
-    databasePath: env.DATABASE_PATH || './data/sponsor.sqlite',
+    databasePath: env.DATABASE_PATH || './data/vouchers.sqlite',
     port,
   }
 }
@@ -188,8 +193,8 @@ export function signedBy(tx: VersionedTransaction, index: number): boolean {
 type Answer = { status: number; body: { signature: string } | { error: Refusal; detail?: string } }
 const refuse = (error: Refusal, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
 
-/** One POST /sponsor, from its parsed body to the answer. */
-export async function sponsor(config: Config, used: UsedSet, body: unknown): Promise<Answer> {
+/** One POST /vouchers, from its parsed body to the answer. */
+export async function spendVoucher(config: Config, used: UsedSet, body: unknown): Promise<Answer> {
   const request = readRequest(body)
   if (!request) return refuse('bad_request')
   const tx = decodeTransaction(request.transaction)
@@ -209,9 +214,9 @@ export async function sponsor(config: Config, used: UsedSet, body: unknown): Pro
   // voucher cannot both get past here.
   if (!used.spend(voucher.marketStamp)) return refuse('voucher_used', 409)
   try {
-    const res = await fetch(config.koraUrl, {
+    const res = await fetch(config.freeKoraUrl, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': config.koraApiKey },
+      headers: { 'content-type': 'application/json', 'x-api-key': config.freeKoraApiKey },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'signAndSendTransaction', params: { transaction: request.transaction } }),
     })
     const answer = (await res.json()) as { result?: { signature?: unknown }; error?: { message?: unknown } }
@@ -247,19 +252,41 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-/** Starts the pre-check on `config.port`. Browsers ask first (OPTIONS), as they do of Kora. */
-export async function startSponsor(config: Config): Promise<{ url: string; close: () => Promise<void> }> {
+const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding']
+const passed = (headers: IncomingHttpHeaders) => {
+  const out = { ...headers }
+  for (const name of HOP_BY_HOP) delete out[name]
+  return out
+}
+
+/** The at-cost door: the request, unchanged, to the at-cost Kora, and its answer, unchanged, back. */
+function forward(req: IncomingMessage, res: ServerResponse, to: URL): void {
+  const upstream = request({ host: to.hostname, port: to.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
+    res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
+    answer.pipe(res)
+  })
+  upstream.on('error', () => {
+    if (!res.headersSent) res.writeHead(502)
+    res.end()
+  })
+  req.pipe(upstream)
+}
+
+/** Starts the front on `config.port`: the voucher door at `/vouchers`, the at-cost door everywhere else. */
+export async function startFront(config: Config): Promise<{ url: string; close: () => Promise<void> }> {
   const used = new UsedSet(config.databasePath)
+  const atCost = new URL(config.atCostKoraUrl)
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://x').pathname
-    if (path !== '/sponsor') return send(res, 404)
+    if (path !== '/vouchers') return forward(req, res, atCost)
+    // Browsers ask first (OPTIONS), as they do of Kora.
     if (req.method === 'OPTIONS') {
       res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }).end()
       return
     }
     if (req.method !== 'POST') return send(res, 405)
     readBody(req)
-      .then((body) => sponsor(config, used, body))
+      .then((body) => spendVoucher(config, used, body))
       .then((answer) => send(res, answer.status, answer.body))
       .catch(() => send(res, 500))
   })

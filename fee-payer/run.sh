@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Runs one fee payer node: Kora (installed by build.sh) with a kora.toml and signers.toml.
+# Runs one of the fee payer's Koras: Kora (installed by build.sh) with a kora.toml and signers.toml.
 #
 #   FOREST_FEE_PAYER_KEY path to the fee payer's keypair file, outside this repo (or, where a host
 #                        has no files, the key itself; see README.md)
 #   RPC_URL              the Solana RPC it simulates and sends through
 #   JUPITER_API_KEY      for the dollar price, with price_source = "Jupiter"
 #   PORT                 default 8080
-#   KORA_CONFIG          default general/kora.toml (the sponsored node passes its own; the local run
-#                        passes its Mock copy)
+#   KORA_CONFIG          default at-cost/kora.toml (deploy/start.sh passes each Kora its devnet
+#                        config; the local run passes its Mock copy)
 set -euo pipefail
 cd "$(dirname "$0")"
 here="$PWD"
@@ -27,5 +27,5 @@ fi
 kora="${KORA_BIN:-$here/.kora/bin/kora}"
 [ -x "$kora" ] || { echo "no kora at $kora; run ./build.sh" >&2; exit 1; }
 
-exec "$kora" --config "${KORA_CONFIG:-general/kora.toml}" --rpc-url "$RPC_URL" \
+exec "$kora" --config "${KORA_CONFIG:-at-cost/kora.toml}" --rpc-url "$RPC_URL" \
   rpc start --signers-config signers.toml --port "${PORT:-8080}"

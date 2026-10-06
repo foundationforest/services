@@ -2,7 +2,7 @@
   "name": "@forest/fee-payer",
   "version": "0.0.0",
   "private": true,
-  "description": "The fee payer: Kora, configured, with no custom code. Co-signs a person's transaction as its fee payer and charges its network fee and storage deposits in the token they pay in.",
+  "description": "The fee payer: Kora, configured, with no custom code inside it. The at-cost Kora co-signs a person's transaction as its fee payer and charges its network fee and storage deposits in the token they pay in; the free Kora, behind the voucher check (vouchers/), pays for registry rows.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

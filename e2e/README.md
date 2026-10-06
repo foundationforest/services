@@ -3,8 +3,8 @@
 The loop: two new people do everything a person does on Forest, on devnet, against the services
 this repo deploys, and the run checks that the index shows the result.
 
-It is not a service: anyone runs it by hand, with the devnet phrase. It tests Soil's host, issuer,
-fee payer and connections and the foundation's index; anyone running their own can point
+It is not a service: the foundation runs it by hand, with the devnet phrase. It tests the
+foundation's host, issuer, fee payer, connections and index; anyone running their own can point
 `devnet.json` at theirs. It runs on Solana's devnet, with test dollars and the stand-in for both of
 the issuer's checks.
 Nothing is on mainnet, and nothing is shipped.
@@ -25,12 +25,12 @@ it:
 3. **Stamped by the issuer:** a face check (the devnet stand-in passes it), the stamp submitted,
    then polled until it is on the list.
 4. **A row each in the registry,** proven against the issuer's newest snapshot and carrying the
-   issuer's signature on its root. The seller's goes through the fee payer's sponsored node with a
+   issuer's signature on its root. The seller's goes through the fee payer's voucher door with a
    voucher (a second proof from the same stamp, under `sponsor/1`) and costs the seller nothing; the
-   buyer's goes through its general node, paid in test dollars. Then the seller takes the issuer's
+   buyer's goes through its at-cost door, paid in test dollars. Then the seller takes the issuer's
    ID check (the stand-in passes it too), its stamp for the ID list goes onto that list, and it
    registers its profile again: a second row for the same main key, proven against the ID list,
-   through the sponsored node with an ID-list voucher (`sponsor/10`). The run reads each row back
+   through the voucher door with an ID-list voucher (`sponsor/10`). The run reads each row back
    and checks the signature and that the fee payer paid for it.
 5. **Each app publishes** the profile's hosts record and its profile record on the host. The
    seller's declares an inbox: senders holding a row from the devnet issuer, one message from each.
@@ -78,12 +78,12 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 
 Run it against the services as deployed from `main`: the index step waits for the deployed index
 to show the offer's photo and the seller's ID row, and the proof step for its reputation tree. The
-ID step needs the sponsored node with both of the issuer's lists in `VOUCHER_ISSUERS`.
+ID step needs the fee payer with both of the issuer's lists in `VOUCHER_ISSUERS`.
 
 ### The latest run
 
 2026-10-05, 02:09 to 02:13 UTC, against all five services as deployed from `main` at `edb9d68`
-(forest at `09b5b96`), the fee payer's two nodes included: **passed** in 230 seconds, most of it
+(forest at `09b5b96`), both of the fee payer's doors included: **passed** in 230 seconds, most of it
 waiting for the issuer's two batches. Its record is
 [`runs/2026-10-05T02-09-34-894Z.json`](runs/2026-10-05T02-09-34-894Z.json). It is the first run
 with step 11: the seller proved its rating on the device, and the index checked the proof and shows
@@ -93,7 +93,7 @@ it.
 |---|---|
 | People | Seller `9m6Vki3PmxGF5WN2kHxwdUKd1sMZNbLUzW6i7ynQT4dW`, buyer `hYtSXUuWTP8XWDxwGioyaX4sMn11nF19pvcnm6Lxa4n` |
 | The lists | Both stamped in one batch on the face list: 20 stamps, snapshot root `3014e388…`, signed by `7zPD6AZc…`. Then the seller on the ID list: 2 stamps, root `1bae2ace…`, signed by `BVT1PcgV…` |
-| Rows, through the fee payer | `tutoring/seller` through the sponsored node with the voucher `sponsor/1`, 651 bytes, charged nothing; `tutoring/buyer` through the general node, 795 bytes, charged 1.77276 test dollars; the seller's second `tutoring/seller`, against the ID list, through the sponsored node with `sponsor/10`, 651 bytes, charged nothing. The seller held no SOL and paid no dollar for either |
+| Rows, through the fee payer | `tutoring/seller` through the voucher door with the voucher `sponsor/1`, 651 bytes, charged nothing; `tutoring/buyer` through the at-cost door, 795 bytes, charged 1.77276 test dollars; the seller's second `tutoring/seller`, against the ID list, through the voucher door with `sponsor/10`, 651 bytes, charged nothing. The seller held no SOL and paid no dollar for either |
 | Access keys | Seller's assistant `FntAGQHD…`, buyer's `99xAEe7n…`, each on its profile's permissions list |
 | Records | The seller's offer `offer/maths`, signed by the access key, and its photo, 79 bytes, on the host; two reviews |
 | The inbox | The buyer's message, 2,562 bytes, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its reading key |

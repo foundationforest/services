@@ -4,10 +4,10 @@ The index reads what profiles publish, the registry's rows and the escrow's rece
 profile, publishes its ratings as a tree a person proves from, and serves it all at open URLs, as
 pages for people and as JSON for AI agents.
 
-The foundation runs this one, on devnet: it reads Solana devnet and Soil's host. Anyone can run
-another, from this code or their own. What this one reads and how it weighs it are files in this
-directory (Policy), so anyone can rebuild what it shows from them, the hosts and the chain. Nothing
-is on mainnet, and nothing is shipped.
+The foundation runs this one, on devnet: it reads Solana devnet and the foundation's host. Anyone
+can run another, from this code or their own. What this one reads and how it weighs it are files in
+this directory (Policy), so anyone can rebuild what it shows from them, the hosts and the chain.
+Nothing is on mainnet, and nothing is shipped.
 
 Up: [the repo](../README.md). How an AI agent reads it: [`skill.md`](skill.md).
 
@@ -353,8 +353,8 @@ at https://index-production-1b6e.up.railway.app:
 - **One replica,** health check `GET /`, a public domain to port 8080, no volume: its state is in
   Postgres, on Supabase (project `forest-devnet`), through the session pooler, with TLS verified
   against Supabase's public root, `deploy/supabase-root-2021.crt` (`NODE_EXTRA_CA_CERTS`).
-- **What it reads:** Soil's host (`host/`), the rows of the devnet issuer's two lists, the devnet
-  registry and escrow, and the markets directory's `main`.
+- **What it reads:** the foundation's host (`host/`), the rows of the devnet issuer's two lists,
+  the devnet registry and escrow, and the markets directory's `main`.
 
 | Variable | On devnet | Sealed |
 |---|---|---|
@@ -374,15 +374,15 @@ keys.
 Each of these is this index's opinion, not a rule, and a file in this directory, read at start.
 Another index holds its own.
 
-- **Which hosts count:** the hosts in `lists/hosts.json`, each read in full. Today: Soil's host on
-  devnet. It does not answer the hosts request (forest's
+- **Which hosts count:** the hosts in `lists/hosts.json`, each read in full. Today: the
+  foundation's host on devnet. It does not answer the hosts request (forest's
   [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Indexes"), so
   no profile can ask it to read another host. Reading any host a verified profile names is a later
   feature.
 - **Which issuers count, and how much:** `lists/issuers.json`, each with a weight from 0 to 1. No
-  issuer counts unless it is named there. Today: Soil's devnet issuer's two lists, its face list at
-  0.7 and its ID list (face and a government ID) at 0.9, so a profile with a row from each scores
-  0.97.
+  issuer counts unless it is named there. Today: the foundation's devnet issuer's two lists, its
+  face list at 0.7 and its ID list (face and a government ID) at 0.9, so a profile with a row from
+  each scores 0.97.
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
   `main`.
 - **The reputation tree:** rebuilt after every scoring pass, from every counted row with a known
@@ -416,9 +416,9 @@ Another index holds its own.
 
 ## Limits
 
-- **It trusts its issuers** to put on their lists only the stamps they say they do (Soil's devnet
-  issuer: one per face on its face list, one per face that passed an ID check on its ID list, with a
-  stand-in that passes everyone on both). It cannot tell.
+- **It trusts its issuers** to put on their lists only the stamps they say they do (the
+  foundation's devnet issuer: one per face on its face list, one per face that passed an ID check on
+  its ID list, with a stand-in that passes everyone on both). It cannot tell.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **A shown market and an exact rating can name the profile.** The tree is public. In a market with
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
@@ -434,8 +434,8 @@ Another index holds its own.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
   here, whatever its rows.
 - **A page with a picture has the reader's browser fetch it from the host,** which sees the
-  reader's network address, though not the page: no referrer is sent. Soil's host keeps no address
-  (`host/`); on Railway, Railway's own request logs do.
+  reader's network address, though not the page: no referrer is sent. The foundation's host keeps
+  no address (`host/`); on Railway, Railway's own request logs do.
 - **A picture is checked once.** A host that loses the bytes after that leaves a broken picture on
   the page.
 - **It keeps every record its hosts serve,** for every profile, counted or not, and every version

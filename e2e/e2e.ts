@@ -10,11 +10,11 @@
 //      later needs SOL);
 //   3. stamped by the issuer: a face check (the stand-in passes it), the stamp submitted, and listed;
 //   4. registered: a row for each, proven against the issuer's newest snapshot and carrying its
-//      signature: the seller's through the fee payer's sponsored node with a voucher, free; the
-//      buyer's through its general node, paid in the test dollar;
+//      signature: the seller's through the fee payer's voucher door with a voucher, free; the
+//      buyer's through its at-cost door, paid in the test dollar;
 //      then the seller passes the issuer's ID check (the stand-in passes it too), lands on the ID
 //      list, and registers its profile again, a second row for the same main key, proven against the
-//      ID list, through the sponsored node with an ID-list voucher (`sponsor/10`);
+//      ID list, through the voucher door with an ID-list voucher (`sponsor/10`);
 //   5. each app publishes the profile's hosts record and card, with its reading key; the seller's
 //      card declares an inbox: senders holding a row from the devnet issuer, one message each;
 //   6. an assistant connects to each through connections (OAuth): the app adds the access key it
@@ -138,11 +138,12 @@ async function kora<T>(method: string, params: Record<string, unknown> = {}): Pr
 type Paid = { signature: string; charge: string; bytes: number }
 
 /**
- * What a person's app does to send through the fee payer: the transaction with the fee payer as
- * payer and a payment to it in the test dollar already in place (Kora's price counts it), the price
- * asked, the payment set to exactly that, the main key signs, Kora checks, co-signs and sends.
+ * What a person's app does to send through the fee payer's at-cost door: the transaction with the
+ * fee payer as payer and a payment to it in the test dollar already in place (Kora's price counts
+ * it), the price asked, the payment set to exactly that, the main key signs, Kora checks, co-signs
+ * and sends.
  */
-async function throughKora(signer: Keypair, instructions: TransactionInstruction[], token: escrow.Token): Promise<Paid> {
+async function throughAtCostDoor(signer: Keypair, instructions: TransactionInstruction[], token: escrow.Token): Promise<Paid> {
   const payer = await kora<{ signer_address: string; payment_address: string }>('getPayerSigner')
   const feePayer = new PublicKey(payer.signer_address)
   const paymentTo = escrow.associatedTokenAddress(new PublicKey(payer.payment_address), token.mint, token.program)
@@ -272,13 +273,13 @@ async function idChecked(p: Person): Promise<ListFile> {
 type Voucher = { secret: Uint8Array; label: string }
 
 /**
- * What a person's app does to have a row sponsored: a voucher, which is a second proof from the same
- * stamp on the list the row is proven against, under a `sponsor/` label, naming the same main key; the row's transaction with
- * the fee payer as payer, signed by the main key; both to the sponsored node. It costs the person
- * nothing: no SOL, no dollar.
+ * What a person's app does to have a row paid for at the voucher door: a voucher, which is a
+ * second proof from the same stamp on the list the row is proven against, under a `sponsor/` label
+ * (forest's word for it), naming the same main key; the row's transaction with the fee payer as
+ * payer, signed by the main key; both to the fee payer's address plus `/vouchers`. It costs the
+ * person nothing: no SOL, no dollar.
  */
-async function throughSponsor(p: Person, register: TransactionInstruction, feePayer: PublicKey, stamps: bigint[], snapshot: ListFile['snapshots'][number], token: escrow.Token, from: Voucher): Promise<Paid> {
-  assert.ok(URL.canParse(cfg.sponsor!), 'devnet.json names the sponsored node')
+async function throughVoucherDoor(p: Person, register: TransactionInstruction, feePayer: PublicKey, stamps: bigint[], snapshot: ListFile['snapshots'][number], token: escrow.Token, from: Voucher): Promise<Paid> {
   const v = await proveStamp({ secret: from.secret, label: from.label, profile: p.profile.publicKey, stamps, artifacts: ARTIFACTS })
   const voucher = { proof: v.raw, root: hex.encode(toBytes32(v.root)), issuerSignature: snapshot.signature, label: from.label, marketStamp: hex.encode(toBytes32(v.marketStamp)) }
   const blockhash = (await connection.getLatestBlockhash('confirmed')).blockhash
@@ -287,8 +288,8 @@ async function throughSponsor(p: Person, register: TransactionInstruction, feePa
   const wire = tx.serialize()
   const dollars = async () => (await connection.getTokenAccountBalance(escrow.associatedTokenAddress(p.signer.publicKey, token.mint, token.program))).value.amount
   const before = await dollars()
-  const { status, body } = await post(`${cfg.sponsor}/sponsor`, { transaction: Buffer.from(wire).toString('base64'), voucher })
-  assert.equal(status, 200, `the sponsored node: ${JSON.stringify(body)}`)
+  const { status, body } = await post(`${cfg.feePayer}/vouchers`, { transaction: Buffer.from(wire).toString('base64'), voucher })
+  assert.equal(status, 200, `the voucher door: ${JSON.stringify(body)}`)
   await confirm(body.signature)
   assert.equal(await connection.getBalance(p.signer.publicKey), 0, 'the person still holds no SOL')
   assert.equal(await dollars(), before, 'and paid no dollar')
@@ -298,7 +299,7 @@ async function throughSponsor(p: Person, register: TransactionInstruction, feePa
 async function register(p: Person, list: ListFile, token: escrow.Token, path: 'voucher' | 'paid', from: Voucher = { secret: p.secret, label: 'sponsor/1' }) {
   const newest = list.snapshots.at(-1)!
   const stamps = list.stamps.slice(0, newest.size).map(BigInt)
-  // Both nodes sign with the general node's key.
+  // Both doors sign with one key, which the at-cost door names.
   const payer = await kora<{ signer_address: string }>('getPayerSigner')
   const feePayer = new PublicKey(payer.signer_address)
   const registration = await buildRegistration({
@@ -315,7 +316,7 @@ async function register(p: Person, list: ListFile, token: escrow.Token, path: 'v
     programId: REGISTRY as never,
   })
   const ix = registration.instruction as never as TransactionInstruction
-  const paid = path === 'voucher' ? await throughSponsor(p, ix, feePayer, stamps, newest, token, from) : await throughKora(p.signer, [ix], token)
+  const paid = path === 'voucher' ? await throughVoucherDoor(p, ix, feePayer, stamps, newest, token, from) : await throughAtCostDoor(p.signer, [ix], token)
   const row = await fetchRow(connection as never, marketStampOf(from.secret, p.label), { programId: REGISTRY as never })
   assert.ok(row, 'the row is there')
   assert.equal(row.label, p.label)
@@ -323,7 +324,7 @@ async function register(p: Person, list: ListFile, token: escrow.Token, path: 'v
   assert.equal(row.issuer.toBase58(), list.issuer, 'and the issuer')
   assert.equal(row.payer.toBase58(), payer.signer_address, 'and the fee payer as its payer')
   assert.ok(issuerSigned(row), "with the issuer's signature on its root")
-  say(`${p.role}: row ${p.label} under ${list.issuer} through the fee payer's ${path === 'voucher' ? `sponsored node, with the voucher ${from.label}` : 'general node, paid'}, ${paid.signature}`)
+  say(`${p.role}: row ${p.label} under ${list.issuer} through the fee payer's ${path === 'voucher' ? `voucher door, with the voucher ${from.label}` : 'at-cost door, paid'}, ${paid.signature}`)
   return { label: p.label, issuer: list.issuer, path, ...(path === 'voucher' ? { voucher: from.label } : {}), row: registration.row.toBase58(), ...paid }
 }
 
@@ -457,7 +458,7 @@ async function pay(buyer: Person, seller: Person, offer: { price: { amount: stri
   const terms = escrow.termsFor(undefined, { seller: seller.signer.publicKey, amount: BigInt(offer.price.amount) * DOLLAR })
   const args = { buyer: buyer.signer.publicKey, payer: new PublicKey(payer.signer_address), token, terms, programId: ESCROW }
   const keys = escrow.keysFor({ buyer: args.buyer, mint: token.mint, tokenProgram: token.program, terms, programId: ESCROW })
-  const paid = await throughKora(buyer.signer, escrow.payInOneTap(args), token)
+  const paid = await throughAtCostDoor(buyer.signer, escrow.payInOneTap(args), token)
   const account = escrow.decodeEscrow(new Uint8Array((await connection.getAccountInfo(keys.escrow))!.data))
   assert.equal(account.status, 'ended')
   assert.equal(account.outcome, 'releasedToSeller')

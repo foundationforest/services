@@ -4,9 +4,10 @@ The issuer checks once that a person is one real human, by face, and puts their 
 anyone can read; for a person already on it, a second check, by face and a government ID, puts a
 stamp on a second list.
 
-Soil runs this one, on devnet, with a stand-in that passes everyone, on both checks. Anyone can run
-another, with this code or their own: an issuer is anyone who keeps a list of stamps, and each
-reader decides which issuers it trusts. Nothing is on mainnet, and nothing is shipped.
+The foundation runs this one, on devnet, with a stand-in that passes everyone, on both checks.
+Anyone can run another, with this code or their own: an issuer is anyone who keeps a list of
+stamps, and each reader decides which issuers it trusts. Nothing is on mainnet, and nothing is
+shipped.
 
 Up: [the repo](../README.md).
 
@@ -198,8 +199,8 @@ faces, so for face first it takes the newest face session it opened as the face 
 session's search finds: an ID session opened before any face session, or since a restart, finds
 none and is refused.
 
-Soil's devnet issuer runs that image on Railway, project `forest-devnet`, service `issuer`, at
-https://issuer-production-4976.up.railway.app:
+The foundation's devnet issuer runs that image on Railway, project `forest-devnet`, service
+`issuer`, at https://issuer-production-4976.up.railway.app:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=issuer/deploy/Dockerfile`.
 - **One replica,** a volume at `/data`, a public domain to port 8080. No health check: Railway
@@ -226,8 +227,8 @@ it started, and of the runs before its list moved off chain, kept under its new 
 
 ## Policy
 
-- **The face check is free to the person.** Soil pays its provider, Didit, per check: about $0.15 a
-  check from 1 November 2026. On devnet the stand-in costs nothing.
+- **The face check is free to the person.** The foundation pays its provider, Didit, per check:
+  about $0.15 a check from 1 November 2026. On devnet the stand-in costs nothing.
 - **The ID check costs `ID_TIER_PRICE`,** in the dollar `ID_TIER_MINT`, paid before the session
   opens. Didit lists the ID workflow at up to $0.30 a check (October 2026). On devnet the price is 0,
   and it stays 0 until an entity can receive the money.
@@ -236,7 +237,7 @@ it started, and of the runs before its list moved off chain, kept under its new 
   mixed from the issuer's seed under `payments`, in the classic test dollar. On mainnet it is the
   address of the entity that receives the money, once one exists.
 - **Never from a profile's address.** A payment is public on chain for good. Paid from a profile's
-  address, it would tell everyone that this profile took Soil's ID check, and tell the issuer, which
+  address, it would tell everyone that this profile took the ID check, and tell the issuer, which
   sees when each payment lands and opens a session for it, which Didit session, and so which face
   and which document, goes with that profile. The lists exist so that a row says a profile's holder
   is on one and nothing more. The app pays from an address that holds no profile; the issuer cannot
@@ -316,8 +317,8 @@ it started, and of the runs before its list moved off chain, kept under its new 
 - **It trusts its RPC** to say which finalized transactions name a reference and what each moved.
   It reads the 20 newest that name it. Each `POST /id/session` with a payment asks the RPC, and has
   no limit of its own.
-- **A payment through Soil's fee payer is untested:** a transfer that lists one more account is not
-  among what its tests sent through Kora.
+- **A payment through the foundation's fee payer is untested:** a transfer that lists one more
+  account is not among what its tests sent through Kora.
 - **It trusts its own file:** at start, each list in the file must match its newest snapshot, or it
   refuses to start.
 - **A proxy's address header counts only when `CLIENT_ADDRESS_HEADER` names it;** otherwise the

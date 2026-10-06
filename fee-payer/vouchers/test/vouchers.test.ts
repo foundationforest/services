@@ -1,6 +1,8 @@
-// The pre-check on loopback, in front of a stand-in Kora that records what reaches it. Real vouchers:
-// proofs from a stamp on a test issuer's list, made with forest's proveStamp, checked with its
-// verifyStamp. Each refusal is provoked once, and nothing refused ever reaches Kora.
+// The voucher check on loopback, the fee payer's front, in front of two stand-in Koras that record
+// what reaches them: the free one, behind the voucher door, and the at-cost one, which gets every
+// other request. Real vouchers: proofs from a stamp on a test issuer's list, made with forest's
+// proveStamp, checked with its verifyStamp. Each refusal is provoked once, and nothing refused ever
+// reaches either Kora.
 //
 //   npm test
 //
@@ -30,7 +32,7 @@ import {
 
 import { listRoot, proveStamp, refundIx, registerIx, stampOf, toBytes32 } from '../../../forest/registry/client/src/index.ts'
 
-import { readConfig, startSponsor, type Config } from '../src/sponsor.ts'
+import { readConfig, startFront, type Config } from '../src/vouchers.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const forest = join(here, '../../../forest')
@@ -51,9 +53,9 @@ function signRoot(key: Keypair, root: bigint): Uint8Array {
   return new Uint8Array(edSign(null, toBytes32(root), createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })))
 }
 
-// Soil's issuer's two lists, as far as this test goes: the face list, whose stamps earn three
-// vouchers, and the ID list, signed by its own key, whose stamps earn ten. One person has a stamp on
-// each among others, from a secret per list.
+// The foundation's issuer's two lists, as far as this test goes: the face list, whose stamps earn
+// three vouchers, and the ID list, signed by its own key, whose stamps earn ten. One person has a
+// stamp on each among others, from a secret per list.
 function list() {
   const key = Keypair.generate()
   const secret = new Uint8Array(randomBytes(32))
@@ -74,7 +76,7 @@ async function voucherFor(profile: Keypair, label: string, from = face): Promise
   return { proof: p.raw, root: hex(toBytes32(p.root)), issuerSignature: hex(from.signature), label, marketStamp: hex(toBytes32(p.marketStamp)) }
 }
 
-/** A `register` for this main key, as an app sends it. The row's own proof is the program's to check, not the pre-check's. */
+/** A `register` for this main key, as an app sends it. The row's own proof is the program's to check, not the voucher check's. */
 function register(profile: Keypair, programId = REGISTRY): TransactionInstruction {
   return registerIx({
     profile: profile.publicKey as never,
@@ -96,7 +98,7 @@ function transaction(instructions: TransactionInstruction[], signers: Keypair[],
   return b64(tx.serialize())
 }
 
-// The stand-in Kora: it records each call, checks the key, and answers as `mode` says.
+// The stand-in free Kora: it records each call, checks the key, and answers as `mode` says.
 let mode: 'sign' | 'refuse' = 'sign'
 const calls: { apiKey: string | undefined; body: any }[] = []
 const kora = createServer((req: IncomingMessage, res) => {
@@ -113,6 +115,18 @@ const kora = createServer((req: IncomingMessage, res) => {
   })
 })
 
+// The stand-in at-cost Kora: it records each request as it arrived, and answers with a status, a
+// header and a body of its own, so the test can see both pass through unchanged.
+const atCostCalls: { method: string | undefined; url: string | undefined; headers: IncomingMessage['headers']; body: string }[] = []
+const atCost = createServer((req: IncomingMessage, res) => {
+  const chunks: Buffer[] = []
+  req.on('data', (c: Buffer) => chunks.push(c))
+  req.on('end', () => {
+    atCostCalls.push({ method: req.method, url: req.url, headers: req.headers, body: Buffer.concat(chunks).toString('utf8') })
+    res.writeHead(req.url === '/liveness' ? 200 : 207, { 'content-type': 'application/json', 'x-stand-in': 'at-cost' }).end(JSON.stringify({ answered: req.url }))
+  })
+})
+
 let dir: string
 let config: Config
 let service: { url: string; close: () => Promise<void> } | undefined
@@ -122,19 +136,21 @@ before(
   async () => {
     if (missing()) return
     await new Promise<void>((resolve) => kora.listen(0, '127.0.0.1', resolve))
-    dir = mkdtempSync(join(tmpdir(), 'forest-sponsor-'))
+    await new Promise<void>((resolve) => atCost.listen(0, '127.0.0.1', resolve))
+    dir = mkdtempSync(join(tmpdir(), 'forest-vouchers-'))
     config = {
-      koraUrl: `http://127.0.0.1:${(kora.address() as AddressInfo).port}`,
-      koraApiKey: API_KEY,
+      freeKoraUrl: `http://127.0.0.1:${(kora.address() as AddressInfo).port}`,
+      freeKoraApiKey: API_KEY,
+      atCostKoraUrl: `http://127.0.0.1:${(atCost.address() as AddressInfo).port}`,
       issuers: [
         { issuer: face.key.publicKey.toBytes(), vouchers: 3 },
         { issuer: id.key.publicKey.toBytes(), vouchers: 10 },
       ],
       registry: REGISTRY,
-      databasePath: join(dir, 'data/sponsor.sqlite'),
+      databasePath: join(dir, 'data/vouchers.sqlite'),
       port: 0,
     }
-    service = await startSponsor(config)
+    service = await startFront(config)
     vouchers.one = await voucherFor(alice, 'sponsor/1')
     vouchers.two = await voucherFor(alice, 'sponsor/2')
     vouchers.idOne = await voucherFor(alice, 'sponsor/1', id)
@@ -146,23 +162,24 @@ before(
 after(async () => {
   await service?.close()
   kora.close()
+  atCost.close()
   if (dir) rmSync(dir, { recursive: true, force: true })
 })
 
 async function post(body: unknown): Promise<{ status: number; body: any }> {
-  const res = await fetch(`${service!.url}/sponsor`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) })
+  const res = await fetch(`${service!.url}/vouchers`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) })
   return { status: res.status, body: await res.json() }
 }
 
-/** A refusal: the named error, and nothing reaches Kora. */
+/** A refusal: the named error, and nothing reaches either Kora. */
 async function refused(body: unknown, error: string, status = 400): Promise<void> {
-  const before = calls.length
+  const before = [calls.length, atCostCalls.length]
   const answer = await post(body)
   assert.deepEqual([answer.status, answer.body.error], [status, error], JSON.stringify(answer.body))
-  assert.equal(calls.length, before, `${error}: nothing reached Kora`)
+  assert.deepEqual([calls.length, atCostCalls.length], before, `${error}: nothing reached either Kora`)
 }
 
-test('the pre-check lets through one registry row per voucher, and refuses everything else by name', { timeout: 120_000 }, async (t) => {
+test('the voucher door lets through one registry row per voucher, and refuses everything else by name', { timeout: 120_000 }, async (t) => {
   const why = missing()
   if (why) return t.skip(why)
   const one = vouchers.one!
@@ -249,19 +266,43 @@ test('the pre-check lets through one registry row per voucher, and refuses every
 
   // The used set is on disk: a restart keeps it.
   await service!.close()
-  service = await startSponsor(config)
+  service = await startFront(config)
   await refused({ transaction: good, voucher: one }, 'voucher_used', 409)
 
-  // Browsers ask first; nothing else is served.
-  const preflight = await fetch(`${service.url}/sponsor`, { method: 'OPTIONS' })
+  // Browsers ask first; the voucher door answers nothing but POST.
+  const preflight = await fetch(`${service.url}/vouchers`, { method: 'OPTIONS' })
   assert.equal(preflight.status, 204)
   assert.equal(preflight.headers.get('access-control-allow-origin'), '*')
-  assert.equal((await fetch(`${service.url}/`)).status, 404)
-  assert.equal((await fetch(`${service.url}/sponsor`)).status, 405)
+  assert.equal((await fetch(`${service.url}/vouchers`)).status, 405)
+  assert.equal(atCostCalls.length, 0, 'nothing at /vouchers reached the at-cost Kora')
+})
+
+test('the at-cost door: every other request goes to the at-cost Kora, and its answer comes back, both unchanged', async (t) => {
+  const why = missing()
+  if (why) return t.skip(why)
+  const free = calls.length
+
+  // Kora's JSON-RPC, as an app calls it.
+  const rpc = JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'getPayerSigner', params: {} })
+  const res = await fetch(`${service!.url}/?a=1`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-app': 'forest' }, body: rpc })
+  assert.equal(res.status, 207, "the at-cost Kora's status")
+  assert.equal(res.headers.get('x-stand-in'), 'at-cost', 'and its headers')
+  assert.deepEqual(await res.json(), { answered: '/?a=1' }, 'and its body')
+  const call = atCostCalls.at(-1)!
+  assert.deepEqual([call.method, call.url, call.body], ['POST', '/?a=1', rpc], 'the request as it came')
+  assert.equal(call.headers['x-app'], 'forest')
+  assert.equal(call.headers['content-type'], 'application/json')
+
+  // Railway's health check, and a browser's preflight: Kora's own to answer.
+  assert.equal((await fetch(`${service!.url}/liveness`)).status, 200)
+  assert.equal(atCostCalls.at(-1)!.method, 'GET')
+  await fetch(`${service!.url}/`, { method: 'OPTIONS' })
+  assert.deepEqual([atCostCalls.at(-1)!.method, atCostCalls.at(-1)!.url], ['OPTIONS', '/'])
+  assert.equal(calls.length, free, 'none of it reached the free Kora')
 })
 
 test('VOUCHER_ISSUERS: each issuer with how many vouchers a stamp on its list earns', () => {
-  const env = { KORA_URL: 'http://127.0.0.1:8081', KORA_API_KEY: 'k', REGISTRY_PROGRAM: REGISTRY.toBase58() }
+  const env = { FREE_KORA_URL: 'http://127.0.0.1:8082', FREE_KORA_API_KEY: 'k', AT_COST_KORA_URL: 'http://127.0.0.1:8081', REGISTRY_PROGRAM: REGISTRY.toBase58() }
   const [a, b] = [face.key.publicKey.toBase58(), id.key.publicKey.toBase58()]
   const config = readConfig({ ...env, VOUCHER_ISSUERS: `${a}:3, ${b}:10` })
   assert.deepEqual(
