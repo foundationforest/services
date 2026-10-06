@@ -27,7 +27,7 @@ access key and sent to the hosts the profile's hosts record names (forest's
    profile's new permissions record with the main key and publishes it to the profile's hosts.
 4. **The waiting page checks every 5 seconds.** It reads the profile from the hosts in `HOSTS` and
    then every host its hosts record names (forest's `readProfile`). Once the current permissions
-   record lists the access key for both `offer` and `review`, with its time not up, the grant goes
+   record lists the access key to write (scope `write`) both `offer` and `review`, the grant goes
    through: the person is sent back to the assistant with a one-time code, and the assistant trades
    it for tokens.
 5. **The assistant calls `post_offer` or `post_review` at `/mcp`** with its access token. Each tool
@@ -36,8 +36,8 @@ access key and sent to the hosts the profile's hosts record names (forest's
    lists the key for that path now, and the main key has not written there (the owner wins). The
    record goes to every host the profile names; the answer says which took it.
 
-The person ends a connection by removing the access key in their app. What it already posted stays
-on the hosts.
+The person ends a connection by revoking the access key in their app. What it already posted stays
+on the hosts, and still counts.
 
 ### Routes
 
@@ -142,17 +142,18 @@ e2e connects an assistant for each of its two people on every run.
 
 - **It holds every access key it made,** private bytes in its SQLite file on the volume, not
   encrypted. Whoever reads that file can post offers and reviews for every connected profile, until
-  each person removes the key in their app.
+  each person revokes the key in their app.
 - **Anyone can register an assistant.** Registration is open, as MCP expects. What protects a
   profile is that only the person's app can list an access key.
 - **It trusts the hosts it reads.** A host that hides the newest permissions record can keep a
-  removed access key looking listed, here and to everyone else reading that host.
+  revoked access key looking listed, here and to everyone else reading that host.
 - **One access key per connection, for offers and reviews together.** A person who lists it for one
   of the two only never gets the grant.
 - **An hour to finish.** A person who has not added the access key within an hour starts again from
   the assistant.
-- **Connections made before forest's 3 October words stop posting.** Their keys sit in permissions
-  records of the old shape, which forest now reads as listing no access key.
+- **Connections made before forest's scoped permissions stop posting.** Their keys sit in
+  permissions records of an older shape, which forest now refuses; the person adds the key again in
+  their app, with scope `write`.
 - **Address logs.** The service keeps no network address (above). A hosting provider's own request
   logs are the operator's choice; on Railway they exist, with each request's client address and
   path.
@@ -162,13 +163,13 @@ e2e connects an assistant for each of its two people on every run.
 - **The standard (forest):** what an access key is, the permissions record, and the access rule.
 - **This service, by its policy:** which tools it offers, what it keeps and for how long, and who
   may register.
-- **The person, through their app:** whether to list its key, for which paths, and until when.
+- **The person, through their app:** whether to list its key, for which paths, and when to revoke it.
 
 ## FAQ
 
 **Why an access key per connection, and not a draft the person approves?**
 An access key is how forest lets something other than the main key write for a profile: the person
-lists it once in their app, and can remove it there at any time. A record it signs reads as the
+lists it once in their app, and can revoke it there at any time. A record it signs reads as the
 access key's on every host, so nothing else has to trust this service. Approving each draft on a
 page of ours would put this service between the person and every record.
 

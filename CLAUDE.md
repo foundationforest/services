@@ -6,9 +6,9 @@ task.
 ## Words
 
 Use these words: seed, main key, profile, address, label, stamp, issuer, list, registry, row,
-record, folder, host, access key, permissions, private, envelope, reading key, inbox, blob, escrow,
-receipt, deal, index, fee payer, connections, app, market, role, ramp, and sealed (for programs
-only). Plain words, no em-dashes.
+record, folder, host, access key, grant, permissions, private, envelope, inbox key, inbox, blob,
+escrow, receipt, deal, index, fee payer, connections, app, market, role, ramp, and sealed (for
+programs only). Plain words, no em-dashes.
 
 - issuer, never keeper; access key, never writer key; fee payer, never relayer or sponsor; main
   key, never profile key; address, never wallet, for a key ("a wallet app" is fine).

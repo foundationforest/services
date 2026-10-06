@@ -104,7 +104,7 @@ test('an assistant connects with OAuth, the person adds its access key, and it p
 
     // The person's app adds the access key, signed with the main key; the grant goes through.
     const t1 = Date.now()
-    await publish([hostUrl], [permissionsRecord(me, [{ key: access, paths: ['offer', 'review'], until: t1 + 30 * 86_400_000 }], t1)])
+    await publish([hostUrl], [permissionsRecord(me, [{ key: access, scope: 'write', paths: ['offer', 'review'] }], t1)])
     const granted = await fetch(base + connect, { redirect: 'manual' })
     assert.equal(granted.status, 302)
     const back = new URL(granted.headers.get('location')!)
@@ -156,7 +156,7 @@ test('an assistant connects with OAuth, the person adds its access key, and it p
 
     // The person removes the access key in their app: from then on the tools refuse; what it wrote stays.
     const t2 = Date.now()
-    await publish([hostUrl], [permissionsRecord(me, [{ key: access, paths: ['offer', 'review'], until: t2 }], t2 + 1)])
+    await publish([hostUrl], [permissionsRecord(me, [{ key: access, scope: 'revoked', paths: ['offer', 'review'] }], t2 + 1)])
     const refused = await assistant.callTool({ name: 'post_offer', arguments: { id: 'later', offer } })
     assert.equal(refused.isError, true)
     assert.match(JSON.stringify(refused), /not on the profile's permissions list/)

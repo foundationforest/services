@@ -67,8 +67,8 @@ export async function post(connection: ToolConnection, kind: Kind, args: Record<
   if (!view.hosts.length) return fail('the profile names no hosts: its app has not published its hosts record where this service looks')
   if (view.current.get(path)?.record.by === undefined && view.current.has(path)) return fail(`the profile's main key wrote ${path}; an access key cannot replace it. Use another id.`)
   const record = accessRecord(key, connection.profile, path, body, nextTime(now, view, path))
-  if (!allowsArrival(view.access, record, now)) {
-    return fail(`this connection's access key (${key.address}) is not on the profile's permissions list for ${path}, or its time is up. The person adds it in their app, or connects again.`)
+  if (!allowsArrival(view.access, record)) {
+    return fail(`this connection's access key (${key.address}) is not on the profile's permissions list for ${path}, or it is revoked. The person adds it in their app, or connects again.`)
   }
   const outcomes = await publish(view.hosts, [record])
   const took = outcomes.filter((o) => o.results[0]?.ok)

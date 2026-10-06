@@ -423,12 +423,13 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
     })
 
     await t.test('10. records: the access rule, by forest’s view, and private records left alone', async () => {
-      // The access key wrote two offers into Ana's profile: one dated before its `until`, which
-      // counts, and one after, which does not. Neither is her own record, and the first counts in
-      // full: an offer is an offer, whoever signed it for her.
+      // Two keys Ana lists wrote an offer each into her profile: the access key she revoked, whose
+      // offer counts, and her message key, whose offer does not: only a write key, or a revoked one,
+      // writes. Neither is her own record, and the first counts in full: an offer is an offer,
+      // whoever signed it for her.
       const uris = anaTwin.offers.map((o: any) => o.uri)
-      assert.ok(uris.includes(OFFERS.french.uri), 'the access key’s offer from before its until')
-      assert.equal(uris.includes(`${ana.address}/offer/german`), false, 'its offer from after does not count')
+      assert.ok(uris.includes(OFFERS.french.uri), 'the revoked access key’s offer')
+      assert.equal(uris.includes(`${ana.address}/offer/german`), false, 'the message key’s offer counts for nothing')
       // A private record at an offer's path: its readers open it, the index never stores it.
       assert.equal(uris.includes(`${ana.address}/offer/private`), false)
       assert.equal((await fixture.db.query("select count(*)::int as n from offers where uri like '%/offer/private'")).rows[0].n, 0)

@@ -5,9 +5,10 @@
 //
 //   - Records are real signed records (forest/records), one host's, taken in through the index's own
 //     view and store, so each body is checked against its shape exactly as a record read from a host
-//     is. Ana lets an access key write offers until 6 September: its offer from before counts, its
-//     offer from after does not. Ana also keeps a private record at an offer's path: the index leaves
-//     it alone.
+//     is. Ana let an access key write offers, then revoked it: what it wrote counts. A key she lists
+//     to send her messages wrote an offer too: it counts for nothing, since only a write key, or a
+//     revoked one, writes. Ana also keeps a private record at an offer's path: the index leaves it
+//     alone.
 //   - Pictures: Ben's review of Ana carries a photo, Dara's offer a video, Ana's card a photo. The
 //     three records are also on a second host, forest's reference host on loopback, which holds the
 //     bytes of the first two and never gets the third. The readers ask it, as they ask every host.
@@ -96,8 +97,10 @@ export const cleo = await person(23, SELLER, 'Cleo')
 export const dara = await person(24, PEER, 'Dara Mensah')
 /** Her row's issuer signature does not check: no row counts, and nothing of hers is stored. */
 export const eve = await person(25, SELLER, 'Eve')
-/** The access key Ana lets write offers until 6 September. */
+/** The access key Ana let write offers, then revoked. */
 export const ACCESS = keyFromPrivate(new Uint8Array(32).fill(42))
+/** The key Ana lists to send her messages: it writes nothing that counts. */
+export const MESSAGE_KEY = keyFromPrivate(new Uint8Array(32).fill(43))
 /** Ana invoiced Ben; Ben objected, then paid in one tap and released it to her. */
 export const DEAL = 'CJfRUQxyonG6B5mnztsNUqxknbFT89DJdrdrzV9F96mU'
 export const ESCROW_PROGRAM = 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8'
@@ -169,10 +172,10 @@ export const RECORDS: SignedRecord[] = [
     // Private: only its readers open it. The index stores nothing of it, at any path.
     ['offer/private', { private: b64u.encode(randomBytes(64)) }, 4],
   ]),
-  // The access key, on Ana's list for offers until 6 September.
-  permissionsRecord(ana.key, [{ key: ACCESS.address, paths: ['offer'], until: at(6) }], at(2)),
+  // The access key, revoked, on Ana's list for offers; and a message key.
+  permissionsRecord(ana.key, [{ key: ACCESS.address, scope: 'revoked', paths: ['offer'] }, { key: MESSAGE_KEY.address, scope: 'message' }], at(6)),
   accessRecord(ACCESS, ana.address, 'offer/french', offer('French for beginners, online.', '20', { subjects: ['french'] }), at(5)),
-  accessRecord(ACCESS, ana.address, 'offer/german', offer('German, written after the access key was removed.', '20', { subjects: ['german'] }), at(7)),
+  accessRecord(MESSAGE_KEY, ana.address, 'offer/german', offer('German, signed by a key that only sends messages.', '20', { subjects: ['german'] }), at(7)),
   ...records(ben, 2, profile(BUYER, 'Learning Portuguese for a move to Lisbon.', 2), [
     // Ana lives in online-tutors, whose file adds `sessions` to a review of her.
     ['review/ana', review(ana.address, { overall: '10', patience: '10' }, DEAL, 'Patient and well prepared.', 7, { sessions: 8, media: [PHOTO] }), 7],

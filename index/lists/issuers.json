@@ -1,7 +1,7 @@
 {
-  "about": "The issuers whose lists the foundation's index trusts, by the issuer's address, each with the index's weight for it from 0 to 1. A registry row counts here only when its issuer is named here and the issuer's signature on the row's root checks. This is the index's opinion, not a rule: another index trusts other issuers. On devnet, the two are Soil's devnet issuer's two lists, built from issuer/: the face list, signed by the issuer's key, and the ID list (face and a government ID), signed by the key mixed from its seed under `id`, weighed higher.",
+  "about": "The issuers whose lists the foundation's index trusts, by the issuer's address, each with the index's weight for it from 0 to 1. A registry row counts here only when its issuer is named here and the issuer's signature on the row's root checks. This is the index's opinion, not a rule: another index trusts other issuers. On devnet, the two are the foundation's devnet issuer's two lists, built from issuer/: the face list, signed by the issuer's key, and the ID list (face and a government ID), signed by the key mixed from its seed under `id`, weighed higher.",
   "issuers": {
-    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Soil issuer (devnet)", "weight": 0.7 },
-    "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4": { "name": "Soil issuer, ID (devnet)", "weight": 0.9 }
+    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Forest issuer (devnet)", "weight": 0.7 },
+    "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4": { "name": "Forest issuer, ID (devnet)", "weight": 0.9 }
   }
 }

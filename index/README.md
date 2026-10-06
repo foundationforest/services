@@ -30,9 +30,10 @@ lists/markets.json ── each market's file, from the markets directory ──�
     One that fails is dropped and reported. Every record that checks is kept, as its text, per
     host.
   - Each profile is viewed with forest's own `viewProfile`, which applies the access rule: an access
-    key's record counts while the profile's permissions record lists it for that path, judged by
-    the record's own date against the key's `until`; the main key's record wins over an access
-    key's at the same path.
+    key's record counts while the profile's permissions record lists the key with scope `write` or
+    `revoked`, its paths covering the record's path; a key not listed, or listed with another scope,
+    counts for nothing, and no date is checked. The main key's record wins over an access key's at
+    the same path.
   - Three shapes are read, by path: `profile`, `offer/<id>` and `review/<id>`. Each live body is
     checked against forest's shape for it (`forest/records/schemas/`); one that fails is not
     stored. A private record (a body that is only `{private}`) is left alone: only its readers can
@@ -227,8 +228,9 @@ index uses. Search results, pay links, a market filtered by `near`, and deals wi
 jpeg, a video for an mp4, with the type the record names. A page shows a picture only when a listed
 host that served its record holds the bytes as that type; otherwise it shows nothing. Each twin
 gives every picture as its record names it (`sha256`, `mimeType`) with its `url` on that host, or
-null. A profile's twin also gives its card's `inbox`: who may deliver it a message. A message goes
-to the profile's own hosts, in an envelope only its reading key opens, and only its main key pulls
+null. A profile's twin also gives its card's `inboxKey` and `inbox`: who may deliver it a message,
+and the readers it is sealed to besides. A message goes to the profile's own hosts, in an envelope
+only its inbox key and those readers open, and only its main key, or a message key it lists, pulls
 it: no message passes through the index.
 
 ### The Pay link
@@ -322,9 +324,9 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   they check that every page and twin renders, every JSON-LD block validates against schema.org's
   vocabulary, each twin matches its page, the sitemap lists every page, every URL in the read skill
   and `llms.txt` resolves, no page says a crypto word, the Pay link reads back to the offer, a
-  access key's record counts only before its `until`, a private record is never stored, and a
-  picture shows from the host that holds it with the type its record names, and not at all when no
-  host does (forest's reference host, on loopback).
+  revoked access key's record counts and a message key's does not, a private record is never
+  stored, and a picture shows from the host that holds it with the type its record names, and not
+  at all when no host does (forest's reference host, on loopback).
 - **The reputation test** (`test/reputation.test.ts`) needs Postgres and circuits' proving files.
   It checks that a row's market stamp is read from the `register` that wrote it and from nothing
   else; then, on the page tests' story, that the served leaves rebuild the served root with

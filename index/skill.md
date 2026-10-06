@@ -60,8 +60,8 @@ A profile is one key: its address is its permanent name, and also where it is pa
 hold several profiles; they are linked only if the person chose to link them. The answer carries:
 
 - `address`, and `profile`: `name`, the one `market` it lives in and its `role` there (with `side`,
-  the market's word for it), `about`, `photo` (under Pictures below), `read`, its reading key, for
-  whoever makes a private record for it or writes it a message, and `inbox`, who may write it one
+  the market's word for it), `about`, `photo` (under Pictures below), `inboxKey`, its inbox key,
+  which a message to it or a private record for it is sealed to, and `inbox`, who may write it one
   (under Write to a profile below; null when it takes none). A profile lives in one market, under
   one label (`market/role`); a person in two markets holds two profiles.
 - `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not.
@@ -87,21 +87,23 @@ bytes are on the hosts, never here. Check the SHA-256 of what you fetch yourself
 ## Write to a profile
 
 A profile whose `profile.inbox` is set takes messages: notes delivered to its own hosts, which only
-its main key pulls. `inbox.senders` is `anyone`, or `{ "issuer": <address> }`: the sender's key
-must hold a registry row from that issuer, under any label. `once` means one message from each
-sender, ever; `maxBytes` is the largest it takes, in bytes. No message passes through this index,
-and it never sees one.
+its main key, or a message key it lists, pulls. `inbox.senders` is `anyone`, or
+`{ "issuer": <address> }`: the sender's key must hold a registry row from that issuer, under any
+label. `once` means one message from each sender, ever; `maxBytes` is the largest it takes, in
+bytes; `readers` are read keys every message is sealed to as well, so whoever holds one can read
+the inbox for the person. No message passes through this index, and it never sees one.
 
 To send one, with forest's records ("Inbox"): read the profile's card and hosts record from its
 hosts (the ones this index reads are in
 https://github.com/foundationforest/services/blob/main/index/lists/hosts.json), put the message in
-an envelope for `profile.read` alone, sign it with your key, and deliver it to each host its hosts
-record names (`POST /v1/inbox`). A host refuses a message the inbox does not allow.
+one envelope sealed to `profile.inboxKey` and to every key in `inbox.readers`, sign it with your
+key, and deliver it to each host its hosts record names (`POST /v1/inbox`). A host refuses a
+message the inbox does not allow.
 
 ## Check a real person
 
-An issuer keeps a list of stamps; Soil's issuer keeps two, putting a person on each once: its
-face list after a face check, its ID list after a check of face and a government ID, each signed by
+An issuer keeps a list of stamps; the foundation's issuer keeps two, putting a person on each once:
+its face list after a face check, its ID list after a check of face and a government ID, each signed by
 its own key, so each is an issuer here with its own weight. A profile shows it is on a list with a row in the registry, which names
 the profile, the issuer, the label and the root of the list it proved against, without saying which
 stamp is the person's. One person gets at most one row per issuer per label, so a second profile in

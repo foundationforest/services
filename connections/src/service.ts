@@ -29,7 +29,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { OAuthClientInformationFull, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
 import express, { type Response } from 'express'
 
-import { keyFromPrivate, normalizeOrigin, pathCovers, publicKeyFromAddress, readProfile } from '../../forest/records/src/index.ts'
+import { type AccessKey, covers, keyFromPrivate, normalizeOrigin, publicKeyFromAddress, readProfile } from '../../forest/records/src/index.ts'
 
 import { connectedPage, gonePage, namePage, PAGE_POLICY, waitPage } from './pages.ts'
 import { ACCESS_MS, type Connection, Store } from './store.ts'
@@ -70,9 +70,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   }
 }
 
-/** Whether a profile's current permissions list this access key for every path a connection needs, now. */
-export function listed(access: { key: string; paths: string[]; until?: number }[], key: string, now: number): boolean {
-  return access.some((k) => k.key === key && PATHS.every((p) => k.paths.some((q) => pathCovers(q, p))) && (k.until === undefined || now < k.until))
+/** Whether a profile's current permissions list this access key to write every path a connection needs. */
+export function listed(access: readonly AccessKey[], key: string): boolean {
+  return access.some((k) => k.key === key && k.scope === 'write' && PATHS.every((p) => covers(k, p)))
 }
 
 /** The OAuth server: the SDK's router asks it everything, and it answers from the store. */
@@ -213,7 +213,7 @@ export async function startConnections(config: Config, options: { now?: () => nu
     let ok = false
     try {
       const view = await readProfile(config.hosts, c.profile, now())
-      ok = listed(view.access, key, now())
+      ok = listed(view.access, key)
     } catch {
       ok = false
     }
