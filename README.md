@@ -121,7 +121,7 @@ repo's `main` and redeployed on every push to it. Each directory's README lists 
 | `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
 | `fee payer` | https://relayer-production-8d40.up.railway.app, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
 | `connections` | https://connections-production-ebc4.up.railway.app | `5f024a9d-b760-4a5a-8613-0ae014b12661` | `connections/deploy/Dockerfile` | `/data` |
-| `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data` |
+| `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data`, and a Railway bucket for its blobs |
 
 | On devnet | Address |
 |---|---|
@@ -167,7 +167,8 @@ These hold for every service here; each README adds its own.
 - **Devnet only.** The issuer's two checks are a stand-in, the dollars are test dollars, and every
   service is one replica on Railway.
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC,
-  connections the hosts, the host its RPC. Each README says how.
+  connections the hosts, the host its RPC and, for a message key's message, the sender's host. Each
+  README says how.
 
 ## FAQ
 
@@ -184,13 +185,14 @@ Everything but its secrets and what it keeps private for people:
   snapshots; every record on the host (a private record as an envelope only its readers open); the
   registry's rows and the escrow's receipts, on chain; the index's pages, JSON and reputation tree;
   and each e2e run's record.
-- **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, and
-  the API keys and keyed URLs (Didit's, the RPC's).
+- **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, the
+  API keys and keyed URLs (Didit's, the RPC's), and the keys to the host's bucket.
 - **The key holder's contents:** [connections](connections/README.md), to be renamed keyholder,
   keeps each connection's access key and the hashes of its tokens; none of it is public.
 - **Private by design:** the issuer's private tables (the hash of each session id used, the stamps
   still waiting, the payments that opened ID sessions), and the messages in an inbox, which only the
-  recipient's main key pulls.
+  recipient's main key, or a message key it lists, pulls, and only its inbox key and the read keys
+  it lists open.
 - **Kept, not published:** the fee payer's used set (the market stamp of each spent voucher), and
   Railway's own request logs.
 

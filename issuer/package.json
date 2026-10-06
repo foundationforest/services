@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "Soil's issuer: it keeps two lists. A passed Didit face check puts a stamp on the face list, a passed face and ID check on the ID list, in shuffled batches; each list and its snapshots, signed with that list's key, are published as one file.",
+  "description": "The Forest Foundation's issuer: it keeps two lists. A passed Didit face check puts a stamp on the face list, a passed face and ID check on the ID list, in shuffled batches; each list and its snapshots, signed with that list's key, are published as one file.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

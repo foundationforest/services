@@ -259,7 +259,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     // --- 3. An access key's offer, and a private record ------------------------------------
     const access = keyFromPrivate(new Uint8Array(randomBytes(32)))
     const t1 = Date.now()
-    await publish([hostUrl], [permissionsRecord(ana.profile, [{ key: access.address, paths: ['offer'], until: t1 + 86_400_000 }], t1)])
+    await publish([hostUrl], [permissionsRecord(ana.profile, [{ key: access.address, scope: 'write', paths: ['offer'] }], t1)])
     await publish([hostUrl], [accessRecord(access, ana.profile.address, 'offer/physics', { ...offer, description: 'Physics, online.', subjects: ['physics'] }, t1 + 1)])
     await publish([hostUrl], [ownerRecord(ben.profile, 'message/ana', { private: Buffer.from(randomBytes(64)).toString('base64url') }, t1)])
     await read()

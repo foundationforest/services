@@ -439,10 +439,10 @@ export async function profile(ctx: Ctx, address: string) {
       /** The plain word for its side: the market's role name, the role itself, or null in a one-sided market. */
       side: home?.sides === 'two' && (p.role === 'seller' || p.role === 'buyer') ? ctx.directory.sideWord(p.market, p.role) : null,
       about: (r.about ?? null) as string | null,
-      /** Its reading key, for whoever makes a private record for it or sends it a message; null when it publishes none. */
-      read: (r.read ?? null) as string | null,
-      /** Who may deliver a message to it, as its card says; null when it takes none. Messages go to its hosts, never here. */
-      inbox: (r.inbox ?? null) as { senders: 'anyone' | { issuer: string }; once?: true; maxBytes?: number } | null,
+      /** Its inbox key, which a message to it and a private record for it are sealed to; null when it publishes none. */
+      inboxKey: (r.inboxKey ?? null) as string | null,
+      /** Who may deliver a message to it, and the readers each message is sealed to besides, as its card says; null when it takes none. Messages go to its hosts, never here. */
+      inbox: (r.inbox ?? null) as { senders: 'anyone' | { issuer: string }; once?: true; maxBytes?: number; readers?: string[] } | null,
       /** Its photo, and where to see it. */
       photo: photoOf(r).map((m) => seen(p.id, m))[0] ?? null,
       createdAt: iso(p.created_at),
