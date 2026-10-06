@@ -143,8 +143,8 @@ deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
 Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/CzuAh5HvRziXsLsZ5zS59MjvCHP9zWzv56WGDDhVXWig)
-and [deal](https://index-production-1b6e.up.railway.app/deals/HxW8DKxdzB8jgd2UcBb4d7PS4kiJ1wFA69XMBjv7psXy),
+[seller](https://index-production-1b6e.up.railway.app/profiles/Fns43wUgK9em76tPfZL5yw9zM4JpbHQwKuCztWNnYSM6)
+and [deal](https://index-production-1b6e.up.railway.app/deals/92nMqPUQi6rA7ohD36G7U5UvxSHaAGcGdUM3MkVSXMCh),
 the issuer's [face list](https://issuer-production-4976.up.railway.app/list.json) and
 [ID list](https://issuer-production-4976.up.railway.app/id/list.json).
 

@@ -97,29 +97,29 @@ ID step needs the fee payer with both of the issuer's lists in `VOUCHER_ISSUERS`
 
 ### The latest run
 
-2026-10-06, 03:55 to 04:00 UTC, against all five services as deployed from `main` at `5725fdf`
-(forest at `7cf5992`): **passed** in 329 seconds, most of it waiting for the issuer's two batches
+2026-10-06, 05:06 to 05:12 UTC, against all five services as deployed from `main` at `578cee1`
+(forest at `7cf5992`): **passed** in 359 seconds, most of it waiting for the issuer's two batches
 and the host's cache time. Its record is
-[`runs/2026-10-06T03-55-04-622Z.json`](runs/2026-10-06T03-55-04-622Z.json). It is the first run on
-forest's scoped permissions and delegated messages, and against the host on a file per folder, its
-blobs in a bucket.
+[`runs/2026-10-06T05-06-38-646Z.json`](runs/2026-10-06T05-06-38-646Z.json). It is the first run
+through the key holder: the assistants held keys the apps made and handed over, and the seller's
+assistant did its inbox, its reply and a payment request with them.
 
 | Step | What happened |
 |---|---|
-| People | Seller `CzuAh5HvRziXsLsZ5zS59MjvCHP9zWzv56WGDDhVXWig`, buyer `3tzZfTd5tZG2iQh34q4jwbbPbWajgopcwqVyEpyAa9xH` |
-| The lists | Both stamped in one batch on the face list: 24 stamps, snapshot root `292deccb…`, signed by `7zPD6AZc…`. Then the seller on the ID list: 4 stamps, root `1d3398c2…`, signed by `BVT1PcgV…` |
+| People | Seller `Fns43wUgK9em76tPfZL5yw9zM4JpbHQwKuCztWNnYSM6`, buyer `GfdksNkRzWUV7Mq8MSE9HB5a9xMiAwLTDc3aEtPt1V5r` |
+| The lists | Both stamped in one batch on the face list: 26 stamps, snapshot root `14938940…`, signed by `7zPD6AZc…`. Then the seller on the ID list: 5 stamps, root `2fde727b…`, signed by `BVT1PcgV…` |
 | Rows, through the fee payer | `tutoring/seller` through the voucher door with the voucher `sponsor/1`, 651 bytes, charged nothing; `tutoring/buyer` through the at-cost door, 795 bytes, charged 1.77276 test dollars; the seller's second `tutoring/seller`, against the ID list, through the voucher door with `sponsor/10`, 651 bytes, charged nothing. The seller held no SOL and paid no dollar for either |
-| Access keys | Seller's assistant `FwRuqicm…`, buyer's `J6MtckYG…`, each on its profile's permissions list with scope `write`, for offers and reviews |
-| Records | The seller's offer `offer/maths`, signed by the access key, and its photo, 79 bytes, on the host, its bytes in the host's bucket; two reviews |
+| Keys handed to the key holder | The seller's app: a write key `4cCF8hKx…` (offers and reviews), a message key `5nvaxUm1…` and the read key its card lists, each on its permissions list and handed over as a grant; the buyer's app: a write key `DRbQpHu3…`. Each connection's grant went through once the host showed its keys listed |
+| Records | The seller's offer `offer/maths`, posted by its assistant through the key holder, signed by the write key, and its photo, 79 bytes, on the host, its bytes in the host's bucket; two reviews, one by each assistant |
 | The inbox | The buyer's message, 4,639 bytes, sealed to the seller's inbox key and the read key in one envelope, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its inbox key |
-| Delegated messages | The seller listed the message key `9XBpkNwE…` (scope `message`). With it the loop pulled the seller's inbox, one message, and opened it with the read key; its reply, 2,693 bytes, signed by the message key for the seller and naming the seller's host, was taken by the buyer's host, which read the seller's records there. The buyer opened it and saw the message key sent it. Revoked: its pull refused at once (`permission`); 71 seconds later a second reply refused (`permission`) |
-| The deal | Escrow `HxW8DKxdzB8jgd2UcBb4d7PS4kiJ1wFA69XMBjv7psXy`, one tap, 715 bytes, charged 3.69808 test dollars |
-| The index | The seller's rows counted under "Forest issuer (devnet)" and "Forest issuer, ID (devnet)", its page showing it ID-checked; the buyer's under "Forest issuer (devnet)"; the offer listed with its photo from the host; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); neither message anywhere. Seller and buyer each rating 10 |
-| The proof | The seller's leaf found by its market stamp `2c3baf36…` among the index's 3 leaves (11 the run before: earlier runs' reviews no longer count, under Limits), scored 100 tenths from one review; proven on the device against root `02897382…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), 6 Oct 2026)" |
+| The seller's assistant | Through the key holder's tools: `pull_inbox` pulled one message with the message key and opened it with the read key; `send_message` replied, 2,695 bytes, signed by the message key for the seller and naming the seller's host, taken by the buyer's host, and the buyer opened it and saw the message key sent it; `request_payment` put `{ request: "pay", amount: "1", to: <the buyer>, note }` in the seller's own inbox, which the seller's app pulled and opened. Revoked: the assistant's pull refused at once (`permission`); 71 seconds later its second reply refused (`permission`) |
+| The deal | Escrow `92nMqPUQi6rA7ohD36G7U5UvxSHaAGcGdUM3MkVSXMCh`, one tap, 715 bytes, charged 3.69808 test dollars |
+| The index | The seller's rows counted under "Forest issuer (devnet)" and "Forest issuer, ID (devnet)", its page showing it ID-checked; the buyer's under "Forest issuer (devnet)"; the offer listed with its photo from the host; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); no message and no payment request anywhere. Seller and buyer each rating 10 |
+| The proof | The seller's leaf found by its market stamp `1b764776…` among the index's 6 leaves, scored 100 tenths from one review; proven on the device against root `03a2e9b1…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), 6 Oct 2026)" |
 
-Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/CzuAh5HvRziXsLsZ5zS59MjvCHP9zWzv56WGDDhVXWig),
-[the buyer](https://index-production-1b6e.up.railway.app/profiles/3tzZfTd5tZG2iQh34q4jwbbPbWajgopcwqVyEpyAa9xH),
-[the deal](https://index-production-1b6e.up.railway.app/deals/HxW8DKxdzB8jgd2UcBb4d7PS4kiJ1wFA69XMBjv7psXy).
+Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/Fns43wUgK9em76tPfZL5yw9zM4JpbHQwKuCztWNnYSM6),
+[the buyer](https://index-production-1b6e.up.railway.app/profiles/GfdksNkRzWUV7Mq8MSE9HB5a9xMiAwLTDc3aEtPt1V5r),
+[the deal](https://index-production-1b6e.up.railway.app/deals/92nMqPUQi6rA7ohD36G7U5UvxSHaAGcGdUM3MkVSXMCh).
 
 ## Promises
 
