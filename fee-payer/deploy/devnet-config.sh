@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints a devnet node's kora.toml: fee-payer/general/kora.toml or fee-payer/sponsored/kora.toml with
+# Prints a devnet Kora's kora.toml: fee-payer/at-cost/kora.toml or fee-payer/free/kora.toml with
 # exactly these lines changed, and nothing else. Each old line must appear exactly once, or it stops.
 # The programs each allows are already devnet's, in the file itself.
 #

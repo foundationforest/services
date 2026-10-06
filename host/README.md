@@ -2,9 +2,9 @@
 
 A host keeps people's signed records, messages and photos, and serves them to anyone who asks.
 
-Soil runs this one, on devnet: forest's reference host with the policy below. Anyone can run
-another, with this code, forest's host alone, or their own. Nothing is on mainnet, and nothing is
-shipped.
+The foundation runs this one, on devnet: forest's reference host with the policy below. Anyone can
+run another, with this code, forest's host alone, or their own. Nothing is on mainnet, and nothing
+is shipped.
 
 Up: [the repo](../README.md).
 
@@ -85,7 +85,9 @@ The devnet index reads it (`index/lists/hosts.json`), and connections looks ther
 
 - **Anyone can write here,** anything forest's host accepts.
 - **On devnet it may be wiped at any time,** and with it every record the e2e runs left.
-- **One file, one replica.**
+- **One file, one replica.** When one machine is not enough: more machines, a managed per-folder
+  store, or Postgres. Forest's host calls SQLite directly today, so any of them is a change to
+  forest's host first.
 - **It trusts its RPC** for the registry lookup. A lookup that fails refuses the message
   (`lookup`), and the sender sends it again.
 

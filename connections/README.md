@@ -3,9 +3,9 @@
 An MCP server an AI assistant connects to with a login, so it can post for a person without ever
 holding a key.
 
-Soil runs this one, on devnet, posting to Soil's host. Anyone can run another, with this code or
-their own: an access key works wherever the profile's permissions record lists it. Nothing is on
-mainnet, and nothing is shipped.
+The foundation runs this one, on devnet, posting to the foundation's host. Anyone can run another,
+with this code or their own: an access key works wherever the profile's permissions record lists
+it. Nothing is on mainnet, and nothing is shipped.
 
 Up: [the repo](../README.md).
 
@@ -94,8 +94,8 @@ Any platform that runs Node 22.18 with a persistent disk. **One replica:** every
 file. **A volume** for `DATABASE_PATH`, or each deploy drops every connection. The build context is
 the repo root; `deploy/Dockerfile` builds it (Node 22.22.2 and git, `forest.sh records`, `npm ci`).
 
-Soil's devnet connections service runs that image on Railway, project `forest-devnet`, service
-`connections`, at https://connections-production-ebc4.up.railway.app:
+The foundation's devnet connections service runs that image on Railway, project `forest-devnet`,
+service `connections`, at https://connections-production-ebc4.up.railway.app:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=connections/deploy/Dockerfile`.
 - **One replica,** a volume at `/data`, a public domain to port 8080, health check `/`.
@@ -103,7 +103,7 @@ Soil's devnet connections service runs that image on Railway, project `forest-de
 | Variable | On devnet |
 |---|---|
 | `PUBLIC_URL` | `https://connections-production-ebc4.up.railway.app` |
-| `HOSTS` | Soil's host, `https://board-devnet-test-production.up.railway.app` |
+| `HOSTS` | The foundation's host, `https://board-devnet-test-production.up.railway.app` |
 | `DATABASE_PATH` | `/data/connections.sqlite` |
 | `PORT` | `8080` |
 

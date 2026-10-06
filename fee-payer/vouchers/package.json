@@ -1,0 +1,23 @@
+{
+  "name": "@forest/fee-payer-vouchers",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The voucher check, the fee payer's front: at POST /vouchers it lets through to the free Kora one registry row per voucher, a second proof from a stamp on one of the lists it takes, each list with its own number of vouchers per stamp, each voucher spent once; every other request goes to the at-cost Kora unchanged.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/vouchers.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "1.99.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

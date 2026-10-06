@@ -1,9 +1,8 @@
 # services
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
-a host, an issuer, a fee payer, connections and an index. Soil, which makes the first app, runs the
-host, the issuer, the fee payer and connections; the Forest Foundation runs the index. Each is the
-first of its kind, and anyone can run another, from this code (Apache 2.0) or their own.
+a host, an issuer, a fee payer, connections and an index. The Forest Foundation runs all five. Each
+is the first of its kind, and anyone can run another, from this code (Apache 2.0) or their own.
 
 Devnet only: everything here runs on Solana's devnet or nowhere. Nothing is on mainnet, and nothing
 is shipped.
@@ -12,12 +11,12 @@ is shipped.
 
 | Directory | What it is | Who runs it | On devnet |
 |---|---|---|---|
-| [`host/`](host/README.md) | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | Soil | Running |
-| [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | Soil | Running, with a stand-in that passes everyone on both checks; the ID check free |
-| [`fee-payer/`](fee-payer/README.md) | Kora, configured, in two nodes: the general node pays Solana's fee for a person's transaction and is paid back at cost, in the dollar they hold; the sponsored node pays for a person's registry rows, against a voucher: three per stamp on Soil's issuer's face list, ten per stamp on its ID list | Soil | Both running; the general node paid in two test dollars |
-| [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | Soil | Running |
-| [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the Forest Foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | anyone, by hand | Passed on 2026-10-05 |
+| [`host/`](host/README.md) | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | the foundation | Running |
+| [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
+| [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three per stamp on the issuer's face list, ten per stamp on its ID list); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
+| [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | the foundation | Running |
+| [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-05 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -69,7 +68,7 @@ which issuers it trusts.
 - **Not the standard.** Keys, records, the registry and the escrow live in
   [foundationforest/forest](https://github.com/foundationforest/forest). This repo uses forest's
   pieces unchanged, at one pinned commit.
-- **Not an app.** Apps live in their own repos; Soil's is
+- **Not an app.** Apps live in their own repos; the Forest app's is
   [foundationforest/app](https://github.com/foundationforest/app).
 - **Not the market directory.** The recommended market names live in
   [foundationforest/markets](https://github.com/foundationforest/markets).
@@ -99,9 +98,9 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (cd issuer      && npm ci && npm run check && npm test)
 (cd connections && npm ci && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
-(cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/general/kora.toml > /dev/null \
-  && bash fee-payer/deploy/devnet-config.sh fee-payer/sponsored/kora.toml > /dev/null
-(cd fee-payer/sponsor && npm ci && npm run check && npm test)
+(cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
+  && bash fee-payer/deploy/devnet-config.sh fee-payer/free/kora.toml > /dev/null
+(cd fee-payer/vouchers && npm ci && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
   node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts)
 ```
@@ -113,15 +112,14 @@ phrase. Each directory's README says how to run them.
 
 ### On devnet
 
-Six services on Railway, project `forest-devnet`, environment `production`, each built from this
+Five services on Railway, project `forest-devnet`, environment `production`, each built from this
 repo's `main` and redeployed on every push to it. Each directory's README lists its settings.
 
 | Service | Address | Railway id | Dockerfile | Volume |
 |---|---|---|---|---|
 | `index` | https://index-production-1b6e.up.railway.app | `37f23042-b2a0-4ff0-90c6-e0521fc811d2` | `index/deploy/Dockerfile` | none: Postgres on Supabase |
 | `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
-| `relayer` (the fee payer's general node) | https://relayer-production-8d40.up.railway.app | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | none |
-| `sponsor` (the fee payer's sponsored node) | https://sponsor-production-94d3.up.railway.app | `154e4cb8-c4f7-45dd-9c7b-98745c955805` | `fee-payer/sponsor/deploy/Dockerfile` | `/data` |
+| `fee payer` | https://relayer-production-8d40.up.railway.app, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
 | `connections` | https://connections-production-ebc4.up.railway.app | `5f024a9d-b760-4a5a-8613-0ae014b12661` | `connections/deploy/Dockerfile` | `/data` |
 | `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data` |
 
@@ -172,6 +170,41 @@ These hold for every service here; each README adds its own.
   connections the hosts, the host its RPC. Each README says how.
 
 ## FAQ
+
+**Who runs what, and why one actor?**
+The Forest Foundation runs every service here, and anyone can run another. The body that writes
+the standard runs the first of each service, so no second body ever has a reason to lock people in.
+One name, one set of books; the foundation has no shareholders and pays nothing out. A company
+would exist only if outside capital or a liability ever required one, and neither does.
+
+**What of what the foundation runs is public?**
+Everything but its secrets and what it keeps private for people:
+
+- **Public:** this code and every setting these READMEs list; the issuer's two lists and their
+  snapshots; every record on the host (a private record as an envelope only its readers open); the
+  registry's rows and the escrow's receipts, on chain; the index's pages, JSON and reputation tree;
+  and each e2e run's record.
+- **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, and
+  the API keys and keyed URLs (Didit's, the RPC's).
+- **The key holder's contents:** [connections](connections/README.md), to be renamed keyholder,
+  keeps each connection's access key and the hashes of its tokens; none of it is public.
+- **Private by design:** the issuer's private tables (the hash of each session id used, the stamps
+  still waiting, the payments that opened ID sessions), and the messages in an inbox, which only the
+  recipient's main key pulls.
+- **Kept, not published:** the fee payer's used set (the market stamp of each spent voucher), and
+  Railway's own request logs.
+
+**What are we waiting on?**
+Five things. Each changes something here when it comes; until then, there is nothing to do.
+
+- **Agave 4.4** (November): Solana's rent falls about 90%, so a registry row costs about 7 cents
+  and the voucher float shrinks.
+- **Real Didit checks:** on devnet the issuer's stand-in passes everyone, so stamps, and vouchers,
+  are unlimited; real checks bound them by faces.
+- **Mainnet:** forest's programs are on devnet only, and these services with them.
+- **The privacy pool in the app:** until a person pays through one, paying from their own profiles
+  links them (forest's keys).
+- **The UK entity:** the issuer's ID check stays free until an entity can receive its price.
 
 **Why is forest pinned by `forest.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in

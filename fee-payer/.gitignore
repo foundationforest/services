@@ -1,5 +1,5 @@
 # Kora's binary, installed by build.sh
 .kora/
 node_modules/
-# The pre-check's used set (DATABASE_PATH defaults to ./data/sponsor.sqlite)
-sponsor/data/
+# The voucher check's used set (DATABASE_PATH defaults to ./data/vouchers.sqlite)
+vouchers/data/
