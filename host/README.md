@@ -91,7 +91,7 @@ at https://board-devnet-test-production.up.railway.app:
   (`auto`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_STYLE=virtual`. `DATABASE_PATH`,
   which this code no longer reads, is still set.
 
-The devnet index reads it (`index/lists/hosts.json`), and connections looks there first (`HOSTS`).
+The devnet index reads it (`index/lists/hosts.json`), and the key holder looks there first (`HOSTS`).
 
 ## Policy
 

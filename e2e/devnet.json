@@ -2,7 +2,7 @@
   "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer is feePayer, its voucher door feePayer plus /vouchers), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's two lists the devnet index trusts (index/lists/issuers.json: issuerAddress signs the face list, idIssuerAddress the ID list), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the delegated step waits out. Devnet only.",
   "issuer": "https://issuer-production-4976.up.railway.app",
   "feePayer": "https://relayer-production-8d40.up.railway.app",
-  "connections": "https://connections-production-ebc4.up.railway.app",
+  "keyholder": "https://connections-production-ebc4.up.railway.app",
   "host": "https://board-devnet-test-production.up.railway.app",
   "senderCacheSeconds": 60,
   "index": "https://index-production-1b6e.up.railway.app",

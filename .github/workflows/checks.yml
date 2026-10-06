@@ -6,7 +6,7 @@
 #                reputation proofs: circuits' proving files)
 #   fee-payer    its type-check, the devnet kora.toml its Dockerfile makes from at-cost/ and free/,
 #                and the voucher check's type-check and tests (real proofs: the proving files)
-#   connections  its type-check, and its tests against forest's reference host
+#   keyholder    its type-check, and its tests against forest's reference host
 #   host         the foundation's host: its type-check and its tests
 #   e2e          the devnet run's type-check
 #
@@ -116,7 +116,7 @@ jobs:
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
-  connections:
+  keyholder:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -127,12 +127,12 @@ jobs:
       - name: Install
         run: |
           ./forest.sh keys records
-          (cd connections && npm ci --no-audit --no-fund)
+          (cd keyholder && npm ci --no-audit --no-fund)
       - name: Type-check
-        working-directory: connections
+        working-directory: keyholder
         run: npm run check
       - name: Test
-        working-directory: connections
+        working-directory: keyholder
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"

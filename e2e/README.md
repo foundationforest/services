@@ -4,7 +4,7 @@ The loop: two new people do everything a person does on Forest, on devnet, again
 this repo deploys, and the run checks that the index shows the result.
 
 It is not a service: the foundation runs it by hand, with the devnet phrase. It tests the
-foundation's host, issuer, fee payer, connections and index; anyone running their own can point
+foundation's host, issuer, fee payer, key holder and index; anyone running their own can point
 `devnet.json` at theirs. It runs on Solana's devnet, with test dollars and the stand-in for both of
 the issuer's checks.
 Nothing is on mainnet, and nothing is shipped.
@@ -37,23 +37,26 @@ it:
    seller's takes one message from each, and lists among its readers a read key the seller's app
    made at random for its assistant; the buyer's takes as many as come, so the seller's replies
    can reach it.
-6. **An assistant connects to each** through connections, with OAuth. The app adds the access key
-   the connection shows to the profile's permissions record. The seller's assistant posts an offer
-   with a photo through MCP, signed by its access key; the seller's app then puts the photo's bytes
-   on the host, which takes them because the offer names them.
+6. **An assistant connects to each** through the key holder, with OAuth. Each app makes its
+   assistant's keys at random, lists them in the profile's permissions record, and hands them to
+   the key holder as forest's grants, through the link the key holder's page shows: the seller's
+   app a write key (offers and reviews), a message key and the read key its card lists; the
+   buyer's a write key. The seller's assistant posts an offer with a photo through MCP, signed by
+   the write key; the seller's app then puts the photo's bytes on the host, which takes them
+   because the offer names them.
 7. **The inbox:** the buyer's app reads the seller's card, puts a message in one envelope only the
    seller's inbox key and the read key open, signs it and delivers it to the seller's host, which
    checks that the buyer holds a row from the devnet issuer. A second message is refused (`once`).
    The seller's app pulls its inbox with a pull its main key signs, and opens the one message.
-8. **Delegated messages:** the seller's app lists a message key in its permissions record (scope
-   `message`), beside its assistant's write key. Holding the message key and the read key, as an
-   assistant would, the loop pulls the seller's inbox with the message key, opens the buyer's
-   message with the read key, and replies to the buyer, signed by the message key for the seller
-   and naming the seller's host, where the buyer's host reads the seller's permissions. The buyer's
-   app pulls the reply, opens it, and sees the message key sent it. Then the seller revokes the
-   message key (scope `revoked`): its pull is refused at once (`permission`), and after the host's
-   cache time (`senderCacheSeconds` in `devnet.json`, 60 seconds) and ten more, a second reply is
-   refused too (`permission`).
+8. **The seller's assistant, through the key holder's tools:** it pulls the seller's inbox with the
+   message key and opens the buyer's message with the read key (`pull_inbox`); replies to the
+   buyer (`send_message`), signed by the message key for the seller and naming the seller's host,
+   where the buyer's host reads the seller's permissions, and the buyer's app pulls the reply,
+   opens it and sees the message key sent it; and asks the seller to pay (`request_payment`), a
+   message to the seller's own inbox, which the seller's app pulls with its main key and opens.
+   Then the seller revokes the message key (scope `revoked`): the assistant's pull is refused at
+   once (`permission`), and after the host's cache time (`senderCacheSeconds` in `devnet.json`, 60
+   seconds) and ten more, its second reply is refused too (`permission`).
 9. **The buyer pays through the escrow** in one tap: pay and release in one transaction, through
    the fee payer, paid in test dollars.
 10. **Each assistant posts a review** of the other, naming the deal.
@@ -145,9 +148,9 @@ Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/Cz
 - **One inbox rule and one photo.** It tests inboxes open to one issuer's rows, with and without
   one message from each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a
   profile's photo or a video.
-- **Keys handed over by the loop itself.** The message key and the read key never travel in a
-  grant: the loop holds them as the seller's app made them. A host other than the foundation's,
-  or a seller and buyer on different hosts, is not tested.
+- **One door, one host.** The assistants use the key holder's MCP door; its HTTP door is tested
+  on loopback only. A host other than the foundation's, or a seller and buyer on different hosts,
+  is not tested.
 - **One proof:** the seller's own rating in its own market, from one profile. It does not prove
   across several profiles or hide the market.
 - **Each wait on the index is up to 15 minutes:** the index step's, and the proof step's two (for
@@ -169,10 +172,6 @@ forest's records say a message is not a record in the sender's folder: anyone re
 who wrote to whom would be public. A message goes to the recipient's hosts, and only its main key,
 or a message key it lists, pulls it. The index's page tests still check that a private record is
 left alone.
-
-**Why is the read key in the seller's card from the start, and not listed in the delegated step?**
-A sender seals a message to the readers the card lists when it sends. The seller's inbox takes
-one message from the buyer, so a read key listed after it would open nothing the buyer sent.
 
 **Why keep every run's record in the repo?**
 So anyone can check, on devnet itself, what the latest run did: every address and signature in it
