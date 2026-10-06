@@ -16,7 +16,7 @@ is shipped.
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three per stamp on the issuer's face list, ten per stamp on its ID list); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
 | [`connections/`](connections/README.md) | An MCP server an AI assistant connects to with a login, so it can post for a person without ever holding a key | the foundation | Running |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-05 |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-06 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -142,8 +142,8 @@ deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
 Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/9m6Vki3PmxGF5WN2kHxwdUKd1sMZNbLUzW6i7ynQT4dW)
-and [deal](https://index-production-1b6e.up.railway.app/deals/7dqTiBEwtaDBXEsGRS112jaYfz9KK64DVECK88RAz3DH),
+[seller](https://index-production-1b6e.up.railway.app/profiles/2CJPX1FGJBRJQTvbNeCA7HL42UqNgtZxbYc5xAUFAJdS)
+and [deal](https://index-production-1b6e.up.railway.app/deals/MAuZc3cm74jxJ2wGHiLxAe2uk6rFfH7TQTSB2Nct1CV),
 the issuer's [face list](https://issuer-production-4976.up.railway.app/list.json) and
 [ID list](https://issuer-production-4976.up.railway.app/id/list.json).
 
