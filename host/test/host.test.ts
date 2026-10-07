@@ -6,7 +6,7 @@
 //   npm test
 
 import assert from 'node:assert/strict'
-import { createHash, createPrivateKey, randomBytes, sign } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -20,11 +20,13 @@ import { base58, deliver, getBlob, hostsRecord, keyFromPrivate, ownerRecord, per
 import { message, openMessage } from '../../forest/records/src/private.ts'
 import { blobStore, signS3 } from '../../forest/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../forest/registry/client/src/program.ts'
+import { issuerKeyBytes, issuerKeyOf } from '../../forest/registry/client/src/index.ts'
 
 import { DEVNET_REGISTRY, LABEL, POLICY, type RunningHost, moveBlobs, readConfig, rowLookup, startHost } from '../src/host.ts'
 
-const ISSUER = keyFromPrivate(new Uint8Array(32).fill(7))
-const ROOT = new Uint8Array(32).fill(9)
+/** An issuer's key, as a row holds it, and as an inbox names it: 128 hex. */
+const ISSUER_KEY = issuerKeyBytes(issuerKeyOf(new Uint8Array(32).fill(7)))
+const ISSUER = Buffer.from(ISSUER_KEY).toString('hex')
 /** Forest's single-file host's own file, as it wrote it: two folders, ten records, three messages, three blobs. */
 const SINGLE_FILE = new URL('../../forest/records/test/single-file.sqlite', import.meta.url)
 
@@ -35,20 +37,16 @@ const scratch = () => {
   return dir
 }
 
-/** Ed25519 by Node itself: PKCS #8 for a 32-byte secret is this fixed header, then the bytes. */
-const signed = (message: Uint8Array, secret: Uint8Array) =>
-  sign(null, message, createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), secret]), format: 'der', type: 'pkcs8' }))
-
-/** A row's bytes as the registry holds them, signed over ROOT by `signer`. */
-function rowData(profile: Uint8Array, signer = ISSUER, label = 'tutoring/buyer'): Buffer {
+/** A row's bytes as the registry holds them, from the issuer whose key is `issuer`. */
+function rowData(profile: Uint8Array, issuer: Uint8Array = ISSUER_KEY, label = 'tutoring/buyer'): Buffer {
   const name = new TextEncoder().encode(label)
   const data = Buffer.alloc(rowSpace(name.length))
   data.set(ROW_DISCRIMINATOR, 0)
   data.set(profile, ROW_OFFSET.profile)
-  data.set(ISSUER.publicKey, ROW_OFFSET.issuer)
-  data.set(ROOT, ROW_OFFSET.root)
-  data.set(signed(ROOT, signer.privateKey), ROW_OFFSET.issuerSignature)
+  data.set(randomBytes(32), ROW_OFFSET.stamp)
+  data.set(issuer, ROW_OFFSET.issuer)
   data.set(new Uint8Array(32).fill(3), ROW_OFFSET.payer)
+  data.writeBigInt64LE(1_790_000_000n, ROW_OFFSET.made)
   data.writeUInt32LE(name.length, ROW_OFFSET.label)
   data.set(name, ROW_OFFSET.label + 4)
   return data
@@ -145,10 +143,10 @@ test('the old single file goes into the data directory once, under the same numb
     const all = await readAll(h.url)
     assert.equal(all.records.length, 10)
     assert.equal(all.cursor, 10, 'the cursors readers hold go on working')
-    // A record whose folder came across takes the next number.
+    // A new record takes a number after them: forest's host numbers by the clock, in microseconds.
     const someone = await mainKey(randomBytes(32), 'tutoring/seller')
     await publish([h.url], [hostsRecord(someone, [h.url], Date.now())])
-    assert.equal((await readAll(h.url)).cursor, 11)
+    assert.ok((await readAll(h.url)).cursor > 10)
   } finally {
     await h.close()
   }
@@ -260,14 +258,16 @@ test('with a bucket: the old file’s bytes go straight to it; bytes an earlier 
   }
 })
 
-test('the lookup: a row counts only if the issuer it names signed its root', async () => {
-  const [held, forged, none] = [keyFromPrivate(randomBytes(32)), keyFromPrivate(randomBytes(32)), keyFromPrivate(randomBytes(32))]
-  const chain = rpc([rowData(held.publicKey), rowData(forged.publicKey, keyFromPrivate(randomBytes(32)))])
+test("the lookup: a row of the sender's from the issuer, by the issuer's key", async () => {
+  const [held, other, none] = [keyFromPrivate(randomBytes(32)), keyFromPrivate(randomBytes(32)), keyFromPrivate(randomBytes(32))]
+  const otherIssuer = issuerKeyBytes(issuerKeyOf(new Uint8Array(32).fill(8)))
+  const chain = rpc([rowData(held.publicKey), rowData(other.publicKey, otherIssuer)])
   const lookup = rowLookup(chain, DEVNET_REGISTRY)
-  assert.equal(await lookup(held.address, ISSUER.address), true, 'a row the issuer signed')
-  assert.equal(await lookup(forged.address, ISSUER.address), false, 'a row naming the issuer, signed by another key')
-  assert.equal(await lookup(none.address, ISSUER.address), false, 'no row')
-  assert.equal(await lookup(held.address, none.address), false, 'a row from another issuer')
+  assert.equal(await lookup(held.address, ISSUER), true, "a row from the issuer's key")
+  assert.equal(await lookup(other.address, ISSUER), false, "a row from another issuer's key")
+  assert.equal(await lookup(none.address, ISSUER), false, 'no row')
+  assert.equal(await lookup(held.address, Buffer.from(otherIssuer).toString('hex')), false, 'asked for another issuer')
+  assert.equal(await lookup(held.address, ISSUER.toUpperCase()), false, 'a key not as a row writes it')
   assert.deepEqual(new Set(chain.asked), new Set([DEVNET_REGISTRY]), 'the registry it was told to read')
 })
 
@@ -275,7 +275,7 @@ test('an inbox open to one issuer’s rows: taken with the lookup, refused witho
   const now = Date.now()
   const owner = await mainKey(randomBytes(32), 'tutoring/seller')
   const sender = keyFromPrivate(randomBytes(32))
-  const { body } = await card(owner, { senders: { issuer: ISSUER.address } })
+  const { body } = await card(owner, { senders: { issuer: ISSUER } })
   const note = () => message(sender, owner.address, { text: 'Is Tuesday free?' }, Date.now(), body)
 
   const withLookup = await startHost(readConfig({ PORT: '0' }), rpc([rowData(sender.publicKey)]))
@@ -292,7 +292,7 @@ test('an inbox open to one issuer’s rows: taken with the lookup, refused witho
   assert.deepEqual(errors(outcome), ['rule_unsupported'], 'no SOLANA_RPC_URL: no lookup')
 })
 
-test('a message key: taken while the sender’s host lists it; once revoked, refused after the time this host keeps what it read', async () => {
+test('a message key: taken while the sender’s host lists it; once past, refused after the time this host keeps what it read', async () => {
   const keep = 2
   const h = await startHost(readConfig({ PORT: '0', SENDER_CACHE_SECONDS: String(keep) }))
   try {
@@ -323,8 +323,8 @@ test('a message key: taken while the sender’s host lists it; once revoked, ref
     const reply = await openMessage(replies.messages[0]!.message, buyerCard.identity)
     assert.deepEqual([reply.from, reply.key, reply.body], [seller.address, messageKey.address, { text: 'Yes.' }])
 
-    // The seller revokes it. Pulls stop at once: the host reads its own copy of the permissions.
-    await publish([h.url], [permissionsRecord(seller, [{ key: messageKey.address, scope: 'revoked' }], Date.now() + 1)])
+    // The seller makes it past. Pulls stop at once: the host reads its own copy of the permissions.
+    await publish([h.url], [permissionsRecord(seller, [{ key: messageKey.address, scope: 'past' }], Date.now() + 1)])
     await assert.rejects(pull(h.url, pullRequest({ key: messageKey, profile: seller.address }, 0, Date.now())), (err: Error & { code?: string }) => err.code === 'permission')
     // Sending stops once what this host read of the seller's host expires.
     assert.deepEqual(errors((await deliver([h.url], [await message(delegated, buyer.address, { text: 'Still me.' }, Date.now(), buyerCard.body)]))[0]), ['ok'], 'kept from before')

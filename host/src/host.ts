@@ -12,10 +12,10 @@
 // (IMPORT_FROM) goes into the data directory with forest's import script, and, with a bucket, bytes
 // left on disk go to the bucket.
 //
-// An inbox can take messages only from keys holding a registry row from one issuer. Forest's host
-// asks `rowLookup` whether a sender holds one; this host answers from the registry, over the RPC in
-// SOLANA_RPC_URL, with forest's registry client. Without an RPC there is no lookup, and forest's
-// host refuses messages to such inboxes (`rule_unsupported`).
+// An inbox can take messages only from keys holding a registry row from one issuer, named by its key
+// as a row holds it (128 hex). Forest's host asks `rowLookup` whether a sender holds one; this host
+// answers from the registry, over the RPC in SOLANA_RPC_URL, with forest's registry client. Without
+// an RPC there is no lookup, and forest's host refuses messages to such inboxes (`rule_unsupported`).
 //
 // A message a message key signed is taken only if the sender's own host lists that key: forest's
 // host asks `readSender` for the sender's records, and this host reads them with forest's client,
@@ -33,7 +33,7 @@ import { type BlobDriver, Host, type HostOptions } from '../../forest/records/sr
 import type { Checked } from '../../forest/records/src/record.ts'
 import { type BlobStore, blobStore } from '../../forest/records/src/storage.ts'
 import { importSingleFile } from '../../forest/records/scripts/import-single-file.ts'
-import { issuerSigned } from '../../forest/registry/client/src/issuer.ts'
+import { fromBytes32 } from '../../forest/registry/client/src/field.ts'
 import { fetchRows } from '../../forest/registry/client/src/rows.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
@@ -59,7 +59,7 @@ export const POLICY = {
 export const SENDER_READ_MS = 5_000
 
 /** The devnet registry (forest/registry/devnet/devnet.json), as the index reads it. */
-export const DEVNET_REGISTRY = '5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC'
+export const DEVNET_REGISTRY = 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4'
 
 export type Config = {
   /** The data directory; a temporary one, removed on close, when null. */
@@ -121,21 +121,23 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 }
 
 /**
- * Whether `from` holds a registry row from `issuer`, under any label. A row counts only if the
- * issuer's signature on its root checks: the program stores that signature and never checks it,
- * so a row naming an issuer is not by itself a row from that issuer.
+ * Whether `from` holds a registry row from `issuer`, under any label. `issuer` is the issuer's key as
+ * a row holds it, 128 hex characters, x then y. A row names its issuer only after the program checked
+ * the person proof against that key, so any such row counts.
  */
 export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, programId: string): NonNullable<HostOptions['rowLookup']> {
   const program = new PublicKey(programId)
   return async (from, issuer) => {
+    if (!/^[0-9a-f]{128}$/.test(issuer)) return false
+    const key = Buffer.from(issuer, 'hex')
     // The registry client has its own copy of web3.js, whose key check is `instanceof` its own
-    // PublicKey, so the two keys go in as their bytes.
+    // PublicKey, so the profile goes in as its bytes.
     const rows = await fetchRows(connection as never, {
       profile: new PublicKey(from).toBytes() as never,
-      issuer: new PublicKey(issuer).toBytes() as never,
+      issuer: [fromBytes32(key.subarray(0, 32)), fromBytes32(key.subarray(32))],
       programId: program as never,
     })
-    return rows.some(({ row }) => issuerSigned(row))
+    return rows.length > 0
   }
 }
 
@@ -156,7 +158,7 @@ async function readRecords(host: string, profile: string): Promise<Checked[]> {
 /**
  * Forest's `readSender`: a sender's records from the host a message names, kept for `cacheMs` per
  * sender and host. Two messages at once share one read; a read that fails is not kept, so forest's
- * host answers `lookup` and the sender's next try reads again. So a message key its owner revoked
+ * host answers `lookup` and the sender's next try reads again. So a message key its owner made past
  * is still taken until what was read before expires.
  */
 export function senderReader(cacheMs: number, now: () => number = Date.now): NonNullable<HostOptions['readSender']> {
