@@ -37,9 +37,10 @@ configured and nothing else, and one program of ours in front of them, the vouch
 
 An app names one fee payer and finds its voucher door from it: the address plus `/vouchers`. Both
 Koras sign with one key, so both doors spend one float. Inside a transaction that key may do one
-thing, fund a new account, so no transaction can make it move its own SOL or tokens. Neither door
-holds a key of the person's, and neither decides anything about the person, the market or the
-deal.
+thing, fund a new account, and Kora refuses any transfer of its SOL or tokens. Through the at-cost
+door the person pays for every account it funds; through the voucher door the voucher check lets
+the row through and nothing beside it ([FAQ](#faq)). Neither door holds a key of the person's, and
+neither decides anything about the person, the market or the deal.
 
 ### Vouchers and their labels
 
@@ -279,7 +280,7 @@ names: Kora's JSON-RPC at `/` (POST), `GET /liveness`, and the voucher door at `
 - **Vouchers from** the foundation's devnet issuer's notes: three with a tier 1 note, ten with a
   tier 2 note.
 
-| Variable | On devnet | Sealed |
+| Variable | On devnet | Secret |
 |---|---|---|
 | `FOREST_RELAYER_KEY` | the `payer` key, as its JSON array; `run.sh` passes it to both Koras as `FOREST_FEE_PAYER_KEY` | yes |
 | `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
@@ -395,8 +396,9 @@ names: Kora's JSON-RPC at `/` (POST), `GET /liveness`, and the voucher door at `
 ## FAQ
 
 **Why Kora 2.0.5, configured only?**
-No custom code inside Kora, and the 2.2 betas are not stable. What Kora cannot check, a voucher, the
-voucher check checks in front of it.
+No custom code inside Kora. The 2.2 betas are not stable, and no longer read the key from a path,
+which `FOREST_FEE_PAYER_KEY` allows. What Kora cannot check, a voucher, the voucher check checks in
+front of it.
 
 **Why does the voucher check allow only one instruction, when the free Kora allows System?**
 Kora sees System inside `register`, where the registry creates the row with it. At the top of a

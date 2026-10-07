@@ -59,9 +59,11 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    ([forest's registry](https://github.com/foundationforest/forest/blob/main/registry/README.md)),
    through the fee payer: free with a voucher, or paid in a dollar.
 3. **Records.** The app signs the profile's records with the main key and posts them to the hosts
-   its hosts record names. It hands access keys to the person's AI assistant, which, through
-   forest's CLI, posts offers and reviews, answers messages, and asks the person, through their own
-   inbox, for what it holds no key for.
+   its hosts record names. It makes access keys for the person's AI assistant and lists them in
+   the profile's permissions record
+   ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions));
+   with them, through forest's CLI, the assistant posts offers and reviews, answers messages,
+   and asks the person, through their own inbox, for what it holds no key for.
 4. **A deal.** A buyer pays into an escrow through the fee payer, and the money moves only as the
    escrow allows
    ([forest's escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md)).
@@ -151,6 +153,9 @@ seller and deal are in [`e2e/`](e2e/README.md).
 
 ## Promises
 
+Forest's own [promises](https://github.com/foundationforest/forest/blob/main/README.md#promises)
+hold here, and what never goes on chain is in its
+[privacy](https://github.com/foundationforest/forest/blob/main/README.md#privacy-honestly).
 Each README holds its service's own promises. One holds for all of them:
 
 - **Everything here competes.** Anyone can run another of each; prices and margins are each

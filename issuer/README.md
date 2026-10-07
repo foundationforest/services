@@ -50,7 +50,7 @@ Tier 1, the face check, for anyone:
    face, next to the note number ([What it keeps](#what-it-keeps-and-why)). Then it signs a tier 1
    note and answers it.
 
-Tier 2, the document check, for a person who shows a tier 1 note:
+Tier 2, the document check, for a person who shows a note this issuer signed:
 
 7. **The app opens a document check.** `POST /id/session` opens a Didit session on the document
    workflow. When the check has a price, a payment comes first ([Payment](#payment)).
@@ -82,9 +82,8 @@ One SQLite file, three tables:
 | `id_payments` | The transaction signature of each payment used | So one payment opens one session |
 
 Nothing else: no face, no embedding, no name, no document, no time, no row number. A session id is
-kept only as its hash, so the file names no Didit session, and the two tables of notes share no
-key, so nothing in the file says which document went with which face. Deleted bytes are
-overwritten (`secure_delete`). How long it keeps them is [Policy](#policy).
+kept only as its hash, so the file names no Didit session. Deleted bytes are overwritten
+(`secure_delete`). How long it keeps them is [Policy](#policy).
 
 **The fingerprint** is HMAC-SHA256, under a key mixed from the issuer's seed with forest's `hkdf`
 under `issuer/fingerprint`, of three things Didit reads on the document, each written one way: the
@@ -168,7 +167,7 @@ Errors are `{"error": "<code>"}`:
 | `400` | `bad_session_id`, `bad_note_number`, `bad_note`, `bad_payment`, `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_sessionId_and_note`, `expected_exactly_payment` |
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `not_approved`, `no_face`, `duplicate_face`, `not_our_note`, `other_model`, `not_the_same_face`, `no_document_data`, `duplicate_document` |
-| `409` | `session_used` (this session's face was signed for another note number), `payment_used` |
+| `409` | `session_used` (this session is kept for another note number), `payment_used` |
 | `429` | `try_later`: this address opened its share of sessions this hour |
 | other | `404 not_found`, `405 post_only`, `405 get_only`, `413 too_large` (bodies over 4 KB), `502 face_check_unavailable`, `502 payment_check_unavailable`, `500 internal` |
 
@@ -237,7 +236,7 @@ https://issuer.devnet.forest.foundation:
 - **No Didit key,** so the stand-in passes everyone, at both tiers.
 - **No price:** `ID_TIER_PRICE` is unset, so 0.
 
-| Variable | On devnet | Sealed |
+| Variable | On devnet | Secret |
 |---|---|---|
 | `ISSUER_NAME` | `issuer.devnet.forest.foundation` | no |
 | `ISSUER_KEYPAIR` | the devnet `issuer` key | yes |
@@ -246,7 +245,7 @@ https://issuer.devnet.forest.foundation:
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |
 | `PORT` | `8080` | no |
 
-Setting `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` and `DIDIT_ID_WORKFLOW_ID` (sealed) and redeploying
+Setting `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` and `DIDIT_ID_WORKFLOW_ID` (secret) and redeploying
 puts the real checks, and the face model, in the stand-in's place.
 
 ## Policy
@@ -256,7 +255,7 @@ puts the real checks, and the face model, in the stand-in's place.
   devnet the stand-in costs nothing.
 - **The face check is free to the person.**
 - **The document check costs `ID_TIER_PRICE`,** in the dollar `ID_TIER_MINT`, paid before the
-  session opens. On devnet the price is 0, since nothing can receive the money yet.
+  session opens. On devnet the price is 0, since no entity can receive the money yet.
 - **Where it is paid:** `ID_TIER_PAY_TO`, an address of its own, never the issuer's seed. On devnet,
   once a price is set, it is the address mixed from the issuer's seed under `payments`
   ([the repo's devnet facts](../README.md#on-devnet)), in the classic test dollar.
@@ -279,8 +278,8 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The face model:** SFace, named `opencv-sface-2021dec` in a note
   ([The face model](#the-face-model)).
 - **The same face:** a cosine similarity of at least 0.5 (`FACE_MATCH`) between the live selfie's
-  embedding and the note's. OpenCV gives 0.363 for SFace, but across six official NASA portraits of
-  five people, two of them scored 0.41 against each other, and one person eight years apart 0.80.
+  embedding and the note's. OpenCV gives 0.363 for SFace, but across six official portraits of five
+  people, two of them scored 0.41 against each other, and one person eight years apart 0.80.
 - **What Didit holds.** For the face check: the selfie, the liveness video, a template of the face
   for its face search, and its decision. For the document check, also: the document's images, what
   Didit reads on it (name, date of birth, document number, nationality, dates), and the match
