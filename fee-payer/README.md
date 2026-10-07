@@ -280,7 +280,7 @@ token account for each token it is paid in. It is paid back in tokens; turning t
 is an operations loop, not code.
 
 The foundation's runs that image on Railway, project `forest-devnet`, service `fee payer`, at
-https://relayer-production-8d40.up.railway.app, the address
+https://fee-payer.devnet.forest.foundation, the address
 [`../e2e/devnet.json`](../e2e/devnet.json) names: Kora's JSON-RPC at `/` (POST), `GET /liveness`,
 and the voucher door at `/vouchers` (POST).
 

@@ -83,7 +83,7 @@ refused at once.
 
 The build context is the repo root; `deploy/Dockerfile` builds it (Node 22.22.2 and git,
 `forest.sh records registry/client`, `npm ci`). Railway, project `forest-devnet`, service `host`,
-at https://board-devnet-test-production.up.railway.app:
+at https://host.devnet.forest.foundation:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=host/deploy/Dockerfile`.
 - **One replica,** a volume at `/data`, a public domain to port 8080, health check `/`.
@@ -163,7 +163,9 @@ signs. A minute keeps that to one request a sender a minute, and a past key stop
 bucket is set would be listed as held and never found. Moving them under the same names keeps the
 list true.
 
-**Why is its address `board-devnet-test-production…`?**
-It was the test board before forest's records replaced boards with hosts. Renaming the service
-leaves the address as it is; changing the address would break the hosts record of every profile
-the e2e runs made, and the index's hosts list.
+**Why do older e2e profiles name another address?**
+Until 7 October 2026 the host answered only at a Railway address. The hosts records of the profiles
+e2e made before then name that address, and no one can sign them again: each run forgot its
+people's words. Readers that start from the index's hosts list, the index and forest's CLI among
+them, still find those profiles here; a message to one goes to the old address, and fails once
+that address is gone.

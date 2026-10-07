@@ -325,7 +325,9 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   and `llms.txt` resolves, no page says a crypto word, the Pay link reads back to the offer, a
   past access key's record counts and a message key's does not, a private record is never
   stored, and a picture shows from the host that holds it with the type its record names, and not
-  at all when no host does (forest's reference host, on loopback).
+  at all when no host does (forest's reference host, on loopback). In a database of their own, they
+  check that the foundation's host under its new name keeps its cursor, its records and its
+  pictures.
 - **The reputation test** (`test/reputation.test.ts`) needs Postgres and circuits' proving files.
   It checks that a row is stored as the registry holds it, its stamp, issuer's key and time read
   from the row itself; then, on the page tests' story, that the served leaves rebuild the served
@@ -348,7 +350,7 @@ verification key; no proving file), `npm ci`, then `node src/main.ts` (readers a
 process). The lists and the config are in the image.
 
 The foundation's devnet index runs that image on Railway, project `forest-devnet`, service `index`,
-at https://index-production-1b6e.up.railway.app:
+at https://index.devnet.forest.foundation:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=index/deploy/Dockerfile`.
 - **One replica,** health check `GET /`, a public domain to port 8080, no volume: its state is in
@@ -364,7 +366,7 @@ at https://index-production-1b6e.up.railway.app:
 | `SOLANA_RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
 | `CHAIN_COMMITMENT` | `finalized` | no |
 | `POLL_MS` | `10000` | no |
-| `PUBLIC_URL` | its own Railway address | no |
+| `PUBLIC_URL` | `https://index.devnet.forest.foundation` | no |
 | `PORT` | `8080` | no |
 
 A new `INDEX_SIGNING_SEED` is a new signing identity: every score is signed again under new public
