@@ -1,16 +1,15 @@
 {
-  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer is feePayer, its voucher door feePayer plus /vouchers), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's two lists the devnet index trusts (index/lists/issuers.json: issuerAddress signs the face list, idIssuerAddress the ID list), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the delegated step waits out. Devnet only.",
+  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer is feePayer, its voucher door feePayer plus /vouchers, and feePayerName the name its voucher labels carry), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's key the devnet index and the fee payer trust (index/lists/issuers.json; the run checks the issuer's /issuer.json says the same), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the past-key step waits out. Devnet only.",
   "issuer": "https://issuer-production-4976.up.railway.app",
+  "issuerKey": "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549",
   "feePayer": "https://relayer-production-8d40.up.railway.app",
-  "keyholder": "https://connections-production-ebc4.up.railway.app",
+  "feePayerName": "fee-payer.devnet.forest.foundation",
   "host": "https://board-devnet-test-production.up.railway.app",
   "senderCacheSeconds": 60,
   "index": "https://index-production-1b6e.up.railway.app",
   "rpc": "https://api.devnet.solana.com",
-  "registry": "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC",
+  "registry": "J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4",
   "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
-  "issuerAddress": "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7",
-  "idIssuerAddress": "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4",
   "testDollar": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
   "market": "tutoring"
 }
