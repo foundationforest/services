@@ -67,7 +67,8 @@ npm test
 DATA_DIR=./data/host npm start
 ```
 
-The test checks that `/` says what this is; that forest's host runs with this policy; the settings;
+The test checks that `/` says what this is; that forest's host runs with this policy; that a request
+whose URL cannot be read (`//`) gets 400 and the host goes on; the settings;
 that records go in and come back through the front; that forest's single-file fixture moves in once,
 under the same numbers, and never over a directory that holds folders; that with a bucket (a
 stand-in on loopback that checks forest's signature, in region `auto`) its bytes go straight there,

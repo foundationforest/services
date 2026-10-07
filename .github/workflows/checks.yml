@@ -84,7 +84,7 @@ jobs:
       - name: Test (everything but the end-to-end test)
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts | tee "$RUNNER_TEMP/tap"
+          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   fee-payer:

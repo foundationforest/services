@@ -10,8 +10,8 @@
     "start:readers": "node src/main.ts readers",
     "start:web": "node src/main.ts web",
     "migrate": "node src/migrate.ts",
-    "test": "node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts test/e2e.test.ts",
-    "test:unit": "node --test test/markets.test.ts test/scoring.test.ts test/sign.test.ts",
+    "test": "node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/e2e.test.ts",
+    "test:unit": "node --test test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

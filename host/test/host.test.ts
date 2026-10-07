@@ -3,12 +3,15 @@
 // an inbox that takes messages from one issuer's rows; and the sender's records read, and kept a
 // while, to take a message a message key signed.
 //
+// A request whose URL cannot be read is refused at the front, and the host goes on.
+//
 //   npm test
 
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
@@ -97,6 +100,25 @@ test('`/` says what this is; every other path is forest’s host, with this poli
     POLICY,
   )
   assert.deepEqual(POLICY, { keepDays: 30, maxBatch: 100, maxPageRecords: 1000, maxPageBytes: 4_194_304, maxBlobBytes: 50_000_000 })
+})
+
+/** One request as raw bytes, so a URL no client would send arrives as written; the status line's code, or null if none came. */
+function raw(url: string, request: string): Promise<number | null> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const socket = connect(Number(port), hostname, () => socket.end(request))
+    let got = ''
+    socket.on('data', (chunk) => (got += chunk.toString('latin1')))
+    socket.on('close', () => resolve(Number(/^HTTP\/1\.1 (\d{3})/.exec(got)?.[1]) || null))
+    socket.on('error', reject)
+  })
+}
+
+test('a request whose URL cannot be read gets 400, and the host goes on answering', async () => {
+  for (const path of ['//', '/\\', '//x:99999']) {
+    assert.equal(await raw(host.url, `GET ${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`), 400, path)
+    assert.equal((await fetch(`${host.url}/`)).status, 200, `still answering after ${path}`)
+  }
 })
 
 test('the settings: a data directory, the old file, a bucket by its variables, and the time a sender’s records are kept', () => {

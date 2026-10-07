@@ -311,12 +311,14 @@ Checks:
 
 ```
 npm run check                                      # type-check
-npm run test:unit                                  # markets, scoring, signatures: nothing else needed
+npm run test:unit                                  # markets, scoring, signatures, the server: nothing else needed
 DATABASE_URL=postgres://… node --test --test-force-exit test/pages.test.ts
 DATABASE_URL=postgres://… node --test --test-force-exit test/reputation.test.ts
 DATABASE_URL=postgres://… npm test                 # all of the above and the end-to-end test
 ```
 
+- **The server test** (`test/server.test.ts`) needs nothing: a request the pages cannot read (a Host
+  header no URL reads, a method a web Request refuses) gets an answer, and the server goes on.
 - **The page tests** (`test/pages.test.ts`) need only Postgres. On a fixed story in a fresh database
   they check that every page and twin renders, every JSON-LD block validates against schema.org's
   vocabulary, each twin matches its page, the sitemap lists every page, every URL in the read skill
