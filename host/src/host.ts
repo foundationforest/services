@@ -19,19 +19,26 @@
 //
 // A message a message key signed is taken only if the sender's own host lists that key: forest's
 // host asks `readSender` for the sender's records, and this host reads them with forest's client,
-// within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS.
+// within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS. It reads them only from a
+// public address, and follows no redirect (`publicFetch`).
+//
+// Photos and videos (forest's blobs) are taken only for a folder holding a row from an issuer this
+// host counts, and only while that folder's photos and videos here stay within PHOTOS.folderBytes
+// (`photoRule`). The lookup is the registry lookup's: without an RPC, no photo is taken.
 
+import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { type AddressInfo, BlockList, isIP } from 'node:net'
 import { join } from 'node:path'
 
 import { Connection, PublicKey } from '@solana/web3.js'
+import { Agent, fetch as undiciFetch } from 'undici'
 
 import { readPage } from '../../forest/records/src/client.ts'
-import { type BlobDriver, Host, type HostOptions } from '../../forest/records/src/host.ts'
+import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../forest/records/src/host.ts'
 import type { Checked } from '../../forest/records/src/record.ts'
-import { type BlobStore, blobStore } from '../../forest/records/src/storage.ts'
+import { type BlobStore, blobNames, blobStore } from '../../forest/records/src/storage.ts'
 import { importSingleFile } from '../../forest/records/scripts/import-single-file.ts'
 import { fromBytes32 } from '../../forest/registry/client/src/field.ts'
 import { fetchRows } from '../../forest/registry/client/src/rows.ts'
@@ -54,6 +61,14 @@ export const POLICY = {
   /** The largest blob it takes. Its types are forest's default: png, jpeg and mp4. */
   maxBlobBytes: 50_000_000,
 } as const satisfies HostOptions
+
+/** The photo rule: whose photos and videos this host takes, and how many bytes of them one folder may hold. */
+export const PHOTOS = {
+  /** The issuers whose registry rows let a folder put photos and videos here, by key as a row holds it: the foundation's devnet issuer. */
+  issuers: ['2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549'],
+  /** The most bytes of photos and videos a folder's current records may name here, the ones being put included. */
+  folderBytes: 250_000_000,
+} as const
 
 /** Milliseconds a sender's host may take to serve all of the sender's records. */
 export const SENDER_READ_MS = 5_000
@@ -141,14 +156,95 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
   }
 }
 
-/** A profile's records, every page, as `host` serves them, each checked by forest's reader; all within SENDER_READ_MS. */
-async function readRecords(host: string, profile: string): Promise<Checked[]> {
+/**
+ * The photo rule, a policy for forest's host on top of forest's own types (png, jpeg and mp4) and its
+ * size cap: bytes are taken when one of the folders whose current records name them holds a row
+ * from an issuer in PHOTOS (`counted`), and the bytes this host holds that the folder's current
+ * records name, these included, come to at most `limit`. A size is the bytes' own, never what a
+ * record says of them, which can be anything: learned when this policy takes them, or read back
+ * once for bytes taken before this start. Bytes enter only through this policy while it runs, so
+ * bytes it finds missing stay missing until it takes them.
+ */
+export function photoRule(host: () => Host, counted: (folder: string) => Promise<boolean>, limit: number = PHOTOS.folderBytes): BlobPolicy {
+  const sizes = new Map<string, number>()
+  const size = async (sha256: string) => {
+    let n = sizes.get(sha256)
+    if (n === undefined) {
+      n = (await host().getBlob(sha256))?.bytes.length ?? 0
+      sizes.set(sha256, n)
+    }
+    return n
+  }
+  return async (blob) => {
+    const refused = await defaultBlobPolicy(blob)
+    if (refused) return refused
+    let full = false
+    for (const folder of blob.folders) {
+      if (!(await counted(folder))) continue
+      const named = new Set([...host().view(folder).current.values()].flatMap((c) => blobNames(c.record.body).map((n) => n.sha256)))
+      named.delete(blob.sha256)
+      let total = blob.size
+      for (const sha256 of named) total += await size(sha256)
+      if (total <= limit) {
+        sizes.set(blob.sha256, blob.size)
+        return null
+      }
+      full = true
+    }
+    return full
+      ? `a folder's photos and videos here come to at most ${limit} bytes`
+      : 'this host takes photos and videos only for a folder holding a registry row from an issuer it counts'
+  }
+}
+
+/**
+ * What a sender's host may not be: loopback, private, link-local, carrier-grade NAT, unspecified,
+ * multicast or reserved. An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is checked as IPv4.
+ */
+const NOT_PUBLIC = new BlockList()
+for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
+  NOT_PUBLIC.addSubnet(net, prefix, 'ipv4')
+}
+for (const [net, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) NOT_PUBLIC.addSubnet(net, prefix, 'ipv6')
+
+/** Whether `address` is an IP address and a public one. */
+export function isPublic(address: string): boolean {
+  const family = isIP(address)
+  return family !== 0 && !NOT_PUBLIC.check(address, family === 6 ? 'ipv6' : 'ipv4')
+}
+
+/** A name's addresses, all of them public, or an error: the connection then goes to one of them, never to an address unchecked. */
+function publicLookup(hostname: string, options: { all?: boolean }, callback: (err: Error | null, address: string | LookupAddress[], family?: number) => void): void {
+  dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
+    if (err) return callback(err, '')
+    const refused = addresses.find((a) => !isPublic(a.address))
+    if (refused || !addresses.length) return callback(new Error(`${hostname} leads to ${refused?.address ?? 'no address'}, not a public address`), '')
+    if (options.all) return callback(null, addresses)
+    callback(null, addresses[0]!.address, addresses[0]!.family)
+  })
+}
+
+const PUBLIC = new Agent({ connect: { lookup: publicLookup as never } })
+
+/** fetch, to public addresses only: an address written in the URL is checked before anything is sent, and a name's at connection. */
+export const publicFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(input instanceof Request ? input.url : input)
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  if (isIP(host) && !isPublic(host)) throw new TypeError(`${url.origin} is not a public address`)
+  return undiciFetch(url, { ...init, dispatcher: PUBLIC } as never)
+}) as typeof fetch
+
+/**
+ * A profile's records, every page, as `host` serves them, each checked by forest's reader; all within
+ * SENDER_READ_MS. Through `get`, `publicFetch` but for tests, and never after a redirect.
+ */
+async function readRecords(host: string, profile: string, get: typeof fetch): Promise<Checked[]> {
   const deadline = Date.now() + SENDER_READ_MS
   const records: Checked[] = []
   for (let after = 0; ; ) {
     const left = deadline - Date.now()
     if (left <= 0) throw new Error(`${host} took more than ${SENDER_READ_MS} ms`)
-    const page = await readPage(host, { profile, after, timeout: left })
+    const page = await readPage(host, { profile, after, timeout: left, fetch: get, redirect: 'error' })
     records.push(...page.records)
     if (page.cursor <= after) return records
     after = page.cursor
@@ -159,9 +255,10 @@ async function readRecords(host: string, profile: string): Promise<Checked[]> {
  * Forest's `readSender`: a sender's records from the host a message names, kept for `cacheMs` per
  * sender and host. Two messages at once share one read; a read that fails is not kept, so forest's
  * host answers `lookup` and the sender's next try reads again. So a message key its owner made past
- * is still taken until what was read before expires.
+ * is still taken until what was read before expires. A host at no public address, or one that
+ * redirects, is a read that fails.
  */
-export function senderReader(cacheMs: number, now: () => number = Date.now): NonNullable<HostOptions['readSender']> {
+export function senderReader(cacheMs: number, now: () => number = Date.now, get: typeof fetch = publicFetch): NonNullable<HostOptions['readSender']> {
   const kept = new Map<string, { at: number; records: Promise<Checked[]> }>()
   return (host, profile) => {
     const t = now()
@@ -169,7 +266,7 @@ export function senderReader(cacheMs: number, now: () => number = Date.now): Non
     const held = kept.get(key)
     if (held && t - held.at < cacheMs) return held.records
     for (const [k, v] of kept) if (t - v.at >= cacheMs) kept.delete(k)
-    const records = readRecords(host, profile)
+    const records = readRecords(host, profile, get)
     if (cacheMs > 0) {
       kept.set(key, { at: t, records })
       records.catch(() => {
@@ -227,19 +324,28 @@ export type RunningHost = {
   close(): Promise<void>
 }
 
-/** `connection` stands in for the RPC in tests; otherwise one is made from `config.rpcUrl`. */
-export async function startHost(config: Config, connection?: Pick<Connection, 'getProgramAccounts'>): Promise<RunningHost> {
+/**
+ * In tests, `connection` stands in for the RPC, otherwise made from `config.rpcUrl`, and `fetch` for
+ * `publicFetch`, so a sender's host on loopback can be read.
+ */
+export async function startHost(config: Config, stand: { connection?: Pick<Connection, 'getProgramAccounts'>; fetch?: typeof fetch } = {}): Promise<RunningHost> {
   const imported = config.dir ? await importOnce(config) : null
   const disk = config.dir && join(config.dir, 'blobs')
   const toBucket = disk && config.blobs.kind === 's3' && existsSync(disk) ? await moveBlobs(blobStore(config.dir!, { kind: 'disk' }), blobStore(config.dir!, config.blobs)) : null
 
-  const rpc = connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
-  const host = new Host({
+  const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
+  const lookup = rpc && rowLookup(rpc, config.registryProgramId)
+  const counted = async (folder: string) => {
+    for (const issuer of PHOTOS.issuers) if (lookup && (await lookup(folder, issuer))) return true
+    return false
+  }
+  const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
     ...POLICY,
-    ...(rpc && { rowLookup: rowLookup(rpc, config.registryProgramId) }),
-    readSender: senderReader(config.senderCacheMs),
+    blobPolicy: photoRule(() => host, counted),
+    ...(lookup && { rowLookup: lookup }),
+    readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
   })
   const inner = new URL(await host.listen(0))
 

@@ -18,7 +18,8 @@ in and out, messages in and pulled, blobs in and out. Forest's host checks every
 and the access rule, every message's signature and its inbox's rule, and every blob's hash and the
 record that names it, before it keeps anything.
 
-`src/host.ts` hands forest's host the numbers in `POLICY`, where to keep things, and two lookups:
+`src/host.ts` hands forest's host the numbers in `POLICY`, where to keep things, two lookups and
+the photo rule:
 
 - **The registry lookup,** when `SOLANA_RPC_URL` is set: whether a key holds a row from an issuer,
   read with forest's registry client (`fetchRows`, filtered on the key and the issuer's key, as an
@@ -27,8 +28,18 @@ record that names it, before it keeps anything.
 - **The sender's records** (forest's `readSender`), always: to take a message a message key signed,
   forest's host needs the sender's hosts and permissions records from the host the message names.
   This host reads them with forest's client (`readPage`, every page, all within 5 seconds) and keeps
-  what it read for `SENDER_CACHE_SECONDS`, per sender and host. A read that fails is kept for
-  nothing: forest's host answers `lookup`, and the sender tries again.
+  what it read for `SENDER_CACHE_SECONDS`, per sender and host. It reads only from a public address
+  and follows no redirect: its fetch (undici's, with a lookup of its own) refuses a host whose
+  address, written or looked up, is loopback, private, link-local, carrier-grade NAT, unspecified,
+  multicast or reserved, before connecting, and `readPage` refuses a redirect. A read that fails, or
+  is refused, is kept for nothing: forest's host answers `lookup`, and the sender tries again.
+- **The photo rule** (forest's blob policy), always. Forest's host takes bytes only when a current
+  record names them; this host takes them only when one of the folders whose current records name
+  them holds a registry row from the foundation's devnet issuer (`PHOTOS`), read with the registry
+  lookup, and the bytes it holds that the folder's current records name, these included, come to at
+  most 250,000,000. A size is the bytes' own, never what a record says of them: learned when it takes
+  them, and read back once, after a start, for bytes taken before it. Without `SOLANA_RPC_URL` no
+  row can be read, so it takes no photo or video.
 
 **Storage** is forest's: a data directory (`DATA_DIR`) holding a SQLite file per folder and
 `host.sqlite`, the log across them; the blobs go in that directory, or in an S3-compatible bucket
@@ -77,7 +88,13 @@ with the issuer's key on it, and no other; that a message to an inbox open to on
 taken with the lookup and refused without it; and that a message key's message is taken while the
 sender's host lists it, still taken within the cache once past, refused (`permission`) after,
 refused (`lookup`) when the named host does not answer, and that a past message key's pull is
-refused at once.
+refused at once. The sender check: loopback, private, link-local and other addresses that are not
+public are refused, written or looked up (`localhost`), before anything is sent; a message key's
+message is refused (`lookup`) when its sender's host is on loopback, or redirects. The photo rule:
+photos are taken for a folder with a row from the devnet issuer, and refused (`policy`) for one with
+another issuer's row, with none, or with no RPC; a folder's bytes are counted as they are, though
+its records say 1 byte each, refused past its limit, taken through another folder that names them
+and has room, and read back after a restart.
 
 ### On devnet
 
@@ -100,15 +117,20 @@ given no host (it reads that list).
 
 - **Keeps** a replaced record, a message, and bytes no current record names any more for **30
   days**, by its own clock. A current record stays.
-- **Blobs:** png, jpeg and mp4, up to **50,000,000 bytes** each.
+- **Photos and videos (blobs):** png, jpeg and mp4, up to **50,000,000 bytes** each; only for a
+  folder holding a registry row from the foundation's devnet issuer, under any label; and up to
+  **250,000,000 bytes** a folder: the bytes held here that its current records name, the new ones
+  included. Bytes several folders name come in through any one of them that qualifies.
 - **Sizes:** **100** records or messages a request; **1,000** a page, and at most **4,194,304
   bytes** a page, though always one line.
 - **Inboxes:** it takes a message for any profile whose card here declares an inbox, under each of
   forest's rules: anyone, one issuer's rows (through the registry lookup, over `SOLANA_RPC_URL`;
   without it, refused as `rule_unsupported`), one message per sender, and a largest size.
 - **Message keys:** it takes a message a message key signed. It reads the sender's records from the
-  host the message names within **5 seconds**, and keeps what it read for **60 seconds** on devnet.
-- **Who may write:** anyone. It refuses nothing by policy of its own, and has no rate limit.
+  host the message names within **5 seconds**, only at a public address and with no redirect, and
+  keeps what it read for **60 seconds** on devnet.
+- **Who may write:** anyone, records and messages; photos and videos by the rule above. It refuses
+  no record or message by policy of its own, and has no rate limit.
 - **Where it keeps things:** a SQLite file per folder and one log across them, on the volume; blob
   bytes in an S3-compatible bucket. When one machine is not enough, forest's records say the way
   ("When it grows").
@@ -125,12 +147,17 @@ given no host (it reads that list).
 
 ## Limits
 
-- **Anyone can write here,** anything forest's host accepts.
+- **Anyone can write records and messages here,** anything forest's host accepts.
 - **On devnet it may be wiped at any time,** and with it every record the e2e runs left.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
   change to forest's storage first.
-- **It trusts its RPC** for the registry lookup. A lookup that fails refuses the message
-  (`lookup`), and the sender sends it again.
+- **It trusts its RPC** for the registry lookups. A lookup that fails refuses the message
+  (`lookup`), and the sender sends it again; for a photo, the put gets 500, and the app puts it
+  again.
+- **No photo before a row.** Bytes are taken only once a folder naming them holds a row, so an app
+  that puts a photo before the person registers is refused (`policy`) and must put it again after.
+- **After a start, sizes are read back.** The first put for a folder after a start reads back the
+  bytes held that its records name, once each, to learn their sizes.
 - **A past message key can still send here for up to 60 seconds:** until what this host read of
   the sender's records expires. Its pulls stop at once.
 - **Taking a message key's message tells the sender's host something:** this host asks it for the
@@ -150,6 +177,11 @@ given no host (it reads that list).
 **Why run forest's host, and not one written here?**
 Forest's host is the reference for what a host does. A host written here could drift from it, and
 the e2e run would test the wrong thing.
+
+**Why does a row from the devnet issuer, under any label, let a folder put photos?**
+A row from an issuer the foundation trusts is a person a face check found once, which is what makes
+a folder's photos someone's and not anyone's. The index also checks that the label is a market it
+uses and the profile's own; the host has no list of markets, and needs none to bound its bytes.
 
 **Why are the numbers written here, when they are forest's defaults?**
 So moving the forest pin cannot change this host's policy without a pull request here that says so.
