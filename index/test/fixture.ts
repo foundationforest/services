@@ -215,7 +215,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const lists = mkdtempSync(join(tmpdir(), 'forest-index-lists-'))
   writeFileSync(join(lists, 'hosts.json'), JSON.stringify({ hosts: [] }))
   writeFileSync(join(lists, 'markets.json'), JSON.stringify({ directory: markets.url, markets: [MARKET, EXCHANGE] }))
-  writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1 } } }))
+  writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } } }))
   writeFileSync(join(lists, 'indexes.json'), JSON.stringify({ roots: ROOTS, indexes: { [INDEX]: { name: INDEX_NAME } } }))
   const env = {
     DATABASE_URL: url.toString(),
@@ -258,7 +258,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   // Eve's are kept but never stored.
   const refused: unknown[] = []
   const checked: Checked[] = RECORDS.map((record) => ({ record, id: recordId(unsignedOf(record)) }))
-  const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }, indexes: [INDEX] }
+  const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } }, indexes: [INDEX] }
   await takeIn(db, HOST, checked, trusted, (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
 

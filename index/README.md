@@ -85,7 +85,9 @@ and accountable, not good. The code is `src/scores/compute.ts`, and it says the 
    market, or on the other side of the same one, holds a second profile.
 
 **Uniqueness,** per counted label, from 0 to 1: how sure this index is that the profile is one real
-person there. Each issuer has a weight from 0 to 1 in `lists/issuers.json`; for the issuers whose
+person there. Each issuer has a weight from 0 to 1 for each tier of its notes in
+`lists/issuers.json`. A row weighs its issuer's weight at the tier its profile's card shows for it
+(Proofs a profile shows), or its issuer's smallest weight when it shows none. For the issuers whose
 counted rows the profile holds under that label,
 
     uniqueness = 1 − (1 − w1) × (1 − w2) × …
@@ -133,9 +135,10 @@ the amount (the program checks it), so an ending proves the payment.
 zero.
 
 **How the pages show them:** side by side, never as one number. A market lists sellers counted as a
-real person first, then by standing. Uniqueness shows as a percentage with who checked it. The JSON
-twins carry `rating` (`value`, `reviews`) and `standing`; each profile's JSON-LD carries an
-`AggregateRating` from the rating, and each offer its seller's rating and standing.
+real person first, then by standing. Uniqueness shows as a percentage with who checked it, and
+"ID-checked" for a row shown at tier 2. The JSON twins carry `rating` (`value`, `reviews`) and
+`standing`; each profile's JSON-LD carries an `AggregateRating` from the rating, and each offer its
+seller's rating and standing.
 
 **The signature.** Every score is served with a statement and an Ed25519 signature over its text:
 
@@ -179,13 +182,19 @@ index signed stays in its database.
 
 ### Proofs a profile shows
 
-A profile's card may carry reputation proofs (forest's
+A profile's card may carry reputation proofs and person proofs (forest's
 [records](https://github.com/foundationforest/forest/blob/main/records/README.md#proofs), "Proofs").
 When the readers store a card, each proof whose circuit is `reputation` and whose `index` is in
 `lists/indexes.json` is checked with circuits' `verifyReputation`: for the profile's own main key,
 the label the proof shows, and the root and time its index signed. The ones that pass are stored
-with the card. One that fails, or names an index not listed, is left out; it is not an error. A
-proof of another circuit is left alone.
+with the card. One that fails, or names an index not listed, is left out; it is not an error.
+
+Each person proof whose `issuer` is in `lists/issuers.json` is checked with forest's registry
+client's `verifyTier`: against the row at its stamp, read over the readers' RPC, for the profile's
+own main key and the issuer and label the proof shows. The ones that pass are stored with the card,
+and weigh their row at that tier (How it scores). One that fails, or names an issuer not listed, is
+left out; with no RPC, every one is. When the RPC fails, the index keeps what it held for the profile and
+checks its card again on the next poll. A proof of any other circuit is left alone.
 
 A page shows a stored proof only while its root is one of its index's newest roots, as many as
 `roots` in `lists/indexes.json`. This index knows only its own roots, so it shows only proofs made
@@ -204,7 +213,7 @@ crypto word; the twins keep the records' own field names (`mint`), since they ar
 | `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's public key, how its scores are signed, its four lists, and where its reputation tree is |
 | `/folders/{folder}` | `.json` | One folder's markets |
 | `/markets/{market}?near=&km=&offset=` | `.json` | The market file, counts, and its live offers, 50 a page. `near=lat,lon&km=N` keeps offers within N km |
-| `/profiles/{address}` | `.json` | A counted profile: its rows, counted or not and why, and their issuers; its scores, apart and signed; the reputation proofs it shows; offers and requests; reviews received and given, each with the payment behind it |
+| `/profiles/{address}` | `.json` | A counted profile: its rows, counted or not and why, their issuers and the tier each shows; its scores, apart and signed; the reputation proofs it shows; offers and requests; reviews received and given, each with the payment behind it |
 | `/deals/{dealId}` | `.json` | The receipt in plain words (or none), the two profiles with their scores, and the reviews that name it |
 | `/search?q=&near=&km=` | `/search.json?q=` | Markets whose name, folder, roles or role names contain `q`, and live offers by full-text search (Postgres's `simple` configuration) |
 | `/pay?…` | `/pay.json?…` | An offer's Pay link, checked against the offer as indexed |
@@ -258,7 +267,7 @@ Environment variables, read once at start; a change means a restart.
 |---|---|
 | `lists/hosts.json` | The hosts it reads, each in full |
 | `lists/markets.json` | The markets it uses, by name, and the directory their files are read from |
-| `lists/issuers.json` | The issuers it trusts, by key (128 hex, x then y, as a row holds it), each with a name, a weight from 0 to 1 and, for a key that leaked, `until`: the last time a row of it counts, in UTC to the second (`2026-11-01T00:00:00Z`) |
+| `lists/issuers.json` | The issuers it trusts, by key (128 hex, x then y, as a row holds it), each with a name, a weight from 0 to 1 for each tier (`weights`, the tier in decimal) and, for a key that leaked, `until`: the last time a row of it counts, in UTC to the second (`2026-11-01T00:00:00Z`) |
 | `lists/indexes.json` | The indexes whose reputation proofs it shows, by the address of their signing key, each with a name; and `roots`, how many of an index's newest roots a proof may be made against |
 | `config/scoring.json` | The evidence weights, the floor for a reviewer with no counted row, and `countedMints`: the tokens whose receipts count |
 | `config/currencies.json` | Which tokens the pages show as which currency, and their decimals |
@@ -301,6 +310,7 @@ npm run check                                      # type-check
 npm run test:unit                                  # markets, scoring, signatures, the server: nothing else needed
 DATABASE_URL=postgres://… node --test --test-force-exit test/pages.test.ts
 DATABASE_URL=postgres://… node --test --test-force-exit test/reputation.test.ts
+DATABASE_URL=postgres://… node --test --test-force-exit test/tiers.test.ts
 DATABASE_URL=postgres://… npm test                 # all of the above and the end-to-end test
 ```
 
@@ -321,6 +331,12 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   root with circuits' `buildTree` and a proof made from them checks with circuits' verifier against the
   served root, time and signature; that a proof on a card shows on the page and in its twin; and
   that one with a byte changed, or against a root past the window, shows nothing.
+- **The tier test** (`test/tiers.test.ts`) needs Postgres. In a database of its own, it puts forest's
+  example card's person proof (keys/'s test person, tier 2 under `tutoring/seller`) on that person's
+  card, against a stand-in RPC holding the row from forest's fixtures: the row counts at 0.9, and the
+  page and its twin say "ID-checked". A byte changed, another tier, another issuer than the row's, an
+  issuer the list does not name (the RPC never asked) or no RPC: no tier, and the row counts at 0.7.
+  An RPC that fails leaves what the index held, and the next poll checks the card again.
 - **The end-to-end test** (`test/e2e.test.ts`) runs forest's reference host, a local validator with
   the registry and the escrow, notes from two issuers signed with forest's `signNote`, and the index.
   It needs the two programs built (`cargo build-sbf --arch v3` in `forest/registry/program` and
@@ -370,8 +386,10 @@ Another index holds its own.
   no profile can ask it to read another host. Reading any host a verified profile names is a later
   feature.
 - **Which issuers count, and how much:** `lists/issuers.json`, each issuer by its key with a weight
-  from 0 to 1, and for a key that leaked the last time a row of it counts (`until`). No issuer counts
-  unless it is named there. Today: the foundation's devnet issuer, at 0.7, with no `until`. A row does not say the tier of the note behind it, so every row from it weighs the same.
+  from 0 to 1 for each tier, and for a key that leaked the last time a row of it counts (`until`). No
+  issuer counts unless it is named there. Today: the foundation's devnet issuer, tier 1 (its face
+  check) at 0.7 and tier 2 (its document check) at 0.9, with no `until`. A row counts at the tier its
+  card shows, checked; a row whose card shows none, at 0.7. Tier 2 shows as "ID-checked".
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
   `main`.
 - **The reputation tree:** rebuilt after every scoring pass, from every counted row of every
@@ -407,8 +425,6 @@ Another index holds its own.
 
 - **It trusts its issuers** to sign notes only for the people they say they do (the foundation's
   devnet issuer: one note number per face, with a stand-in that passes everyone). It cannot tell.
-- **It cannot weigh a tier.** A row does not say which tier the person's note was; until profiles
-  show their tier, every row from one issuer weighs the same.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **A shown market and an exact rating can name the profile.** The tree is public. In a market with
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
@@ -462,6 +478,11 @@ and indexes it uses, and the rest is public on the hosts and the chain.
 **Why read each listed host in full, and not follow the hosts each profile names?**
 Reading what is new on the whole host finds new people the first time they write there, and what
 the index reads stays a list anyone can see, instead of growing with whatever profiles name.
+
+**Why does a row whose card shows no tier count at its issuer's smallest weight?**
+A row does not say which tier its note was, and every note an issuer signs is at one of its tiers.
+At the smallest, a profile that shows no tier keeps the weight it had before tiers counted, and
+showing a higher one only adds.
 
 **Why does a row count by its issuer's key alone?**
 The program writes a row only after checking the person proof against the issuer's key the row

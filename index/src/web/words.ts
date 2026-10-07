@@ -138,6 +138,15 @@ export function field(name: string, value: unknown): string {
 
 export const REAL_PERSON = 'Verified real person, one per market'
 
+/**
+ * A row's tier in words: tier 2 is `ID-checked`, any other none. The one issuer this index lists
+ * signs tier 2 after its document check (issuer/README.md); a listed issuer whose tiers mean
+ * something else would need its own words here.
+ */
+export function badge(tier: string | null): string | null {
+  return tier === '2' ? 'ID-checked' : null
+}
+
 /** Who checked it, by the names this index gives the issuers it trusts. */
 export function checkedBy(names: (string | null)[]): string {
   const known = names.map((n) => n ?? 'someone this index trusts but gives no name')

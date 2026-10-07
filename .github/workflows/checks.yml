@@ -3,8 +3,9 @@
 #
 #   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
 #                the real models and portraits its `npm run fetch` checks by SHA-256
-#   index        its type-check, and its unit, page and reputation tests on a Postgres service (real
-#                reputation proofs: circuits' proving files)
+#   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
+#                (real reputation proofs: circuits' proving files; a real person proof: forest's
+#                example card's)
 #   fee-payer    its type-check, the devnet kora.toml its Dockerfile makes from at-cost/ and free/,
 #                and the voucher check's type-check and tests (real person proofs: the person
 #                circuit's files, committed in forest)
@@ -86,7 +87,7 @@ jobs:
       - name: Test (everything but the end-to-end test)
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts | tee "$RUNNER_TEMP/tap"
+          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   fee-payer:

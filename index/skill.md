@@ -112,12 +112,14 @@ accountable, not good.
 In `stamps[]`:
 
 - `counted: true` means this index counts it. It counts only if all of these hold:
-  - its `issuer` is one this index trusts, by its key (`issuer.key`, `issuer.name`,
-    `issuer.weight`);
+  - its `issuer` is one this index trusts, by its key (`issuer.key`, `issuer.name`, and
+    `issuer.weight`, its weight at the row's tier);
   - its `label` is a market this index uses and a role its sides allow, exactly
     (`online-tutors/seller`, `language-exchange/peer`); a plain market with no role counts for
     nothing;
   - it is the profile's own label: `profile.market` and `profile.role`.
+- `tier` is the tier the profile's card shows for the row, with a person proof this index checked
+  against it, or null; `badge` says it in words: `ID-checked` for tier 2.
 - `why` says why not when it doesn't: `notAMarketHere`, `noRole` or `notTheProfilesLabel`
   (registered under another market or side than the one the profile lives in).
 - `scores.uniqueness[]` combines the issuers of each counted label into one number from 0 to 1.
@@ -163,7 +165,8 @@ the escrow program's own events for it (`Created`, `Funded`, `Ended`, `Closed`, 
 Three scores. They are never added together.
 
 - **Uniqueness**, per label, 0 to 1: how sure this index is that the profile is one real person
-  there. `1 − (1 − w1) × (1 − w2) × …` over the weights of the issuers whose counted rows it holds.
+  there. `1 − (1 − w1) × (1 − w2) × …` over the weights of the issuers whose counted rows it holds,
+  each at the tier the card shows for its row, or the issuer's smallest weight with none.
 - **Rating**, per profile, 1.0 to 10.0: the `overall` ratings of the reviews that count,
   averaged, each weighed by its reviewer and by the payment behind it. No review that counts gives
   one: no rating, not zero.

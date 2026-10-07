@@ -11,6 +11,8 @@
 import type { Server } from 'node:http'
 import { fileURLToPath } from 'node:url'
 
+import { Connection } from '@solana/web3.js'
+
 import { ChainReader } from './chain/poll.ts'
 import { type Config, loadConfig } from './config.ts'
 import { type Db, createPool, migrate } from './db.ts'
@@ -58,7 +60,11 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
 
   let records: HostReader | null = null
   if (config.hosts.length) {
-    records = new HostReader({ db, hosts: config.hosts, issuers: config.issuers, indexes: Object.keys(config.indexes), onChange: () => scorer.schedule(), onError })
+    // The person proofs on cards are checked against the registry's rows, over the chain reader's RPC.
+    const registry = config.rpcUrl
+      ? { connection: new Connection(config.rpcUrl, config.chainCommitment), programId: config.registryProgramId, commitment: config.chainCommitment }
+      : null
+    records = new HostReader({ db, hosts: config.hosts, issuers: config.issuers, indexes: Object.keys(config.indexes), registry, onChange: () => scorer.schedule(), onError })
     await records.start(config.pollMs)
   }
 

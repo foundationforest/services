@@ -17,7 +17,14 @@ import { type IndexKeys, type Kind, sign } from './sign.ts'
 export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string): Promise<Inputs> {
   const [profiles, stamps, receipts, reviews] = await Promise.all([
     db.query('select address, market, role from profiles'),
-    db.query(`select r.profile, r.label, r.issuer, r.stamp from rows r where ${COUNTED}`, [countedParam(issuers)]),
+    // Each counted row, with the tiers its profile's card shows for its stamp, each checked when the card was stored.
+    db.query(
+      `select r.profile, r.label, r.issuer, r.stamp,
+              coalesce((select array_agg(t->>'tier') from profiles p, jsonb_array_elements(p.tiers) t
+                        where p.address = r.profile and t->>'stamp' = r.stamp and t->>'issuer' = r.issuer and t->>'label' = r.label), '{}') as tiers
+       from rows r where ${COUNTED}`,
+      [countedParam(issuers)],
+    ),
     db.query(
       `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts where program_id = $1`,
       [escrow],
@@ -26,7 +33,7 @@ export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string):
   ])
   return {
     profiles: profiles.rows.map((r) => ({ address: r.address, label: r.market && r.role ? `${r.market}/${r.role}` : null })),
-    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, issuer: r.issuer, stamp: r.stamp })),
+    stamps: stamps.rows.map((r) => ({ profile: r.profile, label: r.label, issuer: r.issuer, stamp: r.stamp, tiers: r.tiers as string[] })),
     receipts: receipts.rows.map((r) => ({
       escrow: r.escrow,
       buyer: r.buyer,
