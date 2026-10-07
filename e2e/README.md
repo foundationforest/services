@@ -98,10 +98,27 @@ step needs the fee payer with the issuer's key at tier 1 in `VOUCHER_ISSUERS`, a
 
 ### The latest run
 
-The loop above has not run on devnet yet: it needs the services deployed from this code.
-The last run of the loop before notes, through the key holder and the issuer's lists, passed on
-2026-10-06; its record is
-[`runs/2026-10-06T05-06-38-646Z.json`](runs/2026-10-06T05-06-38-646Z.json).
+2026-10-07, 15:45 to 15:48 UTC, against the four services as deployed from `main` at `b7fbc91`
+(forest at `93ec55a`): **passed** in 136 seconds, most of it waiting out the host's cache time. Its
+record is [`runs/2026-10-07T15-45-50-342Z.json`](runs/2026-10-07T15-45-50-342Z.json). It is the
+first run on notes and the person proof, and the first with the assistants as forest's CLI.
+
+| Step | What happened |
+|---|---|
+| People | Seller `F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6`, buyer `yeVUeEqwHYV4wH1Xi2vhhzkbEdKWdFA4ryhQy2beMxB`, each with its secret for `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` |
+| Notes | A tier 1 note each from the face check, model `stand-in`, signed by the issuer's key `2185f564…` |
+| Rows, through the fee payer | `tutoring/seller` through the voucher door with the voucher `voucher/fee-payer.devnet.forest.foundation/1`, 619 bytes, charged nothing; `tutoring/buyer` through the at-cost door, 763 bytes, charged 1.64576 test dollars. Each row read back at the registry `J4ES…` naming its profile, the issuer's key and the fee payer as payer, and each proof showed tier 1 against its row. The seller held no SOL and paid no dollar |
+| Keys for the assistants | The seller's app: a write key `3K1nLnCA…` (offers and reviews), a message key `9Aheypz6…` and the read key its card lists, each on its permissions list; the buyer's app: a write key `5t21WVDc…` |
+| Records | The seller's offer `offer/maths`, posted through the CLI (`post-offer`), signed by the write key, and its photo, 79 bytes, on the host; two reviews, one by each assistant (`post-review`) |
+| The inbox | The buyer's message, 4,638 bytes, sealed to the seller's inbox key and the read key in one envelope, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its inbox key |
+| The seller's assistant | Through the CLI: `inbox` pulled one message with the message key and opened it with the read key; `send` replied, 2,694 bytes, signed by the message key for the seller, and the buyer opened it and saw the message key sent it; `request` put `{ request: "post-offer", offer, id: "physics" }` in the seller's own inbox, which the seller's app pulled and opened, and `inbox` marked as a request. Then the message key past and the read key deleted: the CLI refused `send` ("listed as a past key") and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and 71 seconds later a message it signed (`permission`) |
+| The deal | Escrow `8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ`, its address its terms', one tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…` |
+| The index | Both rows counted under "Forest issuer (devnet)", weight 0.7; the offer listed with its photo from the host; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Seller and buyer each rating 10 |
+| The proof | The seller's leaf found by its stamp `27dd4971…` among the index's 2 leaves, scored 100 tenths from one review; proven on the device against root `0b2d4f36…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)" |
+
+Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6),
+[the buyer](https://index-production-1b6e.up.railway.app/profiles/yeVUeEqwHYV4wH1Xi2vhhzkbEdKWdFA4ryhQy2beMxB),
+[the deal](https://index-production-1b6e.up.railway.app/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ).
 
 ## Promises
 
