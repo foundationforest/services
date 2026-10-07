@@ -18,7 +18,7 @@ rate_limit = 1
 
 [validation]
 # The most SOL one transaction may take from the fee payer beyond its network fee: the row's deposit.
-# 0.0024 SOL. The largest row (a 128-byte label, 333 bytes) takes 2,341,880 lamports at today's rent,
+# 0.0024 SOL. The largest row (a 128-byte label, 308 bytes) takes 2,214,880 lamports at today's rent,
 # 5,080 lamports a byte on devnet and mainnet; Solana's storage price only falls.
 max_allowed_lamports = 2400000
 # The fee payer and the main key, which signs the row.
@@ -26,7 +26,7 @@ max_signatures = 2
 # Kora checks these against every program a transaction calls, the ones called from inside other
 # programs included.
 allowed_programs = [
-  "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC", # the Forest registry, on devnet
+  "J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4", # the Forest registry, on devnet
   "11111111111111111111111111111111",            # System: the registry creates the row with it
 ]
 # Never used: in free mode Kora prices nothing and is paid nothing. Kora 2.0.5 refuses to start

@@ -41,15 +41,15 @@ and neither decides anything about the person, the market or the deal.
 
 The person's device:
 
-1. makes a voucher: a second proof from its stamp on one of the foundation's issuer's lists, under a
-   label `sponsor/1` to `sponsor/3` on the face list, or `sponsor/1` to `sponsor/10` on the ID list,
-   naming the main key the row is for (forest's `proveStamp`, against that list's newest snapshot);
+1. makes a voucher: a person proof from its note (forest's `provePerson`), under the label
+   `voucher/<this fee payer's name>/<n>`, n from 1 to 3 with a tier 1 note from the foundation's
+   issuer and 1 to 10 with a tier 2 note, naming the main key the row is for. The foundation's fee
+   payer is named `fee-payer.devnet.forest.foundation` on devnet;
 2. builds the row's transaction with the fee payer as payer (the at-cost door's `getPayerSigner`
    names it: both Koras sign with one key), and signs it with the main key;
-3. sends both to `POST /vouchers`, as `{ transaction, voucher: { proof, root, issuerSignature,
-   label, marketStamp } }`: the transaction in base64, the proof as `proveStamp`'s `raw`, and the
-   root, the issuer's signature on it and the market stamp in hex, as the issuer's `list.json`
-   writes a root.
+3. sends both to `POST /vouchers`, as `{ transaction, voucher: { proof, issuer, tier, label, stamp }
+   }`: the transaction in base64, the proof as snarkjs writes it, the issuer's key as 128 hex
+   characters (x then y, as a row holds it), the tier as decimal text, and the stamp as 64 hex.
 
 The voucher check checks, in this order, and refuses by name at the first that fails:
 
@@ -59,10 +59,10 @@ The voucher check checks, in this order, and refuses by name at the first that f
 | The transaction decodes, whole, with nothing after it | `bad_transaction` (400) |
 | It is one instruction, `register`, to the registry, with its four accounts (the row, the main key, the payer, System), no address lookup table and no other account | `not_one_registration` (400) |
 | The main key it names signed it | `not_signed_by_main_key` (400) |
-| One of the lists it takes (`VOUCHER_ISSUERS`) signed the voucher's root, by its key (forest's `issuerSigned`) | `not_signed_by_issuer` (400) |
-| The voucher's label is `sponsor/1` to `sponsor/n`, n that list's count: 3 on the foundation's face list, 10 on its ID list | `not_a_voucher_label` (400) |
-| The voucher's proof holds for that root, market stamp, label and main key (forest's `verifyStamp`) | `voucher_does_not_hold` (400) |
-| Its market stamp is not in the used set; it goes in now, spent | `voucher_used` (409) |
+| Its issuer's key and tier are ones it takes (`VOUCHER_ISSUERS`) | `not_a_trusted_issuer` (400) |
+| The voucher's label is `voucher/<FEE_PAYER_NAME>/1` to `/n`, n that issuer's count for the tier: 3 for the foundation's tier 1, 10 for its tier 2 | `not_a_voucher_label` (400) |
+| The voucher's proof holds for that issuer, tier, label, stamp and main key (forest's `verifyPerson`) | `voucher_does_not_hold` (400) |
+| Its stamp is not in the used set; it goes in now, spent | `voucher_used` (409) |
 
 Then it hands the transaction, unchanged, to the free Kora's `signAndSendTransaction` and answers
 `{ signature }`, or `fee_payer_refused` (502) with Kora's reason; the voucher stays spent either
@@ -70,19 +70,20 @@ way. The free Kora checks the transaction against `free/kora.toml`, adds its sig
 it: the fee payer pays the network fee and the row's deposit, and is recorded in the row as its
 payer.
 
-**A voucher** is the stamp's market stamp under a `sponsor/` label, forest's word for it: the same
-every time for one stamp and one label, so a stamp on the face list has three and a stamp on the ID
-list ten, and nobody can tell from one whose stamp it is. A person on both lists holds a different
-stamp on each, so their vouchers are different too. Its proof names the main key, so a voucher seen
-in flight pays for that main key's row and no other. The row itself may be under any issuer and any
-label.
+**A voucher** is a person's stamp under one of this fee payer's voucher labels: the same every time
+for one person, one issuer and one label, so a person with a tier 1 note has three and with a tier 2
+note ten (the first three the same as tier 1's: a stamp does not depend on the tier), and nobody can
+tell from one whose it is. The label names this fee payer, so another fee payer's vouchers are other
+stamps, and two fee payers comparing their used sets find nothing in common. Its proof names the
+main key, so a voucher seen in flight pays for that main key's row and no other. The row itself may
+be under any issuer and any label.
 
 ### What the free Kora allows
 
 | Setting | Value | Why |
 |---|---|---|
 | `allowed_programs` | the registry at its devnet address, System | The registry creates the row with System, inside its own call |
-| `max_allowed_lamports` | 0.0024 SOL | The largest row (a 128-byte label, 333 bytes) takes 0.00234188 at today's rent, 5,080 lamports a byte on devnet and mainnet |
+| `max_allowed_lamports` | 0.0024 SOL | The largest row (a 128-byte label, 308 bytes) takes 0.00221488 at today's rent, 5,080 lamports a byte on devnet and mainnet |
 | `max_signatures` | 2 | The fee payer and the main key |
 | `price` | free | Nothing is charged |
 | `rate_limit` | 1 a second, across all callers | Kora's own limiter. It holds a request over the limit until the next second rather than refusing it, so it never costs a spent voucher |
@@ -98,10 +99,10 @@ key's row.
 
 ### Measured, on devnet
 
-2026-10-04, against the devnet registry, each row from a main key that never held a lamport: one
-through a local Kora on `free/kora.toml`, one through the voucher check and the free Kora in their
-own container, before the two doors shared one. All amounts in lamports; the network fee was 10,000
-each time.
+2026-10-04, against the devnet registry before the person proof (`5zTP…`, whose rows were larger),
+each row from a main key that never held a lamport: one through a local Kora on `free/kora.toml`,
+one through the voucher check and the free Kora in their own container, before the two doors shared
+one. All amounts in lamports; the network fee was 10,000 each time.
 
 | Transaction | Size | Fee payer spent | Of which the row |
 |---|---|---|---|
@@ -147,7 +148,7 @@ lets it take the row.
 | `fee_payer_policy` | only `allow_create_account` | The fee payer's key may fund a new account it is paid for, and nothing else: no transfer, assign, allocate or nonce use, and no SPL Token or Token-2022 instruction as owner or authority |
 | No API key or HMAC | | A page in a browser cannot keep a secret, and every transaction pays its way |
 
-The programs: the registry `5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC` and the escrow
+The programs: the registry `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` and the escrow
 `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`, as forest records them on devnet. The tokens it is
 paid in, in `at-cost/kora.toml`, are mainnet's: **USDC, USDT, Open USD and EURC**, each its maker's
 own mint. `deploy/devnet-config.sh` prints a Kora's `kora.toml` with exactly three lines changed,
@@ -175,11 +176,13 @@ payment, or one short of the deposits (`Insufficient token payment. Required …
 
 ### What comes back, and to whom
 
-The fee payer charges what it spends. What comes back later goes where each program sends it:
+The fee payer charges what it spends. What comes back later goes where each program sends it: every
+rent to whoever fronted it, which through either door is the fee payer.
 
-- **An escrow's deposit address:** its rent goes back to the person who created the escrow, at
-  every ending.
-- **An escrow never funded, closed:** both rents go back to the person.
+- **An escrow's deposit address:** its rent goes back to the escrow's payer, the fee payer, at every
+  ending. The person was charged for it when the escrow opened, so through the at-cost door the
+  person pays an escrow's deposits and does not get them back; the fee payer keeps them.
+- **An escrow never funded, closed:** both rents go back to the fee payer.
 - **What Solana's storage price cuts free** on an account the fee payer funded goes to the fee
   payer, which keeps it: a registry row's (`refund`, to the payer the row records) and an escrow
   receipt's (`sweep_rent`, to the payer it records).
@@ -192,7 +195,9 @@ later asks the fee payer for SOL.
 `test/fee-payer.test.ts`, the at-cost Kora, both programs built as SBPF v3, rent at the validator's
 default (6,960 lamports a byte), Kora's mock price (one base unit of the test dollar buys one
 lamport). All amounts in lamports. Charged equals spent in every row; the network fee was 10,000
-each time: two signatures, no priority fee.
+each time: two signatures, no priority fee. Measured with forest at `7cf5992`, before rows came from
+the person proof and before every escrow rent went to its payer; the test has moved to both since,
+and has not been run since.
 
 | Transaction | Size | Charged | Of which deposits |
 |---|---|---|---|
@@ -223,7 +228,8 @@ The voucher check, `vouchers/`:
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `VOUCHER_ISSUERS` | yes | | The lists vouchers are proven against, by their keys' addresses, each with how many vouchers a stamp on it earns: `<address>:<count>`, comma-separated |
+| `FEE_PAYER_NAME` | yes | | This fee payer's name, in every voucher's label: `voucher/<name>/<n>`. No slash, at most 100 bytes |
+| `VOUCHER_ISSUERS` | yes | | The issuers whose notes earn vouchers, each tier with how many: `<key>:<tier>:<count>`, comma-separated, the key as 128 lowercase hex (x then y, as a row holds it) |
 | `REGISTRY_PROGRAM` | yes | | The registry a row is written by: the one `free/kora.toml` allows |
 | `FREE_KORA_URL`, `FREE_KORA_API_KEY` | yes | | The free Kora and its key; `deploy/start.sh` sets both |
 | `AT_COST_KORA_URL` | yes | | The at-cost Kora, which gets every request but `/vouchers`; `deploy/start.sh` sets it |
@@ -244,12 +250,11 @@ FOREST_FEE_PAYER_KEY=/outside/repo/fee-payer.json RPC_URL=https://… JUPITER_AP
 Checks:
 
 ```
-./forest.sh registry/client registry/artifacts escrow/client       # from the repo root
-(cd forest/registry/artifacts && npm run fetch)                     # the proving files, for the voucher check's tests
+./forest.sh registry/client escrow/client                           # from the repo root; the person circuit's files come with forest
 cd fee-payer && npm ci && npm run check                             # type-check the local run
 bash deploy/devnet-config.sh at-cost/kora.toml > /dev/null          # the devnet configs still apply
 bash deploy/devnet-config.sh free/kora.toml > /dev/null
-(cd vouchers && npm ci && npm run check && npm test)                # both doors, stand-in Koras, real proofs; seconds
+(cd vouchers && npm ci && npm run check && npm test)                # both doors, stand-in Koras, real person proofs; seconds
 npm run test:local                                                  # the local run, about 30 seconds
 ```
 
@@ -257,11 +262,11 @@ npm run test:local                                                  # the local 
 build has them), a six-decimal test dollar planted at USDC's address and Open USD planted from its
 mainnet account, and Kora through `run.sh` on a copy of `at-cost/kora.toml` with exactly three lines
 changed: the two programs' devnet ids to their source ids, and `price_source = "Mock"`. A main key
-that never held a lamport then writes a registry row, pays escrows (one in Open USD), closes one
-never funded, and provokes every refusal above; every balance is checked. It needs
-`solana-test-validator` (Solana CLI 4.2.2), the two programs built (`cargo build-sbf --arch v3` in
-`forest/registry/program` and `forest/escrow/program`), the proving files (`npm run fetch` in
-`forest/registry/artifacts`) and `./build.sh`. It skips, saying which, if one is missing. Not in CI.
+that never held a lamport then writes a registry row, from a note a test issuer signs, pays escrows
+(one in Open USD), closes one never funded, and provokes every refusal above; every balance is
+checked. It needs `solana-test-validator` (Solana CLI 4.2.2), the two programs built
+(`cargo build-sbf --arch v3` in `forest/registry/program` and `forest/escrow/program`) and
+`./build.sh`. It skips, saying which, if one is missing. Not in CI.
 It runs the at-cost Kora only; the free Kora was run on devnet (above).
 
 ### On devnet
@@ -286,16 +291,17 @@ and the voucher door at `/vouchers` (POST).
   the Open-USD-shaped test dollar's mint authority.
 - **Paid in** the classic test dollar `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` and the
   Open-USD-shaped one `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`.
-- **Vouchers from** the foundation's issuer's two lists: the face list,
-  `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7`, three a stamp; the ID list,
-  `BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4`, ten a stamp.
+- **Named** `fee-payer.devnet.forest.foundation`: its vouchers are `voucher/fee-payer.devnet.forest.foundation/<n>`.
+- **Vouchers from** the foundation's devnet issuer's notes (`issuer.devnet.forest.foundation`, its
+  key `2185f564…63a549` in full below): three with a tier 1 note, ten with a tier 2 note.
 
 | Variable | On devnet | Sealed |
 |---|---|---|
 | `FOREST_RELAYER_KEY` | the `payer` key, as its JSON array; `run.sh` passes it to both Koras as `FOREST_FEE_PAYER_KEY` | yes |
 | `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
-| `VOUCHER_ISSUERS` | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7:3,BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4:10` | no |
-| `REGISTRY_PROGRAM` | `5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC` | no |
+| `FEE_PAYER_NAME` | `fee-payer.devnet.forest.foundation` | no |
+| `VOUCHER_ISSUERS` | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549:1:3,2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549:2:10` | no |
+| `REGISTRY_PROGRAM` | `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` | no |
 | `DATABASE_PATH` | `/data/vouchers.sqlite` | no |
 | `RUST_LOG` | `warn`, as the image sets it | no |
 | `PORT` | `8080` | no |
@@ -312,9 +318,11 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
   at-cost Kora, unchanged.
 - **The voucher door, rows only:** one `register` in a transaction and nothing else, the row under
   any issuer and any label; at most 0.0024 SOL a row beyond the network fee; two signatures.
-- **Vouchers per stamp, by list:** three on the foundation's face list (`sponsor/1` to
-  `sponsor/3`), ten on its ID list (`sponsor/1` to `sponsor/10`), the founder's choice, 2026-10-04.
-  Each is spent once, the moment the voucher check forwards it to the free Kora.
+- **Vouchers per person, by tier:** three with a tier 1 note from the foundation's issuer
+  (`voucher/<name>/1` to `/3`), ten with a tier 2 note (`/1` to `/10`), the founder's choice. Each
+  is spent once, the moment the voucher check forwards it to the free Kora.
+- **Voucher labels name this fee payer** (`FEE_PAYER_NAME`), so two fee payers cannot link
+  vouchers.
 - **The at-cost door, at cost:** the charge is the network fee and every storage deposit it puts
   down, with a margin of 0. It pays for no one: a transaction that does not pay its cost is refused.
 - **Paid in four tokens on mainnet:** USDC, USDT, Open USD and EURC, each its maker's own mint, the
@@ -332,8 +340,8 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
 
 - **Everything here competes.** Anyone can run another of each; prices and margins are each
   service's own policy, written in its README.
-- **The voucher door pays only for registry rows:** one per voucher, three vouchers per stamp on
-  the foundation's face list and ten per stamp on its ID list.
+- **The voucher door pays only for registry rows:** one per voucher, three vouchers per person with
+  a tier 1 note from the foundation's issuer and ten with a tier 2 note.
 - **It holds no key of the person's.** The person signs on their own device; the fee payer adds only
   its own signature as payer.
 - **Its key can do one thing in a transaction:** fund a new account; through the at-cost door one
@@ -347,12 +355,13 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
   faucet: whoever can make it pay takes the SOL. This one pays only for a registry row, and a
   row's deposit stays in the row, which never closes; nobody can move it out but `refund`, which
   sends only what Solana's storage price cuts free, and only to the fee payer. So nobody takes SOL out of it;
-  they can only make it lock SOL up in rows. Each row needs a voucher: three per stamp on the
-  foundation's face list, which holds one stamp per face, and ten per stamp on its ID list, which
-  holds one per face that passed an ID check. What the voucher door can spend is at most (face-list
-  stamps × 3 + ID-list stamps × 10) × (a row's deposit and its network fee): 2,351,880 lamports for
-  the largest row today, about 0.00706 SOL a face-list stamp and 0.0235 SOL an ID-list stamp.
-- **On devnet both of the issuer's checks are the stand-in,** which passes everyone, so stamps, and
+  they can only make it lock SOL up in rows. Each row needs a voucher: three per person with a tier
+  1 note from the foundation's issuer, which signs one note number per face, and ten with a tier 2
+  note, which it signs once per person after a document check. What the voucher door can spend is
+  at most (tier 1 people × 3 + tier 2 people × 7 more) × (a row's deposit and its network fee):
+  2,224,880 lamports for the largest row today, about 0.00667 SOL a tier 1 person and 0.0222 SOL a
+  tier 2 person.
+- **On devnet both of the issuer's checks are the stand-in,** which passes everyone, so notes, and
   vouchers, are unlimited. There only the rate limit bounds it: one row a second, at most about 8.5
   SOL an hour, until the float is empty.
 - **The float is shared.** Both doors spend one key, so emptying it through either stops both.
@@ -383,10 +392,10 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
 ## Who decides what
 
 - **The standard (forest):** nothing about the price. The registry and the escrow take no fee and
-  care nothing for who pays. Forest names a voucher's label, `sponsor/` and a number (its
-  circuits' README).
+  care nothing for who pays; every rent goes back to whoever fronted it.
 - **This fee payer, by its policy:** which programs and transactions each door pays for, which
-  tokens it is paid in, and its price; which lists' stamps earn vouchers, and how many.
+  tokens it is paid in, and its price; whose notes earn vouchers, how many at each tier, and its
+  name in their labels.
 - **An app, with the person:** which fee payer to use, or none, which token to pay in, and when to
   spend a voucher.
 
@@ -407,16 +416,17 @@ So no transaction can make it move its own SOL or tokens.
 **Why is a voucher a stamp, and not a ticket?**
 A ticket, a code or a signed note handed to someone, ties whoever hands it out to whoever spends it:
 the issuer would know whose face it checked, and the fee payer which row the ticket paid for, and
-the two together would link a person to a profile. A voucher is a proof the person makes on their
-own device from the stamp they already hold. It says "a stamp on one of the foundation's lists,
-under `sponsor/1`, for this main key" without saying which stamp, and needs nothing new from the
-issuer. Its market stamp is the same every time for one stamp and one label, so the fee payer can
-spend it once without knowing whose it is.
+the two together would link a person to a profile. A voucher is a person proof the person makes on
+their own device from the note they already hold. It says "a note from this issuer, at this tier,
+under `voucher/<name>/1`, for this main key" without saying whose, and needs nothing new from the
+issuer. Its stamp is the same every time for one person and one label, so the fee payer can spend it
+once without knowing whose it is.
 
-**Why is a voucher's label `sponsor/1`, when nothing here is called that?**
-Forest names it: a voucher is a market stamp under `sponsor/1`, `sponsor/2` and on, proven with the
-membership circuit (its circuits' README). A new label would be a change to forest first, and would
-give every stamp a fresh set of vouchers.
+**Why does a voucher's label name the fee payer?**
+So two fee payers cannot link vouchers. Under one shared label, the same person's voucher would be
+the same stamp at every fee payer, and two fee payers comparing what they spent could tell which
+rows one person paid for with them. With its own name in the label, each fee payer's vouchers are
+stamps no other fee payer sees.
 
 **Why does the voucher check allow only one instruction, when the free Kora allows System?**
 Kora sees System inside `register`, where the registry creates the row with it. At the top of a

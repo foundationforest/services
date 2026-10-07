@@ -2,15 +2,15 @@
 // local validator with the registry and the escrow loaded. A main key that holds no SOL writes a
 // registry row, pays for escrows (one in Open USD, a Token-2022 dollar, which Kora takes in two steps
 // but not in one tap) and closes one it never funded, paying for everything in a test dollar; each
-// storage deposit is charged to it once. Every deposit address's rent comes back to it; what Solana's
-// storage price cuts free goes back to whoever fronted the deposit, which for a row and an escrow is
-// the fee payer. Kora refuses what it must refuse.
+// storage deposit is charged to it once. Every rent comes back to whoever fronted it, which for a row
+// and an escrow is the fee payer: the deposit address's at every ending, both at a close, and what
+// Solana's storage price cuts free. Kora refuses what it must refuse.
 //
 //   npm run test:local
 //
 // Needs `solana-test-validator` on the PATH, the two programs built (`cargo build-sbf --arch v3` in
-// forest/registry/program and forest/escrow/program), the registry's proving files (`npm run fetch`
-// in forest/registry/artifacts), the two clients' dependencies (`../forest.sh registry/client
+// forest/registry/program and forest/escrow/program), the person circuit's files (committed in
+// forest/registry/circuit/devnet), the two clients' dependencies (`../forest.sh registry/client
 // escrow/client`) and Kora (`./build.sh`). If any is missing the test says which and skips.
 //
 // The programs run here at the ids in their source, as a local build has them. Kora runs on a copy
@@ -28,7 +28,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { createPrivateKey, randomBytes, sign as edSign } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { createWriteStream, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -57,7 +57,7 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js'
 
-import { PROGRAM_ID as REGISTRY_ID, buildRegistration, decodeRow, listRoot, refundIx, rowSpace, stampOf, toBytes32 } from '../../forest/registry/client/src/index.ts'
+import { PROGRAM_ID as REGISTRY_ID, buildRegistration, decodeRow, issuerKeyOf, noteNumberOf, refundIx, rowSpace, signNote } from '../../forest/registry/client/src/index.ts'
 import * as escrow from '../../forest/escrow/client/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -65,10 +65,10 @@ const forest = join(here, '../../forest')
 const registrySo = join(forest, 'registry/program/target/deploy/forest_registry.so')
 const escrowSo = join(forest, 'escrow/program/target/deploy/forest_escrow.so')
 /** The two Forest programs' devnet ids, as kora.toml names them. */
-const DEVNET = { registry: '5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC', escrow: 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8' }
+const DEVNET = { registry: 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4', escrow: 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8' }
 const artifacts = {
-  wasm: join(forest, 'registry/artifacts/semaphore-32.wasm'),
-  zkey: join(forest, 'registry/artifacts/semaphore-32.zkey'),
+  wasm: join(forest, 'registry/circuit/devnet/person.wasm'),
+  zkey: join(forest, 'registry/circuit/devnet/person.zkey'),
 }
 const kora = join(here, '../.kora/bin/kora')
 const RPC = 'http://127.0.0.1:8899'
@@ -92,8 +92,8 @@ const setup = Keypair.generate()
 const feePayer = Keypair.generate()
 // The person: one main key, never given a lamport. It signs its row and its payments.
 const person = Keypair.generate()
-// An issuer, and the root of its list signed with its key, as issuer/ publishes it.
-const issuer = Keypair.generate()
+// An issuer: its note key, as issuer/ mixes one.
+const issuerPrivate = new Uint8Array(randomBytes(32))
 const seller = Keypair.generate()
 
 const ata = (owner: PublicKey) => getAssociatedTokenAddressSync(USDC_MINT, owner)
@@ -104,7 +104,7 @@ const sellerTokens = ata(seller.publicKey)
 function missing(): string | null {
   if (!existsSync(registrySo)) return `no program at ${registrySo}; run \`cargo build-sbf --arch v3\` in forest/registry/program`
   if (!existsSync(escrowSo)) return `no program at ${escrowSo}; run \`cargo build-sbf --arch v3\` in forest/escrow/program`
-  if (!existsSync(artifacts.zkey)) return 'no proving files; run `npm run fetch` in forest/registry/artifacts'
+  if (!existsSync(artifacts.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
   if (!existsSync(join(forest, 'registry/client/node_modules'))) return 'run `npm ci` in registry/client'
   if (!existsSync(join(forest, 'escrow/client/node_modules'))) return 'run `npm ci` in escrow/client'
   if (!existsSync(kora)) return 'no Kora; run ./build.sh in fee-payer'
@@ -369,13 +369,10 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
     [setup],
   )
 
-  // The person's secret for the issuer's list, and the issuer's list with their stamp in it, its root
-  // signed with the issuer's key as the issuer signs a snapshot (issuer/README.md).
+  // The person's secret for the issuer, and the note the issuer signs for their note number, as
+  // issuer/ signs one (issuer/README.md).
   const secret = new Uint8Array(randomBytes(32))
-  const others = (n: number) => Array.from({ length: n }, () => stampOf(new Uint8Array(randomBytes(32))))
-  const stamps = [...others(2), stampOf(secret), ...others(1)]
-  const issuerKey = createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), issuer.secretKey.subarray(0, 32)]), format: 'der', type: 'pkcs8' })
-  const issuerSignature = new Uint8Array(edSign(null, toBytes32(listRoot(stamps)), issuerKey))
+  const note = signNote(issuerPrivate, { noteNumber: noteNumberOf(secret), embedding: new Uint8Array(512), model: 'stand-in', tier: 1n })
 
   const start = await balances()
   assert.equal(start.personSol, 0, 'the person holds no SOL')
@@ -414,11 +411,9 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   // fee payer. A row never grows, so nothing after this asks the fee payer for SOL.
   const registration = await buildRegistration({
     secret,
+    note,
     label: LABEL,
     profile: person.publicKey as never,
-    issuer: issuer.publicKey.toBytes() as never,
-    stamps,
-    issuerSignature,
     artifacts,
     payer: feePayer.publicKey as never,
     recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
@@ -439,7 +434,7 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   const afterRow = await balances()
   const row = decodeRow(new Uint8Array((await connection.getAccountInfo(rowAddress))!.data))
   assert.equal(row.profile.toBase58(), person.publicKey.toBase58(), "the row names the person's profile")
-  assert.equal(row.issuer.toBase58(), issuer.publicKey.toBase58(), 'and the issuer')
+  assert.deepEqual(row.issuer, issuerKeyOf(issuerPrivate), "and the issuer's key")
   assert.equal(row.payer.toBase58(), feePayer.publicKey.toBase58(), 'and records the fee payer as its payer')
   assert.equal(row.label, LABEL)
   assert.equal(afterRow.personSol, 0, 'the person still holds no SOL')
@@ -468,14 +463,14 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   assert.equal(await connection.getBalance(rowAddress), rent.row, 'the row keeps exactly its minimum')
 
   // ---- The escrow: pay (the deposit address, create, the money in), then release, each through Kora ----
-  // The seller's offer sets no options. The person opens each escrow, so the deposit address's rent
-  // comes back to the person; the fee payer fronts each deposit in SOL and charges the person for it
-  // in the test dollar, once, and is recorded as the escrow's payer.
+  // The seller's offer sets no options. The person opens each escrow; the fee payer fronts each deposit
+  // in SOL and charges the person for it in the test dollar, once, and is recorded as the escrow's
+  // payer, so every rent comes back to it.
   const tokenOf = async (mint: PublicKey) => escrow.tokenOf(mint, (await connection.getAccountInfo(mint))!)
   const dollar = await tokenOf(USDC_MINT)
   const deal = (amount: bigint, token = dollar) => {
     const terms = escrow.termsFor(undefined, { seller: seller.publicKey, amount })
-    const keys = escrow.keysFor({ buyer: person.publicKey, mint: token.mint, tokenProgram: token.program, terms })
+    const keys = escrow.keysFor({ buyer: person.publicKey, payer: feePayer.publicKey, mint: token.mint, tokenProgram: token.program, terms })
     const args = { buyer: person.publicKey, payer: feePayer.publicKey, token, terms }
     return { keys, pay: escrow.createAndFund(args), oneTap: escrow.payInOneTap(args), release: escrow.releaseToSellerIx({ keys }) }
   }
@@ -497,8 +492,8 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   rent.escrow = await connection.getBalance(first.keys.escrow)
   assert.equal(await connection.getBalance(first.keys.vault), rent.deposit)
   const account = escrow.decodeEscrow(new Uint8Array((await connection.getAccountInfo(first.keys.escrow))!.data))
-  assert.equal(account.rentRecipient.toBase58(), person.publicKey.toBase58(), "the deposit address's rent goes back to the person, who opened it")
-  assert.equal(account.payer.toBase58(), feePayer.publicKey.toBase58(), 'and the fee payer, which fronted the rent, is recorded as its payer')
+  assert.equal(account.payer.toBase58(), feePayer.publicKey.toBase58(), 'the fee payer, which fronted the rent, is recorded as its payer')
+  assert.equal(account.rentRecipient.toBase58(), feePayer.publicKey.toBase58(), 'and every rent goes back to it')
   const paySpent = beforePay.feePayerSol - afterPay.feePayerSol
   assert.equal(paySpent, pay.networkFee + rent.escrow + rent.deposit, "the fee payer's SOL: the network fee, the escrow and its deposit address")
   assert.equal(pay.charge, BigInt(paySpent), 'charged once for each, and nothing over')
@@ -509,9 +504,9 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   const afterRelease = await balances()
   assert.equal((await getAccount(connection, sellerTokens)).amount, 1_500_000n, 'the seller is paid, at its standard account')
   assert.equal(await connection.getAccountInfo(first.keys.vault), null, 'the deposit address is closed')
-  assert.equal(afterRelease.personSol, rent.deposit, 'the deposit comes back to the person')
+  assert.equal(afterRelease.personSol, 0, 'the person gets no SOL')
   const releaseSpent = afterPay.feePayerSol - afterRelease.feePayerSol
-  assert.equal(releaseSpent, release.networkFee, 'the fee payer pays the network fee and gets nothing back')
+  assert.equal(releaseSpent, release.networkFee - rent.deposit, "the fee payer pays the network fee and gets the deposit address's rent back")
   assert.equal(release.charge, BigInt(release.networkFee), 'and Kora charges the release its network fee only')
 
   // ---- In one tap: the deposit address, create, pay and release in one transaction ----
@@ -521,11 +516,10 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   const afterTap = await balances()
   assert.equal((await getAccount(connection, sellerTokens)).amount, 2_000_000n)
   const tapSpent = beforeTap.feePayerSol - afterTap.feePayerSol
-  assert.equal(tapSpent, tap.networkFee + rent.escrow + rent.deposit, 'the fee payer fronts the receipt and the deposit address')
-  assert.equal(tap.charge, BigInt(tapSpent), 'charged once for each, and nothing over')
-  assert.equal(afterTap.personSol - beforeTap.personSol, rent.deposit, "the deposit address's rent back to the person, in the same transaction")
+  assert.equal(tapSpent, tap.networkFee + rent.escrow, "the fee payer fronts the receipt and the deposit address, whose rent comes back to it in the same transaction")
+  assert.equal(afterTap.personSol, beforeTap.personSol, 'the person gets no SOL')
 
-  // ---- Never funded, closed by the person: both storage deposits back to it, who opened it ----
+  // ---- Never funded, closed by the person: both storage deposits back to the fee payer, which fronted them ----
   const third = deal(500_000n)
   const [openDeposit, openCreate] = third.pay
   const beforeOpen = await balances()
@@ -538,8 +532,8 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   const afterClose = await balances()
   assert.equal(await connection.getAccountInfo(third.keys.escrow), null, 'the escrow is gone')
   assert.equal(await connection.getAccountInfo(third.keys.vault), null, 'and its deposit address')
-  assert.equal(afterClose.personSol - afterOpen.personSol, rent.escrow + rent.deposit, 'both storage deposits back to the person')
-  assert.equal(afterOpen.feePayerSol - afterClose.feePayerSol, close.networkFee, 'the fee payer gets nothing back')
+  assert.equal(afterClose.personSol, afterOpen.personSol, 'the person gets no SOL')
+  assert.equal(afterClose.feePayerSol - afterOpen.feePayerSol, rent.escrow + rent.deposit - close.networkFee, 'both storage deposits back to the fee payer')
   assert.equal(close.charge, BigInt(close.networkFee))
 
   // ---- A receipt's sweep: to the fee payer, which fronted its rent. Anyone sends it ----
@@ -580,12 +574,11 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   const releaseT22 = await throughKora([fourth.release])
   const afterReleaseT22 = await balances()
   assert.equal((await getAccount(connection, ousd(seller.publicKey), 'confirmed', TOKEN_2022)).amount, 2_000_000n, 'the seller holds the two Open USD')
-  assert.equal(afterReleaseT22.personSol - afterPayT22.personSol, rent.depositT22, "the deposit address's rent back to the person")
+  assert.equal(afterReleaseT22.personSol, afterPayT22.personSol, "the deposit address's rent goes to the fee payer, not the person")
   assert.equal(releaseT22.charge, BigInt(releaseT22.networkFee))
 
   const end = await balances()
-  const refunded = 3 * rent.deposit + rent.escrow + rent.depositT22 // release, one tap, close (both), Open USD release
-  assert.equal(end.personSol, refunded, 'the person was never given a lamport but its own refunds')
+  assert.equal(end.personSol, 0, 'the person was never given a lamport')
   const lamports = (n: number | bigint) => `${Number(n).toLocaleString('en-US')} lamports`
   console.log('\n== the fee payer, Kora 2.0.5, on a local validator ==')
   console.log(`   rent here: row ${lamports(rent.row)}, escrow ${lamports(rent.escrow)}, deposit address ${lamports(rent.deposit)}`)
@@ -596,8 +589,8 @@ test('a main key with no SOL writes a row, pays for escrows (one in Open USD) an
   console.log(`   escrow, opened and closed unfunded: charged ${open.charge} + ${close.charge} units`)
   console.log(`   escrow in Open USD (Token-2022), pay: ${payT22.wire} bytes, ${payT22.units} units; charged ${payT22.charge} units; fee payer spent ${lamports(payT22Spent)}; its deposit address ${lamports(rent.depositT22)}`)
   console.log(`   escrow in Open USD, release: ${releaseT22.wire} bytes, ${releaseT22.units} units; charged ${releaseT22.charge} units`)
-  console.log(`   person: ${START_DOLLARS - end.personTokens} test-dollar units spent in all; ${lamports(end.personSol)} of storage deposits came back to it`)
-  console.log(`   fee payer: ${lamports(2 * GIFT)} came back to it, a row's refund and a receipt's sweep`)
+  console.log(`   person: ${START_DOLLARS - end.personTokens} test-dollar units spent in all; no SOL came back to it`)
+  console.log(`   fee payer: every deposit address's rent and an unfunded escrow's two came back to it, and ${lamports(2 * GIFT)}: a row's refund and a receipt's sweep`)
   console.log('   refused:')
   for (const [name, message] of Object.entries(refusals)) console.log(`     ${name}: ${message.slice(0, 160)}`)
   console.log()

@@ -3,16 +3,18 @@
 // rules allow and charges nothing, only a registry row that comes with a voucher it has not seen
 // before. Every other request it forwards, unchanged, to the at-cost Kora: the at-cost door.
 //
-// A voucher is a second proof from the same stamp on one of the lists it takes, made under a label
-// `sponsor/1` to `sponsor/n` (forest's word for it), n that list's count (the foundation's face
-// list 3, its ID list 10), for the main key that signs the row. Its market stamp is the same every
-// time for one stamp and one label, so a stamp has n, and each is spent once. The proof names the
-// main key, so a voucher seen in flight pays only for that main key's row. The row itself may be
-// under any issuer and any label.
+// A voucher is a person proof (forest's registry, "The note and the person proof") from a note an
+// issuer it trusts signed, made under the label `voucher/<this fee payer's name>/<n>`, n from 1 to
+// that issuer's count for the note's tier (the foundation's: tier 1, 3; tier 2, 10), for the main key
+// that signs the row. Its stamp is the same every time for one person, one issuer and one label, so a
+// person has n, and each is spent once; the label names this fee payer, so two fee payers' vouchers
+// are different stamps, and their used sets cannot be matched. The proof names the main key, so a
+// voucher seen in flight pays only for that main key's row. The row itself may be under any issuer
+// and any label.
 //
 // Each `POST /vouchers` is checked in this order, each failure a named refusal; the voucher is
 // spent the moment it is forwarded, whatever Kora answers. What it keeps is the used set: each
-// spent voucher's market stamp, and nothing beside it. It logs nothing.
+// spent voucher's stamp, and nothing beside it. It logs nothing.
 
 import { createPublicKey, verify } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
@@ -23,7 +25,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
 import { PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 
-import { discriminator, issuerSigned, verifyStamp, type SnarkjsProof } from '../../../forest/registry/client/src/index.ts'
+import { discriminator, fromBytes32, isFieldElement, verifyPerson, type IssuerKey, type SnarkjsProof } from '../../../forest/registry/client/src/index.ts'
 
 export type Config = {
   /** The free Kora's JSON-RPC, in this container. */
@@ -32,8 +34,10 @@ export type Config = {
   freeKoraApiKey: string
   /** The at-cost Kora, in this container: every request but `/vouchers` goes to it, unchanged. */
   atCostKoraUrl: string
-  /** The issuers whose lists vouchers are proven against, each with how many vouchers a stamp on it earns. */
-  issuers: { issuer: Uint8Array; vouchers: number }[]
+  /** This fee payer's name: every voucher's label is `voucher/<name>/<n>`. */
+  name: string
+  /** The issuers whose notes vouchers are proven from, by key (128 hex), each tier with how many vouchers it earns. */
+  issuers: { issuer: string; tier: bigint; vouchers: number }[]
   /** The registry program a row is written by. */
   registry: PublicKey
   /** The used set's one file. */
@@ -41,10 +45,12 @@ export type Config = {
   port: number
 }
 
-/** Whether a voucher may be made under `label` on a list whose stamps earn `count`: `sponsor/1` to `sponsor/<count>`. */
-export function isVoucherLabel(label: string, count: number): boolean {
-  const n = /^sponsor\/([1-9][0-9]{0,8})$/.exec(label)
-  return n !== null && Number(n[1]) <= count
+/** Whether `label` is one of this fee payer's vouchers for a note that earns `count`: `voucher/<name>/1` to `voucher/<name>/<count>`. */
+export function isVoucherLabel(label: string, name: string, count: number): boolean {
+  const prefix = `voucher/${name}/`
+  if (!label.startsWith(prefix)) return false
+  const n = label.slice(prefix.length)
+  return /^[1-9][0-9]{0,8}$/.test(n) && Number(n) <= count
 }
 
 /** A request body larger than this is refused unread: a transaction is at most 1,232 bytes. */
@@ -59,34 +65,42 @@ export type Refusal =
   | 'not_one_registration'
   | 'not_signed_by_main_key'
   | 'not_a_voucher_label'
-  | 'not_signed_by_issuer'
+  | 'not_a_trusted_issuer'
   | 'voucher_does_not_hold'
   | 'voucher_used'
   | 'fee_payer_refused'
 
-export type Voucher = { proof: SnarkjsProof; root: Uint8Array; issuerSignature: Uint8Array; label: string; marketStamp: Uint8Array }
+export type Voucher = { proof: SnarkjsProof; issuer: IssuerKey; issuerHex: string; tier: bigint; label: string; stamp: Uint8Array }
 
 /**
- * `VOUCHER_ISSUERS`: `<address>:<count>` for each issuer, comma-separated, as `7zPD…:3,BVT1…:10`.
- * Each address once, each count a whole number above 0.
+ * `VOUCHER_ISSUERS`: `<key>:<tier>:<count>` for each issuer and tier, comma-separated: the issuer's
+ * key as 128 hex characters (x then y, as a row holds it), a tier, and how many vouchers a note at
+ * that tier earns, as `2185…a549:1:3,2185…a549:2:10`. Each issuer and tier once, each tier and
+ * count a whole number above 0.
  */
 export function readIssuers(text: string): Config['issuers'] {
   const issuers = text.split(',').map((entry) => {
-    const [address, count, ...rest] = entry.trim().split(':')
-    if (!address || rest.length || !/^[1-9][0-9]{0,8}$/.test(count ?? '')) {
-      throw new Error('VOUCHER_ISSUERS must be <address>:<count>, comma-separated, each count a whole number above 0')
+    const [issuer, tier, count, ...rest] = entry.trim().split(':')
+    if (!/^[0-9a-f]{128}$/.test(issuer ?? '') || rest.length || !/^[1-9][0-9]{0,8}$/.test(tier ?? '') || !/^[1-9][0-9]{0,8}$/.test(count ?? '')) {
+      throw new Error('VOUCHER_ISSUERS must be <key>:<tier>:<count>, comma-separated: a key as 128 lowercase hex, a tier and a count each a whole number above 0')
     }
-    return { issuer: new PublicKey(address).toBytes(), vouchers: Number(count) }
+    return { issuer: issuer!, tier: BigInt(tier!), vouchers: Number(count) }
   })
-  if (new Set(issuers.map((i) => Buffer.from(i.issuer).toString('hex'))).size !== issuers.length) {
-    throw new Error('VOUCHER_ISSUERS names an issuer twice')
+  if (new Set(issuers.map((i) => `${i.issuer}:${i.tier}`)).size !== issuers.length) {
+    throw new Error('VOUCHER_ISSUERS names an issuer and tier twice')
   }
   return issuers
 }
 
+/** `FEE_PAYER_NAME`: text with no slash, so a voucher's label reads one way, and short enough for a label. */
+function readName(text: string): string {
+  if (text.includes('/') || Buffer.byteLength(text) > 100) throw new Error('FEE_PAYER_NAME must have no slash and be at most 100 bytes')
+  return text
+}
+
 /** Reads the variables fee-payer/README.md lists. Fails naming every required one that is missing. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const missing = ['FREE_KORA_URL', 'FREE_KORA_API_KEY', 'AT_COST_KORA_URL', 'VOUCHER_ISSUERS', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
+  const missing = ['FREE_KORA_URL', 'FREE_KORA_API_KEY', 'AT_COST_KORA_URL', 'FEE_PAYER_NAME', 'VOUCHER_ISSUERS', 'REGISTRY_PROGRAM'].filter((name) => !env[name]?.trim())
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   const port = Number(env.PORT || '8080')
   if (!Number.isSafeInteger(port) || port < 0) throw new Error('PORT must be a whole number')
@@ -94,6 +108,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     freeKoraUrl: env.FREE_KORA_URL!.trim(),
     freeKoraApiKey: env.FREE_KORA_API_KEY!.trim(),
     atCostKoraUrl: env.AT_COST_KORA_URL!.trim(),
+    name: readName(env.FEE_PAYER_NAME!.trim()),
     issuers: readIssuers(env.VOUCHER_ISSUERS!.trim()),
     registry: new PublicKey(env.REGISTRY_PROGRAM!.trim()),
     databasePath: env.DATABASE_PATH || './data/vouchers.sqlite',
@@ -102,8 +117,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 }
 
 /**
- * The used set: each spent voucher's market stamp, in key order, with no time, no row number and no
- * main key, so the file says nothing about who spent which, or when.
+ * The used set: each spent voucher's stamp, in key order, with no time, no row number and no main
+ * key, so the file says nothing about who spent which, or when. A file from before notes names its
+ * one column `market_stamp`, forest's word then; it is renamed.
  */
 export class UsedSet {
   readonly #db: DatabaseSync
@@ -114,14 +130,16 @@ export class UsedSet {
     this.#db = new DatabaseSync(path)
     this.#db.exec(`
       PRAGMA journal_mode = DELETE;
-      CREATE TABLE IF NOT EXISTS used (market_stamp BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS used (stamp BLOB PRIMARY KEY) WITHOUT ROWID;
     `)
-    this.#spend = this.#db.prepare('INSERT OR IGNORE INTO used (market_stamp) VALUES (?)')
+    const columns = this.#db.prepare("SELECT name FROM pragma_table_info('used')").all().map((c) => c.name)
+    if (columns.includes('market_stamp')) this.#db.exec('ALTER TABLE used RENAME COLUMN market_stamp TO stamp')
+    this.#spend = this.#db.prepare('INSERT OR IGNORE INTO used (stamp) VALUES (?)')
   }
 
   /** Spends a voucher: true if it was not spent before. Checking and spending are one statement. */
-  spend(marketStamp: Uint8Array): boolean {
-    return this.#spend.run(marketStamp).changes === 1
+  spend(stamp: Uint8Array): boolean {
+    return this.#spend.run(stamp).changes === 1
   }
 
   close(): void {
@@ -140,11 +158,12 @@ export function readRequest(body: unknown): { transaction: string; voucher: Vouc
   const { transaction, voucher } = body as Record<string, unknown>
   if (typeof transaction !== 'string' || typeof voucher !== 'object' || voucher === null) return null
   const v = voucher as Record<string, unknown>
-  const root = hexBytes(v.root, 32)
-  const issuerSignature = hexBytes(v.issuerSignature, 64)
-  const marketStamp = hexBytes(v.marketStamp, 32)
-  if (!root || !issuerSignature || !marketStamp || typeof v.label !== 'string' || typeof v.proof !== 'object' || v.proof === null) return null
-  return { transaction, voucher: { proof: v.proof as SnarkjsProof, root, issuerSignature, label: v.label, marketStamp } }
+  const issuer = typeof v.issuer === 'string' && /^[0-9a-f]{128}$/.test(v.issuer) ? hexBytes(v.issuer, 64) : null
+  const stamp = hexBytes(v.stamp, 32)
+  const tier = typeof v.tier === 'string' && /^(0|[1-9][0-9]{0,77})$/.test(v.tier) ? BigInt(v.tier) : null
+  if (!issuer || !stamp || tier === null || !isFieldElement(tier) || typeof v.label !== 'string' || typeof v.proof !== 'object' || v.proof === null) return null
+  const key: IssuerKey = [fromBytes32(issuer.subarray(0, 32)), fromBytes32(issuer.subarray(32))]
+  return { transaction, voucher: { proof: v.proof as SnarkjsProof, issuer: key, issuerHex: v.issuer as string, tier, label: v.label, stamp } }
 }
 
 /** The transaction's bytes, exactly: canonical base64 of one whole transaction and nothing after it. */
@@ -204,15 +223,15 @@ export async function spendVoucher(config: Config, used: UsedSet, body: unknown)
   if (!signedBy(tx, at)) return refuse('not_signed_by_main_key')
   const profile = tx.message.staticAccountKeys[at]!.toBytes()
   const { voucher } = request
-  // The list the voucher is from: the one whose issuer signed its root.
-  const list = config.issuers.find(({ issuer }) => issuerSigned({ issuer, root: voucher.root, issuerSignature: voucher.issuerSignature }))
-  if (!list) return refuse('not_signed_by_issuer')
-  if (!isVoucherLabel(voucher.label, list.vouchers)) return refuse('not_a_voucher_label')
-  const holds = await verifyStamp({ proof: voucher.proof, root: voucher.root, marketStamp: voucher.marketStamp, label: voucher.label, profile })
+  // The issuer and tier the voucher says it is from, if this fee payer takes them.
+  const earns = config.issuers.find(({ issuer, tier }) => issuer === voucher.issuerHex && tier === voucher.tier)
+  if (!earns) return refuse('not_a_trusted_issuer')
+  if (!isVoucherLabel(voucher.label, config.name, earns.vouchers)) return refuse('not_a_voucher_label')
+  const holds = await verifyPerson({ proof: voucher.proof, issuer: voucher.issuer, label: voucher.label, profile, stamp: voucher.stamp, tier: voucher.tier })
   if (!holds) return refuse('voucher_does_not_hold')
   // Checked and spent in one statement, with nothing awaited since the proof: two copies of one
   // voucher cannot both get past here.
-  if (!used.spend(voucher.marketStamp)) return refuse('voucher_used', 409)
+  if (!used.spend(voucher.stamp)) return refuse('voucher_used', 409)
   try {
     const res = await fetch(config.freeKoraUrl, {
       method: 'POST',
