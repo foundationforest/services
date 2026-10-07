@@ -24,7 +24,7 @@ import { countedProfiles } from '../chain/registry.ts'
 import type { IssuerConfig } from '../config.ts'
 import { type Db, type Queryable, getCursor, setCursor } from '../db.ts'
 import { checkBlobs } from './blobs.ts'
-import { project } from './store.ts'
+import { type Registry, project } from './store.ts'
 
 /** How long one host may take to serve a page. Past that the read fails, and the next poll tries again. */
 export const READ_MS = 60_000
@@ -49,7 +49,9 @@ export class HostReader {
   private readonly issuers: IssuerConfig
   /** The indexes whose reputation proofs count here, by address. */
   private readonly indexes: string[]
-  /** Profiles holding records dated ahead, which the view holds back, and when they come due. */
+  /** The registry the person proofs on cards are checked against; none checks without it. */
+  private readonly registry: Registry | null
+  /** Profiles to view again, and when: records dated ahead come due, or a card's check could not reach the registry. */
   private readonly due = new Map<string, number>()
   private readonly onChange: () => void
   private readonly onError: (err: unknown) => void
@@ -65,6 +67,7 @@ export class HostReader {
     hosts: string[]
     issuers: IssuerConfig
     indexes: string[]
+    registry?: Registry | null
     onChange: () => void
     onError: (err: unknown) => void
     now?: () => number
@@ -73,6 +76,7 @@ export class HostReader {
     this.hosts = args.hosts
     this.issuers = args.issuers
     this.indexes = args.indexes
+    this.registry = args.registry ?? null
     this.onChange = args.onChange
     this.onError = args.onError
     this.now = args.now ?? Date.now
@@ -178,8 +182,14 @@ export class HostReader {
       const ahead = records.map((c) => c.record.time).filter((t) => t > now + MAX_FUTURE_MS)
       if (ahead.length) this.due.set(profile, Math.min(...ahead) - MAX_FUTURE_MS)
       else this.due.delete(profile)
-      const out = await project(this.db, view, counted.has(profile), this.indexes)
-      for (const r of out.refused) this.onError(new Error(`refused ${profile}/${r.path}: ${r.why}`))
+      try {
+        const out = await project(this.db, view, counted.has(profile), { indexes: this.indexes, issuers: this.issuers, registry: this.registry })
+        for (const r of out.refused) this.onError(new Error(`refused ${profile}/${r.path}: ${r.why}`))
+      } catch (err) {
+        // What it held stays, and the next poll views it again: the registry's RPC, say, did not answer.
+        this.due.set(profile, now)
+        this.onError(new Error(`viewing ${profile}: ${(err as Error).message}`, { cause: err }))
+      }
     }
     this.onChange()
   }
@@ -198,7 +208,7 @@ export async function takeIn(
   db: Db,
   host: string,
   records: Checked[],
-  lists: { issuers: IssuerConfig; indexes: string[] },
+  lists: { issuers: IssuerConfig; indexes: string[]; registry?: Registry | null },
   onError: (err: unknown) => void = () => {},
 ): Promise<number> {
   const n = await insert(db, host, records)

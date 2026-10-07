@@ -2,7 +2,8 @@
 // rule here is written out in plain words in README.md; the two must say the same thing.
 //
 // Three scores, never blended into one number:
-//   uniqueness  per label: which trusted issuers' rows the profile holds under it, by their weights
+//   uniqueness  per label: which trusted issuers' rows the profile holds under it, each by its
+//               issuer's weight at the tier the profile's card shows for it
 //   standing    per profile: reviews received, each weighed by its reviewer and by its evidence
 //   rating      per profile: the reviews' `overall`, averaged with the same weights, 1.0 to 10.0
 //
@@ -25,8 +26,10 @@ export type StampIn = {
   label: string
   /** The issuer's key, 128 hex. */
   issuer: string
-  /** The row's stamp, 64 hex: only the reputation tree uses it (reputation.ts). */
+  /** The row's stamp, 64 hex: the reputation tree's leaf (reputation.ts). */
   stamp?: string
+  /** The tiers the profile's card shows for this row, each a person proof checked against it (records/store.ts). */
+  tiers?: string[]
 }
 export type ReceiptIn = {
   escrow: string
@@ -88,9 +91,21 @@ export function stampStatus(stamp: Pick<StampIn, 'label'>, profile: { label: str
   return { counted: true, ...label }
 }
 
-export function issuerWeight(issuers: IssuerConfig, issuer: string): number {
-  const w = issuers[issuer]?.weight ?? 0
-  return Math.min(1, Math.max(0, w))
+/**
+ * A row's weight: its issuer's weight at the tier its profile shows for it, the best when it shows
+ * more than one, and that tier. A row that shows no tier, or only tiers the list does not weigh,
+ * weighs its issuer's smallest weight, with no tier: which tier its note was is not shown. An issuer
+ * not on the list weighs 0.
+ */
+export function rowWeight(issuers: IssuerConfig, issuer: string, tiers: readonly string[] = []): { weight: number; tier: string | null } {
+  const weights = Object.hasOwn(issuers, issuer) ? issuers[issuer]!.weights : {}
+  const clamp = (w: number) => Math.min(1, Math.max(0, w))
+  let best: { weight: number; tier: string | null } | null = null
+  for (const tier of tiers) {
+    if (Object.hasOwn(weights, tier) && (!best || weights[tier]! > best.weight)) best = { weight: clamp(weights[tier]!), tier }
+  }
+  const all = Object.values(weights)
+  return best ?? { weight: all.length ? clamp(Math.min(...all)) : 0, tier: null }
 }
 
 export type Uniqueness = {
@@ -99,33 +114,36 @@ export type Uniqueness = {
   market: string
   role: string
   value: number
-  issuers: { issuer: string; name: string | null; weight: number }[]
+  issuers: { issuer: string; name: string | null; weight: number; tier: string | null }[]
 }
 
 /**
- * Per profile and label: the distinct issuers whose counted rows the profile holds under it,
- * combined as 1 − Π(1 − weight). One issuer at weight w gives w; two independent issuers give more
- * than either and never more than 1; an issuer at 0 adds nothing.
+ * Per profile and label: the distinct issuers whose counted rows the profile holds under it, each at
+ * its row's weight (`rowWeight`), combined as 1 − Π(1 − weight). One issuer at weight w gives w; two
+ * independent issuers give more than either and never more than 1; an issuer at 0 adds nothing.
  */
 export function uniqueness(inputs: Pick<Inputs, 'profiles' | 'stamps'>, settings: Settings): Uniqueness[] {
   const profiles = new Map(inputs.profiles.map((p) => [p.address, p]))
-  const groups = new Map<string, { profile: string; label: string; market: string; role: string; issuers: Set<string> }>()
+  type Weighed = ReturnType<typeof rowWeight>
+  const groups = new Map<string, { profile: string; label: string; market: string; role: string; issuers: Map<string, Weighed> }>()
   for (const st of inputs.stamps) {
     const profile = profiles.get(st.profile)
     if (!profile) continue
     const status = stampStatus(st, profile, settings.directory)
     if (!status.counted) continue
     const key = `${st.profile}\u0000${st.label}`
-    const g = groups.get(key) ?? { profile: st.profile, label: st.label, market: status.market, role: status.role, issuers: new Set() }
-    g.issuers.add(st.issuer)
+    const g = groups.get(key) ?? { profile: st.profile, label: st.label, market: status.market, role: status.role, issuers: new Map() }
+    const weighed = rowWeight(settings.issuers, st.issuer, st.tiers)
+    const held = g.issuers.get(st.issuer)
+    if (!held || weighed.weight > held.weight) g.issuers.set(st.issuer, weighed)
     groups.set(key, g)
   }
   const out: Uniqueness[] = []
   for (const g of groups.values()) {
-    const issuers = [...g.issuers].sort().map((issuer) => ({
+    const issuers = [...g.issuers.keys()].sort().map((issuer) => ({
       issuer,
       name: settings.issuers[issuer]?.name ?? null,
-      weight: issuerWeight(settings.issuers, issuer),
+      ...g.issuers.get(issuer)!,
     }))
     const value = 1 - issuers.reduce((p, k) => p * (1 - k.weight), 1)
     out.push({ profile: g.profile, label: g.label, market: g.market, role: g.role, value, issuers })

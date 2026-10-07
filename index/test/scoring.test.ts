@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import type { IssuerConfig } from '../src/config.ts'
 import { Directory } from '../src/markets.ts'
 import {
   type Inputs,
@@ -16,6 +17,7 @@ import {
   compute,
   evidenceFor,
   reviewerWeight,
+  rowWeight,
   signal,
   uniqueness,
 } from '../src/scores/compute.ts'
@@ -38,7 +40,7 @@ const scoring = {
   maxRounds: 100,
   tolerance: 1e-9,
 }
-const settings = { directory, issuers: { [FOUNDATION]: { name: 'Forest Foundation', weight: 1 } }, scoring }
+const settings = { directory, issuers: { [FOUNDATION]: { name: 'Forest Foundation', weights: { '1': 1 } } }, scoring }
 
 // Each profile lives in one label, as its record names it. Its address is its name and its Solana address.
 const ana = { address: 'AnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAnaAn', label: 'online-tutors/seller' }
@@ -156,17 +158,32 @@ test('uniqueness: issuers combine, an issuer at 0 adds nothing', () => {
   const one = uniqueness({ profiles: [ana], stamps: [stamp(ana.address)] }, settings)
   assert.equal(one.length, 1)
   assert.equal(one[0].value, 1)
-  assert.deepEqual(one[0].issuers, [{ issuer: FOUNDATION, name: 'Forest Foundation', weight: 1 }])
+  assert.deepEqual(one[0].issuers, [{ issuer: FOUNDATION, name: 'Forest Foundation', weight: 1, tier: null }])
 
   const unknown = uniqueness({ profiles: [ana], stamps: [stamp(ana.address, 'online-tutors/seller', OTHER_ISSUER)] }, settings)
   assert.equal(unknown[0].value, 0, 'others start at 0')
 
-  const halves = { ...settings, issuers: { [FOUNDATION]: { name: 'F', weight: 0.5 }, [OTHER_ISSUER]: { name: 'O', weight: 0.5 } } }
+  const halves = { ...settings, issuers: { [FOUNDATION]: { name: 'F', weights: { '1': 0.5 } }, [OTHER_ISSUER]: { name: 'O', weights: { '1': 0.5 } } } }
   const two = uniqueness(
     { profiles: [ana], stamps: [stamp(ana.address), stamp(ana.address, 'online-tutors/seller', OTHER_ISSUER)] },
     halves,
   )
   assert.equal(two[0].value, 0.75, 'two issuers at 0.5: 1 − 0.5 × 0.5')
+})
+
+test('uniqueness: a row weighs its issuer’s weight at the tier its card shows; with none, the smallest', () => {
+  const tiers = { ...settings, issuers: { [FOUNDATION]: { name: 'F', weights: { '1': 0.7, '2': 0.9 } }, [OTHER_ISSUER]: { name: 'O', weights: { '1': 0.5 } } } as IssuerConfig }
+  const at = (shown?: string[], issuer = FOUNDATION) => uniqueness({ profiles: [ana], stamps: [{ ...stamp(ana.address, 'online-tutors/seller', issuer), ...(shown && { tiers: shown }) }] }, tiers)[0]!
+  assert.deepEqual([at(['2']).value, at(['2']).issuers[0]!.tier, at(['2']).issuers[0]!.weight], [0.9, '2', 0.9], 'tier 2 shown')
+  assert.deepEqual([at(['1']).value, at(['1']).issuers[0]!.tier], [0.7, '1'], 'tier 1 shown')
+  assert.deepEqual([at().value, at().issuers[0]!.tier], [0.7, null], 'no tier shown: the smallest weight, today’s')
+  assert.deepEqual([at(['3']).value, at(['3']).issuers[0]!.tier], [0.7, null], 'a tier the list does not weigh is as none')
+  assert.deepEqual([at(['1', '2']).value, at(['1', '2']).issuers[0]!.tier], [0.9, '2'], 'the best of the tiers shown')
+  assert.equal(at(['2'], OTHER_ISSUER).value, 0.5, 'each issuer by its own weights')
+  // Two issuers, one at tier 2: 1 − 0.1 × 0.5.
+  const both = uniqueness({ profiles: [ana], stamps: [{ ...stamp(ana.address), tiers: ['2'] }, stamp(ana.address, 'online-tutors/seller', OTHER_ISSUER)] }, tiers)
+  assert.ok(Math.abs(both[0]!.value - 0.95) < 1e-12)
+  assert.equal(rowWeight({}, FOUNDATION, ['2']).weight, 0, 'an issuer not listed weighs 0')
 })
 
 test('standing: everyone starts at zero; the scenario the end-to-end test runs', () => {
