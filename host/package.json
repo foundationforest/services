@@ -2,7 +2,7 @@
   "name": "@forest/host",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's host: forest/records' reference host, unchanged, run with this service's policy: a file per folder, blobs on disk or in a bucket, a registry lookup for inboxes that take messages from one issuer's rows, and senders' records read to take a message key's messages.",
+  "description": "The Forest Foundation's host: forest/records' reference host, unchanged, run with this service's policy: a file per folder, blobs on disk or in a bucket, photos and videos only for a folder with a row from the devnet issuer and within its bytes, a registry lookup for inboxes that take messages from one issuer's rows, and senders' records read, from public addresses only, to take a message key's messages.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -14,7 +14,8 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "1.99.0",
+    "undici": "7.30.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
