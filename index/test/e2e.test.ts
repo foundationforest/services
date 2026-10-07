@@ -181,7 +181,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     cleanups.push(() => markets.close())
     writeFileSync(join(scratch, 'hosts.json'), JSON.stringify({ hosts: [hostUrl] }))
     writeFileSync(join(scratch, 'markets.json'), JSON.stringify({ directory: markets.url, markets: ['online-tutors', 'language-exchange'] }))
-    writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.key]: { name: 'Forest Foundation', weight: 1 } } }))
+    writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.key]: { name: 'Forest Foundation', weights: { '1': 1 } } } }))
     const config = loadConfig({
       DATABASE_URL: dbUrl.toString(),
       INDEX_SIGNING_SEED: '09'.repeat(32),

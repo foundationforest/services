@@ -143,7 +143,8 @@ ${p.about ? html`<p>${p.about}</p>` : ''}
 ${counted.length
     ? html`<ul class="cards">${[...new Set(counted.map((b) => b.label))].map((label) => {
         const b = counted.find((x) => x.label === label)!
-        return html`<li><h3>${w.REAL_PERSON}</h3>
+        const badges = [...new Set(counted.filter((x) => x.label === label && x.badge).map((x) => x.badge!))]
+        return html`<li><h3>${[w.REAL_PERSON, ...badges].join(' · ')}</h3>
 <p>In <a href="${b.marketUrl}">${w.title(b.market)}</a>${b.side ? `, as ${b.side}` : ''}</p>
 <p class="small muted">Checked by ${w.checkedBy(counted.filter((x) => x.label === label).map((x) => x.issuer.name))}. How sure this index is that it is one real person: <span class="score">${w.percent(uniq.get(label) ?? 0)}</span></p></li>`
       })}</ul>`

@@ -8,20 +8,24 @@
 // this index's. A record's address is `<profile>/<path>`; its `id` is the id of the record that holds
 // the path now. The profile's address is its name and its Solana address.
 //
-// A profile's reputation proofs (forest/records/README.md, "Proofs") are checked here, once per
-// version of its card, and the ones that check are stored with it (`checkProofs`). Whether a page
-// shows one is decided when the page is made, from the roots (web/data.ts).
+// A profile's proofs (forest/records/README.md, "Proofs") are checked here, once per version of its
+// card, and the ones that check are stored with it: its reputation proofs (`checkProofs`), and its
+// person proofs, the tiers it shows (`checkTiers`). Whether a page shows a reputation proof is
+// decided when the page is made, from the roots (web/data.ts); a tier weighs its row in the scores
+// (scores/compute.ts).
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { type Commitment, type Connection, PublicKey } from '@solana/web3.js'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
 import { verifyReputation } from '../../../forest/circuits/reputation/src/index.ts'
-import { type View, b64u, base58, isPrivate, liveContent } from '../../../forest/records/src/index.ts'
+import { type View, b64u, base58, hex, isPrivate, liveContent } from '../../../forest/records/src/index.ts'
+import { verifyTier } from '../../../forest/registry/client/src/index.ts'
 
-import { INDEX_ROOT } from '../config.ts'
+import { INDEX_ROOT, type IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 
 export const KINDS = ['profile', 'offer', 'review'] as const
@@ -85,12 +89,45 @@ export async function checkProofs(profile: string, card: Record<string, any>, in
   return out
 }
 
+/** A person proof on a card that checked: the tier the profile shows for its row at `stamp`, from `issuer`, under `label`. */
+export type StoredTier = { issuer: string; label: string; stamp: string; tier: string }
+
+/** The registry a person proof is checked against, over an RPC. */
+export type Registry = { connection: Pick<Connection, 'getAccountInfo'>; programId: string; commitment: Commitment }
+
+/**
+ * The person proofs on a card that check: each from an issuer in `issuers`, checked by forest's
+ * `verifyTier` against the row at its stamp, for this profile's main key and the issuer and label it
+ * shows. A proof that fails, or names an issuer not listed, is left out; it is not an error. With no
+ * registry to read, none checks. An RPC that fails throws, so the card is checked again.
+ */
+export async function checkTiers(profile: string, card: Record<string, any>, issuers: IssuerConfig, registry: Registry | null): Promise<StoredTier[]> {
+  const out: StoredTier[] = []
+  if (!registry) return out
+  for (const p of Array.isArray(card.proofs) ? card.proofs : []) {
+    if (p?.circuit !== 'person' || !Object.hasOwn(issuers, p.issuer)) continue
+    let input
+    try {
+      input = { profile: base58.decode(profile), issuer: hex.decode(p.issuer), label: p.label, stamp: hex.decode(p.stamp), tier: BigInt(p.tier), proof: b64u.decode(p.proof) }
+    } catch {
+      // Bytes that do not decode are a proof that does not check.
+      continue
+    }
+    // The registry client checks a key against its own copy of web3.js; it reads only its bytes.
+    const row = await verifyTier(registry.connection as never, input, { programId: new PublicKey(registry.programId) as never, commitment: registry.commitment })
+    if (row) out.push({ issuer: p.issuer, label: p.label, stamp: p.stamp, tier: p.tier })
+  }
+  return out
+}
+
+/** What a card's proofs are checked against: the indexes whose reputation proofs count here, the issuers this index trusts, and the registry. */
+export type Proofs = { indexes: string[]; issuers: IssuerConfig; registry: Registry | null }
+
 /**
  * Replace everything the index holds for one profile with what its view says now. Only a profile
- * holding a counted row (`keep`) is stored; any other keeps nothing here. `indexes`: the indexes
- * whose reputation proofs count here.
+ * holding a counted row (`keep`) is stored; any other keeps nothing here.
  */
-export async function project(db: Db, view: View, keep: boolean, indexes: string[]): Promise<Projected> {
+export async function project(db: Db, view: View, keep: boolean, proofs: Proofs): Promise<Projected> {
   const profile = view.profile
   const content = keep ? liveContent(view) : new Map()
   const out: Projected = { stored: 0, refused: [] }
@@ -117,9 +154,19 @@ export async function project(db: Db, view: View, keep: boolean, indexes: string
       switch (kind) {
         case 'profile':
           await client.query(
-            `insert into profiles (address, id, record, name, market, role, created_at, proofs, indexed_at)
-             values ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
-            [profile, c.id, r, r.name, r.market, r.role, ts(r.createdAt), JSON.stringify(await checkProofs(profile, r, indexes))],
+            `insert into profiles (address, id, record, name, market, role, created_at, proofs, tiers, indexed_at)
+             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())`,
+            [
+              profile,
+              c.id,
+              r,
+              r.name,
+              r.market,
+              r.role,
+              ts(r.createdAt),
+              JSON.stringify(await checkProofs(profile, r, proofs.indexes)),
+              JSON.stringify(await checkTiers(profile, r, proofs.issuers, proofs.registry)),
+            ],
           )
           break
         case 'offer':

@@ -377,11 +377,11 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const benTwin = await json(`/profiles/${ben.address}.json`)
       assert.equal(benTwin.reviews.received[0].market, MARKET)
       // A row counts when its issuer's key is one this index trusts.
-      assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.issuer]), [
-        [SELLER, true, { key: ISSUER, name: ISSUER_NAME, weight: 1 }],
+      assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.issuer, b.tier, b.badge]), [
+        [SELLER, true, { key: ISSUER, name: ISSUER_NAME, weight: 1 }, null, null],
       ])
       assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.label, u.value, u.details.issuers]), [
-        [SELLER, 1, [{ issuer: ISSUER, name: ISSUER_NAME, weight: 1 }]],
+        [SELLER, 1, [{ issuer: ISSUER, name: ISSUER_NAME, weight: 1, tier: null }]],
       ])
       assert.ok(anaPage.includes(`Checked by ${ISSUER_NAME}.`))
       // Eve's row: its issuer is not one this index trusts, so it counts for nothing, and nothing of
@@ -481,8 +481,8 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // The story's rows were made at 1,790,000,000 plus their number: Ana's (1), Ben's as a buyer (2)
       // and Cleo's (3) by the until below, to the second; Ben's as a peer (4) and Dara's (5) after it.
       const until = new Date(1_790_000_003 * 1000).toISOString().replace('.000Z', 'Z')
-      const leaked = { [ISSUER]: { name: ISSUER_NAME, weight: 1, until } }
-      const all = { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }
+      const leaked = { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 }, until } }
+      const all = { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } }
       const names = (set: Set<string>) => [...set].sort()
       assert.deepEqual(names(await countedProfiles(fixture.db, all)), [ana, ben, cleo, dara].map((p) => p.address).sort())
       assert.deepEqual(names(await countedProfiles(fixture.db, leaked)), [ana, ben, cleo].map((p) => p.address).sort(), 'Dara’s only row is after it')
@@ -492,11 +492,16 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const dir = mkdtempSync(join(tmpdir(), 'forest-index-until-'))
       try {
         for (const bad of ['2026-11-01', '2026-11-01T00:00:00+01:00', '2026-13-01T00:00:00Z', 1_790_000_003]) {
-          writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1, until: bad } } }))
+          writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 }, until: bad } } }))
           assert.throws(() => readIssuers(join(dir, 'issuers.json')), /until is not a time in UTC/, String(bad))
         }
         writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: leaked }))
         assert.deepEqual(readIssuers(join(dir, 'issuers.json')), leaked)
+        // Weights are per tier: a tier in decimal as a card writes it, a weight from 0 to 1, at least one.
+        for (const bad of [{ weight: 0.7 }, { weights: {} }, { weights: { '1': 1.5 } }, { weights: { '01': 0.5 } }, { weights: { one: 0.5 } }, { weights: [0.7] }]) {
+          writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, ...bad } } }))
+          assert.throws(() => readIssuers(join(dir, 'issuers.json')), /weights are not one or more tiers/, JSON.stringify(bad))
+        }
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

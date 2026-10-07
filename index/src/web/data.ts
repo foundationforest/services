@@ -11,11 +11,12 @@ import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
 import { COUNTED, countedParam } from '../chain/registry.ts'
 import { type Directory, type MarketFile, splitLabel } from '../markets.ts'
-import type { StoredProof } from '../records/store.ts'
-import { stampStatus } from '../scores/compute.ts'
+import type { StoredProof, StoredTier } from '../records/store.ts'
+import { rowWeight, stampStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
 import { type Near, type Urls, LISTS, PAYLINK_DOC, SCORING_DOC, SOURCE } from './html.ts'
 import { type PayLink, payLink } from './paylink.ts'
+import { badge } from './words.ts'
 
 export type Ctx = { db: Db; directory: Directory; config: Config; urls: Urls }
 
@@ -453,6 +454,8 @@ export async function profile(ctx: Ctx, address: string) {
     stamps: stamps.rows.map((b) => {
       const status = stampStatus({ label: b.label }, { label: labelOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
+      const shown = (p.tiers as StoredTier[]).filter((t) => t.stamp === b.stamp && t.issuer === b.issuer && t.label === b.label).map((t) => t.tier)
+      const weighed = rowWeight(ctx.config.issuers, b.issuer, shown)
       return {
         label: b.label as string,
         market: b.market as string,
@@ -464,8 +467,13 @@ export async function profile(ctx: Ctx, address: string) {
           /** The issuer's key, 128 hex, x then y, as the row holds it. */
           key: b.issuer as string,
           name: (ctx.config.issuers[b.issuer]?.name ?? null) as string | null,
-          weight: (ctx.config.issuers[b.issuer]?.weight ?? 0) as number,
+          /** What the row weighs: the issuer's weight at its tier, or its smallest with no tier shown. */
+          weight: weighed.weight,
         },
+        /** The tier its card shows for this row, its person proof checked against it; null when none this index weighs. */
+        tier: weighed.tier,
+        /** That tier in words: `ID-checked` for tier 2; null for any other. */
+        badge: badge(weighed.tier),
         counted: status.counted,
         why: status.counted ? null : status.why,
         /** The row's address: the registry account anyone can read to check it. */
