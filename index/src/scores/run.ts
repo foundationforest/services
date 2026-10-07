@@ -1,12 +1,12 @@
 // Recomputing: read everything the scores depend on, compute them all (compute.ts), and store
-// them. A score whose value did not change keeps its statement, time and signatures, so a reader's
+// them. A score whose value did not change keeps its statement, time and signature, so a reader's
 // cache and a signature someone already holds stay good; only changed values are signed again.
 //
 // Everything is recomputed each time. That is fine at this size; an incremental recompute is
 // later work (README.md, "Limits"). Then the reputation tree is rebuilt from the ratings, in the
 // same transaction (reputation.ts).
 
-import { COUNTED } from '../chain/registry.ts'
+import { COUNTED, countedParam } from '../chain/registry.ts'
 import type { Config, IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
 import type { Directory } from '../markets.ts'
@@ -17,7 +17,7 @@ import { type IndexKeys, type Kind, sign } from './sign.ts'
 export async function loadInputs(db: Db, issuers: IssuerConfig, escrow: string): Promise<Inputs> {
   const [profiles, stamps, receipts, reviews] = await Promise.all([
     db.query('select address, market, role from profiles'),
-    db.query(`select r.profile, r.label, r.issuer, r.stamp from rows r where ${COUNTED}`, [Object.keys(issuers)]),
+    db.query(`select r.profile, r.label, r.issuer, r.stamp from rows r where ${COUNTED}`, [countedParam(issuers)]),
     db.query(
       `select escrow, buyer, seller, creator, mint, funded_at is not null as funded, outcome, closed from escrow_receipts where program_id = $1`,
       [escrow],
@@ -104,12 +104,11 @@ export async function recompute(
       const at = now()
       const signed = sign({ kind: row.kind, profile: row.profile, label: row.label, value: row.value, at }, settings.keys)
       await client.query(
-        `insert into scores (profile, kind, label, value_micro, details, statement, message, sig_ed25519, sig_eddsa, computed_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `insert into scores (profile, kind, label, value_micro, details, statement, sig_ed25519, computed_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
          on conflict (profile, kind, label) do update set
            value_micro = excluded.value_micro, details = excluded.details, statement = excluded.statement,
-           message = excluded.message, sig_ed25519 = excluded.sig_ed25519, sig_eddsa = excluded.sig_eddsa,
-           computed_at = excluded.computed_at`,
+           sig_ed25519 = excluded.sig_ed25519, computed_at = excluded.computed_at`,
         [
           row.profile,
           row.kind,
@@ -117,9 +116,7 @@ export async function recompute(
           row.value.toString(),
           JSON.stringify(row.details),
           signed.statement,
-          signed.message,
           signed.ed25519,
-          JSON.stringify(signed.eddsaPoseidon),
           at.toString(),
         ],
       )

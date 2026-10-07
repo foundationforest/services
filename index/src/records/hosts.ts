@@ -21,6 +21,7 @@ import { type Checked, MAX_FUTURE_MS, type SignedRecord, encodeRecord } from '..
 import { viewProfile } from '../../../forest/records/src/view.ts'
 
 import { countedProfiles } from '../chain/registry.ts'
+import type { IssuerConfig } from '../config.ts'
 import { type Db, type Queryable, getCursor, setCursor } from '../db.ts'
 import { checkBlobs } from './blobs.ts'
 import { project } from './store.ts'
@@ -44,8 +45,8 @@ export class HostReader {
   private readonly db: Db
   /** The hosts read, each in full. */
   readonly hosts: string[]
-  /** The issuers this index trusts, by address. */
-  private readonly issuers: string[]
+  /** The issuers this index trusts, as lists/issuers.json gives them. */
+  private readonly issuers: IssuerConfig
   /** The indexes whose reputation proofs count here, by address. */
   private readonly indexes: string[]
   /** Profiles holding records dated ahead, which the view holds back, and when they come due. */
@@ -62,7 +63,7 @@ export class HostReader {
   constructor(args: {
     db: Db
     hosts: string[]
-    issuers: string[]
+    issuers: IssuerConfig
     indexes: string[]
     onChange: () => void
     onError: (err: unknown) => void
@@ -197,7 +198,7 @@ export async function takeIn(
   db: Db,
   host: string,
   records: Checked[],
-  lists: { issuers: string[]; indexes: string[] },
+  lists: { issuers: IssuerConfig; indexes: string[] },
   onError: (err: unknown) => void = () => {},
 ): Promise<number> {
   const n = await insert(db, host, records)

@@ -258,7 +258,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   // Eve's are kept but never stored.
   const refused: unknown[] = []
   const checked: Checked[] = RECORDS.map((record) => ({ record, id: recordId(unsignedOf(record)) }))
-  const trusted = { issuers: [ISSUER], indexes: [INDEX] }
+  const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }, indexes: [INDEX] }
   await takeIn(db, HOST, checked, trusted, (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
 

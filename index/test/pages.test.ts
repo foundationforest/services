@@ -13,21 +13,29 @@
 //      anything);
 //  10. records: the access rule, by forest's view, and private records left alone;
 //  11. pictures: shown from a host that holds them, with the type the record names; none when no
-//      host does.
+//      host does;
+//  12. the leak rule: a row the chain wrote after its issuer's until counts for nothing.
 // And, in a database of its own: the foundation's host under its new name keeps its cursor, its
-// records and its pictures (migrations/013_host_named.sql).
+// records and its pictures (migrations/013_host_named.sql), and what the old index read under the
+// old name after that goes (015_host_named_once.sql).
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
 import pg from 'pg'
 
+import { countedProfiles } from '../src/chain/registry.ts'
+import { readIssuers } from '../src/config.ts'
 import { createPool, migrate } from '../src/db.ts'
 import { startWeb } from '../src/main.ts'
+import { loadInputs } from '../src/scores/run.ts'
 import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
@@ -261,7 +269,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const links = [...llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => m[1])
       assert.ok(links.length >= 6)
       for (const link of links) {
-        if (link.startsWith('https://github.com/foundationforest/services')) continue
+        if (link.startsWith('https://github.com/foundationforest/services') || link.startsWith('https://github.com/foundationforest/forest')) continue
         assert.ok(link.startsWith(base), `${link} is on this index`)
         assert.equal((await get(link)).status, 200, link)
       }
@@ -280,7 +288,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.equal(res.status, 200, u)
       }
       assert.ok(local.includes(portuguese.payLink), 'the Pay link example is the offer’s own link')
-      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services'), u)
+      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services') || u.startsWith('https://github.com/foundationforest/forest'), u)
     })
 
     await t.test('7. no crypto word anywhere a person reads', async () => {
@@ -468,13 +476,38 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         { sha256: CLIP.sha256, host: fixture.host, type: 'video/mp4' },
       ])
     })
+
+    await t.test('12. the leak rule: a row the chain wrote after its issuer’s until counts for nothing', async () => {
+      // The story's rows were made at 1,790,000,000 plus their number: Ana's (1), Ben's as a buyer (2)
+      // and Cleo's (3) by the until below, to the second; Ben's as a peer (4) and Dara's (5) after it.
+      const until = new Date(1_790_000_003 * 1000).toISOString().replace('.000Z', 'Z')
+      const leaked = { [ISSUER]: { name: ISSUER_NAME, weight: 1, until } }
+      const all = { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }
+      const names = (set: Set<string>) => [...set].sort()
+      assert.deepEqual(names(await countedProfiles(fixture.db, all)), [ana, ben, cleo, dara].map((p) => p.address).sort())
+      assert.deepEqual(names(await countedProfiles(fixture.db, leaked)), [ana, ben, cleo].map((p) => p.address).sort(), 'Dara’s only row is after it')
+      const inputs = await loadInputs(fixture.db, leaked, fixture.config().escrowProgramId)
+      assert.deepEqual(inputs.stamps.map((r) => `${r.profile} ${r.label}`).sort(), [`${ana.address} ${SELLER}`, `${ben.address} ${BUYER}`, `${cleo.address} ${SELLER}`].sort(), 'and it scores none')
+      // A list whose until is not a time in UTC to the second is refused at start.
+      const dir = mkdtempSync(join(tmpdir(), 'forest-index-until-'))
+      try {
+        for (const bad of ['2026-11-01', '2026-11-01T00:00:00+01:00', '2026-13-01T00:00:00Z', 1_790_000_003]) {
+          writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1, until: bad } } }))
+          assert.throws(() => readIssuers(join(dir, 'issuers.json')), /until is not a time in UTC/, String(bad))
+        }
+        writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: leaked }))
+        assert.deepEqual(readIssuers(join(dir, 'issuers.json')), leaked)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await fixture.drop()
   }
 })
 
-test('the foundation’s host under its new name keeps its cursor, records and pictures', async (t) => {
+test('the foundation’s host under its new name keeps its cursor, records and pictures, once', async (t) => {
   if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
   const OLD = 'https://board-devnet-test-production.up.railway.app'
   const NEW = 'https://host.devnet.forest.foundation'
@@ -500,6 +533,18 @@ test('the foundation’s host under its new name keeps its cursor, records and p
     const records = (await db.query('select host, id from host_records order by id')).rows
     assert.deepEqual(records, [{ host: NEW, id: 'r1' }, { host: 'https://other.example', id: 'r2' }], 'its records, and no other host’s')
     assert.deepEqual((await db.query('select host from blobs')).rows, [{ host: NEW }], 'and which pictures it holds')
+
+    // On devnet the index it replaced ran a few seconds more, as a deploy overlaps the old and the
+    // new: it found no cursor under the old address and read the host again from the start under it,
+    // and checked a picture there. 015 takes those copies away, and nothing under the new name.
+    await db.query(`delete from schema_migrations where name = '015_host_named_once.sql'`)
+    await db.query(`insert into cursors (source, value) values ($1, '4243')`, [`host:${OLD}`])
+    await db.query(`insert into host_records (host, id, profile, path, text) values ($1, 'r1', 'P', 'profile', '{}')`, [OLD])
+    await db.query(`insert into blobs (sha256, host, type) values ('${'ab'.repeat(32)}', $1, 'image/png')`, [OLD])
+    assert.deepEqual(await migrate(db), ['015_host_named_once.sql'])
+    assert.deepEqual((await db.query('select source, value from cursors order by source')).rows, cursors, 'one cursor for the host, where it was')
+    assert.deepEqual((await db.query('select host, id from host_records order by id')).rows, records, 'its records once, and the other host’s')
+    assert.deepEqual((await db.query('select host from blobs')).rows, [{ host: NEW }], 'and its pictures once')
   } finally {
     await db.end()
     await admin.query(`drop database if exists ${name} with (force)`)
