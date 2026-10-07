@@ -15,6 +15,7 @@ import { PublicKey } from '@solana/web3.js'
 import { hex } from '../../../forest/records/src/index.ts'
 import { type Row, fetchRows, fromBytes32, issuerKeyBytes, toBytes32 } from '../../../forest/registry/client/src/index.ts'
 
+import type { IssuerConfig } from '../config.ts'
 import type { Queryable } from '../db.ts'
 import { splitLabel } from '../markets.ts'
 
@@ -82,16 +83,23 @@ export async function readRows(connection: Connection, programId: string, issuer
 }
 
 /**
- * A row `r` this index counts: its issuer is one it trusts (`$1`, their keys). Every other row counts
+ * A row `r` this index counts: its issuer is one it trusts, and the chain wrote it no later than that
+ * issuer's `until`, when the list gives one (the leak rule: rows made after a key leaked count for
+ * nothing; the ones before still count). `$1` is `countedParam` of the list. Every other row counts
  * for nothing here, and a profile with no counted row is neither stored nor shown.
  */
-export const COUNTED = `(r.issuer = any($1))`
+export const COUNTED = `(($1::jsonb) ? r.issuer and coalesce(r.made <= (($1::jsonb) ->> r.issuer)::bigint, true))`
+
+/** COUNTED's parameter: each trusted issuer's key, with its `until` in Unix seconds, or null. */
+export function countedParam(issuers: IssuerConfig): string {
+  return JSON.stringify(Object.fromEntries(Object.entries(issuers).map(([key, k]) => [key, k.until === undefined ? null : Date.parse(k.until) / 1000])))
+}
 
 /** The profiles holding a counted row: all of them, or those among `profiles`. */
-export async function countedProfiles(db: Queryable, issuers: string[], profiles?: string[]): Promise<Set<string>> {
+export async function countedProfiles(db: Queryable, issuers: IssuerConfig, profiles?: string[]): Promise<Set<string>> {
   const { rows } = await db.query(
     `select distinct r.profile from rows r where ${COUNTED}${profiles ? ' and r.profile = any($2)' : ''}`,
-    profiles ? [issuers, profiles] : [issuers],
+    profiles ? [countedParam(issuers), profiles] : [countedParam(issuers)],
   )
   return new Set(rows.map((r) => r.profile as string))
 }

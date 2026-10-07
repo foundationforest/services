@@ -32,7 +32,7 @@ import { startWeb } from '../src/main.ts'
 import { takeIn } from '../src/records/hosts.ts'
 import { hex64 } from '../src/scores/reputation.ts'
 import * as w from '../src/web/words.ts'
-import { HOST, INDEX, INDEX_NAME, ISSUER, MADE_UP_DEAL, MARKET, RECORDS, SELLER, ana, cleo, makeFixture } from './fixture.ts'
+import { HOST, INDEX, INDEX_NAME, ISSUER, ISSUER_NAME, MADE_UP_DEAL, MARKET, RECORDS, SELLER, ana, cleo, makeFixture } from './fixture.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const devnet = join(here, '../../forest/circuits/reputation/devnet')
@@ -78,7 +78,7 @@ test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, 
       return { status: res.status, type: res.headers.get('content-type'), text: await res.text() }
     }
     const json = async (path: string) => JSON.parse((await get(path)).text)
-    const trusted = { issuers: [ISSUER], indexes: [INDEX] }
+    const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }, indexes: [INDEX] }
     /** Ana's card again, now, with these proofs; then what her twin and her page say. */
     const anaCard = RECORDS.find((r) => r.profile === ana.address && r.path === 'profile')!.body as Record<string, unknown>
     const showProofs = async (proofs: unknown[]) => {

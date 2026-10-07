@@ -1,10 +1,10 @@
-// A served score's two signatures: both verify against the index's public keys, and a score that
-// was changed after signing fails both.
+// A served score's signature: it verifies against the index's public key, and a score changed after
+// signing, or another index's key, fails.
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { KIND, VALUE_OFFSET, indexKeys, messageOf, parseStatement, publicKeys, sign, statementText, verify } from '../src/scores/sign.ts'
+import { indexKeys, parseStatement, publicKeys, sign, statementText, verify } from '../src/scores/sign.ts'
 
 const seed = new Uint8Array(32).fill(9)
 const keys = indexKeys(seed)
@@ -24,27 +24,15 @@ test('a statement reads back as written, for each kind; an unknown kind is refus
   assert.throws(() => parseStatement(statementText(s).replace('kind standing', 'kind toString')), /unknown kind/)
 })
 
-test('both signatures verify, and a changed score fails both', () => {
+test('the signature verifies, and a changed score or another index’s key fails', () => {
   const s = { kind: 'uniqueness' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: 'online-tutors/seller', value: 1_000_000n, at: 1_790_000_000n }
   const signed = sign(s, keys)
-  assert.deepEqual(verify(signed, pub), { ed25519: true, eddsaPoseidon: true })
+  assert.deepEqual(Object.keys(signed), ['statement', 'ed25519'], 'one signature')
+  assert.equal(verify(signed, pub), true)
 
   const inflated = sign({ ...s, value: 2_000_000n }, keys)
-  const forged = { ...signed, statement: inflated.statement, message: inflated.message }
-  assert.deepEqual(verify(forged, pub), { ed25519: false, eddsaPoseidon: false })
+  assert.equal(verify({ ...signed, statement: inflated.statement }, pub), false)
 
   const other = publicKeys(indexKeys(new Uint8Array(32).fill(1)))
-  assert.deepEqual(verify(signed, other), { ed25519: false, eddsaPoseidon: false }, "another index's keys")
-})
-
-test('the field message separates kinds, labels and signs of value', () => {
-  const base = { kind: 'standing' as const, profile: 'EofQN9U3MiKVmAo3Pyvuw19WjyYbpddfN52E1Q1uBwhu', label: '', value: 5n, at: 1n }
-  const m = messageOf(base)
-  assert.notEqual(messageOf({ ...base, kind: 'uniqueness' }), m)
-  assert.notEqual(messageOf({ ...base, kind: 'rating' }), m)
-  assert.notEqual(messageOf({ ...base, value: -5n }), m)
-  assert.notEqual(messageOf({ ...base, label: 'online-tutors/seller' }), m)
-  assert.notEqual(messageOf({ ...base, profile: '5RWsXwx9Urx8d9sUv1i4viMJZ9pQufyNA76o7sCdLysx' }), m)
-  assert.deepEqual(KIND, { uniqueness: 1n, standing: 2n, rating: 3n }, 'standing keeps trust’s code')
-  assert.ok(-5n + VALUE_OFFSET > 0n, 'a negative value is still a positive field element')
+  assert.equal(verify(signed, other), false, "another index's key")
 })

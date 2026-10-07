@@ -13,16 +13,23 @@
 //      anything);
 //  10. records: the access rule, by forest's view, and private records left alone;
 //  11. pictures: shown from a host that holds them, with the type the record names; none when no
-//      host does.
+//      host does;
+//  12. the leak rule: a row the chain wrote after its issuer's until counts for nothing.
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { countedProfiles } from '../src/chain/registry.ts'
+import { readIssuers } from '../src/config.ts'
 import { startWeb } from '../src/main.ts'
+import { loadInputs } from '../src/scores/run.ts'
 import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
@@ -256,7 +263,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const links = [...llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => m[1])
       assert.ok(links.length >= 6)
       for (const link of links) {
-        if (link.startsWith('https://github.com/foundationforest/services')) continue
+        if (link.startsWith('https://github.com/foundationforest/services') || link.startsWith('https://github.com/foundationforest/forest')) continue
         assert.ok(link.startsWith(base), `${link} is on this index`)
         assert.equal((await get(link)).status, 200, link)
       }
@@ -275,7 +282,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.equal(res.status, 200, u)
       }
       assert.ok(local.includes(portuguese.payLink), 'the Pay link example is the offer’s own link')
-      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services'), u)
+      for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services') || u.startsWith('https://github.com/foundationforest/forest'), u)
     })
 
     await t.test('7. no crypto word anywhere a person reads', async () => {
@@ -462,6 +469,31 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         { sha256: PHOTO.sha256, host: fixture.host, type: 'image/jpeg' },
         { sha256: CLIP.sha256, host: fixture.host, type: 'video/mp4' },
       ])
+    })
+
+    await t.test('12. the leak rule: a row the chain wrote after its issuer’s until counts for nothing', async () => {
+      // The story's rows were made at 1,790,000,000 plus their number: Ana's (1), Ben's as a buyer (2)
+      // and Cleo's (3) by the until below, to the second; Ben's as a peer (4) and Dara's (5) after it.
+      const until = new Date(1_790_000_003 * 1000).toISOString().replace('.000Z', 'Z')
+      const leaked = { [ISSUER]: { name: ISSUER_NAME, weight: 1, until } }
+      const all = { [ISSUER]: { name: ISSUER_NAME, weight: 1 } }
+      const names = (set: Set<string>) => [...set].sort()
+      assert.deepEqual(names(await countedProfiles(fixture.db, all)), [ana, ben, cleo, dara].map((p) => p.address).sort())
+      assert.deepEqual(names(await countedProfiles(fixture.db, leaked)), [ana, ben, cleo].map((p) => p.address).sort(), 'Dara’s only row is after it')
+      const inputs = await loadInputs(fixture.db, leaked, fixture.config().escrowProgramId)
+      assert.deepEqual(inputs.stamps.map((r) => `${r.profile} ${r.label}`).sort(), [`${ana.address} ${SELLER}`, `${ben.address} ${BUYER}`, `${cleo.address} ${SELLER}`].sort(), 'and it scores none')
+      // A list whose until is not a time in UTC to the second is refused at start.
+      const dir = mkdtempSync(join(tmpdir(), 'forest-index-until-'))
+      try {
+        for (const bad of ['2026-11-01', '2026-11-01T00:00:00+01:00', '2026-13-01T00:00:00Z', 1_790_000_003]) {
+          writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1, until: bad } } }))
+          assert.throws(() => readIssuers(join(dir, 'issuers.json')), /until is not a time in UTC/, String(bad))
+        }
+        writeFileSync(join(dir, 'issuers.json'), JSON.stringify({ issuers: leaked }))
+        assert.deepEqual(readIssuers(join(dir, 'issuers.json')), leaked)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
     })
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))

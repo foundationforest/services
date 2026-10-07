@@ -282,7 +282,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     const ana2 = (await page(`/profiles/${ana.profile.address}.json`)).body
     assert.deepEqual(ana2.reviews.received.map((r: any) => [r.counted, r.evidence.kind, r.evidence.weight]), [[true, 'oneSidedConfirmed', 1]])
     const keys = (await page('/index.json')).body.index.keys
-    for (const s of [ana2.scores.standing, ana2.scores.rating, ...ana2.scores.uniqueness]) assert.deepEqual(verify(s.signed, keys), { ed25519: true, eddsaPoseidon: true })
+    for (const s of [ana2.scores.standing, ana2.scores.rating, ...ana2.scores.uniqueness]) assert.equal(verify(s.signed, keys), true)
     assert.equal(ana2.scores.rating.value, 10)
     for (const path of ['/', `/profiles/${ana.profile.address}`, `/profiles/${ben.profile.address}`, `/deals/${deal}`, '/markets/online-tutors']) {
       assert.equal((await page(path)).status, 200, path)
