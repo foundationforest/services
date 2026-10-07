@@ -23,6 +23,7 @@
     "src",
     "test",
     "deploy",
+    "scripts",
     "../forest/registry/client/types"
   ]
 }

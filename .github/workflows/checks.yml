@@ -1,7 +1,8 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
 # first fetches forest at the commit in FOREST (forest.sh) and installs the forest packages it uses.
 #
-#   issuer       its type-check (the stand-in Didit included) and its tests
+#   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
+#                the real models and portraits its `npm run fetch` checks by SHA-256
 #   index        its type-check, and its unit, page and reputation tests on a Postgres service (real
 #                reputation proofs: circuits' proving files)
 #   fee-payer    its type-check, the devnet kora.toml its Dockerfile makes from at-cost/ and free/,
@@ -47,7 +48,7 @@ jobs:
       - name: Install
         run: |
           ./forest.sh registry/client records keys
-          (cd issuer && npm ci --no-audit --no-fund)
+          (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
         run: npm run check

@@ -145,6 +145,31 @@ review in Didit approves it.
 pass them to `buildRegistration`, which checks the signature before it proves anything.
 **How a reader checks a row:** forest's `issuerSigned(row)`; it needs only the row, not this file.
 
+### The face model
+
+`src/face.ts` turns a photo of a face into its embedding: 128 numbers, written as 512 bytes, that
+two photos of one person give close together and two people far apart. The service does not call
+it yet.
+
+- **Two open models from OpenCV's model zoo, used unchanged:** YuNet
+  (`face_detection_yunet_2023mar.onnx`, MIT) finds the face and five points on it (the eyes, the
+  nose tip, the mouth's corners); SFace (`face_recognition_sface_2021dec.onnx`, Apache 2.0) gives
+  the 128 numbers for the face turned and scaled so those points sit where SFace expects them, at
+  112 by 112. They run on `onnxruntime-web` (MIT), in WASM; photos are read with `jpeg-js`
+  (BSD-3-Clause) and `pngjs` (MIT). The steps are OpenCV's own (`FaceDetectorYN`,
+  `FaceRecognizerSF`), written out in the file; on two of the test portraits its embeddings match
+  OpenCV's at a cosine of 0.96 or more.
+- **Its name:** `opencv-sface-2021dec` (`SFACE_MODEL`).
+- **The same person** is a cosine similarity of at least 0.5 (`FACE_MATCH`). OpenCV gives 0.363 for
+  SFace, but across six official NASA portraits of five people, two of them scored 0.41 against each
+  other, and one person eight years apart 0.80.
+- **The files:** `npm run fetch` puts the models in `models/` from OpenCV's own Hugging Face pages,
+  each checked against its SHA-256 (`scripts/fetch.ts`). None is in the repo.
+- **About 0.3 seconds a photo** on one core, and nothing written or logged.
+
+`standIn()` gives one fixed embedding for any photo, under the model `stand-in`, for the devnet
+stand-in Didit, which shows no face.
+
 ### Settings
 
 | Variable | Required | Default | What |
@@ -179,8 +204,9 @@ Node 22.18 or later. From the repo root:
 ```
 ./forest.sh registry/client records keys
 cd issuer && npm ci
+npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, forest's files included
-npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP
+npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP; the face models on the portraits
 npm start            # the service, with the variables above
 ```
 
@@ -335,6 +361,12 @@ it started, and of the runs before its list moved off chain, kept under its new 
   handover.
 - **If the issuer's file is lost, so are its lists.** They are published, but nothing here rebuilds
   the file from a copy.
+- **The face model's training data is not ours to vouch for.** SFace's weights are Apache 2.0, but
+  its paper trains it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, whose own terms are for research.
+  No widely used face model is trained on data with cleaner terms.
+- **The face test is three portraits.** Two of one person and one of another, official NASA
+  photos (public domain, `npm run fetch` takes them from NASA's image library): enough to show the
+  model runs as OpenCV's does, not to measure how often it errs.
 - **Address logs.** The issuer keeps no network address (above). A hosting provider's own request
   logs are the operator's choice; on Railway they exist, with each request's client address and
   path.

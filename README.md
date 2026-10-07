@@ -96,7 +96,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (cd forest/circuits/reputation && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
-(cd issuer      && npm ci && npm run check && npm test)
+(cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd keyholder   && npm ci && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
 (cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
