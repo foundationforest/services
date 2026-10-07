@@ -72,7 +72,10 @@ and accountable, not good. The code is `src/scores/compute.ts`, and it says the 
 
 **Which rows count.** A row counts for a profile only if all of these hold:
 
-1. **Its issuer's key is in `lists/issuers.json`.**
+1. **Its issuer's key is in `lists/issuers.json`, and the chain wrote the row no later than that
+   issuer's `until`, when the list gives one.** That is the leak rule: when an issuer's key leaks,
+   the list sets `until` to the time it leaked, and rows made after it count for nothing; the rows
+   made before still count.
 2. **Its label is `market/role`, the market one this index uses, byte for byte,** and the role one
    the market's sides allow: `seller` or `buyer` in a two-sided market, `peer` in a one-sided one. A
    market's role names (`teacher`, `student`) are words for pages, never roles. A plain market, with
@@ -134,9 +137,7 @@ real person first, then by standing. Uniqueness shows as a percentage with who c
 twins carry `rating` (`value`, `reviews`) and `standing`; each profile's JSON-LD carries an
 `AggregateRating` from the rating, and each offer its seller's rating and standing.
 
-**Signatures.** Every score is served with a statement and two signatures, Ed25519 over the
-statement's text and EdDSA-Poseidon (zk-kit's, the scheme Semaphore uses) over one field element,
-so a later zero-knowledge proof can check the index's word cheaply:
+**The signature.** Every score is served with a statement and an Ed25519 signature over its text:
 
     forest.foundation/index/v2/score
     kind uniqueness            (or standing, or rating)
@@ -145,13 +146,9 @@ so a later zero-knowledge proof can check the index's word cheaply:
     value 1000000              (millionths; may be negative for standing)
     at 1790300000              (unix seconds, when this value was first computed)
 
-The field element is `Poseidon(domain, kind, profile, label, value + 2^63, at)`: `domain` is
-`fieldHash("forest.foundation/index/v2/score")`, `kind` is 1, 2 or 3, `profile` is
-`fieldHash("forest.foundation/index/v2/profile/", profile)`, `label` is the registry's own
-`scopeOf(label)` (0 for standing and rating), and `fieldHash` is the registry client's. Both keys
-come from one 32-byte seed (`INDEX_SIGNING_SEED`) by HKDF-SHA256, and both public keys are at `/`.
-A score whose value has not changed keeps its statement and signatures. When anything arrives, the
-index waits a quarter of a second and recomputes everything.
+The key comes from a 32-byte seed (`INDEX_SIGNING_SEED`) by HKDF-SHA256, and its public half is at
+`/`. A score whose value has not changed keeps its statement and signature. When anything arrives,
+the index waits a quarter of a second and recomputes everything.
 
 ### The reputation tree
 
@@ -204,7 +201,7 @@ crypto word; the twins keep the records' own field names (`mint`), since they ar
 
 | Page | Twin | What it shows |
 |---|---|---|
-| `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's two public keys, how its scores are signed, its four lists, and where its reputation tree is |
+| `/` | `/index.json` | Folders, their markets and live offer counts. The twin also has the index's public key, how its scores are signed, its four lists, and where its reputation tree is |
 | `/folders/{folder}` | `.json` | One folder's markets |
 | `/markets/{market}?near=&km=&offset=` | `.json` | The market file, counts, and its live offers, 50 a page. `near=lat,lon&km=N` keeps offers within N km |
 | `/profiles/{address}` | `.json` | A counted profile: its rows, counted or not and why, and their issuers; its scores, apart and signed; the reputation proofs it shows; offers and requests; reviews received and given, each with the payment behind it |
@@ -232,23 +229,13 @@ it: no message passes through the index.
 
 ### The Pay link
 
-The one format for paying for an offer from any app. The index shows it on every live offer with a
-price. It never pays and never holds money: it links.
-
-    https://forest.foundation/pay?v=2
-      &offer=<profile address>/offer/<id>
-      &record=<the id of the record that holds the offer>
-      &price.amount=<whole units, decimal text>&price.mint=<mint>&price.per=<hour | day | job>
-      [&terms.arbiter=<key>][&terms.timer.days=<1..65535>&terms.timer.to=<seller | buyer>]
-
-Parameters come in exactly this order, so two apps write the same link. Every parameter after
-`record` is the offer record's own field, named by its path. The seller is the profile the offer
-address names, paid at its address: the link carries no other key, so a forged link cannot send
-money anywhere else. An app reads the offer at `offer` (from its hosts, or `/profiles/<address>.json`),
-shows the record's terms if its id is not `record`, agrees the amount, and pays with forest's
-escrow client. `/pay.json?…` says whether the link still matches (`check`): `matches`, `changed`
-(the offer was edited since), `differs` (the link was altered), `notLive`, `noPrice`, `notFound`,
-`invalid`. Version 1 named profiles by did:key.
+The one format for paying for an offer from any app is forest's escrow's
+([escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link), "The pay link").
+This index shows it on every live offer with a price, at its own address (`/pay?…`), and never pays
+or holds money: it links. An app can read the offer from `/profiles/<address>.json` as well as from
+its hosts. `/pay.json?…` says whether the link still matches the offer as this index holds it
+(`check`): `matches`, `changed` (the offer was edited since), `differs` (the link was altered),
+`notLive`, `noPrice`, `notFound`, `invalid`.
 
 ### Settings
 
@@ -271,7 +258,7 @@ Environment variables, read once at start; a change means a restart.
 |---|---|
 | `lists/hosts.json` | The hosts it reads, each in full |
 | `lists/markets.json` | The markets it uses, by name, and the directory their files are read from |
-| `lists/issuers.json` | The issuers it trusts, by key (128 hex, x then y, as a row holds it), each with a name and a weight from 0 to 1 |
+| `lists/issuers.json` | The issuers it trusts, by key (128 hex, x then y, as a row holds it), each with a name, a weight from 0 to 1 and, for a key that leaked, `until`: the last time a row of it counts, in UTC to the second (`2026-11-01T00:00:00Z`) |
 | `lists/indexes.json` | The indexes whose reputation proofs it shows, by the address of their signing key, each with a name; and `roots`, how many of an index's newest roots a proof may be made against |
 | `config/scoring.json` | The evidence weights, the floor for a reviewer with no counted row, and `countedMints`: the tokens whose receipts count |
 | `config/currencies.json` | Which tokens the pages show as which currency, and their decimals |
@@ -284,7 +271,7 @@ devnet.
 | | Readers | Pages |
 |---|---|---|
 | Command | `node src/main.ts readers` | `node src/main.ts web` |
-| Does | Applies migrations; reads the hosts (records and which pictures they hold) and the chain; checks the proofs on cards; recomputes and signs scores and the reputation tree; writes the public keys for the pages | Serves every page, its twin, the reputation tree, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
+| Does | Applies migrations; reads the hosts (records and which pictures they hold) and the chain; checks the proofs on cards; recomputes and signs scores and the reputation tree; writes the public key for the pages | Serves every page, its twin, the reputation tree, the sitemap, `robots.txt`, `llms.txt` and `skill.md` |
 | Runs | Always, exactly one copy | As many copies as wanted |
 | Database | Reads and writes | Reads only |
 | Holds the signing seed | Yes | No |
@@ -367,8 +354,8 @@ at https://index.devnet.forest.foundation:
 | `PUBLIC_URL` | `https://index.devnet.forest.foundation` | no |
 | `PORT` | `8080` | no |
 
-A new `INDEX_SIGNING_SEED` is a new signing identity: every score is signed again under new public
-keys.
+A new `INDEX_SIGNING_SEED` is a new signing identity: every score is signed again under a new public
+key.
 
 ## Policy
 
@@ -381,8 +368,8 @@ Another index holds its own.
   no profile can ask it to read another host. Reading any host a verified profile names is a later
   feature.
 - **Which issuers count, and how much:** `lists/issuers.json`, each issuer by its key with a weight
-  from 0 to 1. No issuer counts unless it is named there. Today: the foundation's devnet issuer, at
-  0.7. A row does not say the tier of the note behind it, so every row from it weighs the same.
+  from 0 to 1, and for a key that leaked the last time a row of it counts (`until`). No issuer counts
+  unless it is named there. Today: the foundation's devnet issuer, at 0.7, with no `until`. A row does not say the tier of the note behind it, so every row from it weighs the same.
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
   `main`.
 - **The reputation tree:** rebuilt after every scoring pass, from every counted row of every
@@ -497,9 +484,8 @@ exists.
 **Why is the markets directory read from the markets repo itself, never copied?**
 One source of names, and only the fields the index reads are checked.
 
-**Why is every score signed twice, and why does a score that did not change keep its signatures?**
-Anyone can check the first; a later zero-knowledge proof can check the second cheaply; and a
-signature someone holds stays good.
+**Why does a score that did not change keep its signature?**
+A signature someone holds stays good.
 
 **Why is every page plain HTML with a JSON twin at the same address?**
 People and AI agents read the same facts, and the two never disagree: the twin is the very object

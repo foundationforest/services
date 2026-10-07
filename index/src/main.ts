@@ -39,7 +39,7 @@ export type Readers = {
   stop: () => Promise<void>
 }
 
-/** Migrations, the public keys for the pages, the two readers (hosts, chain) and the recompute, on `db`. */
+/** Migrations, the public key for the pages, the two readers (hosts, chain) and the recompute, on `db`. */
 export async function startReaders(db: Db, config: Config, opts: Opts = {}): Promise<Readers> {
   const onError = opts.onError ?? ((err: unknown) => console.error(err))
   if (!config.signingSeed) throw new Error('the readers sign scores: INDEX_SIGNING_SEED is required')
@@ -56,10 +56,9 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   scorer.onError = onError
   await scorer.now()
 
-  const issuers = Object.keys(config.issuers)
   let records: HostReader | null = null
   if (config.hosts.length) {
-    records = new HostReader({ db, hosts: config.hosts, issuers, indexes: Object.keys(config.indexes), onChange: () => scorer.schedule(), onError })
+    records = new HostReader({ db, hosts: config.hosts, issuers: config.issuers, indexes: Object.keys(config.indexes), onChange: () => scorer.schedule(), onError })
     await records.start(config.pollMs)
   }
 
@@ -70,7 +69,7 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
       rpcUrl: config.rpcUrl,
       registry: config.registryProgramId,
       escrow: config.escrowProgramId,
-      issuers,
+      issuers: Object.keys(config.issuers),
       // A profile with a new row: what its hosts already gave this index is stored now.
       onChange: (profiles) => {
         if (profiles.length && records) void records.merge(profiles).catch(onError)

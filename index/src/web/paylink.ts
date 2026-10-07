@@ -1,6 +1,6 @@
-// The Pay link on an offer, in the one format index/README.md documents ("The Pay link"). The
-// index does not pay; it links. Any app that follows the escrow client opens the link, checks it
-// against the offer record it names, and makes the payment itself.
+// The Pay link on an offer, in the one format forest's escrow documents (escrow/README.md, "The pay
+// link"). The index does not pay; it links. Any app that follows the escrow client opens the link,
+// checks it against the offer record it names, and makes the payment itself.
 //
 //   {base}/pay?v=2&offer=<profile>/offer/<id>&record=<record id>&price.amount=<decimal>&price.mint=<mint>
 //            &price.per=<hour|day|job>[&terms.arbiter=<key>][&terms.timer.days=<n>&terms.timer.to=<seller|buyer>]

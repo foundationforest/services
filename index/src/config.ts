@@ -14,8 +14,12 @@ import { normalizeOrigin, publicKeyFromAddress } from '../../forest/records/src/
 const here = dirname(fileURLToPath(import.meta.url))
 export const INDEX_ROOT = resolve(here, '..')
 
-/** The issuers this index trusts, by key (128 hex, x then y, as a row holds it), each with this index's weight for it, from 0 to 1. */
-export type IssuerConfig = Record<string, { name: string; weight: number }>
+/**
+ * The issuers this index trusts, by key (128 hex, x then y, as a row holds it), each with this index's
+ * weight for it, from 0 to 1; and, for a key that leaked, `until`: the last time a row of it counts,
+ * in ISO 8601, UTC.
+ */
+export type IssuerConfig = Record<string, { name: string; weight: number; until?: string }>
 /** The indexes whose reputation proofs this index shows, by the address of their signing key, each with a name. */
 export type IndexConfig = Record<string, { name: string }>
 /** The markets this index uses: their names, and the directory their files are read from. */
@@ -94,12 +98,23 @@ export function readMarkets(path: string): MarketsList {
   return { directory: directory.replace(/\/+$/, ''), markets: [...new Set(markets as string[])] }
 }
 
-/** The issuers list: every key an issuer's key as a row holds it (128 lowercase hex), every weight from 0 to 1. */
+/** A time in UTC to the second, as `2026-11-01T00:00:00Z` writes it, and a real one. */
+function utcSecond(text: unknown): boolean {
+  if (typeof text !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(text)) return false
+  const t = Date.parse(text)
+  return !Number.isNaN(t) && new Date(t).toISOString() === text.replace('Z', '.000Z')
+}
+
+/**
+ * The issuers list: every key an issuer's key as a row holds it (128 lowercase hex), every weight from
+ * 0 to 1, and every `until` a time in UTC to the second, such as 2026-11-01T00:00:00Z.
+ */
 export function readIssuers(path: string): IssuerConfig {
   const issuers = field<IssuerConfig>(path, readJson(path), 'issuers')
   for (const [key, k] of Object.entries(issuers)) {
     if (!/^[0-9a-f]{128}$/.test(key)) throw new Error(`${path}: ${key} is not an issuer's key: 128 lowercase hex, x then y`)
     if (typeof k.weight !== 'number' || !(k.weight >= 0 && k.weight <= 1)) throw new Error(`${path}: ${key}'s weight is not from 0 to 1`)
+    if (k.until !== undefined && !utcSecond(k.until)) throw new Error(`${path}: ${key}'s until is not a time in UTC, such as 2026-11-01T00:00:00Z`)
   }
   return issuers
 }

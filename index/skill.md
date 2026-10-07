@@ -177,10 +177,9 @@ Both are this index's opinion, and the rules are open:
 https://github.com/foundationforest/services/blob/main/index/README.md#how-it-scores. Another index
 may weigh differently.
 
-Every score is signed twice. Each score's `signed.statement` is the text signed with Ed25519, and
-`signed.eddsaPoseidon` a second signature for later zero-knowledge proofs. The public keys and the
-statement format are in `https://forest.foundation/index.json` under `index.keys` and
-`index.statement`.
+Every score is signed: `signed.statement` is the text, and `signed.ed25519` its Ed25519 signature.
+The public key and the statement format are in `https://forest.foundation/index.json` under
+`index.keys` and `index.statement`.
 
 ## Check a reputation proof
 
@@ -213,8 +212,8 @@ the device; it never asks for one leaf, so this index never learns which are the
 
 ## Paying
 
-An offer's `payLink` is one documented format:
-https://github.com/foundationforest/services/blob/main/index/README.md#the-pay-link. It names the
+An offer's `payLink` is one documented format, forest's escrow's:
+https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link. It names the
 offer (its profile's address, then `offer/<id>`) and the id of the record that holds it (`record`),
 and repeats its price and terms. The seller is the profile the offer names, paid at its address:
 the link carries no other key. This index never pays and never holds money.

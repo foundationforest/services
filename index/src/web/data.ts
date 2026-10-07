@@ -9,7 +9,7 @@ import { base58, hex } from '../../../forest/records/src/index.ts'
 
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'
-import { COUNTED } from '../chain/registry.ts'
+import { COUNTED, countedParam } from '../chain/registry.ts'
 import { type Directory, type MarketFile, splitLabel } from '../markets.ts'
 import type { StoredProof } from '../records/store.ts'
 import { stampStatus } from '../scores/compute.ts'
@@ -247,7 +247,7 @@ function scoreOut(row: any) {
     valueMicro: String(row.value_micro),
     details: row.details,
     computedAt: Number(row.computed_at),
-    signed: { statement: row.statement, message: row.message, ed25519: row.sig_ed25519, eddsaPoseidon: row.sig_eddsa },
+    signed: { statement: row.statement, ed25519: row.sig_ed25519 },
   }
 }
 
@@ -282,12 +282,11 @@ export async function home(ctx: Ctx) {
       source: SOURCE,
       /** What this index reads, as three public lists: anyone can rebuild it from them, the hosts and the chain. */
       lists: LISTS,
-      keys: (keys.rows[0]?.value ?? null) as { ed25519: string; eddsaPoseidon: [string, string] } | null,
+      keys: (keys.rows[0]?.value ?? null) as { ed25519: string } | null,
       statement: {
         header: STATEMENT_HEADER,
         lines: ['kind <uniqueness|standing|rating>', 'profile <address>', 'label <row label, or empty>', 'value <millionths>', 'at <unix seconds>'],
         ed25519: 'over the statement text, UTF-8',
-        eddsaPoseidon: 'over message = Poseidon(domain, kind, profile, label, value + 2^63, at); see index/README.md',
       },
       machines: {
         sitemap: ctx.urls.file('sitemap.xml'),
@@ -330,7 +329,7 @@ export async function market(ctx: Ctx, name: string, offset: number, near: Near 
     ctx.db.query(
       `select r.profile, r.label, p.market as profile_market, p.role as profile_role
        from rows r join profiles p on p.address = r.profile where r.market = $2 and ${COUNTED}`,
-      [Object.keys(ctx.config.issuers), name],
+      [countedParam(ctx.config.issuers), name],
     ),
     offers(ctx, 'pr.market = $1', [name], PAGE_SIZE, offset, near),
   ])
@@ -412,8 +411,9 @@ export async function profile(ctx: Ctx, address: string) {
   const p = rows[0]
   const r = p.record
   const [stamps, scores, posts, received, given, proofs] = await Promise.all([
-    // Each row of a trusted issuer whose signature checks. Any other row counts for nothing here.
-    ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.issuer, r.address`, [Object.keys(ctx.config.issuers), address]),
+    // Each row this index counts: a trusted issuer's, made no later than that issuer's until. Any
+    // other row counts for nothing here.
+    ctx.db.query(`select r.* from rows r where r.profile = $2 and ${COUNTED} order by r.label, r.issuer, r.address`, [countedParam(ctx.config.issuers), address]),
     ctx.db.query('select * from scores where profile = $1 order by kind, label', [address]),
     ctx.db.query(`${OFFER_SELECT} where p.profile = $1 order by p.created_at desc nulls last, p.uri`, [address]),
     reviews(ctx, 'v.subject = $1', [address]),
