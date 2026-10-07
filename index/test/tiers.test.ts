@@ -170,7 +170,15 @@ test('tiers: a person proof on a card weighs its row, and tier 2 says ID-checked
       assert.deepEqual([now.profile.about, now.stamps[0].tier, now.scores.uniqueness[0].value], ['Changed.', '2', 0.9])
     })
   } finally {
+    // pg's pool resolves `end()` before its sockets have closed; dropping the database under a
+    // closing connection makes it report an error nobody is listening for. Wait for them to go, as the
+    // fixture does.
     await db.end()
+    for (let i = 0; i < 100; i++) {
+      const { rows } = await admin.query('select count(*)::int as n from pg_stat_activity where datname = $1', [name])
+      if (rows[0].n === 0) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
     await markets.close()
     rmSync(folder, { recursive: true, force: true })
     await admin.query(`drop database ${name} with (force)`)
