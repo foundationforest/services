@@ -35,7 +35,10 @@
 //      its photo from the host, the deal and both reviews at full weight; and not the messages;
 //  12. the loop proves: the seller's app finds its leaf among the index's reputation leaves, proves
 //      its own rating in its market on the device (forest's circuits), writes the proof into its card
-//      and publishes it again, and the index shows it.
+//      and publishes it again, and the index shows it;
+//  13. the ID check: the seller takes the issuer's second check (the stand-in passes it; free on
+//      devnet), gets its note back at tier 2, proves its tier on the device, puts the proof on its
+//      card beside the rating's, and the index shows it ID-checked, its row at tier 2's weight.
 // Everything it did goes to runs/<time>.json.
 
 import assert from 'node:assert/strict'
@@ -49,7 +52,7 @@ import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedI
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 import { exportWords, importWords, issuerSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
-import { type AccessKey, type Body, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
+import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
 import { message, openMessage, readerCount } from '../forest/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, fromBytes32, issuerKeyBytes, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../forest/registry/client/src/index.ts'
 import * as escrow from '../forest/escrow/client/src/index.ts'
@@ -213,6 +216,8 @@ type Person = {
   noteNumber: bigint
   /** The issuer's note, once the face check is done. The app keeps it as it keeps a key. */
   note?: SignedNote
+  /** That note as the issuer sent it, which the ID check takes back. */
+  sent?: unknown
 }
 
 async function newPerson(role: Person['role'], name: string, issuer: Issuer): Promise<Person> {
@@ -267,6 +272,7 @@ async function faceNote(p: Person) {
   assert.equal(note.noteNumber, p.noteNumber, 'for this person’s note number')
   assert.equal(note.tier, 1n, 'at tier 1, the face check')
   p.note = note
+  p.sent = got.body.note
   say(`${p.role}: a tier 1 note from the issuer, model ${note.model}`)
   return { model: note.model, tier: note.tier.toString(), embeddingBytes: note.embedding.length }
 }
@@ -630,7 +636,8 @@ async function proves(p: Person, card: Body) {
     label: p.label,
     proof: b64u.encode(proofBytes(proof.proof)),
   }
-  const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', { ...card, proofs: [entry] }, Date.now())])
+  const proven = { ...card, proofs: [entry] }
+  const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', proven, Date.now())])
   assert.ok(outcome!.results.every((r) => r.ok), `the host took the card with the proof: ${JSON.stringify(outcome)}`)
   say(`seller: its rating in ${cfg.market} proven on the device (${proof.score} tenths) against root ${tree.root.slice(0, 12)}…, ${leaves.length} leaves, and on its card`)
 
@@ -651,6 +658,60 @@ async function proves(p: Person, card: Body) {
     score: Number(proof.score),
     label: p.label,
     shown: { url: `${cfg.index}/profiles/${p.profile.address}`, index: shown.index, time: shown.time },
+  }
+  return proven
+}
+
+/**
+ * Stage 2, the ID check, as the app does it: a session on the document check (the stand-in passes
+ * it; free on devnet), then the tier 1 note sent, and the same note back at tier 2, checked. Then the
+ * tier shown: the app proves on the device with the tier 2 note, for the same label and main key, so
+ * at the stamp of the row it already holds; checks the proof against that row as a reader does; puts
+ * it on the card beside the rating's proof and publishes the card again. The index checks it and
+ * shows the seller ID-checked, its row at the issuer's tier 2 weight, the rating's proof still shown.
+ */
+async function idChecked(p: Person, card: Body) {
+  const session = await post(`${cfg.issuer}/id/session`, {})
+  assert.equal(session.status, 201, `an ID session: ${JSON.stringify(session.body)}`)
+  const got = await post(`${cfg.issuer}/id/note`, { sessionId: session.body.sessionId, note: p.sent })
+  assert.equal(got.status, 200, `a tier 2 note: ${JSON.stringify(got.body)}`)
+  const note = noteOf(got.body.note)
+  assert.ok(noteSigned(note), 'the issuer signed it')
+  assert.equal(hex.encode(issuerKeyBytes(note.issuer)), cfg.issuerKey, 'with the key the index trusts')
+  assert.equal(note.noteNumber, p.noteNumber, 'for the same note number')
+  assert.equal(note.tier, 2n, 'at tier 2, the ID check')
+  assert.deepEqual([note.model, note.embedding], [p.note!.model, p.note!.embedding], 'the same note, at a higher tier')
+  say(`${p.role}: a tier 2 note from the issuer's ID check, model ${note.model}`)
+
+  const tier = await provePerson({ secret: p.secret, note, label: p.label, profile: p.profile.publicKey, artifacts: PERSON })
+  const stamp = hex.encode(toBytes32(tier.stamp))
+  assert.equal(stamp, hex.encode(toBytes32(stampOf(p.secret, p.label))), 'the stamp of the row it holds')
+  const proof = proofBytes(tier.proof)
+  const row = await verifyTier(connection as never, { profile: p.profile.publicKey, issuer: hex.decode(cfg.issuerKey), label: p.label, stamp: tier.stamp, tier: 2n, proof }, { programId: REGISTRY as never })
+  assert.ok(row, 'the proof shows tier 2 against the row, as the index checks it')
+  const person = { circuit: 'person', issuer: cfg.issuerKey, label: p.label, stamp, tier: '2', proof: b64u.encode(proof) }
+  const proofs = [...(card.proofs as Json[]), person]
+  const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', { ...card, proofs }, Date.now())])
+  assert.ok(outcome!.results.every((r) => r.ok), `the host took the card with the tier: ${JSON.stringify(outcome)}`)
+  say(`${p.role}: its tier 2 proven on the device at its row's stamp ${stamp.slice(0, 12)}…, and on its card beside the rating's`)
+
+  const rating = (steps.reputation as { root: string }).root
+  const shown = await waitFor('the index to show the seller ID-checked', 900_000, async () => {
+    const v = await json(`${cfg.index}/profiles/${p.profile.address}.json`)
+    if (v.status !== 200) return null
+    const row = v.body.stamps.find((x: any) => x.label === p.label && x.counted && x.issuer.key === cfg.issuerKey)
+    const u = v.body.scores.uniqueness.find((x: any) => x.label === p.label)
+    if (row?.tier !== '2' || row.badge !== 'ID-checked' || u?.value !== 0.9) return null
+    return { row, uniqueness: u, rated: v.body.proofs.some((x: any) => x.root === rating) }
+  }, 15_000)
+  assert.ok(shown.rated, 'the rating’s proof still shows')
+  const page = await (await fetch(`${cfg.index}/profiles/${p.profile.address}`)).text()
+  assert.ok(page.includes('Verified real person, one per market · ID-checked'), 'the seller’s page says ID-checked')
+  steps.tier = {
+    note: { model: note.model, tier: note.tier.toString() },
+    stamp,
+    row: shown.row.row,
+    shown: { url: `${cfg.index}/profiles/${p.profile.address}`, tier: shown.row.tier, badge: shown.row.badge, issuer: shown.row.issuer.name, weight: shown.row.issuer.weight, uniqueness: shown.uniqueness.value },
   }
 }
 
@@ -714,8 +775,11 @@ async function main() {
   await indexShows(seller, buyer, deal.escrow, offerUri, picture, [asked.text, ...helped.result.texts])
   say('the index shows it all')
 
-  await proves(seller, helped.card)
+  const proven = await proves(seller, helped.card)
   say('the index shows the seller’s rating, proven')
+
+  await idChecked(seller, proven)
+  say('the index shows the seller ID-checked')
 }
 
 try {

@@ -70,6 +70,13 @@ it:
     (one profile, its market shown), puts the proof on its card and publishes the card again. The
     index checks the proof and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest
     index (devnet), …)".
+13. **The ID check:** the seller's app opens a session on the issuer's document check (the stand-in
+    passes it, with a name made up for the session; free on devnet) and sends its tier 1 note; the
+    issuer signs the same note at tier 2, and the run checks it. The app proves its tier on the
+    device with that note, at the stamp of the row it already holds, checks the proof against the
+    row as a reader does, puts it on its card beside the rating's proof and publishes the card
+    again. The index checks it: the seller's row at tier 2, "ID-checked", uniqueness 0.9, and the
+    rating's proof still shown.
 
 Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
 step passed.
@@ -143,8 +150,8 @@ Open them: [the seller](https://index.devnet.forest.foundation/profiles/swxCTAeM
   and no app can sign them again: each run forgot its people's words. So the index no longer counts
   what their assistants wrote, their offers and reviews, though the host keeps them.
 - **The face check is the stand-in,** with one embedding for everyone, so a run says nothing about
-  Didit or the face model. It does not take the ID check, so no tier 2 note and no tier 2
-  vouchers.
+  Didit or the face model. Only the seller takes the ID check, after its row is written, so no
+  tier 2 vouchers.
 - **One market, one test dollar, one tap.** It does not pay in the Open-USD-shaped test dollar
   (the fee payer's test does, on a local validator, and its README says why a one tap in it fails
   through Kora), and it does not test a refund.
@@ -156,8 +163,8 @@ Open them: [the seller](https://index.devnet.forest.foundation/profiles/swxCTAeM
   foundation's, or a seller and buyer on different hosts, is not tested.
 - **One proof:** the seller's own rating in its own market, from one profile. It does not prove
   across several profiles or hide the market.
-- **Each wait on the index is up to 15 minutes:** the index step's, and the proof step's two (for
-  the seller's leaf, then for the proof to show). A slower devnet fails the run.
+- **Each wait on the index is up to 15 minutes:** the index step's, the proof step's two (for the
+  seller's leaf, then for the proof to show), and the ID check's. A slower devnet fails the run.
 
 ## FAQ
 
