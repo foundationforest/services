@@ -89,6 +89,10 @@ https://mcp.devnet.forest.foundation, the tools at `/mcp`:
   every other path 404.
 - **Variables:** `PORT=8080`. Nothing else, and no key.
 
+`npm run smoke` passed against it on 2026-10-07, after the deploy from `main` at `6aeb857`: its ten
+tools and forest's instructions, the two refusals, the market `tutoring` from the devnet index, and
+the latest e2e run's seller read from `host.devnet.forest.foundation`.
+
 ## Policy
 
 - **Free:** no price, no sign-in, no account.
