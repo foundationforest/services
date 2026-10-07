@@ -19,7 +19,7 @@
 //   kind    = 1 for uniqueness, 2 for standing, 3 for rating
 //   profile = fieldHash('forest.foundation/index/v2/profile/', profile)
 //   label   = the registry's own scopeOf(label), the number a registration proof carries as its
-//             scope, so a later circuit ties a uniqueness score to a market stamp; 0 otherwise
+//             scope, so a later circuit ties a uniqueness score to a stamp; 0 otherwise
 // fieldHash is the registry client's: keccak256 of the namespace and the bytes, shifted right a
 // byte. The value is offset by 2^63 so a negative standing is still a small positive number a
 // circuit can range-check. A rating's value is its 1.0 to 10.0 in millionths.

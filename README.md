@@ -12,10 +12,10 @@ is shipped.
 | Directory | What it is | Who runs it | On devnet |
 |---|---|---|---|
 | [`host/`](host/README.md) | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | the foundation | Running |
-| [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
-| [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three per stamp on the issuer's face list, ten per stamp on its ID list); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
+| [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and signs them a note; for a person who shows that note, a second check, by face and a government document, signs the same note at a higher tier | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
+| [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three for a tier 1 note from the issuer, ten in all for tier 2); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-06 |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Not yet run on notes; the loop before them passed on 2026-10-06 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -31,33 +31,32 @@ records and rows.
 ## How it works
 
 ```
-             face, then face and ID (Didit), stamp
-  person's app ─────────────────────────────▶ issuer ── two lists: stamps, signed snapshots ──▶ apps
+             face, then face and ID (Didit), note number
+  person's app ─────────────────────────────▶ issuer ── signs a note, tier 1 or 2, back to the app
        │
        │ transaction: a row, a payment (a row with a voucher: free)
        └────────▶ fee payer ── co-signs, sends ──▶ Solana: registry rows, escrow
                                                         │ rows, receipts
-  assistant ── MCP, HTTP ──▶ key holder                 ▼
+  assistant (forest's CLI) ──┐                          ▼
                              │ access keys sign      index ──▶ pages, JSON
   person's app ──────────────┴── records ──▶ host ── what's new ──▶ index
 ```
 
 **The loop.** A person's app makes a seed from 24 words, and from it a main key for a label such as
-`tutoring/seller`, and a stamp for the issuer. The issuer checks their face once and puts the stamp
-on its list; the app proves against the list's newest snapshot and writes one row in the registry,
-through the fee payer, paid in a dollar, or free with a voucher: a second proof from the same stamp,
-three per stamp. A person on the face list may then pass the issuer's ID check, by face and a
-government ID: it puts a second stamp on a second list, signed by a second key so a reader can weigh
-it higher, and the app registers the same profile again against that list, with a voucher from it
-(ten per stamp). The app
-signs the profile's records with the main key and posts them to the host its hosts record names. It
-also makes access keys for the person's AI assistant, lists them in the profile's permissions record
-and hands them to the key holder; through it, the assistant posts offers and reviews and answers
-messages, each signed by one of those keys. A buyer pays into an escrow through the fee payer, and the
-money moves only as the escrow allows. The index reads the host, the rows of the issuers it trusts
-and the escrow's receipts, scores each profile, and serves every page as HTML and as JSON. It also
-publishes its ratings as a tree: the seller's app proves its rating from it on the device, puts the
-proof on its card, and the index shows it.
+`tutoring/seller`, and a secret and note number for the issuer. The issuer checks their face once
+and signs a note for that note number, at tier 1; from the note the app makes a person proof on the
+device and writes one row in the registry, through the fee payer, paid in a dollar, or free with a
+voucher: a second proof from the same note, three for a tier 1 note. A person may then show the note
+at the issuer's ID check, by face and a government document: it signs the same note at tier 2,
+which earns ten vouchers in all. The app signs the profile's records with the main key and posts
+them to the host its hosts record names. It also makes access keys for the person's AI assistant and
+lists them in the profile's permissions record; with them, through forest's CLI, the assistant posts
+offers and reviews, answers messages, and asks the person, through their own inbox, for what it holds
+no key for. A buyer pays into an escrow through the fee payer, and the money moves only as the
+escrow allows. The index reads the host, the rows of the issuers it trusts and the escrow's
+receipts, scores each profile, and serves every page as HTML and as JSON. It also publishes its
+ratings as a tree: the seller's app proves its rating from it on the device, puts the proof on its
+card, and the index shows it.
 [`e2e/`](e2e/README.md) runs this loop on devnet.
 
 Each arrow is open: an app can use another issuer, fee payer, host or index, and each reader decides
@@ -122,27 +121,26 @@ repo's `main` and redeployed on every push to it. Each directory's README lists 
 
 | On devnet | Address |
 |---|---|
-| The registry | `5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC` (forest's `registry/devnet/devnet.json`) |
+| The registry | `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` (forest's `registry/devnet/devnet.json`) |
 | The escrow | `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` (forest's `escrow/devnet/devnet.json`) |
 | The classic test dollar (six decimals) | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` |
 | The Open-USD-shaped test dollar (Token-2022 with Open USD's extensions, six decimals) | `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz` |
-| The issuer's key, which signs its face list | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` |
-| The issuer's ID list key, mixed from its key under `id` | `BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4` |
-| The address the ID check's price is paid to once one is set, mixed from the issuer's key under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
+| The issuer's name, which each person's secret for it is mixed under | `issuer.devnet.forest.foundation` |
+| The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
+| The address the ID check's price is paid to once one is set, mixed from the issuer's seed under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
+| The fee payer's name, in every voucher's label | `fee-payer.devnet.forest.foundation` |
 | The fee payer's key (`payer`) | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
 Every key is derived from the devnet phrase by the recipe in forest's `devnet/deploy.sh` scripts, and
-the issuer's other two from its key by forest's `mainKey`; none is in this repo. The first escrow,
+the issuer's note key and payments address from its seed, by forest's `hkdf` and `mainKey`; none is
+in this repo. The first escrow,
 `3vAVLwiwFkCUG4AHV3gK3t15HoyRSuKNEuBFvvy9CbeR`, was closed on 2026-10-02 and its 1.43794988 SOL
 deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
-Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/Fns43wUgK9em76tPfZL5yw9zM4JpbHQwKuCztWNnYSM6)
-and [deal](https://index-production-1b6e.up.railway.app/deals/92nMqPUQi6rA7ohD36G7U5UvxSHaAGcGdUM3MkVSXMCh),
-the issuer's [face list](https://issuer-production-4976.up.railway.app/list.json) and
-[ID list](https://issuer-production-4976.up.railway.app/id/list.json).
+Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), and
+[who the issuer is](https://issuer-production-4976.up.railway.app/issuer.json).
 
 ## Promises
 
@@ -158,7 +156,7 @@ These hold for every service here; each README adds its own.
   service's own policy, written in its README.
 - **Reputation is per profile.** Nothing here links one person's profiles, and nothing server-side
   holds a person next to a profile.
-- **Never on chain:** seeds, private keys, records, issuers' lists, the index.
+- **Never on chain:** seeds, private keys, records, issuers' notes, the index.
 
 ## Limits
 
@@ -178,17 +176,18 @@ would exist only if outside capital or a liability ever required one, and neithe
 **What of what the foundation runs is public?**
 Everything but its secrets and what it keeps private for people:
 
-- **Public:** this code and every setting these READMEs list; the issuer's two lists and their
-  snapshots; every record on the host (a private record as an envelope only its readers open); the
+- **Public:** this code and every setting these READMEs list; the issuer's name and note key;
+  every record on the host (a private record as an envelope only its readers open); the
   registry's rows and the escrow's receipts, on chain; the index's pages, JSON and reputation tree;
   and each e2e run's record.
 - **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, the
   API keys and keyed URLs (Didit's, the RPC's), and the keys to the host's bucket.
-- **Private by design:** the issuer's private tables (the hash of each session id used, the stamps
-  still waiting, the payments that opened ID sessions), and the messages in an inbox, which only the
+- **Private by design:** the issuer's private tables (the hash of each session id next to the note
+  number it was signed for, a keyed fingerprint of each document next to its note number, the
+  payments that opened ID sessions), and the messages in an inbox, which only the
   recipient's main key, or a message key it lists, pulls, and only its inbox key and the read keys
   it lists open.
-- **Kept, not published:** the fee payer's used set (the market stamp of each spent voucher), and
+- **Kept, not published:** the fee payer's used set (the stamp of each spent voucher), and
   Railway's own request logs.
 
 **What are we waiting on?**
@@ -196,7 +195,7 @@ Five things. Each changes something here when it comes; until then, there is not
 
 - **Agave 4.4** (November): Solana's rent falls about 90%, so a registry row costs about 7 cents
   and the voucher float shrinks.
-- **Real Didit checks:** on devnet the issuer's stand-in passes everyone, so stamps, and vouchers,
+- **Real Didit checks:** on devnet the issuer's stand-in passes everyone, so notes, and vouchers,
   are unlimited; real checks bound them by faces.
 - **Mainnet:** forest's programs are on devnet only, and these services with them.
 - **The privacy pool in the app:** until a person pays through one, paying from their own profiles

@@ -14,7 +14,7 @@ programs only). Plain words, no em-dashes.
   key, never profile key; address, never wallet, for a key ("a wallet app" is fine).
 - The foundation runs every service here, never Soil; the app is the Forest app.
 - The fee payer has two doors: the voucher door (free, with a voucher) and the at-cost door; behind
-  them, the free Kora and the at-cost Kora. A voucher's label stays `sponsor/n`: forest's word.
+  them, the free Kora and the at-cost Kora. A voucher's label is `voucher/<fee payer's name>/<n>`.
 - A token's issuer is "the dollar's maker".
 - A folder is what one main key signs on a host; this repo's folders are directories.
 - Never "replace every app".

@@ -1,6 +1,6 @@
 // The reputation tree and the proofs profiles carry (README.md, "The reputation tree" and "Proofs
 // a profile shows"):
-//   1. a row's market stamp, read from the `register` that wrote it, and from nothing else;
+//   1. a row as the index stores it: its stamp, its issuer's key and its time, read from the row;
 //   then on the page tests' story (test/fixture.ts) in a fresh database:
 //   2. the tree: its leaves rebuild its root with circuits' buildTree, and a proof made from them
 //      checks with circuits' verifier against the root, time and signature the index serves;

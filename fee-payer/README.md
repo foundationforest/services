@@ -334,7 +334,7 @@ cannot read, by its type alone, and an instruction with too few accounts, whole.
 - **The rate limit:** the free Kora signs at most one transaction a second, across all callers; the
   rest wait their turn. The at-cost Kora: 100 a second.
 - **No request logs:** both Koras run at `RUST_LOG=warn`, which writes no request. The voucher check
-  writes nothing but the used set: each spent voucher's market stamp, with no time and no main key.
+  writes nothing but the used set: each spent voucher's stamp, with no time and no main key.
 
 ## Promises
 
