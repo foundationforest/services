@@ -10,14 +10,19 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/payment.test.ts",
+    "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@semaphore-protocol/group": "4.12.1"
+    "@semaphore-protocol/group": "4.12.1",
+    "jpeg-js": "0.4.4",
+    "onnxruntime-web": "1.30.0",
+    "pngjs": "7.0.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
+    "@types/pngjs": "6.0.5",
     "typescript": "5.9.3"
   }
 }

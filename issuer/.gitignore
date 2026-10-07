@@ -4,3 +4,7 @@ data/
 *.sqlite-journal
 # The issuer key never enters the repo
 *keypair*.json
+
+# The face models and the test portraits (npm run fetch)
+models/
+test/faces/
