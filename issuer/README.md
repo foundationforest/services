@@ -217,7 +217,7 @@ workflows, with no face seen before and, for a document, a name it makes up for 
 the issuer at it with `FACE_MODEL=stand-in`; and says so.
 
 The foundation's devnet issuer runs that image on Railway, project `forest-devnet`, service
-`issuer`, at https://issuer-production-4976.up.railway.app:
+`issuer`, at https://issuer.devnet.forest.foundation:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=issuer/deploy/Dockerfile`.
 - **One replica,** a volume at `/data`, a public domain to port 8080. No health check: Railway

@@ -114,10 +114,10 @@ repo's `main` and redeployed on every push to it. Each directory's README lists 
 
 | Service | Address | Railway id | Dockerfile | Volume |
 |---|---|---|---|---|
-| `index` | https://index-production-1b6e.up.railway.app | `37f23042-b2a0-4ff0-90c6-e0521fc811d2` | `index/deploy/Dockerfile` | none: Postgres on Supabase |
-| `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
-| `fee payer` | https://relayer-production-8d40.up.railway.app, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
-| `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data`, and a Railway bucket for its blobs |
+| `index` | https://index.devnet.forest.foundation | `37f23042-b2a0-4ff0-90c6-e0521fc811d2` | `index/deploy/Dockerfile` | none: Postgres on Supabase |
+| `issuer` | https://issuer.devnet.forest.foundation | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
+| `fee payer` | https://fee-payer.devnet.forest.foundation, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
+| `host` | https://host.devnet.forest.foundation | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data`, and a Railway bucket for its blobs |
 
 | On devnet | Address |
 |---|---|
@@ -139,10 +139,10 @@ in this repo. The first escrow,
 deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
-Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
-[seller](https://index-production-1b6e.up.railway.app/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6)
-and [deal](https://index-production-1b6e.up.railway.app/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ),
-and [who the issuer is](https://issuer-production-4976.up.railway.app/issuer.json).
+Open in a browser: [the index](https://index.devnet.forest.foundation/), the latest e2e run's
+[seller](https://index.devnet.forest.foundation/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6)
+and [deal](https://index.devnet.forest.foundation/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ),
+and [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json).
 
 ## Promises
 
