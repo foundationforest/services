@@ -116,9 +116,9 @@ first run on notes and the person proof, and the first with the assistants as fo
 | The index | Both rows counted under "Forest issuer (devnet)", weight 0.7; the offer listed with its photo from the host; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Seller and buyer each rating 10 |
 | The proof | The seller's leaf found by its stamp `27dd4971…` among the index's 2 leaves, scored 100 tenths from one review; proven on the device against root `0b2d4f36…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)" |
 
-Open them: [the seller](https://index-production-1b6e.up.railway.app/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6),
-[the buyer](https://index-production-1b6e.up.railway.app/profiles/yeVUeEqwHYV4wH1Xi2vhhzkbEdKWdFA4ryhQy2beMxB),
-[the deal](https://index-production-1b6e.up.railway.app/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ).
+Open them: [the seller](https://index.devnet.forest.foundation/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6),
+[the buyer](https://index.devnet.forest.foundation/profiles/yeVUeEqwHYV4wH1Xi2vhhzkbEdKWdFA4ryhQy2beMxB),
+[the deal](https://index.devnet.forest.foundation/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ).
 
 ## Promises
 
