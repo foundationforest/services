@@ -1,7 +1,8 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
 // in forest's CLI at the commit in FOREST, on loopback, with Railway's PORT set to 0 (any free port).
 //   1. the MCP SDK's client finds forest's MCP door there (../smoke.ts): its instructions, every
-//      action as a tool, no session, and refusals in forest's words;
+//      action as a tool, no session, and refusals in forest's words; a request whose URL is no path
+//      (`//`) gets 400, and it goes on answering;
 //   2. with a key in its environment, the same command refuses to start.
 //
 //   ../forest.sh records cli && npm ci && npm test
@@ -9,6 +10,7 @@
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -43,6 +45,17 @@ function run(env: Record<string, string>): { child: ChildProcess; started: Promi
   return { child, started }
 }
 
+/** One request as raw bytes, so a URL no client would send arrives as written; the status line's code, or null if none came. */
+function raw(port: number, request: string): Promise<number | null> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => socket.end(request))
+    let got = ''
+    socket.on('data', (chunk) => (got += chunk.toString('latin1')))
+    socket.on('close', () => resolve(Number(/^HTTP\/1\.1 (\d{3})/.exec(got)?.[1]) || null))
+    socket.on('error', reject)
+  })
+}
+
 test('the hosted copy, as its image runs it', async (t) => {
   if (!existsSync(join(CLI, 'node_modules'))) return t.skip('forest’s CLI is not installed: ../forest.sh records cli')
 
@@ -53,6 +66,8 @@ test('the hosted copy, as its image runs it', async (t) => {
       assert.ok('port' in got, `it started: ${JSON.stringify(got)}`)
       const seen = await smoke(`http://127.0.0.1:${got.port}/mcp`)
       assert.ok((seen.tools as number) > 0)
+      assert.equal(await raw(got.port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')
+      assert.ok(((await smoke(`http://127.0.0.1:${got.port}/mcp`)).tools as number) > 0, 'and it goes on answering')
     } finally {
       child.kill()
     }

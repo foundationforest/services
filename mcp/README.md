@@ -74,9 +74,10 @@ The test reads the command and working directory from `deploy/Dockerfile`, runs 
 with `PORT=0`, and connects with the MCP SDK's own client (`smoke.ts`): forest's text comes first as
 the server's instructions, there is no session, every action is a tool saying which key it needs, and
 a call refused before it reads anything (an address that is not one, a write with no key) says why
-in forest's words. It also checks that the same command, with a key in its environment, refuses to
-start. `npm run smoke` runs the same client against a deployed copy, and reads the market `tutoring`
-and, if given, a profile through it.
+in forest's words; and a request for `//` gets 400, and it goes on answering. It also checks that
+the same command, with a key in its environment, refuses to start. `npm run smoke` runs the same
+client against a deployed copy, and reads the market `tutoring` and, if given, a profile through
+it.
 
 ### On devnet
 
@@ -115,8 +116,6 @@ the latest e2e run's seller read from `host.devnet.forest.foundation`.
   while it acts.
 - **The AI's maker sees every key the AI writes into a call,** and every answer, and keeps what its
   own policy keeps.
-- **A request for `//` stops it** until Railway starts it again: forest's CLI reads the request's
-  path in a way that throws on that URL. The fix is forest's, then `FOREST` moves.
 - **No rate limit.** Anyone can keep it busy, and every call reads whole folders from hosts.
 - **Slow.** Every call reads the profile's whole folder from every start host, and checks each
   signature in JavaScript.
