@@ -1,0 +1,23 @@
+{
+  "name": "@forest/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The foundation's hosted copy of forest's CLI MCP door: only deploy/Dockerfile runs, forest's CLI unchanged. This package is its smoke test: the MCP SDK's client against the image's own command, and against a deployed copy.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "test": "node --test test/smoke.test.ts",
+    "smoke": "node smoke.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

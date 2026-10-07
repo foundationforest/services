@@ -1,8 +1,9 @@
 # services
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
-a host, an issuer, a fee payer and an index. The Forest Foundation runs all four. Each is the first
-of its kind, and anyone can run another, from this code (Apache 2.0) or their own.
+a host, an issuer, a fee payer, an index, and a hosted copy of forest's CLI for AI chats. The Forest
+Foundation runs all five. Each is the first of its kind, and anyone can run another, from this code
+(Apache 2.0) or their own.
 
 Devnet only: everything here runs on Solana's devnet or nowhere. Nothing is on mainnet, and nothing
 is shipped.
@@ -15,6 +16,7 @@ is shipped.
 | [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and signs them a note; for a person who shows that note, a second check, by face and a government document, signs the same note at a higher tier | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three for a tier 1 note from the issuer, ten in all for tier 2); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
+| [`mcp/`](mcp/README.md) | forest's CLI as MCP tools, hosted, for AI chats that cannot run a program on the person's device: only a Dockerfile, forest's CLI unchanged | the foundation | Running once Railway builds it from `main` |
 | [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-07 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
@@ -95,6 +97,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
+(cd mcp         && npm ci && npm run check && npm test)
 (cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
   && bash fee-payer/deploy/devnet-config.sh fee-payer/free/kora.toml > /dev/null
 (cd fee-payer/vouchers && npm ci && npm run check && npm test)
@@ -104,12 +107,12 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 
 A test that cannot find what it needs skips; the workflow fails on any skip. Not in CI: the index's
 end-to-end test and the fee payer's local run, which need forest's programs built, its proving
-files, a local validator and (for the fee payer) Kora built; and the e2e run, which needs the devnet
-phrase. Each directory's README says how to run them.
+files, a local validator and (for the fee payer) Kora built; the e2e run, which needs the devnet
+phrase; and the smoke run against the deployed `mcp`. Each directory's README says how to run them.
 
 ### On devnet
 
-Four services on Railway, project `forest-devnet`, environment `production`, each built from this
+Five services on Railway, project `forest-devnet`, environment `production`, each built from this
 repo's `main` and redeployed on every push to it. Each directory's README lists its settings.
 
 | Service | Address | Railway id | Dockerfile | Volume |
@@ -118,6 +121,7 @@ repo's `main` and redeployed on every push to it. Each directory's README lists 
 | `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
 | `fee payer` | https://relayer-production-8d40.up.railway.app, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
 | `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data`, and a Railway bucket for its blobs |
+| `mcp` | https://mcp.devnet.forest.foundation, the tools at `/mcp` | `34faba28-5014-491e-aa81-f4c3d1b84e98` | `mcp/deploy/Dockerfile` | none |
 
 | On devnet | Address |
 |---|---|
@@ -211,6 +215,6 @@ one file is the whole pin, and moving it is a one-line change plus whatever it t
 **Why does CI fail on a skipped test?**
 A test skips when a piece it needs is missing. A missing piece must never pass as green.
 
-**Why one repo for four services?**
+**Why one repo for five services?**
 They share one forest pin, one CI and one devnet. Each directory stands alone: its own package, its
 own Dockerfile, its own README.

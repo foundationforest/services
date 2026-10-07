@@ -10,10 +10,12 @@
 #                circuit's files, committed in forest)
 #   host         the foundation's host: its type-check and its tests
 #   e2e          the devnet run's type-check
+#   mcp          the hosted copy's smoke test: the image's own command, through the MCP SDK's client
 #
-# Not here: the fee payer's local run, the index's end-to-end test and the e2e run itself. The first
-# two need forest's programs, its proving files, a local validator and (for the fee payer) Kora
-# built; the third needs the devnet phrase and the deployed services.
+# Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
+# run against the deployed mcp. The first two need forest's programs, its proving files, a local
+# validator and (for the fee payer) Kora built; the last two need the deployed services, and the e2e
+# run the devnet phrase.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -152,3 +154,24 @@ jobs:
       - name: Type-check
         working-directory: e2e
         run: npm run check
+
+  mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        run: |
+          ./forest.sh records cli
+          (cd mcp && npm ci --no-audit --no-fund)
+      - name: Type-check
+        working-directory: mcp
+        run: npm run check
+      - name: Test
+        working-directory: mcp
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
