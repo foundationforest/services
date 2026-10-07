@@ -14,14 +14,19 @@
 //  10. records: the access rule, by forest's view, and private records left alone;
 //  11. pictures: shown from a host that holds them, with the type the record names; none when no
 //      host does.
+// And, in a database of its own: the foundation's host under its new name keeps its cursor, its
+// records and its pictures (migrations/013_host_named.sql).
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 
+import pg from 'pg'
+
+import { createPool, migrate } from '../src/db.ts'
 import { startWeb } from '../src/main.ts'
 import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
@@ -466,5 +471,38 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
     await fixture.drop()
+  }
+})
+
+test('the foundation’s host under its new name keeps its cursor, records and pictures', async (t) => {
+  if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
+  const OLD = 'https://board-devnet-test-production.up.railway.app'
+  const NEW = 'https://host.devnet.forest.foundation'
+  const admin = new pg.Client({ connectionString: process.env.DATABASE_URL })
+  await admin.connect()
+  const name = `forest_index_renamed_${randomBytes(4).toString('hex')}`
+  await admin.query(`create database ${name}`)
+  const url = new URL(process.env.DATABASE_URL)
+  url.pathname = `/${name}`
+  const db = createPool(url.toString())
+  try {
+    // Every migration, then 013 taken back, so what the index read under the old address goes in
+    // first, as on devnet, and 013 runs over it.
+    await migrate(db)
+    await db.query(`delete from schema_migrations where name = '013_host_named.sql'`)
+    await db.query(`insert into cursors (source, value) values ($1, '4242'), ('chain:registry', '7')`, [`host:${OLD}`])
+    await db.query(`insert into host_records (host, id, profile, path, text) values ($1, 'r1', 'P', 'profile', '{}'), ('https://other.example', 'r2', 'Q', 'profile', '{}')`, [OLD])
+    await db.query(`insert into blobs (sha256, host, type) values ('${'ab'.repeat(32)}', $1, 'image/png')`, [OLD])
+    assert.deepEqual(await migrate(db), ['013_host_named.sql'])
+
+    const cursors = (await db.query('select source, value from cursors order by source')).rows
+    assert.deepEqual(cursors, [{ source: 'chain:registry', value: '7' }, { source: `host:${NEW}`, value: '4242' }], 'the cursor resumes where it was')
+    const records = (await db.query('select host, id from host_records order by id')).rows
+    assert.deepEqual(records, [{ host: NEW, id: 'r1' }, { host: 'https://other.example', id: 'r2' }], 'its records, and no other host’s')
+    assert.deepEqual((await db.query('select host from blobs')).rows, [{ host: NEW }], 'and which pictures it holds')
+  } finally {
+    await db.end()
+    await admin.query(`drop database if exists ${name} with (force)`)
+    await admin.end()
   }
 })
