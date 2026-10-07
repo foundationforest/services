@@ -10,7 +10,7 @@
 //
 // After each read, each profile that changed is viewed with forest's own `viewProfile`, which
 // applies the access rule (an access key's record counts while the permissions record lists the key
-// with scope write or revoked, its paths covering the record's; no date is checked; the owner wins),
+// with scope write or past, its paths covering the record's; no date is checked; the owner wins),
 // and what the view holds now replaces what the index held for it (store.ts). Only a profile holding a counted row is stored; any other's records wait in
 // `host_records`, so the day its row is read it is stored with nothing to read again.
 //

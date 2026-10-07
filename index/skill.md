@@ -12,62 +12,61 @@ not counted is not here.
 - Every page has a JSON twin at the same address with `.json` added to the path. The home page's
   twin is `/index.json`. The twin is the exact data the page shows.
 - Answers may be up to 30 seconds old.
-- Amounts in receipts are base units, as text. A price in an offer is whole units, as text
-  (`"25"`, `"12.50"`). A price is optional: an offer may name none.
-- In records, decimals are text: a price, a rating (`"8.5"`), a point's degrees (`"38.72"`). In
-  the JSON twins, ratings and scores are plain numbers.
-- Start anywhere below; every answer links onward with full URLs (`url`, `profileUrl`,
-  `marketUrl`, `dealUrl`).
+- In records, money and decimals are text: a price is whole units (`"25"`, `"12.50"`), a rating
+  `"8.5"`, a point's degrees `"38.72"`. Amounts in receipts are base units, as text. In the JSON
+  twins, ratings and scores are plain numbers.
+- Every answer links onward with full URLs (`url`, `profileUrl`, `marketUrl`, `dealUrl`).
 
 ## Search
 
     GET https://forest.foundation/search.json?q=portuguese
 
-Returns `markets` (markets this index uses whose name, folder, roles or role names contain the
-words) and `offers` (live offers whose text matches), ranked the same way as a market.
+Returns `markets` (the markets this index uses whose name, folder, roles or role names contain the
+text) and `offers` (live offers whose text matches), ranked as in a market.
 
 To browse instead: `https://forest.foundation/index.json` lists the folders and their markets;
 `https://forest.foundation/folders/freelance-work.json` lists one folder's markets;
 `https://forest.foundation/markets/online-tutors.json` lists a market's live offers.
 
 In a market, offers are ranked: sellers counted as a real person in that market first, then by
-standing, then newest. Page with `?offset=50`. A market has one name: another spelling is not
-that market.
+standing, then newest. Page with `?offset=50`. A market has one name: another spelling is not that
+market.
 
 Near a place: add `near=lat,lon&km=N` to a market or a search, such as
 `https://forest.foundation/markets/language-exchange.json?near=38.72,-9.14&km=10`. It keeps the
 offers whose point is within N km, and leaves out offers that name no place.
 
-The market file comes with its market (`market`): `description`, `sides` (`two`: a seller and a
-buyer; `one`: peers), `roleNames` (the plain words for seller and buyer, such as tutor and student),
-`ratings` (the rating names reviews there usually give),
-`howDealsGo` (how deals there usually go, in plain text), and the extra fields offers and reviews
-there carry.
+A market's answer carries its file (`market`): `description`, `sides` (`two`: a seller and a buyer;
+`one`: peers), `roleNames` (the plain words for seller and buyer, such as tutor and student),
+`ratings` (the rating names reviews there usually give), `howDealsGo` (how deals there usually go,
+in plain text), and the extra fields its offers and reviews carry.
 
-Each offer carries `description`, `price` (`amount`, the currency as `mint`, and `per`: hour, day
-or job; null when it names none), `terms` (optional: an `arbiter`, and a `timer` of `days`
-to the `seller` or `buyer`; absent, neither), `availability`, `remote` and `location` (`lat`, `lon`,
-`precisionKm`, `area`; either may be missing), `media` (its photos and videos, under Pictures
-below), `expires`, the seller's `profile`, `name` and `profileUrl`, its `market` and `role` (its
-author profile's: an offer names neither), the seller's `uniqueness`, `rating` and `standing`, and
-a `payLink` (none when it names no price).
+Each offer carries:
+
+- `description`, `availability`, `remote`, `expires`;
+- `price`: `amount`, the currency as `mint`, and `per` (hour, day or job); null when it names none;
+- `terms`: an `arbiter`, and a `timer` of `days` to the `seller` or `buyer`; absent, neither;
+- `location`: `lat`, `lon`, `precisionKm`, `area`; `remote` or `location` may be missing;
+- `media`: its photos and videos (Pictures, below);
+- the seller's `profile`, `name`, `profileUrl`, `uniqueness`, `rating` and `standing`;
+- its `market` and `role`: its author profile's, since an offer names neither;
+- a `payLink` (Paying, below); none when it names no price.
 
 ## Read a profile
 
     GET https://forest.foundation/profiles/3ds35BYoks9R95FJ3XfwfvtuDGkaM3LeEiqUP2wWBfJm.json
 
-A profile is one key: its address is its permanent name, and also where it is paid. One person may
-hold several profiles; they are linked only if the person chose to link them. The answer carries:
+A profile is one key: its address is its permanent name, and also where it is paid. A profile lives
+in one market, under one label (`market/role`); a person in two markets holds two profiles, linked
+only if the person chose to link them. The answer carries:
 
-- `address`, and `profile`: `name`, the one `market` it lives in and its `role` there (with `side`,
-  the market's word for it), `about`, `photo` (under Pictures below), `inboxKey`, its inbox key,
-  which a message to it or a private record for it is sealed to, and `inbox`, who may write it one
-  (under Write to a profile below; null when it takes none). A profile lives in one market, under
-  one label (`market/role`); a person in two markets holds two profiles.
-- `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not.
+- `address`, and `profile`: `name`, the `market` it lives in and its `role` there (with `side`, the
+  market's word for it), `about`, `photo` (Pictures, below), `inboxKey` and `inbox` (Write to a
+  profile, below).
+- `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not
+  (Check a real person, below).
 - `scores`: `uniqueness` (one per counted label), `rating` and `standing`, each signed.
-- `proofs`: the reputation proofs its card carries that this index shows (under Check a reputation
-  proof below).
+- `proofs`: the reputation proofs its card carries that this index shows.
 - `offers` and `requests`: its live offers, whether its main key or an access key it allowed
   signed them.
 - `reviews.received` and `reviews.given`: each with its `ratings` (by name, 1 to 10), its
@@ -86,28 +85,24 @@ bytes are on the hosts, never here. Check the SHA-256 of what you fetch yourself
 
 ## Write to a profile
 
-A profile whose `profile.inbox` is set takes messages: notes delivered to its own hosts, which only
-its main key, or a message key it lists, pulls. `inbox.senders` is `anyone`, or
-`{ "issuer": <key> }`: the sender's key must hold a registry row from that issuer, named by its key
-as a row holds it (128 hex characters), under any label. `once` means one message from each sender, ever; `maxBytes` is the largest it takes, in
-bytes; `readers` are read keys every message is sealed to as well, so whoever holds one can read
-the inbox for the person. No message passes through this index, and it never sees one.
+A profile whose `profile.inbox` is set takes messages, on its own hosts. `inbox.senders` is
+`anyone`, or `{ "issuer": <key> }`: the sender's key must hold a registry row from that issuer
+(128 hex characters, as a row holds it), under any label. `once` means one message from each
+sender, ever; `maxBytes` is the largest it takes; `readers` are keys every message is encrypted
+to besides `inboxKey`. No message passes through this index.
 
-To send one, with forest's records ("Inbox"): read the profile's card and hosts record from its
-hosts (the ones this index reads are in
-https://github.com/foundationforest/services/blob/main/index/lists/hosts.json), put the message in
-one envelope sealed to `profile.inboxKey` and to every key in `inbox.readers`, sign it with your
-key, and deliver it to each host its hosts record names (`POST /v1/inbox`). A host refuses a
-message the inbox does not allow.
+How to send one is forest's: its records' Inbox section,
+https://github.com/foundationforest/forest/blob/main/records/README.md, or forest's CLI, `send`
+(https://github.com/foundationforest/forest/blob/main/cli/README.md). The hosts this index reads
+are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json.
 
 ## Check a real person
 
 An issuer signs a person a note after the checks it chooses; the foundation's issuer checks a face
-once. A profile shows it holds a note with a row in the registry, which names the profile, the
-issuer's key, the label and the row's stamp, without saying who the person is: the registry wrote it
-only after checking a proof of the note. One person gets at most one row per issuer per label, so a
-second profile in the same market needs a second person, or a second issuer. It means real and
-accountable, not good.
+once, and, for a person who asks, a government document too. A profile shows it holds a note with a
+row in the registry, which names the profile, the issuer's key and the label, without saying who the
+person is. One person gets at most one row per issuer per label. It means real and accountable, not
+good.
 
 In `stamps[]`:
 
@@ -118,16 +113,18 @@ In `stamps[]`:
     (`online-tutors/seller`, `language-exchange/peer`); a plain market with no role counts for
     nothing;
   - it is the profile's own label: `profile.market` and `profile.role`.
-- `tier` is the tier the profile's card shows for the row, with a person proof this index checked
-  against it, or null; `badge` says it in words: `ID-checked` for tier 2.
 - `why` says why not when it doesn't: `notAMarketHere`, `noRole` or `notTheProfilesLabel`
   (registered under another market or side than the one the profile lives in).
+- `tier` is the tier the profile's card shows for the row, with a person proof this index checked
+  against it, or null; `badge` says it in words: `ID-checked` for tier 2.
 - `scores.uniqueness[]` combines the issuers of each counted label into one number from 0 to 1.
 
 To check it yourself, without trusting this index: `row` is the address of the row's account in the
-registry program on Solana. Read it: it names the profile's key, the row's stamp, the issuer's key
-and the label, and the program wrote it only after checking the person proof against that key. Then
-decide whether you trust that issuer. This index's issuers are listed at
+registry program on Solana
+(https://github.com/foundationforest/forest/blob/main/registry/README.md). Read it: it names the
+profile's key, the row's stamp, the issuer's key and the label, and the program wrote it only after
+checking the person proof against that key. Then decide whether you trust that issuer. This
+index's issuers are listed at
 https://github.com/foundationforest/services/blob/main/index/lists/issuers.json.
 
 ## Check a receipt
@@ -148,78 +145,73 @@ and its record stays forever as a receipt.
   listed.
 - `reviews`: every review that names the deal. Two reviews across one deal are the two sides.
 
-How much a receipt backs a review (`evidence.kind` on the review):
+What backs a review is its `evidence.kind`, weighed by `evidence.weight`:
 
-| Kind | Meaning | Weight |
-|---|---|---|
-| `both` | paid, and the seller signed for it: asked for the payment, or signed a split or a refund | 1 |
-| `oneSidedConfirmed` | paid by the buyer, and the seller reviewed the same deal | 1 |
-| `oneSided` | paid by the buyer; the seller hasn't reviewed it | 0.5 |
-| `none` | no receipt, someone else's, a currency not counted, or not paid; the reason is in `note` | 0.05 |
+- `both`: paid, and the seller signed for it (asked for the payment, or signed a split or a refund);
+- `oneSidedConfirmed`: paid by the buyer, and the seller reviewed the same deal;
+- `oneSided`: paid by the buyer; the seller hasn't reviewed it;
+- `none`: no receipt, someone else's, a currency not counted, or not paid; the reason is in `note`.
 
 To check it yourself: the deal ID is the escrow account's address on Solana. Read that account, or
 the escrow program's own events for it (`Created`, `Funded`, `Ended`, `Closed`, `Objected`).
 
 ## What the scores mean
 
-Three scores. They are never added together.
+Three scores, never added together:
 
 - **Uniqueness**, per label, 0 to 1: how sure this index is that the profile is one real person
-  there. `1 − (1 − w1) × (1 − w2) × …` over the weights of the issuers whose counted rows it holds,
-  each at the tier the card shows for its row, or the issuer's smallest weight with none.
-- **Rating**, per profile, 1.0 to 10.0: the `overall` ratings of the reviews that count,
-  averaged, each weighed by its reviewer and by the payment behind it. No review that counts gives
-  one: no rating, not zero.
-- **Standing**, per profile, any number, below zero too, starting at zero: the sum of the reviews
-  received, each weighed by its reviewer (their uniqueness, then their own standing) and by the payment
-  behind it. An overall of 10 adds, 5.5 is neutral, 1 takes away.
+  there.
+- **Rating**, per profile, 1.0 to 10.0: the `overall` ratings of the reviews that count, averaged,
+  each weighed by its reviewer and by the payment behind it. No review that counts gives one: no
+  rating, not zero.
+- **Standing**, per profile, any number, below zero too, starting at zero: the reviews received,
+  summed, each weighed the same way. An overall of 10 adds, 5.5 is neutral, 1 takes away.
 
-Pages show the rating and the standing side by side, as two numbers.
-
-Both are this index's opinion, and the rules are open:
+Pages show the rating and the standing side by side, as two numbers. Both are this index's opinion,
+and the rules are open:
 https://github.com/foundationforest/services/blob/main/index/README.md#how-it-scores. Another index
 may weigh differently.
 
-Every score is signed: `signed.statement` is the text, and `signed.ed25519` its Ed25519 signature.
-The public key and the statement format are in `https://forest.foundation/index.json` under
+Every score is signed: `signed.statement` is the text, and `signed.ed25519` its Ed25519 signature,
+in hex. The public key and the statement format are in `https://forest.foundation/index.json` under
 `index.keys` and `index.statement`.
 
 ## Check a reputation proof
 
 Nothing public links one person's profiles. A person may still show, on one profile, a rating
-proven from their own profiles in an index's reputation tree, naming none of them: a reputation
-proof (forest's circuits). Each of `proofs[]` gives `score`, out of 10; `label` and `market` when it
-shows one market, or null when it counts profiles it does not name; `index`, whose tree it was made
-from, with its `name`; and `root` and `time`, the root that index signed and when. The page says
-"Rated 9.5 of 10 in Online tutors (per …, 5 Oct 2026)", or "across their profiles".
+proven from their own profiles in an index's reputation tree, naming none of them. Each of
+`proofs[]` gives `score`, out of 10; `label` and `market` when it shows one market, or null when it
+counts profiles it does not name; `index`, whose tree it was made from, with its `name`; and `root`
+and `time`, the root that index signed and when. The page says "Rated 9.5 of 10 in Online tutors
+(per …, 5 Oct 2026)", or "across their profiles".
 
 This index shows a proof only when it checks for this profile's own key, its index is in
 https://github.com/foundationforest/services/blob/main/index/lists/indexes.json, and its root is one
-of that index's newest roots (`roots` in that list). One that fails, or is too old, shows nothing:
-that is not an error. To check one yourself, take the proof from the profile's card on its hosts and
-run forest's `verifyReputation` with the profile's address.
+of that index's newest roots. One that fails, or is too old, shows nothing: that is not an error.
+To check one yourself, take the proof from the profile's card on its hosts and run forest's
+`verifyReputation` (https://github.com/foundationforest/forest/blob/main/circuits/README.md) with
+the profile's address.
 
-This index's own tree:
+This index's own tree, for an app that proves on the device:
 
     GET https://forest.foundation/v1/reputation
 
-gives `index` (its signing key, as an address), `root` (64 hex), `time` (ms), `signature` (ed25519
-over forest's signed bytes for the root and the time, base64url) and how many `leaves`.
+gives `index` (its signing key, as an address), `root` (64 hex), `time` (ms), `signature`
+(base64url) and how many `leaves`.
 
     GET https://forest.foundation/v1/reputation/leaves
 
 gives every leaf in the tree's order, with the `root` they make: `stamp` and `scope` (64 hex),
-`score` (the rating times ten) and `count` (the reviews it comes from). One leaf per stamp of a
-counted row of a profile with a rating. An app finds its person's own leaves here and proves on
-the device; it never asks for one leaf, so this index never learns which are theirs.
+`score` (the rating times ten) and `count` (the reviews it comes from). An app finds its person's
+own leaves here and proves on the device; it never asks for one leaf, so this index never learns
+which are theirs.
 
 ## Paying
 
 An offer's `payLink` is one documented format, forest's escrow's:
-https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link. It names the
-offer (its profile's address, then `offer/<id>`) and the id of the record that holds it (`record`),
-and repeats its price and terms. The seller is the profile the offer names, paid at its address:
-the link carries no other key. This index never pays and never holds money.
+https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link. The seller is
+the profile the offer names, paid at its address: the link carries no other key. This index never
+pays and never holds money.
 
 An example, from this index's test data:
 
@@ -227,7 +219,7 @@ An example, from this index's test data:
 
 Its twin, `https://forest.foundation/pay.json?…` with the same query, says whether the link still
 matches the offer (`check`: `matches`, `changed`, `differs`, `notLive`, `noPrice`, `notFound`,
-`invalid`). An offer with no price has no Pay link.
+`invalid`).
 
 ## Examples
 

@@ -6,15 +6,13 @@
 
 Every page has a JSON twin at the same address with `.json`. Reading needs no key, no account and no sign-in.
 
-Photos and short videos show from the hosts that hold them, and each twin gives their address. A profile may also take messages in its inbox, on its own hosts: none passes through this index.
-
 ## For AI agents
 
 - [Read skill](https://forest.foundation/skill.md): how to search Forest, read a profile, check a real person and a payment receipt, and what the scores mean
 - [Index](https://forest.foundation/index.json): markets by folder, this index's public key, and how its scores are signed
 - [Search](https://forest.foundation/search.json?q=portuguese): offers and markets matching words; add `near=lat,lon&km=N` for offers near a place
 - [Sitemap](https://forest.foundation/sitemap.xml): every page
-- [Reputation tree](https://forest.foundation/v1/reputation): this index's signed root, and [every leaf](https://forest.foundation/v1/reputation/leaves), for proving a rating from one's own profiles without naming them; a profile's `proofs` are the ones this index checked and shows
+- [Reputation tree](https://forest.foundation/v1/reputation): this index's signed root, and [every leaf](https://forest.foundation/v1/reputation/leaves), for proving a rating from one's own profiles without naming them
 
 ## Rules
 
