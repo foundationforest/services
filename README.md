@@ -1,8 +1,8 @@
 # services
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
-a host, an issuer, a fee payer, a key holder and an index. The Forest Foundation runs all five. Each
-is the first of its kind, and anyone can run another, from this code (Apache 2.0) or their own.
+a host, an issuer, a fee payer and an index. The Forest Foundation runs all four. Each is the first
+of its kind, and anyone can run another, from this code (Apache 2.0) or their own.
 
 Devnet only: everything here runs on Solana's devnet or nowhere. Nothing is on mainnet, and nothing
 is shipped.
@@ -14,7 +14,6 @@ is shipped.
 | [`host/`](host/README.md) | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | the foundation | Running |
 | [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and puts their stamp on a list it publishes with signed snapshots; for a person already on it, a second check, by face and a government ID, onto a second list | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three per stamp on the issuer's face list, ten per stamp on its ID list); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
-| [`keyholder/`](keyholder/README.md) | The key holder behind connections: holds the write, message and read keys a person's app hands it, encrypted, so an AI assistant that logs in can post, message and read for them through tools, over MCP or plain HTTP; never a pay key or a main key | the foundation | Running, as connections |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
 | [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-06 |
 
@@ -26,7 +25,7 @@ records and rows.
 - **The standard (forest):** what every service here must agree on, at the pinned commit.
 - **Each service, by its own policy:** what its README's Policy section says; the one who runs it
   changes it.
-- **An app, with the person:** which host, issuer, fee payer, index and key holder to use.
+- **An app, with the person:** which host, issuer, fee payer and index to use.
 - **Promises:** the promises in each README change only when Carlos says so in a chat.
 
 ## How it works
@@ -96,7 +95,6 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
-(cd keyholder   && npm ci && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
 (cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
   && bash fee-payer/deploy/devnet-config.sh fee-payer/free/kora.toml > /dev/null
@@ -112,7 +110,7 @@ phrase. Each directory's README says how to run them.
 
 ### On devnet
 
-Five services on Railway, project `forest-devnet`, environment `production`, each built from this
+Four services on Railway, project `forest-devnet`, environment `production`, each built from this
 repo's `main` and redeployed on every push to it. Each directory's README lists its settings.
 
 | Service | Address | Railway id | Dockerfile | Volume |
@@ -120,7 +118,6 @@ repo's `main` and redeployed on every push to it. Each directory's README lists 
 | `index` | https://index-production-1b6e.up.railway.app | `37f23042-b2a0-4ff0-90c6-e0521fc811d2` | `index/deploy/Dockerfile` | none: Postgres on Supabase |
 | `issuer` | https://issuer-production-4976.up.railway.app | `9a9538d9-1a79-4860-9705-c85b8b538306` | `issuer/deploy/Dockerfile` | `/data` |
 | `fee payer` | https://relayer-production-8d40.up.railway.app, the voucher door at `/vouchers` | `05e3d61b-7052-45cf-98f0-8928628425b7` | `fee-payer/deploy/Dockerfile` | `/data` |
-| `connections` (the key holder) | https://connections-production-ebc4.up.railway.app | `5f024a9d-b760-4a5a-8613-0ae014b12661` | `keyholder/deploy/Dockerfile` | `/data` |
 | `host` | https://board-devnet-test-production.up.railway.app | `6bc0708f-1171-4c93-a47e-56e5bcd82685` | `host/deploy/Dockerfile` | `/data`, and a Railway bucket for its blobs |
 
 | On devnet | Address |
@@ -152,8 +149,8 @@ the issuer's [face list](https://issuer-production-4976.up.railway.app/list.json
 These hold for every service here; each README adds its own.
 
 - **The seed and main keys never leave the person's device.** Access keys leave only when the
-  person hands one out (to a person, an app or the key holder), each with one scope, and a revoked
-  key stops working.
+  person hands one out (to a person or an app), each with one scope, and a past or deleted key
+  stops working.
 - **No accounts.** There are keys, records and rows.
 - **No address logs in this code.** No service here keeps a network address. A hosting provider's
   own request logs are the operator's choice; on Railway they exist.
@@ -168,8 +165,7 @@ These hold for every service here; each README adds its own.
 - **Devnet only.** The issuer's two checks are a stand-in, the dollars are test dollars, and every
   service is one replica on Railway.
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC, the
-  key holder the hosts, the host its RPC and, for a message key's message, the sender's host. Each
-  README says how.
+  host its RPC and, for a message key's message, the sender's host. Each README says how.
 
 ## FAQ
 
@@ -187,10 +183,7 @@ Everything but its secrets and what it keeps private for people:
   registry's rows and the escrow's receipts, on chain; the index's pages, JSON and reputation tree;
   and each e2e run's record.
 - **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, the
-  API keys and keyed URLs (Didit's, the RPC's), the keys to the host's bucket, and the key holder's
-  secret.
-- **The key holder's contents:** [the key holder](keyholder/README.md) keeps each connection's keys,
-  encrypted, and the hashes of its tokens; none of it is public.
+  API keys and keyed URLs (Didit's, the RPC's), and the keys to the host's bucket.
 - **Private by design:** the issuer's private tables (the hash of each session id used, the stamps
   still waiting, the payments that opened ID sessions), and the messages in an inbox, which only the
   recipient's main key, or a message key it lists, pulls, and only its inbox key and the read keys
@@ -217,6 +210,6 @@ one file is the whole pin, and moving it is a one-line change plus whatever it t
 **Why does CI fail on a skipped test?**
 A test skips when a piece it needs is missing. A missing piece must never pass as green.
 
-**Why one repo for five services?**
+**Why one repo for four services?**
 They share one forest pin, one CI and one devnet. Each directory stands alone: its own package, its
 own Dockerfile, its own README.
