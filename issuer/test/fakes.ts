@@ -1,45 +1,75 @@
-// A stand-in for Didit and for the RPC payments are found through, a fresh issuer key, and the check
-// that the file keeps no link.
+// A stand-in for Didit, an embedder that knows people by name, the RPC payments are found through, a
+// fresh issuer seed, a person's note number, and the check that the file keeps nothing it shouldn't.
 
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
+import { issuerSecret } from '../../forest/keys/src/issuer.ts'
 import { base58 } from '../../forest/records/src/bytes.ts'
-import type { Decision, FaceCheck } from '../src/didit.ts'
+import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
+import type { Decision, Document, FaceCheck } from '../src/didit.ts'
+import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
 import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
 export const WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
 export const ID_WORKFLOW = '0b6e2f1a-3c4d-4e5f-8a9b-1c2d3e4f5a6b'
+export const ISSUER_NAME = 'issuer.test.forest.example'
 
-/** What a face check that passed looks like: one liveness step, approved, no risk codes, no match. */
-export const passed = (over: Partial<Decision> = {}): Decision => ({
+/** The selfie of `person`, as the stand-in Didit names it: the test embedder reads the name back. */
+export const selfie = (person: string) => `https://didit.example/photo/${person}`
+
+/** What a face check that passed looks like: one liveness step, approved, the person's selfie, no face seen before. */
+export const passed = (person: string, over: Partial<Decision> = {}): Decision => ({
   workflowId: WORKFLOW,
   status: 'Approved',
   liveness: [{ status: 'Approved' }],
-  risks: [],
   documents: [],
   faceMatches: [],
+  faceImage: selfie(person),
   matches: [],
+  document: null,
   ...over,
 })
 
+/** A document as Didit reads one. */
+export const doc = (lastName: string, over: Partial<Document> = {}): Document => ({
+  firstName: 'Ada',
+  lastName,
+  fullName: `Ada ${lastName}`,
+  birth: '1990-04-01',
+  country: 'GBR',
+  ...over,
+})
+
+/** What a document check that passed looks like: the document, the liveness step and the face match, each approved. */
+export const passedId = (person: string, document: Document = doc(person), over: Partial<Decision> = {}): Decision =>
+  passed(person, { workflowId: ID_WORKFLOW, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }], document, ...over })
+
 /**
- * What an ID check that passed looks like: the document, the liveness step and the face match, each
- * approved, and the face found in an earlier face check, as face first requires.
+ * Faces by name: each person's embedding is a fixed random direction made from their name, so one
+ * person matches themselves exactly and two people hardly at all. The photo `none` has no face.
  */
-export const passedId = (over: Partial<Decision> = {}): Decision =>
-  passed({
-    workflowId: ID_WORKFLOW,
-    documents: [{ status: 'Approved' }],
-    faceMatches: [{ status: 'Approved' }],
-    risks: ['DUPLICATED_FACE'],
-    matches: [`face-${randomUUID()}`],
-    ...over,
-  })
+export function namedFaces(): Embedder & { embedded: number } {
+  const faces = {
+    model: 'test-model',
+    embedded: 0,
+    async embed(photo: Uint8Array) {
+      const name = new TextDecoder().decode(photo)
+      if (name === 'none') throw new FaceError('no_face')
+      faces.embedded++
+      const values = Float32Array.from({ length: EMBEDDING_BYTES / 4 }, (_, i) => createHash('sha256').update(`${name}/${i}`).digest().readInt32LE(0) / 2 ** 31)
+      const out = new Uint8Array(EMBEDDING_BYTES)
+      const view = new DataView(out.buffer)
+      const length = Math.hypot(...values)
+      values.forEach((v, i) => view.setFloat32(i * 4, v / length, true))
+      return out
+    },
+  }
+  return faces
+}
 
 /** The RPC, as far as the issuer sees it: the paying transactions each reference has, set by the test. */
 export class FakePayments implements Payments {
@@ -58,16 +88,18 @@ export class FakePayments implements Payments {
 /** A transaction signature's shape: 64 random bytes in base58. */
 export const randomSignature = () => base58.encode(randomBytes(64))
 
-/** A stamp-shaped number: 31 random bytes, so always below the field order. */
-export const randomStamp = () => BigInt('0x' + randomBytes(31).toString('hex')) + 1n
+/** A person's note number for the test issuer, as their app mixes it: from a fresh seed and the issuer's name. */
+export const noteNumber = async () => (await issuerSecret(new Uint8Array(randomBytes(32)), ISSUER_NAME)).noteNumber
 
 /**
  * Didit, as far as the issuer sees it. A test says what each session came to with `set`. With
  * `hold`, decisions wait until the test lets them go, so two requests can both be waiting at once.
+ * A photo is its selfie address's last part, the person's name.
  */
 export class FakeFaceCheck implements FaceCheck {
   readonly sessions = new Map<string, Decision>()
   down = false
+  photoDown = false
   waiting = 0
   /** How many sessions Didit was asked to open. */
   created = 0
@@ -103,94 +135,72 @@ export class FakeFaceCheck implements FaceCheck {
       this.waiting--
     }
   }
+
+  async photo(url: string) {
+    if (this.photoDown) throw new Error('down')
+    return new TextEncoder().encode(url.split('/').at(-1))
+  }
 }
 
 /** A fresh Ed25519 key as `solana-keygen` writes one: 64 numbers, the secret then the public key. */
-export function keypairJson(): { json: string; publicKey: Uint8Array } {
+export function keypairJson(): { json: string; secret: Uint8Array; publicKey: Uint8Array } {
   const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
   const secret = Buffer.from(jwk.d!, 'base64url')
   const publicKey = Buffer.from(jwk.x!, 'base64url')
-  return { json: JSON.stringify([...secret, ...publicKey]), publicKey: new Uint8Array(publicKey) }
+  return { json: JSON.stringify([...secret, ...publicKey]), secret: new Uint8Array(secret), publicKey: new Uint8Array(publicKey) }
 }
 
 /** Every file SQLite may have written next to the database. */
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
-/** The byte forms a stamp could be stored in. */
-function forms(stamp: bigint): Buffer[] {
-  return [Buffer.from(toBytes32(stamp)), Buffer.from(stamp.toString(10)), Buffer.from(stamp.toString(16))]
-}
-
-/** Sanity for the check below: the file does hold these stamps while they wait. */
-export function assertFileHolds(path: string, stamps: bigint[]): void {
-  const file = readFileSync(path)
-  for (const s of stamps) assert.ok(file.includes(Buffer.from(toBytes32(s))), 'a queued stamp is in the file')
-}
-
-/** What one list should hold after its batch: the sessions used, the stamps listed, the payments used. */
-export type Expected = { sessionIds: string[]; stamps: bigint[]; payments?: string[] }
-
 const TABLES = [
-  'CREATE TABLE id_list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
+  'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID',
-  'CREATE TABLE id_queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
-  'CREATE TABLE id_snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
-  'CREATE TABLE id_used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
-  'CREATE TABLE list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL)',
-  'CREATE TABLE queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID',
-  'CREATE TABLE snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL)',
-  'CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
 ]
 
+/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used. */
+export type Expected = { sessions: [string, bigint][]; fingerprints: [number, bigint][]; payments?: string[]; never: string[] }
+
 /**
- * After a batch, for each list: the file holds each listed stamp exactly once, as its list row in
- * list order, and in no other form; no session id in the clear; the queue empty and the used sessions
- * exactly the hashes of these sessions; for the ID list, the payments used and nothing beside them.
- * And only these nine tables, four per list and the ID list's payments. No journal is left beside it.
+ * The file holds three tables and nothing else: each session that gave a note as the hash of its id,
+ * next to its note number; each document's fingerprint next to its note number; the payments used.
+ * None of `never` (names, birth dates, embeddings, session ids) is anywhere in its bytes, and no
+ * journal is left beside it.
  */
-export function assertNoLink(path: string, face: Expected, id: Expected = { sessionIds: [], stamps: [] }): void {
+export function assertKept(path: string, expected: Expected): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
   const file = readFileSync(path)
-  for (const s of [...face.stamps, ...id.stamps]) {
-    const [bytes, ...others] = forms(s)
-    assert.equal(file.indexOf(bytes), file.lastIndexOf(bytes), 'a listed stamp is in the file once: no stale copy')
-    assert.ok(file.includes(bytes), 'as its list row')
-    for (const form of others) assert.equal(file.includes(form), false, 'and in no other form')
-  }
-  for (const sessionId of [...face.sessionIds, ...id.sessionIds]) {
-    assert.equal(file.includes(Buffer.from(sessionId)), false, 'no session id is in the clear')
-  }
+  for (const text of expected.never) assert.equal(file.includes(Buffer.from(text)), false, `${text.slice(0, 24)} is not in the file`)
+  for (const [sessionId] of expected.sessions) assert.equal(file.includes(Buffer.from(sessionId)), false, 'no session id is in the clear')
 
   const db = new DatabaseSync(path, { readOnly: true })
   try {
-    const schema = db.prepare('SELECT type, name, sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(
-      schema.map((t) => t.sql),
-      TABLES,
-      'nine tables, and no index or other table beside them',
-    )
-    for (const [t, expected] of [['', face], ['id_', id]] as const) {
-      assert.equal(db.prepare(`SELECT count(*) AS n FROM ${t}queue`).get()!.n, 0, 'the queue is empty')
-      const listed = db
-        .prepare(`SELECT stamp FROM ${t}list ORDER BY position`)
-        .all()
-        .map((row) => fromBytes32(row.stamp as Uint8Array))
-      assert.deepEqual([...listed].sort(), [...expected.stamps].sort(), 'the list holds these stamps, each once')
-      const kept = db
-        .prepare(`SELECT hash FROM ${t}used_sessions`)
-        .all()
-        .map((row) => Buffer.from(row.hash as Uint8Array).toString('hex'))
-        .sort()
-      const hashes = expected.sessionIds.map((sessionId) => Buffer.from(sessionHash(sessionId)).toString('hex')).sort()
-      assert.deepEqual(kept, hashes, 'the used sessions are kept, hashed, and nothing else is')
-    }
+    const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'three tables, and no index or other table beside them')
+    const sessions = db
+      .prepare('SELECT hash, note_number FROM sessions')
+      .all()
+      .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${fromBytes32(r.note_number as Uint8Array)}`)
+      .sort()
+    const want = expected.sessions.map(([id, n]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n}`).sort()
+    assert.deepEqual(sessions, want, 'each session that gave a note, hashed, next to its note number')
+    const prints = db
+      .prepare('SELECT note_number FROM fingerprints')
+      .all()
+      .map((r) => fromBytes32(r.note_number as Uint8Array))
+      .sort()
+    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each document, as a fingerprint next to its note number')
     const payments = db
       .prepare('SELECT signature FROM id_payments')
       .all()
       .map((row) => base58.encode(row.signature as Uint8Array))
       .sort()
-    assert.deepEqual(payments, [...(id.payments ?? [])].sort(), 'the payments used, and nothing beside them')
+    assert.deepEqual(payments, [...(expected.payments ?? [])].sort(), 'the payments used, and nothing beside them')
   } finally {
     db.close()
   }
 }
+
+/** A note number as the file stores it, for tests that look at raw bytes. */
+export const noteNumberBytes = (n: bigint) => Buffer.from(toBytes32(n))

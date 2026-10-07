@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's issuer: it keeps two lists. A passed Didit face check puts a stamp on the face list, a passed face and ID check on the ID list, in shuffled batches; each list and its snapshots, signed with that list's key, are published as one file.",
+  "description": "The Forest Foundation's issuer: it signs notes. A passed Didit face check gives a person a tier 1 note for their note number, with their face embedding from an open model (SFace); a passed document check, with the live face matching the note's, the same note at tier 2. It keeps which check session gave which note number, and a keyed fingerprint of each document next to it.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -11,11 +11,10 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
     "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@semaphore-protocol/group": "4.12.1",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.30.0",
     "pngjs": "7.0.0"

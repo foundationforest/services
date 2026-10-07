@@ -1,6 +1,6 @@
 // The reputation tree and the proofs profiles carry (README.md, "The reputation tree" and "Proofs
 // a profile shows"):
-//   1. a row's market stamp, read from the `register` that wrote it, and from nothing else;
+//   1. a row as the index stores it: its stamp, its issuer's key and its time, read from the row;
 //   then on the page tests' story (test/fixture.ts) in a fresh database:
 //   2. the tree: its leaves rebuild its root with circuits' buildTree, and a proof made from them
 //      checks with circuits' verifier against the root, time and signature the index serves;
@@ -24,9 +24,10 @@ import { PublicKey } from '@solana/web3.js'
 
 import { type Leaf, buildTree, proofBytes, proveReputation, verifyReputation } from '../../forest/circuits/reputation/src/index.ts'
 import { type Body, b64u, base58, ownerRecord, recordId, unsignedOf } from '../../forest/records/src/index.ts'
-import { registerIx, rowAddress } from '../../forest/registry/client/src/program.ts'
+import { ROW_DISCRIMINATOR, ROW_OFFSET, decodeRow, rowSpace } from '../../forest/registry/client/src/program.ts'
+import { toBytes32 } from '../../forest/registry/client/src/field.ts'
 
-import { stampFrom } from '../src/chain/registry.ts'
+import { issuerFromHex, issuerHex, rowRecord } from '../src/chain/registry.ts'
 import { startWeb } from '../src/main.ts'
 import { takeIn } from '../src/records/hosts.ts'
 import { hex64 } from '../src/scores/reputation.ts'
@@ -36,29 +37,34 @@ import { HOST, INDEX, INDEX_NAME, ISSUER, MADE_UP_DEAL, MARKET, RECORDS, SELLER,
 const here = dirname(fileURLToPath(import.meta.url))
 const devnet = join(here, '../../forest/circuits/reputation/devnet')
 const ARTIFACTS = { wasm: join(devnet, 'reputation.wasm'), zkey: join(devnet, 'reputation.zkey') }
-const REGISTRY = '5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC'
-
-test('1. a row’s market stamp, from the register that wrote it', () => {
-  const program = new PublicKey(REGISTRY)
+test('1. a row as the index stores it: its stamp, its issuer’s key and its time, read from the row itself', () => {
+  const profile = new PublicKey(ana.address)
+  const payer = new PublicKey(INDEX)
   const stamp = 0x1234n
-  const row = rowAddress(stamp, program as never).toBase58()
-  const ix = registerIx({
-    profile: program as never,
+  const label = new TextEncoder().encode(SELLER)
+  const data = new Uint8Array(rowSpace(label.length))
+  const view = new DataView(data.buffer)
+  data.set(ROW_DISCRIMINATOR, 0)
+  data.set(profile.toBytes(), ROW_OFFSET.profile)
+  data.set(toBytes32(stamp), ROW_OFFSET.stamp)
+  data.set(Buffer.from(ISSUER, 'hex'), ROW_OFFSET.issuer)
+  data.set(payer.toBytes(), ROW_OFFSET.payer)
+  view.setBigInt64(ROW_OFFSET.made, 1_790_000_000n, true)
+  view.setUint32(ROW_OFFSET.label, label.length, true)
+  data.set(label, ROW_OFFSET.label + 4)
+  const row = rowRecord('ExampleRow'.padEnd(44, '1'), decodeRow(data) as never)
+  assert.deepEqual(row, {
+    address: 'ExampleRow'.padEnd(44, '1'),
+    profile: ana.address,
+    stamp: hex64(stamp),
+    issuer: ISSUER,
+    payer: INDEX,
+    made: 1_790_000_000,
     label: SELLER,
-    marketStamp: stamp,
-    issuer: ISSUER.publicKey,
-    root: 1n,
-    issuerSignature: new Uint8Array(64),
-    proof: { a: new Uint8Array(32), b: new Uint8Array(64), c: new Uint8Array(32) },
-    payer: program as never,
-    programId: program as never,
+    market: MARKET,
+    role: 'seller',
   })
-  const data = new Uint8Array(ix.data)
-  assert.equal(stampFrom([{ programId: REGISTRY, data }], REGISTRY, row), hex64(stamp), 'the stamp the row’s address is derived from')
-  const other = rowAddress(stamp + 1n, program as never).toBase58()
-  assert.equal(stampFrom([{ programId: REGISTRY, data }], REGISTRY, other), null, 'not another row’s')
-  assert.equal(stampFrom([{ programId: ISSUER.address, data }], REGISTRY, row), null, 'not from another program')
-  assert.equal(stampFrom([{ programId: REGISTRY, data: data.slice(0, 39) }], REGISTRY, row), null, 'not from a cut instruction')
+  assert.equal(issuerHex(issuerFromHex(ISSUER)), ISSUER, 'an issuer’s key, there and back')
 })
 
 test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, async (t) => {
@@ -72,7 +78,7 @@ test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, 
       return { status: res.status, type: res.headers.get('content-type'), text: await res.text() }
     }
     const json = async (path: string) => JSON.parse((await get(path)).text)
-    const trusted = { issuers: [ISSUER.address], indexes: [INDEX] }
+    const trusted = { issuers: [ISSUER], indexes: [INDEX] }
     /** Ana's card again, now, with these proofs; then what her twin and her page say. */
     const anaCard = RECORDS.find((r) => r.profile === ana.address && r.path === 'profile')!.body as Record<string, unknown>
     const showProofs = async (proofs: unknown[]) => {

@@ -15,7 +15,7 @@ Up: [the repo](../README.md). How an AI agent reads it: [`skill.md`](skill.md).
 
 ```
 lists/hosts.json ── each host, in full ── records ──▶ forest's view (the access rule) ──┐
-lists/issuers.json ── registry rows of those issuers, signature checked ───────────────┼─▶ scores ─▶ pages + JSON, the reputation tree
+lists/issuers.json ── registry rows of those issuers' keys ───────────────────────────┼─▶ scores ─▶ pages + JSON, the reputation tree
 the escrow's own events ── receipts ───────────────────────────────────────────────────┤
 lists/markets.json ── each market's file, from the markets directory ──────────────────┘
 ```
@@ -31,7 +31,7 @@ lists/markets.json ── each market's file, from the markets directory ──�
     host.
   - Each profile is viewed with forest's own `viewProfile`, which applies the access rule: an access
     key's record counts while the profile's permissions record lists the key with scope `write` or
-    `revoked`, its paths covering the record's path; a key not listed, or listed with another scope,
+    `past`, its paths covering the record's path; a key not listed, or listed with another scope,
     counts for nothing, and no date is checked. The main key's record wins over an access key's at
     the same path.
   - Three shapes are read, by path: `profile`, `offer/<id>` and `review/<id>`. Each live body is
@@ -47,15 +47,12 @@ lists/markets.json ── each market's file, from the markets directory ──�
   host, the hash and the type the host serves them as, never the bytes (`src/records/blobs.ts`).
   Bytes that are not their hash count as not there. A picture not there yet is asked for again
   after the next read.
-- **Rows, from the registry.** Every row of each issuer in `lists/issuers.json`, from the program's
-  own accounts (`fetchRows`, filtered on the issuer), on every poll. A row never changes, so only
-  new ones are stored. A row counts when its issuer's signature on its root checks (`issuerSigned`);
-  it needs nothing else, no file from the issuer.
-- **Market stamps, from each counted row's own transaction.** The reputation tree needs each row's
-  market stamp, and a row's bytes do not hold it. The readers read it once from the transaction that
-  wrote the row: the 32 bytes after the `register` instruction's discriminator, kept only when the
-  row's address is derived from them (`readStamp`). A row whose stamp is not found yet is looked for
-  again on every poll.
+- **Rows, from the registry.** Every row of each issuer key in `lists/issuers.json`, from the
+  program's own accounts (`fetchRows`, filtered on the issuer's key), on every poll. A row holds the
+  profile, its stamp, the issuer's key, who paid, when the chain wrote it, and the label. A row never
+  changes, so only new ones are stored. The program writes a row only after checking the person proof
+  against the issuer's key the row names, so a row from a trusted key counts; it needs nothing else,
+  no file from the issuer.
 - **Receipts, from the escrow's own events.** Every transaction that named the escrow, oldest first;
   failed ones skipped. Each transaction's log lines are kept in the index's own archive
   (`chain_transactions`), since RPC nodes are not an archive. Only events the program itself wrote
@@ -75,7 +72,7 @@ and accountable, not good. The code is `src/scores/compute.ts`, and it says the 
 
 **Which rows count.** A row counts for a profile only if all of these hold:
 
-1. **Its issuer is in `lists/issuers.json`, and the issuer's signature on its root checks.**
+1. **Its issuer's key is in `lists/issuers.json`.**
 2. **Its label is `market/role`, the market one this index uses, byte for byte,** and the role one
    the market's sides allow: `seller` or `buyer` in a two-sided market, `peer` in a one-sided one. A
    market's role names (`teacher`, `student`) are words for pages, never roles. A plain market, with
@@ -163,12 +160,12 @@ The index publishes its ratings as a tree in forest's format
 index publishes"), so a person proves on their device a rating from their own profiles, naming none
 of them. The code is `src/scores/reputation.ts`.
 
-- **A leaf** per market stamp of a counted row (How it scores, "Which rows count"), for each profile
-  with a rating: the stamp; the scope of its label, as the registry computes it; the rating times
+- **A leaf** per stamp of a counted row (How it scores, "Which rows count"), for each profile with a
+  rating: the row's stamp; the scope of its label, as the registry computes it; the rating times
   ten, as the pages round it (1.0 to 10.0 is 10 to 100); and how many reviews the rating comes from.
-  A profile with no rating has no leaf. A profile with rows on two lists has two leaves, one per
+  A profile with no rating has no leaf. A profile with rows from two issuers has two leaves, one per
   stamp.
-- **In order of market stamp.**
+- **In order of stamp.**
 - **The root** is circuits' `buildTree` over the leaves, signed with the index's ed25519 key (the one
   that signs its scores) over circuits' `signedBytes(root, time)`, the time in milliseconds.
 - **Rebuilt after every scoring pass,** in the same database transaction. Leaves that did not change
@@ -274,7 +271,7 @@ Environment variables, read once at start; a change means a restart.
 |---|---|
 | `lists/hosts.json` | The hosts it reads, each in full |
 | `lists/markets.json` | The markets it uses, by name, and the directory their files are read from |
-| `lists/issuers.json` | The issuers it trusts, by address, each with a name and a weight from 0 to 1 |
+| `lists/issuers.json` | The issuers it trusts, by key (128 hex, x then y, as a row holds it), each with a name and a weight from 0 to 1 |
 | `lists/indexes.json` | The indexes whose reputation proofs it shows, by the address of their signing key, each with a name; and `roots`, how many of an index's newest roots a proof may be made against |
 | `config/scoring.json` | The evidence weights, the floor for a reviewer with no counted row, and `countedMints`: the tokens whose receipts count |
 | `config/currencies.json` | Which tokens the pages show as which currency, and their decimals |
@@ -324,22 +321,22 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   they check that every page and twin renders, every JSON-LD block validates against schema.org's
   vocabulary, each twin matches its page, the sitemap lists every page, every URL in the read skill
   and `llms.txt` resolves, no page says a crypto word, the Pay link reads back to the offer, a
-  revoked access key's record counts and a message key's does not, a private record is never
+  past access key's record counts and a message key's does not, a private record is never
   stored, and a picture shows from the host that holds it with the type its record names, and not
   at all when no host does (forest's reference host, on loopback).
 - **The reputation test** (`test/reputation.test.ts`) needs Postgres and circuits' proving files.
-  It checks that a row's market stamp is read from the `register` that wrote it and from nothing
-  else; then, on the page tests' story, that the served leaves rebuild the served root with
-  circuits' `buildTree` and a proof made from them checks with circuits' verifier against the
+  It checks that a row is stored as the registry holds it, its stamp, issuer's key and time read
+  from the row itself; then, on the page tests' story, that the served leaves rebuild the served
+  root with circuits' `buildTree` and a proof made from them checks with circuits' verifier against the
   served root, time and signature; that a proof on a card shows on the page and in its twin; and
   that one with a byte changed, or against a root past the window, shows nothing.
 - **The end-to-end test** (`test/e2e.test.ts`) runs forest's reference host, a local validator with
-  the registry and the escrow, two issuers' lists made by issuer/'s own code, and the index, in
-  about 15 seconds. It needs the two programs built (`cargo build-sbf --arch v3` in
-  `forest/registry/program` and `forest/escrow/program`), the proving files (`npm run fetch` in
-  `forest/registry/artifacts`), `npm ci` in `../issuer`, `solana-test-validator` on the PATH and a
-  Postgres where it may create and drop a database. It skips, saying which, if one is missing. Not
-  in CI.
+  the registry and the escrow, notes from two issuers signed with forest's `signNote`, and the index.
+  It needs the two programs built (`cargo build-sbf --arch v3` in `forest/registry/program` and
+  `forest/escrow/program`), `solana-test-validator` on the PATH and a Postgres where it may create
+  and drop a database; the person circuit's files come with forest. It skips, saying which, if one is
+  missing. Not in CI. It took about 15 seconds before rows came from the person proof, and has not
+  been run since.
 
 ### On devnet
 
@@ -355,8 +352,8 @@ at https://index-production-1b6e.up.railway.app:
 - **One replica,** health check `GET /`, a public domain to port 8080, no volume: its state is in
   Postgres, on Supabase (project `forest-devnet`), through the session pooler, with TLS verified
   against Supabase's public root, `deploy/supabase-root-2021.crt` (`NODE_EXTRA_CA_CERTS`).
-- **What it reads:** the foundation's host (`host/`), the rows of the devnet issuer's two lists,
-  the devnet registry and escrow, and the markets directory's `main`.
+- **What it reads:** the foundation's host (`host/`), the rows of the devnet issuer's key, the
+  devnet registry and escrow, and the markets directory's `main`.
 
 | Variable | On devnet | Sealed |
 |---|---|---|
@@ -381,14 +378,13 @@ Another index holds its own.
   [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Indexes"), so
   no profile can ask it to read another host. Reading any host a verified profile names is a later
   feature.
-- **Which issuers count, and how much:** `lists/issuers.json`, each with a weight from 0 to 1. No
-  issuer counts unless it is named there. Today: the foundation's devnet issuer's two lists, its
-  face list at 0.7 and its ID list (face and a government ID) at 0.9, so a profile with a row from
-  each scores 0.97.
+- **Which issuers count, and how much:** `lists/issuers.json`, each issuer by its key with a weight
+  from 0 to 1. No issuer counts unless it is named there. Today: the foundation's devnet issuer, at
+  0.7. A row does not say the tier of the note behind it, so every row from it weighs the same.
 - **Which markets count:** `lists/markets.json`, 57 names, each read from the markets directory's
   `main`.
-- **The reputation tree:** rebuilt after every scoring pass, from every counted row with a known
-  stamp of every profile with a rating. Leaves that did not change keep their root, time and
+- **The reputation tree:** rebuilt after every scoring pass, from every counted row of every
+  profile with a rating. Leaves that did not change keep their root, time and
   signature.
 - **Which reputation proofs show:** `lists/indexes.json`. Today this index alone (its devnet signing
   key, `8117HhEbnw4z1KVE1sryQfoqTRVsruNpLRZvqWWJnJvC`), and a proof against one of its 10 newest
@@ -418,9 +414,10 @@ Another index holds its own.
 
 ## Limits
 
-- **It trusts its issuers** to put on their lists only the stamps they say they do (the
-  foundation's devnet issuer: one per face on its face list, one per face that passed an ID check on
-  its ID list, with a stand-in that passes everyone on both). It cannot tell.
+- **It trusts its issuers** to sign notes only for the people they say they do (the foundation's
+  devnet issuer: one note number per face, with a stand-in that passes everyone). It cannot tell.
+- **It cannot weigh a tier.** A row does not say which tier the person's note was; until profiles
+  show their tier, every row from one issuer weighs the same.
 - **It trusts its Solana RPC** for rows and escrow events; no second source cross-checks it.
 - **A shown market and an exact rating can name the profile.** The tree is public. In a market with
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
@@ -431,8 +428,6 @@ Another index holds its own.
   moves with every new rating, so on a busy index a proof goes stale sooner than on a quiet one.
 - **Only its own roots.** A proof made against another index's tree shows nothing here, even from
   an index the list names, until this index reads other indexes' roots: later work.
-- **A row's stamp comes from its transaction.** A row whose `register` transaction the RPC no
-  longer serves has no stamp, so no leaf; its stamp is asked for again on every poll.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
   here, whatever its rows.
 - **A page with a picture has the reader's browser fetch it from the host,** which sees the
@@ -477,9 +472,10 @@ and indexes it uses, and the rest is public on the hosts and the chain.
 Reading what is new on the whole host finds new people the first time they write there, and what
 the index reads stays a list anyone can see, instead of growing with whatever profiles name.
 
-**Why does a row count by its issuer's signature alone?**
-The row carries the root and the issuer's signature on it, so anyone can check it forever without
-asking the issuer. Which issuers to trust is the reader's call: `lists/issuers.json` is this one's.
+**Why does a row count by its issuer's key alone?**
+The program writes a row only after checking the person proof against the issuer's key the row
+names, so the row is the proof, read by anyone forever without asking the issuer. Which issuers to
+trust is the reader's call: `lists/issuers.json` is this one's.
 
 **Why apply the access rule with forest's own view?**
 Every reader computes the same view from the same records, so this index counts exactly what any
@@ -510,13 +506,8 @@ the page renders.
 **Why do the pages say nothing about an offer's or a receipt's escrow options?**
 What to advise is each app's.
 
-**Why read a row's transaction for its market stamp?**
-A row's bytes do not hold it: the stamp is the seed of the row's address, and is only in the
-`register` instruction that wrote the row. The address is derived from the stamp, so a stamp that is
-not the row's cannot pass for it.
-
 **Why serve every leaf, and no URL for one leaf and its path?**
-A path asked for by market stamp tells the index, and whoever logs its requests, which profile is
+A path asked for by stamp tells the index, and whoever logs its requests, which profile is
 the caller's, and an app that asked for two would link them. With every leaf, an app finds its
 person's own on the device. forest's prover takes every leaf anyway.
 

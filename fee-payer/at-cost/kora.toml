@@ -32,7 +32,7 @@ max_signatures = 3
 # programs included. No compute budget program: a registration fits the default compute limit, and
 # the fee payer never pays a priority fee it did not agree to.
 allowed_programs = [
-  "5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC", # the Forest registry, on devnet
+  "J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4", # the Forest registry, on devnet
   "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8", # the Forest escrow, on devnet
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
   "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the fee payer's key may do nothing in it (below)

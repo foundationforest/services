@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, stamped by the issuer, registered with the issuer's signed root through the fee payer, assistants acting through the key holder with the keys each app hands it (an offer with a photo, the seller's inbox pulled and opened, a reply, a payment request, until the seller revokes its message key), a message to the seller's inbox, a payment through the escrow, reviews, the index showing it, and the seller proving its rating on its card.",
+  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, each given a note by the issuer's face check, registered with a person proof through the fee payer (one with a voucher), assistants acting through forest's CLI with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the index showing it, and the seller proving its rating on its card.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -13,7 +13,6 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.0",
     "@solana/spl-token": "0.4.9",
     "@solana/web3.js": "1.99.0"
   },

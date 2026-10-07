@@ -6,7 +6,8 @@
 //   test/faces/   three official NASA portraits, public domain, from NASA's own image library: two of
 //                 one astronaut (2004, 2012) and one of another (2019), for test/face.test.ts
 //
-// None of these files is in the repo. Needs the network.
+// None of these files is in the repo. Needs the network. `npm run fetch -- models` takes the models
+// alone, as the image does.
 
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -37,7 +38,8 @@ export const FILES = [
 
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
-for (const file of FILES) {
+const only = process.argv[2]
+for (const file of FILES.filter((f) => !only || f.path.startsWith(`${only}/`))) {
   const path = join(root, file.path)
   if (existsSync(path) && sha256(readFileSync(path)) === file.sha256) continue
   const res = await fetch(file.url, { headers: { 'user-agent': 'foundationforest/services issuer fetch' }, signal: AbortSignal.timeout(300_000) })

@@ -21,9 +21,9 @@ record that names it, before it keeps anything.
 `src/host.ts` hands forest's host the numbers in `POLICY`, where to keep things, and two lookups:
 
 - **The registry lookup,** when `SOLANA_RPC_URL` is set: whether a key holds a row from an issuer,
-  read with forest's registry client (`fetchRows`, filtered on the key and the issuer). A row counts
-  only if the issuer's signature on its root checks (`issuerSigned`), since the registry stores that
-  signature without checking it.
+  read with forest's registry client (`fetchRows`, filtered on the key and the issuer's key, as an
+  inbox names it: 128 hex characters, x then y). Any such row counts: the registry wrote it only
+  after checking the person proof against that issuer's key.
 - **The sender's records** (forest's `readSender`), always: to take a message a message key signed,
   forest's host needs the sender's hosts and permissions records from the host the message names.
   This host reads them with forest's client (`readPage`, every page, all within 5 seconds) and keeps
@@ -71,11 +71,12 @@ The test checks that `/` says what this is; that forest's host runs with this po
 that records go in and come back through the front; that forest's single-file fixture moves in once,
 under the same numbers, and never over a directory that holds folders; that with a bucket (a
 stand-in on loopback that checks forest's signature, in region `auto`) its bytes go straight there,
-and bytes an earlier start left on disk move there; that the lookup counts a row only when the
-issuer signed it; that a message to an inbox open to one issuer's rows is taken with the lookup and
-refused without it; and that a message key's message is taken while the sender's host lists it,
-still taken within the cache once revoked, refused (`permission`) after, refused (`lookup`) when
-the named host does not answer, and that a revoked message key's pull is refused at once.
+and bytes an earlier start left on disk move there; that the lookup counts a row of the sender's
+with the issuer's key on it, and no other; that a message to an inbox open to one issuer's rows is
+taken with the lookup and refused without it; and that a message key's message is taken while the
+sender's host lists it, still taken within the cache once past, refused (`permission`) after,
+refused (`lookup`) when the named host does not answer, and that a past message key's pull is
+refused at once.
 
 ### On devnet
 
@@ -91,7 +92,8 @@ at https://board-devnet-test-production.up.railway.app:
   (`auto`), `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_STYLE=virtual`. `DATABASE_PATH`,
   which this code no longer reads, is still set.
 
-The devnet index reads it (`index/lists/hosts.json`), and the key holder looks there first (`HOSTS`).
+The devnet index reads it (`index/lists/hosts.json`), and forest's CLI starts there when it is
+given no host (it reads that list).
 
 ## Policy
 
@@ -128,7 +130,7 @@ The devnet index reads it (`index/lists/hosts.json`), and the key holder looks t
   change to forest's storage first.
 - **It trusts its RPC** for the registry lookup. A lookup that fails refuses the message
   (`lookup`), and the sender sends it again.
-- **A revoked message key can still send here for up to 60 seconds:** until what this host read of
+- **A past message key can still send here for up to 60 seconds:** until what this host read of
   the sender's records expires. Its pulls stop at once.
 - **Taking a message key's message tells the sender's host something:** this host asks it for the
   sender's records, so it sees that this host asked, and when.
@@ -153,7 +155,7 @@ So moving the forest pin cannot change this host's policy without a pull request
 
 **Why keep a sender's records for a minute, and not read them for every message?**
 Reading them is a request to another host, up to five seconds, for every message a message key
-signs. A minute keeps that to one request a sender a minute, and a revoked key stops within it.
+signs. A minute keeps that to one request a sender a minute, and a past key stops within it.
 
 **Why move the bytes on disk to the bucket on start?**
 `host.sqlite` lists which bytes the host holds, whatever holds them. Bytes left on disk after the

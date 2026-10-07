@@ -1,29 +1,34 @@
-// The issuer's key: an Ed25519 key that signs each snapshot of the face list and nothing else. Its
-// address (base58 of its 32-byte public key) is the issuer's name: what a registry row records and
-// what a reader trusts (forest/keys/README.md, "The recipe").
+// The issuer's seed: the Ed25519 keypair in ISSUER_KEYPAIR, whose 32-byte secret every key the issuer
+// uses is mixed from. The keypair itself signs nothing.
 //
 // It is written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret
-// then the 32-byte public key. Signing is Node's own Ed25519 (RFC 8032, deterministic).
+// then the 32-byte public key.
 //
-// Its 32-byte secret is also the seed of the issuer's other keys, mixed by forest's own recipe for a
-// key under a label (`mainKey`): `id`, the key that signs the ID list, and `reference/<n>`, the
-// address a payment for one ID check names. The same seed and label always give the same key.
+// What is mixed from the secret, the same every time:
+//   - with forest's `hkdf` under `issuer/notes`: the note key, a Baby Jubjub private key that signs
+//     every note (forest/registry/README.md, "The note and the person proof");
+//   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
+//   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
+//     for one document check names, and `payments`, the devnet address payments go to once there is a
+//     price.
 
-import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
+import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { hkdf } from '../../forest/keys/src/hkdf.ts'
 import { mainKey } from '../../forest/keys/src/profile.ts'
 import { base58 } from '../../forest/records/src/bytes.ts'
 
 export type IssuerKey = {
   publicKey: Uint8Array
-  /** The issuer's name: its public key in base58. */
+  /** The keypair's public key in base58. */
   address: string
-  sign(message: Uint8Array): Uint8Array
   /** The key forest's `mainKey` mixes from this key's secret under `label`. */
   derive(label: string): Promise<IssuerKey>
+  /** 32 bytes forest's `hkdf` mixes from this key's secret under `info`. */
+  mix(info: string): Promise<Uint8Array>
 }
 
 /** PKCS #8 for an Ed25519 secret (RFC 8410): this fixed header, then the 32 bytes. */
@@ -63,25 +68,24 @@ export function parseKeypair(text: string, source: string): IssuerKey {
   return issuer
 }
 
-/** A key from its 32-byte secret. The secret stays inside, for signing and for mixing other keys. */
+/** A key from its 32-byte secret. The secret stays inside, for mixing other keys. */
 function fromSecret(secret: Uint8Array): IssuerKey {
-  const key = privateKey(secret)
-  const publicKey = publicKeyOf(key)
+  const publicKey = publicKeyOf(privateKey(secret))
   return {
     publicKey,
     address: base58.encode(publicKey),
-    sign: (message) => new Uint8Array(sign(null, message, key)),
     derive: async (label) => fromSecret((await mainKey(secret, label)).privateKey),
+    mix: (info) => hkdf(secret, info),
   }
 }
 
-/** The issuer's key, from a keypair file. */
+/** The issuer's seed, from a keypair file. */
 export function loadKeypair(path: string): IssuerKey {
   return parseKeypair(readFileSync(path, 'utf8'), `the key file ${path}`)
 }
 
 /**
- * The issuer's key from the contents of a sealed variable (`ISSUER_KEYPAIR`), written to a file of
+ * The issuer's seed from the contents of a sealed variable (`ISSUER_KEYPAIR`), written to a file of
  * its own: a new directory under the system's temporary directory, readable by this process's user
  * only (0700), holding one file readable by it only (0600). Never under the repo or the build, and
  * `remove` deletes it. The service loads the key and removes the file at once.

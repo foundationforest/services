@@ -1,16 +1,16 @@
 // The index end to end, on real pieces: forest's reference host (forest/records), a local validator
-// running the registry and the escrow (forest/registry, forest/escrow), the issuer's own list file
-// (issuer/src/list.ts) for the issuer the index trusts and for a stranger, and a local Postgres.
-// Nothing is mocked.
+// running the registry and the escrow (forest/registry, forest/escrow), notes signed with forest's
+// own signNote, by the issuer the index trusts and by a stranger, and a local Postgres. Nothing is
+// mocked.
 //
 // The story:
 //   1. Ana tutors, Ben is her student, Cleo is a stranger. Each app writes its hosts record, card,
 //      and (Ana) an offer on the host the index reads in full. Nobody holds a row yet: the index
 //      keeps the records and shows no one.
-//   2. Ana and Ben are on the foundation issuer's list, Cleo on a stranger's. Each registers a row,
-//      proven against its issuer's newest snapshot and carrying its signature. The index reads the
-//      rows of the issuers it trusts: Ana and Ben appear, from the records it already held; Cleo,
-//      whose issuer it does not trust, does not.
+//   2. The foundation's issuer signs Ana and Ben a note, a stranger signs Cleo one. Each registers a
+//      row with a person proof from its note. The index reads the rows of the issuers it trusts: Ana
+//      and Ben appear, from the records it already held; Cleo, whose issuer it does not trust, does
+//      not.
 //   3. Ana lets an access key write offers: its offer counts. Ben writes a private record: the index
 //      leaves it alone.
 //   4. A paid deal: Ben pays Ana in one tap through the escrow; they review each other.
@@ -20,8 +20,8 @@
 //
 // Needs: DATABASE_URL (a Postgres the test may create and drop a database in); the two programs
 // built (`cargo build-sbf --arch v3` in forest/registry/program and forest/escrow/program); the
-// proving files (`npm run fetch` in forest/registry/artifacts); `npm ci` in issuer/; and
-// `solana-test-validator` on the PATH. If any is missing the test says which and skips.
+// person circuit's files (committed in forest/registry/circuit/devnet); and `solana-test-validator`
+// on the PATH. If any is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
@@ -31,27 +31,26 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { ed25519 } from '@noble/curves/ed25519.js'
 import { MINT_SIZE, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInstruction, createMintToInstruction, getAssociatedTokenAddressSync } from '@solana/spl-token'
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js'
 import pg from 'pg'
 
-import { listSecret, mainKey, type MainKey } from '../../forest/keys/src/index.ts'
+import { issuerSecret, mainKey, type MainKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
-import { base58, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, accessRecord } from '../../forest/records/src/index.ts'
-import { PROGRAM_ID as REGISTRY_ID, buildRegistration } from '../../forest/registry/client/src/index.ts'
+import { hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, accessRecord } from '../../forest/records/src/index.ts'
+import { PROGRAM_ID as REGISTRY_ID, type SignedNote, buildRegistration, issuerKeyOf, signNote } from '../../forest/registry/client/src/index.ts'
 import { PROGRAM_ID as ESCROW_ID, payInOneTap, termsFor, keysFor } from '../../forest/escrow/client/src/index.ts'
 
+import { issuerHex } from '../src/chain/registry.ts'
 import { INDEX_ROOT, loadConfig } from '../src/config.ts'
 import { startIndex } from '../src/main.ts'
 import { verify } from '../src/scores/sign.ts'
 import { serveMarkets } from './markets-repo.ts'
 
 const FOREST = join(INDEX_ROOT, '../forest')
-const ISSUER = join(INDEX_ROOT, '../issuer')
 const REGISTRY_SO = join(FOREST, 'registry/program/target/deploy/forest_registry.so')
 const ESCROW_SO = join(FOREST, 'escrow/program/target/deploy/forest_escrow.so')
-const ARTIFACTS = { wasm: join(FOREST, 'registry/artifacts/semaphore-32.wasm'), zkey: join(FOREST, 'registry/artifacts/semaphore-32.zkey') }
+const ARTIFACTS = { wasm: join(FOREST, 'registry/circuit/devnet/person.wasm'), zkey: join(FOREST, 'registry/circuit/devnet/person.zkey') }
 const RPC_PORT = 18899
 const RPC = `http://127.0.0.1:${RPC_PORT}`
 /** A classic mint at USDC's address, which the index's config counts. */
@@ -63,8 +62,7 @@ function missing(): string | null {
   if (!process.env.DATABASE_URL) return 'DATABASE_URL is not set'
   if (!existsSync(REGISTRY_SO)) return 'the registry is not built; run `cargo build-sbf --arch v3` in forest/registry/program'
   if (!existsSync(ESCROW_SO)) return 'the escrow is not built; run `cargo build-sbf --arch v3` in forest/escrow/program'
-  if (!existsSync(ARTIFACTS.zkey)) return 'no proving files; run `npm run fetch` in forest/registry/artifacts'
-  if (!existsSync(join(ISSUER, 'node_modules'))) return 'the issuer is not installed; run `npm ci` in issuer/'
+  if (!existsSync(ARTIFACTS.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
   if (spawnSync('solana-test-validator', ['--version']).status !== 0) return 'solana-test-validator is not on the PATH'
   return null
 }
@@ -96,10 +94,6 @@ function usdcAccountJson(authority: PublicKey): string {
 test('the index, end to end', { timeout: 600_000 }, async (t) => {
   const why = missing()
   if (why) return t.skip(why)
-
-  const { IssuerList } = await import(join(ISSUER, 'src/list.ts'))
-  const { Store } = await import(join(ISSUER, 'src/store.ts'))
-  const { parseKeypair } = await import(join(ISSUER, 'src/key.ts'))
 
   const cleanups: (() => Promise<void> | void)[] = []
   try {
@@ -158,26 +152,26 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     }
     await confirm(await connection.requestAirdrop(payer.publicKey, 100 * LAMPORTS_PER_SOL))
 
-    // --- Two issuers, each its own list file as the issuer keeps it -----------------------------
+    // --- Two issuers, each with its note key and its name -------------------------------------
     const issuer = (name: string) => {
-      const secret = randomBytes(32)
-      const key = parseKeypair(JSON.stringify([...secret, ...ed25519.getPublicKey(secret)]), name)
-      return { key, address: key.address as string, list: new IssuerList(new Store(join(scratch, `${name}.sqlite`)), key) }
+      const privateKey = new Uint8Array(randomBytes(32))
+      return { name, privateKey, key: issuerHex(issuerKeyOf(privateKey)) }
     }
-    const foundation = issuer('foundation')
-    const stranger = issuer('stranger')
+    const foundation = issuer('issuer.foundation.example')
+    const stranger = issuer('issuer.stranger.example')
 
-    // --- People: a seed each, a profile per label, a secret per issuer's list -------------------
-    type Person = { profile: MainKey; signer: Keypair; secret: Uint8Array; stamp: bigint; name: string }
-    const person = async (label: string, name: string, issuerAddress: string): Promise<Person> => {
+    // --- People: a seed each, a profile per label, a note from one issuer ----------------------
+    type Person = { profile: MainKey; signer: Keypair; secret: Uint8Array; note: SignedNote; name: string }
+    const person = async (label: string, name: string, by: ReturnType<typeof issuer>): Promise<Person> => {
       const seed = new Uint8Array(randomBytes(32))
       const profile = await mainKey(seed, label)
-      const list = await listSecret(seed, issuerAddress)
-      return { profile, signer: Keypair.fromSeed(profile.privateKey), secret: list.secret, stamp: list.stamp, name }
+      const { secret, noteNumber } = await issuerSecret(seed, by.name)
+      const note = signNote(by.privateKey, { noteNumber, embedding: new Uint8Array(512), model: 'stand-in', tier: 1n })
+      return { profile, signer: Keypair.fromSeed(profile.privateKey), secret, note, name }
     }
-    const ana = await person(SELLER, 'Ana', foundation.address)
-    const ben = await person(BUYER, 'Ben', foundation.address)
-    const cleo = await person(SELLER, 'Cleo', stranger.address)
+    const ana = await person(SELLER, 'Ana', foundation)
+    const ben = await person(BUYER, 'Ben', foundation)
+    const cleo = await person(SELLER, 'Cleo', stranger)
 
     // --- The host the index reads in full, and the index on its three lists ---------------------
     const host = new Host()
@@ -187,7 +181,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     cleanups.push(() => markets.close())
     writeFileSync(join(scratch, 'hosts.json'), JSON.stringify({ hosts: [hostUrl] }))
     writeFileSync(join(scratch, 'markets.json'), JSON.stringify({ directory: markets.url, markets: ['online-tutors', 'language-exchange'] }))
-    writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.address]: { name: 'Forest Foundation', weight: 1 } } }))
+    writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.key]: { name: 'Forest Foundation', weight: 1 } } }))
     const config = loadConfig({
       DATABASE_URL: dbUrl.toString(),
       INDEX_SIGNING_SEED: '09'.repeat(32),
@@ -225,19 +219,13 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     for (const p of [ana, ben, cleo]) assert.equal((await page(`/profiles/${p.profile.address}.json`)).status, 404, 'no row yet: no profile shown')
     assert.equal((await index.db.query('select count(*)::int as n from host_records')).rows[0].n, 7, 'every record kept')
 
-    // --- 2. Rows, each proven against its issuer's newest snapshot, carrying its signature --------
-    foundation.list.append([ana.stamp, ben.stamp, ...[1n, 2n, 3n].map((n) => n * 1_000_003n)], [], Date.now())
-    stranger.list.append([cleo.stamp], [], Date.now())
-    const register = async (p: Person, label: string, k: ReturnType<typeof issuer>) => {
-      const file = JSON.parse(k.list.file())
-      const newest = file.snapshots.at(-1)
+    // --- 2. Rows, each from a person proof of its note ------------------------------------------
+    const register = async (p: Person, label: string) => {
       const r = await buildRegistration({
         secret: p.secret,
+        note: p.note,
         label,
         profile: p.signer.publicKey as never,
-        issuer: base58.decode(k.address) as never,
-        stamps: file.stamps.slice(0, newest.size).map(BigInt),
-        issuerSignature: hex.decode(newest.signature),
         artifacts: ARTIFACTS,
         payer: payer.publicKey as never,
         recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash,
@@ -245,12 +233,12 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
       await send([r.instruction as never], [payer, p.signer])
       return r.row.toBase58()
     }
-    const anaRow = await register(ana, SELLER, foundation)
-    await register(ben, BUYER, foundation)
-    await register(cleo, SELLER, stranger)
+    const anaRow = await register(ana, SELLER)
+    await register(ben, BUYER)
+    await register(cleo, SELLER)
     await read()
     const anaPage = (await page(`/profiles/${ana.profile.address}.json`)).body
-    assert.deepEqual(anaPage.stamps.map((s: any) => [s.label, s.counted, s.issuer.address, s.row]), [[SELLER, true, foundation.address, anaRow]])
+    assert.deepEqual(anaPage.stamps.map((s: any) => [s.label, s.counted, s.issuer.key, s.row]), [[SELLER, true, foundation.key, anaRow]])
     assert.deepEqual(anaPage.offers.map((o: any) => o.uri), [`${ana.profile.address}/offer/portuguese`], 'from the records it already held')
     assert.equal((await page(`/profiles/${ben.profile.address}.json`)).status, 200)
     assert.equal((await page(`/profiles/${cleo.profile.address}.json`)).status, 404, 'an issuer the index does not trust: no row counts')
@@ -282,7 +270,7 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     const token = { mint: USDC, program: TOKEN_PROGRAM_ID, decimals: 6 }
     const terms = termsFor(undefined, { seller: ana.signer.publicKey as never, amount: 25_000_000n })
     await send(payInOneTap({ buyer: ben.signer.publicKey as never, payer: payer.publicKey as never, token: token as never, terms }) as never, [payer, ben.signer])
-    const deal = keysFor({ buyer: ben.signer.publicKey as never, mint: USDC as never, terms }).escrow.toBase58()
+    const deal = keysFor({ buyer: ben.signer.publicKey as never, payer: payer.publicKey as never, mint: USDC as never, terms }).escrow.toBase58()
     const t2 = Date.now()
     const review = (subject: string) => ({ subject, ratings: { overall: '10' }, text: 'Good.', dealId: deal, createdAt: new Date(t2).toISOString() })
     await publish([hostUrl], [ownerRecord(ben.profile, 'review/1', review(ana.profile.address), t2), ownerRecord(ana.profile, 'review/1', review(ben.profile.address), t2)])

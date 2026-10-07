@@ -14,7 +14,7 @@ import { normalizeOrigin, publicKeyFromAddress } from '../../forest/records/src/
 const here = dirname(fileURLToPath(import.meta.url))
 export const INDEX_ROOT = resolve(here, '..')
 
-/** The issuers this index trusts, by address, each with this index's weight for it, from 0 to 1. */
+/** The issuers this index trusts, by key (128 hex, x then y, as a row holds it), each with this index's weight for it, from 0 to 1. */
 export type IssuerConfig = Record<string, { name: string; weight: number }>
 /** The indexes whose reputation proofs this index shows, by the address of their signing key, each with a name. */
 export type IndexConfig = Record<string, { name: string }>
@@ -33,7 +33,7 @@ export type ScoringConfig = {
 
 /** The programs the foundation's index reads by default: the registry and the escrow on devnet. */
 export const DEVNET = {
-  registry: '5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC',
+  registry: 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4',
   escrow: 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8',
 }
 
@@ -94,12 +94,12 @@ export function readMarkets(path: string): MarketsList {
   return { directory: directory.replace(/\/+$/, ''), markets: [...new Set(markets as string[])] }
 }
 
-/** The issuers list: every key an address, every weight from 0 to 1. */
+/** The issuers list: every key an issuer's key as a row holds it (128 lowercase hex), every weight from 0 to 1. */
 export function readIssuers(path: string): IssuerConfig {
   const issuers = field<IssuerConfig>(path, readJson(path), 'issuers')
-  for (const [address, k] of Object.entries(issuers)) {
-    if (!publicKeyFromAddress(address)) throw new Error(`${path}: ${address} is not an issuer's address`)
-    if (typeof k.weight !== 'number' || !(k.weight >= 0 && k.weight <= 1)) throw new Error(`${path}: ${address}'s weight is not from 0 to 1`)
+  for (const [key, k] of Object.entries(issuers)) {
+    if (!/^[0-9a-f]{128}$/.test(key)) throw new Error(`${path}: ${key} is not an issuer's key: 128 lowercase hex, x then y`)
+    if (typeof k.weight !== 'number' || !(k.weight >= 0 && k.weight <= 1)) throw new Error(`${path}: ${key}'s weight is not from 0 to 1`)
   }
   return issuers
 }

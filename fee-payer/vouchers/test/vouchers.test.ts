@@ -1,22 +1,22 @@
 // The voucher check on loopback, the fee payer's front, in front of two stand-in Koras that record
 // what reaches them: the free one, behind the voucher door, and the at-cost one, which gets every
-// other request. Real vouchers: proofs from a stamp on a test issuer's list, made with forest's
-// proveStamp, checked with its verifyStamp. Each refusal is provoked once, and nothing refused ever
+// other request. Real vouchers: person proofs from notes a test issuer signed, made with forest's
+// provePerson, checked with its verifyPerson. Each refusal is provoked once, and nothing refused ever
 // reaches either Kora.
 //
 //   npm test
 //
-// Needs the registry's proving files (`npm run fetch` in forest/registry/artifacts) and its client's
-// dependencies (`../../forest.sh registry/client registry/artifacts`). If either is missing the test
-// says which and skips.
+// Needs the registry client's dependencies (`../../forest.sh registry/client`); the person circuit's
+// files are committed in forest. If either is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
-import { createPrivateKey, randomBytes, sign as edSign } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { after, before, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -30,61 +30,53 @@ import {
   type TransactionInstruction,
 } from '@solana/web3.js'
 
-import { listRoot, proveStamp, refundIx, registerIx, stampOf, toBytes32 } from '../../../forest/registry/client/src/index.ts'
+import { issuerKeyBytes, issuerKeyOf, noteNumberOf, provePerson, refundIx, registerIx, signNote, toBytes32 } from '../../../forest/registry/client/src/index.ts'
 
-import { readConfig, startFront, type Config } from '../src/vouchers.ts'
+import { UsedSet, readConfig, startFront, type Config } from '../src/vouchers.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const forest = join(here, '../../../forest')
-const artifacts = { wasm: join(forest, 'registry/artifacts/semaphore-32.wasm'), zkey: join(forest, 'registry/artifacts/semaphore-32.zkey') }
-const REGISTRY = new PublicKey('5zTPm1bGY8ANLcJd12fPiKSTd71bvnq38LAUDT4ToeoC')
+const artifacts = { wasm: join(forest, 'registry/circuit/devnet/person.wasm'), zkey: join(forest, 'registry/circuit/devnet/person.zkey') }
+const REGISTRY = new PublicKey('J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4')
+const NAME = 'fee-payer.test.forest.example'
 const API_KEY = randomBytes(16).toString('hex')
 
 function missing(): string | null {
   if (!existsSync(join(forest, 'registry/client/node_modules'))) return 'run `npm ci` in forest/registry/client'
-  if (!existsSync(artifacts.zkey)) return 'no proving files; run `npm run fetch` in forest/registry/artifacts'
+  if (!existsSync(artifacts.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
   return null
 }
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString('hex')
 const b64 = (b: Uint8Array) => Buffer.from(b).toString('base64')
-function signRoot(key: Keypair, root: bigint): Uint8Array {
-  const der = Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), key.secretKey.subarray(0, 32)])
-  return new Uint8Array(edSign(null, toBytes32(root), createPrivateKey({ key: der, format: 'der', type: 'pkcs8' })))
-}
 
-// The foundation's issuer's two lists, as far as this test goes: the face list, whose stamps earn
-// three vouchers, and the ID list, signed by its own key, whose stamps earn ten. One person has a
-// stamp on each among others, from a secret per list.
-function list() {
-  const key = Keypair.generate()
-  const secret = new Uint8Array(randomBytes(32))
-  const stamps = [stampOf(new Uint8Array(randomBytes(32))), stampOf(secret), stampOf(new Uint8Array(randomBytes(32)))]
-  const root = listRoot(stamps)
-  return { key, secret, stamps, root, signature: signRoot(key, root) }
-}
-const face = list()
-const id = list()
-const { key: issuer, root, signature: issuerSignature } = face
+// The issuer, as far as this test goes: its key, and a note it signs for Alice, at tier 1 and at
+// tier 2, from her secret for it. Another issuer the fee payer does not trust signs her a note too.
+const issuerPrivate = new Uint8Array(randomBytes(32))
+const issuer = issuerKeyOf(issuerPrivate)
+const issuerHex = hex(issuerKeyBytes(issuer))
+const secret = new Uint8Array(randomBytes(32))
+const noteAt = (tier: bigint, key = issuerPrivate) =>
+  signNote(key, { noteNumber: noteNumberOf(secret), embedding: new Uint8Array(512).fill(7), model: 'test-model', tier })
 const feePayer = Keypair.generate()
 const alice = Keypair.generate()
 const bob = Keypair.generate()
 
-type VoucherJson = { proof: unknown; root: string; issuerSignature: string; label: string; marketStamp: string }
-async function voucherFor(profile: Keypair, label: string, from = face): Promise<VoucherJson> {
-  const p = await proveStamp({ secret: from.secret, label, profile: profile.publicKey.toBytes(), stamps: from.stamps, artifacts })
-  return { proof: p.raw, root: hex(toBytes32(p.root)), issuerSignature: hex(from.signature), label, marketStamp: hex(toBytes32(p.marketStamp)) }
+type VoucherJson = { proof: unknown; issuer: string; tier: string; label: string; stamp: string }
+async function voucherFor(profile: Keypair, label: string, note = noteAt(1n)): Promise<VoucherJson> {
+  const p = await provePerson({ secret, note, label, profile: profile.publicKey.toBytes(), artifacts })
+  return { proof: p.proof, issuer: hex(issuerKeyBytes(p.issuer)), tier: p.tier.toString(), label, stamp: hex(toBytes32(p.stamp)) }
 }
+const label = (n: number | string, name = NAME) => `voucher/${name}/${n}`
 
 /** A `register` for this main key, as an app sends it. The row's own proof is the program's to check, not the voucher check's. */
 function register(profile: Keypair, programId = REGISTRY): TransactionInstruction {
   return registerIx({
     profile: profile.publicKey as never,
     label: 'tutoring/seller',
-    marketStamp: new Uint8Array(randomBytes(32)),
-    issuer: issuer.publicKey.toBytes(),
-    root,
-    issuerSignature,
+    stamp: new Uint8Array(randomBytes(32)),
+    issuer,
+    tier: 1n,
     proof: { a: new Uint8Array(32), b: new Uint8Array(64), c: new Uint8Array(32) },
     payer: feePayer.publicKey as never,
     programId: programId as never,
@@ -142,19 +134,25 @@ before(
       freeKoraUrl: `http://127.0.0.1:${(kora.address() as AddressInfo).port}`,
       freeKoraApiKey: API_KEY,
       atCostKoraUrl: `http://127.0.0.1:${(atCost.address() as AddressInfo).port}`,
+      name: NAME,
       issuers: [
-        { issuer: face.key.publicKey.toBytes(), vouchers: 3 },
-        { issuer: id.key.publicKey.toBytes(), vouchers: 10 },
+        { issuer: issuerHex, tier: 1n, vouchers: 3 },
+        { issuer: issuerHex, tier: 2n, vouchers: 10 },
       ],
       registry: REGISTRY,
       databasePath: join(dir, 'data/vouchers.sqlite'),
       port: 0,
     }
     service = await startFront(config)
-    vouchers.one = await voucherFor(alice, 'sponsor/1')
-    vouchers.two = await voucherFor(alice, 'sponsor/2')
-    vouchers.idOne = await voucherFor(alice, 'sponsor/1', id)
-    vouchers.idTen = await voucherFor(alice, 'sponsor/10', id)
+    vouchers.one = await voucherFor(alice, label(1))
+    vouchers.two = await voucherFor(alice, label(2))
+    vouchers.tierTwoOne = await voucherFor(alice, label(1), noteAt(2n))
+    vouchers.tierTwoFour = await voucherFor(alice, label(4), noteAt(2n))
+    vouchers.tierTwoTen = await voucherFor(alice, label(10), noteAt(2n))
+    vouchers.tierOneFour = await voucherFor(alice, label(4))
+    vouchers.elsewhere = await voucherFor(alice, label(1, 'another.fee-payer.example'))
+    vouchers.stranger = await voucherFor(alice, label(1), noteAt(1n, new Uint8Array(randomBytes(32))))
+    vouchers.tierThree = await voucherFor(alice, label(1), noteAt(3n))
   },
   { timeout: 120_000 },
 )
@@ -188,7 +186,9 @@ test('the voucher door lets through one registry row per voucher, and refuses ev
   // The request's shape.
   await refused('not json', 'bad_request')
   await refused({ transaction: good }, 'bad_request')
-  await refused({ transaction: good, voucher: { ...one, root: 'zz' } }, 'bad_request')
+  await refused({ transaction: good, voucher: { ...one, stamp: 'zz' } }, 'bad_request')
+  await refused({ transaction: good, voucher: { ...one, issuer: one.issuer.toUpperCase() } }, 'bad_request')
+  await refused({ transaction: good, voucher: { ...one, tier: 1 } }, 'bad_request')
   await refused({ transaction: good, voucher: { ...one, proof: null } }, 'bad_request')
 
   // The transaction decodes, whole.
@@ -222,17 +222,22 @@ test('the voucher door lets through one registry row per voucher, and refuses ev
   forged.signatures[forged.message.staticAccountKeys.findIndex((k) => k.equals(alice.publicKey))] = new Uint8Array(randomBytes(64))
   await refused({ transaction: b64(forged.serialize()), voucher: one }, 'not_signed_by_main_key')
 
-  // The voucher: its issuer, its label on that issuer's list, its proof.
-  await refused({ transaction: good, voucher: { ...one, issuerSignature: hex(signRoot(Keypair.generate(), root)) } }, 'not_signed_by_issuer')
-  await refused({ transaction: good, voucher: { ...one, label: 'sponsor/4' } }, 'not_a_voucher_label')
-  await refused({ transaction: good, voucher: { ...one, label: 'sponsor/10' } }, 'not_a_voucher_label')
-  await refused({ transaction: good, voucher: { ...one, label: 'sponsor/0' } }, 'not_a_voucher_label')
-  await refused({ transaction: good, voucher: { ...one, label: 'sponsor/01' } }, 'not_a_voucher_label')
-  await refused({ transaction: good, voucher: { ...one, label: 'tutoring/seller' } }, 'not_a_voucher_label')
-  await refused({ transaction: good, voucher: { ...vouchers.idTen!, label: 'sponsor/11' } }, 'not_a_voucher_label')
-  const otherStamp = Buffer.from(one.marketStamp, 'hex')
+  // The voucher: an issuer and tier this fee payer takes, this fee payer's label within the tier's
+  // count, and its proof.
+  await refused({ transaction: good, voucher: vouchers.stranger }, 'not_a_trusted_issuer')
+  await refused({ transaction: good, voucher: vouchers.tierThree }, 'not_a_trusted_issuer')
+  await refused({ transaction: good, voucher: vouchers.elsewhere }, 'not_a_voucher_label')
+  await refused({ transaction: good, voucher: vouchers.tierOneFour }, 'not_a_voucher_label')
+  for (const bad of [label(0), label('01'), label(11), 'sponsor/1', 'tutoring/seller', `voucher/${NAME}`, `voucher/${NAME}/1/2`]) {
+    await refused({ transaction: good, voucher: { ...one, label: bad } }, 'not_a_voucher_label')
+  }
+  await refused({ transaction: good, voucher: { ...vouchers.tierTwoTen!, label: label(11) } }, 'not_a_voucher_label')
+  // The proof must hold for what the voucher says: its label, its stamp, its tier, its main key.
+  await refused({ transaction: good, voucher: { ...one, label: label(3) } }, 'voucher_does_not_hold')
+  const otherStamp = Buffer.from(one.stamp, 'hex')
   otherStamp[31] ^= 1
-  await refused({ transaction: good, voucher: { ...one, marketStamp: otherStamp.toString('hex') } }, 'voucher_does_not_hold')
+  await refused({ transaction: good, voucher: { ...one, stamp: otherStamp.toString('hex') } }, 'voucher_does_not_hold')
+  await refused({ transaction: good, voucher: { ...one, tier: '2' } }, 'voucher_does_not_hold')
   // A voucher seen in flight, sent with another main key's row: its proof names Alice.
   await refused({ transaction: transaction([register(bob)], [bob]), voucher: one }, 'voucher_does_not_hold')
 
@@ -248,8 +253,11 @@ test('the voucher door lets through one registry row per voucher, and refuses ev
   await refused({ transaction: good, voucher: one }, 'voucher_used', 409)
   await refused({ transaction: transaction([register(alice)], [alice]), voucher: one }, 'voucher_used', 409)
 
-  // The ID list's vouchers: ten per stamp, each its own, `sponsor/1` apart from the face list's.
-  for (const voucher of [vouchers.idOne!, vouchers.idTen!]) {
+  // A tier 2 note earns ten: the same person's stamps under the same labels, so its first three are
+  // the tier 1 note's, and the rest are new.
+  assert.equal(vouchers.tierTwoOne!.stamp, one.stamp, 'a stamp depends on the person and the label, not the tier')
+  await refused({ transaction: transaction([register(alice)], [alice]), voucher: vouchers.tierTwoOne }, 'voucher_used', 409)
+  for (const voucher of [vouchers.tierTwoFour!, vouchers.tierTwoTen!]) {
     assert.deepEqual(await post({ transaction: transaction([register(alice)], [alice]), voucher }), { status: 200, body: { signature: 'stand-in-signature' } })
     await refused({ transaction: transaction([register(alice)], [alice]), voucher }, 'voucher_used', 409)
   }
@@ -301,16 +309,35 @@ test('the at-cost door: every other request goes to the at-cost Kora, and its an
   assert.equal(calls.length, free, 'none of it reached the free Kora')
 })
 
-test('VOUCHER_ISSUERS: each issuer with how many vouchers a stamp on its list earns', () => {
-  const env = { FREE_KORA_URL: 'http://127.0.0.1:8082', FREE_KORA_API_KEY: 'k', AT_COST_KORA_URL: 'http://127.0.0.1:8081', REGISTRY_PROGRAM: REGISTRY.toBase58() }
-  const [a, b] = [face.key.publicKey.toBase58(), id.key.publicKey.toBase58()]
-  const config = readConfig({ ...env, VOUCHER_ISSUERS: `${a}:3, ${b}:10` })
-  assert.deepEqual(
-    config.issuers.map((i) => [new PublicKey(i.issuer).toBase58(), i.vouchers]),
-    [[a, 3], [b, 10]],
-  )
+test('FEE_PAYER_NAME and VOUCHER_ISSUERS: the name in every label, and each issuer and tier with how many vouchers it earns', () => {
+  const env = { FREE_KORA_URL: 'http://127.0.0.1:8082', FREE_KORA_API_KEY: 'k', AT_COST_KORA_URL: 'http://127.0.0.1:8081', REGISTRY_PROGRAM: REGISTRY.toBase58(), FEE_PAYER_NAME: NAME }
+  const a = issuerHex
+  const b = 'ab'.repeat(64)
+  const config = readConfig({ ...env, VOUCHER_ISSUERS: `${a}:1:3, ${a}:2:10,${b}:1:1` })
+  assert.equal(config.name, NAME)
+  assert.deepEqual(config.issuers, [{ issuer: a, tier: 1n, vouchers: 3 }, { issuer: a, tier: 2n, vouchers: 10 }, { issuer: b, tier: 1n, vouchers: 1 }])
+  assert.throws(() => readConfig({ ...env, FEE_PAYER_NAME: '' , VOUCHER_ISSUERS: `${a}:1:3` }), /missing environment variables: FEE_PAYER_NAME/)
+  assert.throws(() => readConfig({ ...env, VOUCHER_ISSUERS: `${a}:1:3`, FEE_PAYER_NAME: 'a/b' }), /FEE_PAYER_NAME/)
   assert.throws(() => readConfig(env), /missing environment variables: VOUCHER_ISSUERS/)
-  for (const bad of [a, `${a}:0`, `${a}:-1`, `${a}:3:4`, `${a}:three`, `:3`, `${a}:3,${a}:10`]) {
-    assert.throws(() => readConfig({ ...env, VOUCHER_ISSUERS: bad }), /VOUCHER_ISSUERS|public key/i, bad)
+  for (const bad of [a, `${a}:1`, `${a}:0:3`, `${a}:1:0`, `${a}:1:3:4`, `${a}:1:three`, `${a.toUpperCase()}:1:3`, `${a.slice(2)}:1:3`, `:1:3`, `${a}:1:3,${a}:1:10`]) {
+    assert.throws(() => readConfig({ ...env, VOUCHER_ISSUERS: bad }), /VOUCHER_ISSUERS/, bad)
+  }
+})
+
+test('a used set kept before notes: its column renamed, its vouchers still spent', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'forest-vouchers-old-'))
+  try {
+    const path = join(dir, 'vouchers.sqlite')
+    const old = new DatabaseSync(path)
+    old.exec('CREATE TABLE used (market_stamp BLOB PRIMARY KEY) WITHOUT ROWID')
+    const spent = new Uint8Array(randomBytes(32))
+    old.prepare('INSERT INTO used (market_stamp) VALUES (?)').run(spent)
+    old.close()
+    const used = new UsedSet(path)
+    assert.equal(used.spend(spent), false, 'spent before, still spent')
+    assert.equal(used.spend(new Uint8Array(randomBytes(32))), true)
+    used.close()
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 })
