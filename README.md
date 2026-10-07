@@ -144,8 +144,8 @@ deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
 Open in a browser: [the index](https://index.devnet.forest.foundation/), the latest e2e run's
-[seller](https://index.devnet.forest.foundation/profiles/swxCTAeMdyzoN2wLS2zYS8MgHphKwL39poUqnmiTd7v)
-and [deal](https://index.devnet.forest.foundation/deals/31QrpGSyo4WUsz1Sca5ycMpp1urDo8tPhq4G95PjWxEo),
+[seller](https://index.devnet.forest.foundation/profiles/GrFNVhxpQjSD8JDQb5EKkhdFMjDJm2ryPSxPfWkaxAAd),
+ID-checked, and [deal](https://index.devnet.forest.foundation/deals/21GTMsUt29MKcPAemeZm4zuuH2uYYHCwZ82qKGn8s11f),
 and [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json).
 
 ## Promises
