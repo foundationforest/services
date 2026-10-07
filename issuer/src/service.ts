@@ -6,36 +6,44 @@ import type { AddressInfo } from 'node:net'
 import { dirname } from 'node:path'
 
 import { base58 } from '../../forest/records/src/bytes.ts'
-import { Batcher } from './batch.ts'
+import { canonical } from '../../forest/records/src/canonical.ts'
+import { type IssuerKey as NoteKey, issuerKeyOf } from '../../forest/registry/client/src/person.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
+import { type Embedder, sface, standIn } from './face.ts'
 import { loadKeypair, writeKeyFile, type IssuerKey } from './key.ts'
 import { RateLimit } from './limit.ts'
-import { IssuerList } from './list.ts'
+import { issuerHex } from './notes.ts'
 import { RpcPayments, type Payments } from './payment.ts'
 import { handler, type PaymentDeps } from './server.ts'
 import { Store } from './store.ts'
 
+/** The hkdf labels the note key and the fingerprint key are mixed under, from the issuer's seed. */
+export const NOTE_KEY_INFO = 'issuer/notes'
+export const FINGERPRINT_KEY_INFO = 'issuer/fingerprint'
+
 export type Config = {
+  /** The issuer's name: what a person's secret for it is mixed from (forest's `issuerSecret`). */
+  issuerName: string
   diditApiKey: string
   diditWorkflowId: string
-  /** The ID check's workflow: document, liveness and face match. */
+  /** The document check's workflow: document, liveness and face match. */
   diditIdWorkflowId: string
   diditBaseUrl: string
-  /** The ID check's price in the dollar's smallest unit; 0 is free. */
+  /** `sface`, or `stand-in`: one fixed embedding, only with a stand-in Didit on this machine. */
+  faceModel: 'sface' | 'stand-in'
+  /** The document check's price in the dollar's smallest unit; 0 is free. */
   idTierPrice: bigint
   /** The dollar it is paid in, by its mint's address. Required when the price is above 0. */
   idTierMint?: string
-  /** The address that receives it; never one of the issuer's signing keys. Required when the price is above 0. */
+  /** The address that receives it; never the issuer's own. Required when the price is above 0. */
   idTierPayTo?: string
   /** The Solana RPC a payment is looked for through. Required when the price is above 0. */
   rpcUrl?: string
-  /** The key as a file, for local runs. */
+  /** The seed as a file, for local runs. */
   issuerKeypairPath?: string
   /** Or its contents, from a sealed variable, as on Railway. Exactly one of the two is set. */
   issuerKeypair?: string
   databasePath: string
-  batchMax: number
-  batchIntervalMs: number
   /** How many sessions one address may open in an hour. */
   sessionLimitPerHour: number
   /** The header a proxy in front puts the client's address in (`x-real-ip` on Railway); unset, the connection's. */
@@ -53,6 +61,15 @@ function isAddress(text: string): boolean {
   }
 }
 
+/** Whether a URL is on this machine: the only place a stand-in Didit may be. */
+function onThisMachine(url: string): boolean {
+  try {
+    return ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(url).hostname)
+  } catch {
+    return false
+  }
+}
+
 function whole(name: string, value: string, min: number): number {
   const n = Number(value)
   if (!Number.isSafeInteger(n) || n < min) throw new Error(`${name} must be a whole number of at least ${min}`)
@@ -60,12 +77,12 @@ function whole(name: string, value: string, min: number): number {
 }
 
 /**
- * Reads the variables `README.md` lists. Fails naming every required one that is missing. The key's
- * contents (`ISSUER_KEYPAIR`) are taken out of `env` once read, so nothing that reads the
- * environment later finds them.
+ * Reads the variables `README.md` lists. Fails naming every required one that is missing. The seed's
+ * contents (`ISSUER_KEYPAIR`) are taken out of `env` once read, so nothing that reads the environment
+ * later finds them.
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const required = ['DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID']
+  const required = ['ISSUER_NAME', 'DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID']
   const missing = required.filter((name) => !env[name])
   if (!env.ISSUER_KEYPAIR && !env.ISSUER_KEYPAIR_PATH) missing.push('ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH')
   const price = env.ID_TIER_PRICE || '0'
@@ -78,13 +95,21 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   if (env.ISSUER_KEYPAIR && env.ISSUER_KEYPAIR_PATH) {
     throw new Error('set ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH, not both')
   }
+  const faceModel = env.FACE_MODEL || 'sface'
+  if (faceModel !== 'sface' && faceModel !== 'stand-in') throw new Error('FACE_MODEL is sface or stand-in')
+  const diditBaseUrl = env.DIDIT_BASE_URL || 'https://verification.didit.me'
+  if (faceModel === 'stand-in' && !onThisMachine(diditBaseUrl)) {
+    throw new Error('FACE_MODEL=stand-in is for a stand-in Didit on this machine only: DIDIT_BASE_URL is not on loopback')
+  }
   const issuerKeypair = env.ISSUER_KEYPAIR || undefined
   delete env.ISSUER_KEYPAIR
   return {
+    issuerName: env.ISSUER_NAME!,
     diditApiKey: env.DIDIT_API_KEY!,
     diditWorkflowId: env.DIDIT_WORKFLOW_ID!,
     diditIdWorkflowId: env.DIDIT_ID_WORKFLOW_ID!,
-    diditBaseUrl: env.DIDIT_BASE_URL || 'https://verification.didit.me',
+    diditBaseUrl,
+    faceModel,
     idTierPrice: BigInt(price),
     idTierMint: env.ID_TIER_MINT || undefined,
     idTierPayTo: env.ID_TIER_PAY_TO || undefined,
@@ -92,37 +117,29 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     issuerKeypairPath: env.ISSUER_KEYPAIR_PATH || undefined,
     issuerKeypair,
     databasePath: env.DATABASE_PATH || './data/issuer.sqlite',
-    batchMax: whole('BATCH_MAX', env.BATCH_MAX || '50', 1),
-    batchIntervalMs: whole('BATCH_INTERVAL_SECONDS', env.BATCH_INTERVAL_SECONDS || '3600', 1) * 1000,
     sessionLimitPerHour: whole('SESSION_LIMIT_PER_HOUR', env.SESSION_LIMIT_PER_HOUR || '5', 1),
     clientAddressHeader: env.CLIENT_ADDRESS_HEADER?.toLowerCase() || undefined,
     port: whole('PORT', env.PORT || '8080', 0),
   }
 }
 
-/** One list's parts: its tables, the list, and its batch. */
-export type ListParts = { store: Store; list: IssuerList; batcher: Batcher }
-
 export type Issuer = {
   url: string
   server: Server
-  /** The face list's parts. */
   store: Store
-  list: IssuerList
-  batcher: Batcher
-  /** The ID list's, signed by the key mixed from the issuer's seed under `id`. */
-  id: ListParts
-  /** Where the key from `ISSUER_KEYPAIR` was written; the file is gone by the time this returns. */
+  /** The note key's public half: what a row names, and what readers trust. */
+  noteKey: NoteKey
+  /** Where the seed from `ISSUER_KEYPAIR` was written; the file is gone by the time this returns. */
   keyFile?: string
-  /** Stops taking requests, lets a running batch finish, and closes the file. */
+  /** Stops taking requests, and closes the file. */
   close(): Promise<void>
 }
 
 /**
- * The issuer's key: from its file, or, when it came in a sealed variable, written to a private file
+ * The issuer's seed: from its file, or, when it came in a sealed variable, written to a private file
  * in a temporary directory, loaded, and the file deleted at once. Nothing reads it again.
  */
-function issuerKey(config: Config): { keypair: IssuerKey; keyFile?: string } {
+function issuerSeed(config: Config): { keypair: IssuerKey; keyFile?: string } {
   if (!config.issuerKeypair) return { keypair: loadKeypair(config.issuerKeypairPath!) }
   const file = writeKeyFile(config.issuerKeypair)
   try {
@@ -133,8 +150,8 @@ function issuerKey(config: Config): { keypair: IssuerKey; keyFile?: string } {
 }
 
 /**
- * Starts the service. Tests pass their own checks, payments and clock; otherwise it talks to Didit
- * and to the RPC. Each list is the file's own, read at start.
+ * Starts the service. Tests pass their own checks, payments and embedder; otherwise it talks to Didit
+ * and to the RPC, and loads the face models (or, with `FACE_MODEL=stand-in`, the stand-in).
  */
 export async function startIssuer(
   config: Config,
@@ -142,27 +159,24 @@ export async function startIssuer(
     faceCheck?: FaceCheck
     idCheck?: FaceCheck
     payments?: Payments
+    embedder?: Embedder
     log?: (line: string) => void
-    now?: () => number
   } = {},
 ): Promise<Issuer> {
-  const key = issuerKey(config)
-  const idKey = await key.keypair.derive('id')
-  if (config.idTierPayTo === key.keypair.address || config.idTierPayTo === idKey.address) {
-    throw new Error("ID_TIER_PAY_TO is one of the issuer's signing keys; payments go to an address of their own")
+  const seed = issuerSeed(config)
+  if (config.idTierPayTo === seed.keypair.address) {
+    throw new Error("ID_TIER_PAY_TO is the issuer's own key; payments go to an address of their own")
   }
+  const notePrivate = await seed.keypair.mix(NOTE_KEY_INFO)
+  const noteKey = issuerKeyOf(notePrivate)
+  const fingerprintKey = await seed.keypair.mix(FINGERPRINT_KEY_INFO)
   const didit = { apiKey: config.diditApiKey, baseUrl: config.diditBaseUrl }
   const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditWorkflowId, tier: 'face' })
   const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, tier: 'id' })
+  const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
 
   mkdirSync(dirname(config.databasePath), { recursive: true })
-  const batch = { max: config.batchMax, intervalMs: config.batchIntervalMs, log: overrides.log, now: overrides.now }
   const store = new Store(config.databasePath)
-  const list = new IssuerList(store, key.keypair)
-  const batcher = new Batcher(store, list, batch)
-  const idStore = new Store(config.databasePath, 'id')
-  const idList = new IssuerList(idStore, idKey)
-  const idBatcher = new Batcher(idStore, idList, { ...batch, name: 'ID list' })
 
   let payment: PaymentDeps | undefined
   if (config.idTierPrice > 0n) {
@@ -170,15 +184,20 @@ export async function startIssuer(
     payment = {
       price,
       payments: overrides.payments ?? new RpcPayments({ rpcUrl: config.rpcUrl!, price }),
-      reference: async (paymentId) => (await key.keypair.derive(`reference/${paymentId}`)).address,
+      reference: async (paymentId) => (await seed.keypair.derive(`reference/${paymentId}`)).address,
     }
   }
 
   const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(
     handler({
-      face: { tier: 'face', store, check: faceCheck, list, batcher, workflowId: config.diditWorkflowId },
-      id: { tier: 'id', store: idStore, check: idCheck, list: idList, batcher: idBatcher, workflowId: config.diditIdWorkflowId },
+      face: { tier: 'face', check: faceCheck, workflowId: config.diditWorkflowId },
+      id: { tier: 'id', check: idCheck, workflowId: config.diditIdWorkflowId },
+      store,
+      embedder,
+      noteKey: { privateKey: notePrivate, key: noteKey },
+      fingerprintKey,
+      about: canonical({ v: 1, name: config.issuerName, key: issuerHex(noteKey) }),
       payment,
       limit,
       clientAddressHeader: config.clientAddressHeader,
@@ -189,26 +208,20 @@ export async function startIssuer(
     server.once('error', reject)
     server.listen(config.port, resolve)
   })
-  batcher.start()
-  idBatcher.start()
 
   const { port } = server.address() as AddressInfo
   return {
     url: `http://127.0.0.1:${port}`,
     server,
     store,
-    list,
-    batcher,
-    id: { store: idStore, list: idList, batcher: idBatcher },
-    keyFile: key.keyFile,
+    noteKey,
+    keyFile: seed.keyFile,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
         server.closeAllConnections()
       })
-      await Promise.all([batcher.close(), idBatcher.close()])
       store.close()
-      idStore.close()
     },
   }
 }

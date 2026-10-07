@@ -2,3 +2,5 @@
 .git
 forest/
 **/node_modules
+issuer/models
+issuer/test/faces
