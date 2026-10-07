@@ -15,7 +15,7 @@ is shipped.
 | [`issuer/`](issuer/README.md) | Checks once, by face, that a person is one real human, and signs them a note; for a person who shows that note, a second check, by face and a government document, signs the same note at a higher tier | the foundation | Running, with a stand-in that passes everyone on both checks; the ID check free |
 | [`fee-payer/`](fee-payer/README.md) | Kora, configured, at one address with two doors: the voucher door pays for a person's registry rows, free, against a voucher (three for a tier 1 note from the issuer, ten in all for tier 2); the at-cost door pays Solana's fee for any other transaction and is paid back at cost, in the dollar the person holds | the foundation | Running, one service; paid in two test dollars |
 | [`index/`](index/README.md) | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree and shows the proofs made from it; serves pages for people and JSON for AI agents | the foundation | Running |
-| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Not yet run on notes; the loop before them passed on 2026-10-06 |
+| [`e2e/`](e2e/README.md) | The loop, end to end on devnet, against these services | the foundation, by hand | Passed on 2026-10-07 |
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -139,8 +139,10 @@ in this repo. The first escrow,
 deposit returned to the deploy key
 ([`4uXu5XR…`](https://explorer.solana.com/tx/4uXu5XR1Q9XMfofLtTs7itdACXVRqFppBnMZxQDfKLnq1KC3nJgy7erzZZvJPr6xEoHXkH8ApEGEPmohHfXLK9ta?cluster=devnet)).
 
-Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), and
-[who the issuer is](https://issuer-production-4976.up.railway.app/issuer.json).
+Open in a browser: [the index](https://index-production-1b6e.up.railway.app/), the latest e2e run's
+[seller](https://index-production-1b6e.up.railway.app/profiles/F39dfM58E3SpxQfEZBQkiChjTXG299xyKgVEwYKPKnR6)
+and [deal](https://index-production-1b6e.up.railway.app/deals/8TrDGZhYCDTXebTEKBG4Gq15uXhzUs5NTbzf1TNTZ5jZ),
+and [who the issuer is](https://issuer-production-4976.up.railway.app/issuer.json).
 
 ## Promises
 
