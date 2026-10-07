@@ -102,7 +102,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
   && bash fee-payer/deploy/devnet-config.sh fee-payer/free/kora.toml > /dev/null
 (cd fee-payer/vouchers && npm ci && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
-  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/pages.test.ts test/reputation.test.ts)
+  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts)
 ```
 
 A test that cannot find what it needs skips; the workflow fails on any skip. Not in CI: the index's

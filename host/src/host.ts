@@ -244,15 +244,31 @@ export async function startHost(config: Config, connection?: Pick<Connection, 'g
   const inner = new URL(await host.listen(0))
 
   const server = createServer((req, res) => {
-    if (new URL(req.url ?? '/', 'http://host.invalid').pathname === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
+    // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
+    // the process.
+    let path: string
+    try {
+      path = new URL(req.url ?? '/', 'http://host.invalid').pathname
+    } catch {
+      req.resume()
+      return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
+    }
+    if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
       req.resume()
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
-    const upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
-      res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
-      answer.pipe(res)
-    })
+    let upstream
+    try {
+      upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
+        res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
+        answer.pipe(res)
+      })
+    } catch {
+      // A request node:http will not send on, as it is.
+      req.resume()
+      return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
+    }
     upstream.on('error', () => {
       if (!res.headersSent) res.writeHead(502)
       res.end()
