@@ -16,7 +16,8 @@
 //      host does;
 //  12. the leak rule: a row the chain wrote after its issuer's until counts for nothing.
 // And, in a database of its own: the foundation's host under its new name keeps its cursor, its
-// records and its pictures (migrations/013_host_named.sql).
+// records and its pictures (migrations/013_host_named.sql), and what the old index read under the
+// old name after that goes (015_host_named_once.sql).
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 
@@ -506,7 +507,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
   }
 })
 
-test('the foundation’s host under its new name keeps its cursor, records and pictures', async (t) => {
+test('the foundation’s host under its new name keeps its cursor, records and pictures, once', async (t) => {
   if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
   const OLD = 'https://board-devnet-test-production.up.railway.app'
   const NEW = 'https://host.devnet.forest.foundation'
@@ -532,6 +533,18 @@ test('the foundation’s host under its new name keeps its cursor, records and p
     const records = (await db.query('select host, id from host_records order by id')).rows
     assert.deepEqual(records, [{ host: NEW, id: 'r1' }, { host: 'https://other.example', id: 'r2' }], 'its records, and no other host’s')
     assert.deepEqual((await db.query('select host from blobs')).rows, [{ host: NEW }], 'and which pictures it holds')
+
+    // On devnet the index it replaced ran a few seconds more, as a deploy overlaps the old and the
+    // new: it found no cursor under the old address and read the host again from the start under it,
+    // and checked a picture there. 015 takes those copies away, and nothing under the new name.
+    await db.query(`delete from schema_migrations where name = '015_host_named_once.sql'`)
+    await db.query(`insert into cursors (source, value) values ($1, '4243')`, [`host:${OLD}`])
+    await db.query(`insert into host_records (host, id, profile, path, text) values ($1, 'r1', 'P', 'profile', '{}')`, [OLD])
+    await db.query(`insert into blobs (sha256, host, type) values ('${'ab'.repeat(32)}', $1, 'image/png')`, [OLD])
+    assert.deepEqual(await migrate(db), ['015_host_named_once.sql'])
+    assert.deepEqual((await db.query('select source, value from cursors order by source')).rows, cursors, 'one cursor for the host, where it was')
+    assert.deepEqual((await db.query('select host, id from host_records order by id')).rows, records, 'its records once, and the other host’s')
+    assert.deepEqual((await db.query('select host from blobs')).rows, [{ host: NEW }], 'and its pictures once')
   } finally {
     await db.end()
     await admin.query(`drop database if exists ${name} with (force)`)
