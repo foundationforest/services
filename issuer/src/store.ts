@@ -9,8 +9,11 @@
 //                  payment opens one
 //
 // Nothing else: no face, no embedding, no name, no document, no time, no row number. A session id is
-// kept only as its hash, so the file names no Didit session; the two tables of notes share no key, so
-// nothing in the file says which document went with which face.
+// kept only as its hash, so the file names no Didit session. The note number links the two tables
+// of notes: a document's fingerprint sits next to the same note number as the hashes of the
+// sessions signed for it, its face-check sessions included. So the file does say which document
+// went with which face-check sessions, and whoever also holds Didit's records of those sessions can
+// tell which face.
 //
 // A file the issuer kept before notes, when it published lists, holds their tables: the lists, their
 // snapshots, the stamps waiting and the sessions used. They are dropped at start, and the file

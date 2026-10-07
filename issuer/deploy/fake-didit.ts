@@ -16,8 +16,8 @@
 // anyone who asks the devnet issuer gets a note, at either tier (the issuer's own limit on sessions an
 // hour per address still holds). deploy/start.sh starts it only when DIDIT_API_KEY is unset, on
 // 127.0.0.1 inside the issuer's container, where nothing else reaches it. It keeps in memory the
-// sessions it opened and their workflows, nothing else, and forgets them on restart. It logs nothing
-// per request.
+// sessions it opened, their workflows and, for a document session, the name it made up, nothing
+// else, and forgets them on restart. It logs nothing per request.
 
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
