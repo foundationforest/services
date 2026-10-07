@@ -91,8 +91,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./forest.sh keys records registry/client registry/artifacts escrow/client circuits/reputation
-(cd forest/registry/artifacts && npm run fetch)
+./forest.sh keys records registry/client escrow/client circuits/reputation cli
 (cd forest/circuits/reputation && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
