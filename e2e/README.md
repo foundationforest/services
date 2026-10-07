@@ -105,28 +105,29 @@ step needs the fee payer with the issuer's key at tier 1 in `VOUCHER_ISSUERS`, a
 
 ### The latest run
 
-2026-10-07, 17:42 to 17:45 UTC, against the five services as deployed from `main` at `6aeb857`
-(forest at `93ec55a`): **passed** in 130 seconds, most of it waiting out the host's cache time. Its
-record is [`runs/2026-10-07T17-42-52-358Z.json`](runs/2026-10-07T17-42-52-358Z.json). It is the
-first run at the services' own names (`devnet.json`), and the index read the host under its new
-name.
+2026-10-07, 18:49 to 18:51 UTC, against the five services as deployed from `main` at `2588f97`
+(forest at `a499401`): **passed** in 151 seconds, most of it waiting out the host's cache time. Its
+record is [`runs/2026-10-07T18-49-00-682Z.json`](runs/2026-10-07T18-49-00-682Z.json). It is the
+first run with the ID check (step 13), the index's tier badges, the host's photo rule and its sender
+check.
 
 | Step | What happened |
 |---|---|
-| People | Seller `swxCTAeMdyzoN2wLS2zYS8MgHphKwL39poUqnmiTd7v`, buyer `3pwPbaLSrUSQ6hVe2yyXozMuSXvfUe7qLopYZdi2jESt`, each with its secret for `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` |
+| People | Seller `GrFNVhxpQjSD8JDQb5EKkhdFMjDJm2ryPSxPfWkaxAAd`, buyer `D2CTyxhmKsDQGSFRmAzavuWgQ57xMc4kQZ9RPorfHf8P`, each with its secret for `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` |
 | Notes | A tier 1 note each from the face check, model `stand-in`, signed by the issuer's key `2185f564…` |
 | Rows, through the fee payer | `tutoring/seller` through the voucher door with the voucher `voucher/fee-payer.devnet.forest.foundation/1`, 619 bytes, charged nothing; `tutoring/buyer` through the at-cost door, 763 bytes, charged 1.64576 test dollars. Each row read back at the registry `J4ES…` naming its profile, the issuer's key and the fee payer as payer, and each proof showed tier 1 against its row. The seller held no SOL and paid no dollar |
-| Keys for the assistants | The seller's app: a write key `13mz6gPB…` (offers and reviews), a message key `CmJhj7kv…` and the read key its card lists, each on its permissions list; the buyer's app: a write key `Bnit9DtM…` |
-| Records | The seller's offer `offer/maths`, posted through the CLI (`post-offer`), signed by the write key, and its photo, 79 bytes, on the host; two reviews, one by each assistant (`post-review`) |
-| The inbox | The buyer's message, 4,638 bytes, sealed to the seller's inbox key and the read key in one envelope, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its inbox key |
-| The seller's assistant | Through the CLI: `inbox` pulled one message with the message key and opened it with the read key; `send` replied, 2,680 bytes, signed by the message key for the seller, and the buyer opened it and saw the message key sent it; `request` put `{ request: "post-offer", offer, id: "physics" }` in the seller's own inbox, which the seller's app pulled and opened, and `inbox` marked as a request. Then the message key past and the read key deleted: the CLI refused `send` ("listed as a past key") and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and 71 seconds later a message it signed (`permission`) |
-| The deal | Escrow `31QrpGSyo4WUsz1Sca5ycMpp1urDo8tPhq4G95PjWxEo`, its address its terms', one tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…` |
-| The index | Both rows counted under "Forest issuer (devnet)", weight 0.7; the offer listed with its photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Seller and buyer each rating 10 |
-| The proof | The seller's leaf found by its stamp `26f179eb…` among the index's 4 leaves, scored 100 tenths from one review; proven on the device against root `29541b5b…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)" |
+| Keys for the assistants | The seller's app: a write key `6hUcKTTP…` (offers and reviews), a message key `D9nfPLTd…` and the read key its card lists, each on its permissions list; the buyer's app: a write key `7skioAV4…` |
+| Records | The seller's offer `offer/maths`, posted through the CLI (`post-offer`), signed by the write key, and its photo, 79 bytes, taken by the host's photo rule: the seller's folder holds a row from the devnet issuer; two reviews, one by each assistant (`post-review`) |
+| The inbox | The buyer's message, 4,639 bytes, sealed to the seller's inbox key and the read key in one envelope, taken by the seller's host; a second refused (`once`); the seller pulled one message and opened it with its inbox key |
+| The seller's assistant | Through the CLI: `inbox` pulled one message with the message key and opened it with the read key; `send` replied, 2,681 bytes, signed by the message key for the seller, which the buyer's host took after reading the seller's permissions from `host.devnet.forest.foundation`, at a public address and with no redirect; the buyer opened it and saw the message key sent it; `request` put `{ request: "post-offer", offer, id: "physics" }` in the seller's own inbox, which the seller's app pulled and opened, and `inbox` marked as a request. Then the message key past and the read key deleted: the CLI refused `send` ("listed as a past key") and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and 71 seconds later a message it signed (`permission`) |
+| The deal | Escrow `21GTMsUt29MKcPAemeZm4zuuH2uYYHCwZ82qKGn8s11f`, its address its terms', one tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…` |
+| The index | Both rows counted under "Forest issuer (devnet)", weight 0.7, no tier shown yet; the offer listed with its photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews counted (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Seller and buyer each rating 10 |
+| The proof | The seller's leaf found by its stamp `1e11d762…` among the index's 6 leaves, scored 100 tenths from one review; proven on the device against root `1245bc30…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its card. The index checked it and the seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)" |
+| The ID check | The issuer's document check (the stand-in) signed the seller's note again at tier 2, the same note number, embedding and model. The seller proved its tier on the device at its row's stamp `1e11d762…`, the proof held against the row `8KJYj5UT…` (`verifyTier`), and it went on its card beside the rating's proof. The index checked it: the seller's row at tier 2, "ID-checked", weight 0.9 and uniqueness 0.9; the page says "Verified real person, one per market · ID-checked", and the rating's proof still shows |
 
-Open them: [the seller](https://index.devnet.forest.foundation/profiles/swxCTAeMdyzoN2wLS2zYS8MgHphKwL39poUqnmiTd7v),
-[the buyer](https://index.devnet.forest.foundation/profiles/3pwPbaLSrUSQ6hVe2yyXozMuSXvfUe7qLopYZdi2jESt),
-[the deal](https://index.devnet.forest.foundation/deals/31QrpGSyo4WUsz1Sca5ycMpp1urDo8tPhq4G95PjWxEo).
+Open them: [the seller](https://index.devnet.forest.foundation/profiles/GrFNVhxpQjSD8JDQb5EKkhdFMjDJm2ryPSxPfWkaxAAd),
+[the buyer](https://index.devnet.forest.foundation/profiles/D2CTyxhmKsDQGSFRmAzavuWgQ57xMc4kQZ9RPorfHf8P),
+[the deal](https://index.devnet.forest.foundation/deals/21GTMsUt29MKcPAemeZm4zuuH2uYYHCwZ82qKGn8s11f).
 
 ## Promises
 
