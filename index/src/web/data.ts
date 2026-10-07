@@ -449,7 +449,7 @@ export async function profile(ctx: Ctx, address: string) {
       /** The id of the record that holds the profile card now. */
       id: p.id as string,
     },
-    /** Each row of an issuer this index trusts: a market stamp on its list, under a label. */
+    /** Each row of an issuer this index trusts: a note that issuer signed, under a label. */
     stamps: stamps.rows.map((b) => {
       const status = stampStatus({ label: b.label }, { label: labelOf(p) }, ctx.directory)
       const file = ctx.directory.markets.get(b.market)
@@ -461,7 +461,8 @@ export async function profile(ctx: Ctx, address: string) {
         /** The plain word for the role: the market's role name, the role itself, or null in a one-sided market. */
         side: status.counted && file?.sides === 'two' ? ctx.directory.sideWord(b.market, status.role as 'seller' | 'buyer') : null,
         issuer: {
-          address: b.issuer as string,
+          /** The issuer's key, 128 hex, x then y, as the row holds it. */
+          key: b.issuer as string,
           name: (ctx.config.issuers[b.issuer]?.name ?? null) as string | null,
           weight: (ctx.config.issuers[b.issuer]?.weight ?? 0) as number,
         },
@@ -469,8 +470,6 @@ export async function profile(ctx: Ctx, address: string) {
         why: status.counted ? null : status.why,
         /** The row's address: the registry account anyone can read to check it. */
         row: b.address as string,
-        root: b.root as string,
-        issuerSignature: b.issuer_signature as string,
       }
     }),
     scores: {

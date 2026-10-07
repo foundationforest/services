@@ -28,8 +28,9 @@ const directory = new Directory([
   { file: 'learning/language-exchange.json', market: exchange },
 ])
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-const FOUNDATION = '7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7'
-const OTHER_ISSUER = '5tUPxWGKqNbFctBXKS8LgnkM8A1Jfn5qVrUGxKjFXozB'
+/** Issuers by key, as a row holds one: 128 hex, x then y. */
+const FOUNDATION = '2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549'
+const OTHER_ISSUER = 'ef'.repeat(64)
 const scoring = {
   evidence: { both: 1, oneSided: 0.5, none: 0.05 },
   unstampedReviewer: 0.05,

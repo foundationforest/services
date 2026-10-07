@@ -2,13 +2,13 @@
 // an index publishes"), so a person proves on their device a score from their own profiles, naming
 // none of them (forest/circuits/reputation).
 //
-//   a leaf   one per market stamp of a counted row (scores/compute.ts, "Which rows count"), for each
-//            profile with a rating: Poseidon(stamp, scope, score, count), where scope is the row's
-//            label as the registry computes it, score the rating times ten as the pages round it
+//   a leaf   one per stamp of a counted row (README.md, "Which rows count"), for each profile with
+//            a rating: Poseidon(stamp, scope, score, count), where stamp is the row's own, scope the
+//            row's label as the registry computes it, score the rating times ten as the pages round it
 //            (1.0 to 10.0 is 10 to 100), and count the reviews the rating comes from. A profile with
-//            no rating has no leaf: a leaf with no review can prove nothing. A profile with rows on
-//            two lists has two leaves, one per stamp, and proves from either list's secret.
-//   order    by market stamp: stable, and it says nothing about whose leaf is whose.
+//            no rating has no leaf: a leaf with no review can prove nothing. A profile with rows from
+//            two issuers has two leaves, one per stamp, and proves from either issuer's secret.
+//   order    by stamp: stable, and it says nothing about whose leaf is whose.
 //   root     circuits' buildTree over the leaves, signed with the index's ed25519 key (the one that
 //            signs its scores, sign.ts) over circuits' signedBytes(root, time), the time in ms.
 //
@@ -30,7 +30,7 @@ import type { IndexKeys } from './sign.ts'
 /** A field element as the tree's URLs and a profile's proofs write it: 32 bytes, 64 lowercase hex. */
 export const hex64 = (v: bigint): string => hex.encode(toBytes32(v))
 
-/** The tree's leaves, in its order: one per market stamp of a counted row of a profile with a rating. */
+/** The tree's leaves, in its order: one per stamp of a counted row of a profile with a rating. */
 export function reputationLeaves(inputs: Pick<Inputs, 'profiles' | 'stamps'>, rating: Rating[], directory: Directory): Leaf[] {
   const profiles = new Map(inputs.profiles.map((p) => [p.address, p]))
   const rated = new Map(rating.filter((r) => r.value !== null).map((r) => [r.profile, r]))
@@ -38,10 +38,10 @@ export function reputationLeaves(inputs: Pick<Inputs, 'profiles' | 'stamps'>, ra
   for (const st of inputs.stamps) {
     const profile = profiles.get(st.profile)
     const r = rated.get(st.profile)
-    if (!profile || !r || !st.marketStamp || !stampStatus(st, profile, directory).counted) continue
-    const stamp = BigInt(`0x${st.marketStamp}`)
+    if (!profile || !r || !st.stamp || !stampStatus(st, profile, directory).counted) continue
+    const stamp = BigInt(`0x${st.stamp}`)
     if (!isFieldElement(stamp)) continue
-    leaves.set(st.marketStamp, { stamp, scope: scopeOf(st.label), score: BigInt(Math.round(r.value! * 10)), count: BigInt(r.reviews) })
+    leaves.set(st.stamp, { stamp, scope: scopeOf(st.label), score: BigInt(Math.round(r.value! * 10)), count: BigInt(r.reviews) })
   }
   return [...leaves.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, leaf]) => leaf)
 }

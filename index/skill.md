@@ -88,8 +88,8 @@ bytes are on the hosts, never here. Check the SHA-256 of what you fetch yourself
 
 A profile whose `profile.inbox` is set takes messages: notes delivered to its own hosts, which only
 its main key, or a message key it lists, pulls. `inbox.senders` is `anyone`, or
-`{ "issuer": <address> }`: the sender's key must hold a registry row from that issuer, under any
-label. `once` means one message from each sender, ever; `maxBytes` is the largest it takes, in
+`{ "issuer": <key> }`: the sender's key must hold a registry row from that issuer, named by its key
+as a row holds it (128 hex characters), under any label. `once` means one message from each sender, ever; `maxBytes` is the largest it takes, in
 bytes; `readers` are read keys every message is sealed to as well, so whoever holds one can read
 the inbox for the person. No message passes through this index, and it never sees one.
 
@@ -102,18 +102,18 @@ message the inbox does not allow.
 
 ## Check a real person
 
-An issuer keeps a list of stamps; the foundation's issuer keeps two, putting a person on each once:
-its face list after a face check, its ID list after a check of face and a government ID, each signed by
-its own key, so each is an issuer here with its own weight. A profile shows it is on a list with a row in the registry, which names
-the profile, the issuer, the label and the root of the list it proved against, without saying which
-stamp is the person's. One person gets at most one row per issuer per label, so a second profile in
-the same market needs a second person, or a second issuer. It means real and accountable, not good.
+An issuer signs a person a note after the checks it chooses; the foundation's issuer checks a face
+once. A profile shows it holds a note with a row in the registry, which names the profile, the
+issuer's key, the label and the row's stamp, without saying who the person is: the registry wrote it
+only after checking a proof of the note. One person gets at most one row per issuer per label, so a
+second profile in the same market needs a second person, or a second issuer. It means real and
+accountable, not good.
 
 In `stamps[]`:
 
 - `counted: true` means this index counts it. It counts only if all of these hold:
-  - its `issuer` is one this index trusts (`issuer.name`, `issuer.weight`), and the issuer's
-    signature on the row's `root` checks;
+  - its `issuer` is one this index trusts, by its key (`issuer.key`, `issuer.name`,
+    `issuer.weight`);
   - its `label` is a market this index uses and a role its sides allow, exactly
     (`online-tutors/seller`, `language-exchange/peer`); a plain market with no role counts for
     nothing;
@@ -123,10 +123,9 @@ In `stamps[]`:
 - `scores.uniqueness[]` combines the issuers of each counted label into one number from 0 to 1.
 
 To check it yourself, without trusting this index: `row` is the address of the row's account in the
-registry program on Solana. Read it: it names the profile's key, the issuer, the root, the issuer's
-signature on the root (`issuerSignature`) and the label. Check that signature with the issuer's key:
-it is ed25519 over the root's 32 bytes. Then decide whether you trust that issuer. This index's
-issuers are listed at
+registry program on Solana. Read it: it names the profile's key, the row's stamp, the issuer's key
+and the label, and the program wrote it only after checking the person proof against that key. Then
+decide whether you trust that issuer. This index's issuers are listed at
 https://github.com/foundationforest/services/blob/main/index/lists/issuers.json.
 
 ## Check a receipt
@@ -208,8 +207,8 @@ over forest's signed bytes for the root and the time, base64url) and how many `l
     GET https://forest.foundation/v1/reputation/leaves
 
 gives every leaf in the tree's order, with the `root` they make: `stamp` and `scope` (64 hex),
-`score` (the rating times ten) and `count` (the reviews it comes from). One leaf per market stamp of
-a counted row of a profile with a rating. An app finds its person's own leaves here and proves on
+`score` (the rating times ten) and `count` (the reviews it comes from). One leaf per stamp of a
+counted row of a profile with a rating. An app finds its person's own leaves here and proves on
 the device; it never asks for one leaf, so this index never learns which are theirs.
 
 ## Paying

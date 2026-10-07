@@ -363,15 +363,15 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // be another profile, as Dara's is. A review of him takes online-tutors' review fields.
       const benTwin = await json(`/profiles/${ben.address}.json`)
       assert.equal(benTwin.reviews.received[0].market, MARKET)
-      // A row counts when its issuer is one this index trusts and the issuer's signature checks.
+      // A row counts when its issuer's key is one this index trusts.
       assert.deepEqual(anaTwin.stamps.map((b: any) => [b.label, b.counted, b.issuer]), [
-        [SELLER, true, { address: ISSUER.address, name: ISSUER_NAME, weight: 1 }],
+        [SELLER, true, { key: ISSUER, name: ISSUER_NAME, weight: 1 }],
       ])
       assert.deepEqual(anaTwin.scores.uniqueness.map((u: any) => [u.label, u.value, u.details.issuers]), [
-        [SELLER, 1, [{ issuer: ISSUER.address, name: ISSUER_NAME, weight: 1 }]],
+        [SELLER, 1, [{ issuer: ISSUER, name: ISSUER_NAME, weight: 1 }]],
       ])
       assert.ok(anaPage.includes(`Checked by ${ISSUER_NAME}.`))
-      // Eve's row: its issuer's signature does not check, so it counts for nothing, and nothing of
+      // Eve's row: its issuer is not one this index trusts, so it counts for nothing, and nothing of
       // hers is stored: no page, no offer, no review, no count.
       assert.equal((await get(`/profiles/${eve.address}`)).status, 404)
       assert.equal((await get(`/profiles/${eve.address}.json`)).status, 404)

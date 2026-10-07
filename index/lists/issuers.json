@@ -1,7 +1,6 @@
 {
-  "about": "The issuers whose lists the foundation's index trusts, by the issuer's address, each with the index's weight for it from 0 to 1. A registry row counts here only when its issuer is named here and the issuer's signature on the row's root checks. This is the index's opinion, not a rule: another index trusts other issuers. On devnet, the two are the foundation's devnet issuer's two lists, built from issuer/: the face list, signed by the issuer's key, and the ID list (face and a government ID), signed by the key mixed from its seed under `id`, weighed higher.",
+  "about": "The issuers the foundation's index trusts, by the issuer's key as a registry row holds it (128 hex characters, x then y of its point on Baby Jubjub), each with the index's weight for it from 0 to 1. A registry row counts here only when its issuer's key is named here. This is the index's opinion, not a rule: another index trusts other issuers. On devnet, the one is the foundation's devnet issuer, built from issuer/, named issuer.devnet.forest.foundation; a row does not say which tier the person's note was, so every row from it weighs the same.",
   "issuers": {
-    "7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7": { "name": "Forest issuer (devnet)", "weight": 0.7 },
-    "BVT1PcgV7PAUVipZzm2xP9g6qQS97vdhofvZbkJy1JX4": { "name": "Forest issuer, ID (devnet)", "weight": 0.9 }
+    "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549": { "name": "Forest issuer (devnet)", "weight": 0.7 }
   }
 }

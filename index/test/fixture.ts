@@ -1,20 +1,20 @@
 // The story, as data, for the page tests: Ana tutors; Ben is her student; Cleo is a stranger; Eve
-// holds a row whose issuer signature does not check, so the index stores nothing of hers. Dara offers
+// holds a row from an issuer the index does not trust, so the index stores nothing of hers. Dara offers
 // a language exchange in a place, with no price, in a one-sided market. Every profile lives in one
 // market, as one side of it: its label.
 //
 //   - Records are real signed records (forest/records), one host's, taken in through the index's own
 //     view and store, so each body is checked against its shape exactly as a record read from a host
-//     is. Ana let an access key write offers, then revoked it: what it wrote counts. A key she lists
-//     to send her messages wrote an offer too: it counts for nothing, since only a write key, or a
-//     revoked one, writes. Ana also keeps a private record at an offer's path: the index leaves it
+//     is. Ana let an access key write offers, then made it past: what it wrote counts. A key she
+//     lists to send her messages wrote an offer too: it counts for nothing, since only a write key,
+//     or a past one, writes. Ana also keeps a private record at an offer's path: the index leaves it
 //     alone.
 //   - Pictures: Ben's review of Ana carries a photo, Dara's offer a video, Ana's card a photo. The
 //     three records are also on a second host, forest's reference host on loopback, which holds the
 //     bytes of the first two and never gets the third. The readers ask it, as they ask every host.
-//   - Rows go in as the chain reader stores them, signed by the test issuer over a fixed root, each
-//     with the market stamp its person's list secret gives under its label; the receipt as the
-//     escrow reader stores it.
+//   - Rows go in as the chain reader stores them, from the test issuer's key, each with the stamp its
+//     person's secret for that issuer gives under its label; the receipt as the escrow reader
+//     stores it.
 //   - Scores come from the real recompute, signed with a fixed seed, and so does the reputation tree.
 //     The index's own lists name it as the one index whose proofs count, two roots back.
 //
@@ -26,11 +26,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ed25519 } from '@noble/curves/ed25519.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 import pg from 'pg'
 
-import { type MainKey, listSecret, mainKey } from '../../forest/keys/src/index.ts'
+import { type MainKey, issuerSecret, mainKey } from '../../forest/keys/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
 import {
   type Body,
@@ -49,8 +48,7 @@ import {
   accessRecord,
   base58,
 } from '../../forest/records/src/index.ts'
-import { issuerSigned } from '../../forest/registry/client/src/issuer.ts'
-import { marketStampOf } from '../../forest/registry/client/src/stamp.ts'
+import { stampOf } from '../../forest/registry/client/src/stamp.ts'
 
 import { storeRow } from '../src/chain/registry.ts'
 import { type Config, hexSeed, loadConfig } from '../src/config.ts'
@@ -64,12 +62,13 @@ import { indexKeys } from '../src/scores/sign.ts'
 import { serveMarkets } from './markets-repo.ts'
 
 export const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-/** The test issuer, the one the index trusts: a fixed key. */
-export const ISSUER = keyFromPrivate(new Uint8Array(32).fill(31))
+/** The test issuer, the one the index trusts: a fixed key, as a row holds it (128 hex, x then y), and its name. */
+export const ISSUER = 'ab'.repeat(32) + 'cd'.repeat(32)
 export const ISSUER_NAME = 'Forest Foundation (test key)'
-/** The root of the issuer's list every counted row here was proven against, and the issuer's signature on it. */
-export const ROOT = new Uint8Array(32).fill(0xab)
-const SIGNATURE = ed25519.sign(ROOT, ISSUER.privateKey)
+/** The name a person's secret for it is mixed from. */
+const ISSUER_DOMAIN = 'issuer.test.forest.example'
+/** An issuer the index does not trust. */
+const STRANGER = 'ef'.repeat(64)
 export const MARKET = 'online-tutors'
 /** Rows count only as `market/role`: Ana and Cleo sell, Ben buys. */
 export const SELLER = `${MARKET}/seller`
@@ -83,21 +82,21 @@ export const LISBON = { lat: '38.72', lon: '-9.14', precisionKm: 2, area: 'Arroi
 /** The host the story's hosts records name. Nothing is served there: the records go straight in. */
 export const HOST = 'https://host.example'
 
-/** `secret`: the person's secret for the test issuer's list, which their market stamps come from. */
+/** `secret`: the person's secret for the test issuer, which their stamps come from. */
 type Person = { key: MainKey; address: string; name: string; secret: Uint8Array }
 const person = async (fill: number, label: string, name: string): Promise<Person> => {
   const seed = new Uint8Array(32).fill(fill)
   const key = await mainKey(seed, label)
-  return { key, address: key.address, name, secret: (await listSecret(seed, ISSUER.address)).secret }
+  return { key, address: key.address, name, secret: (await issuerSecret(seed, ISSUER_DOMAIN)).secret }
 }
 export const ana = await person(21, SELLER, 'Ana Ribeiro')
 export const ben = await person(22, BUYER, 'Ben Okafor')
 export const cleo = await person(23, SELLER, 'Cleo')
 /** A peer in the language exchange: another market, so another profile. */
 export const dara = await person(24, PEER, 'Dara Mensah')
-/** Her row's issuer signature does not check: no row counts, and nothing of hers is stored. */
+/** Her row is from an issuer the index does not trust: no row counts, and nothing of hers is stored. */
 export const eve = await person(25, SELLER, 'Eve')
-/** The access key Ana let write offers, then revoked. */
+/** The access key Ana let write offers, then made past. */
 export const ACCESS = keyFromPrivate(new Uint8Array(32).fill(42))
 /** The key Ana lists to send her messages: it writes nothing that counts. */
 export const MESSAGE_KEY = keyFromPrivate(new Uint8Array(32).fill(43))
@@ -172,8 +171,8 @@ export const RECORDS: SignedRecord[] = [
     // Private: only its readers open it. The index stores nothing of it, at any path.
     ['offer/private', { private: b64u.encode(randomBytes(64)) }, 4],
   ]),
-  // The access key, revoked, on Ana's list for offers; and a message key.
-  permissionsRecord(ana.key, [{ key: ACCESS.address, scope: 'revoked', paths: ['offer'] }, { key: MESSAGE_KEY.address, scope: 'message' }], at(6)),
+  // The access key, past, on Ana's list for offers; and a message key.
+  permissionsRecord(ana.key, [{ key: ACCESS.address, scope: 'past', paths: ['offer'] }, { key: MESSAGE_KEY.address, scope: 'message' }], at(6)),
   accessRecord(ACCESS, ana.address, 'offer/french', offer('French for beginners, online.', '20', { subjects: ['french'] }), at(5)),
   accessRecord(MESSAGE_KEY, ana.address, 'offer/german', offer('German, signed by a key that only sends messages.', '20', { subjects: ['german'] }), at(7)),
   ...records(ben, 2, profile(BUYER, 'Learning Portuguese for a move to Lisbon.', 2), [
@@ -216,7 +215,7 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const lists = mkdtempSync(join(tmpdir(), 'forest-index-lists-'))
   writeFileSync(join(lists, 'hosts.json'), JSON.stringify({ hosts: [] }))
   writeFileSync(join(lists, 'markets.json'), JSON.stringify({ directory: markets.url, markets: [MARKET, EXCHANGE] }))
-  writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER.address]: { name: ISSUER_NAME, weight: 1 } } }))
+  writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weight: 1 } } }))
   writeFileSync(join(lists, 'indexes.json'), JSON.stringify({ roots: ROOTS, indexes: { [INDEX]: { name: INDEX_NAME } } }))
   const env = {
     DATABASE_URL: url.toString(),
@@ -233,21 +232,19 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   // Migrations and the public keys; no hosts and no chain, so no reader reads.
   const readers = await startReaders(db, config())
 
-  // Six rows. Five signed by the test issuer; Ben's second is under another label than his
-  // profile's, so it does not count for it: a second market is a second profile, as Dara's is.
-  // Eve's carries a signature the issuer never made.
-  const row = async (i: number, p: Person, label: string, signature = SIGNATURE) => {
+  // Six rows. Five from the test issuer; Ben's second is under another label than his profile's, so
+  // it does not count for it: a second market is a second profile, as Dara's is. Eve's is from an
+  // issuer the index does not trust.
+  const row = async (i: number, p: Person, label: string, issuer = ISSUER) => {
     await storeRow(db, {
       address: `ExampleRow${i}`.padEnd(44, '1'),
       profile: p.address,
-      issuer: ISSUER.address,
-      root: hex.encode(ROOT),
-      issuerSignature: hex.encode(signature),
-      issuerSigned: issuerSigned({ issuer: ISSUER.publicKey, root: ROOT, issuerSignature: signature }),
+      stamp: hex64(stampOf(p.secret, label)),
+      issuer,
       payer: 'ExamplePayer'.padEnd(44, '1'),
+      made: 1_790_000_000 + i,
       label,
       ...splitLabel(label),
-      marketStamp: hex64(marketStampOf(p.secret, label)),
     })
   }
   await row(1, ana, SELLER)
@@ -255,13 +252,13 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   await row(3, cleo, SELLER)
   await row(4, ben, PEER)
   await row(5, dara, PEER)
-  await row(6, eve, SELLER, ed25519.sign(ROOT, new Uint8Array(32).fill(7)))
+  await row(6, eve, SELLER, STRANGER)
 
   // The records: every one as one host served them, kept, viewed and stored as the reader does.
   // Eve's are kept but never stored.
   const refused: unknown[] = []
   const checked: Checked[] = RECORDS.map((record) => ({ record, id: recordId(unsignedOf(record)) }))
-  const trusted = { issuers: [ISSUER.address], indexes: [INDEX] }
+  const trusted = { issuers: [ISSUER], indexes: [INDEX] }
   await takeIn(db, HOST, checked, trusted, (err) => refused.push(err))
   if (refused.length) throw new Error(`fixture records refused: ${refused.map(String).join('; ')}`)
 
