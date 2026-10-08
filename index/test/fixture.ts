@@ -7,7 +7,7 @@
 //     view and store, so each body is checked against its shape exactly as a record read from a host
 //     is. Ana let an access key write offers, then made it past: what it wrote counts. A key she
 //     lists to send her messages wrote an offer too: it counts for nothing, since only a write key,
-//     or a past one, writes. Ana also keeps a private record at an offer's path: the index leaves it
+//     or a past write key, writes. Ana also keeps a private record at an offer's path: the index leaves it
 //     alone.
 //   - Pictures: Ben's review of Ana carries a photo, Dara's offer a video, Ana's card a photo. The
 //     three records are also on a second host, forest's reference host on loopback, which holds the
@@ -172,7 +172,7 @@ export const RECORDS: SignedRecord[] = [
     ['offer/private', { private: b64u.encode(randomBytes(64)) }, 4],
   ]),
   // The access key, past, on Ana's list for offers; and a message key.
-  permissionsRecord(ana.key, [{ key: ACCESS.address, scope: 'past', paths: ['offer'] }, { key: MESSAGE_KEY.address, scope: 'message' }], at(6)),
+  permissionsRecord(ana.key, [{ key: ACCESS.address, was: 'write', paths: ['offer'] }, { key: MESSAGE_KEY.address, scope: 'message' }], at(6)),
   accessRecord(ACCESS, ana.address, 'offer/french', offer('French for beginners, online.', '20', { subjects: ['french'] }), at(5)),
   accessRecord(MESSAGE_KEY, ana.address, 'offer/german', offer('German, signed by a key that only sends messages.', '20', { subjects: ['german'] }), at(7)),
   ...records(ben, 2, profile(BUYER, 'Learning Portuguese for a move to Lisbon.', 2), [

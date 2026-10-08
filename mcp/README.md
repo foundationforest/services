@@ -27,9 +27,9 @@ Nothing of this repo runs in it, so what it does is what forest's CLI README say
 - **Keys only in the call.** A tool that needs a key takes it in the call (`writeKey`,
   `messageKey`, `readKey`), with the `profile` it acts for. The image sets none, and forest's CLI
   refuses to start a hosted copy with one: every caller would act as that person.
-- **What it reads.** Folders from the hosts on the foundation's index's public list
-  ([`index/lists/hosts.json`](../index/lists/hosts.json) on this repo's `main`, read once per
-  start) and from every host a profile's hosts record names, every signature checked; markets and
+- **What it reads.** Folders from its start hosts, the hosts on the foundation's index's public
+  list ([`index/lists/hosts.json`](../index/lists/hosts.json) on this repo's `main`, read once per
+  start), and from every host a profile's hosts record names, every signature checked; markets and
   summaries from the foundation's devnet index, passed on as that index's word.
 
 ### Connect a chat
@@ -87,7 +87,7 @@ https://mcp.devnet.forest.foundation, the tools at `/mcp`:
 - **Free:** no price and no sign-in.
 - **Keeps nothing:** no key, record, message or call is written; each request gets a fresh server.
 - **Logs no call:** forest's CLI writes one line when it starts, and nothing for a request.
-- **Its index** is the foundation's devnet index; **its hosts,** that index's public list.
+- **Its index** is the foundation's devnet index; **its start hosts,** that index's public list.
 - **No rate limit.**
 - **Where it runs:** Railway, one replica.
 
@@ -106,8 +106,8 @@ https://mcp.devnet.forest.foundation, the tools at `/mcp`:
   the foundation, while it acts. The AI's maker sees the key too, since the AI writes it into the
   call.
 - **No rate limit.** Anyone can keep it busy, and every call reads whole folders from hosts.
-- **Profiles off the index's hosts list are out of reach,** unless a hosts record on a listed host
-  names their host.
+- **Profiles on other hosts are out of reach** until their host is added to the foundation's
+  index's list.
 - **One replica.** When it stops, the tools stop until Railway starts it again.
 - **The rest is forest's CLI's:** slow, and no paying, photos or videos, handing out keys, or
   reviews others wrote except through the index's summary

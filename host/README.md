@@ -28,11 +28,11 @@ standard says, before it keeps anything.
 - **The sender check** (forest's `readSender`), always: to take a message a message key signed,
   forest's host needs the sender's hosts and permissions records from the host the message names.
   This host reads them with forest's client (`readPage`, every page) and keeps what it read for a
-  while, per sender and host. It reads only from a public address and follows no redirect: its
-  fetch (undici's, with a lookup of its own) refuses a host whose address, written or looked up, is
-  loopback, private, link-local, carrier-grade NAT, unspecified, multicast or reserved, before
-  connecting, and `readPage` refuses a redirect. A read that fails, or is refused, is not kept:
-  forest's host answers `lookup`, and the sender tries again.
+  while, per sender and host. It reads only from a public address and follows no redirect: its fetch
+  (undici's, with a lookup of its own) refuses a host whose address, written or looked up, is
+  loopback, private, link-local, carrier-grade NAT, NAT64, 6to4, unspecified, multicast or reserved,
+  before connecting, and `readPage` refuses a redirect. A read that fails, or is refused, is not
+  kept: forest's host answers `lookup`, and the sender tries again.
 - **The photo rule** (forest's blob policy), always. Forest's host takes bytes only while a current
   record names them; this host takes them only when one of the folders whose current records name
   them holds a registry row from an issuer in `PHOTOS`, read with the registry lookup, and the bytes

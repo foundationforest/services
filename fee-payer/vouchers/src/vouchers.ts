@@ -296,7 +296,15 @@ export async function startFront(config: Config): Promise<{ url: string; close: 
   const used = new UsedSet(config.databasePath)
   const atCost = new URL(config.atCostKoraUrl)
   const server = createServer((req, res) => {
-    const path = new URL(req.url ?? '/', 'http://x').pathname
+    // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
+    // the process.
+    let path: string
+    try {
+      path = new URL(req.url ?? '/', 'http://x').pathname
+    } catch {
+      req.resume()
+      return send(res, 400)
+    }
     if (path !== '/vouchers') return forward(req, res, atCost)
     // Browsers ask first (OPTIONS), as they do of Kora.
     if (req.method === 'OPTIONS') {

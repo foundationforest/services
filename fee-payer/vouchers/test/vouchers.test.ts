@@ -2,7 +2,7 @@
 // what reaches them: the free one, behind the voucher door, and the at-cost one, which gets every
 // other request. Real vouchers: person proofs from notes a test issuer signed, made with forest's
 // provePerson, checked with its verifyPerson. Each refusal is provoked once, and nothing refused ever
-// reaches either Kora.
+// reaches either Kora. A request whose URL cannot be read gets 400, and the front goes on.
 //
 //   npm test
 //
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage } from 'node:http'
-import type { AddressInfo } from 'node:net'
+import { connect, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -307,6 +307,29 @@ test('the at-cost door: every other request goes to the at-cost Kora, and its an
   await fetch(`${service!.url}/`, { method: 'OPTIONS' })
   assert.deepEqual([atCostCalls.at(-1)!.method, atCostCalls.at(-1)!.url], ['OPTIONS', '/'])
   assert.equal(calls.length, free, 'none of it reached the free Kora')
+})
+
+/** One request as raw bytes, so a URL no client would send arrives as written; the status line's code, or null if none came. */
+function raw(url: string, request: string): Promise<number | null> {
+  const { hostname, port } = new URL(url)
+  return new Promise((resolve, reject) => {
+    const socket = connect(Number(port), hostname, () => socket.end(request))
+    let got = ''
+    socket.on('data', (chunk) => (got += chunk.toString('latin1')))
+    socket.on('close', () => resolve(Number(/^HTTP\/1\.1 (\d{3})/.exec(got)?.[1]) || null))
+    socket.on('error', reject)
+  })
+}
+
+test('a request whose URL cannot be read gets 400, reaches neither Kora, and the front goes on answering', async (t) => {
+  const why = missing()
+  if (why) return t.skip(why)
+  for (const path of ['//', '/\\', '//x:99999']) {
+    const before = [calls.length, atCostCalls.length]
+    assert.equal(await raw(service!.url, `GET ${path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n`), 400, path)
+    assert.deepEqual([calls.length, atCostCalls.length], before, `${path}: nothing reached either Kora`)
+    assert.equal((await fetch(`${service!.url}/liveness`)).status, 200, `still answering after ${path}`)
+  }
 })
 
 test('FEE_PAYER_NAME and VOUCHER_ISSUERS: the name in every label, and each issuer and tier with how many vouchers it earns', () => {

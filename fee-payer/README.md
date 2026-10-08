@@ -33,7 +33,8 @@ configured and nothing else, and one program of ours in front of them, the vouch
   deposit ([Rent](#rent)).
 - **The at-cost door** is every other request to the address, passed unchanged to the at-cost
   Kora: Kora's own JSON-RPC. It co-signs any transaction its rules allow, pays the network fee and
-  any deposit, and charges the person exactly what that cost it, in the dollar they pay with.
+  any deposit, and charges the person exactly what that cost it, in the dollar they pay with. A
+  request whose URL cannot be read (`//`) gets 400 and reaches neither Kora.
 
 An app names one fee payer and finds its voucher door from it: the address plus `/vouchers`. Both
 Koras sign with one key, so both doors spend one float. Inside a transaction that key may do one
@@ -178,7 +179,8 @@ lamports`).
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. A
 cut in Solana's rent frees part of it, which only the program that owns the account can send on
 ([forest's escrow, Rent](https://github.com/foundationforest/forest/blob/main/escrow/README.md#rent)).
-Every rent goes back to whoever fronted it, which through either door is the fee payer:
+The registry and the escrow send every rent back to whoever fronted it, which through either door
+is the fee payer:
 
 - **An escrow's deposit address:** its rent goes back to the escrow's payer, the fee payer, at
   every ending. The person was charged for it when the escrow opened, so through the at-cost door
@@ -303,16 +305,16 @@ names: Kora's JSON-RPC at `/` (POST), `GET /liveness`, and the voucher door at `
   moment the voucher check forwards it to the free Kora.
 - **Voucher labels name this fee payer** (`FEE_PAYER_NAME`), so two fee payers cannot link
   vouchers.
-- **The at-cost door, at cost:** the charge is the network fee and every deposit it puts down, with
-  a margin of 0. It pays for no one: a transaction that does not pay its cost is refused.
+- **The at-cost door, at cost:** the charge is the network fee and every deposit it puts down. It
+  pays for no one: a transaction that does not pay its cost is refused.
+- **Rent it fronts and later gets back stays with it:** an escrow's deposits, and what a cut in
+  Solana's rent frees on a row or a receipt ([Rent](#rent)).
 - **Paid in four tokens on mainnet's configuration:** USDC, USDT, Open USD and EURC, each its
   maker's own mint, since people pay in what they hold. The makers' freeze and Open USD's permanent
   delegate are accepted. On devnet, the two test dollars.
 - **Prices:** Jupiter's, on mainnet's configuration; on devnet, Kora's mock.
 - **What its key may do:** fund a new account (through the at-cost door one it is paid for, through
   the voucher door a row), and nothing else; no priority fee.
-- **What comes back stays:** every rent the fee payer fronted, and what a cut in Solana's rent
-  frees, goes back to it ([Rent](#rent)).
 - **The float:** the SOL in the one key, which both doors spend. Nothing refills it but a person;
   when it runs out, both doors refuse. It is paid back in tokens; turning them back into SOL is done
   by hand, not by code.

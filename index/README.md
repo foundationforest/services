@@ -30,7 +30,7 @@ markets directory ── the markets lists/markets.json names ──┘
     One that fails is dropped and logged; every one that checks is kept, as its text, per host.
   - Each profile is viewed with forest's own `viewProfile`, which applies the access rule (forest's
     [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Which record
-    counts"), so this index counts exactly what any other reader counts.
+    counts"), so this index sees exactly what any other reader sees.
   - Three paths are read: `profile`, `offer/<id>` and `review/<id>`, each body checked against
     forest's shape for it (`forest/records/schemas/`); one that fails is not stored. A private
     record is left alone: only its readers can open it. Other paths are not this index's.
@@ -54,7 +54,7 @@ markets directory ── the markets lists/markets.json names ──┘
   the directory that list names (its `directory.md` gives each name's file), never copied, so there
   is one source of names. Each file is checked for the fields the index reads (`name`, `folder`,
   `description`, `sides`, `roleNames`, `evidenceTypes`, `offerFields`, `reviewFields`, `ratings`,
-  `howDealsGo`). A name the directory does not list, or a file that fails, counts for nothing. An
+  `howDealsGo`). A name the directory does not list, or a file that fails, is not used. An
   offer names no market: it is listed in its profile's.
 - **Pictures, from the same hosts.** A profile's `photo`, and the `media` of an offer or a review,
   name bytes by their SHA-256, with a type
@@ -98,18 +98,18 @@ One issuer at weight w gives w; two give more than either, and never more than 1
 adds nothing.
 
 **Evidence: what backs a review.** A review can name a deal with its `dealId`. When that id is an
-escrow's address, the index reads that escrow's receipt. It counts only if the reviewer and the
-reviewed are the escrow's buyer and seller, in either order (a profile's address is where it is
-paid), and its token is one this index counts. Then the index asks whether the seller said yes. The
-escrow has no accept step: the seller says yes by creating the escrow (an invoice), by signing its
-ending (a split, or a release back to the buyer), or by reviewing the deal.
+escrow's address, the index reads that escrow's receipt. It backs the review only if the reviewer
+and the reviewed are the escrow's buyer and seller, in either order (a profile's address is where it
+is paid), and its token is one this index takes. Then the index asks whether the seller said yes.
+The escrow has no accept step: the seller says yes by creating the escrow (an invoice), by signing
+its ending (a split, or a release back to the buyer), or by reviewing the deal.
 
 | What the receipt shows | Evidence |
 |---|---|
 | Paid, and the seller created it or signed its ending | `both` |
 | Paid, the buyer created it, and the seller reviewed the deal | `oneSidedConfirmed`, as `both` |
 | Paid, the buyer created it, and the seller signed nothing and wrote no review | `oneSided` |
-| Not paid; no deal id, no receipt, someone else's receipt, a token not counted | `none` |
+| Not paid; no deal id, no receipt, someone else's receipt, a token it does not take | `none` |
 
 "Paid" means someone marked the escrow funded, or it ended: every way out pays a balance that held
 the amount (the program checks it), so an ending proves the payment. Each kind's weight is Policy.
@@ -125,12 +125,12 @@ the amount (the program checks it), so an ending proves the payment. Each kind's
   the reviewer's own standing, which moves the weight between nothing and twice the base.
 - The sum is repeated, everyone starting at 0, until no profile moves by more than a tolerance, or
   for at most a number of rounds.
-- A review of oneself is ignored. Per reviewer and subject, one review counts per deal id with
-  evidence under it, and of the reviews with none, only the latest. Inventing deal ids adds
+- A review of oneself is ignored. Per reviewer and subject, standing takes one review per deal id
+  with evidence under it, and of the reviews with none, only the latest. Inventing deal ids adds
   nothing.
 
-**Rating,** per profile, from 1.0 to 10.0: the reviews that count for standing and give an
-`overall`, averaged with the weights standing gives them. No such review: no rating, rather than a
+**Rating,** per profile, from 1.0 to 10.0: the reviews standing takes that give an `overall`,
+averaged with the weights standing gives them. No such review: no rating, rather than a
 zero.
 
 **The signature.** Every score is served with a statement and an Ed25519 signature over its text,
@@ -318,7 +318,7 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
 - **The page tests** need Postgres. On a fixed story in a fresh database: every page and twin
   renders; every JSON-LD block validates against schema.org's vocabulary; each twin matches its
   page; the sitemap lists every page; every URL in `skill.md` and `llms.txt` resolves; no page says
-  a crypto word; the Pay link reads back to the offer; a past access key's record counts and a
+  a crypto word; the Pay link reads back to the offer; a past write key's record stands and a
   message key's does not; a private record is never stored; a picture shows from the host that
   holds it, as the type its record names, and not at all when no host does; a row made after its
   issuer's `until` counts for nothing. In a database of their own: renaming the foundation's host
@@ -389,8 +389,11 @@ them, the hosts and the chain. Another index holds its own.
 - **How reviews weigh** (`config/scoring.json`): evidence `both` 1 (and so `oneSidedConfirmed`),
   `oneSided` 0.5, `none` 0.05; the floor for a reviewer's weight, 0.05; standing repeated until no
   profile moves by more than 10⁻⁹, for at most 100 rounds.
-- **Which receipts count** (`countedMints` in `config/scoring.json`): in USDC, devnet USDC and the
-  two devnet test dollars.
+- **Which escrow it reads:** one program, forest's escrow at
+  `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8` on devnet (`ESCROW_PROGRAM_ID`). A deal through any
+  other escrow is not evidence here.
+- **Which tokens it takes** (`countedMints` in `config/scoring.json`): USDC, devnet USDC and the two
+  devnet test dollars.
 - **What the pages show as money** (`config/currencies.json`): those four tokens, as dollars with
   six decimals. Any other token shows with no number.
 - **Which reputation proofs show** (`lists/indexes.json`): those from the indexes it names, by the
@@ -403,7 +406,7 @@ them, the hosts and the chain. Another index holds its own.
   that takes more than 60 seconds to serve a page fails that read, and the next poll tries again.
   A quarter of a second after anything new is read, every score and the tree are computed again.
 - **What it keeps, and for how long,** in Postgres, with nothing deleted: every record its hosts
-  serve, for every profile, counted or not, and every version it saw; every row of the issuers it
+  serve, for every profile, stored or not, and every version it saw; every row of the issuers it
   lists; each escrow transaction's log lines; and every root it signed. A picture's bytes, never.
 - **What the pages advise:** nothing. An offer's and a receipt's escrow options (an arbiter, a
   timer) are shown as they are: what to advise is each app's.
@@ -430,13 +433,16 @@ them, the hosts and the chain. Another index holds its own.
   devnet issuer: one note number per face, with a stand-in that passes everyone). It cannot tell.
 - **It trusts its Solana RPC** for rows, escrow events and the checks of tiers against rows; no
   second source cross-checks it.
+- **One person's two profiles can raise each other's standing** with small deals between them: each
+  is evidence whatever its amount, and nothing here links the two. How to weigh that is this index's
+  choice.
 - **A shown market and an exact rating can name the profile.** The tree is public. In a market with
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
   shows that market and that rating then points to it. A proof that shows no market narrows it too,
   when few leaves share its score. An app should say so before a proof is shown (forest's
   [circuits](https://github.com/foundationforest/forest/blob/main/circuits/README.md#limits)).
-- **Roots are counted, not timed.** The root moves with every new rating, so on a busy index a proof
-  goes stale sooner than on a quiet one.
+- **Roots go stale by number, not by age.** The root moves with every new rating, so on a busy index
+  a proof goes stale sooner than on a quiet one.
 - **Only its own roots.** A proof made against another index's tree shows nothing here, even from an
   index the list names.
 - **It reads only the hosts it lists.** A profile whose records live on other hosts is not shown
@@ -446,7 +452,7 @@ them, the hosts and the chain. Another index holds its own.
   ([host](../host/README.md)); on Railway, Railway's own request logs do.
 - **A picture is checked once.** A host that loses the bytes after that leaves a broken picture on
   the page.
-- **It keeps every record its hosts serve,** for every profile, counted or not, and every version
+- **It keeps every record its hosts serve,** for every profile, stored or not, and every version
   it saw. A host can make it keep junk.
 - **The markets are read once, at start.** A change in the markets directory reaches the index at
   its next restart, and while the directory does not answer, the index does not start.
@@ -466,9 +472,9 @@ them, the hosts and the chain. Another index holds its own.
 ## Who decides what
 
 - **The standard (forest):** what a record, a row, a receipt and the tree are, and the access rule.
-- **This index, by its policy:** which hosts, issuers and markets count, how much each tier and
-  each review weighs, from when a leaked issuer's rows stop counting, which indexes' reputation
-  proofs it shows and how many roots back, and what its pages show.
+- **This index, by its policy:** which hosts it reads, which issuers and markets count, how much
+  each tier and each review weighs, from when a leaked issuer's rows stop counting, which indexes'
+  reputation proofs it shows and how many roots back, and what its pages show.
 - **The markets directory:** each market's name and the fields it adds; which of them this index
   uses is its own.
 - **A person, through their app:** where their records live, which index they read, and which
@@ -482,7 +488,7 @@ the index reads stays a list anyone can see, instead of growing with whatever pr
 
 **Why does a row whose card shows no tier count at its issuer's smallest weight?**
 A row does not say which tier its note was, and every note an issuer signs is at one of its tiers.
-The smallest is the least it can be, so a profile never counts for more than it shows, and showing
+The smallest is the least it can be, so a row never weighs more than its card shows, and showing
 a higher tier only adds.
 
 **Why serve every leaf, and no URL for one leaf and its path?**
@@ -490,6 +496,6 @@ A path asked for by stamp tells the index, and whoever logs its requests, which 
 caller's, and an app that asked for two would link them. With every leaf, an app finds its person's
 own on the device. forest's prover takes every leaf anyway.
 
-**Why count roots, and not how old a root is?**
+**Why a number of roots, and not an age?**
 A proof against the newest root stays exact however old it is, until someone's rating moves; an age
 would expire it while it is still true.
