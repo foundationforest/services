@@ -1,0 +1,265 @@
+{
+  "started": "2026-10-08T05:29:17.320Z",
+  "services": {
+    "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer is feePayer, its voucher door feePayer plus /vouchers, and feePayerName the name its voucher labels carry), the devnet programs (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json), the issuer's key the devnet index and the fee payer trust (index/lists/issuers.json; the run checks the issuer's /issuer.json says the same), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the past-key step waits out. Devnet only.",
+    "issuer": "https://issuer.devnet.forest.foundation",
+    "issuerKey": "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549",
+    "feePayer": "https://fee-payer.devnet.forest.foundation",
+    "feePayerName": "fee-payer.devnet.forest.foundation",
+    "host": "https://host.devnet.forest.foundation",
+    "senderCacheSeconds": 60,
+    "index": "https://index.devnet.forest.foundation",
+    "rpc": "https://api.devnet.solana.com",
+    "registry": "J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4",
+    "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+    "testDollar": "J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa",
+    "market": "tutoring"
+  },
+  "steps": {
+    "setup": {
+      "accounts": "3Gi6RHbkiZdRty4Z9wjKoHCUK4tLcCVCQjXC2SgrM3LDgLVeQqAMADD9voGGCTh69T6TSZyCUaGo45adHjEhfTrv",
+      "minted": "2MLNz9AN2sd8Whqh2hU1WahWMbb3XUoo3Fc86R3LM5fAWhNwCwWDXAoVtqdirVaccAw9Gz58FfAVPGAWU8Tykf9g",
+      "seller": "5.00",
+      "buyer": "10.00"
+    },
+    "notes": {
+      "seller": {
+        "model": "stand-in",
+        "tier": "1",
+        "embeddingBytes": 512
+      },
+      "buyer": {
+        "model": "stand-in",
+        "tier": "1",
+        "embeddingBytes": 512
+      }
+    },
+    "rows": {
+      "seller": {
+        "label": "tutoring/seller",
+        "path": "voucher",
+        "row": "AAp5gacPWFCRnuEsu3YSACnXzaveq1SjxDp7y9iLcz8f",
+        "stamp": "2ff4f5e58d4b96a74ba5c02d65e20fb6c24648ff6a8ead35321d9653eb229a28",
+        "made": 1791437364,
+        "signature": "dwuno6iay7ibDjskL2Qx37Tzr1nTdPMnxVZsXWerQZNqWT8oXzC21JeHvAcK1DxqikNMjX18zH3hrtVWbmHtgqt",
+        "charge": "0",
+        "bytes": 619,
+        "voucher": "voucher/fee-payer.devnet.forest.foundation/1"
+      },
+      "buyer": {
+        "label": "tutoring/buyer",
+        "path": "paid",
+        "row": "DhrFUhC3YYKQNHgjMNwE4B8J4umq73FuJktG8uyZoqp8",
+        "stamp": "061a5cdd0c721a3e430fda8384be378a9b7914d1f9b5db31111fa77f2e4cd4a8",
+        "made": 1791437368,
+        "signature": "2eoBxvxTE2bJvfobm6Ycn8Dyp94eLyum13W6CD576g56sUEwT3SKjvY7aAENVvmjysScVQyoVVxu2tDAv7ZjCzCs",
+        "charge": "1645760",
+        "bytes": 763
+      }
+    },
+    "records": {
+      "sellerWriteKey": "FQDhXTTVfnCmsSrUVmva5uzfNtRmEdqp7FJMcBTjx2m1",
+      "buyerWriteKey": "5YyqpHSGbgaFXrQ9wGKJDPenvRytEPMuX6SZvTxwp5V9",
+      "offer": "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2/offer/maths",
+      "photo": {
+        "sha256": "32023eb8fd3eaf8bbdc8e82be01eaf1869216872094ce939fb8252819ef2f53d",
+        "mimeType": "image/png",
+        "size": 79
+      }
+    },
+    "inbox": {
+      "to": "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+      "from": "AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG",
+      "rule": {
+        "once": true,
+        "readers": [
+          "age1pq15rnmz823q6s49ta9cqumv69urf320uhsxcwy8zhcyym3hnzyt4s5tk7kznjf3vccufzzw6u9vvrz5qmeszudscc0cxlhyv7fyds5m8yhkynhznrjnz2j89556g26fcerrtg528w0y5rprp5zf7njde6jyx9ge89r622skserlcs4hawvzvtm22tzueee257wjuuv2scv3t4hpfj8gygt82rj7hvhsx3cnn2n4086jupa3sruvy948dsqfulsrsjtg9k566rwjp4hzezneu0ky5psfjm7tztjm3v240vss6d38t3v5qpjk7sgeuwp4p9gnz035r3q0v58k3cs8wfn9nny89cugkfykv70agskk332xggz38m42ppwuk367npu439vnr5gp4kkpnk2g68gmqunuad8qr755h6r8wffx2lq9pscq5q3dazrf86t4yhgtjg399yhmgnhzrsnxw2vqkzk5vmr8kt80ftm2av53d3urwlex2za8vgyeuf3vrmn9tr8ypmrrqu0kqm9xkfmkk08x2ptqfewffpatnres8qyj8r28swzr20es42mw5zzy9kfxuusyw88xctxmyng72gh379h0k3ccke0tta4uf4al7r744c87cxprk2shr8h3xph8krq77wt4trsvmvrhtj3q6plz4vrzqjrm3n2vwehkx3uq7lfqzev00s2dke9khv73qvyhwtphjjcqzcyfrxvcvqyewq3yj3f89xtlxg8wgfhyrssrx5p4rz38930wugpmu3us0zjcy4wmx8947mqsfzy5n5csqkrjn2sqjau2y6rdcyvku7sx76sq3tzcde4jc486xmqwhmf4tlf2p0xq5xlv62pp8qrvcl43vkk99q4km87rmquhpc8npjjy8nqyundeyhl20y6e6rgqasy52c6k70lpjl043gdkrtgra6n3w2jkfyzf3jw5x9v8key3vjcyvnhnv40g7p58y3gc23fl45tqjdwzkwjc3prf2vjgz4m4hfknpg8kx8gp3j02k4zf63ftcgpccna40j5gaay2z6nvz2xxxdrpaqag9f9g2utg5pgr4ux29738vd4cl6xcaq6czpu0h2330s5efrcvsee6ar483qrhnnuds0839kv80zw0x9hnj5vnjrsrcqejs89gz09ds0w7fyyxmzv66rhkgn9d2gay5fq4wgncl59axp9qwwsgv2jgymy3667g4rsdpa2nlqcn0hmjxldeqvkx0ax99t98fftcngfr2wycwsehtmqulupg57ev49dd92t435dcyez24v59w592c64s3j26uujr6esv35vqqdzzf3uxvp3cz9nx26tg73f5w8v9t4akpxq75n93u6h4advgrnfvwtq52g3szvst3zv9uakf6qj9zgv6z8f2u6l0fcr0luksy29g6nglgzp2jf8xhrp2l9j2d9xjdx9s9jy42d459n4ulnu9qg2g3gdrymn673jr02v90qhxnl8sj5ugda9rydld0r4hue8ftq7vp47e9znszc6gq3q8a0kglctrnpx43vrdd3h0z4vulynp4vyjh4m8wn4ugfv8459aedf8tplyn8pqy4qeca0kzj8cj65ed47njpdjsp5zjn9ty3ywj4e3fwzgyd7aynhc32n7vvrz5yxvra3gch4mxleeptvl9t3acphcrm9cl6jgwrp9jfvma78x7lfeyv0g8fewvu63ppy88cejlmgc7s2zl9dvk87hfrkkf6jd9qpcamncp7hjzxnrpt3ueec8nxxv83mjczkuvqztcc46wcnc6p2vrxh3ysw7afyu364lycgzn822st8cauqh3ya9aeagzrzk8ryhkn9qv9z07vq3d3vsgsnyj2sekvadr6zcafgudnkvlkjp58tfeu4yzu9c5vsk3lczm4sk74g3chtv3ac8lveangqtszdhryl"
+        ],
+        "senders": {
+          "issuer": "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549"
+        }
+      },
+      "message": "10feed8a3648fb793a1b0636cefcdfbc71b5ca5ddc7db1e2c4f832b3ece469d3",
+      "bytes": 4639,
+      "sealedTo": 2,
+      "second": "once",
+      "pulled": 1,
+      "text": "Tuesday at six works for me. A devnet test message, made by e2e."
+    },
+    "assistant": {
+      "keys": {
+        "write": "FQDhXTTVfnCmsSrUVmva5uzfNtRmEdqp7FJMcBTjx2m1",
+        "message": "2une86GhHaiwgYCUrd8Y3V2cHfM8nfobRHFiPN9avwV4",
+        "read": "age1pq15rnmz823q6s49ta9cqumv69urf320uhsxcwy8zhcyym3hnzyt4s5tk7kznjf3vccufzzw6u9vvrz5qmeszudscc0cxlhyv7fyds5m8yhkynhznrjnz2j89556g26fcerrtg528w0y5rprp5zf7njde6jyx9ge89r622skserlcs4hawvzvtm22tzueee257wjuuv2scv3t4hpfj8gygt82rj7hvhsx3cnn2n4086jupa3sruvy948dsqfulsrsjtg9k566rwjp4hzezneu0ky5psfjm7tztjm3v240vss6d38t3v5qpjk7sgeuwp4p9gnz035r3q0v58k3cs8wfn9nny89cugkfykv70agskk332xggz38m42ppwuk367npu439vnr5gp4kkpnk2g68gmqunuad8qr755h6r8wffx2lq9pscq5q3dazrf86t4yhgtjg399yhmgnhzrsnxw2vqkzk5vmr8kt80ftm2av53d3urwlex2za8vgyeuf3vrmn9tr8ypmrrqu0kqm9xkfmkk08x2ptqfewffpatnres8qyj8r28swzr20es42mw5zzy9kfxuusyw88xctxmyng72gh379h0k3ccke0tta4uf4al7r744c87cxprk2shr8h3xph8krq77wt4trsvmvrhtj3q6plz4vrzqjrm3n2vwehkx3uq7lfqzev00s2dke9khv73qvyhwtphjjcqzcyfrxvcvqyewq3yj3f89xtlxg8wgfhyrssrx5p4rz38930wugpmu3us0zjcy4wmx8947mqsfzy5n5csqkrjn2sqjau2y6rdcyvku7sx76sq3tzcde4jc486xmqwhmf4tlf2p0xq5xlv62pp8qrvcl43vkk99q4km87rmquhpc8npjjy8nqyundeyhl20y6e6rgqasy52c6k70lpjl043gdkrtgra6n3w2jkfyzf3jw5x9v8key3vjcyvnhnv40g7p58y3gc23fl45tqjdwzkwjc3prf2vjgz4m4hfknpg8kx8gp3j02k4zf63ftcgpccna40j5gaay2z6nvz2xxxdrpaqag9f9g2utg5pgr4ux29738vd4cl6xcaq6czpu0h2330s5efrcvsee6ar483qrhnnuds0839kv80zw0x9hnj5vnjrsrcqejs89gz09ds0w7fyyxmzv66rhkgn9d2gay5fq4wgncl59axp9qwwsgv2jgymy3667g4rsdpa2nlqcn0hmjxldeqvkx0ax99t98fftcngfr2wycwsehtmqulupg57ev49dd92t435dcyez24v59w592c64s3j26uujr6esv35vqqdzzf3uxvp3cz9nx26tg73f5w8v9t4akpxq75n93u6h4advgrnfvwtq52g3szvst3zv9uakf6qj9zgv6z8f2u6l0fcr0luksy29g6nglgzp2jf8xhrp2l9j2d9xjdx9s9jy42d459n4ulnu9qg2g3gdrymn673jr02v90qhxnl8sj5ugda9rydld0r4hue8ftq7vp47e9znszc6gq3q8a0kglctrnpx43vrdd3h0z4vulynp4vyjh4m8wn4ugfv8459aedf8tplyn8pqy4qeca0kzj8cj65ed47njpdjsp5zjn9ty3ywj4e3fwzgyd7aynhc32n7vvrz5yxvra3gch4mxleeptvl9t3acphcrm9cl6jgwrp9jfvma78x7lfeyv0g8fewvu63ppy88cejlmgc7s2zl9dvk87hfrkkf6jd9qpcamncp7hjzxnrpt3ueec8nxxv83mjczkuvqztcc46wcnc6p2vrxh3ysw7afyu364lycgzn822st8cauqh3ya9aeagzrzk8ryhkn9qv9z07vq3d3vsgsnyj2sekvadr6zcafgudnkvlkjp58tfeu4yzu9c5vsk3lczm4sk74g3chtv3ac8lveangqtszdhryl"
+      },
+      "pulled": 1,
+      "reply": {
+        "id": "ebe673cd87db51e27b8455fc7bfd5bd659d24c1ac63656e179a9a0ee4924ff83",
+        "bytes": 2681,
+        "from": "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+        "key": "2une86GhHaiwgYCUrd8Y3V2cHfM8nfobRHFiPN9avwV4",
+        "hosts": [
+          "https://host.devnet.forest.foundation"
+        ]
+      },
+      "request": {
+        "id": "32040099475cf5061ae2476dcbd48496980f7e72ff9f2eb9fd3643662f40ccdb",
+        "body": {
+          "id": "physics",
+          "offer": {
+            "description": "One hour of physics tutoring, online. A devnet test offer, drafted by an assistant through e2e.",
+            "direction": "offer",
+            "remote": true
+          },
+          "request": "post-offer"
+        }
+      },
+      "after": {
+        "cli": {
+          "send": "this key is past in 7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2's permissions record: the owner removed it; use request",
+          "private": "this read key is not listed in 7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2's permissions record; use request"
+        },
+        "pull": "permission",
+        "waitedMs": 70748,
+        "message": "permission"
+      },
+      "texts": [
+        "Tuesday at six, yes. A devnet test reply, sent through forest’s CLI by e2e.",
+        "One hour of physics tutoring, online. A devnet test offer, drafted by an assistant through e2e."
+      ]
+    },
+    "deal": {
+      "escrow": "6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS",
+      "rentTo": "9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd",
+      "signature": "3wrNdLWvJYxqzyuHQ8nW6JSs7XUmCGyuWhSGyrNUR4zun7MJm4YgsXWC8YeVrJ6b8qK3sJxUP4pZkP7HdkgxAgoZ",
+      "charge": "3698080",
+      "bytes": 715
+    },
+    "reviews": [
+      "AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG/review/maths",
+      "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2/review/maths"
+    ],
+    "index": {
+      "seller": {
+        "url": "https://index.devnet.forest.foundation/profiles/7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+        "stamps": [
+          {
+            "label": "tutoring/seller",
+            "counted": true,
+            "issuer": "Forest issuer (devnet)",
+            "weight": 0.7,
+            "row": "AAp5gacPWFCRnuEsu3YSACnXzaveq1SjxDp7y9iLcz8f"
+          }
+        ],
+        "uniqueness": [
+          {
+            "label": "tutoring/seller",
+            "value": 0.7
+          }
+        ],
+        "rating": 10,
+        "standing": 1.060233,
+        "offers": [
+          "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2/offer/maths"
+        ],
+        "pictures": [
+          "https://host.devnet.forest.foundation/v1/blobs/32023eb8fd3eaf8bbdc8e82be01eaf1869216872094ce939fb8252819ef2f53d"
+        ],
+        "reviewsReceived": [
+          {
+            "uri": "AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG/review/maths",
+            "dealId": "6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "buyer": {
+        "url": "https://index.devnet.forest.foundation/profiles/AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG",
+        "stamps": [
+          {
+            "label": "tutoring/buyer",
+            "counted": true,
+            "issuer": "Forest issuer (devnet)",
+            "weight": 0.7,
+            "row": "DhrFUhC3YYKQNHgjMNwE4B8J4umq73FuJktG8uyZoqp8"
+          }
+        ],
+        "uniqueness": [
+          {
+            "label": "tutoring/buyer",
+            "value": 0.7
+          }
+        ],
+        "rating": 10,
+        "standing": 1.060233,
+        "offers": [],
+        "pictures": [],
+        "reviewsReceived": [
+          {
+            "uri": "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2/review/maths",
+            "dealId": "6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS",
+            "counted": true,
+            "evidence": "oneSidedConfirmed",
+            "weight": 1
+          }
+        ]
+      },
+      "deal": {
+        "url": "https://index.devnet.forest.foundation/deals/6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS",
+        "outcome": "releasedToSeller",
+        "amount": "1000000",
+        "reviews": 2
+      }
+    },
+    "reputation": {
+      "stamp": "2ff4f5e58d4b96a74ba5c02d65e20fb6c24648ff6a8ead35321d9653eb229a28",
+      "root": "1cd0c08ea41c929772f13afdee6b56d974ef7e32e74775100e7faaa95d381ad6",
+      "time": 1791437457583,
+      "leaves": 8,
+      "score": 100,
+      "label": "tutoring/seller",
+      "shown": {
+        "url": "https://index.devnet.forest.foundation/profiles/7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+        "index": {
+          "address": "8117HhEbnw4z1KVE1sryQfoqTRVsruNpLRZvqWWJnJvC",
+          "name": "Forest index (devnet)"
+        },
+        "time": "2026-10-08T05:30:57.583Z"
+      }
+    },
+    "tier": {
+      "note": {
+        "model": "stand-in",
+        "tier": "2"
+      },
+      "stamp": "2ff4f5e58d4b96a74ba5c02d65e20fb6c24648ff6a8ead35321d9653eb229a28",
+      "row": "AAp5gacPWFCRnuEsu3YSACnXzaveq1SjxDp7y9iLcz8f",
+      "shown": {
+        "url": "https://index.devnet.forest.foundation/profiles/7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+        "tier": "2",
+        "badge": "ID-checked",
+        "issuer": "Forest issuer (devnet)",
+        "weight": 0.9,
+        "uniqueness": 0.9
+      }
+    }
+  },
+  "issuer": {
+    "name": "issuer.devnet.forest.foundation",
+    "key": "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549"
+  },
+  "people": {
+    "seller": {
+      "profile": "7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2",
+      "label": "tutoring/seller"
+    },
+    "buyer": {
+      "profile": "AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG",
+      "label": "tutoring/buyer"
+    }
+  },
+  "passed": true,
+  "ended": "2026-10-08T05:31:44.876Z"
+}

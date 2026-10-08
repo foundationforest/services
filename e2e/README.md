@@ -108,12 +108,12 @@ issuer's key at tier 1 in `VOUCHER_ISSUERS`, and its `FEE_PAYER_NAME` the `feePa
 
 ### The latest run
 
-2026-10-07, 18:49 to 18:51 UTC, against the five services as deployed from `main` at `2588f97`
-(forest at `a499401`): **passed** in 151 seconds, most of it waiting out the host's cache time. Its
-record is [`runs/2026-10-07T18-49-00-682Z.json`](runs/2026-10-07T18-49-00-682Z.json).
+2026-10-08, 05:29 to 05:31 UTC, against the five services as deployed from `main` at `6063c57`
+(forest at `f067dbf`): **passed** in 148 seconds, most of it waiting out the host's cache time. Its
+record is [`runs/2026-10-08T05-29-17-320Z.json`](runs/2026-10-08T05-29-17-320Z.json).
 
-- **People:** seller `GrFNVhxpQjSD8JDQb5EKkhdFMjDJm2ryPSxPfWkaxAAd`, buyer
-  `D2CTyxhmKsDQGSFRmAzavuWgQ57xMc4kQZ9RPorfHf8P`, each with its secret for
+- **People:** seller `7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2`, buyer
+  `AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG`, each with its secret for
   `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json`.
 - **Notes:** a tier 1 note each from the face check, model `stand-in`, signed by the issuer's key
   `2185f564…`.
@@ -122,8 +122,8 @@ record is [`runs/2026-10-07T18-49-00-682Z.json`](runs/2026-10-07T18-49-00-682Z.j
   through the at-cost door, 763 bytes, charged 1.64576 test dollars. Each read back at the registry
   `J4ES…` naming its profile, the issuer's key and the fee payer, and each proof showed tier 1. The
   seller held no SOL and paid no dollar.
-- **Keys:** the seller's app made a write key `6hUcKTTP…`, a message key `D9nfPLTd…` and the read
-  key; the buyer's app a write key `7skioAV4…`.
+- **Keys:** the seller's app made a write key `FQDhXTTV…`, a message key `2une86Gh…` and the read
+  key; the buyer's app a write key `5YyqpHSG…`.
 - **Records:** the offer `offer/maths`, posted through the CLI and signed by the write key, and its
   photo, 79 bytes, taken by the host's photo rule; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, encrypted to the seller's inbox key and the
@@ -131,28 +131,29 @@ record is [`runs/2026-10-07T18-49-00-682Z.json`](runs/2026-10-07T18-49-00-682Z.j
 - **The assistant:** `inbox` pulled and opened the message; `send` replied, 2,681 bytes, taken by
   the buyer's host after reading the seller's permissions, and the buyer saw the message key sent
   it; `request` put `{ request: "post-offer", offer, id: "physics" }` in the seller's inbox, which
-  the seller's app opened and `inbox` marked. Then the CLI refused `send` ("listed as a past key")
+  the seller's app opened and `inbox` marked. Then the seller listed the message key as past
+  (`{ key, was: "message" }`) and deleted the read key; the CLI refused `send` ("this key is past")
   and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and
   71 seconds later a message it signed (`permission`).
-- **The deal:** escrow `21GTMsUt29MKcPAemeZm4zuuH2uYYHCwZ82qKGn8s11f`, its address its terms', one
+- **The deal:** escrow `6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS`, its address its terms', one
   tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…`.
 - **The index:** both rows counted under "Forest issuer (devnet)", weight 0.7; the offer with its
   photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews counted
   (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Each rated 10.
-- **The proof:** the seller's leaf found by its stamp `1e11d762…` among 6 leaves, 100 tenths from
-  one review; proven against root `1245bc30…`, signed by "Forest index (devnet)" (`8117HhEb…`), and
+- **The proof:** the seller's leaf found by its stamp `2ff4f5e5…` among 8 leaves, 100 tenths from
+  one review; proven against root `1cd0c08e…`, signed by "Forest index (devnet)" (`8117HhEb…`), and
   put on its card. The page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
 - **The ID check:** the seller's note signed again at tier 2, the same note number, embedding and
-  model; its tier proven at its row's stamp and held against the row `8KJYj5UT…` (`verifyTier`),
+  model; its tier proven at its row's stamp and held against the row `AAp5gacP…` (`verifyTier`),
   and put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight
   0.9, uniqueness 0.9; the page says "Verified real person, one per market · ID-checked", and the
   rating's proof still shows.
 
 Open them: [the seller][s], [the buyer][b], [the deal][d].
 
-[s]: https://index.devnet.forest.foundation/profiles/GrFNVhxpQjSD8JDQb5EKkhdFMjDJm2ryPSxPfWkaxAAd
-[b]: https://index.devnet.forest.foundation/profiles/D2CTyxhmKsDQGSFRmAzavuWgQ57xMc4kQZ9RPorfHf8P
-[d]: https://index.devnet.forest.foundation/deals/21GTMsUt29MKcPAemeZm4zuuH2uYYHCwZ82qKGn8s11f
+[s]: https://index.devnet.forest.foundation/profiles/7n5TZ128dxgVSTDqbdafGRK7KskWXkGi3dBeYu2jBKc2
+[b]: https://index.devnet.forest.foundation/profiles/AsBRf636E4Kh5MzXVbGNJ6yn1mFemMurKGnHZs5LXfdG
+[d]: https://index.devnet.forest.foundation/deals/6pmjdPijG4JJu18Jq5uBq9zJrkVTBUxEwEih67kYT3bS
 
 ## Promises
 
