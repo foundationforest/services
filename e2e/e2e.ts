@@ -51,7 +51,7 @@ import { crc32, deflateSync } from 'node:zlib'
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
-import { exportWords, importWords, issuerSecret, mainKey, newSeed, readingKey, type MainKey, type ReadingKey } from '../forest/keys/src/index.ts'
+import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../forest/keys/src/index.ts'
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
 import { message, openMessage, readerCount } from '../forest/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, fromBytes32, issuerKeyBytes, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../forest/registry/client/src/index.ts'
@@ -210,7 +210,7 @@ type Person = {
   /** The main key as a Solana signer: the same key. */
   signer: Keypair
   /** The inbox key, mixed from the main key: what messages to the profile are sealed to. */
-  inboxKey: ReadingKey
+  inboxKey: InboxKey
   /** The person's secret for the issuer, mixed from the seed under the issuer's name, and its note number. */
   secret: Uint8Array
   noteNumber: bigint
@@ -228,10 +228,10 @@ async function newPerson(role: Person['role'], name: string, issuer: Issuer): Pr
   const label = `${cfg.market}/${role}`
   const profile = await mainKey(seed, label)
   assert.equal((await mainKey(importWords(words.toUpperCase().split(' ').join('  '))!, label)).address, profile.address, 'case and spacing do not matter')
-  const inboxKey = await readingKey(profile.privateKey)
+  const inbox = await inboxKey(profile.privateKey)
   const { secret, noteNumber } = await issuerSecret(seed, issuer.name)
   seed.fill(0)
-  return { role, name, label, profile, signer: Keypair.fromSeed(profile.privateKey), inboxKey, secret, noteNumber }
+  return { role, name, label, profile, signer: Keypair.fromSeed(profile.privateKey), inboxKey: inbox, secret, noteNumber }
 }
 
 // ---- Steps ----
@@ -428,7 +428,7 @@ function photo(): Uint8Array {
  * delivers it to the seller's hosts. A second one is refused: one from each sender. The seller's app
  * pulls its inbox with a pull its main key signs, and opens the one message with its inbox key.
  */
-async function inbox(from: Person, to: Person, readKey: ReadingKey) {
+async function inbox(from: Person, to: Person, readKey: InboxKey) {
   const seller = await readProfile([cfg.host!], to.profile.address, Date.now())
   const card = seller.current.get('profile')!.record.body as Body & { inboxKey: string; inbox: unknown }
   assert.deepEqual(card.inbox, { senders: { issuer: cfg.issuerKey }, once: true, readers: [readKey.recipient] }, 'the seller’s card declares the inbox, and the read key as a reader')
@@ -503,13 +503,13 @@ async function assistant(seller: Person, buyer: Person, ctx: Context, keys: Made
   // The seller makes the message key past, keeps the write key, and deletes the read key's entry,
   // then drops it from its inbox's readers, so no message is sealed to it any more.
   const pastAt = Date.now()
-  const access = keys.flatMap((k): AccessKey[] => (k.listed.scope === 'read' ? [] : k.listed.scope === 'message' ? [{ key: k.listed.key, scope: 'past' }] : [k.listed]))
+  const access = keys.flatMap((k): AccessKey[] => (k.listed.scope === 'read' ? [] : k.listed.scope === 'message' ? [{ key: k.listed.key, was: 'message' }] : [k.listed]))
   const now = { ...card, inbox: { senders: card.inbox.senders, once: true as const } }
   const [changed] = await publish([cfg.host!], [permissionsRecord(seller.profile, access, pastAt), ownerRecord(seller.profile, 'profile', now, pastAt)])
   assert.ok(changed!.results.every((r) => r.ok), `the host took the permissions record and the card: ${JSON.stringify(changed)}`)
 
   const pastSend = await refusal(ctx, 'send', { to: buyer.profile.address, text: 'And Thursday?' })
-  assert.match(pastSend, /listed as a past key/, 'the CLI refuses the past message key')
+  assert.match(pastSend, /this key is past/, 'the CLI refuses the past message key')
   const goneRead = await refusal({ ...ctx, keys: { read: ctx.keys.read! } }, 'private')
   assert.match(goneRead, /not listed/, 'and the deleted read key')
   const key = keyFromPrivate(b64u.decode(messageKey.key))
@@ -731,7 +731,7 @@ async function main() {
 
   // The read key the seller's app makes for its assistant, at random (forest's records, "Access
   // keys"): listed among the seller's inbox's readers, so every message to it is sealed to it too.
-  const readKey = await readingKey(randomBytes(32))
+  const readKey = await inboxKey(randomBytes(32))
   const sellerCard = await publishCard(seller, [readKey.recipient])
   await publishCard(buyer)
   // Each app makes its assistant's keys: the seller's a write, a message and a read key; the buyer's a write key.

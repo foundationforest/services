@@ -318,7 +318,7 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
 - **The page tests** need Postgres. On a fixed story in a fresh database: every page and twin
   renders; every JSON-LD block validates against schema.org's vocabulary; each twin matches its
   page; the sitemap lists every page; every URL in `skill.md` and `llms.txt` resolves; no page says
-  a crypto word; the Pay link reads back to the offer; a past access key's record stands and a
+  a crypto word; the Pay link reads back to the offer; a past write key's record stands and a
   message key's does not; a private record is never stored; a picture shows from the host that
   holds it, as the type its record names, and not at all when no host does; a row made after its
   issuer's `until` counts for nothing. In a database of their own: renaming the foundation's host

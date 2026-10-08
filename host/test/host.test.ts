@@ -19,7 +19,7 @@ import { after, before, test } from 'node:test'
 
 import { type Connection, PublicKey } from '@solana/web3.js'
 
-import { mainKey, readingKey } from '../../forest/keys/src/index.ts'
+import { inboxKey, mainKey } from '../../forest/keys/src/index.ts'
 import { base58, deliver, getBlob, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readAll, readProfile } from '../../forest/records/src/index.ts'
 import { Host } from '../../forest/records/src/host.ts'
 import { message, openMessage } from '../../forest/records/src/private.ts'
@@ -74,9 +74,9 @@ function rpc(accounts: Buffer[]): Pick<Connection, 'getProgramAccounts'> & { ask
 
 /** A card with an inbox under `rule`, its inbox key and `readers`. */
 async function card(owner: Awaited<ReturnType<typeof mainKey>>, rule: object, readers?: string[]) {
-  const inboxKey = await readingKey(owner.privateKey)
-  const body = { market: 'tutoring', role: owner.label.split('/')[1]!, name: 'Test', inboxKey: inboxKey.recipient, inbox: { ...rule, ...(readers && { readers }) }, createdAt: '2026-10-02T00:00:00Z' }
-  return { body, identity: inboxKey.identity }
+  const key = await inboxKey(owner.privateKey)
+  const body = { market: 'tutoring', role: owner.label.split('/')[1]!, name: 'Test', inboxKey: key.recipient, inbox: { ...rule, ...(readers && { readers }) }, createdAt: '2026-10-02T00:00:00Z' }
+  return { body, identity: key.identity }
 }
 
 const errors = (outcome: { results: { ok: boolean; error?: string }[] } | undefined) => outcome!.results.map((r) => r.error ?? 'ok')
@@ -325,7 +325,7 @@ test('a message key: taken while the sender’s host lists it; once past, refuse
     const seller = await mainKey(randomBytes(32), 'tutoring/seller')
     const buyer = await mainKey(randomBytes(32), 'tutoring/buyer')
     const messageKey = keyFromPrivate(randomBytes(32))
-    const readKey = await readingKey(randomBytes(32))
+    const readKey = await inboxKey(randomBytes(32))
     const sellerCard = await card(seller, { senders: 'anyone' }, [readKey.recipient])
     const buyerCard = await card(buyer, { senders: 'anyone' })
     const now = Date.now()
@@ -350,7 +350,7 @@ test('a message key: taken while the sender’s host lists it; once past, refuse
     assert.deepEqual([reply.from, reply.key, reply.body], [seller.address, messageKey.address, { text: 'Yes.' }])
 
     // The seller makes it past. Pulls stop at once: the host reads its own copy of the permissions.
-    await publish([h.url], [permissionsRecord(seller, [{ key: messageKey.address, scope: 'past' }], Date.now() + 1)])
+    await publish([h.url], [permissionsRecord(seller, [{ key: messageKey.address, was: 'message' }], Date.now() + 1)])
     await assert.rejects(pull(h.url, pullRequest({ key: messageKey, profile: seller.address }, 0, Date.now())), (err: Error & { code?: string }) => err.code === 'permission')
     // Sending stops once what this host read of the seller's host expires.
     assert.deepEqual(errors((await deliver([h.url], [await message(delegated, buyer.address, { text: 'Still me.' }, Date.now(), buyerCard.body)]))[0]), ['ok'], 'kept from before')
