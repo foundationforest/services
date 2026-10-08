@@ -33,7 +33,8 @@ configured and nothing else, and one program of ours in front of them, the vouch
   deposit ([Rent](#rent)).
 - **The at-cost door** is every other request to the address, passed unchanged to the at-cost
   Kora: Kora's own JSON-RPC. It co-signs any transaction its rules allow, pays the network fee and
-  any deposit, and charges the person exactly what that cost it, in the dollar they pay with.
+  any deposit, and charges the person exactly what that cost it, in the dollar they pay with. A
+  request whose URL cannot be read (`//`) gets 400 and reaches neither Kora.
 
 An app names one fee payer and finds its voucher door from it: the address plus `/vouchers`. Both
 Koras sign with one key, so both doors spend one float. Inside a transaction that key may do one
