@@ -198,14 +198,18 @@ export function photoRule(host: () => Host, counted: (folder: string) => Promise
 }
 
 /**
- * What a sender's host may not be: loopback, private, link-local, carrier-grade NAT, unspecified,
- * multicast or reserved. An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is checked as IPv4.
+ * What a sender's host may not be: loopback, private, link-local, carrier-grade NAT, NAT64, 6to4,
+ * unspecified, multicast or reserved. An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is
+ * checked as IPv4. NAT64 (`64:ff9b::/96`) and 6to4 (`2002::/16`) lead to an IPv4 address, so both
+ * are refused whole.
  */
 const NOT_PUBLIC = new BlockList()
 for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
   NOT_PUBLIC.addSubnet(net, prefix, 'ipv4')
 }
-for (const [net, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) NOT_PUBLIC.addSubnet(net, prefix, 'ipv6')
+for (const [net, prefix] of [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) {
+  NOT_PUBLIC.addSubnet(net, prefix, 'ipv6')
+}
 
 /** Whether `address` is an IP address and a public one. */
 export function isPublic(address: string): boolean {
