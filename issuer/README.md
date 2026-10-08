@@ -179,7 +179,7 @@ Errors are `{"error": "<code>"}`:
 | `DIDIT_API_KEY` | yes | | The issuer's Didit API key, from the application that owns both workflows. A secret |
 | `DIDIT_WORKFLOW_ID` | yes | | The face check's workflow; any other is refused for tier 1 |
 | `DIDIT_ID_WORKFLOW_ID` | yes | | The document check's workflow (document, liveness, face match); any other is refused for tier 2 |
-| `ISSUER_KEYPAIR` | one of these two | | The issuer's seed: a JSON list of 64 numbers, as `solana-keygen` writes a key. At start it is written to a private file in a new temporary directory, loaded, the file deleted, and the variable taken out of the environment. The note key, the fingerprint key and the payment references are mixed from it |
+| `ISSUER_KEYPAIR` | one of these two | | The issuer's seed: a JSON list of 64 numbers, as `solana-keygen` writes a key. At start it is written to a private file in a new temporary directory, loaded, and the file deleted. The issuer's own process removes it from its environment once read. The note key, the fingerprint key and the payment references are mixed from it |
 | `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to that file, for local runs. `.gitignore` covers `*keypair*.json` |
 | `FACE_MODEL` | no | `sface` | `sface`, or `stand-in` with a stand-in Didit on this machine (`DIDIT_BASE_URL` on loopback); `deploy/start.sh` sets it |
 | `ID_TIER_PRICE` | no | `0` | The document check's price, a whole number in the dollar's smallest unit: `2500000` is 2.50 of a six-decimal dollar. 0 is free |
