@@ -1,12 +1,13 @@
 # The foundation's host (host/): forest's reference host with this service's policy. The build
-# context is the repo root, because the host imports forest's records and registry client by
-# relative path; standard.sh fetches standard into standard/ at the commit in STANDARD, and needs git.
+# context is the repo root, because the host imports forest's records, registry client and credits
+# by relative path; standard.sh fetches standard into standard/ at the commit in STANDARD, and needs
+# git.
 FROM node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services
 COPY STANDARD standard.sh ./
-RUN ./standard.sh records registry/client
+RUN ./standard.sh records registry/client credits
 COPY host/ host/
 RUN cd host && npm ci --no-audit --no-fund
 WORKDIR /services/host

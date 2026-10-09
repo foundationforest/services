@@ -9,10 +9,11 @@
 //     every note (standard/registry/README.md, "The note and the person proof");
 //   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
 //   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
-//     for one document check names, and `payments`, the devnet address payments go to once there is a
-//     price.
+//     for one document check names; `payments`, the devnet address payments go to once there is a
+//     price; and `credits`, the key that pays for the welcome gift's credits (gift.ts), the one key
+//     here that holds money.
 
-import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto'
+import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 
 import { hkdf } from '../../standard/keys/src/hkdf.ts'
@@ -27,6 +28,8 @@ export type IssuerKey = {
   derive(label: string): Promise<IssuerKey>
   /** 32 bytes forest's `hkdf` mixes from this key's secret under `info`. */
   mix(info: string): Promise<Uint8Array>
+  /** This key's Ed25519 signature of `message`: how the `credits` key signs the gift's transaction. */
+  sign(message: Uint8Array): Uint8Array
 }
 
 /** PKCS #8 for an Ed25519 secret (RFC 8410): this fixed header, then the 32 bytes. */
@@ -68,12 +71,14 @@ export function parseKeypair(text: string, source: string): IssuerKey {
 
 /** A key from its 32-byte secret. The secret stays inside, for mixing other keys. */
 function fromSecret(secret: Uint8Array): IssuerKey {
-  const publicKey = publicKeyOf(privateKey(secret))
+  const key = privateKey(secret)
+  const publicKey = publicKeyOf(key)
   return {
     publicKey,
     address: base58.encode(publicKey),
     derive: async (label) => fromSecret((await mainKey(secret, label)).privateKey),
     mix: (info) => hkdf(secret, info),
+    sign: (message) => new Uint8Array(sign(null, message, key)),
   }
 }
 

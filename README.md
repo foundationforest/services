@@ -1,8 +1,8 @@
 # services
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
-an issuer, a fee payer, a host, an index, and a CLI, with a hosted copy for AI chats. The Forest
-Foundation runs all five, on devnet. Anyone can run another of each, from this code (Apache 2.0) or
+an issuer, a registry payer, a fee payer, a host, an index, and a CLI, with a hosted copy for AI
+chats. The Forest Foundation runs all six, on devnet. Anyone can run another of each, from this code (Apache 2.0) or
 their own.
 
 The foundation writes forest, and runs the first of each service until there are others
@@ -16,9 +16,10 @@ the foundation has no shareholders and pays nothing out.
 
 | Service | What it does | On devnet | Directory |
 |---|---|---|---|
-| issuer | Checks once, by face, that a person is one real human, and signs them a note; a second check, by face and a government document, signs the same note at tier 2 | https://issuer.devnet.forest.foundation | [`issuer/`](issuer/README.md) |
-| fee payer | Pays Solana's costs for a person: their registry row free, against a voucher, at the voucher door; anything else at cost, in the dollar they hold, at the at-cost door | https://fee-payer.devnet.forest.foundation | [`fee-payer/`](fee-payer/README.md) |
-| host | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | https://host.devnet.forest.foundation | [`host/`](host/README.md) |
+| issuer | Checks once, by face, that a person is one real human, and signs them a note; a second check, by face and a government document, signs the same note at tier 2. At the first note, it pays for the person's first credits | https://issuer.devnet.forest.foundation | [`issuer/`](issuer/README.md) |
+| registry payer | Pays for a person's registry row against one of its credits, which anyone can buy for them | https://registry-payer.devnet.forest.foundation | [`fee-payer/registry/`](fee-payer/registry/README.md) |
+| fee payer | Pays Solana's costs for a person's transactions at cost, in the dollar they hold | https://fee-payer.devnet.forest.foundation | [`fee-payer/`](fee-payer/README.md) |
+| host | Keeps people's signed records, messages and photos, paid for in its credits, and serves them to anyone: forest's reference host, with its policy | https://host.devnet.forest.foundation | [`host/`](host/README.md) |
 | index | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree; serves pages for people and JSON for AI agents | https://index.devnet.forest.foundation | [`index/`](index/README.md) |
 | mcp | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats that cannot run a program on the person's device | https://mcp.devnet.forest.foundation/mcp | [`mcp/`](mcp/README.md) |
 
@@ -31,21 +32,22 @@ records and rows.
 - **The standard (forest):** what every service here must agree on, at the pinned commit.
 - **Each service, by its own policy:** what its README's Policy section says; whoever runs it
   changes it.
-- **An app, with the person:** which host, issuer, fee payer and index to use.
+- **An app, with the person:** which host, issuer, registry payer, fee payer and index to use.
 - **Promises:** the promises in each README change only when Carlos says so in a chat.
 
 ## How it works
 
 ```
-             face, then face and ID (Didit), note number
-  person's app ─────────────────────────────▶ issuer ── signs a note, tier 1 or 2, back to the app
+             face, then face and ID (Didit), note number, pay links
+  person's app ─────────────────────────────▶ issuer ── a note back; pays for first credits
        │
-       │ transaction: a row, a payment (a row with a voucher: free)
-       └────────▶ fee payer ── co-signs, sends ──▶ Solana: registry rows, escrow
-                                                        │ rows, receipts
-  assistant (the CLI) ───────┐                          ▼
-                             │ access keys sign      index ──▶ pages, JSON
-  person's app ──────────────┴── records ──▶ host ── what's new ──▶ index
+       │ a row and a credit            registry payer ──┐
+       ├──────────────────────────────────▶            ├─ co-signs, sends ──▶ Solana: registry
+       │ a payment, paid at cost       fee payer ───────┘                       rows, escrow
+       └──────────────────────────────────▶                                      │ rows, receipts
+  assistant (the CLI) ───────┐                                                   ▼
+                             │ access keys sign                               index ──▶ pages, JSON
+  person's app ──────────────┴── records, paid in credits ──▶ host ── what's new ──▶ index
 ```
 
 A person's app holds their seed, and mixes from it a main key for each label, such as
@@ -53,13 +55,16 @@ A person's app holds their seed, and mixes from it a main key for each label, su
 ([forest's keys](https://github.com/foundationforest/forest/blob/main/keys/README.md)). Then:
 
 1. **A note.** The issuer checks the person's face once and signs a note for their note number, at
-   tier 1; a document check later signs the same note at tier 2.
+   tier 1; a document check later signs the same note at tier 2. With the first note it pays for
+   the person's first credits, which their app bought: a few registrations at the registry payer,
+   and writes at the host
+   ([standard's credits](https://github.com/foundationforest/standard/blob/main/credits/README.md)).
 2. **A row.** From the note, the app makes a person proof on the device and writes one row in the
    registry
    ([forest's registry](https://github.com/foundationforest/forest/blob/main/registry/README.md)),
-   through the fee payer: free with a voucher, or paid in a dollar.
+   through the registry payer with one of its credits, or through the fee payer, paid in a dollar.
 3. **Records.** The app signs the profile's records with the main key and posts them to the hosts
-   its hosts record names. It makes access keys for the person's AI assistant and lists them in
+   its hosts record names; the host takes each write's price from the folder's balance of credits. It makes access keys for the person's AI assistant and lists them in
    the profile's permissions record
    ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions));
    with them, through the CLI ([`mcp/`](mcp/README.md)), the assistant posts offers and reviews,
@@ -72,8 +77,8 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    ratings as a tree; the seller's app proves its rating from it on the device and puts the proof
    on its card, and the index shows it.
 
-Each arrow is open: an app can use another issuer, fee payer, host or index, and each reader
-decides which issuers it trusts.
+Each arrow is open: an app can use another issuer, registry payer, fee payer, host or index, and
+each reader decides which issuers it trusts.
 
 ### What this repo is not
 
@@ -103,7 +108,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./standard.sh keys records registry/client escrow/client reputation/client
+./standard.sh keys records registry/client escrow/client reputation/client credits
 (cd standard/reputation/circuit && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
@@ -125,9 +130,10 @@ Each directory's README says how to run them.
 
 ### On devnet
 
-Five services on Railway, project `forest-devnet`, environment `production`. Each is one replica,
-built from its directory's `deploy/Dockerfile` on this repo's `main` and redeployed on every push
-to it; each directory's README lists its settings and its volume. Railway's service ids: `issuer`
+Six services on Railway, project `forest-devnet`, environment `production`. Each is one replica,
+built from its directory's `deploy/Dockerfile` (the registry payer's, `fee-payer/deploy/registry.Dockerfile`)
+on this repo's `main` and redeployed on every push to it; each directory's README lists its
+settings and its volume. Railway's service ids: `issuer`
 `9a9538d9-1a79-4860-9705-c85b8b538306`, `fee payer` `05e3d61b-7052-45cf-98f0-8928628425b7`, `host`
 `6bc0708f-1171-4c93-a47e-56e5bcd82685`, `index` `37f23042-b2a0-4ff0-90c6-e0521fc811d2`, `mcp`
 `34faba28-5014-491e-aa81-f4c3d1b84e98`.
@@ -142,12 +148,15 @@ to it; each directory's README lists its settings and its volume. Railway's serv
 | The issuer's seed, the devnet `issuer` key, which signs nothing itself | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` |
 | The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
 | The address the document check's price is paid to once one is set, mixed from the issuer's seed under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
-| The fee payer's name, in every voucher's label | `fee-payer.devnet.forest.foundation` |
+| The issuer's `credits` key, mixed from its seed under `credits`, which pays the welcome gift | `AWnaPYoUSbBHKqmhre77yrtfETysvYyw6j8cP5PkYSzK` |
+| The registry payer's key, the devnet `registry-payer` key, which its credits are paid to | `G4okQqEUk9WMVfheCHhjQL4ZerAKqKj3Y97UMq8TUsjZ` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
+| The address the host's credits are paid to, the devnet `host` key's; the host never signs with it | `2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9` |
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
 Every key is derived from the devnet phrase by the recipe in forest's `devnet/deploy.sh` scripts,
-and the issuer's note key and payments address from its seed, by forest's `hkdf` and `mainKey`;
+and the issuer's note key, payments address and `credits` key from its seed, by forest's `hkdf` and
+`mainKey`;
 none is in this repo. Open in a browser: [the index](https://index.devnet.forest.foundation/) and
 [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json); the latest e2e run's
 seller and deal are in [`e2e/`](e2e/README.md).
@@ -165,8 +174,13 @@ Each README holds its service's own promises. One holds for all of them:
 ## Limits
 
 - **Devnet only.** Nothing is on mainnet, and nothing is shipped. The issuer's two checks are a
-  stand-in that passes everyone, so notes, and the fee payer's vouchers, are unlimited; the dollars
-  are test dollars; every service is one replica on Railway.
+  stand-in that passes everyone, so notes, and the welcome gift's credits, are unlimited; the
+  dollars are test dollars, which their maker mints at will, so credits bought with them are
+  unlimited too; every service is one replica on Railway.
+- **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind, so
+  no service can tell from a credit which buy it came from; but a buy the issuer paid, collected and
+  spent soon after from one network address, can be tied together by whoever sees all three
+  (standard's [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC, the
   host its RPC and, for a message key's message, the sender's host. Each README says how.
 
@@ -179,18 +193,20 @@ Everything but its secrets and what it keeps private for people:
   every record on the host (a private record as an envelope only its readers open); the
   registry's rows and the escrow's receipts, on chain; the index's pages, JSON and reputation tree;
   and each e2e run's record.
-- **Secret:** the signing keys (the fee payer's, the issuer's, the index's), the devnet phrase, the
-  API keys and keyed URLs (Didit's, the RPC's), and the keys to the host's bucket.
+- **Secret:** the signing keys (the registry payer's, the fee payer's, the issuer's, the index's),
+  the credit keys (the registry payer's, the host's), the devnet phrase, the API keys and keyed URLs
+  (Didit's, the RPC's), and the keys to the host's bucket.
 - **Private by design:** what the issuer keeps ([issuer](issuer/README.md#what-it-keeps-and-why)),
   and the messages in an inbox, which only the recipient's main key, or a message key it lists,
   pulls, and only its inbox key and the read keys it lists open.
-- **Kept, not published:** the fee payer's used set (the stamp of each spent voucher), and
+- **Kept, not published:** the registry payer's and the host's spent lists (the id of each spent
+  credit), the host's balance of each folder, the issuer's list of note numbers given a gift, and
   Railway's own request logs.
 
 **Why is forest pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in
 one file is the whole pin, and moving it is a one-line change plus whatever it touches.
 
-**Why one repo for five services?**
+**Why one repo for six services?**
 They share one forest pin, one CI and one devnet. Each directory stands alone: its own package, its
 own Dockerfile, its own README.

@@ -1,9 +1,9 @@
-// The voucher check, the fee payer's front: `npm start`, with the variables fee-payer/README.md
-// lists. deploy/start.sh starts it beside the two Koras.
+// The registry payer's front: `npm start`, with the variables fee-payer/README.md lists.
+// deploy/registry.sh starts it beside its Kora.
 
-import { readConfig, startFront } from './vouchers.ts'
+import { readConfig, startFront } from './payer.ts'
 
-const service = await startFront(readConfig())
+const service = await startFront(await readConfig())
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {

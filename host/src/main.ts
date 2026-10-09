@@ -12,7 +12,7 @@ if (imported) {
 if (config.blobs.kind === 's3') console.log(`host: blobs in the bucket; ${toBucket ?? 0} moved there from disk`)
 console.log(
   `host: forest's reference host with this service's policy, on port ${new URL(host.url).port}; data in ${config.dir ?? 'a temporary directory'}; ` +
-    `blobs ${config.blobs.kind === 's3' ? 'in the bucket' : 'on disk'}; registry lookup ${config.rpcUrl ? 'on' : 'off'}; senders' records kept ${config.senderCacheMs / 1000} s`,
+    `blobs ${config.blobs.kind === 's3' ? 'in the bucket' : 'on disk'}; registry lookup and payment check ${config.rpcUrl ? 'on' : 'off'}; senders' records kept ${config.senderCacheMs / 1000} s; credits at ${config.credit.price} each`,
 )
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

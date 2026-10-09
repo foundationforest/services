@@ -1,4 +1,4 @@
-// The issuer's one file, three tables:
+// The issuer's one file, four tables:
 //
 //   sessions       for each check session that gave a note, and each earlier session Didit's face
 //                  search found the same face in: the SHA-256 of its id, and the note number that face
@@ -7,8 +7,10 @@
 //                  it was signed for, so a person seen again is signed again only for the same one
 //   id_payments    the transaction signature of each payment that opened a document check, so one
 //                  payment opens one
+//   gifts          each note number whose welcome gift was paid (gift.ts), so a person gets one
 //
-// Nothing else: no face, no embedding, no name, no document, no time, no row number. A session id is
+// Nothing else: no face, no embedding, no name, no document, no time, no row number, and nothing of
+// a gift but that it was paid: not its transaction, not its buys. A session id is
 // kept only as its hash, so the file names no Didit session. The note number links the two tables
 // of notes: a document's fingerprint sits next to the same note number as the hashes of the
 // sessions signed for it, its face-check sessions included. So the file does say which document
@@ -44,6 +46,8 @@ export class Store {
   readonly #pay: StatementSync
   readonly #unpay: StatementSync
   readonly #isPaid: StatementSync
+  readonly #give: StatementSync
+  readonly #ungive: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -61,6 +65,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY) WITHOUT ROWID;
     `)
     this.#session = this.#db.prepare('SELECT note_number FROM sessions WHERE hash = ?')
     this.#fingerprint = this.#db.prepare('SELECT note_number FROM fingerprints WHERE fingerprint = ?')
@@ -69,6 +74,8 @@ export class Store {
     this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature) VALUES (?)')
     this.#unpay = this.#db.prepare('DELETE FROM id_payments WHERE signature = ?')
     this.#isPaid = this.#db.prepare('SELECT 1 FROM id_payments WHERE signature = ?')
+    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number) VALUES (?)')
+    this.#ungive = this.#db.prepare('DELETE FROM gifts WHERE note_number = ?')
   }
 
   /** The note number this session gave, if it gave one. */
@@ -128,6 +135,16 @@ export class Store {
   /** Gives a payment back, when the check it was to open could not be opened. */
   releasePayment(signature: string): void {
     this.#unpay.run(base58.decode(signature))
+  }
+
+  /** Marks this note number's gift given: true if it was not before. Checking and marking are one statement. */
+  giveGift(noteNumber: bigint): boolean {
+    return Number(this.#give.run(toBytes32(noteNumber)).changes) === 1
+  }
+
+  /** Takes the mark back, when the gift was not paid after all. */
+  ungiveGift(noteNumber: bigint): void {
+    this.#ungive.run(toBytes32(noteNumber))
   }
 
   close(): void {

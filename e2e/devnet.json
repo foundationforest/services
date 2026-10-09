@@ -1,9 +1,9 @@
 {
-  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the fee payer is feePayer, its voucher door feePayer plus /vouchers, and feePayerName the name its voucher labels carry), the devnet programs (standard/registry/devnet/devnet.json, standard/escrow/devnet/devnet.json), the issuer's key the devnet index and the fee payer trust (index/lists/issuers.json; the run checks the issuer's /issuer.json says the same), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the past-key step waits out. Devnet only.",
+  "about": "What e2e runs against: the devnet services this repo deploys on Railway (each directory's README, \"On devnet\"; the registry payer is registryPayer, the fee payer feePayer), the devnet programs (standard/registry/devnet/devnet.json, standard/escrow/devnet/devnet.json), the issuer's key the devnet index trusts (index/lists/issuers.json; the run checks the issuer's /issuer.json says the same, and names the registry payer and the host in its gift), the classic test dollar, the market, and how long the host keeps a sender's records it read (host/README.md, its SENDER_CACHE_SECONDS), which the past-key step waits out. Devnet only.",
   "issuer": "https://issuer.devnet.forest.foundation",
   "issuerKey": "2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549",
+  "registryPayer": "https://registry-payer.devnet.forest.foundation",
   "feePayer": "https://fee-payer.devnet.forest.foundation",
-  "feePayerName": "fee-payer.devnet.forest.foundation",
   "host": "https://host.devnet.forest.foundation",
   "senderCacheSeconds": 60,
   "index": "https://index.devnet.forest.foundation",

@@ -19,7 +19,8 @@ that this issuer signed them a note, without showing the note or who they are.
 
 The checks are Didit's: Didit runs each one on its own page, and holds the face and, for the
 document check, the document. The issuer signs notes, looks on chain for a payment when the
-document check has a price, and does nothing else.
+document check has a price, pays for a person's first credits when it gives a welcome gift, and
+does nothing else.
 
 **Who it is.** `GET /issuer.json` gives its name and its note key. The name is what each person's
 secret for this issuer is mixed from
@@ -48,7 +49,8 @@ Tier 1, the face check, for anyone:
    an open model ([The face model](#the-face-model)). It keeps neither.
 6. **The note.** In one transaction it keeps the session, and every earlier session of the same
    face, next to the note number ([What it keeps](#what-it-keeps-and-why)). Then it signs a tier 1
-   note and answers it.
+   note and answers it, and, with a welcome gift, pays for the app's first credits
+   ([The welcome gift](#the-welcome-gift)).
 
 Tier 2, the document check, for a person who shows a note this issuer signed:
 
@@ -73,16 +75,17 @@ a review in Didit approves it.
 
 ### What it keeps, and why
 
-One SQLite file, three tables:
+One SQLite file, four tables:
 
 | Table | What | Why |
 |---|---|---|
 | `sessions` | The SHA-256 of each session id that gave a note, and of each earlier session of the same face, next to the note number | To sign a face for one note number: Didit names a face's earlier sessions, and the issuer must know which note number each was signed for. The earlier ones are kept too, so one of them sent late, whose own search could not see the later one, is refused for another note number |
 | `fingerprints` | Each document's fingerprint next to the note number it was signed for | To sign a document's person for one note number. Next to the note number, not alone, so a lost tier 2 note can be signed again: a fingerprint alone could only refuse |
 | `id_payments` | The transaction signature of each payment used | So one payment opens one session |
+| `gifts` | Each note number whose welcome gift was paid | So a person gets one: a face seen again gives the same note number |
 
-Nothing else: no face, no embedding, no name, no document, no time, no row number. A session id is
-kept only as its hash, so the file names no Didit session. Deleted bytes are overwritten
+Nothing else: no face, no embedding, no name, no document, no time, no row number, and of a gift
+only that it was paid: not its transaction, not its buys. A session id is kept only as its hash, so the file names no Didit session. Deleted bytes are overwritten
 (`secure_delete`). How long it keeps them is [Policy](#policy).
 
 **The fingerprint** is HMAC-SHA256, under a key mixed from the issuer's seed with forest's `hkdf`
@@ -137,13 +140,49 @@ transactions that name the reference (`getSignaturesForAddress`), and reads each
 (`getTransaction`): what `to`'s token accounts in the dollar gained in it must be at least the
 price. It reads nothing about who paid.
 
+### The welcome gift
+
+With a gift (`REGISTRY_PAYER_URL`, `HOST_URL`), a person's first note comes with credits at the
+services those settings name, paid by the issuer: on devnet, three registrations at the
+[registry payer](../fee-payer/registry/README.md) and 500 cents of writes at the
+[host](../host/README.md). They are
+[Forest credits](https://github.com/foundationforest/standard/blob/main/credits/README.md): the
+app buys them, the issuer pays, and each service signs them blind, so the issuer never sees them.
+
+1. **The app reads the gift** in `GET /issuer.json`: each service's origin, and how many of its
+   credits the issuer pays for.
+2. **The app makes one buy at each service,** of exactly that many credits (forest's credits,
+   `buy`), and keeps what finishes them in the vault.
+3. **It sends the buys' pay links with the note request:** `POST /note` with
+   `"gift": {"registryPayer": "<pay link>", "host": "<pay link>"}`, one for each service in the gift
+   and no other.
+4. **The issuer checks each link** against the one forest's credits writes for that service's
+   directory, read at its origin, that many credits and the buy's reference: the service's address,
+   token and price, and the amount. Anything else is `bad_gift`, and nothing is paid.
+5. **Once a note number,** it marks the gift given, then pays every link in one transaction from its
+   `credits` key: for each service, its token account made if it is not there, and a transfer to it
+   naming the buy's reference as one more account, as Solana Pay does. It waits until the
+   transaction is confirmed.
+6. **The answer** is the note, with `"gift": {"signature": "<the transaction>"}`, or
+   `"gift": {"error": …}`: `given`, paid before for this note number (the app collects the buys it
+   sent then); `bad_gift`; or `gift_unavailable`, when a directory did not answer or the
+   transaction was not paid, and then the mark comes off, so the same note asked for again pays it.
+   The note never waits on the gift: it is signed whatever the gift's answer.
+7. **The app collects** each buy at its service once the payment is finalized, and finishes the
+   credits.
+
+The `credits` key is mixed from the issuer's seed under `credits`, by forest's recipe for a main
+key. It is the one key here that holds money: the dollars the gift pays, the SOL for each
+transaction's fee, and the rent of a service's token account the first time. Someone funds it by
+hand.
+
 ### The API
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /issuer.json` | | `200 {"key":"<128 hex>","name":"<name>","v":1}`, canonical JSON |
+| `GET /issuer.json` | | `200 {"key":"<128 hex>","name":"<name>","v":1}`, canonical JSON; with a gift, also `"gift":{"<service>":{"credits":<n>,"origin":"<origin>"}}` |
 | `POST /session` | `{}` or none | `201 {"sessionId": "…", "url": "…"}` |
-| `POST /note` | `{"sessionId": "<uuid>", "noteNumber": "<decimal>"}` | `200 {"note": <note>}`, tier 1 |
+| `POST /note` | `{"sessionId": "<uuid>", "noteNumber": "<decimal>"}`; with a gift, may add `"gift": {"<service>": "<pay link>"}` | `200 {"note": <note>}`, tier 1; with `gift` asked, also `"gift"`: `{"signature"}` or `{"error"}` |
 | `POST /id/session` | `{}` or none; with a price, `{"payment": "<id>"}` once paid | `201 {"sessionId": "…", "url": "…"}`, or `402` with a payment to make |
 | `POST /id/note` | `{"sessionId": "<uuid>", "note": <note>}` | `200 {"note": <note>}`, tier 2 |
 
@@ -165,7 +204,7 @@ Errors are `{"error": "<code>"}`:
 
 | Status | Codes |
 |---|---|
-| `400` | `bad_session_id`, `bad_note_number`, `bad_note`, `bad_payment`, `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_sessionId_and_note`, `expected_exactly_payment` |
+| `400` | `bad_session_id`, `bad_note_number`, `bad_note`, `bad_payment`, `bad_gift` (a gift that is not an object), `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_sessionId_and_note`, `expected_exactly_payment` |
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `not_approved`, `no_face`, `duplicate_face`, `not_our_note`, `other_model`, `not_the_same_face`, `no_document_data`, `duplicate_document` |
 | `409` | `session_used` (this session is kept for another note number), `payment_used` |
@@ -180,13 +219,17 @@ Errors are `{"error": "<code>"}`:
 | `DIDIT_API_KEY` | yes | | The issuer's Didit API key, from the application that owns both workflows. A secret |
 | `DIDIT_WORKFLOW_ID` | yes | | The face check's workflow; any other is refused for tier 1 |
 | `DIDIT_ID_WORKFLOW_ID` | yes | | The document check's workflow (document, liveness, face match); any other is refused for tier 2 |
-| `ISSUER_KEYPAIR` | one of these two | | The issuer's seed: a JSON list of 64 numbers, as `solana-keygen` writes a key, read from the variable itself at start. The issuer's own process removes it from its environment once read. The note key, the fingerprint key and the payment references are mixed from it |
+| `ISSUER_KEYPAIR` | one of these two | | The issuer's seed: a JSON list of 64 numbers, as `solana-keygen` writes a key, read from the variable itself at start. The issuer's own process removes it from its environment once read. The note key, the fingerprint key, the payment references and the `credits` key are mixed from it |
 | `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to that file, for local runs. `.gitignore` covers `*keypair*.json` |
 | `FACE_MODEL` | no | `sface` | `sface`, or `stand-in` with a stand-in Didit on this machine (`DIDIT_BASE_URL` on loopback); `deploy/start.sh` sets it |
 | `ID_TIER_PRICE` | no | `0` | The document check's price, a whole number in the dollar's smallest unit: `2500000` is 2.50 of a six-decimal dollar. 0 is free |
 | `ID_TIER_MINT` | when priced | | The dollar it is paid in, by its mint's address |
 | `ID_TIER_PAY_TO` | when priced | | The address that receives it |
-| `RPC_URL` | when priced | | The Solana RPC it looks for payments through, at `finalized` |
+| `RPC_URL` | when priced, or with a gift | | The Solana RPC it looks for payments through, at `finalized`, and pays the gift through |
+| `REGISTRY_PAYER_URL` | no | none: no registrations in the gift | The registry payer's origin, `https://<host>`, whose credits the gift pays for |
+| `REGISTRY_CREDITS` | no | `3` | How many registrations; 0 for none |
+| `HOST_URL` | no | none: no host credits in the gift | The host's origin, whose credits the gift pays for |
+| `HOST_CREDITS` | no | `500` | How many of the host's credits, a cent each; 0 for none |
 | `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour, both checks together |
 | `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy puts the client's address in (`x-real-ip` on Railway) |
@@ -195,19 +238,22 @@ Errors are `{"error": "<code>"}`:
 
 It refuses to start if a required variable is missing, if both seed variables are set, if the seed
 is not a keypair (the message quotes none of it), if `FACE_MODEL=stand-in` is set with a Didit off
-this machine, or if `ID_TIER_PAY_TO` is the seed's own address.
+this machine, if `ID_TIER_PAY_TO` is the seed's own address, or if a gift's service is not an
+origin.
 
 ### Run it
 
 Node 22.18 or later. From the repo root:
 
 ```
-./standard.sh registry/client records keys
+./standard.sh registry/client records keys credits
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, forest's files included
 npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP, a person proof from a note;
-                     # the face models on the portraits; the devnet stand-in Didit, both tiers
+                     # the face models on the portraits; the devnet stand-in Didit, both tiers; the
+                     # welcome gift against stand-in directories and payer, and its transaction's
+                     # instructions against a stand-in RPC
 npm start            # the service, with the variables above
 ```
 
@@ -219,7 +265,7 @@ point `ISSUER_KEYPAIR_PATH` at it.
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
 and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH`, or each deploy forgets which
 face was signed for which note number. The build context is the repo root. `deploy/Dockerfile`
-builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `npm ci`, the face models
+builds it (Node 22.22.2 and git, `standard.sh registry/client records keys credits`, `npm ci`, the face models
 by `npm run fetch -- models`) and runs `deploy/start.sh`. With no `DIDIT_API_KEY`, that first starts
 `deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that approves every session it opens, on both
 workflows, with no face seen before and, for a document, a name it makes up for that session; then
@@ -233,9 +279,12 @@ https://issuer.devnet.forest.foundation:
   refuses a path with a dot, and the other routes are POST.
 - **Who it is:** `issuer.devnet.forest.foundation`; its note key is in
   [the repo's devnet facts](../README.md#on-devnet) and at `/issuer.json`. It is the issuer the
-  devnet index trusts (`index/lists/issuers.json`) and the fee payer takes vouchers from.
+  devnet index trusts (`index/lists/issuers.json`).
 - **No Didit key,** so the stand-in passes everyone, at both tiers.
 - **No price:** `ID_TIER_PRICE` is unset, so 0.
+- **A welcome gift:** three registrations at https://registry-payer.devnet.forest.foundation and
+  500 cents at https://host.devnet.forest.foundation, paid from the `credits` key,
+  `AWnaPYoUSbBHKqmhre77yrtfETysvYyw6j8cP5PkYSzK`, in the classic test dollar.
 
 | Variable | On devnet | Secret |
 |---|---|---|
@@ -244,6 +293,11 @@ https://issuer.devnet.forest.foundation:
 | `DATABASE_PATH` | `/data/issuer.sqlite` | no |
 | `SESSION_LIMIT_PER_HOUR` | `20` | no |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |
+| `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
+| `REGISTRY_PAYER_URL` | `https://registry-payer.devnet.forest.foundation` | no |
+| `REGISTRY_CREDITS` | `3` | no |
+| `HOST_URL` | `https://host.devnet.forest.foundation` | no |
+| `HOST_CREDITS` | `500` | no |
 | `PORT` | `8080` | no |
 
 Setting `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` and `DIDIT_ID_WORKFLOW_ID` (secret) and redeploying
@@ -268,6 +322,10 @@ puts the real checks, and the face model, in the stand-in's place.
   issuer cannot tell, and does not check.
 - **The price pays for the check, whatever Didit decides.** Nothing is refunded. A refused request
   uses nothing up, so the same session can still be sent again once a review in Didit approves it.
+- **The welcome gift:** at a person's first note, three registrations at the registry payer
+  (`REGISTRY_CREDITS`) and 500 cents of writes at the host (`HOST_CREDITS`): on devnet's prices,
+  1.50 and 5.00 of the classic test dollar, 6.50 a person, placeholders. Once a note number, paid
+  from the `credits` key, the issuer's one key that holds money.
 - **Session limits per address:** `SESSION_LIMIT_PER_HOUR` sessions an hour from one network
   address, both checks together, paid or not: 5 by default, 20 on devnet so a few e2e runs an hour
   fit. Counted in memory as keyed hashes, an IPv6 address by its /64. `/note`, `/id/note` and a
@@ -289,7 +347,7 @@ puts the real checks, and the face model, in the stand-in's place.
   for the document check also the document and the face match), the selfie's address, the earlier
   sessions with the same face, and, for the document check, the name, the birth date and the
   document's country. From the selfie: its embedding. From a payment: what `ID_TIER_PAY_TO` gained,
-  in which dollar. It keeps none of it but what [What it keeps](#what-it-keeps-and-why) lists.
+  in which dollar. From a gift's links: each buy's reference and amount. It keeps none of it but what [What it keeps](#what-it-keeps-and-why) lists.
 - **The consent screen.** Before the document check the app shows this, word for word; the last
   sentence only when there is a price:
 
@@ -313,10 +371,11 @@ puts the real checks, and the face model, in the stand-in's place.
 ## Promises
 
 - **It keeps which check session gave which note number, and nothing else of a check.** Its one
-  SQLite file has three tables: the SHA-256 of each session id next to the note number its face was
+  SQLite file has four tables: the SHA-256 of each session id next to the note number its face was
   signed for; a keyed one-way fingerprint of each document's name, birth date and country next to
-  the note number it was signed for; and the transaction signature of each payment used. No face, no
-  embedding, no name, no document, no time, no row number. Deleted bytes are overwritten
+  the note number it was signed for; the transaction signature of each payment used; and each note
+  number whose welcome gift was paid. No face, no embedding, no name, no document, no time, no row
+  number. Deleted bytes are overwritten
   (`secure_delete`). A test reads the raw file and checks this.
 - **It never logs a request, an address, a session, a note number or a note.** It logs an error's
   kind, never its message.
@@ -339,6 +398,19 @@ puts the real checks, and the face model, in the stand-in's place.
 - **On devnet, anyone passes.** The stand-in approves every session, on both checks, with no face
   seen before and a name made up for each document, so anyone who asks gets a note from the devnet
   issuer, at either tier.
+- **The `credits` key holds money on a server.** Whoever holds the seed, or gets into the
+  container, can spend what it holds. On devnet, test dollars and SOL.
+- **The issuer sees which buys a person's gift paid,** while it pays them, and keeps neither the
+  buys nor the transaction. The payment is public for good: the `credits` address paid each
+  service, naming the buy. A service that sees a buy collected and its credits spent soon after,
+  from one network address, can tie the two, and the issuer knows whose note the buy came with;
+  the foundation runs all three (standard's
+  [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+- **A gift whose transaction the RPC could not settle stays given.** Sent, and neither confirmed nor
+  past its blockhash when the RPC stopped answering, it may yet land; if it never does, that
+  person's gift is lost.
+- **The gift's transaction runs on chain only in the e2e run.** Its tests use a stand-in payer, and
+  check its instructions against a stand-in RPC.
 - **Payment is untried on chain.** The price is 0 on devnet. The payment path runs in this code's
   tests only, against a stand-in RPC, and a transfer that lists one more account is not among what
   the fee payer's tests sent through Kora.
@@ -385,7 +457,8 @@ puts the real checks, and the face model, in the stand-in's place.
   person proof a row carries.
 - **This issuer, by its policy:** whom it signs notes for (one face check per face, by Didit; one
   document check per person, after a face check, by Didit), what its tiers mean, the face model and
-  when two faces are the same, the document check's price and where it is paid, and its limits.
+  when two faces are the same, the document check's price and where it is paid, the welcome gift
+  (which services, how many credits), and its limits.
 - **Readers, by their own policy:** whether an index, a fee payer or a host trusts this issuer's
   key, and how much each tier weighs.
 - **The person, through their app:** whether to be checked, by which check and which issuers, and
@@ -399,9 +472,10 @@ id names nobody, and the tag says only which check the session was for.
 
 **Why does the price go to one address, with a reference per session, and not to an address per
 session?**
-So the issuer never holds money, nor a key that moves it: money paid goes straight to the address
-that receives it, and that address is a setting, which can change without a change here. The
-reference lets the issuer find each payment and count it once.
+So the issuer holds none of the money a document check is paid with, nor a key that moves it: it
+goes straight to the address that receives it, and that address is a setting, which can change
+without a change here. The reference lets the issuer find each payment and count it once. The one
+key the issuer holds money in is the `credits` key, which pays the welcome gift.
 
 **Could someone rebuild this issuer from public data?**
 Its name and key are public, and its code is here. What it keeps, which face and which document were

@@ -6,9 +6,9 @@
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
 #                (real reputation proofs: the reputation circuit's proving files; a real person proof: forest's
 #                example card's)
-#   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml its Dockerfile makes from
-#                at-cost/ and registry/, and the voucher check's type-check and tests (registry/; real
-#                person proofs: the person circuit's files, committed in forest)
+#   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml each Dockerfile makes from
+#                at-cost/ and registry/, and the registry payer's front: its type-check and tests
+#                (registry/; real credits, bought, collected and spent, against a stand-in Kora and RPC)
 #   host         the foundation's host: its type-check and its tests
 #   e2e          the devnet run's type-check, with the CLI it runs (mcp/)
 #   mcp          the CLI's type-check and tests: every action on records' reference host, both doors,
@@ -51,7 +51,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client records keys
+          ./standard.sh registry/client records keys credits
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
@@ -101,7 +101,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client escrow/client
+          ./standard.sh registry/client escrow/client credits
           (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
       - name: The local run's type-check
@@ -111,10 +111,10 @@ jobs:
         run: |
           bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null
           bash fee-payer/deploy/devnet-config.sh fee-payer/registry/kora.toml > /dev/null
-      - name: The voucher check's type-check
+      - name: The registry payer's type-check
         working-directory: fee-payer/registry
         run: npm run check
-      - name: The voucher check's tests
+      - name: The registry payer's tests
         working-directory: fee-payer/registry
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
@@ -130,7 +130,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client
+          ./standard.sh keys records registry/client credits
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -151,7 +151,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client
+          ./standard.sh keys records registry/client escrow/client reputation/client credits
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check
