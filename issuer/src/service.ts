@@ -10,7 +10,7 @@ import { canonical } from '../../standard/records/src/canonical.ts'
 import { type IssuerKey as NoteKey, issuerKeyOf } from '../../standard/registry/client/src/person.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
-import { loadKeypair, writeKeyFile, type IssuerKey } from './key.ts'
+import { loadKeypair, parseKeypair, type IssuerKey } from './key.ts'
 import { RateLimit } from './limit.ts'
 import { issuerHex } from './notes.ts'
 import { RpcPayments, type Payments } from './payment.ts'
@@ -129,24 +129,13 @@ export type Issuer = {
   store: Store
   /** The note key's public half: what a row names, and what readers trust. */
   noteKey: NoteKey
-  /** Where the seed from `ISSUER_KEYPAIR` was written; the file is gone by the time this returns. */
-  keyFile?: string
   /** Stops taking requests, and closes the file. */
   close(): Promise<void>
 }
 
-/**
- * The issuer's seed: from its file, or, when it came in a sealed variable, written to a private file
- * in a temporary directory, loaded, and the file deleted at once. Nothing reads it again.
- */
-function issuerSeed(config: Config): { keypair: IssuerKey; keyFile?: string } {
-  if (!config.issuerKeypair) return { keypair: loadKeypair(config.issuerKeypairPath!) }
-  const file = writeKeyFile(config.issuerKeypair)
-  try {
-    return { keypair: loadKeypair(file.path), keyFile: file.path }
-  } finally {
-    file.remove()
-  }
+/** The issuer's seed: read from `ISSUER_KEYPAIR`'s contents, or from its file. Nothing reads it again. */
+function issuerSeed(config: Config): IssuerKey {
+  return config.issuerKeypair ? parseKeypair(config.issuerKeypair, 'ISSUER_KEYPAIR') : loadKeypair(config.issuerKeypairPath!)
 }
 
 /**
@@ -164,12 +153,12 @@ export async function startIssuer(
   } = {},
 ): Promise<Issuer> {
   const seed = issuerSeed(config)
-  if (config.idTierPayTo === seed.keypair.address) {
+  if (config.idTierPayTo === seed.address) {
     throw new Error("ID_TIER_PAY_TO is the issuer's own key; payments go to an address of their own")
   }
-  const notePrivate = await seed.keypair.mix(NOTE_KEY_INFO)
+  const notePrivate = await seed.mix(NOTE_KEY_INFO)
   const noteKey = issuerKeyOf(notePrivate)
-  const fingerprintKey = await seed.keypair.mix(FINGERPRINT_KEY_INFO)
+  const fingerprintKey = await seed.mix(FINGERPRINT_KEY_INFO)
   const didit = { apiKey: config.diditApiKey, baseUrl: config.diditBaseUrl }
   const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditWorkflowId, tier: 'face' })
   const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, tier: 'id' })
@@ -184,7 +173,7 @@ export async function startIssuer(
     payment = {
       price,
       payments: overrides.payments ?? new RpcPayments({ rpcUrl: config.rpcUrl!, price }),
-      reference: async (paymentId) => (await seed.keypair.derive(`reference/${paymentId}`)).address,
+      reference: async (paymentId) => (await seed.derive(`reference/${paymentId}`)).address,
     }
   }
 
@@ -215,7 +204,6 @@ export async function startIssuer(
     server,
     store,
     noteKey,
-    keyFile: seed.keyFile,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())

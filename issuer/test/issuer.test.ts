@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -21,7 +21,7 @@ import { canonical, parseCanonical } from '../../standard/records/src/canonical.
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
-import { loadKeypair, parseKeypair, writeKeyFile } from '../src/key.ts'
+import { parseKeypair } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
 import { issuerHex, noteFromJson, noteToJson } from '../src/notes.ts'
 import { NOTE_KEY_INFO, readConfig, startIssuer, type Issuer } from '../src/service.ts'
@@ -579,7 +579,7 @@ test('the limit: a fresh share each hour, and nothing kept past it', () => {
   assert.equal(addressGroup('not an address'), 'not an address')
 })
 
-test('the seed from a sealed variable: a private temporary file, loaded, then deleted', () => {
+test('the seed from ISSUER_KEYPAIR: read from the variable itself, which leaves the environment', async () => {
   const { json: contents, publicKey } = keypairJson()
   const numbers = JSON.parse(contents) as number[]
   const env: Record<string, string | undefined> = { ISSUER_NAME, DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i', ISSUER_KEYPAIR: contents }
@@ -588,22 +588,13 @@ test('the seed from a sealed variable: a private temporary file, loaded, then de
   assert.equal(config.issuerKeypairPath, undefined)
   assert.equal(env.ISSUER_KEYPAIR, undefined, 'taken out of the environment once read')
   assert.throws(() => readConfig({ ...env, ISSUER_KEYPAIR: contents, ISSUER_KEYPAIR_PATH: '/k.json' }), /not both/)
+  assert.deepEqual(parseKeypair(contents, 'ISSUER_KEYPAIR').publicKey, publicKey)
 
-  const file = writeKeyFile(contents)
-  try {
-    assert.ok(file.path.startsWith(tmpdir()), 'under the system temporary directory, not the repo')
-    assert.equal(statSync(file.path).mode & 0o777, 0o600, 'the file: this user only')
-    assert.equal(statSync(dirname(file.path)).mode & 0o777, 0o700, 'its directory: this user only')
-    assert.deepEqual(loadKeypair(file.path).publicKey, publicKey)
-  } finally {
-    file.remove()
-  }
-  assert.equal(existsSync(dirname(file.path)), false, 'removed, directory and all')
-
+  // A value that is no keypair stops the issuer, with a message that quotes none of it.
   const broken = [contents.slice(0, 40), JSON.stringify(numbers.slice(0, 32)), JSON.stringify([...numbers.slice(0, 32), ...JSON.parse(keypairJson().json).slice(32)])]
   for (const text of broken) {
-    assert.throws(
-      () => writeKeyFile(text),
+    await assert.rejects(
+      () => start({ key: text }),
       (error: Error) => /^ISSUER_KEYPAIR is not a Solana keypair/.test(error.message) && !error.message.includes(text.slice(1, 12)),
     )
   }
