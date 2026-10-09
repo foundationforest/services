@@ -534,7 +534,7 @@ async function giftServices() {
   const pkcs8 = () => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
   const mint = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
   const directories = new Map<string, unknown>([
-    ['https://registry-payer.example', directoryOf({ requestUri: '/credits/buy', keys: [{ key: (await keyFrom(pkcs8())).published }], credit: { unit: 'one registration', address: 'G4okQqEUk9WMVfheCHhjQL4ZerAKqKj3Y97UMq8TUsjZ', mint, price: '0.5' } })],
+    ['https://registry-payer.example', directoryOf({ requestUri: '/credits/buy', keys: [{ key: (await keyFrom(pkcs8())).published }], credit: { unit: 'one registration', address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint, price: '0.5' } })],
     ['https://host.example', directoryOf({ requestUri: '/credits/buy', keys: [{ key: (await keyFrom(pkcs8())).published }], credit: { unit: 'one cent of writes', address: '2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9', mint, price: '0.01' } })],
   ])
   let down = false

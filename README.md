@@ -2,8 +2,8 @@
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
 an issuer, a registry payer, a fee payer, a host, an index, and a CLI, with a hosted copy for AI
-chats. The Forest Foundation runs all six, on devnet. Anyone can run another of each, from this code (Apache 2.0) or
-their own.
+chats. The Forest Foundation runs all six, on devnet. Anyone can run another of each, from this
+code (Apache 2.0) or their own.
 
 The foundation writes forest, and runs the first of each service until there are others
 ([forest's pieces](https://github.com/foundationforest/forest/blob/main/README.md#the-pieces)).
@@ -64,8 +64,9 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    ([forest's registry](https://github.com/foundationforest/forest/blob/main/registry/README.md)),
    through the registry payer with one of its credits, or through the fee payer, paid in a dollar.
 3. **Records.** The app signs the profile's records with the main key and posts them to the hosts
-   its hosts record names; the host takes each write's price from the folder's balance of credits. It makes access keys for the person's AI assistant and lists them in
-   the profile's permissions record
+   its hosts record names; the host takes each write's price from the folder's balance of credits.
+   It makes access keys for the person's AI assistant and lists them in the profile's permissions
+   record
    ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions));
    with them, through the CLI ([`mcp/`](mcp/README.md)), the assistant posts offers and reviews,
    answers messages, and asks the person, through their own inbox, for what it holds no key for.
@@ -149,15 +150,14 @@ settings and its volume. Railway's service ids: `issuer`
 | The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
 | The address the document check's price is paid to once one is set, mixed from the issuer's seed under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
 | The issuer's `credits` key, mixed from its seed under `credits`, which pays the welcome gift | `AWnaPYoUSbBHKqmhre77yrtfETysvYyw6j8cP5PkYSzK` |
-| The registry payer's key, the devnet `registry-payer` key, which its credits are paid to | `G4okQqEUk9WMVfheCHhjQL4ZerAKqKj3Y97UMq8TUsjZ` |
+| The registry payer's key, which its credits are paid to: a random key made for it, not mixed from the devnet phrase | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
 | The address the host's credits are paid to, the devnet `host` key's; the host never signs with it | `2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9` |
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
-Every key is derived from the devnet phrase by the recipe in forest's `devnet/deploy.sh` scripts,
-and the issuer's note key, payments address and `credits` key from its seed, by forest's `hkdf` and
-`mainKey`;
-none is in this repo. Open in a browser: [the index](https://index.devnet.forest.foundation/) and
+Every key but the registry payer's is derived from the devnet phrase by the recipe in forest's
+`devnet/deploy.sh` scripts, and the issuer's note key, payments address and `credits` key from its
+seed, by forest's `hkdf` and `mainKey`; the registry payer's is random. None is in this repo. Open in a browser: [the index](https://index.devnet.forest.foundation/) and
 [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json); the latest e2e run's
 seller and deal are in [`e2e/`](e2e/README.md).
 
