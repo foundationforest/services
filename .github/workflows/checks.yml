@@ -130,7 +130,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client
+          ./standard.sh keys records registry/client credits
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host

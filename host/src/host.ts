@@ -4,7 +4,13 @@
 // words.
 //
 // Around forest's host, one thing only: a front that answers `GET /` with one line saying what this
-// is, and passes every other request, untouched, to the host on loopback.
+// is, sells and takes credits (credits.ts), and passes every other request, untouched, to the host on
+// loopback.
+//
+// Every write is paid for in credits, from a folder's balance here: forest's host asks this host's
+// policies (`policy`, `messagePolicy`, `blobPolicy`), and each takes the write's price from the
+// balance, or refuses it. Forest's host asks nothing about a hosts or permissions record, so those
+// are free. Reads are free.
 //
 // Where it keeps things is forest's storage: a data directory (DATA_DIR) with a SQLite file per
 // folder, and the blobs on disk there, or in an S3-compatible bucket when the S3_ variables are set.
@@ -22,12 +28,8 @@
 // within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS. It reads them only from a
 // public address, and follows no redirect (forest's `publicFetch`, records/src/public.ts).
 //
-// Photos and videos (forest's blobs) are taken only for a folder holding a row from an issuer this
-// host counts, and only while that folder's photos and videos here stay within PHOTOS.folderBytes
-// (`photoRule`). The lookup is the registry lookup's: without an RPC, no photo is taken.
-
 import { existsSync, renameSync, rmSync } from 'node:fs'
-import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http'
+import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
@@ -36,16 +38,20 @@ import { Connection, PublicKey } from '@solana/web3.js'
 import { readPage } from '../../standard/records/src/client.ts'
 import { publicFetch } from '../../standard/records/src/public.ts'
 import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../standard/records/src/host.ts'
-import type { Checked } from '../../standard/records/src/record.ts'
-import { type BlobStore, blobNames, blobStore } from '../../standard/records/src/storage.ts'
+import { encodeMessage } from '../../standard/records/src/message.ts'
+import { type Checked, encodeRecord } from '../../standard/records/src/record.ts'
+import { type BlobStore, blobStore } from '../../standard/records/src/storage.ts'
+import { type Rpc, keyFrom } from '../../standard/credits/src/service.ts'
 import { importSingleFile } from '../../standard/records/scripts/import-single-file.ts'
 import { fromBytes32 } from '../../standard/registry/client/src/field.ts'
 import { fetchRows } from '../../standard/registry/client/src/rows.ts'
 
+import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, priceOf } from './credits.ts'
+
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
   'A Forest host, run by the Forest Foundation on devnet: forest/records’ reference host with the policy in ' +
-  'foundationforest/services, host/README.md. Anyone may write here, and on devnet it may be wiped at any time.\n'
+  'foundationforest/services, host/README.md. Anyone may write here, paying in credits, and on devnet it may be wiped at any time.\n'
 
 /** This host's policy: each number forest's host takes as an option. */
 export const POLICY = {
@@ -60,14 +66,6 @@ export const POLICY = {
   /** The largest blob it takes. Its types are forest's default: png, jpeg and mp4. */
   maxBlobBytes: 50_000_000,
 } as const satisfies HostOptions
-
-/** The photo rule: whose photos and videos this host takes, and how many bytes of them one folder may hold. */
-export const PHOTOS = {
-  /** The issuers whose registry rows let a folder put photos and videos here, by key as a row holds it: the foundation's devnet issuer. */
-  issuers: ['2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549'],
-  /** The most bytes of photos and videos a folder's current records may name here, the ones being put included. */
-  folderBytes: 250_000_000,
-} as const
 
 /** Milliseconds a sender's host may take to serve all of the sender's records. */
 export const SENDER_READ_MS = 5_000
@@ -88,6 +86,14 @@ export type Config = {
   registryProgramId: string
   /** Milliseconds what a sender's host served is kept; 0 reads it again for every request. */
   senderCacheMs: number
+  /** Its public origin, `https://host`: the name its credits carry. */
+  origin: string
+  /** Its credit key, RSA-2048 in PKCS #8, from CREDIT_KEY. */
+  creditKey: Uint8Array
+  /** Where a credit is paid, in what, and one credit's price in whole units. */
+  credit: { address: string; mint: string; price: string }
+  /** The most credits one buy may ask for. */
+  maxBuy: number
 }
 
 /** The bucket's variables; the first four are needed once any of them is set. */
@@ -119,10 +125,24 @@ function whole(name: string, value: string): number {
   return n
 }
 
-/** Reads the variables README.md lists. */
+/** The credit variables, every one needed: without them the host could take no write. */
+const CREDIT_NEEDED = ['PUBLIC_ORIGIN', 'CREDIT_KEY', 'CREDIT_ADDRESS', 'CREDIT_MINT', 'CREDIT_PRICE']
+
+/** Reads the variables README.md lists. CREDIT_KEY leaves the environment once read. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
   const registryProgramId = env.REGISTRY_PROGRAM_ID || DEVNET_REGISTRY
   new PublicKey(registryProgramId)
+  const missing = CREDIT_NEEDED.filter((name) => !env[name]?.trim())
+  if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
+  const origin = env.PUBLIC_ORIGIN!.trim()
+  if (new URL(origin).origin !== origin) throw new Error('PUBLIC_ORIGIN is an origin: https://host')
+  const price = env.CREDIT_PRICE!.trim()
+  if (!/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(price) || !/[1-9]/.test(price)) throw new Error('CREDIT_PRICE is decimal text above 0')
+  const mint = env.CREDIT_MINT!.trim()
+  const creditKey = new Uint8Array(Buffer.from(env.CREDIT_KEY!.trim(), 'base64'))
+  delete env.CREDIT_KEY
+  const maxBuy = whole('CREDITS_PER_BUY', env.CREDITS_PER_BUY || '1000')
+  if (maxBuy < 1) throw new Error('CREDITS_PER_BUY must be a whole number of at least 1')
   return {
     dir: env.DATA_DIR || null,
     importFrom: env.IMPORT_FROM || null,
@@ -131,6 +151,26 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     rpcUrl: env.SOLANA_RPC_URL || null,
     registryProgramId,
     senderCacheMs: whole('SENDER_CACHE_SECONDS', env.SENDER_CACHE_SECONDS || '60') * 1000,
+    origin,
+    creditKey,
+    credit: { address: new PublicKey(env.CREDIT_ADDRESS!.trim()).toBase58(), mint: mint === 'SOL' ? 'SOL' : new PublicKey(mint).toBase58(), price },
+    maxBuy,
+  }
+}
+
+/** A JSON-RPC call through `url`, for the payment check. Its errors never carry the URL, which may carry the RPC's key. */
+function rpcAt(url: string | null): Rpc {
+  return async (method, params) => {
+    if (!url) throw new Error('no RPC')
+    let answered: { result?: unknown; error?: unknown }
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(20_000) })
+      answered = (await res.json()) as typeof answered
+    } catch {
+      throw new Error('the RPC could not be reached')
+    }
+    if (answered.error !== undefined || !('result' in answered)) throw new Error(`the RPC refused ${method}`)
+    return answered.result
   }
 }
 
@@ -156,43 +196,20 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
 }
 
 /**
- * The photo rule, a policy for forest's host on top of forest's own types (png, jpeg and mp4) and its
- * size cap: bytes are taken when one of the folders whose current records name them holds a row
- * from an issuer in PHOTOS (`counted`), and the bytes this host holds that the folder's current
- * records name, these included, come to at most `limit`. A size is the bytes' own, never what a
- * record says of them, which can be anything: learned when this policy takes them, or read back
- * once for bytes taken before this start. Bytes enter only through this policy while it runs, so
- * bytes it finds missing stay missing until it takes them.
+ * Bytes, paid for: forest's own types (png, jpeg and mp4), then their price, from the balance of the
+ * first folder whose current records name them that holds it.
  */
-export function photoRule(host: () => Host, counted: (folder: string) => Promise<boolean>, limit: number = PHOTOS.folderBytes): BlobPolicy {
-  const sizes = new Map<string, number>()
-  const size = async (sha256: string) => {
-    let n = sizes.get(sha256)
-    if (n === undefined) {
-      n = (await host().getBlob(sha256))?.bytes.length ?? 0
-      sizes.set(sha256, n)
-    }
-    return n
-  }
+export function paidBlobs(credits: Credits): BlobPolicy {
   return async (blob) => {
     const refused = await defaultBlobPolicy(blob)
     if (refused) return refused
-    let full = false
+    const price = priceOf(blob.size)
+    let why: string | null = null
     for (const folder of blob.folders) {
-      if (!(await counted(folder))) continue
-      const named = new Set([...host().view(folder).current.values()].flatMap((c) => blobNames(c.record.body).map((n) => n.sha256)))
-      named.delete(blob.sha256)
-      let total = blob.size
-      for (const sha256 of named) total += await size(sha256)
-      if (total <= limit) {
-        sizes.set(blob.sha256, blob.size)
-        return null
-      }
-      full = true
+      why = credits.charge(folder, price)
+      if (!why) return null
     }
-    return full
-      ? `a folder's photos and videos here come to at most ${limit} bytes`
-      : 'this host takes photos and videos only for a folder holding a registry row from an issuer it counts'
+    return blob.folders.length === 1 ? why : `these bytes cost ${price} credits, and no folder whose records name them holds that many here`
   }
 }
 
@@ -280,32 +297,105 @@ const passed = (headers: IncomingHttpHeaders) => {
 export type RunningHost = {
   url: string
   host: Host
+  credits: Credits
   server: Server
   /** What the start moved: the old file's import, and, with a bucket, the blobs that were on disk. Null when there was nothing to move. */
   moved: { imported: Imported | null; toBucket: number | null }
   close(): Promise<void>
 }
 
+/** A credit route's body read whole: a buy of the most credits is a little over 260 bytes each. */
+const MAX_CREDIT_BODY = 512 * 1024
+const CORS = { 'access-control-allow-origin': '*' }
+
+function send(res: ServerResponse, answered: Answer): void {
+  const body = answered.body instanceof Uint8Array ? answered.body : JSON.stringify(answered.body)
+  res.writeHead(answered.status, { ...CORS, 'content-type': answered.type ?? 'application/json' }).end(body)
+}
+
+async function readBytes(req: IncomingMessage): Promise<Uint8Array | undefined> {
+  const chunks: Buffer[] = []
+  let size = 0
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length
+    if (size > MAX_CREDIT_BODY) return undefined
+    chunks.push(chunk as Buffer)
+  }
+  return new Uint8Array(Buffer.concat(chunks))
+}
+
+/** The credit routes (credits.ts); false for any other path, which goes to forest's host. */
+function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: ServerResponse): boolean {
+  const routes = [DIRECTORY_PATH, BUY_PATH, SPEND_PATH]
+  if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
+  if (req.method === 'OPTIONS') {
+    req.resume()
+    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400' }).end()
+    return true
+  }
+  if (req.method === 'GET' && path === DIRECTORY_PATH) {
+    req.resume()
+    send(res, { status: 200, body: credits.directory(), type: 'application/private-token-issuer-directory' })
+    return true
+  }
+  if (req.method === 'GET' && path.startsWith(BALANCE_PATH)) {
+    req.resume()
+    send(res, credits.balanceOf(path.slice(BALANCE_PATH.length)))
+    return true
+  }
+  if (req.method !== 'POST' || (path !== BUY_PATH && path !== SPEND_PATH)) {
+    req.resume()
+    send(res, { status: 405, body: { error: 'method' } })
+    return true
+  }
+  readBytes(req)
+    .then(async (bytes) => {
+      if (!bytes) return send(res, { status: 413, body: { error: 'too_big' } })
+      if (path === BUY_PATH) return send(res, await credits.collect(bytes))
+      let body: unknown
+      try {
+        body = JSON.parse(Buffer.from(bytes).toString('utf8'))
+      } catch {
+        body = undefined
+      }
+      send(res, await credits.spend(req.headers.authorization, body))
+    })
+    .catch(() => {
+      if (!res.headersSent) res.writeHead(500, CORS)
+      res.end()
+    })
+  return true
+}
+
 /**
- * In tests, `connection` stands in for the RPC, otherwise made from `config.rpcUrl`, and `fetch` for
- * `publicFetch`, so a sender's host on loopback can be read.
+ * In tests, `connection` stands in for the RPC the registry lookup reads and `rpc` for the one the
+ * payment check asks, otherwise both made from `config.rpcUrl`; `fetch` stands in for `publicFetch`,
+ * so a sender's host on loopback can be read.
  */
-export async function startHost(config: Config, stand: { connection?: Pick<Connection, 'getProgramAccounts'>; fetch?: typeof fetch } = {}): Promise<RunningHost> {
+export async function startHost(config: Config, stand: { connection?: Pick<Connection, 'getProgramAccounts'>; fetch?: typeof fetch; rpc?: Rpc } = {}): Promise<RunningHost> {
+  let creditKey
+  try {
+    creditKey = await keyFrom(config.creditKey)
+  } catch {
+    // The setting is a private key: nothing of it goes in the message.
+    throw new Error('CREDIT_KEY is not an RSA-2048 private key in PKCS #8, base64')
+  }
   const imported = config.dir ? await importOnce(config) : null
   const disk = config.dir && join(config.dir, 'blobs')
   const toBucket = disk && config.blobs.kind === 's3' && existsSync(disk) ? await moveBlobs(blobStore(config.dir!, { kind: 'disk' }), blobStore(config.dir!, config.blobs)) : null
 
   const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
   const lookup = rpc && rowLookup(rpc, config.registryProgramId)
-  const counted = async (folder: string) => {
-    for (const issuer of PHOTOS.issuers) if (lookup && (await lookup(folder, issuer))) return true
-    return false
-  }
+  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy }, stand.rpc ?? rpcAt(config.rpcUrl))
+  // Each write's price is taken before forest's host keeps it. Two copies of one record or message
+  // in flight at once may both pay, though forest's host keeps one.
   const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
     ...POLICY,
-    blobPolicy: photoRule(() => host, counted),
+    policy: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record)))),
+    messagePolicy: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message)))),
+    blobPolicy: paidBlobs(credits),
     ...(lookup && { rowLookup: lookup }),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
   })
@@ -326,6 +416,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
       res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
+    if (creditRoute(credits, path, req, res)) return
     let upstream
     try {
       upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
@@ -351,6 +442,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     host,
+    credits,
     server,
     moved: { imported, toBucket },
     async close() {
@@ -359,6 +451,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
         server.closeAllConnections()
       })
       await host.close()
+      credits.close()
     },
   }
 }

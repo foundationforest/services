@@ -2,20 +2,22 @@
 // with the import of the old single file and the move of bytes to a bucket; the registry lookup for
 // an inbox that takes messages from one issuer's rows; the sender's records read, and kept a while,
 // to take a message a message key signed, never after a redirect (forest's public fetch keeps the
-// read to public addresses, and its own tests try every range); and the photo rule: photos and
-// videos only for a folder with a counted row, within its bytes.
+// read to public addresses, and its own tests try every range); and credits: sold, collected,
+// finished with forest's credits client and spent into a folder's balance, which every write but a
+// hosts or permissions record pays from, bytes by the megabyte.
 //
 // A request whose URL cannot be read is refused at the front, and the host goes on.
 //
 //   npm test
 
 import assert from 'node:assert/strict'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, generateKeyPairSync, randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { after, before, test } from 'node:test'
 
 import { type Connection, PublicKey } from '@solana/web3.js'
@@ -27,8 +29,46 @@ import { message, openMessage } from '../../standard/records/src/private.ts'
 import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
+import { type Credit, authorization, buy, creditId, finish, serviceOf } from '../../standard/credits/src/index.ts'
+import type { Rpc } from '../../standard/credits/src/service.ts'
 
-import { DEVNET_REGISTRY, LABEL, PHOTOS, POLICY, type RunningHost, moveBlobs, photoRule, readConfig, rowLookup, startHost } from '../src/host.ts'
+import { BALANCE_PATH, BUY_PATH, DIRECTORY_PATH, SPEND_PATH, UNIT, priceOf } from '../src/credits.ts'
+import { DEVNET_REGISTRY, LABEL, POLICY, type RunningHost, moveBlobs, readConfig, rowLookup, startHost } from '../src/host.ts'
+
+const ORIGIN = 'https://host.example'
+/** Where credits are paid in these tests, and in what: the classic devnet test dollar. */
+const PAY_TO = base58.encode(new Uint8Array(32).fill(5))
+const MINT = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
+const CREDIT_KEY = Buffer.from(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' })).toString('base64')
+/** The credit settings every start needs, as a fresh object each time: readConfig takes CREDIT_KEY out of what it reads. */
+const credited = (env: Record<string, string> = {}) => ({ PUBLIC_ORIGIN: ORIGIN, CREDIT_KEY, CREDIT_ADDRESS: PAY_TO, CREDIT_MINT: MINT, CREDIT_PRICE: '0.01', ...env })
+
+/** An RPC on which every buy is paid: one finalized transaction naming any reference, paying the host plenty. */
+const paidRpc: Rpc = async (method) => {
+  if (method === 'getSignaturesForAddress') return [{ signature: 'paid', err: null }]
+  const balance = (amount: string) => [{ accountIndex: 1, mint: MINT, owner: PAY_TO, uiTokenAmount: { amount, decimals: 6 } }]
+  return { meta: { err: null, preTokenBalances: balance('0'), postTokenBalances: balance('1000000000') }, transaction: { message: { accountKeys: [] } } }
+}
+
+/** `n` credits from `h`: bought, collected (on `paidRpc`, every buy is paid) and finished, as an app does. */
+async function creditsFrom(h: RunningHost, n: number): Promise<Credit[]> {
+  const service = serviceOf(ORIGIN, await (await fetch(`${h.url}${DIRECTORY_PATH}`)).json())
+  const b = await buy(service, n)
+  const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: b.buy as Uint8Array<ArrayBuffer> })
+  assert.equal(res.status, 200, await res.clone().text())
+  return finish(b.pending, new Uint8Array(await res.arrayBuffer()))
+}
+
+/** One credit spent into `folder`'s balance: the status and what the host answered. */
+async function spend(h: RunningHost, folder: unknown, credit?: Credit, header = credit && authorization(credit)) {
+  const res = await fetch(`${h.url}${SPEND_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(header && { authorization: header }) }, body: JSON.stringify({ folder }) })
+  return { status: res.status, body: (await res.json()) as { error?: string; folder?: string; credits?: number } }
+}
+
+/** `n` credits into each folder's balance at `h`. */
+async function fund(h: RunningHost, folders: string[], n = 5) {
+  for (const folder of folders) for (const credit of await creditsFrom(h, n)) assert.equal((await spend(h, folder, credit)).status, 200)
+}
 
 /** An issuer's key, as a row holds it, and as an inbox names it: 128 hex. */
 const ISSUER_KEY = issuerKeyBytes(issuerKeyOf(new Uint8Array(32).fill(7)))
@@ -84,7 +124,7 @@ const errors = (outcome: { results: { ok: boolean; error?: string }[] } | undefi
 
 let host: RunningHost
 before(async () => {
-  host = await startHost(readConfig({ PORT: '0' }))
+  host = await startHost(readConfig(credited({ PORT: '0' })), { rpc: paidRpc })
 })
 after(async () => {
   await host?.close()
@@ -103,7 +143,6 @@ test('`/` says what this is; every other path is forest’s host, with this poli
     POLICY,
   )
   assert.deepEqual(POLICY, { keepDays: 30, maxBatch: 100, maxPageRecords: 1000, maxPageBytes: 4_194_304, maxBlobBytes: 50_000_000 })
-  assert.deepEqual(PHOTOS, { issuers: ['2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549'], folderBytes: 250_000_000 })
 })
 
 /** One request as raw bytes, so a URL no client would send arrives as written; the status line's code, or null if none came. */
@@ -125,23 +164,37 @@ test('a request whose URL cannot be read gets 400, and the host goes on answerin
   }
 })
 
-test('the settings: a data directory, the old file, a bucket by its variables, and the time a sender’s records are kept', () => {
-  const none = readConfig({})
-  assert.deepEqual(none, { dir: null, importFrom: null, blobs: { kind: 'disk' }, port: 8080, rpcUrl: null, registryProgramId: DEVNET_REGISTRY, senderCacheMs: 60_000 })
+test('the settings: a data directory, the old file, a bucket by its variables, the time a sender’s records are kept, and credits', () => {
+  const env = credited()
+  const none = readConfig(env)
+  assert.deepEqual({ ...none, creditKey: undefined }, { dir: null, importFrom: null, blobs: { kind: 'disk' }, port: 8080, rpcUrl: null, registryProgramId: DEVNET_REGISTRY, senderCacheMs: 60_000, origin: ORIGIN, creditKey: undefined, credit: { address: PAY_TO, mint: MINT, price: '0.01' }, maxBuy: 1000 })
+  assert.deepEqual(none.creditKey, new Uint8Array(Buffer.from(CREDIT_KEY, 'base64')))
+  assert.equal(env.CREDIT_KEY, undefined, 'the credit key leaves the environment once read')
+  assert.throws(() => readConfig({}), /missing environment variables: PUBLIC_ORIGIN, CREDIT_KEY, CREDIT_ADDRESS, CREDIT_MINT, CREDIT_PRICE/, 'no credits, no start: never a free host by mistake')
+  assert.throws(() => readConfig(credited({ PUBLIC_ORIGIN: 'https://host.example/path' })), /PUBLIC_ORIGIN/)
+  assert.throws(() => readConfig(credited({ CREDIT_PRICE: '0' })), /CREDIT_PRICE/)
+  assert.throws(() => readConfig(credited({ CREDITS_PER_BUY: '0' })), /CREDITS_PER_BUY/)
+  assert.equal(readConfig(credited({ CREDIT_MINT: 'SOL' })).credit.mint, 'SOL')
   const bucket = { S3_ENDPOINT: 'https://s3.example.com', S3_BUCKET: 'forest-host', S3_ACCESS_KEY_ID: 'id', S3_SECRET_ACCESS_KEY: 'secret' }
-  const full = readConfig({ DATA_DIR: '/data/host', IMPORT_FROM: '/data/host.sqlite', SENDER_CACHE_SECONDS: '5', ...bucket, S3_REGION: 'auto', S3_STYLE: 'virtual' })
+  const full = readConfig(credited({ DATA_DIR: '/data/host', IMPORT_FROM: '/data/host.sqlite', SENDER_CACHE_SECONDS: '5', ...bucket, S3_REGION: 'auto', S3_STYLE: 'virtual' }))
   assert.deepEqual([full.dir, full.importFrom, full.senderCacheMs], ['/data/host', '/data/host.sqlite', 5000])
   assert.deepEqual(full.blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret', region: 'auto', style: 'virtual' }, 'the region as given, `auto` too')
-  assert.deepEqual(readConfig(bucket).blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret' }, 'forest’s defaults: us-east-1, path style')
-  assert.throws(() => readConfig({ S3_BUCKET: 'forest-host', S3_REGION: 'auto' }), /missing: S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/, 'half a bucket is no bucket, and no silent disk')
-  assert.throws(() => readConfig({ ...bucket, S3_STYLE: 'sideways' }), /S3_STYLE/)
-  assert.throws(() => readConfig({ ...bucket, S3_ENDPOINT: 'not a url' }))
-  assert.throws(() => readConfig({ SENDER_CACHE_SECONDS: '-1' }), /SENDER_CACHE_SECONDS/)
+  assert.deepEqual(readConfig(credited(bucket)).blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret' }, 'forest’s defaults: us-east-1, path style')
+  assert.throws(() => readConfig(credited({ S3_BUCKET: 'forest-host', S3_REGION: 'auto' })), /missing: S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/, 'half a bucket is no bucket, and no silent disk')
+  assert.throws(() => readConfig(credited({ ...bucket, S3_STYLE: 'sideways' })), /S3_STYLE/)
+  assert.throws(() => readConfig(credited({ ...bucket, S3_ENDPOINT: 'not a url' })))
+  assert.throws(() => readConfig(credited({ SENDER_CACHE_SECONDS: '-1' })), /SENDER_CACHE_SECONDS/)
+})
+
+test('a credit key that is not one stops the start, and says nothing of what it was given', async () => {
+  const pkcs1 = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs1', format: 'der' }).toString('base64')
+  await assert.rejects(startHost(readConfig(credited({ PORT: '0', CREDIT_KEY: pkcs1 }))), (err: Error) => /PKCS #8/.test(err.message) && !err.message.includes(pkcs1.slice(0, 16)))
 })
 
 test('records go in and come back through the front, for the whole host and by profile', async () => {
   const now = Date.now()
   const people = [await mainKey(randomBytes(32), 'tutoring/seller'), await mainKey(randomBytes(32), 'tutoring/buyer')]
+  await fund(host, people.map((p) => p.address), 1)
   for (const who of people) {
     const outcomes = await publish([host.url], [
       hostsRecord(who, [host.url], now),
@@ -160,11 +213,11 @@ test('the old single file goes into the data directory once, under the same numb
   const old = join(scratch(), 'host.sqlite')
   copyFileSync(SINGLE_FILE, old)
 
-  const config = readConfig({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old })
+  const config = readConfig(credited({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old }))
   let h = await startHost(config)
   try {
     assert.deepEqual(h.moved, { imported: { folders: 2, records: 10, messages: 3, blobs: 3 }, toBucket: null })
-    assert.deepEqual(readdirSync(dir).filter((n) => !/-(wal|shm)$/.test(n)).sort(), ['blobs', 'folders', 'host.sqlite'], 'forest’s layout, and nothing half-made beside it')
+    assert.deepEqual(readdirSync(dir).filter((n) => !/-(wal|shm)$/.test(n)).sort(), ['blobs', 'credits', 'folders', 'host.sqlite'], 'forest’s layout and the credits, and nothing half-made beside them')
     assert.equal(existsSync(`${dir}.import`), false)
     const all = await readAll(h.url)
     assert.equal(all.records.length, 10)
@@ -189,10 +242,10 @@ test('a data directory with folders but no host.sqlite is not replaced by the im
   const dir = join(scratch(), 'host')
   const old = join(scratch(), 'host.sqlite')
   copyFileSync(SINGLE_FILE, old)
-  const first = await startHost(readConfig({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old }))
+  const first = await startHost(readConfig(credited({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old })))
   await first.close()
   rmSync(join(dir, 'host.sqlite'))
-  await assert.rejects(startHost(readConfig({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old })))
+  await assert.rejects(startHost(readConfig(credited({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old }))))
   assert.ok(readdirSync(join(dir, 'folders')).length, 'the folders are where they were')
 })
 
@@ -247,7 +300,7 @@ async function bucketStandIn(credentials: { accessKeyId: string; secretAccessKey
 test('with a bucket: the old file’s bytes go straight to it; bytes an earlier start left on disk move to it', async () => {
   const credentials = { accessKeyId: 'id', secretAccessKey: 'secret', region: 'auto' }
   const bucket = await bucketStandIn(credentials)
-  const variables = (dir: string, old: string) => ({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old, S3_ENDPOINT: bucket.url, S3_BUCKET: 'forest-host', S3_ACCESS_KEY_ID: 'id', S3_SECRET_ACCESS_KEY: 'secret', S3_REGION: 'auto', S3_STYLE: 'path' })
+  const variables = (dir: string, old: string) => credited({ PORT: '0', DATA_DIR: dir, IMPORT_FROM: old, S3_ENDPOINT: bucket.url, S3_BUCKET: 'forest-host', S3_ACCESS_KEY_ID: 'id', S3_SECRET_ACCESS_KEY: 'secret', S3_REGION: 'auto', S3_STYLE: 'path' })
   const old = join(scratch(), 'host.sqlite')
   copyFileSync(SINGLE_FILE, old)
   const fixtureBlobs = ['1c85c049849c11c261c798dc86337dad071aba06912e5cf0bc4246b6741d2fea', '5f16b986be00b36dad6ceccb463837b06bf09e5266e531ebaad64c140ef1858b', '1eab5c7e38c814d8bfa518fdf37d1652c3877616db7cab2af17812083083d8c4']
@@ -267,7 +320,7 @@ test('with a bucket: the old file’s bytes go straight to it; bytes an earlier 
     // A host that started on disk, then got the bucket.
     bucket.objects.clear()
     const later = join(scratch(), 'host')
-    h = await startHost(readConfig({ PORT: '0', DATA_DIR: later, IMPORT_FROM: old }))
+    h = await startHost(readConfig(credited({ PORT: '0', DATA_DIR: later, IMPORT_FROM: old })))
     await h.close()
     assert.equal(readdirSync(join(later, 'blobs')).filter((n) => !n.endsWith('.type')).length, 3)
     h = await startHost(readConfig(variables(later, old)))
@@ -304,8 +357,9 @@ test('an inbox open to one issuer’s rows: taken with the lookup, refused witho
   const { body } = await card(owner, { senders: { issuer: ISSUER } })
   const note = () => message(sender, owner.address, { text: 'Is Tuesday free?' }, Date.now(), body)
 
-  const withLookup = await startHost(readConfig({ PORT: '0' }), { connection: rpc([rowData(sender.publicKey)]) })
+  const withLookup = await startHost(readConfig(credited({ PORT: '0' })), { connection: rpc([rowData(sender.publicKey)]), rpc: paidRpc })
   try {
+    await fund(withLookup, [owner.address, sender.address], 1)
     await publish([withLookup.url], [ownerRecord(owner, 'profile', body, now)])
     const [outcome] = await deliver([withLookup.url], [await note()])
     assert.deepEqual(errors(outcome), ['ok'])
@@ -313,6 +367,7 @@ test('an inbox open to one issuer’s rows: taken with the lookup, refused witho
     await withLookup.close()
   }
 
+  await fund(host, [owner.address], 1)
   await publish([host.url], [ownerRecord(owner, 'profile', body, now)])
   const [outcome] = await deliver([host.url], [await note()])
   assert.deepEqual(errors(outcome), ['rule_unsupported'], 'no SOLANA_RPC_URL: no lookup')
@@ -321,7 +376,7 @@ test('an inbox open to one issuer’s rows: taken with the lookup, refused witho
 test('a message key: taken while the sender’s host lists it; once past, refused after the time this host keeps what it read', async () => {
   const keep = 2
   // The plain fetch stands in for the public one, so the sender's host can be on loopback.
-  const h = await startHost(readConfig({ PORT: '0', SENDER_CACHE_SECONDS: String(keep) }), { fetch })
+  const h = await startHost(readConfig(credited({ PORT: '0', SENDER_CACHE_SECONDS: String(keep) })), { fetch, rpc: paidRpc })
   try {
     const seller = await mainKey(randomBytes(32), 'tutoring/seller')
     const buyer = await mainKey(randomBytes(32), 'tutoring/buyer')
@@ -330,6 +385,7 @@ test('a message key: taken while the sender’s host lists it; once past, refuse
     const sellerCard = await card(seller, { senders: 'anyone' }, [readKey.recipient])
     const buyerCard = await card(buyer, { senders: 'anyone' })
     const now = Date.now()
+    await fund(h, [seller.address, buyer.address])
     await publish([h.url], [
       hostsRecord(seller, [h.url], now),
       permissionsRecord(seller, [{ key: messageKey.address, scope: 'message' }], now),
@@ -367,80 +423,140 @@ test('a message key: taken while the sender’s host lists it; once past, refuse
 })
 
 
-/** Bytes, and their name as a record gives it; `size` is what the record says of them, true or not. */
-function photo(length: number, size = length) {
-  const bytes = new Uint8Array(randomBytes(length))
-  return { bytes, named: { sha256: createHash('sha256').update(bytes).digest('hex'), mimeType: 'image/png', size } }
-}
-
-/** What a host answered a put: ok, or its code. */
-const put = async (url: string, p: ReturnType<typeof photo>) => {
-  const [answer] = await putBlob([url], p.bytes, p.named.mimeType)
-  return answer!.ok ? 'ok' : answer!.error
-}
-
-test('the photo rule: photos and videos only for a folder holding a row from the devnet issuer', async () => {
-  const devnetIssuer = Buffer.from(PHOTOS.issuers[0], 'hex')
-  const [holder, other, none] = [await mainKey(randomBytes(32), 'tutoring/seller'), await mainKey(randomBytes(32), 'tutoring/seller'), await mainKey(randomBytes(32), 'tutoring/buyer')]
-  const [mine, others, nones] = [photo(100), photo(100), photo(100)]
-  const now = Date.now()
-  const records = [
-    ownerRecord(holder, 'profile', { name: 'Holder', photo: mine.named }, now),
-    ownerRecord(other, 'profile', { name: 'Other', photo: others.named }, now),
-    ownerRecord(none, 'profile', { name: 'None', photo: nones.named }, now),
-  ]
-  // The holder's row is the devnet issuer's; the other's is another issuer's; none holds none.
-  const h = await startHost(readConfig({ PORT: '0' }), { connection: rpc([rowData(holder.publicKey, devnetIssuer), rowData(other.publicKey)]) })
-  try {
-    await publish([h.url], records)
-    assert.equal(await put(h.url, mine), 'ok')
-    assert.equal(await put(h.url, others), 'policy', 'a row from another issuer')
-    assert.equal(await put(h.url, nones), 'policy', 'no row')
-    const [refused] = await putBlob([h.url], nones.bytes, 'image/png')
-    assert.match(refused!.message!, /only for a folder holding a registry row from an issuer it counts/)
-    assert.equal((await getBlob([h.url], mine.named.sha256))?.type, 'image/png', 'and serves what it took')
-    assert.equal(await put(h.url, photo(10)), 'unnamed', 'forest’s rule first: bytes no record names')
-  } finally {
-    await h.close()
+test('credits: the directory, a buy collected only once paid, and spent into a folder, once', async () => {
+  const directory = await (await fetch(`${host.url}${DIRECTORY_PATH}`)).json()
+  assert.deepEqual(directory['forest-credit'], { unit: UNIT, address: PAY_TO, mint: MINT, price: '0.01' })
+  assert.equal(directory['issuer-request-uri'], BUY_PATH)
+  const service = serviceOf(ORIGIN, directory)
+  const collect = async (h: RunningHost, bytes: Uint8Array) => {
+    const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: bytes as Uint8Array<ArrayBuffer> })
+    return { status: res.status, body: res.headers.get('content-type') === 'application/json' ? await res.json() : null }
   }
-  // No RPC: no row can be read, so no photo is taken.
-  await publish([host.url], records)
-  assert.equal(await put(host.url, mine), 'policy', 'no SOLANA_RPC_URL: no photos')
+  const owed = await buy(service, 3)
+  assert.ok(owed.payLink.includes('amount=0.03&'), 'three cents')
+
+  // Unpaid, or with no RPC to ask: no credits.
+  const unpaid: Rpc = async (method) => (method === 'getSignaturesForAddress' ? [] : null)
+  const strict = await startHost(readConfig(credited({ PORT: '0', CREDITS_PER_BUY: '2' })), { rpc: unpaid })
+  const noRpc = await startHost(readConfig(credited({ PORT: '0' })))
+  try {
+    assert.deepEqual(await collect(strict, (await buy(service, 2)).buy), { status: 402, body: { error: 'not_paid', detail: `0.02 to ${PAY_TO}, naming the buy's reference, finalized` } })
+    assert.deepEqual((await collect(strict, owed.buy)).body, { error: 'too_many', detail: 'at most 2 credits a buy' })
+    assert.deepEqual((await collect(noRpc, owed.buy)).body, { error: 'payment_check_unavailable' })
+  } finally {
+    await strict.close()
+    await noRpc.close()
+  }
+  assert.deepEqual((await collect(host, new Uint8Array([1, 2, 3]))).body, { error: 'not_a_buy' })
+
+  // Paid: collected twice, the same credits.
+  const first = await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer> })
+  const answered = new Uint8Array(await first.arrayBuffer())
+  const again = new Uint8Array(await (await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer> })).arrayBuffer())
+  assert.deepEqual(again, answered, 'the same buy, the same answer')
+  const [a, b] = await finish(owed.pending, answered)
+
+  const folder = (await mainKey(randomBytes(32), 'tutoring/seller')).address
+  assert.deepEqual(await spend(host, folder, a), { status: 200, body: { folder, credits: 1 } })
+  assert.deepEqual(await spend(host, folder, a), { status: 409, body: { error: 'spent' } }, 'a credit is spent once')
+  assert.deepEqual((await spend(host, 'not a folder', b)).body, { error: 'bad_request' })
+  assert.deepEqual(await spend(host, folder), { status: 401, body: { error: 'no_credit' } })
+  // The same credit with one byte of its signature changed: read as a credit, checked, refused.
+  const bytes = Buffer.from(b!.credit, 'base64url')
+  bytes[bytes.length - 1]! ^= 1
+  const forged = { ...b!, credit: bytes.toString('base64url') }
+  assert.deepEqual(await spend(host, folder, forged), { status: 402, body: { error: 'credit' } })
+  assert.deepEqual(await spend(host, folder, b), { status: 200, body: { folder, credits: 2 } }, 'the credit refused for its folder, then spent')
+  assert.deepEqual(await (await fetch(`${host.url}${BALANCE_PATH}${folder}`)).json(), { folder, credits: 2 })
+  assert.equal((await fetch(`${host.url}${BALANCE_PATH}nope`)).status, 400)
+  const preflight = await fetch(`${host.url}${SPEND_PATH}`, { method: 'OPTIONS' })
+  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type, authorization', 'a page may show a credit')
 })
 
-test('the photo rule: a folder’s bytes as they are, not as its records say, through any folder that names them, after a restart too', async () => {
-  const dir = scratch()
+/** Bytes, and their name as a record gives it. */
+function photo(length: number) {
+  const bytes = new Uint8Array(randomBytes(length))
+  return { bytes, named: { sha256: createHash('sha256').update(bytes).digest('hex'), mimeType: 'image/png', size: length } }
+}
+
+/** What a host answered a put: ok, or its code and why. */
+const put = async (url: string, p: ReturnType<typeof photo>, type = p.named.mimeType) => {
+  const [answer] = await putBlob([url], p.bytes, type)
+  return answer!.ok ? 'ok' : `${answer!.error}: ${answer!.message}`
+}
+
+test('every write pays from its folder: a record or a message one credit, bytes one a started megabyte; hosts and permissions free', async () => {
+  const MIB = 1024 * 1024
+  assert.deepEqual([priceOf(0), priceOf(1), priceOf(MIB), priceOf(MIB + 1), priceOf(5 * MIB)], [1, 1, 1, 2, 5])
   const [owner, other] = [await mainKey(randomBytes(32), 'tutoring/seller'), await mainKey(randomBytes(32), 'tutoring/buyer')]
-  // Every record says each is 1 byte: the rule counts the bytes.
-  const [a, b, c, d] = [photo(600, 1), photo(300, 1), photo(200, 1), photo(50, 1)]
-  const start = async (counted: (folder: string) => Promise<boolean> = async () => true) => {
-    const h: Host = new Host({ dir, blobPolicy: photoRule(() => h, counted, 1000) })
-    return { h, url: await h.listen(0) }
-  }
-  let { h, url } = await start()
+  const balance = (who: { address: string }) => host.credits.balance(who.address)
+  const now = Date.now()
+  const big = photo(MIB + 1)
+  const profile = { name: 'Owner', photo: big.named }
+
+  // With nothing in its balance, a folder still moves and still removes an access key.
+  const control = await publish([host.url], [hostsRecord(owner, [host.url], now), permissionsRecord(owner, [], now)])
+  assert.deepEqual(errors(control[0]), ['ok', 'ok'])
+  const [broke] = await publish([host.url], [ownerRecord(owner, 'profile', profile, now)])
+  assert.deepEqual(errors(broke), ['policy'])
+  assert.match(broke!.results[0]!.message!, /costs 1 credit, and the folder holds 0 here; credits are sold at \/\.well-known\/private-token-issuer-directory/)
+
+  await fund(host, [owner.address], 2)
+  assert.deepEqual(errors((await publish([host.url], [ownerRecord(owner, 'profile', profile, now)]))[0]), ['ok'])
+  assert.equal(balance(owner), 1, 'a record: one credit')
+  assert.deepEqual(errors((await publish([host.url], [ownerRecord(owner, 'profile', profile, now)]))[0]), ['ok'], 'already here')
+  assert.equal(balance(owner), 1, 'a record already here costs nothing')
+
+  // Bytes of a megabyte and one: two credits, from a folder whose records name them.
+  assert.match(await put(host.url, big), /^policy: this write costs 2 credits, and the folder holds 1 here/)
+  assert.match(await put(host.url, big, 'image/gif'), /^unnamed/, 'forest’s rule first')
+  await fund(host, [owner.address], 1)
+  assert.equal(await put(host.url, big), 'ok')
+  assert.equal(balance(owner), 0)
+  assert.equal(await put(host.url, big), 'ok', 'bytes already here')
+  assert.equal(balance(owner), 0, 'bytes already here cost nothing')
+
+  // Bytes two folders name come in through one that can pay.
+  const shared = photo(10)
+  await publish([host.url], [ownerRecord(owner, 'offer/a', { media: [shared.named] }, now)])
+  await fund(host, [other.address], 2)
+  await publish([host.url], [ownerRecord(other, 'offer/b', { media: [shared.named] }, now)])
+  assert.equal(balance(other), 1)
+  assert.equal(await put(host.url, shared), 'ok', 'through the folder that holds credits')
+  assert.equal(balance(other), 0)
+
+  // A message: one credit, from its sender.
+  const inbox = await card(other, { senders: 'anyone' })
+  await fund(host, [other.address], 1)
+  await publish([host.url], [ownerRecord(other, 'profile', inbox.body, now)])
+  const letter = async () => message(owner, other.address, { text: 'Tuesday?' }, Date.now(), inbox.body)
+  const [unpaid] = await deliver([host.url], [await letter()])
+  assert.deepEqual(errors(unpaid), ['policy'], 'the sender holds nothing here')
+  await fund(host, [owner.address], 1)
+  assert.deepEqual(errors((await deliver([host.url], [await letter()]))[0]), ['ok'])
+  assert.deepEqual([balance(owner), balance(other)], [0, 0], 'the sender paid; the recipient did not')
+})
+
+test('a spend that stopped between holding a credit and spending it settles on the next start', async () => {
+  const dir = scratch()
+  const start = () => startHost(readConfig(credited({ PORT: '0', DATA_DIR: dir })), { rpc: paidRpc })
+  let h = await start()
+  const folder = (await mainKey(randomBytes(32), 'tutoring/seller')).address
+  const [kept, lost] = await creditsFrom(h, 2)
+  const ids = [creditId(kept!), creditId(lost!)]
+  // Two spends cut short: the first got as far as the balance, the second only as far as the hold.
+  h.credits.spent.hold(ids[0]!)
+  h.credits.spent.hold(ids[1]!)
+  await h.close()
+  const balances = new DatabaseSync(join(dir, 'credits', 'balances.sqlite'))
+  balances.prepare('INSERT INTO landing (id) VALUES (?)').run(ids[0]!)
+  balances.prepare('INSERT INTO balances (folder, credits) VALUES (?, 1)').run(folder)
+  balances.close()
+  h = await start()
   try {
-    const now = Date.now()
-    await publish([url], [ownerRecord(owner, 'offer/x', { media: [a.named, b.named, c.named] }, now)])
-    assert.equal(await put(url, a), 'ok', '600 of 1000')
-    assert.equal(await put(url, b), 'ok', '900')
-    assert.equal(await put(url, c), 'policy', '1100: over')
-    const [over] = await putBlob([url], c.bytes, 'image/png')
-    assert.match(over!.message!, /at most 1000 bytes/)
-    // Another folder names the same bytes, and has room: they come in through it.
-    await publish([url], [ownerRecord(other, 'offer/y', { media: [c.named] }, now)])
-    assert.equal(await put(url, c), 'ok', 'through the other folder: 200 of 1000')
-    // A folder with no counted row puts nothing, room or not.
-    await h.close()
-    ;({ h, url } = await start(async (folder) => folder !== other.address))
-    await publish([url], [ownerRecord(other, 'offer/z', { media: [d.named] }, now)])
-    assert.equal(await put(url, d), 'policy', 'no row')
-    await h.close()
-    // After a restart, the sizes of the bytes held are read back from them: the owner's 600, 300
-    // and 200 are still 1100, so 10 more is over.
-    ;({ h, url } = await start())
-    const e = photo(10, 1)
-    await publish([url], [ownerRecord(owner, 'offer/v', { media: [e.named] }, now)])
-    assert.equal(await put(url, e), 'policy', '1110 of 1000, the sizes read back')
+    assert.deepEqual(h.credits.spent.holds(), [], 'nothing held after the start')
+    assert.deepEqual((await spend(h, folder, kept)).body, { error: 'spent' }, 'the one its folder took is spent')
+    assert.deepEqual((await spend(h, folder, lost)).body, { folder, credits: 2 }, 'the other is free to show again')
   } finally {
     await h.close()
   }
@@ -452,12 +568,14 @@ test('a message key: its sender’s host read at a public address only, and neve
   const messageKey = keyFromPrivate(randomBytes(32))
   const buyerCard = await card(buyer, { senders: 'anyone' })
   // A host the plain fetch reads (loopback), and in front of it one that only redirects to it.
-  const h = await startHost(readConfig({ PORT: '0', SENDER_CACHE_SECONDS: '0' }), { fetch })
+  const h = await startHost(readConfig(credited({ PORT: '0', SENDER_CACHE_SECONDS: '0' })), { fetch, rpc: paidRpc })
   const redirect = createServer((req, res) => res.writeHead(302, { location: `${h.url}${req.url}` }).end())
   await new Promise<void>((resolve) => redirect.listen(0, '127.0.0.1', resolve))
   const via = `http://127.0.0.1:${(redirect.address() as { port: number }).port}`
   try {
     const now = Date.now()
+    await fund(h, [seller.address, buyer.address])
+    await fund(host, [buyer.address], 1)
     await publish([h.url], [
       hostsRecord(seller, [h.url, via], now),
       permissionsRecord(seller, [{ key: messageKey.address, scope: 'message' }], now),
