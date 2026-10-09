@@ -5,7 +5,8 @@
 # RUST_LOG=warn, which writes no request. The build context is the repo root.
 FROM ghcr.io/solana-foundation/kora:v2.0.5@sha256:6e575278f559762d673a02c668e6c96ec2c04a2691ab9a668475272c97cd4e9b AS kora
 
-FROM node:22.22.2-bookworm-slim
+# Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
+FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=kora /usr/local/bin/kora /usr/local/bin/kora

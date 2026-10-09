@@ -3,7 +3,8 @@
 # fetches them into standard/ at the commit in STANDARD, and needs git. `npm run fetch` puts the face
 # models in the image, each checked by SHA-256, so the real checks need only their variables.
 # issuer/deploy/start.sh runs the stand-in Didit first when no Didit key is set.
-FROM node:22.22.2-bookworm-slim
+# Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
+FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services

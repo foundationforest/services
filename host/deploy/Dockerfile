@@ -2,7 +2,8 @@
 # context is the repo root, because the host imports forest's records, registry client and credits
 # by relative path; standard.sh fetches standard into standard/ at the commit in STANDARD, and needs
 # git.
-FROM node:22.22.2-bookworm-slim
+# Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
+FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services

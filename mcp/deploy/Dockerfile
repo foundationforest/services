@@ -6,7 +6,8 @@
 # foundation's devnet index as its index. No key is set: the CLI refuses to start a hosted copy with
 # one, since every caller would act as that person. The hosts it starts from are the CLI's default,
 # the public list in index/lists/hosts.json on this repo's main.
-FROM node:22.22.2-bookworm-slim
+# Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
+FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services
