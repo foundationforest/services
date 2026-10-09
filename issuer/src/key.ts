@@ -13,9 +13,7 @@
 //     price.
 
 import { createPrivateKey, createPublicKey, type KeyObject } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 import { hkdf } from '../../standard/keys/src/hkdf.ts'
 import { mainKey } from '../../standard/keys/src/profile.ts'
@@ -82,18 +80,4 @@ function fromSecret(secret: Uint8Array): IssuerKey {
 /** The issuer's seed, from a keypair file. */
 export function loadKeypair(path: string): IssuerKey {
   return parseKeypair(readFileSync(path, 'utf8'), `the key file ${path}`)
-}
-
-/**
- * The issuer's seed from the contents of a sealed variable (`ISSUER_KEYPAIR`), written to a file of
- * its own: a new directory under the system's temporary directory, readable by this process's user
- * only (0700), holding one file readable by it only (0600). Never under the repo or the build, and
- * `remove` deletes it. The service loads the key and removes the file at once.
- */
-export function writeKeyFile(contents: string): { path: string; remove(): void } {
-  parseKeypair(contents, 'ISSUER_KEYPAIR')
-  const dir = mkdtempSync(join(tmpdir(), 'forest-issuer-key-'))
-  const path = join(dir, 'issuer-keypair.json')
-  writeFileSync(path, JSON.stringify(JSON.parse(contents)), { mode: 0o600, flag: 'wx' })
-  return { path, remove: () => rmSync(dir, { recursive: true, force: true }) }
 }

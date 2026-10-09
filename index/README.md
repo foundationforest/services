@@ -27,15 +27,19 @@ markets directory ── the markets lists/markets.json names ──┘
   cursor kept in Postgres, so a profile is found the first time it writes there. No other host is
   read, and a profile's hosts record is not followed.
   - Every record is checked by forest's reader (`readPage`): its canonical text and its signature.
-    One that fails is dropped and logged; every one that checks is kept, as its text, per host.
+    One that fails is dropped and logged; every one that checks is taken in, as its text, per host.
   - Each profile is viewed with forest's own `viewProfile`, which applies the access rule (forest's
     [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Which record
     counts"), so this index sees exactly what any other reader sees.
+  - Only each profile's current records are kept: what the view holds now, at every path, and any
+    record dated ahead, until it comes due. A version its writer replaced, a record its writer
+    deleted, and a record no key lets count any more are dropped. A delete stays, holding no
+    content, as its path's current version.
   - Three paths are read: `profile`, `offer/<id>` and `review/<id>`, each body checked against
     forest's shape for it (`standard/records/schemas/`); one that fails is not stored. A private
     record is left alone: only its readers can open it. Other paths are not this index's.
-  - Only a profile holding a row from an issuer it trusts (below) is stored. Any other's records
-    wait, kept, and are stored the day its row is read, with nothing to read again.
+  - Only a profile holding a row from an issuer it trusts (below) is stored. Any other's current
+    records wait, kept, and are stored the day its row is read, with nothing to read again.
 - **Rows, from the registry.** Every row of each issuer key in `lists/issuers.json`, read from the
   program's own accounts on every poll (`fetchRows`). A row
   ([registry](https://github.com/foundationforest/forest/blob/main/registry/README.md#the-row))
@@ -405,9 +409,9 @@ them, the hosts and the chain. Another index holds its own.
 - **How often:** every host and the chain are read every `POLL_MS` (10 seconds on devnet); a host
   that takes more than 60 seconds to serve a page fails that read, and the next poll tries again.
   A quarter of a second after anything new is read, every score and the tree are computed again.
-- **What it keeps, and for how long,** in Postgres, with nothing deleted: every record its hosts
-  serve, for every profile, stored or not, and every version it saw; every row of the issuers it
-  lists; each escrow transaction's log lines; and every root it signed. A picture's bytes, never.
+- **What it keeps, and for how long,** in Postgres: each profile's current records from its hosts,
+  stored or not, until they are replaced or deleted; every row of the issuers it lists; each escrow
+  transaction's log lines; and every root it signed. A picture's bytes, never.
 - **What the pages advise:** nothing. An offer's and a receipt's escrow options (an arbiter, a
   timer) are shown as they are: what to advise is each app's.
 - **No request logs.** The pages log only a failed request's path and its error.
@@ -452,8 +456,11 @@ them, the hosts and the chain. Another index holds its own.
   ([host](../host/README.md)); on Railway, Railway's own request logs do.
 - **A picture is checked once.** A host that loses the bytes after that leaves a broken picture on
   the page.
-- **It keeps every record its hosts serve,** for every profile, stored or not, and every version
-  it saw. A host can make it keep junk.
+- **It keeps each profile's current records its hosts serve,** at every path, stored or not. A host
+  can make it keep junk, one version a path.
+- **A replaced version is gone for good.** If a path's newest version came from an access key the
+  profile later removes from its permissions record, the path shows nothing here, where a reader
+  holding every version would show the one before.
 - **The markets are read once, at start.** A change in the markets directory reaches the index at
   its next restart, and while the directory does not answer, the index does not start.
 - **Everything is computed again on every change,** and signing runs in JavaScript, inside one
@@ -499,3 +506,8 @@ own on the device. forest's prover takes every leaf anyway.
 **Why a number of roots, and not an age?**
 A proof against the newest root stays exact however old it is, until someone's rating moves; an age
 would expire it while it is still true.
+
+**Why keep a delete, once what it deleted is gone?**
+So the record stays deleted. Another host this index reads may serve an older copy of it later:
+beside the delete it is an older version, and goes; without the delete it would be the newest, and
+show again.
