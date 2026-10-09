@@ -185,12 +185,13 @@ counts profiles it does not name; `index`, whose tree it was made from, with its
 and `time`, the root that index signed and when. The page says "Rated 9.5 of 10 in Online tutors
 (per …, 5 Oct 2026)", or "across their profiles".
 
-This index shows a proof only when it checks for this profile's own key, its index is in
+This index shows a proof only when it checks for this profile's own key and the registry row at
+its stamp names this profile, its index is in
 https://github.com/foundationforest/services/blob/main/index/lists/indexes.json, and its root is one
 of that index's newest roots. One that fails, or is too old, shows nothing: that is not an error.
 To check one yourself, take the proof from the profile's card on its hosts and run forest's
-`verifyReputation` (https://github.com/foundationforest/forest/blob/main/circuits/README.md) with
-the profile's address.
+`verifyReputation` (https://github.com/foundationforest/forest/blob/main/reputation/README.md) with
+the profile's address and a Solana RPC.
 
 This index's own tree, for an app that proves on the device:
 

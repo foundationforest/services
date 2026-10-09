@@ -2,15 +2,19 @@
 // a profile shows"):
 //   1. a row as the index stores it: its stamp, its issuer's key and its time, read from the row;
 //   then on the page tests' story (test/fixture.ts) in a fresh database:
-//   2. the tree: its leaves rebuild its root with circuits' buildTree, and a proof made from them
-//      checks with circuits' verifier against the root, time and signature the index serves;
+//   2. the tree: its leaves rebuild its root with reputation's buildTree, and a proof made from them
+//      checks with reputation's verifier against the root, time and signature the index serves;
 //   3. a proof passes: Ana shows her rating in her market on her card, and her page and its twin
 //      say so;
 //   4. a proof with one byte changed shows nothing;
-//   5. a proof against a root past the window shows nothing: two roots back, it still shows; three,
+//   5. Ana's proof on Cleo's card shows nothing there: it lands only on the profile whose row sits at
+//      its stamp, Ana's own;
+//   6. a proof against a root past the window shows nothing: two roots back, it still shows; three,
 //      it does not.
 //
-// Needs Postgres and circuits' proving files (`npm run fetch` in standard/circuits/reputation).
+// The registry is a stand-in RPC that holds the rows at the stamps the proofs show.
+//
+// Needs Postgres and reputation's proving files (`npm run fetch` in standard/reputation/circuit).
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres node --test --test-force-exit test/reputation.test.ts
 
@@ -22,37 +26,57 @@ import { fileURLToPath } from 'node:url'
 
 import { PublicKey } from '@solana/web3.js'
 
-import { type Leaf, buildTree, proofBytes, proveReputation, verifyReputation } from '../../standard/circuits/reputation/src/index.ts'
+import { type Leaf, buildTree, proofBytes, proveReputation, verifyReputation } from '../../standard/reputation/client/src/index.ts'
 import { type Body, b64u, base58, ownerRecord, recordId, unsignedOf } from '../../standard/records/src/index.ts'
-import { ROW_DISCRIMINATOR, ROW_OFFSET, decodeRow, rowSpace } from '../../standard/registry/client/src/program.ts'
+import { PROGRAM_ID, ROW_DISCRIMINATOR, ROW_OFFSET, decodeRow, rowAddress, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 
 import { issuerFromHex, issuerHex, rowRecord } from '../src/chain/registry.ts'
 import { startWeb } from '../src/main.ts'
 import { takeIn } from '../src/records/hosts.ts'
+import type { Registry } from '../src/records/store.ts'
 import { hex64 } from '../src/scores/reputation.ts'
 import * as w from '../src/web/words.ts'
 import { HOST, INDEX, INDEX_NAME, ISSUER, ISSUER_NAME, MADE_UP_DEAL, MARKET, RECORDS, SELLER, ana, cleo, makeFixture } from './fixture.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const devnet = join(here, '../../standard/circuits/reputation/devnet')
+const devnet = join(here, '../../standard/reputation/circuit/devnet')
 const ARTIFACTS = { wasm: join(devnet, 'reputation.wasm'), zkey: join(devnet, 'reputation.zkey') }
-test('1. a row as the index stores it: its stamp, its issuer’s key and its time, read from the row itself', () => {
-  const profile = new PublicKey(ana.address)
-  const payer = new PublicKey(INDEX)
-  const stamp = 0x1234n
-  const label = new TextEncoder().encode(SELLER)
+
+/** A row's bytes as the program writes them: this profile, at this stamp, under this label, from the test issuer. */
+function rowBytes(profile: string, stamp: bigint, labelText: string): Uint8Array {
+  const label = new TextEncoder().encode(labelText)
   const data = new Uint8Array(rowSpace(label.length))
   const view = new DataView(data.buffer)
   data.set(ROW_DISCRIMINATOR, 0)
-  data.set(profile.toBytes(), ROW_OFFSET.profile)
+  data.set(new PublicKey(profile).toBytes(), ROW_OFFSET.profile)
   data.set(toBytes32(stamp), ROW_OFFSET.stamp)
   data.set(Buffer.from(ISSUER, 'hex'), ROW_OFFSET.issuer)
-  data.set(payer.toBytes(), ROW_OFFSET.payer)
+  data.set(new PublicKey(INDEX).toBytes(), ROW_OFFSET.payer)
   view.setBigInt64(ROW_OFFSET.made, 1_790_000_000n, true)
   view.setUint32(ROW_OFFSET.label, label.length, true)
   data.set(label, ROW_OFFSET.label + 4)
-  const row = rowRecord('ExampleRow'.padEnd(44, '1'), decodeRow(data) as never)
+  return data
+}
+
+/** A stand-in RPC holding these rows, each at its stamp's address, as the registry program keeps them. */
+function registry(rows: { profile: string; stamp: bigint; label: string }[]): Registry {
+  const at = new Map(rows.map((r) => [rowAddress(r.stamp, PROGRAM_ID).toBase58(), rowBytes(r.profile, r.stamp, r.label)]))
+  return {
+    programId: PROGRAM_ID.toBase58(),
+    commitment: 'confirmed',
+    connection: {
+      getAccountInfo: async (address: PublicKey) => {
+        const data = at.get(address.toBase58())
+        return data ? { data: Buffer.from(data), owner: new PublicKey(PROGRAM_ID.toBase58()), lamports: 1, executable: false, rentEpoch: 0 } : null
+      },
+    } as never,
+  }
+}
+
+test('1. a row as the index stores it: its stamp, its issuer’s key and its time, read from the row itself', () => {
+  const stamp = 0x1234n
+  const row = rowRecord('ExampleRow'.padEnd(44, '1'), decodeRow(rowBytes(ana.address, stamp, SELLER)) as never)
   assert.deepEqual(row, {
     address: 'ExampleRow'.padEnd(44, '1'),
     profile: ana.address,
@@ -69,7 +93,7 @@ test('1. a row as the index stores it: its stamp, its issuer’s key and its tim
 
 test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, async (t) => {
   if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
-  if (!existsSync(ARTIFACTS.wasm) || !existsSync(ARTIFACTS.zkey)) return t.skip('circuits’ proving files are not fetched: npm run fetch in standard/circuits/reputation')
+  if (!existsSync(ARTIFACTS.wasm) || !existsSync(ARTIFACTS.zkey)) return t.skip('reputation’s proving files are not fetched: npm run fetch in standard/reputation/circuit')
   const fixture = await makeFixture(process.env.DATABASE_URL)
   try {
     const { web } = await startWeb(fixture.db, fixture.config(), { listen: false })
@@ -78,13 +102,30 @@ test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, 
       return { status: res.status, type: res.headers.get('content-type'), text: await res.text() }
     }
     const json = async (path: string) => JSON.parse((await get(path)).text)
-    const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } }, indexes: [INDEX] }
-    /** Ana's card again, now, with these proofs; then what her twin and her page say. */
-    const anaCard = RECORDS.find((r) => r.profile === ana.address && r.path === 'profile')!.body as Record<string, unknown>
-    const showProofs = async (proofs: unknown[]) => {
-      const record = ownerRecord(ana.key, 'profile', { ...anaCard, proofs } as Body, Date.now())
+    const tree = await json('/v1/reputation')
+    const served = await json('/v1/reputation/leaves')
+    const leaves: Leaf[] = served.leaves.map((l: any) => ({ stamp: BigInt(`0x${l.stamp}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) }))
+    const proof = await proveReputation({ secret: ana.secret, labels: [SELLER], leaves, profileLabel: SELLER, show: true, artifacts: ARTIFACTS })
+    const entry = {
+      circuit: 'reputation',
+      index: tree.index,
+      root: tree.root,
+      time: tree.time,
+      signature: tree.signature,
+      score: Number(proof.score),
+      stamp: hex64(proof.stamp),
+      label: SELLER,
+      proof: b64u.encode(proofBytes(proof.proof)),
+    }
+    // Ana's row, at the stamp her proof shows.
+    const rows = registry([{ profile: ana.address, stamp: proof.stamp, label: SELLER }])
+    const trusted = { issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } }, indexes: [INDEX], registry: rows }
+    /** A person's card again, now, with these proofs; then what its twin and its page say. */
+    const showProofs = async (proofs: unknown[], who = ana) => {
+      const card = RECORDS.find((r) => r.profile === who.address && r.path === 'profile')!.body as Record<string, unknown>
+      const record = ownerRecord(who.key, 'profile', { ...card, proofs } as Body, Date.now())
       await takeIn(fixture.db, HOST, [{ record, id: recordId(unsignedOf(record)) }], trusted)
-      return { twin: await json(`/profiles/${ana.address}.json`), page: (await get(`/profiles/${ana.address}`)).text }
+      return { twin: await json(`/profiles/${who.address}.json`), page: (await get(`/profiles/${who.address}`)).text }
     }
     /** Cleo rates Ana again: a rating that changes Ana's leaf, and so the root. */
     const cleoRates = async (overall: string) => {
@@ -94,43 +135,35 @@ test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, 
       await fixture.rescore()
     }
 
-    const tree = await json('/v1/reputation')
-    const served = await json('/v1/reputation/leaves')
-    const leaves: Leaf[] = served.leaves.map((l: any) => ({ stamp: BigInt(`0x${l.stamp}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) }))
-    const proof = await proveReputation({ secret: ana.secret, labels: [SELLER], leaves, profile: ana.key.publicKey, show: true, artifacts: ARTIFACTS })
-    const entry = {
-      circuit: 'reputation',
-      index: tree.index,
-      root: tree.root,
-      time: tree.time,
-      signature: tree.signature,
-      score: Number(proof.score),
-      label: SELLER,
-      proof: b64u.encode(proofBytes(proof.proof)),
-    }
 
     await t.test('2. the tree: its leaves make its root, and a proof from them checks', async () => {
       assert.equal((await get('/v1/reputation')).type, 'application/json; charset=utf-8')
       assert.equal(tree.index, INDEX, 'signed with the index’s own key')
       assert.equal(tree.leaves, 2, 'Ana and Ben, the two profiles with a rating')
       assert.equal(served.root, tree.root, 'the leaves of the root it serves')
-      assert.equal(hex64(buildTree(leaves).root), tree.root, 'circuits’ buildTree makes the same root')
+      assert.equal(hex64(buildTree(leaves).root), tree.root, 'reputation’s buildTree makes the same root')
       const rating = (await json(`/profiles/${ana.address}.json`)).scores.rating
       assert.equal(proof.score, BigInt(Math.round(rating.value * 10)), 'Ana’s leaf: her rating times ten, as her page rounds it')
-      const checks = (over: Partial<Parameters<typeof verifyReputation>[0]>) =>
-        verifyReputation({
-          proof: proof.proof,
-          root: BigInt(`0x${tree.root}`),
-          score: proof.score,
-          profile: ana.key.publicKey,
-          label: SELLER,
-          index: base58.decode(tree.index),
-          time: tree.time,
-          signature: b64u.decode(tree.signature),
-          ...over,
-        })
-      assert.equal(await checks({}), true, 'circuits’ verifier takes the root, time and signature the index serves')
+      const checks = async (over: Partial<Parameters<typeof verifyReputation>[1]>) =>
+        (await verifyReputation(
+          rows.connection as never,
+          {
+            proof: proof.proof,
+            root: BigInt(`0x${tree.root}`),
+            score: proof.score,
+            stamp: proof.stamp,
+            profile: ana.key.publicKey,
+            label: SELLER,
+            index: base58.decode(tree.index),
+            time: tree.time,
+            signature: b64u.decode(tree.signature),
+            ...over,
+          },
+          { programId: PROGRAM_ID },
+        )) !== null
+      assert.equal(await checks({}), true, 'reputation’s verifier takes the root, time and signature the index serves, and Ana’s row')
       assert.equal(await checks({ time: tree.time + 1 }), false, 'and no other time')
+      assert.equal(await checks({ profile: cleo.key.publicKey }), false, 'and no other profile than the one at its stamp')
       const missing = await get('/v1/reputation/nothing')
       assert.equal(missing.status, 404, 'no URL per stamp')
     })
@@ -162,7 +195,14 @@ test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, 
       assert.equal((await showProofs([entry])).twin.proofs.length, 1, 'the proof as made shows again')
     })
 
-    await t.test('5. a proof against a root past the window shows nothing', async () => {
+    await t.test('5. Ana’s proof on Cleo’s card shows nothing there', async () => {
+      const { twin, page } = await showProofs([entry], cleo)
+      assert.deepEqual(twin.proofs, [], 'the row at its stamp names Ana, not Cleo')
+      assert.doesNotMatch(page, /Rated [^<]* in Online tutors \(per/)
+      assert.equal((await json(`/profiles/${ana.address}.json`)).proofs.length, 1, 'and on Ana’s card it still shows')
+    })
+
+    await t.test('6. a proof against a root past the window shows nothing', async () => {
       await cleoRates('5')
       const second = await json('/v1/reputation')
       assert.notEqual(second.root, tree.root, 'Ana’s rating moved, and with it the root')

@@ -12,13 +12,10 @@
 // redirect; and a folder read, or an inbox pull, stops after MAX_PAGES pages.
 
 import { randomBytes } from 'node:crypto'
-import { type LookupAddress, lookup as dnsLookup } from 'node:dns'
 import { readFileSync } from 'node:fs'
-import { BlockList, isIP } from 'node:net'
 import { identityToRecipient } from 'age-encryption'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
-import { Agent, fetch as undiciFetch } from 'undici'
 import {
   type Body,
   type Checked,
@@ -50,6 +47,7 @@ import {
   unsignedMessageOf,
 } from '../../standard/records/src/index.ts'
 import { message, openMessage, openPrivate } from '../../standard/records/src/private.ts'
+import { publicFetch } from '../../standard/records/src/public.ts'
 
 /** A plain refusal: what could not be done, and why, in words a person reads. */
 export class Refusal extends Error {
@@ -86,45 +84,8 @@ const MAX_JSON_BYTES = 4 * 1024 * 1024
 export const MAX_PAGES = 100
 
 // ---------------------------------------------------------------------------------------------
-// Reaching hosts: the rule services' host reads senders' hosts by (services, host/src/host.ts).
-
-/**
- * What a host a record names may not be: loopback, private, link-local, carrier-grade NAT,
- * unspecified, multicast or reserved. An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is
- * checked as IPv4.
- */
-const NOT_PUBLIC = new BlockList()
-for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
-  NOT_PUBLIC.addSubnet(net, prefix, 'ipv4')
-}
-for (const [net, prefix] of [['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) NOT_PUBLIC.addSubnet(net, prefix, 'ipv6')
-
-/** Whether `address` is an IP address and a public one. */
-export function isPublic(address: string): boolean {
-  const family = isIP(address)
-  return family !== 0 && !NOT_PUBLIC.check(address, family === 6 ? 'ipv6' : 'ipv4')
-}
-
-/** A name's addresses, all of them public, or an error: the connection then goes to one of them, never to an address unchecked. */
-function publicLookup(hostname: string, options: { all?: boolean }, callback: (err: Error | null, address: string | LookupAddress[], family?: number) => void): void {
-  dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
-    if (err) return callback(err, '')
-    const refused = addresses.find((a) => !isPublic(a.address))
-    if (refused || !addresses.length) return callback(new Error(`${hostname} leads to ${refused?.address ?? 'no address'}, not a public address`), '')
-    if (options.all) return callback(null, addresses)
-    callback(null, addresses[0]!.address, addresses[0]!.family)
-  })
-}
-
-const PUBLIC = new Agent({ connect: { lookup: publicLookup as never } })
-
-/** fetch, to public addresses only: an address written in the URL is checked before anything is sent, and a name's at connection. */
-export const publicFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(input instanceof Request ? input.url : input)
-  const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (isIP(host) && !isPublic(host)) throw new TypeError(`${url.origin} is not a public address`)
-  return undiciFetch(url, { ...init, dispatcher: PUBLIC } as never)
-}) as typeof fetch
+// Reaching hosts: forest's public fetch (records/src/public.ts), the one services' host reads
+// senders' hosts with.
 
 /** How a call reaches hosts: the start hosts by the plain fetch, every other host by publicFetch, never after a redirect. */
 function reach(start: string[]): Reach {

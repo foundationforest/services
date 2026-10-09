@@ -209,7 +209,7 @@ altered), `notLive`, `noPrice`, `notFound` or `invalid`.
 #### The reputation tree
 
 The index publishes its ratings as a tree in forest's format (forest's
-[circuits](https://github.com/foundationforest/forest/blob/main/circuits/README.md), "The tree an
+[reputation](https://github.com/foundationforest/forest/blob/main/reputation/README.md), "The tree an
 index publishes"), so a person proves on their device a rating from their own profiles, naming none
 of them. The code is `src/scores/reputation.ts`.
 
@@ -218,8 +218,8 @@ of them. The code is `src/scores/reputation.ts`.
   10.0 is 10 to 100); and how many reviews the rating comes from. A profile with no rating has no
   leaf; one with rows from two issuers has two.
 - **In order of stamp,** which says nothing about whose leaf is whose.
-- **The root** is circuits' `buildTree` over the leaves, signed with the key that signs the scores,
-  over circuits' `signedBytes(root, time)`, the time in milliseconds.
+- **The root** is reputation's `buildTree` over the leaves, signed with the key that signs the scores,
+  over reputation's `signedBytes(root, time)`, the time in milliseconds.
 - **Rebuilt after every scoring pass,** in the same database transaction. Leaves that did not change
   keep their root, time and signature. With no leaf there is no tree.
 
@@ -239,8 +239,11 @@ A profile's card may carry reputation proofs and person proofs
 ([records](https://github.com/foundationforest/forest/blob/main/records/README.md#proofs)). The
 readers check them whenever they store the card, and store with it the ones that pass:
 
-- **A reputation proof** whose `index` is in `lists/indexes.json`: circuits' `verifyReputation`, for
-  the profile's own main key, the label the proof shows, and the root and time its index signed.
+- **A reputation proof** whose `index` is in `lists/indexes.json`: reputation's `verifyReputation`, for
+  the label the proof shows and the root and time its index signed, then the row at the proof's
+  stamp, read over the readers' RPC, which must name this profile: a proof counts only on the
+  prover's own profile, never one it was lent or copied to. With no RPC, none passes; when the RPC
+  fails, the index checks the card again on the next poll.
 - **A person proof** whose `issuer` is in `lists/issuers.json`: the registry client's `verifyTier`,
   against the row at its stamp, read over the readers' RPC, for the profile's own main key and the
   issuer and label the proof shows. One that passes weighs its row at that tier
@@ -296,8 +299,8 @@ they can also run as a serverless function. The readers cannot: they keep poll l
 Node 22.18 or later and Postgres 14 or later. From the repo root:
 
 ```
-./standard.sh keys records registry/client escrow/client circuits/reputation
-(cd standard/circuits/reputation && npm run fetch)   # proving files, for the reputation test
+./standard.sh keys records registry/client escrow/client reputation/client
+(cd standard/reputation/circuit && npm run fetch)   # proving files, for the reputation test
 cd index && npm ci
 export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/forest_index
 export INDEX_SIGNING_SEED=$(openssl rand -hex 32)   # keep it: it is the index's signing identity
@@ -327,10 +330,11 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   holds it, as the type its record names, and not at all when no host does; a row made after its
   issuer's `until` counts for nothing. In a database of their own: renaming the foundation's host
   keeps its cursor, records and pictures.
-- **The reputation test** needs Postgres and circuits' proving files: a row is stored as the
+- **The reputation test** needs Postgres and reputation's proving files: a row is stored as the
   registry holds it; the served leaves rebuild the served root, and a proof made from them checks
-  against the served root, time and signature; a proof on a card shows on the page and its twin;
-  one with a byte changed, or against a root past the window, shows nothing.
+  against the served root, time and signature and the row at its stamp, held by a stand-in RPC; a
+  proof on a card shows on the page and its twin; one with a byte changed, one on another profile's
+  card, or one against a root past the window, shows nothing.
 - **The tier test** needs Postgres: forest's example card's person proof (tier 2 under
   `tutoring/seller`), against a stand-in RPC holding its row, counts the row at 0.9, and the page
   and twin say "ID-checked"; a byte changed, another tier, another issuer than the row's, an issuer
@@ -346,7 +350,7 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
 ### On devnet
 
 The build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 and git,
-`standard.sh records registry/client escrow/client circuits/reputation` (the circuit's committed
+`standard.sh records registry/client escrow/client reputation/client` (the circuit's committed
 verification key; no proving file), `npm ci`, then `node src/main.ts` (readers and pages in one
 process). The lists and the config are in the image.
 
@@ -444,7 +448,7 @@ them, the hosts and the chain. Another index holds its own.
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
   shows that market and that rating then points to it. A proof that shows no market narrows it too,
   when few leaves share its score. An app should say so before a proof is shown (forest's
-  [circuits](https://github.com/foundationforest/forest/blob/main/circuits/README.md#limits)).
+  [reputation](https://github.com/foundationforest/forest/blob/main/reputation/README.md#limits)).
 - **Roots go stale by number, not by age.** The root moves with every new rating, so on a busy index
   a proof goes stale sooner than on a quiet one.
 - **Only its own roots.** A proof made against another index's tree shows nothing here, even from an
@@ -469,7 +473,7 @@ them, the hosts and the chain. Another index holds its own.
   every review; `near` measures every live offer in the market; a pool of 10 Postgres clients per
   process; every issuer's rows are read again on every poll; after every read, every stored record
   is looked through for pictures not yet found, and each is asked for again; the tree is built whole
-  when its leaves change, about 0.6 ms a leaf at circuits' measure, and every leaf goes out in one
+  when its leaves change, about 0.6 ms a leaf at reputation's measure, and every leaf goes out in one
   response.
 - **On devnet, readers and pages are one process,** so the pages hold the signing seed.
 - **Pages in English only.**

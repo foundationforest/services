@@ -360,7 +360,9 @@ test('stage 2 refusals', async () => {
       { ...note, noteNumber: '01' },
       { ...note, issuer: note.issuer.toUpperCase() },
       { ...note, embedding: 'not base64url!' },
-      { ...note, signature: { R8: ['1'], S: '1' } },
+      { ...note, signature: { r8: ['1'], s: '1' } },
+      // The note as the issuer wrote it before the registry client's form.
+      { ...note, signature: { R8: note.signature.r8, S: note.signature.s } },
       { ...note, model: '' },
     ]) {
       assert.deepEqual(await idNote(h, sessionId, bad), { status: 400, body: { error: 'bad_note' } })
@@ -393,7 +395,7 @@ test('the file keeps which session gave which note number, and each document as 
     assertKept(h.dbPath, {
       sessions: [[a.sessionId, n1], [again, n1], [b.sessionId, n2], [id, n1]],
       fingerprints: [[1, n1]],
-      never: ['Lovelace', 'lovelace', '1990-04-01', a.note.embedding, a.note.signature.S],
+      never: ['Lovelace', 'lovelace', '1990-04-01', a.note.embedding, a.note.signature.s],
     })
     const file = readFileSync(h.dbPath)
     assert.equal(file.includes(embedding), false, 'no embedding')

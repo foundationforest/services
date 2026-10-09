@@ -1,8 +1,8 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
-//   ../standard.sh keys records registry/client escrow/client circuits/reputation
+//   ../standard.sh keys records registry/client escrow/client reputation/client
 //   (cd ../mcp && npm ci)
-//   (cd ../standard/circuits/reputation && npm run fetch)
+//   (cd ../standard/reputation/circuit && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 //
 // Two new people, a seller and a buyer, each the way their app would do it:
@@ -35,8 +35,8 @@
 //  11. the index shows it: both profiles, their rows counted under the issuer's key, the offer with
 //      its photo from the host, the deal and both reviews at full weight; and not the messages;
 //  12. the loop proves: the seller's app finds its leaf among the index's reputation leaves, proves
-//      its own rating in its market on the device (forest's circuits), writes the proof into its card
-//      and publishes it again, and the index shows it;
+//      its own rating in its market on the device (forest's reputation circuit), at the stamp of its
+//      own row, writes the proof into its card and publishes it again, and the index shows it;
 //  13. the ID check: the seller takes the issuer's second check (the stand-in passes it; free on
 //      devnet), gets its note back at tier 2, proves its tier on the device, puts the proof on its
 //      card beside the rating's, and the index shows it ID-checked, its row at tier 2's weight.
@@ -55,9 +55,9 @@ import { Connection, Keypair, PublicKey, Transaction, type TransactionInstructio
 import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../standard/keys/src/index.ts'
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
-import { type SignedNote, buildRegistration, fetchRow, fromBytes32, issuerKeyBytes, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
+import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
-import { proofBytes, proveReputation } from '../standard/circuits/reputation/src/index.ts'
+import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
 import type { Context } from '../mcp/src/forest.ts'
 
@@ -65,7 +65,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const cfg = JSON.parse(readFileSync(join(here, 'devnet.json'), 'utf8')) as Record<string, string>
 const RPC = process.env.HELIUS_API_KEY ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : cfg.rpc!
 const PERSON = { wasm: join(here, '../standard/registry/circuit/devnet/person.wasm'), zkey: join(here, '../standard/registry/circuit/devnet/person.zkey') }
-const REPUTATION = { wasm: join(here, '../standard/circuits/reputation/devnet/reputation.wasm'), zkey: join(here, '../standard/circuits/reputation/devnet/reputation.zkey') }
+const REPUTATION = { wasm: join(here, '../standard/reputation/circuit/devnet/reputation.wasm'), zkey: join(here, '../standard/reputation/circuit/devnet/reputation.zkey') }
 const DOLLAR = 1_000_000n
 
 /**
@@ -188,18 +188,8 @@ async function readIssuer(): Promise<Issuer> {
   return { name: body.name, key: body.key }
 }
 
-/** A note as the issuer sends it: every number decimal text, the embedding base64url, the issuer's key 128 hex, x then y. */
-function noteOf(j: any): SignedNote {
-  const xy = hex.decode(j.issuer)
-  return {
-    noteNumber: BigInt(j.noteNumber),
-    embedding: b64u.decode(j.embedding),
-    model: j.model,
-    tier: BigInt(j.tier),
-    issuer: [fromBytes32(xy.subarray(0, 32)), fromBytes32(xy.subarray(32))],
-    signature: { R8: [BigInt(j.signature.R8[0]), BigInt(j.signature.R8[1])], S: BigInt(j.signature.S) },
-  }
-}
+/** A note as the issuer sends it: the registry client's JSON form, the one a vault keeps (`noteFromJson`). */
+const noteOf = (j: unknown): SignedNote => noteFromJson(j)
 
 // ---- A person, as their app holds them ----
 
@@ -622,11 +612,12 @@ async function proves(p: Person, card: Body) {
     secret: p.secret,
     labels: [p.label],
     leaves: leaves.map((l) => ({ stamp: BigInt(`0x${l.stamp}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) })),
-    profile: p.profile.publicKey,
+    profileLabel: p.label,
     show: true,
     artifacts: REPUTATION,
   })
   assert.equal(hex.encode(toBytes32(proof.root)), tree.root, 'the proof is against the root the index signed')
+  assert.equal(hex.encode(toBytes32(proof.stamp)), stamp, 'and shows the stamp of the seller’s own row, where it lands')
   const entry = {
     circuit: 'reputation',
     index: tree.index,
@@ -634,6 +625,7 @@ async function proves(p: Person, card: Body) {
     time: tree.time,
     signature: tree.signature,
     score: Number(proof.score),
+    stamp,
     label: p.label,
     proof: b64u.encode(proofBytes(proof.proof)),
   }

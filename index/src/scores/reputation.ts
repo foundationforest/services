@@ -1,6 +1,6 @@
-// The reputation tree this index publishes, in forest's format (standard/circuits/README.md, "The tree
+// The reputation tree this index publishes, in forest's format (standard/reputation/README.md, "The tree
 // an index publishes"), so a person proves on their device a score from their own profiles, naming
-// none of them (standard/circuits/reputation).
+// none of them (standard/reputation/).
 //
 //   a leaf   one per stamp of a counted row (README.md, "Which rows count"), for each profile with
 //            a rating: Poseidon(stamp, scope, score, count), where stamp is the row's own, scope the
@@ -9,8 +9,8 @@
 //            no rating has no leaf: a leaf with no review can prove nothing. A profile with rows from
 //            two issuers has two leaves, one per stamp, and proves from either issuer's secret.
 //   order    by stamp: stable, and it says nothing about whose leaf is whose.
-//   root     circuits' buildTree over the leaves, signed with the index's ed25519 key (the one that
-//            signs its scores, sign.ts) over circuits' signedBytes(root, time), the time in ms.
+//   root     reputation's buildTree over the leaves, signed with the index's ed25519 key (the one that
+//            signs its scores, sign.ts) over reputation's signedBytes(root, time), the time in ms.
 //
 // Rebuilt after every scoring pass (run.ts), in its transaction. Leaves that did not change keep
 // their root, time and signature, as an unchanged score keeps its statement, so a proof made against
@@ -18,7 +18,7 @@
 
 import { ed25519 } from '@noble/curves/ed25519.js'
 
-import { type Leaf, buildTree, signedBytes } from '../../../standard/circuits/reputation/src/index.ts'
+import { type Leaf, buildTree, signedBytes } from '../../../standard/reputation/client/src/index.ts'
 import { b64u, hex } from '../../../standard/records/src/index.ts'
 import { isFieldElement, scopeOf, toBytes32 } from '../../../standard/registry/client/src/field.ts'
 

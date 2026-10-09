@@ -103,8 +103,8 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./standard.sh keys records registry/client escrow/client circuits/reputation
-(cd standard/circuits/reputation && npm run fetch)
+./standard.sh keys records registry/client escrow/client reputation/client
+(cd standard/reputation/circuit && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)

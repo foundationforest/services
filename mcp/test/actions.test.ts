@@ -12,7 +12,7 @@ import { type AccessKey, type Body, deliver, hostsRecord, ownerRecord, permissio
 import { message, openMessage } from '../../standard/records/src/private.ts'
 import { type MainKey, inboxKey, mainKey, newSeed } from '../../standard/keys/src/index.ts'
 import { ACTIONS, REQUESTS, checkArgs } from '../src/actions.ts'
-import { type Context, MAX_PAGES, NO_KEY, Refusal, isPublic } from '../src/forest.ts'
+import { type Context, MAX_PAGES, NO_KEY, Refusal } from '../src/forest.ts'
 import { ACCESS, KEYS, MARKET, SCORES, type World, buyer, buyerInbox, laterPastKey, messageKey, offer, quiet, seller, sellerInbox, strayKey, world, writeKey } from './setup.ts'
 
 let w: World
@@ -266,10 +266,6 @@ describe('hosts', () => {
   }
 
   test('a host a hosts record names at a private address hears nothing: reads, writes, sends and pulls reach only public addresses and the start hosts', async () => {
-    for (const a of ['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.169.254', '100.64.0.1', '0.0.0.0', '::1', 'fd12:3456::1', 'fe80::1', '::ffff:127.0.0.1', 'localhost']) {
-      assert.equal(isPublic(a), false, a)
-    }
-    for (const a of ['8.8.8.8', '172.32.0.1', '2606:4700:4700::1111']) assert.equal(isPublic(a), true, a)
     const inside = await serve((_req, res) => res.end())
     try {
       const someone = await namingAlso(inside.url)

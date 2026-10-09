@@ -97,10 +97,10 @@ A folder is always read from hosts, never from an index:
 - Writes and messages go to the hosts that the hosts record names.
 - A profile with no records on any start host is out of reach until one of its hosts is added with
   `--host`.
-- A host other than the start hosts is reached only at a public address: one that is loopback,
-  private, link-local, carrier-grade NAT, unspecified, multicast or reserved, written or looked up,
-  is refused before anything is sent. No request follows a redirect, and a folder read, or an inbox
-  pull, stops after 100 pages.
+- A host other than the start hosts is reached only at a public address, through forest's public
+  fetch (`publicFetch`, records/src/public.ts): one in any range IANA marks as not globally
+  reachable, written or looked up, is refused before anything is sent. No request follows a
+  redirect, and a folder read, or an inbox pull, stops after 100 pages.
 
 An index is read for two things only, `GET <index>/markets/<market>.json` and
 `GET <index>/profiles/<address>.json`. Both are passed on as that index's word. This JSON is the
@@ -176,11 +176,10 @@ npm run smoke -- https://mcp.devnet.forest.foundation/mcp [<profile address>]
 
 Node 22.18 or later. Built from existing pieces, used unchanged:
 
-- forest's records library;
+- forest's records library, and its public fetch, to reach a host only at a public address;
 - `@modelcontextprotocol/sdk`, for the MCP door;
 - `ajv` and `ajv-formats`, for the record shapes;
-- `age-encryption`, to work out a read key's public half;
-- `undici`, to reach a host only at a public address.
+- `age-encryption`, to work out a read key's public half.
 
 `test/actions.test.ts` and `test/doors.test.ts` run every action, through both doors, against
 records' reference host on loopback. `test/smoke.test.ts` reads the command and working directory

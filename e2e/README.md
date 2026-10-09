@@ -73,9 +73,10 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
     to the seller; both reviews counted at full weight. Not the messages, nor the request.
 12. **The rating, proven.** The seller's app finds its own leaf among the index's reputation leaves
     by the stamp its secret gives under its label, scored 10 from one review. It proves that rating
-    in its market on the device, with forest's circuits, puts the proof on its card and publishes
-    the card again. The index checks the proof, and the seller's page says "Rated 10.0 of 10 in
-    Tutoring (per Forest index (devnet), …)".
+    in its market on the device, with forest's reputation circuit, for its own profile: the proof
+    shows the stamp of the seller's row, so it lands on that profile alone. It puts the proof on its
+    card and publishes the card again. The index checks the proof and the row at its stamp, and the
+    seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
 13. **The ID check.** The seller's app opens a session on the issuer's document check (the stand-in
     passes it; free on devnet) and sends its tier 1 note; the issuer signs the same note at tier 2,
     and the run checks it. The app proves its tier on the device at the stamp of the row it already
@@ -92,9 +93,9 @@ Node 22.18 or later, with standard fetched at the commit in `STANDARD`, and the 
 proving files (the person circuit's are in forest):
 
 ```sh
-./standard.sh keys records registry/client escrow/client circuits/reputation
+./standard.sh keys records registry/client escrow/client reputation/client
 (cd mcp && npm ci)
-(cd standard/circuits/reputation && npm run fetch)
+(cd standard/reputation/circuit && npm run fetch)
 cd e2e && npm ci
 FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```

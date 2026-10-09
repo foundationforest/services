@@ -147,12 +147,13 @@ price. It reads nothing about who paid.
 | `POST /id/session` | `{}` or none; with a price, `{"payment": "<id>"}` once paid | `201 {"sessionId": "…", "url": "…"}`, or `402` with a payment to make |
 | `POST /id/note` | `{"sessionId": "<uuid>", "note": <note>}` | `200 {"note": <note>}`, tier 2 |
 
-A note, as JSON: every number is decimal text, the embedding base64url, and the issuer's key 128 hex
-characters, x then y, as a registry row holds it:
+A note, as JSON, in the registry client's form (`noteToJson`), the one a vault keeps: every number
+is decimal text, the embedding base64url, and the issuer's key 128 hex characters, x then y, as a
+registry row holds it:
 
 ```
 {"embedding":"<base64url>","issuer":"<128 hex>","model":"opencv-sface-2021dec","noteNumber":"<decimal>",
- "signature":{"R8":["<decimal>","<decimal>"],"S":"<decimal>"},"tier":"1"}
+ "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},"tier":"1"}
 ```
 
 A note number is decimal text, as forest's `issuerSecret` gives it: no sign, no leading zero, below
