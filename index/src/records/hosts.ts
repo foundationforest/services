@@ -52,7 +52,7 @@ export class HostReader {
   private readonly issuers: IssuerConfig
   /** The indexes whose reputation proofs count here, by address. */
   private readonly indexes: string[]
-  /** The registry the person proofs on cards are checked against; none checks without it. */
+  /** The registry the proofs on cards are checked against; none checks without it. */
   private readonly registry: Registry | null
   /** Profiles to view again, and when: records dated ahead come due, or a card's check could not reach the registry. */
   private readonly due = new Map<string, number>()

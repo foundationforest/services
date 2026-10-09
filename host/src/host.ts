@@ -20,22 +20,21 @@
 // A message a message key signed is taken only if the sender's own host lists that key: forest's
 // host asks `readSender` for the sender's records, and this host reads them with forest's client,
 // within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS. It reads them only from a
-// public address, and follows no redirect (`publicFetch`).
+// public address, and follows no redirect (forest's `publicFetch`, records/src/public.ts).
 //
 // Photos and videos (forest's blobs) are taken only for a folder holding a row from an issuer this
 // host counts, and only while that folder's photos and videos here stay within PHOTOS.folderBytes
 // (`photoRule`). The lookup is the registry lookup's: without an RPC, no photo is taken.
 
-import { lookup as dnsLookup, type LookupAddress } from 'node:dns'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type Server } from 'node:http'
-import { type AddressInfo, BlockList, isIP } from 'node:net'
+import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
 import { Connection, PublicKey } from '@solana/web3.js'
-import { Agent, fetch as undiciFetch } from 'undici'
 
 import { readPage } from '../../standard/records/src/client.ts'
+import { publicFetch } from '../../standard/records/src/public.ts'
 import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../standard/records/src/host.ts'
 import type { Checked } from '../../standard/records/src/record.ts'
 import { type BlobStore, blobNames, blobStore } from '../../standard/records/src/storage.ts'
@@ -196,47 +195,6 @@ export function photoRule(host: () => Host, counted: (folder: string) => Promise
       : 'this host takes photos and videos only for a folder holding a registry row from an issuer it counts'
   }
 }
-
-/**
- * What a sender's host may not be: loopback, private, link-local, carrier-grade NAT, NAT64, 6to4,
- * unspecified, multicast or reserved. An IPv4 address written as IPv6 (`::ffff:127.0.0.1`) is
- * checked as IPv4. NAT64 (`64:ff9b::/96`, and `64:ff9b:1::/48` for local use) and 6to4
- * (`2002::/16`) lead to an IPv4 address, so each is refused whole.
- */
-const NOT_PUBLIC = new BlockList()
-for (const [net, prefix] of [['0.0.0.0', 8], ['10.0.0.0', 8], ['100.64.0.0', 10], ['127.0.0.0', 8], ['169.254.0.0', 16], ['172.16.0.0', 12], ['192.0.0.0', 24], ['192.168.0.0', 16], ['198.18.0.0', 15], ['224.0.0.0', 3]] as const) {
-  NOT_PUBLIC.addSubnet(net, prefix, 'ipv4')
-}
-for (const [net, prefix] of [['::', 128], ['::1', 128], ['64:ff9b::', 96], ['64:ff9b:1::', 48], ['2002::', 16], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8]] as const) {
-  NOT_PUBLIC.addSubnet(net, prefix, 'ipv6')
-}
-
-/** Whether `address` is an IP address and a public one. */
-export function isPublic(address: string): boolean {
-  const family = isIP(address)
-  return family !== 0 && !NOT_PUBLIC.check(address, family === 6 ? 'ipv6' : 'ipv4')
-}
-
-/** A name's addresses, all of them public, or an error: the connection then goes to one of them, never to an address unchecked. */
-function publicLookup(hostname: string, options: { all?: boolean }, callback: (err: Error | null, address: string | LookupAddress[], family?: number) => void): void {
-  dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
-    if (err) return callback(err, '')
-    const refused = addresses.find((a) => !isPublic(a.address))
-    if (refused || !addresses.length) return callback(new Error(`${hostname} leads to ${refused?.address ?? 'no address'}, not a public address`), '')
-    if (options.all) return callback(null, addresses)
-    callback(null, addresses[0]!.address, addresses[0]!.family)
-  })
-}
-
-const PUBLIC = new Agent({ connect: { lookup: publicLookup as never } })
-
-/** fetch, to public addresses only: an address written in the URL is checked before anything is sent, and a name's at connection. */
-export const publicFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(input instanceof Request ? input.url : input)
-  const host = url.hostname.replace(/^\[|\]$/g, '')
-  if (isIP(host) && !isPublic(host)) throw new TypeError(`${url.origin} is not a public address`)
-  return undiciFetch(url, { ...init, dispatcher: PUBLIC } as never)
-}) as typeof fetch
 
 /**
  * A profile's records, every page, as `host` serves them, each checked by forest's reader; all within

@@ -4,7 +4,7 @@
 #   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
 #                the real models and portraits its `npm run fetch` checks by SHA-256
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
-#                (real reputation proofs: circuits' proving files; a real person proof: forest's
+#                (real reputation proofs: the reputation circuit's proving files; a real person proof: forest's
 #                example card's)
 #   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml its Dockerfile makes from
 #                at-cost/ and registry/, and the voucher check's type-check and tests (registry/; real
@@ -79,8 +79,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client circuits/reputation
-          (cd standard/circuits/reputation && npm run fetch)
+          ./standard.sh keys records registry/client escrow/client reputation/client
+          (cd standard/reputation/circuit && npm run fetch)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
@@ -151,7 +151,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client circuits/reputation
+          ./standard.sh keys records registry/client escrow/client reputation/client
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check

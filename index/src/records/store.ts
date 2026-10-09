@@ -21,7 +21,7 @@ import { type Commitment, type Connection, PublicKey } from '@solana/web3.js'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
-import { verifyReputation } from '../../../standard/circuits/reputation/src/index.ts'
+import { verifyReputation } from '../../../standard/reputation/client/src/index.ts'
 import { type View, b64u, base58, hex, isPrivate, liveContent } from '../../../standard/records/src/index.ts'
 import { verifyTier } from '../../../standard/registry/client/src/index.ts'
 
@@ -59,32 +59,39 @@ export type Projected = { stored: number; refused: { path: string; why: string }
 export type StoredProof = { index: string; root: string; time: number; signature: string; score: number; label: string | null }
 
 /**
- * The reputation proofs on a card that check: each from an index in `indexes`, for this profile's
- * main key and the label it shows, under the root and time that index signed. circuits'
- * `verifyReputation` checks it all, reading the proof's 256 bytes with `proofFromBytes`. A proof
- * that fails, or names an index not listed, is left out; it is not an error. A proof of a circuit
- * this index does not know is left alone.
+ * The reputation proofs on a card that check: each from an index in `indexes`, under the root and
+ * time that index signed, landing on this profile. Reputation's `verifyReputation` checks it all,
+ * reading the proof's 256 bytes with `proofFromBytes`, then reads the registry row at the proof's
+ * stamp and requires that it name this profile: so a proof counts only on the prover's own profile.
+ * A proof that fails, or names an index not listed, is left out; it is not an error. With no
+ * registry to read, none checks. An RPC that fails throws, so the card is checked again. A proof of
+ * a circuit this index does not know is left alone.
  */
-export async function checkProofs(profile: string, card: Record<string, any>, indexes: string[]): Promise<StoredProof[]> {
+export async function checkProofs(profile: string, card: Record<string, any>, indexes: string[], registry: Registry | null): Promise<StoredProof[]> {
   const out: StoredProof[] = []
+  if (!registry) return out
   for (const p of Array.isArray(card.proofs) ? card.proofs : []) {
     if (p?.circuit !== 'reputation' || !indexes.includes(p.index)) continue
-    let ok = false
+    let input
     try {
-      ok = await verifyReputation({
+      input = {
         proof: b64u.decode(p.proof),
         root: BigInt(`0x${p.root}`),
         score: BigInt(p.score),
+        stamp: hex.decode(p.stamp),
         profile: base58.decode(profile),
         ...(p.label === undefined ? {} : { label: p.label }),
         index: base58.decode(p.index),
         time: p.time,
         signature: b64u.decode(p.signature),
-      })
+      }
     } catch {
       // Bytes that do not decode are a proof that does not check.
+      continue
     }
-    if (ok) out.push({ index: p.index, root: p.root, time: p.time, signature: p.signature, score: p.score, label: p.label ?? null })
+    // The reputation client reads the row with the registry client's own copy of web3.js; it reads only its bytes.
+    const row = await verifyReputation(registry.connection as never, input, { programId: new PublicKey(registry.programId) as never, commitment: registry.commitment })
+    if (row) out.push({ index: p.index, root: p.root, time: p.time, signature: p.signature, score: p.score, label: p.label ?? null })
   }
   return out
 }
@@ -92,7 +99,7 @@ export async function checkProofs(profile: string, card: Record<string, any>, in
 /** A person proof on a card that checked: the tier the profile shows for its row at `stamp`, from `issuer`, under `label`. */
 export type StoredTier = { issuer: string; label: string; stamp: string; tier: string }
 
-/** The registry a person proof is checked against, over an RPC. */
+/** The registry the proofs on a card are checked against, over an RPC: a person proof's row, and the row a reputation proof lands on. */
 export type Registry = { connection: Pick<Connection, 'getAccountInfo'>; programId: string; commitment: Commitment }
 
 /**
@@ -164,7 +171,7 @@ export async function project(db: Db, view: View, keep: boolean, proofs: Proofs)
               r.market,
               r.role,
               ts(r.createdAt),
-              JSON.stringify(await checkProofs(profile, r, proofs.indexes)),
+              JSON.stringify(await checkProofs(profile, r, proofs.indexes, proofs.registry)),
               JSON.stringify(await checkTiers(profile, r, proofs.issuers, proofs.registry)),
             ],
           )

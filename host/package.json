@@ -14,8 +14,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@solana/web3.js": "1.99.0",
-    "undici": "7.30.0"
+    "@solana/web3.js": "1.99.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
