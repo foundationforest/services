@@ -4,7 +4,7 @@ The loop, end to end on devnet: two new people do everything a person does on Fo
 services this repo deploys, and the run checks that the index shows the result.
 
 It is not a service: the foundation runs it by hand, with the devnet phrase, against its host,
-issuer, fee payer and index. Anyone running their own can point `devnet.json` at theirs. It runs on
+issuer, registry payer, fee payer and index. Anyone running their own can point `devnet.json` at theirs. It runs on
 Solana's devnet, with test dollars and the stand-in for the issuer's checks.
 
 Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md).
@@ -18,10 +18,11 @@ Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md
 
 That a person's app, with forest's pieces alone, takes a new person from 24 words to a profile the
 index counts as one real person, rated and ID-checked, through these services as deployed: the
-issuer's two checks, a row through each of the fee payer's doors, records, a photo and messages on
-the host, an assistant acting through the CLI ([`mcp/`](../mcp/README.md)) with access keys only,
-a payment through the escrow, reviews, and a rating proven on the device. The seller pays nothing;
-the buyer pays only in test dollars. Every step checks what it did, and the run passes only if every
+issuer's two checks and its welcome gift of credits, a row through the registry payer with a credit
+and one through the fee payer, records, a photo and messages on the host paid for in credits, an
+assistant acting through the CLI ([`mcp/`](../mcp/README.md)) with access keys only, a payment
+through the escrow, reviews, and a rating proven on the device. The seller pays nothing but the
+gift's credits; the buyer pays only in test dollars and credits. Every step checks what it did, and the run passes only if every
 step does.
 
 ### The steps
@@ -31,18 +32,26 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
 1. **Keys.** A seed from 24 words, and from it the main key, the inbox key, and the person's secret
    and note number for the issuer, mixed under the name the issuer publishes at `/issuer.json`
    (forest's keys). The run checks that the key published there is the one in `devnet.json`.
-2. **Setup.** A test-dollar account each and some test dollars, paid by the devnet deploy key.
-   Nothing after this needs anything but test dollars, and the seller's row not even those.
-3. **The face check.** A session at the issuer, the check (the stand-in passes it, with one
-   embedding for everyone), the note number sent, and a tier 1 note back. The run checks the
-   issuer's signature on it, its key, the note number and the tier.
-4. **A row each,** from a person proof made from the note. The seller's goes through the fee payer's
-   voucher door with a voucher (a second person proof from the same note, under
-   `voucher/fee-payer.devnet.forest.foundation/1`), free; the buyer's through its at-cost door, paid
-   in test dollars. The run reads each row back (the profile, the issuer's key, the fee payer as
-   payer, when the program wrote it), and checks that the proof shows tier 1 against it.
-5. **Cards.** Each app publishes the profile's hosts record and card on the host, with its inbox
-   key and an inbox for senders holding a row from the issuer, named by its key. The seller's takes
+2. **Setup.** A test-dollar account each and some test dollars, paid by the devnet deploy key; and,
+   for the issuer's `credits` key, the test dollars the run's two welcome gifts cost, and SOL for its
+   fees when it runs low. Nothing after this needs anything but test dollars and credits, and the
+   seller's row not even dollars.
+3. **The face check, and the gift.** A session at the issuer, the check (the stand-in passes it,
+   with one embedding for everyone), the note number sent, and a tier 1 note back. The run checks
+   the issuer's signature on it, its key, the note number and the tier. With the note request the
+   app sends the pay links of two buys it made, of as many credits as `/issuer.json`'s gift names:
+   at the registry payer and at the host. The issuer pays both; once the payment is finalized, the
+   app collects each buy at its service and finishes the credits.
+4. **A row each,** from a person proof made from the note. The seller's goes through the registry
+   payer with one of its credits, free; the run checks the seller still holds no SOL and paid no
+   dollar, and that the credit, shown again, is refused as spent once the row landed. The buyer's
+   goes through the fee payer, paid in test dollars. The run reads each row back (the profile, the
+   issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
+   shows tier 1 against it.
+5. **Cards.** Each app sends the profile's hosts record and card to the host, which takes the hosts
+   record free and refuses the card (`policy`): the folder holds no credits there. The app spends 20
+   host credits into the folder's balance and sends the card again. The card has its inbox key and
+   an inbox for senders holding a row from the issuer, named by its key. The seller's takes
    one message from each sender, and lists among its readers a read key its app made at random for
    its assistant; the buyer's takes as many as come.
 6. **Keys for an assistant.** Each app makes its assistant's access keys at random and lists them in
@@ -50,7 +59,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    and the read key; the buyer's a write key. The assistants are the CLI (`mcp/`), given the profile,
    the host and those keys. The seller's posts an offer with a photo (`post-offer`), signed by the
    write key; the seller's app then puts the photo's bytes on the host, which takes them because the
-   offer names them.
+   offer names them and the folder pays for them.
 7. **The inbox.** The buyer's app puts a message in one envelope only the seller's inbox key and the
    read key open, signs it and delivers it to the seller's host, which checks that the buyer holds a
    row from the issuer. A second message is refused (`once`). The seller's app pulls its inbox with
@@ -84,8 +93,8 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
     rating's proof. The index shows the row at tier 2, "ID-checked", uniqueness 0.9, and the
     rating's proof still.
 
-Every address, signature and charge goes to `runs/<time>.json`, and the run exits 0 only if every
-step passed.
+Every address, signature and charge goes to `runs/<time>.json`, with the credits each folder spent
+and had left, never a credit itself; the run exits 0 only if every step passed.
 
 ### Run it
 
@@ -93,7 +102,7 @@ Node 22.18 or later, with standard fetched at the commit in `STANDARD`, and the 
 proving files (the person circuit's are in forest):
 
 ```sh
-./standard.sh keys records registry/client escrow/client reputation/client
+./standard.sh keys records registry/client escrow/client reputation/client credits
 (cd mcp && npm ci)
 (cd standard/reputation/circuit && npm run fetch)
 cd e2e && npm ci
@@ -101,13 +110,13 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
 
 - **`FOREST_DEVNET_SEED`** (required): the devnet phrase. Its `deploy` key pays the setup; its
-  `test-dollar-authority` key mints the test dollars. Never in this repo.
+  `test-dollar-authority` key mints the test dollars; its `issuer` key gives the issuer's `credits`
+  address, which the setup funds. Never in this repo.
 - **`HELIUS_API_KEY`** (optional): read and send through Helius's devnet RPC instead of
   `api.devnet.solana.com`. The key never goes into a run's record.
 
-Run it against the services as deployed from `main`. The voucher step needs the fee payer with the
-issuer's key at tier 1 in `VOUCHER_ISSUERS`, and its `FEE_PAYER_NAME` the `feePayerName` in
-`devnet.json`.
+Run it against the services as deployed from `main`. The gift needs the issuer's gift to name the
+registry payer and the host in `devnet.json`, in the classic test dollar.
 
 ### The latest run
 
@@ -165,6 +174,8 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
   and a run's record holds addresses, signatures and charges only.
 - **It does what an app would,** with forest's own pieces: keys, records, the registry and escrow
   clients, and the reputation circuit's client. Nothing in it reaches around a service.
+- **No credit in a run's record.** A credit is a bearer token; the record holds how many were
+  bought and spent, and the buys' references.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
   and the error.
 
@@ -175,8 +186,7 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 - **Every run leaves its people on devnet for good:** their rows and their deal, and at the issuer,
   which session gave which note number. Their records stay on the host until it is wiped.
 - **The checks are the stand-in,** with one embedding for everyone, so a run says nothing about
-  Didit or the face model. Only the seller takes the ID check, after its row is written, so no
-  tier 2 vouchers.
+  Didit or the face model. Only the seller takes the ID check, after its row is written.
 - **One market, one test dollar, one tap.** It pays in the classic test dollar, not the
   Open-USD-shaped one, and does not test a refund.
 - **One inbox rule and one photo.** It tests inboxes open to one issuer's rows, with and without
@@ -207,7 +217,9 @@ and the services talking to each other over the internet.
 
 **Why does the deploy key pay the setup?**
 A new person has no test dollars. On mainnet they would come in at a ramp; on devnet the deploy key
-makes the accounts and the test dollar's own authority mints them. Nothing after setup touches SOL.
+makes the accounts and the test dollar's own authority mints them. The issuer's gift is paid from
+its own `credits` key, which someone must fund; the setup mints what the run's two gifts cost into
+it, so a run never drains it. Nothing after setup touches SOL.
 
 **Why keep every run's record in the repo?**
 So anyone can check, on devnet itself, what a run did: every address and signature in it is public.

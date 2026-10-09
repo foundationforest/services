@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, each given a note by the issuer's face check, registered with a person proof through the fee payer (one with a voucher), assistants acting through the CLI (mcp/) with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the index showing it, and the seller proving its rating on its card.",
+  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, each given a note by the issuer's face check and its welcome gift of credits, registered with a person proof (the seller through the registry payer with a credit, the buyer through the fee payer), paying the host in credits, assistants acting through the CLI (mcp/) with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the index showing it, and the seller proving its rating on its card.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

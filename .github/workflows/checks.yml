@@ -151,7 +151,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client
+          ./standard.sh keys records registry/client escrow/client reputation/client credits
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check

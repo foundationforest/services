@@ -1,6 +1,6 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
-//   ../standard.sh keys records registry/client escrow/client reputation/client
+//   ../standard.sh keys records registry/client escrow/client reputation/client credits
 //   (cd ../mcp && npm ci)
 //   (cd ../standard/reputation/circuit && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
@@ -8,15 +8,19 @@
 // Two new people, a seller and a buyer, each the way their app would do it:
 //   1. a seed from 24 words, and from it the main key, the inbox key, and the secret and note number
 //      for the issuer, by the name the issuer publishes;
-//   2. setup: their test-dollar accounts and some dollars (the deploy key pays; nothing a person does
-//      later needs SOL);
-//   3. the issuer's face check (the stand-in passes it): a tier 1 note for each, for its note number;
+//   2. setup: their test-dollar accounts and some dollars, and, for the issuer's `credits` key, what
+//      their two welcome gifts cost (the deploy key pays; nothing a person does later needs SOL);
+//   3. the issuer's face check (the stand-in passes it): a tier 1 note for each, for its note number,
+//      and its welcome gift: each app buys the credits the issuer's gift names, at the registry payer
+//      and the host, sends their pay links with the note request, and once the issuer's payment is
+//      finalized collects them and finishes them;
 //   4. registered: a row for each at the registry, from a person proof made from the note: the
-//      seller's through the fee payer's voucher door with a voucher, free; the buyer's through its
-//      at-cost door, paid in the test dollar;
-//   5. each app publishes the profile's hosts record and card, with its inbox key; each card
-//      declares an inbox, for senders holding a row from the issuer: the seller's takes one message
-//      from each, and lists a read key the seller's app made for its assistant as a reader;
+//      seller's through the registry payer, with one of its credits, free; the buyer's through the
+//      fee payer, paid in the test dollar;
+//   5. each app puts host credits in its folder's balance (the host first refuses a card from a
+//      folder holding none), then publishes the profile's hosts record and card, with its inbox key;
+//      each card declares an inbox, for senders holding a row from the issuer: the seller's takes one
+//      message from each, and lists a read key the seller's app made for its assistant as a reader;
 //   6. each app makes its assistant's access keys and lists them in the profile's permissions
 //      record: the seller's a write, a message and a read key, the buyer's a write key; the
 //      assistants are the CLI (../mcp), given those keys; the seller's posts an offer with a photo, and
@@ -50,12 +54,13 @@ import { fileURLToPath } from 'node:url'
 import { crc32, deflateSync } from 'node:zlib'
 
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
-import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../standard/keys/src/index.ts'
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
+import { type Credit, type Service, DIRECTORY_PATH, amountOf, authorization, buy, finish, serviceOf } from '../standard/credits/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
@@ -89,6 +94,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const started = new Date()
 const record: Record<string, unknown> = { started: started.toISOString(), services: cfg, steps: {} }
 const steps = record.steps as Record<string, unknown>
+/** What each folder did at the host: the card refused unpaid, the credits spent into it, what was left. */
+const hostSteps: Record<string, Record<string, unknown>> = {}
 const redact = (text: string) => (process.env.HELIUS_API_KEY ? text.split(process.env.HELIUS_API_KEY).join('<key>') : text)
 
 function say(line: string) {
@@ -128,18 +135,25 @@ async function setupSend(instructions: TransactionInstruction[], signers: Keypai
   return signature
 }
 
+/** `amount`, decimal text in whole tokens, in base units of `decimals`. */
+const units = (amount: string, decimals: number): bigint => {
+  const [whole, fraction = ''] = amount.split('.')
+  return BigInt(whole! + fraction.padEnd(decimals, '0'))
+}
+
 async function json(url: string, init?: RequestInit): Promise<{ status: number; body: any }> {
   const res = await fetch(url, init)
   const text = await res.text()
   return { status: res.status, body: text ? JSON.parse(text) : null }
 }
-const post = (url: string, body: unknown) => json(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const post = (url: string, body: unknown, headers: Record<string, string> = {}) => json(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
 
 // ---- The fee payer, as a person's app calls it ----
 
 class KoraError extends Error {}
-async function kora<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-  const { body } = await post(cfg.feePayer!, { jsonrpc: '2.0', id: 1, method, params })
+/** Kora's JSON-RPC at the fee payer, or, for `getPayerSigner` only, at the registry payer. */
+async function kora<T>(method: string, params: Record<string, unknown> = {}, at = cfg.feePayer!): Promise<T> {
+  const { body } = await post(at, { jsonrpc: '2.0', id: 1, method, params })
   if (body.error) throw new KoraError(`${method}: ${body.error.message} ${JSON.stringify(body.error.data ?? '')}`)
   return body.result as T
 }
@@ -147,12 +161,12 @@ async function kora<T>(method: string, params: Record<string, unknown> = {}): Pr
 type Paid = { signature: string; charge: string; bytes: number }
 
 /**
- * What a person's app does to send through the fee payer's at-cost door: the transaction with the
+ * What a person's app does to send through the fee payer, at cost: the transaction with the
  * fee payer as payer and a payment to it in the test dollar already in place (Kora's price counts
  * it), the price asked, the payment set to exactly that, the main key signs, Kora checks, co-signs
  * and sends.
  */
-async function throughAtCostDoor(signer: Keypair, instructions: TransactionInstruction[], token: escrow.Token): Promise<Paid> {
+async function throughFeePayer(signer: Keypair, instructions: TransactionInstruction[], token: escrow.Token): Promise<Paid> {
   const payer = await kora<{ signer_address: string; payment_address: string }>('getPayerSigner')
   const feePayer = new PublicKey(payer.signer_address)
   const paymentTo = escrow.associatedTokenAddress(new PublicKey(payer.payment_address), token.mint, token.program)
@@ -178,14 +192,24 @@ async function throughAtCostDoor(signer: Keypair, instructions: TransactionInstr
 
 // ---- The issuer, as a person's app reads it ----
 
-/** Who the issuer is, as it publishes itself: its name, which each person's secret is mixed under, and its key. */
-type Issuer = { name: string; key: string }
+/** Who the issuer is, as it publishes itself: its name, which each person's secret is mixed under, its key, and its welcome gift. */
+type Issuer = { name: string; key: string; gift: Record<'registryPayer' | 'host', { origin: string; credits: number }> }
 
 async function readIssuer(): Promise<Issuer> {
   const { status, body } = await json(`${cfg.issuer}/issuer.json`)
   assert.equal(status, 200, `the issuer says who it is: ${JSON.stringify(body)}`)
-  assert.equal(body.key, cfg.issuerKey, 'with the key the index and the fee payer trust')
-  return { name: body.name, key: body.key }
+  assert.equal(body.key, cfg.issuerKey, 'with the key the index trusts')
+  assert.deepEqual(Object.keys(body.gift ?? {}).sort(), ['host', 'registryPayer'], 'a welcome gift at the registry payer and the host')
+  assert.equal(body.gift.registryPayer.origin, cfg.registryPayer)
+  assert.equal(body.gift.host.origin, cfg.host)
+  return { name: body.name, key: body.key, gift: body.gift }
+}
+
+/** A service that sells credits, from its directory, as an app reads it. */
+async function serviceAt(origin: string): Promise<Service> {
+  const { status, body } = await json(`${origin}${DIRECTORY_PATH}`)
+  assert.equal(status, 200, `${origin} publishes its credits: ${JSON.stringify(body)}`)
+  return serviceOf(origin, body)
 }
 
 /** A note as the issuer sends it: the registry client's JSON form, the one a vault keeps (`noteFromJson`). */
@@ -209,6 +233,8 @@ type Person = {
   note?: SignedNote
   /** That note as the issuer sent it, which the ID check takes back. */
   sent?: unknown
+  /** The credits the issuer's gift paid for, which the app keeps as it keeps a key: by service. */
+  credits?: { registryPayer: Credit[]; host: Credit[] }
 }
 
 async function newPerson(role: Person['role'], name: string, issuer: Issuer): Promise<Person> {
@@ -227,8 +253,16 @@ async function newPerson(role: Person['role'], name: string, issuer: Issuer): Pr
 
 // ---- Steps ----
 
-async function setup(people: Person[]): Promise<escrow.Token> {
-  say('setup: each person’s test-dollar account, and dollars; the deploy key pays')
+/**
+ * The issuer's `credits` key, the one that pays the welcome gift: mixed from the devnet `issuer` key's
+ * secret under `credits` by forest's recipe for a main key, as the issuer mixes it (issuer/src/key.ts).
+ */
+async function issuerCreditsKey(): Promise<PublicKey> {
+  return new PublicKey((await mainKey(devnetKey('issuer').secretKey.slice(0, 32), 'credits')).publicKey)
+}
+
+async function setup(people: Person[], issuer: Issuer): Promise<escrow.Token> {
+  say('setup: each person’s test-dollar account, and dollars; what the two gifts cost, to the issuer’s credits key; the deploy key pays')
   const token = escrow.tokenOf(DOLLAR_MINT, (await connection.getAccountInfo(DOLLAR_MINT))!)
   const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
   const accounts = await setupSend(
@@ -243,7 +277,25 @@ async function setup(people: Person[]): Promise<escrow.Token> {
     ],
     [dollarAuthority],
   )
-  steps.setup = { accounts, minted, seller: '5.00', buyer: '10.00' }
+  // The issuer pays two gifts this run: their dollars, and SOL for its fee and token accounts if low.
+  const credits = await issuerCreditsKey()
+  let cost = 0n
+  for (const { origin, credits: n } of Object.values(issuer.gift)) {
+    const s = await serviceAt(origin)
+    assert.equal(s.mint, DOLLAR_MINT.toBase58(), `${origin} is paid in the classic test dollar`)
+    cost += units(amountOf(s.price, n), token.decimals)
+  }
+  const sol = await connection.getBalance(credits)
+  const topUp = sol < 20_000_000 ? [SystemProgram.transfer({ fromPubkey: deployKey.publicKey, toPubkey: credits, lamports: 50_000_000 - sol })] : []
+  const funded = await setupSend(
+    [
+      ...topUp,
+      createAssociatedTokenAccountIdempotentInstruction(deployKey.publicKey, ata(credits), credits, token.mint, token.program),
+      createMintToCheckedInstruction(DOLLAR_MINT, ata(credits), dollarAuthority.publicKey, 2n * cost, token.decimals, [], token.program),
+    ],
+    [dollarAuthority],
+  )
+  steps.setup = { accounts, minted, seller: '5.00', buyer: '10.00', issuerCredits: { address: credits.toBase58(), dollars: (Number(2n * cost) / Number(DOLLAR)).toFixed(2), sol: topUp.length ? 'topped up to 0.05' : 'enough', funded } }
   return token
 }
 
@@ -252,11 +304,16 @@ async function setup(people: Person[]): Promise<escrow.Token> {
  * the person's note number sent, and a tier 1 note back, checked: the issuer's signature, its key,
  * this note number, tier 1. The run's record keeps the model and the tier, never the embedding.
  */
-async function faceNote(p: Person) {
+async function faceNote(p: Person, issuer: Issuer) {
   const session = await post(`${cfg.issuer}/session`, {})
   assert.equal(session.status, 201, `a session: ${JSON.stringify(session.body)}`)
-  const got = await post(`${cfg.issuer}/note`, { sessionId: session.body.sessionId, noteNumber: p.noteNumber.toString() })
+  // The gift: one buy at each service, of as many credits as the issuer's gift names there.
+  const services = { registryPayer: await serviceAt(issuer.gift.registryPayer.origin), host: await serviceAt(issuer.gift.host.origin) }
+  const buys = { registryPayer: await buy(services.registryPayer, issuer.gift.registryPayer.credits), host: await buy(services.host, issuer.gift.host.credits) }
+  const gift = { registryPayer: buys.registryPayer.payLink, host: buys.host.payLink }
+  const got = await post(`${cfg.issuer}/note`, { sessionId: session.body.sessionId, noteNumber: p.noteNumber.toString(), gift })
   assert.equal(got.status, 200, `a note: ${JSON.stringify(got.body)}`)
+  assert.ok(got.body.gift?.signature, `and its gift paid: ${JSON.stringify(got.body.gift)}`)
   const note = noteOf(got.body.note)
   assert.ok(noteSigned(note), 'the issuer signed it')
   assert.equal(hex.encode(issuerKeyBytes(note.issuer)), cfg.issuerKey, 'with the key the index trusts')
@@ -264,32 +321,71 @@ async function faceNote(p: Person) {
   assert.equal(note.tier, 1n, 'at tier 1, the face check')
   p.note = note
   p.sent = got.body.note
-  say(`${p.role}: a tier 1 note from the issuer, model ${note.model}`)
-  return { model: note.model, tier: note.tier.toString(), embeddingBytes: note.embedding.length }
+  say(`${p.role}: a tier 1 note from the issuer, model ${note.model}, and its gift paid, ${got.body.gift.signature}`)
+
+  // Collected once the payment is finalized: the service answers the blind signatures, the app finishes them.
+  const collect = async (role: 'registryPayer' | 'host') => {
+    const b = buys[role]
+    const answer = await waitFor(`${services[role].origin} to find the gift's payment finalized`, 180_000, async () => {
+      const res = await fetch(services[role].requestUri, { method: 'POST', headers: { 'content-type': 'application/private-token-generic-batch-request' }, body: b.buy as Uint8Array<ArrayBuffer> })
+      if (res.status === 402) return null
+      assert.equal(res.status, 200, `${services[role].origin} answers the buy: ${await res.clone().text()}`)
+      return new Uint8Array(await res.arrayBuffer())
+    })
+    return finish(b.pending, answer)
+  }
+  p.credits = { registryPayer: await collect('registryPayer'), host: await collect('host') }
+  assert.equal(p.credits.registryPayer.length, issuer.gift.registryPayer.credits)
+  assert.equal(p.credits.host.length, issuer.gift.host.credits)
+  say(`${p.role}: ${p.credits.registryPayer.length} registrations and ${p.credits.host.length} host credits, collected and finished`)
+  return {
+    model: note.model,
+    tier: note.tier.toString(),
+    embeddingBytes: note.embedding.length,
+    gift: { signature: got.body.gift.signature, registryPayer: { credits: p.credits.registryPayer.length, reference: buys.registryPayer.reference }, host: { credits: p.credits.host.length, reference: buys.host.reference } },
+  }
 }
 
 /**
- * What a person's app does to have a row paid for at the voucher door: a voucher, which is a
- * second person proof from the same note under the label `voucher/<the fee payer's name>/1`, naming
- * the same main key; the row's transaction with the fee payer as payer, signed by the main key;
- * both to the fee payer's address plus `/vouchers`. It costs the person nothing: no SOL, no dollar.
+ * Host credits into the person's folder's balance, one a request, as the app spends them (the host's
+ * `/credits/spend`). Before, the host refuses the folder's card; `publishCard` checks that first.
  */
-async function throughVoucherDoor(p: Person, register: TransactionInstruction, feePayer: PublicKey, token: escrow.Token): Promise<Paid & { voucher: string }> {
-  const label = `voucher/${cfg.feePayerName}/1`
-  const v = await provePerson({ secret: p.secret, note: p.note!, label, profile: p.profile.publicKey, artifacts: PERSON })
-  const voucher = { proof: v.proof, issuer: cfg.issuerKey, tier: v.tier.toString(), label, stamp: hex.encode(toBytes32(v.stamp)) }
+async function fundFolder(p: Person, n: number): Promise<number> {
+  let credits = 0
+  for (const credit of p.credits!.host.splice(0, n)) {
+    const { status, body } = await post(`${cfg.host}/credits/spend`, { folder: p.profile.address }, { authorization: authorization(credit) })
+    assert.equal(status, 200, `the host takes the credit: ${JSON.stringify(body)}`)
+    credits = body.credits
+  }
+  say(`${p.role}: ${n} host credits in its folder, which holds ${credits}`)
+  return credits
+}
+
+/**
+ * What a person's app does to have a row paid for by the registry payer: the row's transaction with
+ * the registry payer as payer, signed by the main key, and one of its credits in the Authorization
+ * header. It costs the person nothing more: no SOL, no dollar. The credit is spent once the row lands:
+ * shown again, it is refused as spent.
+ */
+async function throughRegistryPayer(p: Person, register: TransactionInstruction, payer: PublicKey, token: escrow.Token): Promise<Paid & { credit: string }> {
+  const credit = p.credits!.registryPayer.shift()!
   const blockhash = (await connection.getLatestBlockhash('confirmed')).blockhash
-  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: feePayer, recentBlockhash: blockhash, instructions: [register] }).compileToV0Message())
+  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: blockhash, instructions: [register] }).compileToV0Message())
   tx.sign([p.signer])
   const wire = tx.serialize()
   const dollars = async () => (await connection.getTokenAccountBalance(escrow.associatedTokenAddress(p.signer.publicKey, token.mint, token.program))).value.amount
   const before = await dollars()
-  const { status, body } = await post(`${cfg.feePayer}/vouchers`, { transaction: Buffer.from(wire).toString('base64'), voucher })
-  assert.equal(status, 200, `the voucher door: ${JSON.stringify(body)}`)
+  const shown = () => post(`${cfg.registryPayer}/register`, { transaction: Buffer.from(wire).toString('base64') }, { authorization: authorization(credit) })
+  const { status, body } = await shown()
+  assert.equal(status, 200, `the registry payer: ${JSON.stringify(body)}`)
   await confirm(body.signature)
   assert.equal(await connection.getBalance(p.signer.publicKey), 0, 'the person still holds no SOL')
   assert.equal(await dollars(), before, 'and paid no dollar')
-  return { signature: body.signature, charge: '0', bytes: wire.length, voucher: label }
+  const again = await waitFor('the registry payer to count the credit spent', 90_000, async () => {
+    const r = await shown()
+    return r.body?.error === 'spent' ? r.body.error : null
+  }, 3000)
+  return { signature: body.signature, charge: '0', bytes: wire.length, credit: again }
 }
 
 /**
@@ -297,9 +393,9 @@ async function throughVoucherDoor(p: Person, register: TransactionInstruction, f
  * the profile, the issuer's key, the fee payer as payer, and when the program wrote it; and the
  * proof shows tier 1 against it, as a reader checks a tier a profile shows.
  */
-async function register(p: Person, token: escrow.Token, path: 'voucher' | 'paid') {
-  // Both doors sign with one key, which the at-cost door names.
-  const payer = await kora<{ signer_address: string }>('getPayerSigner')
+async function register(p: Person, token: escrow.Token, path: 'credit' | 'paid') {
+  // The payer each names: the registry payer's key, or the fee payer's.
+  const payer = await kora<{ signer_address: string }>('getPayerSigner', {}, path === 'credit' ? cfg.registryPayer! : cfg.feePayer!)
   const feePayer = new PublicKey(payer.signer_address)
   const registration = await buildRegistration({
     secret: p.secret,
@@ -313,17 +409,17 @@ async function register(p: Person, token: escrow.Token, path: 'voucher' | 'paid'
     programId: REGISTRY as never,
   })
   const ix = registration.instruction as never as TransactionInstruction
-  const paid = path === 'voucher' ? await throughVoucherDoor(p, ix, feePayer, token) : await throughAtCostDoor(p.signer, [ix], token)
+  const paid = path === 'credit' ? await throughRegistryPayer(p, ix, feePayer, token) : await throughFeePayer(p.signer, [ix], token)
   const row = await fetchRow(connection as never, registration.stamp, { programId: REGISTRY as never })
   assert.ok(row, 'the row is there')
   assert.equal(row.label, p.label)
   assert.equal(row.profile.toBase58(), p.profile.address, 'it names the profile')
   assert.equal(hex.encode(issuerKeyBytes(row.issuer)), cfg.issuerKey, 'and the issuer’s key')
-  assert.equal(row.payer.toBase58(), payer.signer_address, 'and the fee payer as its payer')
+  assert.equal(row.payer.toBase58(), payer.signer_address, 'and the key that paid for it as its payer')
   assert.ok(Math.abs(row.made - Date.now() / 1000) < 600, 'made now, by the chain’s clock')
   const shown = await verifyTier(connection as never, { profile: p.profile.publicKey, stamp: registration.stamp, tier: 1n, proof: registration.proof }, { programId: REGISTRY as never })
   assert.ok(shown, 'the proof shows tier 1 against the row')
-  say(`${p.role}: row ${p.label} through the fee payer's ${'voucher' in paid ? `voucher door, with the voucher ${paid.voucher}` : 'at-cost door, paid'}, ${paid.signature}`)
+  say(`${p.role}: row ${p.label} ${'credit' in paid ? 'through the registry payer, with one of its credits, spent once the row landed' : 'through the fee payer, paid'}, ${paid.signature}`)
   return { label: p.label, path, row: registration.row.toBase58(), stamp: hex.encode(toBytes32(registration.stamp)), made: row.made, ...paid }
 }
 
@@ -344,9 +440,14 @@ async function publishCard(p: Person, readers: string[] = []) {
     inbox: { senders: { issuer: cfg.issuerKey! }, ...(p.role === 'seller' && { once: true as const }), ...(readers.length > 0 && { readers }) },
     createdAt: new Date(now).toISOString().replace(/\.\d{3}Z$/, 'Z'),
   }
-  const [outcome] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
-  assert.ok(outcome!.results.every((r) => r.ok), `the host took the hosts record and the card: ${JSON.stringify(outcome)}`)
+  // A folder holding no credits here: its hosts record is free, its card is refused.
+  const [unpaid] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
+  assert.deepEqual(unpaid!.results.map((r) => r.error ?? 'ok'), ['ok', 'policy'], `the host takes the hosts record free and refuses an unpaid card: ${JSON.stringify(unpaid)}`)
+  const funded = await fundFolder(p, 20)
+  const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', card, now)])
+  assert.ok(outcome!.results.every((r) => r.ok), `the host took the card: ${JSON.stringify(outcome)}`)
   say(`${p.role}: hosts record and card on the host, as ${p.profile.address}`)
+  hostSteps[p.role] = { unpaidCard: 'policy', spent: 20, balance: funded }
   return card
 }
 type Card = Awaited<ReturnType<typeof publishCard>>
@@ -534,7 +635,7 @@ async function pay(buyer: Person, seller: Person, offer: { price: { amount: stri
   const terms = escrow.termsFor(undefined, { seller: seller.signer.publicKey, amount: BigInt(offer.price.amount) * DOLLAR })
   const args = { buyer: buyer.signer.publicKey, payer, token, terms, programId: ESCROW }
   const keys = escrow.keysFor({ buyer: args.buyer, payer, mint: token.mint, tokenProgram: token.program, terms, programId: ESCROW })
-  const paid = await throughAtCostDoor(buyer.signer, escrow.payInOneTap(args), token)
+  const paid = await throughFeePayer(buyer.signer, escrow.payInOneTap(args), token)
   const account = escrow.decodeEscrow(new Uint8Array((await connection.getAccountInfo(keys.escrow))!.data))
   assert.equal(account.status, 'ended')
   assert.equal(account.outcome, 'releasedToSeller')
@@ -718,9 +819,10 @@ async function main() {
   record.people = Object.fromEntries(people.map((p) => [p.role, { profile: p.profile.address, label: p.label }]))
   say(`two people, each from 24 words: seller ${seller.profile.address}, buyer ${buyer.profile.address}; the issuer ${issuer.name}`)
 
-  const token = await setup(people)
-  steps.notes = { seller: await faceNote(seller), buyer: await faceNote(buyer) }
-  steps.rows = { seller: await register(seller, token, 'voucher'), buyer: await register(buyer, token, 'paid') }
+  steps.host = hostSteps
+  const token = await setup(people, issuer)
+  steps.notes = { seller: await faceNote(seller, issuer), buyer: await faceNote(buyer, issuer) }
+  steps.rows = { seller: await register(seller, token, 'credit'), buyer: await register(buyer, token, 'paid') }
 
   // The read key the seller's app makes for its assistant, at random (forest's records, "Access
   // keys"): listed among the seller's inbox's readers, so every message to it is sealed to it too.
@@ -773,6 +875,12 @@ async function main() {
 
   await idChecked(seller, proven)
   say('the index shows the seller ID-checked')
+
+  // What each folder's writes took from its balance.
+  for (const p of people) {
+    const { body } = await json(`${cfg.host}/credits/balance/${p.profile.address}`)
+    hostSteps[p.role]!.left = body.credits
+  }
 }
 
 try {
