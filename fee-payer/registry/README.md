@@ -159,17 +159,16 @@ https://registry-payer.devnet.forest.foundation.
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=fee-payer/deploy/registry.Dockerfile`.
 - **One replica,** health check `GET /liveness` (its Kora's, through the front), a public domain to
   port 8080, a volume at `/data` for the spent list.
-- **Signs as** the devnet `registry-payer` key, `G4okQqEUk9WMVfheCHhjQL4ZerAKqKj3Y97UMq8TUsjZ`,
-  from the devnet phrase by the recipe in standard's `devnet/deploy.sh` scripts; **credits are paid
-  to** the same address, in the classic test dollar.
+- **Signs as** a key of its own, `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA`: a random key made for it, not mixed
+  from the devnet phrase; **credits are paid to** the same address, in the classic test dollar.
 
 | Variable | On devnet | Secret |
 |---|---|---|
-| `FOREST_FEE_PAYER_KEY` | the `registry-payer` key, as its JSON array | yes |
+| `FOREST_FEE_PAYER_KEY` | its random key, as its JSON array | yes |
 | `RPC_URL` | Helius's devnet RPC; its URL holds the key | yes |
 | `CREDIT_KEY` | an RSA-2048 key made for it | yes |
 | `PUBLIC_ORIGIN` | `https://registry-payer.devnet.forest.foundation` | no |
-| `CREDIT_ADDRESS` | `G4okQqEUk9WMVfheCHhjQL4ZerAKqKj3Y97UMq8TUsjZ` | no |
+| `CREDIT_ADDRESS` | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` | no |
 | `CREDIT_MINT` | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`, the classic test dollar | no |
 | `CREDIT_PRICE` | `0.5` | no |
 | `REGISTRY_PROGRAM` | `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` | no |
