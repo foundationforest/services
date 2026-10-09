@@ -12,7 +12,7 @@ Up: [the repo](../README.md).
 
 ## How it works
 
-Forest's host (`forest/records/src/host.ts`), unchanged, listens on loopback. In front of it, one
+Forest's host (`standard/records/src/host.ts`), unchanged, listens on loopback. In front of it, one
 thing only: a front that answers `GET /` with one line saying what this is, and passes every other
 request, untouched, to forest's host. So the routes are forest's six: records in and out, messages
 in and pulled, blobs in and out. Forest's host checks every record, message and blob, as its
@@ -47,7 +47,7 @@ when the `S3_` variables are set. Before it listens, a start makes two moves, ea
 says what each moved:
 
 1. **A single file, moved in.** If `IMPORT_FROM` names a file and the data directory holds no
-   `host.sqlite` yet, forest's import script (`forest/records/scripts/import-single-file.ts`) moves
+   `host.sqlite` yet, forest's import script (`standard/records/scripts/import-single-file.ts`) moves
    that file in, under the same numbers, so the cursors readers hold go on working. It runs into a
    directory beside the data directory, renamed onto it when whole, and never over one that holds
    folders: the start fails instead. The file is left as it was.
@@ -76,7 +76,7 @@ stops the start.
 ### Run it
 
 ```sh
-./forest.sh keys records registry/client
+./standard.sh keys records registry/client
 cd host && npm ci
 npm test
 DATA_DIR=./data/host npm start
@@ -106,7 +106,7 @@ The test checks:
 ### On devnet
 
 The build context is the repo root; `deploy/Dockerfile` builds it (Node 22.22.2 and git,
-`forest.sh records registry/client`, `npm ci`). Railway, project `forest-devnet`, service `host`,
+`standard.sh records registry/client`, `npm ci`). Railway, project `forest-devnet`, service `host`,
 at https://host.devnet.forest.foundation:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=host/deploy/Dockerfile`.
@@ -116,8 +116,8 @@ at https://host.devnet.forest.foundation:
   Railway's bucket by reference: `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` (`auto`),
   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, and `S3_STYLE=virtual`.
 
-The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)), and forest's CLI
-starts there when it is given no host (it reads that list).
+The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)), and the CLI
+([`mcp/`](../mcp/README.md)) starts there when it is given no host (it reads that list).
 
 ## Policy
 

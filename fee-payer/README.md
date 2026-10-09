@@ -17,15 +17,20 @@ Up: [the repo](../README.md).
 The fee payer is one address. Behind it, in one container, run two copies of
 [Kora](https://github.com/solana-foundation/kora) 2.0.5, the Solana Foundation's open fee payer,
 configured and nothing else, and one program of ours in front of them, the voucher check
-(`vouchers/`):
+(`registry/`):
 
 ```
                      POST /vouchers   the voucher check: one row,       the free Kora
-  app ──▶ the fee ─────────────────▶ a voucher not seen before ───▶ (free/kora.toml) ───┐
-          payer's                                                                       ├─▶ Solana
-          address ──────────────────────────── unchanged ─────────▶ the at-cost Kora ───┘
+  app ──▶ the fee ─────────────────▶ a voucher not seen before ───▶ (registry/kora.toml) ───┐
+          payer's                                                                           ├─▶ Solana
+          address ──────────────────────────── unchanged ─────────▶ the at-cost Kora ───────┘
                      anything else                                  (at-cost/kora.toml)
 ```
+
+This folder has one part for each Kora. `registry/` holds the free Kora's configuration and the
+voucher check, which also passes every other request on to the at-cost Kora; `at-cost/` holds the
+at-cost Kora's configuration and its local run. What both use stays at the top: Kora's version
+(`KORA`), `build.sh`, `run.sh`, `signers.toml` and `deploy/`.
 
 - **The voucher door,** `POST /vouchers`, pays for a person's registry row, free. The app sends the
   row's transaction and a voucher; the voucher check lets the row through to the free Kora only
@@ -91,9 +96,9 @@ The voucher check checks, in this order, and refuses by name at the first that f
 
 Then it hands the transaction, unchanged, to the free Kora's `signAndSendTransaction` and answers
 `{ signature }`, or `fee_payer_refused` (502) with Kora's reason; the voucher stays spent either
-way. The free Kora checks the transaction against `free/kora.toml`, adds its signature and sends
-it: the fee payer pays the network fee and the row's deposit, and is recorded in the row as its
-payer. `vouchers/test/vouchers.test.ts` checks every refusal above with nothing reaching either
+way. The free Kora checks the transaction against `registry/kora.toml`, adds its signature and
+sends it: the fee payer pays the network fee and the row's deposit, and is recorded in the row as
+its payer. `registry/test/vouchers.test.ts` checks every refusal above with nothing reaching either
 Kora, and a voucher replayed, and a voucher sent with another main key's row.
 
 ### What the free Kora allows
@@ -216,13 +221,13 @@ Both Koras, `run.sh`:
 
 `run.sh` refuses a key file inside this repo.
 
-The voucher check, `vouchers/`:
+The voucher check, `registry/`:
 
 | Variable | Required | Default | What |
 |---|---|---|---|
 | `FEE_PAYER_NAME` | yes | | This fee payer's name, in every voucher's label: `voucher/<name>/<n>`. No slash, at most 100 bytes |
 | `VOUCHER_ISSUERS` | yes | | The issuers whose notes earn vouchers, each tier with how many: `<key>:<tier>:<count>`, comma-separated, the key as 128 lowercase hex (x then y, as a row holds it) |
-| `REGISTRY_PROGRAM` | yes | | The registry a row is written by: the one `free/kora.toml` allows |
+| `REGISTRY_PROGRAM` | yes | | The registry a row is written by: the one `registry/kora.toml` allows |
 | `FREE_KORA_URL`, `FREE_KORA_API_KEY` | yes | | The free Kora and its key; `deploy/start.sh` sets both |
 | `AT_COST_KORA_URL` | yes | | The at-cost Kora, which gets every request but `/vouchers`; `deploy/start.sh` sets it |
 | `DATABASE_PATH` | no | `./data/vouchers.sqlite` | The used set's one file |
@@ -242,12 +247,13 @@ FOREST_FEE_PAYER_KEY=/outside/repo/fee-payer.json RPC_URL=https://… JUPITER_AP
 Checks:
 
 ```
-./forest.sh registry/client escrow/client                           # from the repo root; the person circuit's files come with forest
-cd fee-payer && npm ci && npm run check                             # type-check the local run
+./standard.sh registry/client escrow/client                         # from the repo root; the person circuit's files come with forest
+cd fee-payer
 bash deploy/devnet-config.sh at-cost/kora.toml > /dev/null          # the devnet configs still apply
-bash deploy/devnet-config.sh free/kora.toml > /dev/null
-(cd vouchers && npm ci && npm run check && npm test)                # both doors, stand-in Koras, real person proofs; seconds
-npm run test:local                                                  # the local run, about 30 seconds
+bash deploy/devnet-config.sh registry/kora.toml > /dev/null
+(cd registry && npm ci && npm run check && npm test)                # both doors, stand-in Koras, real person proofs; seconds
+(cd at-cost && npm ci && npm run check)                             # type-check the local run
+(cd at-cost && npm run test:local)                                  # the local run, about 30 seconds
 ```
 
 **The local run** starts a validator with the two programs at the ids in their source (as a local
@@ -257,15 +263,15 @@ changed: the two programs' devnet ids to their source ids, and `price_source = "
 that never held a lamport then writes a registry row, from a note a test issuer signs, pays escrows
 (one in Open USD), closes one never funded, and provokes every refusal above; every balance is
 checked. It needs `solana-test-validator` (Solana CLI 4.2.2), the two programs built
-(`cargo build-sbf --arch v3` in `forest/registry/program` and `forest/escrow/program`) and
+(`cargo build-sbf --arch v3` in `standard/registry/program` and `standard/escrow/program`) and
 `./build.sh`. It skips, saying which, if one is missing. Not in CI. It runs the at-cost Kora only.
 
 ### On devnet
 
 `deploy/Dockerfile` builds one image from Node's image: Kora's binary, copied from Kora's own
 published image `ghcr.io/solana-foundation/kora:v2.0.5`, pinned by digest, and checked against
-`KORA`; `at-cost/kora.toml` and `free/kora.toml` with the devnet lines `deploy/devnet-config.sh`
-changes; `signers.toml`, `run.sh` and `deploy/start.sh`; and the voucher check, with `RUST_LOG=warn`
+`KORA`; `at-cost/kora.toml` and `registry/kora.toml` with the devnet lines
+`deploy/devnet-config.sh` changes; `signers.toml`, `run.sh` and `deploy/start.sh`; and the voucher check, with `RUST_LOG=warn`
 set in the image. Before the first transaction, the key needs SOL for the deposits it funds, and a
 token account for each token it is paid in.
 
@@ -296,8 +302,8 @@ names: Kora's JSON-RPC at `/` (POST), `GET /liveness`, and the voucher door at `
 ## Policy
 
 - **Kora,** 2.0.5, run twice with one key: the at-cost Kora configured by `at-cost/kora.toml`, the
-  free Kora by `free/kora.toml`, with no code of ours inside either. The one program of ours, the
-  voucher check, stands in front of both.
+  free Kora by `registry/kora.toml`, with no code of ours inside either. The one program of ours,
+  the voucher check, stands in front of both.
 - **The voucher door, rows only:** one `register` in a transaction and nothing else, the row under
   any issuer and any label; at most 0.0024 SOL a row beyond the network fee; two signatures.
 - **Vouchers per person, by tier:** three with a tier 1 note from the foundation's issuer
@@ -405,8 +411,8 @@ front of it.
 **Why does the voucher check allow only one instruction, when the free Kora allows System?**
 Kora sees System inside `register`, where the registry creates the row with it. At the top of a
 transaction, a System instruction the fee payer funds could hand its SOL to the person: on devnet,
-Kora on `free/kora.toml` signed a row with a `CreateAccountWithSeed` beside it, which put 660,000 of
-the fee payer's lamports in an account the main key can empty. So the voucher check lets through the
+Kora on `registry/kora.toml` signed a row with a `CreateAccountWithSeed` beside it, which put
+660,000 of the fee payer's lamports in an account the main key can empty. So the voucher check lets through the
 one `register` and nothing beside it.
 
 **Why a key between the voucher check and the free Kora, and none on the at-cost Kora?**
@@ -416,7 +422,7 @@ the same project could reach both Koras' over the private network. So the free K
 caller for a key (`KORA_API_KEY`) that `deploy/start.sh` makes at each start and gives only to the
 voucher check. The at-cost Kora needs none: whatever reaches it pays its way, as through the front.
 
-**Why does `free/kora.toml` list tokens it is never paid in, and a price source?**
+**Why does `registry/kora.toml` list tokens it is never paid in, and a price source?**
 Kora 2.0.5 refuses to start without an allowed token, even when it charges nothing. They are
 `at-cost/kora.toml`'s own three lines, so `deploy/devnet-config.sh` changes both files the same way.
 On mainnet, `price_source = "Jupiter"` would still need `JUPITER_API_KEY` to start.

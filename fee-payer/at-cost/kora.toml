@@ -1,5 +1,5 @@
 # The fee payer's at-cost Kora: Kora 2.0.5 (the version in KORA), configured. Nothing custom inside
-# it. Every request to the fee payer's address but `/vouchers` reaches it unchanged (vouchers/).
+# it. Every request to the fee payer's address but `/vouchers` reaches it unchanged (registry/src/).
 #
 # It co-signs a person's transaction as its payer and charges, in the token they pay in, what that
 # transaction costs it: the network fee plus every storage deposit it puts down, including the ones
@@ -9,7 +9,7 @@
 # is paid for.
 #
 # It allows two Forest programs, the registry and the escrow, at their devnet addresses
-# (forest/registry/devnet/devnet.json, forest/escrow/devnet/devnet.json): nothing of Forest's is on
+# (standard/registry/devnet/devnet.json, standard/escrow/devnet/devnet.json): nothing of Forest's is on
 # mainnet. The tokens it is paid in and its price source are mainnet's; deploy/devnet-config.sh
 # swaps those for devnet's. The local run (test/fee-payer.test.ts) copies this file and changes
 # three lines: `price_source`, to "Mock", and the registry's and the escrow's devnet ids, to the ids
@@ -24,8 +24,8 @@ rate_limit = 100
 [validation]
 # The most SOL one transaction may take from the fee payer beyond its network fee: storage deposits.
 # 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
-# 0.0037 at today's rent (forest/escrow/README.md); a registry row, at most 0.0022 (a 128-byte
-# label: free/kora.toml).
+# 0.0037 at today's rent (standard/escrow/README.md); a registry row, at most 0.0022 (a 128-byte
+# label: registry/kora.toml).
 max_allowed_lamports = 10000000
 # The fee payer, and an escrow's two parties when both sign a split. A registration needs two: the
 # fee payer, and the main key, which signs the row and its payment.

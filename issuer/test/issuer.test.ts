@@ -14,12 +14,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { issuerSecret } from '../../forest/keys/src/issuer.ts'
-import { base58 } from '../../forest/records/src/bytes.ts'
-import { hkdf } from '../../forest/keys/src/hkdf.ts'
-import { canonical, parseCanonical } from '../../forest/records/src/canonical.ts'
-import { toBytes32 } from '../../forest/registry/client/src/field.ts'
-import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../forest/registry/client/src/person.ts'
+import { issuerSecret } from '../../standard/keys/src/issuer.ts'
+import { base58 } from '../../standard/records/src/bytes.ts'
+import { hkdf } from '../../standard/keys/src/hkdf.ts'
+import { canonical, parseCanonical } from '../../standard/records/src/canonical.ts'
+import { toBytes32 } from '../../standard/registry/client/src/field.ts'
+import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
 import { loadKeypair, parseKeypair, writeKeyFile } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
@@ -43,8 +43,8 @@ import {
 } from './fakes.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const forest = join(here, '../../forest')
-const ARTIFACTS = { wasm: join(forest, 'registry/circuit/devnet/person.wasm'), zkey: join(forest, 'registry/circuit/devnet/person.zkey') }
+const standard = join(here, '../../standard')
+const ARTIFACTS = { wasm: join(standard, 'registry/circuit/devnet/person.wasm'), zkey: join(standard, 'registry/circuit/devnet/person.zkey') }
 
 const dirs: string[] = []
 after(() => {

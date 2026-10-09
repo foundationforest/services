@@ -1,4 +1,4 @@
-// Pictures (forest/records/README.md, "Blobs"): a profile's `photo`, and the `media` of an offer or a
+// Pictures (standard/records/README.md, "Blobs"): a profile's `photo`, and the `media` of an offer or a
 // review, name bytes by their SHA-256, with a type and a size. The bytes stay on the hosts; the pages
 // show them from there (GET /v1/blobs/<sha256>).
 //
@@ -8,7 +8,7 @@
 // (`blobs`). A picture not held yet is asked for again after the next read, since an app posts the
 // record first and the bytes after it.
 
-import { getBlob } from '../../../forest/records/src/client.ts'
+import { getBlob } from '../../../standard/records/src/client.ts'
 
 import type { Db } from '../db.ts'
 

@@ -5,7 +5,7 @@
 // a host this index read the record from, when that host holds the bytes as the type the record
 // names (src/records/blobs.ts); the index never keeps the bytes.
 
-import { base58, hex } from '../../../forest/records/src/index.ts'
+import { base58, hex } from '../../../standard/records/src/index.ts'
 
 import type { Config } from '../config.ts'
 import type { Db } from '../db.ts'

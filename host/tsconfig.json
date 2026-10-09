@@ -23,6 +23,6 @@
   "include": [
     "src",
     "test",
-    "../forest/registry/client/types"
+    "../standard/registry/client/types"
   ]
 }

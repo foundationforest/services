@@ -25,7 +25,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
 import { PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 
-import { discriminator, fromBytes32, isFieldElement, verifyPerson, type IssuerKey, type SnarkjsProof } from '../../../forest/registry/client/src/index.ts'
+import { discriminator, fromBytes32, isFieldElement, verifyPerson, type IssuerKey, type SnarkjsProof } from '../../../standard/registry/client/src/index.ts'
 
 export type Config = {
   /** The free Kora's JSON-RPC, in this container. */

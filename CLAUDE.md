@@ -1,5 +1,5 @@
 This repo is `services`: the first services on Forest's open standard, `forest`
-(github.com/foundationforest/forest), used here at the commit in `FOREST`. The Forest Foundation
+(github.com/foundationforest/forest), used here at the commit in `STANDARD`. The Forest Foundation
 runs every service here. Read `README.md` and the README of the directory you work in before any
 task.
 
@@ -34,7 +34,7 @@ programs only). Plain words, no em-dashes.
   anyone can run another; How it works; Policy, every number and choice the service makes, in plain
   words; Promises; Limits; Who decides what; FAQ. The README is the directory's only doc.
 - Use existing pieces unchanged, and write only what does not exist. A change one of forest's
-  pieces needs is made in forest first; then `FOREST` moves, in its own pull request.
+  pieces needs is made in forest first; then `STANDARD` moves, in its own pull request.
 - Keep the docs true in the same pull request: a change that makes a README wrong fixes it. A README
   says only what the code does today. Say "on devnet" for what runs; never state anything as
   shipped.

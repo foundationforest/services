@@ -1,5 +1,5 @@
-// The index end to end, on real pieces: forest's reference host (forest/records), a local validator
-// running the registry and the escrow (forest/registry, forest/escrow), notes signed with forest's
+// The index end to end, on real pieces: forest's reference host (standard/records), a local validator
+// running the registry and the escrow (standard/registry, standard/escrow), notes signed with forest's
 // own signNote, by the issuer the index trusts and by a stranger, and a local Postgres. Nothing is
 // mocked.
 //
@@ -19,8 +19,8 @@
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres npm test
 //
 // Needs: DATABASE_URL (a Postgres the test may create and drop a database in); the two programs
-// built (`cargo build-sbf --arch v3` in forest/registry/program and forest/escrow/program); the
-// person circuit's files (committed in forest/registry/circuit/devnet); and `solana-test-validator`
+// built (`cargo build-sbf --arch v3` in standard/registry/program and standard/escrow/program); the
+// person circuit's files (committed in standard/registry/circuit/devnet); and `solana-test-validator`
 // on the PATH. If any is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
@@ -35,11 +35,11 @@ import { MINT_SIZE, TOKEN_PROGRAM_ID, createAssociatedTokenAccountIdempotentInst
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, Transaction, type TransactionInstruction } from '@solana/web3.js'
 import pg from 'pg'
 
-import { issuerSecret, mainKey, type MainKey } from '../../forest/keys/src/index.ts'
-import { Host } from '../../forest/records/src/host.ts'
-import { hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, accessRecord } from '../../forest/records/src/index.ts'
-import { PROGRAM_ID as REGISTRY_ID, type SignedNote, buildRegistration, issuerKeyOf, signNote } from '../../forest/registry/client/src/index.ts'
-import { PROGRAM_ID as ESCROW_ID, payInOneTap, termsFor, keysFor } from '../../forest/escrow/client/src/index.ts'
+import { issuerSecret, mainKey, type MainKey } from '../../standard/keys/src/index.ts'
+import { Host } from '../../standard/records/src/host.ts'
+import { hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, accessRecord } from '../../standard/records/src/index.ts'
+import { PROGRAM_ID as REGISTRY_ID, type SignedNote, buildRegistration, issuerKeyOf, signNote } from '../../standard/registry/client/src/index.ts'
+import { PROGRAM_ID as ESCROW_ID, payInOneTap, termsFor, keysFor } from '../../standard/escrow/client/src/index.ts'
 
 import { issuerHex } from '../src/chain/registry.ts'
 import { INDEX_ROOT, loadConfig } from '../src/config.ts'
@@ -47,10 +47,10 @@ import { startIndex } from '../src/main.ts'
 import { verify } from '../src/scores/sign.ts'
 import { serveMarkets } from './markets-repo.ts'
 
-const FOREST = join(INDEX_ROOT, '../forest')
-const REGISTRY_SO = join(FOREST, 'registry/program/target/deploy/forest_registry.so')
-const ESCROW_SO = join(FOREST, 'escrow/program/target/deploy/forest_escrow.so')
-const ARTIFACTS = { wasm: join(FOREST, 'registry/circuit/devnet/person.wasm'), zkey: join(FOREST, 'registry/circuit/devnet/person.zkey') }
+const STANDARD = join(INDEX_ROOT, '../standard')
+const REGISTRY_SO = join(STANDARD, 'registry/program/target/deploy/forest_registry.so')
+const ESCROW_SO = join(STANDARD, 'escrow/program/target/deploy/forest_escrow.so')
+const ARTIFACTS = { wasm: join(STANDARD, 'registry/circuit/devnet/person.wasm'), zkey: join(STANDARD, 'registry/circuit/devnet/person.zkey') }
 const RPC_PORT = 18899
 const RPC = `http://127.0.0.1:${RPC_PORT}`
 /** A classic mint at USDC's address, which the index's config counts. */
@@ -60,9 +60,9 @@ const BUYER = 'online-tutors/buyer'
 
 function missing(): string | null {
   if (!process.env.DATABASE_URL) return 'DATABASE_URL is not set'
-  if (!existsSync(REGISTRY_SO)) return 'the registry is not built; run `cargo build-sbf --arch v3` in forest/registry/program'
-  if (!existsSync(ESCROW_SO)) return 'the escrow is not built; run `cargo build-sbf --arch v3` in forest/escrow/program'
-  if (!existsSync(ARTIFACTS.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
+  if (!existsSync(REGISTRY_SO)) return 'the registry is not built; run `cargo build-sbf --arch v3` in standard/registry/program'
+  if (!existsSync(ESCROW_SO)) return 'the escrow is not built; run `cargo build-sbf --arch v3` in standard/escrow/program'
+  if (!existsSync(ARTIFACTS.zkey)) return "no person circuit's files in standard/registry/circuit/devnet"
   if (spawnSync('solana-test-validator', ['--version']).status !== 0) return 'solana-test-validator is not on the PATH'
   return null
 }

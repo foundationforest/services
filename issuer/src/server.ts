@@ -22,7 +22,7 @@
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { type IssuerKey, type SignedNote, noteSigned, signNote } from '../../forest/registry/client/src/person.ts'
+import { type IssuerKey, type SignedNote, noteSigned, signNote } from '../../standard/registry/client/src/person.ts'
 import { type FaceCheck, type Tier, judge } from './didit.ts'
 import { type Embedder, FACE_MATCH, FaceError, similarity } from './face.ts'
 import type { RateLimit } from './limit.ts'

@@ -201,7 +201,7 @@ this machine, or if `ID_TIER_PAY_TO` is the seed's own address.
 Node 22.18 or later. From the repo root:
 
 ```
-./forest.sh registry/client records keys
+./standard.sh registry/client records keys
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, forest's files included
@@ -218,7 +218,7 @@ point `ISSUER_KEYPAIR_PATH` at it.
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
 and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH`, or each deploy forgets which
 face was signed for which note number. The build context is the repo root. `deploy/Dockerfile`
-builds it (Node 22.22.2 and git, `forest.sh registry/client records keys`, `npm ci`, the face models
+builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `npm ci`, the face models
 by `npm run fetch -- models`) and runs `deploy/start.sh`. With no `DIDIT_API_KEY`, that first starts
 `deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that approves every session it opens, on both
 workflows, with no face seen before and, for a document, a name it makes up for that session; then

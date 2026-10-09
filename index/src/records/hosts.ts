@@ -1,5 +1,5 @@
 // The record reader: what's new on each host in lists/hosts.json, for the whole host, so a profile
-// this index has never seen is found the first time it writes there (forest/records/README.md,
+// this index has never seen is found the first time it writes there (standard/records/README.md,
 // "Hosts": `GET /v1/records?after=`). No other host is read: a profile's hosts record is not
 // followed, and nothing is looked up by profile.
 //
@@ -16,9 +16,9 @@
 //
 // Then the pictures stored records name are asked for on the hosts that served them (blobs.ts).
 
-import { readPage } from '../../../forest/records/src/client.ts'
-import { type Checked, MAX_FUTURE_MS, type SignedRecord, encodeRecord } from '../../../forest/records/src/record.ts'
-import { viewProfile } from '../../../forest/records/src/view.ts'
+import { readPage } from '../../../standard/records/src/client.ts'
+import { type Checked, MAX_FUTURE_MS, type SignedRecord, encodeRecord } from '../../../standard/records/src/record.ts'
+import { viewProfile } from '../../../standard/records/src/view.ts'
 
 import { countedProfiles } from '../chain/registry.ts'
 import type { IssuerConfig } from '../config.ts'

@@ -1,6 +1,6 @@
 // Notes as they travel between the issuer and a person's app, and the fingerprint of a document.
 //
-// A note is forest's (forest/registry/README.md, "The note and the person proof"): the person's note
+// A note is forest's (standard/registry/README.md, "The note and the person proof"): the person's note
 // number, a face embedding, the model that made it and a tier, signed by the issuer's note key with
 // forest's `signNote`. As JSON, every number is decimal text, the embedding base64url, and the
 // issuer's key 128 hex characters, x then y, as a registry row holds it:
@@ -15,11 +15,11 @@
 
 import { createHmac } from 'node:crypto'
 
-import { b64u, hex } from '../../forest/records/src/bytes.ts'
-import { canonical } from '../../forest/records/src/canonical.ts'
-import { fromBytes32, isFieldElement } from '../../forest/registry/client/src/field.ts'
-import type { IssuerKey, SignedNote } from '../../forest/registry/client/src/person.ts'
-import { issuerKeyBytes } from '../../forest/registry/client/src/program.ts'
+import { b64u, hex } from '../../standard/records/src/bytes.ts'
+import { canonical } from '../../standard/records/src/canonical.ts'
+import { fromBytes32, isFieldElement } from '../../standard/registry/client/src/field.ts'
+import type { IssuerKey, SignedNote } from '../../standard/registry/client/src/person.ts'
+import { issuerKeyBytes } from '../../standard/registry/client/src/program.ts'
 import type { Document } from './didit.ts'
 
 /** The two tiers this issuer signs: 1 after the face check, 2 after the document check. */

@@ -1,7 +1,8 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
-//   ../forest.sh keys records registry/client escrow/client circuits/reputation cli
-//   (cd ../forest/circuits/reputation && npm run fetch)
+//   ../standard.sh keys records registry/client escrow/client circuits/reputation
+//   (cd ../mcp && npm ci)
+//   (cd ../standard/circuits/reputation && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 //
 // Two new people, a seller and a buyer, each the way their app would do it:
@@ -18,7 +19,7 @@
 //      from each, and lists a read key the seller's app made for its assistant as a reader;
 //   6. each app makes its assistant's access keys and lists them in the profile's permissions
 //      record: the seller's a write, a message and a read key, the buyer's a write key; the
-//      assistants are forest's CLI, given those keys; the seller's posts an offer with a photo, and
+//      assistants are the CLI (../mcp), given those keys; the seller's posts an offer with a photo, and
 //      the seller's app then puts the photo's bytes on the host;
 //   7. the inbox: the buyer delivers a message to the seller's inbox, sealed to its inbox key and the
 //      read key, and a second one is refused (one each); the seller pulls it with a pull its main
@@ -51,20 +52,20 @@ import { crc32, deflateSync } from 'node:zlib'
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
-import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../forest/keys/src/index.ts'
-import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../forest/records/src/index.ts'
-import { message, openMessage, readerCount } from '../forest/records/src/private.ts'
-import { type SignedNote, buildRegistration, fetchRow, fromBytes32, issuerKeyBytes, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../forest/registry/client/src/index.ts'
-import * as escrow from '../forest/escrow/client/src/index.ts'
-import { proofBytes, proveReputation } from '../forest/circuits/reputation/src/index.ts'
-import { ACTIONS, Refusal, checkArgs } from '../forest/cli/src/actions.ts'
-import type { Context } from '../forest/cli/src/forest.ts'
+import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../standard/keys/src/index.ts'
+import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
+import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
+import { type SignedNote, buildRegistration, fetchRow, fromBytes32, issuerKeyBytes, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
+import * as escrow from '../standard/escrow/client/src/index.ts'
+import { proofBytes, proveReputation } from '../standard/circuits/reputation/src/index.ts'
+import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
+import type { Context } from '../mcp/src/forest.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cfg = JSON.parse(readFileSync(join(here, 'devnet.json'), 'utf8')) as Record<string, string>
 const RPC = process.env.HELIUS_API_KEY ? `https://devnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}` : cfg.rpc!
-const PERSON = { wasm: join(here, '../forest/registry/circuit/devnet/person.wasm'), zkey: join(here, '../forest/registry/circuit/devnet/person.zkey') }
-const REPUTATION = { wasm: join(here, '../forest/circuits/reputation/devnet/reputation.wasm'), zkey: join(here, '../forest/circuits/reputation/devnet/reputation.zkey') }
+const PERSON = { wasm: join(here, '../standard/registry/circuit/devnet/person.wasm'), zkey: join(here, '../standard/registry/circuit/devnet/person.zkey') }
+const REPUTATION = { wasm: join(here, '../standard/circuits/reputation/devnet/reputation.wasm'), zkey: join(here, '../standard/circuits/reputation/devnet/reputation.zkey') }
 const DOLLAR = 1_000_000n
 
 /**
@@ -371,7 +372,7 @@ function made(scope: 'write' | 'message'): Made {
 
 /**
  * The app lists the keys it made in the profile's permissions record, signed with the main key, and
- * gives them to the assistant: forest's CLI, with the profile, the host to start from and the keys.
+ * gives them to the assistant: the CLI (../mcp), with the profile, the host to start from and the keys.
  */
 async function assistantFor(p: Person, keys: Made[]): Promise<Context> {
   const [outcome] = await publish([cfg.host!], [permissionsRecord(p.profile, keys.map((k) => k.listed), Date.now())])
@@ -382,7 +383,7 @@ async function assistantFor(p: Person, keys: Made[]): Promise<Context> {
 }
 
 /**
- * One of forest's CLI actions, run the way its typed door runs one (forest/cli/src/main.ts): the
+ * One of the CLI's actions, run the way its typed door runs one (../mcp/src/main.ts): the
  * arguments checked, then the action with the assistant's context. In process, so the keys stay in
  * the run's memory and never go into an environment.
  */
@@ -455,7 +456,7 @@ async function inbox(from: Person, to: Person, readKey: InboxKey) {
 }
 
 /**
- * The seller's assistant, through forest's CLI, with the keys the seller's app made. It opens the
+ * The seller's assistant, through the CLI, with the keys the seller's app made. It opens the
  * seller's inbox (`inbox`, the message key and the read key), replies to the buyer (`send`, signed by
  * the message key for the seller and naming the seller's host, where the buyer's host reads the
  * seller's permissions), and asks the seller to post an offer it drafted (`request`, a message to the

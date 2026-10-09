@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { normalizeOrigin, publicKeyFromAddress } from '../../forest/records/src/index.ts'
+import { normalizeOrigin, publicKeyFromAddress } from '../../standard/records/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const INDEX_ROOT = resolve(here, '..')

@@ -6,7 +6,7 @@
 //
 // What is mixed from the secret, the same every time:
 //   - with forest's `hkdf` under `issuer/notes`: the note key, a Baby Jubjub private key that signs
-//     every note (forest/registry/README.md, "The note and the person proof");
+//     every note (standard/registry/README.md, "The note and the person proof");
 //   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
 //   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
 //     for one document check names, and `payments`, the devnet address payments go to once there is a
@@ -17,9 +17,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { hkdf } from '../../forest/keys/src/hkdf.ts'
-import { mainKey } from '../../forest/keys/src/profile.ts'
-import { base58 } from '../../forest/records/src/bytes.ts'
+import { hkdf } from '../../standard/keys/src/hkdf.ts'
+import { mainKey } from '../../standard/keys/src/profile.ts'
+import { base58 } from '../../standard/records/src/bytes.ts'
 
 export type IssuerKey = {
   publicKey: Uint8Array

@@ -27,7 +27,7 @@ export type Signed = { statement: string; ed25519: string }
 
 const utf8 = (s: string) => new TextEncoder().encode(s)
 
-/** The signing key from the 32-byte seed, by HKDF-SHA256 under its label, as forest/keys/ derives its keys. */
+/** The signing key from the 32-byte seed, by HKDF-SHA256 under its label, as standard/keys/ derives its keys. */
 export function indexKeys(seed: Uint8Array): IndexKeys {
   if (seed.length !== 32) throw new RangeError('the index seed is 32 bytes')
   const secret = hkdf(sha256, seed, new Uint8Array(0), utf8('forest.foundation/index/ed25519/v1'), 32)

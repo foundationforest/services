@@ -92,8 +92,8 @@ sender, ever; `maxBytes` is the largest it takes; `readers` are keys every messa
 to besides `inboxKey`. No message passes through this index.
 
 How to send one is forest's: its records' Inbox section,
-https://github.com/foundationforest/forest/blob/main/records/README.md, or forest's CLI, `send`
-(https://github.com/foundationforest/forest/blob/main/cli/README.md). The hosts this index reads
+https://github.com/foundationforest/forest/blob/main/records/README.md, or the CLI, `send`
+(https://github.com/foundationforest/services/blob/main/mcp/README.md). The hosts this index reads
 are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json.
 
 ## Check a real person

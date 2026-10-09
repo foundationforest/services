@@ -24,6 +24,6 @@
     "test",
     "deploy",
     "scripts",
-    "../forest/registry/client/types"
+    "../standard/registry/client/types"
   ]
 }

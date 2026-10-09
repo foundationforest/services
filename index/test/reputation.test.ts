@@ -10,7 +10,7 @@
 //   5. a proof against a root past the window shows nothing: two roots back, it still shows; three,
 //      it does not.
 //
-// Needs Postgres and circuits' proving files (`npm run fetch` in forest/circuits/reputation).
+// Needs Postgres and circuits' proving files (`npm run fetch` in standard/circuits/reputation).
 //
 //   DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres node --test --test-force-exit test/reputation.test.ts
 
@@ -22,10 +22,10 @@ import { fileURLToPath } from 'node:url'
 
 import { PublicKey } from '@solana/web3.js'
 
-import { type Leaf, buildTree, proofBytes, proveReputation, verifyReputation } from '../../forest/circuits/reputation/src/index.ts'
-import { type Body, b64u, base58, ownerRecord, recordId, unsignedOf } from '../../forest/records/src/index.ts'
-import { ROW_DISCRIMINATOR, ROW_OFFSET, decodeRow, rowSpace } from '../../forest/registry/client/src/program.ts'
-import { toBytes32 } from '../../forest/registry/client/src/field.ts'
+import { type Leaf, buildTree, proofBytes, proveReputation, verifyReputation } from '../../standard/circuits/reputation/src/index.ts'
+import { type Body, b64u, base58, ownerRecord, recordId, unsignedOf } from '../../standard/records/src/index.ts'
+import { ROW_DISCRIMINATOR, ROW_OFFSET, decodeRow, rowSpace } from '../../standard/registry/client/src/program.ts'
+import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 
 import { issuerFromHex, issuerHex, rowRecord } from '../src/chain/registry.ts'
 import { startWeb } from '../src/main.ts'
@@ -35,7 +35,7 @@ import * as w from '../src/web/words.ts'
 import { HOST, INDEX, INDEX_NAME, ISSUER, ISSUER_NAME, MADE_UP_DEAL, MARKET, RECORDS, SELLER, ana, cleo, makeFixture } from './fixture.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const devnet = join(here, '../../forest/circuits/reputation/devnet')
+const devnet = join(here, '../../standard/circuits/reputation/devnet')
 const ARTIFACTS = { wasm: join(devnet, 'reputation.wasm'), zkey: join(devnet, 'reputation.zkey') }
 test('1. a row as the index stores it: its stamp, its issuer’s key and its time, read from the row itself', () => {
   const profile = new PublicKey(ana.address)
@@ -69,7 +69,7 @@ test('1. a row as the index stores it: its stamp, its issuer’s key and its tim
 
 test('the reputation tree and the proofs profiles carry', { timeout: 300_000 }, async (t) => {
   if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
-  if (!existsSync(ARTIFACTS.wasm) || !existsSync(ARTIFACTS.zkey)) return t.skip('circuits’ proving files are not fetched: npm run fetch in forest/circuits/reputation')
+  if (!existsSync(ARTIFACTS.wasm) || !existsSync(ARTIFACTS.zkey)) return t.skip('circuits’ proving files are not fetched: npm run fetch in standard/circuits/reputation')
   const fixture = await makeFixture(process.env.DATABASE_URL)
   try {
     const { web } = await startWeb(fixture.db, fixture.config(), { listen: false })

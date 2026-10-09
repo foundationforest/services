@@ -6,7 +6,7 @@
 //
 //   npm test
 //
-// Needs the registry client's dependencies (`../../forest.sh registry/client`); the person circuit's
+// Needs the registry client's dependencies (`../../standard.sh registry/client`); the person circuit's
 // files are committed in forest. If either is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
@@ -30,20 +30,20 @@ import {
   type TransactionInstruction,
 } from '@solana/web3.js'
 
-import { issuerKeyBytes, issuerKeyOf, noteNumberOf, provePerson, refundIx, registerIx, signNote, toBytes32 } from '../../../forest/registry/client/src/index.ts'
+import { issuerKeyBytes, issuerKeyOf, noteNumberOf, provePerson, refundIx, registerIx, signNote, toBytes32 } from '../../../standard/registry/client/src/index.ts'
 
 import { UsedSet, readConfig, startFront, type Config } from '../src/vouchers.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const forest = join(here, '../../../forest')
-const artifacts = { wasm: join(forest, 'registry/circuit/devnet/person.wasm'), zkey: join(forest, 'registry/circuit/devnet/person.zkey') }
+const standard = join(here, '../../../standard')
+const artifacts = { wasm: join(standard, 'registry/circuit/devnet/person.wasm'), zkey: join(standard, 'registry/circuit/devnet/person.zkey') }
 const REGISTRY = new PublicKey('J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4')
 const NAME = 'fee-payer.test.forest.example'
 const API_KEY = randomBytes(16).toString('hex')
 
 function missing(): string | null {
-  if (!existsSync(join(forest, 'registry/client/node_modules'))) return 'run `npm ci` in forest/registry/client'
-  if (!existsSync(artifacts.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
+  if (!existsSync(join(standard, 'registry/client/node_modules'))) return 'run `npm ci` in standard/registry/client'
+  if (!existsSync(artifacts.zkey)) return "no person circuit's files in standard/registry/circuit/devnet"
   return null
 }
 

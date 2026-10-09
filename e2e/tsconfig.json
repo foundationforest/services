@@ -22,7 +22,7 @@
   },
   "include": [
     "*.ts",
-    "../forest/registry/client/types"
+    "../standard/registry/client/types"
   ],
   "exclude": [
     "host",

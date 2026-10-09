@@ -4,8 +4,9 @@
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "lib": [
-      "es2022",
-      "dom"
+      "es2024",
+      "dom",
+      "dom.iterable"
     ],
     "types": [
       "node"
@@ -20,7 +21,8 @@
     "noEmit": true
   },
   "include": [
+    "src",
     "test",
-    "../forest/registry/client/types"
+    "../../standard/registry/client/types"
   ]
 }

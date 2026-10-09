@@ -6,9 +6,9 @@ import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:c
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { issuerSecret } from '../../forest/keys/src/issuer.ts'
-import { base58 } from '../../forest/records/src/bytes.ts'
-import { fromBytes32, toBytes32 } from '../../forest/registry/client/src/field.ts'
+import { issuerSecret } from '../../standard/keys/src/issuer.ts'
+import { base58 } from '../../standard/records/src/bytes.ts'
+import { fromBytes32, toBytes32 } from '../../standard/registry/client/src/field.ts'
 import type { Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
 import type { Payments } from '../src/payment.ts'

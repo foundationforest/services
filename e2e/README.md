@@ -19,9 +19,10 @@ Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md
 That a person's app, with forest's pieces alone, takes a new person from 24 words to a profile the
 index counts as one real person, rated and ID-checked, through these services as deployed: the
 issuer's two checks, a row through each of the fee payer's doors, records, a photo and messages on
-the host, an assistant acting through forest's CLI with access keys only, a payment through the
-escrow, reviews, and a rating proven on the device. The seller pays nothing; the buyer pays only in
-test dollars. Every step checks what it did, and the run passes only if every step does.
+the host, an assistant acting through the CLI ([`mcp/`](../mcp/README.md)) with access keys only,
+a payment through the escrow, reviews, and a rating proven on the device. The seller pays nothing;
+the buyer pays only in test dollars. Every step checks what it did, and the run passes only if every
+step does.
 
 ### The steps
 
@@ -46,7 +47,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    its assistant; the buyer's takes as many as come.
 6. **Keys for an assistant.** Each app makes its assistant's access keys at random and lists them in
    the profile's permissions record: the seller's a write key (offers and reviews), a message key
-   and the read key; the buyer's a write key. The assistants are forest's CLI, given the profile,
+   and the read key; the buyer's a write key. The assistants are the CLI (`mcp/`), given the profile,
    the host and those keys. The seller's posts an offer with a photo (`post-offer`), signed by the
    write key; the seller's app then puts the photo's bytes on the host, which takes them because the
    offer names them.
@@ -87,12 +88,13 @@ step passed.
 
 ### Run it
 
-Node 22.18 or later, with forest fetched at the commit in `FOREST`, and the reputation circuit's
+Node 22.18 or later, with standard fetched at the commit in `STANDARD`, and the reputation circuit's
 proving files (the person circuit's are in forest):
 
 ```sh
-./forest.sh keys records registry/client escrow/client circuits/reputation cli
-(cd forest/circuits/reputation && npm run fetch)
+./standard.sh keys records registry/client escrow/client circuits/reputation
+(cd mcp && npm ci)
+(cd standard/circuits/reputation && npm run fetch)
 cd e2e && npm ci
 FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
@@ -178,7 +180,7 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 - **One inbox rule and one photo.** It tests inboxes open to one issuer's rows, with and without
   one message from each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a
   profile's photo or a video.
-- **The CLI's actions, called in process; one host.** The assistants run forest's CLI actions as
+- **The CLI's actions, called in process; one host.** The assistants run the CLI's actions as
   its typed door runs them, not through `forest` itself or its MCP door. A host other than the
   foundation's, or a seller and buyer on different hosts, is not tested.
 - **One proof:** the seller's own rating in its own market, from one profile. It does not prove

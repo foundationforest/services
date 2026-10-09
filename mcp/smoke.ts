@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-import { ACTIONS, HOW, keyNeeded } from '../forest/cli/src/actions.ts'
-import { NO_KEY } from '../forest/cli/src/forest.ts'
+import { ACTIONS, HOW, keyNeeded } from './src/actions.ts'
+import { NO_KEY } from './src/forest.ts'
 
 type Result = { isError?: boolean; content: Array<{ type: string; text?: string }> }
 const text = (r: unknown) => (r as Result).content[0]?.text ?? ''
