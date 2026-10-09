@@ -60,7 +60,7 @@ import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, typ
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
-import { type Credit, type Service, DIRECTORY_PATH, amountOf, authorization, buy, finish, serviceOf } from '../standard/credits/src/index.ts'
+import { type Credit, type Service, DIRECTORY_PATH, amountOf, authorization, buy, creditList, finish, serviceOf } from '../standard/credits/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
@@ -347,18 +347,22 @@ async function faceNote(p: Person, issuer: Issuer) {
 }
 
 /**
- * Host credits into the person's folder's balance, one a request, as the app spends them (the host's
- * `/credits/spend`). Before, the host refuses the folder's card; `publishCard` checks that first.
+ * Every host credit of the gift into the person's folder's balance, up to 100 a request, as the app
+ * spends them (the host's `/credits/spend`, each list as forest's `creditList` writes it). Before, the
+ * host refuses the folder's card; `publishCard` checks that first.
  */
-async function fundFolder(p: Person, n: number): Promise<number> {
+async function fundFolder(p: Person): Promise<{ credits: number; requests: number }> {
   let credits = 0
-  for (const credit of p.credits!.host.splice(0, n)) {
-    const { status, body } = await post(`${cfg.host}/credits/spend`, { folder: p.profile.address }, { authorization: authorization(credit) })
-    assert.equal(status, 200, `the host takes the credit: ${JSON.stringify(body)}`)
+  let requests = 0
+  while (p.credits!.host.length) {
+    const some = p.credits!.host.splice(0, 100)
+    const { status, body } = await post(`${cfg.host}/credits/spend`, { folder: p.profile.address, credits: creditList(some) })
+    assert.equal(status, 200, `the host takes the credits: ${JSON.stringify(body)}`)
     credits = body.credits
+    requests++
   }
-  say(`${p.role}: ${n} host credits in its folder, which holds ${credits}`)
-  return credits
+  say(`${p.role}: its host credits in its folder in ${requests} requests; it holds ${credits}`)
+  return { credits, requests }
 }
 
 /**
@@ -443,11 +447,11 @@ async function publishCard(p: Person, readers: string[] = []) {
   // A folder holding no credits here: its hosts record is free, its card is refused.
   const [unpaid] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
   assert.deepEqual(unpaid!.results.map((r) => r.error ?? 'ok'), ['ok', 'policy'], `the host takes the hosts record free and refuses an unpaid card: ${JSON.stringify(unpaid)}`)
-  const funded = await fundFolder(p, 20)
+  const funded = await fundFolder(p)
   const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', card, now)])
   assert.ok(outcome!.results.every((r) => r.ok), `the host took the card: ${JSON.stringify(outcome)}`)
   say(`${p.role}: hosts record and card on the host, as ${p.profile.address}`)
-  hostSteps[p.role] = { unpaidCard: 'policy', spent: 20, balance: funded }
+  hostSteps[p.role] = { unpaidCard: 'policy', spent: funded.credits, requests: funded.requests }
   return card
 }
 type Card = Awaited<ReturnType<typeof publishCard>>

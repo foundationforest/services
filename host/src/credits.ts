@@ -3,7 +3,7 @@
 //
 //   GET  /.well-known/private-token-issuer-directory   its credit key and price
 //   POST /credits/buy                                   a paid buy's blind signatures
-//   POST /credits/spend     { folder }                  one credit, shown in Authorization, into the folder's balance
+//   POST /credits/spend     { folder, credits }         up to 100 credits, together, into the folder's balance
 //   GET  /credits/balance/<folder>                      { folder, credits }
 //
 // A write costs one credit a started megabyte (MiB) of it, one at the least: every record and every
@@ -11,9 +11,9 @@
 // balance (a message's, the sender's); bytes from the balance of a folder whose current records name
 // them. Forest's host never asks about a hosts or permissions record, so those are free.
 //
-// A spend lands when the folder's balance holds the credit: the balance and a mark for the credit go
-// in in one transaction, then the credit is spent. A start finds a credit held, after a stop between
-// the two, and settles it by that mark. What it keeps: the spent list (credit ids) and each
+// A spend lands when the folder's balance holds its credits: the balance and a mark for each credit
+// go in in one transaction, then the credits are spent. A start finds credits held, after a stop
+// between the two, and settles each by its mark. What it keeps: the spent list (credit ids) and each
 // folder's balance; nothing ties a credit to a folder. It logs nothing.
 
 import { mkdirSync } from 'node:fs'
@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { base58 } from '../../standard/records/src/index.ts'
-import { checkCredit, creditOf, referenceOf } from '../../standard/credits/src/index.ts'
+import { checkCredits, referenceOf } from '../../standard/credits/src/index.ts'
 import { type CreditKey, type Rpc, DIRECTORY_PATH, SpentList, amountOf, answer, countOf, directoryOf, paid } from '../../standard/credits/src/service.ts'
 
 export { DIRECTORY_PATH }
@@ -31,6 +31,8 @@ export const UNIT = 'one cent of writes'
 export const BUY_PATH = '/credits/buy'
 export const SPEND_PATH = '/credits/spend'
 export const BALANCE_PATH = '/credits/balance/'
+/** The most credits one spend may carry: a 500-credit gift fills a folder in five. */
+export const SPEND_MAX = 100
 
 const MIB = 1024 * 1024
 /** What a write of `bytes` costs: one credit a started megabyte, one at the least. */
@@ -110,38 +112,35 @@ export class Credits {
     return { status: 200, body: await answer(buy, this.#config.creditKey, this.#config.origin), type: 'application/private-token-generic-batch-response' }
   }
 
-  /** One credit, shown in `authorization`, into the balance of the folder `body` names. */
-  async spend(authorization: string | undefined, body: unknown): Promise<Answer> {
-    const folder = typeof body === 'object' && body !== null && Object.keys(body).length === 1 ? (body as { folder?: unknown }).folder : undefined
-    if (!isFolder(folder)) return refuse('bad_request')
-    let credit: Uint8Array
+  /** Credits, as `{ folder, credits }` lists them (forest's `creditList`), into that folder's balance: all of them, or none. */
+  async spend(body: unknown): Promise<Answer> {
+    const shown = typeof body === 'object' && body !== null && !Array.isArray(body) && Object.keys(body).sort().join() === 'credits,folder' ? (body as { folder: unknown; credits: unknown }) : undefined
+    if (!shown || !isFolder(shown.folder)) return refuse('bad_request')
+    const { folder, credits } = shown as { folder: string; credits: unknown }
+    if (!Array.isArray(credits) || credits.length < 1 || credits.length > SPEND_MAX) return refuse('bad_request', 400, `from 1 to ${SPEND_MAX} credits`)
+    let ids: string[]
     try {
-      credit = creditOf(authorization ?? '')
-    } catch {
-      return refuse('no_credit', 401)
-    }
-    let id: string
-    try {
-      id = await checkCredit(credit, { origin: this.#config.origin, keys: [this.#config.creditKey.published] })
-    } catch {
-      return refuse('credit', 402)
+      ids = await checkCredits(credits, { origin: this.#config.origin, keys: [this.#config.creditKey.published] }, SPEND_MAX)
+    } catch (error) {
+      // Forest's own words for what does not hold: no credit's bytes are in them.
+      return refuse('credit', 402, (error as Error).message)
     }
     // From here on, no wait: two requests with one credit cannot both get past the hold.
-    const held = this.spent.hold(id)
+    const held = this.spent.hold(ids)
     if (held === 'spent') return refuse('spent', 409)
     if (held === 'busy') return refuse('held', 409)
     this.#db.exec('BEGIN')
     try {
-      this.#db.prepare('INSERT INTO landing (id) VALUES (?)').run(id)
-      this.#db.prepare('INSERT INTO balances (folder, credits) VALUES (?, 1) ON CONFLICT (folder) DO UPDATE SET credits = credits + 1').run(folder)
+      for (const id of ids) this.#db.prepare('INSERT INTO landing (id) VALUES (?)').run(id)
+      this.#db.prepare('INSERT INTO balances (folder, credits) VALUES (?, ?) ON CONFLICT (folder) DO UPDATE SET credits = credits + excluded.credits').run(folder, ids.length)
       this.#db.exec('COMMIT')
     } catch (err) {
       this.#db.exec('ROLLBACK')
-      this.spent.free(id)
+      this.spent.free(ids)
       throw err
     }
-    this.spent.land(id)
-    this.#db.prepare('DELETE FROM landing WHERE id = ?').run(id)
+    this.spent.land(ids)
+    for (const id of ids) this.#db.prepare('DELETE FROM landing WHERE id = ?').run(id)
     return { status: 200, body: { folder, credits: this.balance(folder) } }
   }
 

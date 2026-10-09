@@ -49,8 +49,8 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
    shows tier 1 against it.
 5. **Cards.** Each app sends the profile's hosts record and card to the host, which takes the hosts
-   record free and refuses the card (`policy`): the folder holds no credits there. The app spends 20
-   host credits into the folder's balance and sends the card again. The card has its inbox key and
+   record free and refuses the card (`policy`): the folder holds no credits there. The app spends the
+   gift's host credits into the folder's balance, 100 a request, and sends the card again. The card has its inbox key and
    an inbox for senders holding a row from the issuer, named by its key. The seller's takes
    one message from each sender, and lists among its readers a read key its app made at random for
    its assistant; the buyer's takes as many as come.

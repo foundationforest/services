@@ -64,13 +64,14 @@ in `src/credits.ts`:
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its credit key, where a buy goes, and its `forest-credit` entry: the unit, the address a credit is paid to, the token and one credit's price |
 | `POST /credits/buy` | A buy's bytes; once a finalized payment names the buy's reference and pays for every credit, its blind signatures, the same each time. Refused: `not_a_buy`, `too_many` (over `CREDITS_PER_BUY`), `not_paid` (402, with what to pay), `payment_check_unavailable` (503, the RPC did not answer, or there is none) |
-| `POST /credits/spend` | `{ folder }`, with one credit in `Authorization: PrivateToken token="<credit>"`: the credit goes into that folder's balance, and the answer is `{ folder, credits }`. Refused: `bad_request`, `no_credit` (401), `credit` (402: not this host's, checked with standard's `checkCredit`), `spent` or `held` (409) |
+| `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, as standard's `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice, checked with standard's `checkCredits`), `spent` or `held` (409: one is spent, or held by another request) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }` |
 
-**A folder's balance** is a count of credits. Anyone holding a credit can add it to any folder; only
-that folder's writes draw from it. A spend lands when the balance holds the credit: the balance and
-a mark for the credit are written in one transaction, then the credit is spent. A start settles a
-credit a stop left held by that mark.
+**A folder's balance** is a count of credits. Anyone holding credits can add them to any folder;
+only that folder's writes draw from it. A spend lands when the balance holds its credits: the
+balance and a mark for each credit are written in one transaction, then the credits are spent. A
+start settles each credit a stop left held by its mark. A 500-credit gift fills a folder in five
+spends.
 
 **What a write costs:** one credit a started megabyte (1,048,576 bytes) of it, one at the least. A
 record is paid from its own folder's balance, a message from its sender's, and bytes from the first
@@ -134,7 +135,8 @@ The test checks:
   on loopback, or redirects.
 - Credits: the directory; a buy refused unpaid, over the most a buy may hold, with no RPC, or not a
   buy; collected twice, the same answer; finished with standard's client, and spent into a folder,
-  once, with every refusal; the balance; a page's preflight.
+  one or several in a request, each once, with every refusal, none taken when one is refused; the
+  balance; a page's preflight.
 - What writes cost: a hosts and a permissions record taken with nothing in the balance; a record
   one credit, refused without it, nothing for one already here; bytes of a megabyte and one, two
   credits, refused short, taken once paid, nothing again; bytes two folders name, through the one
@@ -166,7 +168,7 @@ The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)
 
 ## Policy
 
-Every number here is set in `src/host.ts` (`POLICY`, `SENDER_READ_MS`), `src/credits.ts` (`priceOf`) or by a setting,
+Every number here is set in `src/host.ts` (`POLICY`, `SENDER_READ_MS`), `src/credits.ts` (`priceOf`, `SPEND_MAX`) or by a setting,
 so moving the forest pin cannot change it without a pull request here; two are forest's defaults,
 not set here: the largest record or message, and the blob types.
 
@@ -179,8 +181,8 @@ not set here: the largest record or message, and the blob types.
   folder's balance here: a record's own folder, a message's sender, bytes any folder that names
   them.
 - **One credit is one cent:** **0.01** of the classic test dollar on devnet, a placeholder, paid to
-  the devnet `host` key's address. At most **1,000** credits a buy. A payment counts once it is
-  finalized.
+  the devnet `host` key's address. At most **1,000** credits a buy, and **100** a spend (`SPEND_MAX`).
+  A payment counts once it is finalized.
 - **No monthly fee and no free tier.** A write that is current stays; reads are free.
 - **Inboxes:** it takes a message for any profile whose card here declares an inbox, under each of
   forest's rules: anyone, one issuer's rows (through the registry lookup; without an RPC, refused as
@@ -206,8 +208,9 @@ not set here: the largest record or message, and the blob types.
 
 - **Forest's host, unchanged.** The front adds the line at `/` and the credit routes, and nothing
   else.
-- **No accounts.** Nobody signs up or logs in: a record's signature is its only credential, and a
-  pull's is the profile's main key's or a message key's.
+- **No sign-ups:** a folder's balance is just a number next to its address. Nobody logs in: a
+  record's signature is its only credential, and a pull's is the profile's main key's or a message
+  key's.
 - **No address logs.** Neither forest's host nor the front logs a request or keeps an address. On
   Railway, Railway's own request logs exist.
 
@@ -252,9 +255,9 @@ Forest's host is the reference for what a host does. A host written here could d
 the e2e run would test the wrong thing.
 
 **Why a balance per folder, and not a credit shown on each write?**
-A write can cost more than one credit, and standard shows one credit a request. Forest's host also
-takes records and messages in batches, and an app rewrites its vault often. A balance takes a
-credit once, through one route, and every write after draws from it.
+A write can cost more than one credit, and an app should not have to show credits on every write.
+Forest's host also takes records and messages in batches, and an app rewrites its vault often. A
+balance takes credits once, through one route, and every write after draws from it.
 
 **Can I run it at home?**
 Yes: the same program on your own machine works the moment it is reachable with an address and

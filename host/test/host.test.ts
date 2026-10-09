@@ -29,7 +29,7 @@ import { message, openMessage } from '../../standard/records/src/private.ts'
 import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
-import { type Credit, authorization, buy, creditId, finish, serviceOf } from '../../standard/credits/src/index.ts'
+import { type Credit, buy, creditId, creditList, finish, serviceOf } from '../../standard/credits/src/index.ts'
 import type { Rpc } from '../../standard/credits/src/service.ts'
 
 import { BALANCE_PATH, BUY_PATH, DIRECTORY_PATH, SPEND_PATH, UNIT, priceOf } from '../src/credits.ts'
@@ -59,15 +59,15 @@ async function creditsFrom(h: RunningHost, n: number): Promise<Credit[]> {
   return finish(b.pending, new Uint8Array(await res.arrayBuffer()))
 }
 
-/** One credit spent into `folder`'s balance: the status and what the host answered. */
-async function spend(h: RunningHost, folder: unknown, credit?: Credit, header = credit && authorization(credit)) {
-  const res = await fetch(`${h.url}${SPEND_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(header && { authorization: header }) }, body: JSON.stringify({ folder }) })
-  return { status: res.status, body: (await res.json()) as { error?: string; folder?: string; credits?: number } }
+/** Credits spent into `folder`'s balance, in one request, as the app sends them: the status and what the host answered. */
+async function spend(h: RunningHost, folder: unknown, credits: Credit[], body: unknown = { folder, credits: creditList(credits) }) {
+  const res = await fetch(`${h.url}${SPEND_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  return { status: res.status, body: (await res.json()) as { error?: string; detail?: string; folder?: string; credits?: number } }
 }
 
-/** `n` credits into each folder's balance at `h`. */
+/** `n` credits into each folder's balance at `h`, one request a folder. */
 async function fund(h: RunningHost, folders: string[], n = 5) {
-  for (const folder of folders) for (const credit of await creditsFrom(h, n)) assert.equal((await spend(h, folder, credit)).status, 200)
+  for (const folder of folders) assert.equal((await spend(h, folder, await creditsFrom(h, n))).status, 200)
 }
 
 /** An issuer's key, as a row holds it, and as an inbox names it: 128 hex. */
@@ -454,23 +454,29 @@ test('credits: the directory, a buy collected only once paid, and spent into a f
   const answered = new Uint8Array(await first.arrayBuffer())
   const again = new Uint8Array(await (await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer> })).arrayBuffer())
   assert.deepEqual(again, answered, 'the same buy, the same answer')
-  const [a, b] = await finish(owed.pending, answered)
+  const [a, b, c] = await finish(owed.pending, answered)
 
   const folder = (await mainKey(randomBytes(32), 'tutoring/seller')).address
-  assert.deepEqual(await spend(host, folder, a), { status: 200, body: { folder, credits: 1 } })
-  assert.deepEqual(await spend(host, folder, a), { status: 409, body: { error: 'spent' } }, 'a credit is spent once')
-  assert.deepEqual((await spend(host, 'not a folder', b)).body, { error: 'bad_request' })
-  assert.deepEqual(await spend(host, folder), { status: 401, body: { error: 'no_credit' } })
-  // The same credit with one byte of its signature changed: read as a credit, checked, refused.
+  assert.deepEqual(await spend(host, folder, [a!]), { status: 200, body: { folder, credits: 1 } })
+  assert.deepEqual(await spend(host, folder, [a!]), { status: 409, body: { error: 'spent' } }, 'a credit is spent once')
+  assert.deepEqual(await spend(host, folder, [b!, c!, a!]), { status: 409, body: { error: 'spent' } }, 'one spent among several: none of them taken')
+  assert.equal(host.credits.balance(folder), 1)
+  assert.deepEqual((await spend(host, 'not a folder', [b!])).body, { error: 'bad_request' })
+  assert.deepEqual((await spend(host, folder, [], { folder })).body, { error: 'bad_request' }, 'no list')
+  assert.deepEqual((await spend(host, folder, [])).body, { error: 'bad_request', detail: 'from 1 to 100 credits' })
+  assert.deepEqual((await spend(host, folder, Array(101).fill(b!))).body, { error: 'bad_request', detail: 'from 1 to 100 credits' })
+  assert.deepEqual(await spend(host, folder, [b!, b!]), { status: 402, body: { error: 'credit', detail: 'the same credit twice' } })
+  // The same credit with one byte of its signature changed: read as a credit, checked, refused, and the good one beside it with it.
   const bytes = Buffer.from(b!.credit, 'base64url')
   bytes[bytes.length - 1]! ^= 1
   const forged = { ...b!, credit: bytes.toString('base64url') }
-  assert.deepEqual(await spend(host, folder, forged), { status: 402, body: { error: 'credit' } })
-  assert.deepEqual(await spend(host, folder, b), { status: 200, body: { folder, credits: 2 } }, 'the credit refused for its folder, then spent')
-  assert.deepEqual(await (await fetch(`${host.url}${BALANCE_PATH}${folder}`)).json(), { folder, credits: 2 })
+  const refused = await spend(host, folder, [c!, forged])
+  assert.deepEqual([refused.status, refused.body.error], [402, 'credit'])
+  assert.deepEqual(await spend(host, folder, [b!, c!]), { status: 200, body: { folder, credits: 3 } }, 'two together, the refusals having taken none')
+  assert.deepEqual(await (await fetch(`${host.url}${BALANCE_PATH}${folder}`)).json(), { folder, credits: 3 })
   assert.equal((await fetch(`${host.url}${BALANCE_PATH}nope`)).status, 400)
   const preflight = await fetch(`${host.url}${SPEND_PATH}`, { method: 'OPTIONS' })
-  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type, authorization', 'a page may show a credit')
+  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type', 'a page may post credits')
 })
 
 /** Bytes, and their name as a record gives it. */
@@ -555,8 +561,8 @@ test('a spend that stopped between holding a credit and spending it settles on t
   h = await start()
   try {
     assert.deepEqual(h.credits.spent.holds(), [], 'nothing held after the start')
-    assert.deepEqual((await spend(h, folder, kept)).body, { error: 'spent' }, 'the one its folder took is spent')
-    assert.deepEqual((await spend(h, folder, lost)).body, { folder, credits: 2 }, 'the other is free to show again')
+    assert.deepEqual((await spend(h, folder, [kept!])).body, { error: 'spent' }, 'the one its folder took is spent')
+    assert.deepEqual((await spend(h, folder, [lost!])).body, { folder, credits: 2 }, 'the other is free to show again')
   } finally {
     await h.close()
   }

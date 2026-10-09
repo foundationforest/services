@@ -330,7 +330,7 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
   if (req.method === 'OPTIONS') {
     req.resume()
-    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400' }).end()
+    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }).end()
     return true
   }
   if (req.method === 'GET' && path === DIRECTORY_PATH) {
@@ -358,7 +358,7 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
       } catch {
         body = undefined
       }
-      send(res, await credits.spend(req.headers.authorization, body))
+      send(res, await credits.spend(body))
     })
     .catch(() => {
       if (!res.headersSent) res.writeHead(500, CORS)
