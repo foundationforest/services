@@ -1,5 +1,5 @@
 # The fee payer's at-cost Kora: Kora 2.0.5 (the version in KORA), configured. Nothing custom inside
-# it. Every request to the fee payer's address but `/vouchers` reaches it unchanged (registry/src/).
+# it, and nothing of ours in front of it: every request to the fee payer's address reaches it.
 #
 # It co-signs a person's transaction as its payer and charges, in the token they pay in, what that
 # transaction costs it: the network fee plus every storage deposit it puts down, including the ones

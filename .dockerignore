@@ -4,3 +4,4 @@ standard/
 **/node_modules
 issuer/models
 issuer/test/faces
+fee-payer/registry/data

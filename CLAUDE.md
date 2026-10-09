@@ -13,8 +13,8 @@ programs only). Plain words, no em-dashes.
 - issuer, never keeper; access key, never writer key; fee payer, never relayer or sponsor; main
   key, never profile key; address, never wallet, for a key ("a wallet app" is fine).
 - The foundation runs every service here, never Soil; the app is the Forest app.
-- The fee payer has two doors: the voucher door (free, with a voucher) and the at-cost door; behind
-  them, the free Kora and the at-cost Kora. A voucher's label is `voucher/<fee payer's name>/<n>`.
+- The registry payer pays for registry rows, one per credit; the fee payer pays for anything else,
+  at cost. Each has its own Kora and its own key: the registry payer's Kora and the at-cost Kora.
 - A token's issuer is "the dollar's maker".
 - A folder is what one main key signs on a host; this repo's folders are directories.
 - Never "replace every app".

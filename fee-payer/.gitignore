@@ -1,5 +1,5 @@
 # Kora's binary, installed by build.sh
 .kora/
 node_modules/
-# The voucher check's used set (DATABASE_PATH defaults to ./data/vouchers.sqlite)
+# The registry payer's spent list (DATABASE_PATH defaults to ./data/credits.sqlite)
 registry/data/

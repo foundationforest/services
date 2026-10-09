@@ -1,9 +1,9 @@
-# The fee payer's free Kora: Kora 2.0.5 (the version in KORA), configured. Nothing custom inside it.
+# The registry payer's Kora: Kora 2.0.5 (the version in KORA), configured. Nothing custom inside it.
 #
 # It pays for a person's registry row and charges nothing: the network fee and the row's deposit,
-# which the registry program creates inside its own call. Nobody reaches it but the voucher check in
-# front of it (registry/src/), which lets through only one `register` and only against a voucher it has
-# not seen before; this file is what Kora itself still refuses after that.
+# which the registry program creates inside its own call. Nobody reaches it but the front before it
+# (registry/src/), which lets through only one `register` and only against a credit it holds for that
+# row; this file is what Kora itself still refuses after that.
 #
 # It allows one Forest program, the registry, at its devnet address (standard/registry/devnet/
 # devnet.json), and System, which the registry calls to create the row. deploy/devnet-config.sh
@@ -12,8 +12,8 @@
 
 [kora]
 # Requests per second, across all callers (Kora's own global limiter). It holds a request over the
-# limit until the next second rather than refusing it, so a voucher the voucher check has spent is
-# never lost to the limit.
+# limit until the next second rather than refusing it, so a row the front lets through is never
+# refused for the limit.
 rate_limit = 1
 
 [validation]
