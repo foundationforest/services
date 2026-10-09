@@ -394,8 +394,8 @@ async function throughRegistryPayer(p: Person, register: TransactionInstruction,
 
 /**
  * A row at the registry, from a person proof made on the device from the note. Read back: it names
- * the profile, the issuer's key, the fee payer as payer, and when the program wrote it; and the
- * proof shows tier 1 against it, as a reader checks a tier a profile shows.
+ * the profile, the issuer's key, the key that paid for it as payer, and when the program wrote it;
+ * and the proof shows tier 1 against it, as a reader checks a tier a profile shows.
  */
 async function register(p: Person, token: escrow.Token, path: 'credit' | 'paid') {
   // The payer each names: the registry payer's key, or the fee payer's.

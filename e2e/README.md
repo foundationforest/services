@@ -120,25 +120,33 @@ registry payer and the host in `devnet.json`, in the classic test dollar.
 
 ### The latest run
 
-2026-10-09, 16:48 to 16:51 UTC, against the five services as deployed from `main` at `3826377`
-(standard at `f067dbf`), after the CLI moved to `mcp/` and the fee payer split into `registry/` and
-`at-cost/`: **passed** in 154 seconds, most of it waiting out the host's cache time. Its record is
-[`runs/2026-10-09T16-48-54-345Z.json`](runs/2026-10-09T16-48-54-345Z.json).
+2026-10-09, 21:25 to 21:32 UTC, against the six services as deployed from `main` at `7dd4798`
+(standard at `97414c8`), after credits came in: **passed** in 441 seconds, most of it waiting for
+the two gift payments to finalize, about two minutes each, and for the host's cache time. Its
+record is [`runs/2026-10-09T21-25-34-141Z.json`](runs/2026-10-09T21-25-34-141Z.json).
 
-- **People:** seller `AoKYtfz4VjSKJnhuaqah94Vx3ykgMrbEy19CojzWVAMq`, buyer
-  `4qRGeNro6AtpMeDMKo5EhPzRGazMPfQD27ZStdnjWUVY`, each with its secret for
-  `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json`.
-- **Notes:** a tier 1 note each from the face check, model `stand-in`, signed by the issuer's key
-  `2185f564…`.
-- **Rows:** `tutoring/seller` through the voucher door with the voucher
-  `voucher/fee-payer.devnet.forest.foundation/1`, 619 bytes, charged nothing; `tutoring/buyer`
-  through the at-cost door, 763 bytes, charged 1.64576 test dollars. Each read back at the registry
-  `J4ES…` naming its profile, the issuer's key and the fee payer, and each proof showed tier 1. The
-  seller held no SOL and paid no dollar.
-- **Keys:** the seller's app made a write key `CbqKutQA…`, a message key `2zshCvVC…` and the read
-  key; the buyer's app a write key `4jv4efnS…`.
+- **People:** seller `AxhrC6KVhsFtcJAgHvfpeP15Sbk5hKTt1NZQBwkMXJcd`, buyer
+  `5rdki3G3rYzfuouMgqQQ9pkPbm2LA1A5THoKxokfMvps`, each with its secret for
+  `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` and a gift
+  of 3 registry payer credits and 500 host credits.
+- **Setup:** the issuer's `credits` key `AWnaPY…` got 13.00 test dollars, what the two gifts cost,
+  and its SOL topped up to 0.05.
+- **Notes and gifts:** a tier 1 note each from the face check, model `stand-in`, signed by the
+  issuer's key `2185f564…`. With each note, the issuer paid both of that person's buys in one
+  transaction (the seller's `emgJ4FC5…`, the buyer's `5TCergvj…`); each app then collected and
+  finished its 3 and 500 credits.
+- **Rows:** `tutoring/seller` through the registry payer with one credit, 619 bytes, charged
+  nothing; the same credit shown again was refused as `spent` once the row landed. The seller held
+  no SOL and paid no dollar. `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test
+  dollars. Each read back at the registry `J4ES…` naming its profile, the issuer's key and the key
+  that paid for it, and each proof showed tier 1.
+- **The host:** each folder's card was refused (`policy`) while it held no credits; then each app
+  spent its 500 host credits into its folder in 5 requests. At the end the seller's folder held 491
+  and the buyer's 497: every write here cost one credit.
+- **Keys:** the seller's app made a write key `HYNJScan…`, a message key `Fvr3xYzZ…` and the read
+  key; the buyer's app a write key `HJbVVdqN…`.
 - **Records:** the offer `offer/maths`, posted through the CLI and signed by the write key, and its
-  photo, 79 bytes, taken by the host's photo rule; two reviews, one by each assistant.
+  photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, encrypted to the seller's inbox key and the
   read key, taken; a second refused (`once`); the seller pulled and opened it.
 - **The assistant:** `inbox` pulled and opened the message; `send` replied, 2,681 bytes, taken by
@@ -148,25 +156,25 @@ registry payer and the host in `devnet.json`, in the classic test dollar.
   (`{ key, was: "message" }`) and deleted the read key; the CLI refused `send` ("this key is past")
   and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and
   71 seconds later a message it signed (`permission`).
-- **The deal:** escrow `C2jfyZZVwkT1fCXfGSHF9ZfN7rz8gvNgHAV8bgephnUv`, its address its terms', one
+- **The deal:** escrow `6F7ivLeCwjcJFktsRo1hx6gcSax9N9dV95bQvkoDVGdq`, its address its terms', one
   tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…`.
 - **The index:** both rows counted under "Forest issuer (devnet)", weight 0.7; the offer with its
   photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews counted
   (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Each rated 10.
-- **The proof:** the seller's leaf found by its stamp `095c6b35…` among 10 leaves, 100 tenths from
-  one review; proven against root `0f98725a…`, signed by "Forest index (devnet)" (`8117HhEb…`), and
+- **The proof:** the seller's leaf found by its stamp `2fa098ab…` among 7 leaves, 100 tenths from
+  one review; proven against root `183b69ff…`, signed by "Forest index (devnet)" (`8117HhEb…`), and
   put on its card. The page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
 - **The ID check:** the seller's note signed again at tier 2, the same note number, embedding and
-  model; its tier proven at its row's stamp and held against the row `7zoHedPW…` (`verifyTier`),
+  model; its tier proven at its row's stamp and held against the row `4zkBGFHU…` (`verifyTier`),
   and put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight
   0.9, uniqueness 0.9; the page says "Verified real person, one per market · ID-checked", and the
   rating's proof still shows.
 
 Open them: [the seller][s], [the buyer][b], [the deal][d].
 
-[s]: https://index.devnet.forest.foundation/profiles/AoKYtfz4VjSKJnhuaqah94Vx3ykgMrbEy19CojzWVAMq
-[b]: https://index.devnet.forest.foundation/profiles/4qRGeNro6AtpMeDMKo5EhPzRGazMPfQD27ZStdnjWUVY
-[d]: https://index.devnet.forest.foundation/deals/C2jfyZZVwkT1fCXfGSHF9ZfN7rz8gvNgHAV8bgephnUv
+[s]: https://index.devnet.forest.foundation/profiles/AxhrC6KVhsFtcJAgHvfpeP15Sbk5hKTt1NZQBwkMXJcd
+[b]: https://index.devnet.forest.foundation/profiles/5rdki3G3rYzfuouMgqQQ9pkPbm2LA1A5THoKxokfMvps
+[d]: https://index.devnet.forest.foundation/deals/6F7ivLeCwjcJFktsRo1hx6gcSax9N9dV95bQvkoDVGdq
 
 ## Promises
 

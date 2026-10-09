@@ -137,7 +137,7 @@ on this repo's `main` and redeployed on every push to it; each directory's READM
 settings and its volume. Railway's service ids: `issuer`
 `9a9538d9-1a79-4860-9705-c85b8b538306`, `fee payer` `05e3d61b-7052-45cf-98f0-8928628425b7`, `host`
 `6bc0708f-1171-4c93-a47e-56e5bcd82685`, `index` `37f23042-b2a0-4ff0-90c6-e0521fc811d2`, `mcp`
-`34faba28-5014-491e-aa81-f4c3d1b84e98`.
+`34faba28-5014-491e-aa81-f4c3d1b84e98`, `registry payer` `bcca22db-92e4-41b2-ae04-f673d93c7a0b`.
 
 | On devnet | Address |
 |---|---|
