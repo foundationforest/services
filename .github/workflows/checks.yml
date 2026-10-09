@@ -51,7 +51,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client records keys
+          ./standard.sh registry/client records keys credits
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer

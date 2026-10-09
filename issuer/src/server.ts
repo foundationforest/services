@@ -2,9 +2,12 @@
 // sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
 // client's address).
 //
-//   GET  /issuer.json   {"key":"<128 hex>","name":"<the issuer's name>","v":1}   who this issuer is
+//   GET  /issuer.json   {"key":"<128 hex>","name":"<the issuer's name>","v":1}   who this issuer is,
+//                       and, with a welcome gift, {"gift":{"<role>":{"credits":n,"origin":"<url>"}}}
 //   POST /session       {}                       -> 201 {sessionId, url}   a face check (stage 1)
 //   POST /note          {sessionId, noteNumber}  -> 200 {note}             a tier 1 note
+//                       with a gift, also {gift: {"<role>": "<pay link>"}}
+//                                                -> 200 {note, gift: {signature} or {error}}
 //   POST /id/session    {} or {payment}          -> 201 {sessionId, url}   a document check (stage 2),
 //                                                   or 402 with a payment to make first
 //   POST /id/note       {sessionId, note}        -> 200 {note}             the same note at tier 2
@@ -27,6 +30,7 @@ import { type FaceCheck, type Tier, judge } from './didit.ts'
 import { type Embedder, FACE_MATCH, FaceError, similarity } from './face.ts'
 import type { RateLimit } from './limit.ts'
 import { TIER, decimal, fingerprint, issuerHex, noteFromJson, noteToJson } from './notes.ts'
+import { type Directory, type Gift, type Payer, partsOf } from './gift.ts'
 import type { Payments, Price } from './payment.ts'
 import type { Store } from './store.ts'
 
@@ -103,6 +107,13 @@ export type CheckDeps = {
   workflowId: string
 }
 
+/** The welcome gift, when there is one: its services, and how it reads them and pays. */
+export type GiftDeps = {
+  gift: Gift
+  directory: Directory
+  payer: Payer
+}
+
 /** The document check's price, when it has one, and how a payment is found. */
 export type PaymentDeps = {
   price: Price
@@ -124,6 +135,8 @@ export type IssuerDeps = {
   about: string
   /** Unset: the document check is free. */
   payment?: PaymentDeps
+  /** Unset: no welcome gift. */
+  gift?: GiftDeps
   /** How often one address may open a session, on either check. */
   limit: RateLimit
   /** The header a proxy puts the client's address in; unset, the connection's own address. */
@@ -190,14 +203,40 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     if (outcome !== 'ok') throw new HttpError(403, outcome)
   }
 
-  const sign = (note: Omit<SignedNote, 'issuer' | 'signature'>) => [200, { note: noteToJson(signNote(deps.noteKey.privateKey, note)) }] as [number, unknown]
+  const sign = (note: Omit<SignedNote, 'issuer' | 'signature'>) => [200, { note: noteToJson(signNote(deps.noteKey.privateKey, note)) }] as [number, Record<string, unknown>]
+
+  /**
+   * The welcome gift for this note number, once: the app's links checked, the gift marked given,
+   * then paid. If it is not paid, the mark comes off, so the note asked for again pays it. Its
+   * outcome rides with the note, which never waits on it: `{signature}`, or `{error}`: `bad_gift`,
+   * `given` (paid before: the app collects the buys it sent then), or `gift_unavailable`.
+   */
+  async function giveGift(noteNumber: bigint, links: Record<string, unknown>): Promise<Record<string, string>> {
+    const parts = await partsOf(deps.gift!.gift, links, deps.gift!.directory)
+    if (typeof parts === 'string') return { error: parts }
+    if (!store.giveGift(noteNumber)) return { error: 'given' }
+    let signature: string | null
+    try {
+      signature = await deps.gift!.payer.pay(parts)
+    } catch {
+      signature = null
+    }
+    if (!signature) {
+      store.ungiveGift(noteNumber)
+      return { error: 'gift_unavailable' }
+    }
+    return { signature }
+  }
 
   /**
    * Stage 1: a tier 1 note for this note number, from a face check that passed. A face Didit's
    * search found in an earlier session is signed again only for the note number that session gave.
    */
   async function faceNote(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const input = fields(body, { sessionId: 'string', noteNumber: 'string' })
+    const { gift: links, ...rest } = body
+    const asked = deps.gift && 'gift' in body
+    if (asked && (typeof links !== 'object' || links === null || Array.isArray(links))) throw new HttpError(400, 'bad_gift')
+    const input = fields(asked ? rest : body, { sessionId: 'string', noteNumber: 'string' })
     const sessionId = sessionIdFrom(input.sessionId)
     const noteNumber = decimal(input.noteNumber)
     if (!noteNumber) throw new HttpError(400, 'bad_note_number')
@@ -210,7 +249,9 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     // Checked again, for good, inside one transaction: another session with this face may have given
     // a note while this one waited for Didit.
     kept(store.remember({ sessionId, noteNumber, earlier }))
-    return sign({ noteNumber, embedding: embedded, model: embedder.model, tier: TIER.face })
+    const signed = sign({ noteNumber, embedding: embedded, model: embedder.model, tier: TIER.face })
+    if (asked) signed[1].gift = await giveGift(noteNumber, links as Record<string, unknown>)
+    return signed
   }
 
   /**

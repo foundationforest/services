@@ -11,6 +11,7 @@ import { base58 } from '../../standard/records/src/bytes.ts'
 import { fromBytes32, toBytes32 } from '../../standard/registry/client/src/field.ts'
 import type { Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
+import type { Part, Payer } from '../src/gift.ts'
 import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
@@ -85,6 +86,18 @@ export class FakePayments implements Payments {
   }
 }
 
+/** The gift's payer, as far as the issuer sees it: what it was asked to pay, and, with `fail`, nothing paid. */
+export class FakePayer implements Payer {
+  readonly paid: Part[][] = []
+  fail = false
+
+  async pay(parts: Part[]) {
+    if (this.fail) return null
+    this.paid.push(parts)
+    return randomSignature()
+  }
+}
+
 /** A transaction signature's shape: 64 random bytes in base58. */
 export const randomSignature = () => base58.encode(randomBytes(64))
 
@@ -155,16 +168,18 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY) WITHOUT ROWID',
   'CREATE TABLE id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used. */
-export type Expected = { sessions: [string, bigint][]; fingerprints: [number, bigint][]; payments?: string[]; never: string[] }
+/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used; the note numbers given a gift. */
+export type Expected = { sessions: [string, bigint][]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
- * The file holds three tables and nothing else: each session that gave a note as the hash of its id,
- * next to its note number; each document's fingerprint next to its note number; the payments used.
+ * The file holds four tables and nothing else: each session that gave a note as the hash of its id,
+ * next to its note number; each document's fingerprint next to its note number; the payments used;
+ * the note numbers whose gift was paid.
  * None of `never` (names, birth dates, embeddings, session ids) is anywhere in its bytes, and no
  * journal is left beside it.
  */
@@ -177,7 +192,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'three tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'four tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, note_number FROM sessions')
       .all()
@@ -197,6 +212,12 @@ export function assertKept(path: string, expected: Expected): void {
       .map((row) => base58.encode(row.signature as Uint8Array))
       .sort()
     assert.deepEqual(payments, [...(expected.payments ?? [])].sort(), 'the payments used, and nothing beside them')
+    const gifts = db
+      .prepare('SELECT note_number FROM gifts')
+      .all()
+      .map((r) => fromBytes32(r.note_number as Uint8Array))
+      .sort()
+    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and nothing of the gift')
   } finally {
     db.close()
   }
