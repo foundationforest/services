@@ -4,14 +4,17 @@
 // followed, and nothing is looked up by profile.
 //
 // Every record a host serves is checked by forest's reader (`readPage`: its canonical text and its
-// signature); one that fails is dropped and reported. Every record that checks is kept, as its
-// canonical text, per host, in the order taken (`host_records`), and a cursor per host, kept in
-// Postgres, says where to resume.
+// signature); one that fails is dropped and reported. Every record that checks is taken in, as its
+// canonical text, per host (`host_records`), and a cursor per host, kept in Postgres, says where to
+// resume.
 //
 // After each read, each profile that changed is viewed with forest's own `viewProfile`, which
 // applies the access rule (an access key's record counts while the permissions record lists the key
 // with scope write, or was write, its paths covering the record's; no date is checked; the owner
-// wins), and what the view holds now replaces what the index held for it (store.ts). Only a profile holding a counted row is stored; any other's records wait in
+// wins), and what the view holds now replaces what the index held for it (store.ts). Only the
+// view's current records stay in `host_records`, with those dated ahead: a replaced version, and a
+// record no key lets count, are dropped. A delete stays as its path's current version, holding no
+// content. Only a profile holding a counted row is stored; any other's current records wait in
 // `host_records`, so the day its row is read it is stored with nothing to read again.
 //
 // Then the pictures stored records name are asked for on the hosts that served them (blobs.ts).
@@ -179,6 +182,10 @@ export class HostReader {
       const { rows } = await this.db.query('select id, text from host_records where profile = $1', [profile])
       const records: Checked[] = rows.map((r) => ({ id: r.id as string, record: JSON.parse(r.text as string) as SignedRecord }))
       const view = viewProfile(profile, records, now)
+      // Only what the view holds now is kept: a replaced version, and a record no key lets count, go.
+      // A delete stays as its path's current version, so an older copy from another host stays out.
+      const gone = [...view.ignored].filter(([, why]) => why !== 'future').map(([id]) => id)
+      if (gone.length) await this.db.query('delete from host_records where profile = $1 and id = any($2)', [profile, gone])
       const ahead = records.map((c) => c.record.time).filter((t) => t > now + MAX_FUTURE_MS)
       if (ahead.length) this.due.set(profile, Math.min(...ahead) - MAX_FUTURE_MS)
       else this.due.delete(profile)

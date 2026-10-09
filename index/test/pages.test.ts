@@ -31,16 +31,19 @@ import { test } from 'node:test'
 
 import pg from 'pg'
 
+import { type SignedRecord, accessRecord, hostsRecord, ownerRecord, permissionsRecord, recordId, unsignedOf } from '../../standard/records/src/index.ts'
+
 import { countedProfiles } from '../src/chain/registry.ts'
 import { readIssuers } from '../src/config.ts'
 import { createPool, migrate } from '../src/db.ts'
+import { takeIn } from '../src/records/hosts.ts'
 import { startWeb } from '../src/main.ts'
 import { loadInputs } from '../src/scores/run.ts'
 import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
 import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
-import { BUYER, CLIP, DEAL, EXCHANGE, FOLDER, HOST, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, NO_PHOTO, OFFERS, PEER, PHOTO, SELLER, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
+import { ACCESS, BUYER, CLIP, DEAL, EXCHANGE, FOLDER, HOST, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, NO_PHOTO, OFFERS, PEER, PHOTO, SELLER, USDC, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -446,8 +449,9 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // A private record at an offer's path: its readers open it, the index never stores it.
       assert.equal(uris.includes(`${ana.address}/offer/private`), false)
       assert.equal((await fixture.db.query("select count(*)::int as n from offers where uri like '%/offer/private'")).rows[0].n, 0)
-      // Every record is kept as the host served it, the ones that do not count too.
-      assert.equal((await fixture.db.query('select count(*)::int as n from host_records where profile = $1 and host = $2', [ana.address, HOST])).rows[0].n, 9)
+      // Only her current records are kept: the message key's offer, which counts for nothing, is not.
+      const kept = (await fixture.db.query('select path from host_records where profile = $1 and host = $2 order by path', [ana.address, HOST])).rows.map((r) => r.path)
+      assert.deepEqual(kept, ['hosts', 'offer/french', 'offer/portuguese', 'offer/private', 'offer/spanish', 'permissions', 'profile', 'review/ben'])
     })
 
     await t.test('11. pictures: from a host that holds them, with the type the record names', async () => {
@@ -554,6 +558,58 @@ test('the foundation’s host under its new name keeps its cursor, records and p
     // pg's pool resolves end() before its sockets have closed; dropping the database under a closing
     // connection makes it report an error nobody is listening for. Wait for them to go, as the
     // fixture does.
+    await db.end()
+    for (let i = 0; i < 100; i++) {
+      const { rows } = await admin.query('select count(*)::int as n from pg_stat_activity where datname = $1', [name])
+      if (rows[0].n === 0) break
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    await admin.query(`drop database if exists ${name} with (force)`)
+    await admin.end()
+  }
+})
+
+test('a profile’s records: only the current ones are kept, and a delete stays in place of what it deleted', async (t) => {
+  if (!process.env.DATABASE_URL) return t.skip('DATABASE_URL is not set')
+  const admin = new pg.Client({ connectionString: process.env.DATABASE_URL })
+  await admin.connect()
+  const name = `forest_index_current_${randomBytes(4).toString('hex')}`
+  await admin.query(`create database ${name}`)
+  const url = new URL(process.env.DATABASE_URL)
+  url.pathname = `/${name}`
+  const db = createPool(url.toString())
+  try {
+    await migrate(db)
+    const t0 = Date.parse('2026-09-01T10:00:00.000Z')
+    const offer = (description: string) => ({ direction: 'offer', description, price: { amount: '20', mint: USDC, per: 'hour' }, remote: true, createdAt: new Date(t0).toISOString() })
+    const r = {
+      hosts: hostsRecord(ana.key, [HOST], t0),
+      card: ownerRecord(ana.key, 'profile', { name: ana.name, market: MARKET, role: 'seller', createdAt: new Date(t0).toISOString() }, t0),
+      first: ownerRecord(ana.key, 'offer/a', offer('The first version.'), t0 + 1),
+      second: ownerRecord(ana.key, 'offer/a', offer('The second version.'), t0 + 2),
+      written: ownerRecord(ana.key, 'offer/b', offer('Soon deleted.'), t0 + 1),
+      deleted: ownerRecord(ana.key, 'offer/b', null, t0 + 3),
+      listed: permissionsRecord(ana.key, [{ key: ACCESS.address, scope: 'write', paths: ['offer'] }], t0 + 1),
+      byKey: accessRecord(ACCESS, ana.address, 'offer/c', offer('By an access key, later removed.'), t0 + 2),
+      unlisted: permissionsRecord(ana.key, [], t0 + 4),
+      ahead: ownerRecord(ana.key, 'offer/d', offer('Dated an hour ahead.'), Date.now() + 3_600_000),
+    }
+    const checked = (records: SignedRecord[]) => records.map((record) => ({ record, id: recordId(unsignedOf(record)) }))
+    const held = async () => (await db.query('select host, id from host_records order by host, id')).rows.map((row) => `${row.host} ${row.id}`).sort()
+    const at = (host: string, ...records: SignedRecord[]) => checked(records).map((c) => `${host} ${c.id}`).sort()
+    const lists = { issuers: {}, indexes: [] }
+
+    await takeIn(db, HOST, checked(Object.values(r)), lists)
+    // The replaced version, the deleted offer's text, the old permissions and the removed key's offer
+    // go; the delete stays as offer/b's current version, and the record dated ahead waits.
+    assert.deepEqual(await held(), at(HOST, r.hosts, r.card, r.second, r.deleted, r.unlisted, r.ahead))
+
+    // Another host serves the old versions later: they are older than what is kept, so they go too,
+    // and the deleted offer does not come back.
+    const OTHER = 'https://other.example'
+    await takeIn(db, OTHER, checked([r.first, r.written]), lists)
+    assert.deepEqual(await held(), at(HOST, r.hosts, r.card, r.second, r.deleted, r.unlisted, r.ahead))
+  } finally {
     await db.end()
     for (let i = 0; i < 100; i++) {
       const { rows } = await admin.query('select count(*)::int as n from pg_stat_activity where datname = $1', [name])
