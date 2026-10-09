@@ -1,11 +1,11 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
-// in forest's CLI at the commit in FOREST, on loopback, with Railway's PORT set to 0 (any free port).
-//   1. the MCP SDK's client finds forest's MCP door there (../smoke.ts): its instructions, every
-//      action as a tool, no session, and refusals in forest's words; a request whose URL is no path
+// in this directory, on loopback, with Railway's PORT set to 0 (any free port).
+//   1. the MCP SDK's client finds the CLI's MCP door there (../smoke.ts): its instructions, every
+//      action as a tool, no session, and refusals in the CLI's words; a request whose URL is no path
 //      (`//`) gets 400, and it goes on answering;
 //   2. with a key in its environment, the same command refuses to start.
 //
-//   ../forest.sh records cli && npm ci && npm test
+//   ../standard.sh keys records && npm ci && npm test
 
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn } from 'node:child_process'
@@ -18,14 +18,15 @@ import { fileURLToPath } from 'node:url'
 import { smoke } from '../smoke.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const CLI = join(here, '../../forest/cli')
+const CLI = join(here, '..')
+const RECORDS = join(here, '../../standard/records')
 
 /** The image's command and working directory, as deploy/Dockerfile says them. */
 function image(): { cmd: string[]; cwd: string } {
   const dockerfile = readFileSync(join(here, '../deploy/Dockerfile'), 'utf8')
   const cmd = JSON.parse(/^CMD (\[.*\])$/m.exec(dockerfile)![1]!) as string[]
   const workdir = [...dockerfile.matchAll(/^WORKDIR (\S+)$/gm)].at(-1)![1]!
-  assert.equal(workdir, '/services/forest/cli', 'the image runs in forest’s CLI')
+  assert.equal(workdir, '/services/mcp', 'the image runs in this directory')
   return { cmd, cwd: CLI }
 }
 
@@ -57,7 +58,7 @@ function raw(port: number, request: string): Promise<number | null> {
 }
 
 test('the hosted copy, as its image runs it', async (t) => {
-  if (!existsSync(join(CLI, 'node_modules'))) return t.skip('forest’s CLI is not installed: ../forest.sh records cli')
+  if (!existsSync(join(CLI, 'node_modules')) || !existsSync(join(RECORDS, 'node_modules'))) return t.skip('not installed: ../standard.sh records, then npm ci')
 
   await t.test('1. the MCP SDK’s client finds forest’s door, with every action and no session', async () => {
     const { child, started } = run({ PORT: '0' })

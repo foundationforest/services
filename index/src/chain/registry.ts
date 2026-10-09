@@ -1,4 +1,4 @@
-// The registry's rows, read from the program's own accounts (forest/registry/README.md). A row says:
+// The registry's rows, read from the program's own accounts (standard/registry/README.md). A row says:
 // this profile holds a note this issuer signed, under this label. It holds the profile, the stamp,
 // the issuer's key, who paid, when the chain wrote it, and the label; it never changes. The program
 // writes a row only after checking the person proof against the issuer's key the row names, so a
@@ -12,8 +12,8 @@
 import type { Connection, Commitment } from '@solana/web3.js'
 import { PublicKey } from '@solana/web3.js'
 
-import { hex } from '../../../forest/records/src/index.ts'
-import { type Row, fetchRows, fromBytes32, issuerKeyBytes, toBytes32 } from '../../../forest/registry/client/src/index.ts'
+import { hex } from '../../../standard/records/src/index.ts'
+import { type Row, fetchRows, fromBytes32, issuerKeyBytes, toBytes32 } from '../../../standard/registry/client/src/index.ts'
 
 import type { IssuerConfig } from '../config.ts'
 import type { Queryable } from '../db.ts'

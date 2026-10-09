@@ -2,4 +2,4 @@
 .kora/
 node_modules/
 # The voucher check's used set (DATABASE_PATH defaults to ./data/vouchers.sqlite)
-vouchers/data/
+registry/data/

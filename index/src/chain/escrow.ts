@@ -1,6 +1,6 @@
 // THE ESCROW ADAPTER. The one file in the index that knows the escrow program's events.
 //
-// One sealed program (forest/escrow/README.md). If the receipt itself gains or loses a fact, change
+// One sealed program (standard/escrow/README.md). If the receipt itself gains or loses a fact, change
 // it here and in the table and its store in poll.ts: everything past this file reads `EscrowFact`,
 // the index's own shape for what happened to one escrow, and stores it in `escrow_receipts`.
 //
@@ -16,7 +16,7 @@
 
 import { PublicKey } from '@solana/web3.js'
 
-import { decodeEvents } from '../../../forest/escrow/client/src/index.ts'
+import { decodeEvents } from '../../../standard/escrow/client/src/index.ts'
 
 export type Side = 'buyer' | 'seller'
 

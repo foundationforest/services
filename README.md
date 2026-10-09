@@ -1,7 +1,7 @@
 # services
 
 The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
-an issuer, a fee payer, a host, an index, and a hosted copy of forest's CLI for AI chats. The Forest
+an issuer, a fee payer, a host, an index, and a CLI, with a hosted copy for AI chats. The Forest
 Foundation runs all five, on devnet. Anyone can run another of each, from this code (Apache 2.0) or
 their own.
 
@@ -20,7 +20,7 @@ the foundation has no shareholders and pays nothing out.
 | fee payer | Pays Solana's costs for a person: their registry row free, against a voucher, at the voucher door; anything else at cost, in the dollar they hold, at the at-cost door | https://fee-payer.devnet.forest.foundation | [`fee-payer/`](fee-payer/README.md) |
 | host | Keeps people's signed records, messages and photos, and serves them to anyone: forest's reference host, with its policy | https://host.devnet.forest.foundation | [`host/`](host/README.md) |
 | index | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree; serves pages for people and JSON for AI agents | https://index.devnet.forest.foundation | [`index/`](index/README.md) |
-| mcp | forest's CLI as MCP tools, hosted, for AI chats that cannot run a program on the person's device | https://mcp.devnet.forest.foundation/mcp | [`mcp/`](mcp/README.md) |
+| mcp | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats that cannot run a program on the person's device | https://mcp.devnet.forest.foundation/mcp | [`mcp/`](mcp/README.md) |
 
 [`e2e/`](e2e/README.md) runs the loop below end to end on devnet, against these services, by hand.
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
@@ -43,7 +43,7 @@ records and rows.
        │ transaction: a row, a payment (a row with a voucher: free)
        └────────▶ fee payer ── co-signs, sends ──▶ Solana: registry rows, escrow
                                                         │ rows, receipts
-  assistant (forest's CLI) ──┐                          ▼
+  assistant (the CLI) ───────┐                          ▼
                              │ access keys sign      index ──▶ pages, JSON
   person's app ──────────────┴── records ──▶ host ── what's new ──▶ index
 ```
@@ -62,8 +62,8 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    its hosts record names. It makes access keys for the person's AI assistant and lists them in
    the profile's permissions record
    ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions));
-   with them, through forest's CLI, the assistant posts offers and reviews, answers messages,
-   and asks the person, through their own inbox, for what it holds no key for.
+   with them, through the CLI ([`mcp/`](mcp/README.md)), the assistant posts offers and reviews,
+   answers messages, and asks the person, through their own inbox, for what it holds no key for.
 4. **A deal.** A buyer pays into an escrow through the fee payer, and the money moves only as the
    escrow allows
    ([forest's escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md)).
@@ -87,12 +87,13 @@ decides which issuers it trusts.
 
 ### Forest, pinned
 
-`FOREST` holds one forest commit. `./forest.sh` fetches forest at that commit into `forest/` (not
-committed), then runs `npm ci` in each forest package named after it. Every `forest/…` path here
-means forest at that commit, and each service imports what it needs by relative path. Each
-directory's README says which packages it needs.
+`STANDARD` holds one forest commit. `./standard.sh` fetches forest, from
+[foundationforest/standard](https://github.com/foundationforest/standard), at that commit into
+`standard/` (not committed), then runs `npm ci` in each forest package named after it. Every
+`standard/…` path here means forest at that commit, and each service imports what it needs by
+relative path. Each directory's README says which packages it needs.
 
-A change one of forest's pieces needs is made in forest first; then `FOREST` moves, in a pull
+A change one of forest's pieces needs is made in forest first; then `STANDARD` moves, in a pull
 request here that fixes every service the move touches and keeps every README true.
 
 ### Run the checks
@@ -102,16 +103,16 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./forest.sh keys records registry/client escrow/client circuits/reputation cli
-(cd forest/circuits/reputation && npm run fetch)
+./standard.sh keys records registry/client escrow/client circuits/reputation
+(cd standard/circuits/reputation && npm run fetch)
 
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
-(cd e2e         && npm ci && npm run check)
 (cd mcp         && npm ci && npm run check && npm test)
-(cd fee-payer   && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
-  && bash fee-payer/deploy/devnet-config.sh fee-payer/free/kora.toml > /dev/null
-(cd fee-payer/vouchers && npm ci && npm run check && npm test)
+(cd e2e         && npm ci && npm run check)
+(cd fee-payer/at-cost  && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
+  && bash fee-payer/deploy/devnet-config.sh fee-payer/registry/kora.toml > /dev/null
+(cd fee-payer/registry && npm ci && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
   node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts)
 ```
@@ -186,7 +187,7 @@ Everything but its secrets and what it keeps private for people:
 - **Kept, not published:** the fee payer's used set (the stamp of each spent voucher), and
   Railway's own request logs.
 
-**Why is forest pinned by `forest.sh`, and not a submodule or a copy?**
+**Why is forest pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in
 one file is the whole pin, and moving it is a one-line change plus whatever it touches.
 

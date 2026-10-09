@@ -1,6 +1,6 @@
-// A profile as forest's view sees it (forest/records/src/view.ts), into Postgres. Every record
+// A profile as forest's view sees it (standard/records/src/view.ts), into Postgres. Every record
 // reached the view checked: its canonical text and its signature, when it was read from a host. Here
-// each live body is checked once more, against its shape (forest/records/schemas/), and a body that
+// each live body is checked once more, against its shape (standard/records/schemas/), and a body that
 // fails is not stored: nothing unchecked ever reaches a score.
 //
 // Three shapes are read, by path: `profile`, `offer/<id>` and `review/<id>`. A private record (its
@@ -8,7 +8,7 @@
 // this index's. A record's address is `<profile>/<path>`; its `id` is the id of the record that holds
 // the path now. The profile's address is its name and its Solana address.
 //
-// A profile's proofs (forest/records/README.md, "Proofs") are checked here, once per version of its
+// A profile's proofs (standard/records/README.md, "Proofs") are checked here, once per version of its
 // card, and the ones that check are stored with it: its reputation proofs (`checkProofs`), and its
 // person proofs, the tiers it shows (`checkTiers`). Whether a page shows a reputation proof is
 // decided when the page is made, from the roots (web/data.ts); a tier weighs its row in the scores
@@ -21,9 +21,9 @@ import { type Commitment, type Connection, PublicKey } from '@solana/web3.js'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
-import { verifyReputation } from '../../../forest/circuits/reputation/src/index.ts'
-import { type View, b64u, base58, hex, isPrivate, liveContent } from '../../../forest/records/src/index.ts'
-import { verifyTier } from '../../../forest/registry/client/src/index.ts'
+import { verifyReputation } from '../../../standard/circuits/reputation/src/index.ts'
+import { type View, b64u, base58, hex, isPrivate, liveContent } from '../../../standard/records/src/index.ts'
+import { verifyTier } from '../../../standard/registry/client/src/index.ts'
 
 import { INDEX_ROOT, type IssuerConfig } from '../config.ts'
 import type { Db } from '../db.ts'
@@ -33,7 +33,7 @@ export type Kind = (typeof KINDS)[number]
 
 const ajv = new Ajv2020({ strict: true, allErrors: true })
 formats.default(ajv)
-const schemaFile = (kind: Kind) => join(INDEX_ROOT, '../forest/records/schemas', `${kind}.json`)
+const schemaFile = (kind: Kind) => join(INDEX_ROOT, '../standard/records/schemas', `${kind}.json`)
 const validators = Object.fromEntries(KINDS.map((k) => [k, ajv.compile(JSON.parse(readFileSync(schemaFile(k), 'utf8')))]))
 
 /** Whether a body fits its shape, and every way it does not. */

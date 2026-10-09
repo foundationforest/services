@@ -19,13 +19,13 @@ import { after, before, test } from 'node:test'
 
 import { type Connection, PublicKey } from '@solana/web3.js'
 
-import { inboxKey, mainKey } from '../../forest/keys/src/index.ts'
-import { base58, deliver, getBlob, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readAll, readProfile } from '../../forest/records/src/index.ts'
-import { Host } from '../../forest/records/src/host.ts'
-import { message, openMessage } from '../../forest/records/src/private.ts'
-import { blobStore, signS3 } from '../../forest/records/src/storage.ts'
-import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../forest/registry/client/src/program.ts'
-import { issuerKeyBytes, issuerKeyOf } from '../../forest/registry/client/src/index.ts'
+import { inboxKey, mainKey } from '../../standard/keys/src/index.ts'
+import { base58, deliver, getBlob, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readAll, readProfile } from '../../standard/records/src/index.ts'
+import { Host } from '../../standard/records/src/host.ts'
+import { message, openMessage } from '../../standard/records/src/private.ts'
+import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
+import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
+import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
 
 import { DEVNET_REGISTRY, LABEL, PHOTOS, POLICY, type RunningHost, isPublic, moveBlobs, photoRule, publicFetch, readConfig, rowLookup, startHost } from '../src/host.ts'
 
@@ -33,7 +33,7 @@ import { DEVNET_REGISTRY, LABEL, PHOTOS, POLICY, type RunningHost, isPublic, mov
 const ISSUER_KEY = issuerKeyBytes(issuerKeyOf(new Uint8Array(32).fill(7)))
 const ISSUER = Buffer.from(ISSUER_KEY).toString('hex')
 /** Forest's single-file host's own file, as it wrote it: two folders, ten records, three messages, three blobs. */
-const SINGLE_FILE = new URL('../../forest/records/test/single-file.sqlite', import.meta.url)
+const SINGLE_FILE = new URL('../../standard/records/test/single-file.sqlite', import.meta.url)
 
 const dirs: string[] = []
 const scratch = () => {

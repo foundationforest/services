@@ -3,7 +3,7 @@
 // a language exchange in a place, with no price, in a one-sided market. Every profile lives in one
 // market, as one side of it: its label.
 //
-//   - Records are real signed records (forest/records), one host's, taken in through the index's own
+//   - Records are real signed records (standard/records), one host's, taken in through the index's own
 //     view and store, so each body is checked against its shape exactly as a record read from a host
 //     is. Ana let an access key write offers, then made it past: what it wrote counts. A key she
 //     lists to send her messages wrote an offer too: it counts for nothing, since only a write key,
@@ -29,8 +29,8 @@ import { join } from 'node:path'
 import { sha256 } from '@noble/hashes/sha2.js'
 import pg from 'pg'
 
-import { type MainKey, issuerSecret, mainKey } from '../../forest/keys/src/index.ts'
-import { Host } from '../../forest/records/src/host.ts'
+import { type MainKey, issuerSecret, mainKey } from '../../standard/keys/src/index.ts'
+import { Host } from '../../standard/records/src/host.ts'
 import {
   type Body,
   type Checked,
@@ -47,8 +47,8 @@ import {
   unsignedOf,
   accessRecord,
   base58,
-} from '../../forest/records/src/index.ts'
-import { stampOf } from '../../forest/registry/client/src/stamp.ts'
+} from '../../standard/records/src/index.ts'
+import { stampOf } from '../../standard/registry/client/src/stamp.ts'
 
 import { storeRow } from '../src/chain/registry.ts'
 import { type Config, hexSeed, loadConfig } from '../src/config.ts'

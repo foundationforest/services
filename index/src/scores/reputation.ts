@@ -1,6 +1,6 @@
-// The reputation tree this index publishes, in forest's format (forest/circuits/README.md, "The tree
+// The reputation tree this index publishes, in forest's format (standard/circuits/README.md, "The tree
 // an index publishes"), so a person proves on their device a score from their own profiles, naming
-// none of them (forest/circuits/reputation).
+// none of them (standard/circuits/reputation).
 //
 //   a leaf   one per stamp of a counted row (README.md, "Which rows count"), for each profile with
 //            a rating: Poseidon(stamp, scope, score, count), where stamp is the row's own, scope the
@@ -18,9 +18,9 @@
 
 import { ed25519 } from '@noble/curves/ed25519.js'
 
-import { type Leaf, buildTree, signedBytes } from '../../../forest/circuits/reputation/src/index.ts'
-import { b64u, hex } from '../../../forest/records/src/index.ts'
-import { isFieldElement, scopeOf, toBytes32 } from '../../../forest/registry/client/src/field.ts'
+import { type Leaf, buildTree, signedBytes } from '../../../standard/circuits/reputation/src/index.ts'
+import { b64u, hex } from '../../../standard/records/src/index.ts'
+import { isFieldElement, scopeOf, toBytes32 } from '../../../standard/registry/client/src/field.ts'
 
 import type { Queryable } from '../db.ts'
 import type { Directory } from '../markets.ts'

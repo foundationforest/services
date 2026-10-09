@@ -2,10 +2,10 @@
 #
 # It pays for a person's registry row and charges nothing: the network fee and the row's deposit,
 # which the registry program creates inside its own call. Nobody reaches it but the voucher check in
-# front of it (vouchers/), which lets through only one `register` and only against a voucher it has
+# front of it (registry/src/), which lets through only one `register` and only against a voucher it has
 # not seen before; this file is what Kora itself still refuses after that.
 #
-# It allows one Forest program, the registry, at its devnet address (forest/registry/devnet/
+# It allows one Forest program, the registry, at its devnet address (standard/registry/devnet/
 # devnet.json), and System, which the registry calls to create the row. deploy/devnet-config.sh
 # changes the same three lines here as in at-cost/kora.toml. Every key Kora 2.0.5 requires in a
 # table is written out, so nothing here is a default someone has to look up.

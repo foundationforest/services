@@ -32,7 +32,7 @@ markets directory ── the markets lists/markets.json names ──┘
     [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Which record
     counts"), so this index sees exactly what any other reader sees.
   - Three paths are read: `profile`, `offer/<id>` and `review/<id>`, each body checked against
-    forest's shape for it (`forest/records/schemas/`); one that fails is not stored. A private
+    forest's shape for it (`standard/records/schemas/`); one that fails is not stored. A private
     record is left alone: only its readers can open it. Other paths are not this index's.
   - Only a profile holding a row from an issuer it trusts (below) is stored. Any other's records
     wait, kept, and are stored the day its row is read, with nothing to read again.
@@ -292,8 +292,8 @@ they can also run as a serverless function. The readers cannot: they keep poll l
 Node 22.18 or later and Postgres 14 or later. From the repo root:
 
 ```
-./forest.sh keys records registry/client escrow/client circuits/reputation
-(cd forest/circuits/reputation && npm run fetch)   # proving files, for the reputation test
+./standard.sh keys records registry/client escrow/client circuits/reputation
+(cd standard/circuits/reputation && npm run fetch)   # proving files, for the reputation test
 cd index && npm ci
 export DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/forest_index
 export INDEX_SIGNING_SEED=$(openssl rand -hex 32)   # keep it: it is the index's signing identity
@@ -334,15 +334,15 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
   what the index held, and the next poll checks the card again.
 - **The end-to-end test** (`test/e2e.test.ts`) runs forest's reference host, a local validator with
   the registry and the escrow, notes from two issuers signed with forest's `signNote`, and the
-  index. It needs the two programs built (`cargo build-sbf --arch v3` in `forest/registry/program`
-  and `forest/escrow/program`), `solana-test-validator` on the PATH and a Postgres where it may
+  index. It needs the two programs built (`cargo build-sbf --arch v3` in `standard/registry/program`
+  and `standard/escrow/program`), `solana-test-validator` on the PATH and a Postgres where it may
   create and drop a database; it skips, saying which, if one is missing. Not in CI, and not run on
   the code as it is now.
 
 ### On devnet
 
 The build context is the repo root. `deploy/Dockerfile` builds it: Node 22.22.2 and git,
-`forest.sh records registry/client escrow/client circuits/reputation` (the circuit's committed
+`standard.sh records registry/client escrow/client circuits/reputation` (the circuit's committed
 verification key; no proving file), `npm ci`, then `node src/main.ts` (readers and pages in one
 process). The lists and the config are in the image.
 

@@ -1,4 +1,4 @@
-// The fee payer, run locally: Kora (installed by ../build.sh, started by ../run.sh) in front of a
+// The fee payer, run locally: Kora (installed by ../../build.sh, started by ../../run.sh) in front of a
 // local validator with the registry and the escrow loaded. A main key that holds no SOL writes a
 // registry row, pays for escrows (one in Open USD, a Token-2022 dollar, which Kora takes in two steps
 // but not in one tap) and closes one it never funded, paying for everything in a test dollar; each
@@ -9,9 +9,9 @@
 //   npm run test:local
 //
 // Needs `solana-test-validator` on the PATH, the two programs built (`cargo build-sbf --arch v3` in
-// forest/registry/program and forest/escrow/program), the person circuit's files (committed in
-// forest/registry/circuit/devnet), the two clients' dependencies (`../forest.sh registry/client
-// escrow/client`) and Kora (`./build.sh`). If any is missing the test says which and skips.
+// standard/registry/program and standard/escrow/program), the person circuit's files (committed in
+// standard/registry/circuit/devnet), the two clients' dependencies (`../../standard.sh registry/client
+// escrow/client`) and Kora (`../build.sh`). If any is missing the test says which and skips.
 //
 // The programs run here at the ids in their source, as a local build has them. Kora runs on a copy
 // of at-cost/kora.toml with exactly these lines changed: its two Forest programs from their devnet ids to
@@ -57,20 +57,20 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js'
 
-import { PROGRAM_ID as REGISTRY_ID, buildRegistration, decodeRow, issuerKeyOf, noteNumberOf, refundIx, rowSpace, signNote } from '../../forest/registry/client/src/index.ts'
-import * as escrow from '../../forest/escrow/client/src/index.ts'
+import { PROGRAM_ID as REGISTRY_ID, buildRegistration, decodeRow, issuerKeyOf, noteNumberOf, refundIx, rowSpace, signNote } from '../../../standard/registry/client/src/index.ts'
+import * as escrow from '../../../standard/escrow/client/src/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const forest = join(here, '../../forest')
-const registrySo = join(forest, 'registry/program/target/deploy/forest_registry.so')
-const escrowSo = join(forest, 'escrow/program/target/deploy/forest_escrow.so')
+const standard = join(here, '../../../standard')
+const registrySo = join(standard, 'registry/program/target/deploy/forest_registry.so')
+const escrowSo = join(standard, 'escrow/program/target/deploy/forest_escrow.so')
 /** The two Forest programs' devnet ids, as kora.toml names them. */
 const DEVNET = { registry: 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4', escrow: 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8' }
 const artifacts = {
-  wasm: join(forest, 'registry/circuit/devnet/person.wasm'),
-  zkey: join(forest, 'registry/circuit/devnet/person.zkey'),
+  wasm: join(standard, 'registry/circuit/devnet/person.wasm'),
+  zkey: join(standard, 'registry/circuit/devnet/person.zkey'),
 }
-const kora = join(here, '../.kora/bin/kora')
+const kora = join(here, '../../.kora/bin/kora')
 const RPC = 'http://127.0.0.1:8899'
 const KORA_PORT = 8080
 const KORA_URL = `http://127.0.0.1:${KORA_PORT}`
@@ -102,11 +102,11 @@ const feePayerTokens = ata(feePayer.publicKey)
 const sellerTokens = ata(seller.publicKey)
 
 function missing(): string | null {
-  if (!existsSync(registrySo)) return `no program at ${registrySo}; run \`cargo build-sbf --arch v3\` in forest/registry/program`
-  if (!existsSync(escrowSo)) return `no program at ${escrowSo}; run \`cargo build-sbf --arch v3\` in forest/escrow/program`
-  if (!existsSync(artifacts.zkey)) return "no person circuit's files in forest/registry/circuit/devnet"
-  if (!existsSync(join(forest, 'registry/client/node_modules'))) return 'run `npm ci` in registry/client'
-  if (!existsSync(join(forest, 'escrow/client/node_modules'))) return 'run `npm ci` in escrow/client'
+  if (!existsSync(registrySo)) return `no program at ${registrySo}; run \`cargo build-sbf --arch v3\` in standard/registry/program`
+  if (!existsSync(escrowSo)) return `no program at ${escrowSo}; run \`cargo build-sbf --arch v3\` in standard/escrow/program`
+  if (!existsSync(artifacts.zkey)) return "no person circuit's files in standard/registry/circuit/devnet"
+  if (!existsSync(join(standard, 'registry/client/node_modules'))) return 'run `npm ci` in registry/client'
+  if (!existsSync(join(standard, 'escrow/client/node_modules'))) return 'run `npm ci` in escrow/client'
   if (!existsSync(kora)) return 'no Kora; run ./build.sh in fee-payer'
   return null
 }
@@ -138,7 +138,7 @@ function testDollarJson(): string {
  * extensions stay as mainnet has them.
  */
 function openUsdJson(): string {
-  const source = readFileSync(join(forest, 'escrow/program/tests-litesvm/src/token_2022.rs'), 'utf8')
+  const source = readFileSync(join(standard, 'escrow/program/tests-litesvm/src/token_2022.rs'), 'utf8')
   const data = Buffer.from(/OPEN_USD_MAINNET: &str = "([^"]+)"/.exec(source)![1], 'base64')
   data.writeUInt32LE(1, 0) // mint_authority: Some
   setup.publicKey.toBuffer().copy(data, 4)
@@ -300,7 +300,7 @@ before(
     const keyFile = join(work, 'fee-payer.json')
     writeFileSync(keyFile, JSON.stringify(Array.from(feePayer.secretKey)), { mode: 0o600 })
     // at-cost/kora.toml with three lines changed, each checked to appear exactly once.
-    let config = readFileSync(join(here, '../at-cost/kora.toml'), 'utf8')
+    let config = readFileSync(join(here, '../kora.toml'), 'utf8')
     for (const [from, to] of [
       ['price_source = "Jupiter"', 'price_source = "Mock"'],
       [DEVNET.registry, REGISTRY_ID.toBase58()],
@@ -313,7 +313,7 @@ before(
     writeFileSync(mockConfig, config)
 
     const log = createWriteStream(join(work, 'kora.log'))
-    koraProcess = spawn('bash', [join(here, '../run.sh')], {
+    koraProcess = spawn('bash', [join(here, '../../run.sh')], {
       env: { ...process.env, FOREST_FEE_PAYER_KEY: keyFile, RPC_URL: RPC, KORA_CONFIG: mockConfig, PORT: String(KORA_PORT) },
       stdio: ['ignore', 'pipe', 'pipe'],
     })

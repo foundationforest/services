@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Prints a devnet Kora's kora.toml: fee-payer/at-cost/kora.toml or fee-payer/free/kora.toml with
+# Prints a devnet Kora's kora.toml: fee-payer/at-cost/kora.toml or fee-payer/registry/kora.toml with
 # exactly these lines changed, and nothing else. Each old line must appear exactly once, or it stops.
 # The programs each allows are already devnet's, in the file itself.
 #
 #   the four paid tokens -> the classic test dollar and the one shaped like Open USD
-#   (USDC, USDT, Open USD,  (forest/escrow/devnet/devnet.json: testDollar, openUsdShaped): devnet's
+#   (USDC, USDT, Open USD,  (standard/escrow/devnet/devnet.json: testDollar, openUsdShaped): devnet's
 #   EURC)                   fee payer is paid in those two only
 #   Jupiter's price      -> Kora's mock, since Jupiter prices mainnet only (fee-payer/README.md). The
 #                           mock values the test dollar at 0.001 SOL a whole token: one base unit

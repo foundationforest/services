@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["smoke.ts", "test"]
+  "include": ["src", "test", "smoke.ts"]
 }

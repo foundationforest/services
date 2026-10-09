@@ -1,5 +1,5 @@
 // The face embedding: the numbers a face model gives for a face, which a note carries
-// (forest/registry/README.md, "The note and the person proof"). Two photos of one person give
+// (standard/registry/README.md, "The note and the person proof"). Two photos of one person give
 // two embeddings close to each other; two people, two far apart.
 //
 // Two open models from OpenCV's model zoo, used unchanged, run with onnxruntime-web (WASM, in Node):

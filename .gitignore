@@ -1,5 +1,5 @@
-# forest at the commit in FOREST, fetched by forest.sh
-forest/
+# standard at the commit in STANDARD, fetched by standard.sh
+standard/
 
 node_modules/
 *.tsbuildinfo

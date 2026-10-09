@@ -1,4 +1,4 @@
-// The foundation's host: forest/records' reference host (forest/records/src/host.ts), unchanged, run
+// The foundation's host: standard/records' reference host (standard/records/src/host.ts), unchanged, run
 // with this service's policy. It takes anyone's records, delivers messages to inboxes, and keeps
 // blobs, as forest's host does; every number it uses is in POLICY below, and README.md says each in
 // words.
@@ -35,13 +35,13 @@ import { join } from 'node:path'
 import { Connection, PublicKey } from '@solana/web3.js'
 import { Agent, fetch as undiciFetch } from 'undici'
 
-import { readPage } from '../../forest/records/src/client.ts'
-import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../forest/records/src/host.ts'
-import type { Checked } from '../../forest/records/src/record.ts'
-import { type BlobStore, blobNames, blobStore } from '../../forest/records/src/storage.ts'
-import { importSingleFile } from '../../forest/records/scripts/import-single-file.ts'
-import { fromBytes32 } from '../../forest/registry/client/src/field.ts'
-import { fetchRows } from '../../forest/registry/client/src/rows.ts'
+import { readPage } from '../../standard/records/src/client.ts'
+import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../standard/records/src/host.ts'
+import type { Checked } from '../../standard/records/src/record.ts'
+import { type BlobStore, blobNames, blobStore } from '../../standard/records/src/storage.ts'
+import { importSingleFile } from '../../standard/records/scripts/import-single-file.ts'
+import { fromBytes32 } from '../../standard/registry/client/src/field.ts'
+import { fetchRows } from '../../standard/registry/client/src/rows.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -73,7 +73,7 @@ export const PHOTOS = {
 /** Milliseconds a sender's host may take to serve all of the sender's records. */
 export const SENDER_READ_MS = 5_000
 
-/** The devnet registry (forest/registry/devnet/devnet.json), as the index reads it. */
+/** The devnet registry (standard/registry/devnet/devnet.json), as the index reads it. */
 export const DEVNET_REGISTRY = 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4'
 
 export type Config = {

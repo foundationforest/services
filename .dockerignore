@@ -1,6 +1,6 @@
-# Each image fetches forest itself (forest.sh) and installs its own dependencies.
+# Each image fetches standard itself (standard.sh) and installs its own dependencies.
 .git
-forest/
+standard/
 **/node_modules
 issuer/models
 issuer/test/faces

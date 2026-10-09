@@ -22,9 +22,9 @@ import { test } from 'node:test'
 import { PublicKey } from '@solana/web3.js'
 import pg from 'pg'
 
-import { mainKey } from '../../forest/keys/src/index.ts'
-import { ownerRecord, recordId, unsignedOf } from '../../forest/records/src/index.ts'
-import { decodeRow } from '../../forest/registry/client/src/program.ts'
+import { mainKey } from '../../standard/keys/src/index.ts'
+import { ownerRecord, recordId, unsignedOf } from '../../standard/records/src/index.ts'
+import { decodeRow } from '../../standard/registry/client/src/program.ts'
 
 import { rowRecord, storeRow } from '../src/chain/registry.ts'
 import { INDEX_ROOT, type IssuerConfig, loadConfig } from '../src/config.ts'
@@ -34,10 +34,10 @@ import { HostReader, takeIn } from '../src/records/hosts.ts'
 import type { Registry } from '../src/records/store.ts'
 import { serveMarkets } from './markets-repo.ts'
 
-const FOREST = join(INDEX_ROOT, '../forest')
-const fixtures = JSON.parse(readFileSync(join(FOREST, 'registry/program/tests-litesvm/fixtures/proofs.json'), 'utf8'))
-const example = JSON.parse(readFileSync(join(FOREST, 'records/schemas/examples/profile.json'), 'utf8'))
-const seed = Buffer.from(JSON.parse(readFileSync(join(FOREST, 'keys/test/vectors.json'), 'utf8')).seed, 'hex')
+const STANDARD = join(INDEX_ROOT, '../standard')
+const fixtures = JSON.parse(readFileSync(join(STANDARD, 'registry/program/tests-litesvm/fixtures/proofs.json'), 'utf8'))
+const example = JSON.parse(readFileSync(join(STANDARD, 'records/schemas/examples/profile.json'), 'utf8'))
+const seed = Buffer.from(JSON.parse(readFileSync(join(STANDARD, 'keys/test/vectors.json'), 'utf8')).seed, 'hex')
 const wire = fixtures.wire as { programId: string; rowAddress: string; row: string }
 const ISSUER_A = fixtures.issuers.A as string
 const ISSUER_B = fixtures.issuers.B as string
