@@ -1,4 +1,4 @@
-// The foundation's host: forest's host behind the front, with this service's policy; its storage,
+// The foundation's host: forest's host behind the front, with this service's choices; its storage,
 // with the import of the old single file and the move of bytes to a bucket; the registry lookup for
 // an inbox that takes messages from one issuer's rows; the sender's records read, and kept a while,
 // to take a message a message key signed, never after a redirect (forest's public fetch keeps the
@@ -34,7 +34,7 @@ import { type Credit, PAYMENT_HEADER, buy, creditId, creditList, finish, service
 import type { Rpc } from '../../shared/credits/src/service.ts'
 
 import { BALANCE_PATH, BUY_PATH, DIRECTORY_PATH, SPEND_PATH, UNIT, priceOf } from '../src/credits.ts'
-import { DEVNET_REGISTRY, LABEL, POLICY, type RunningHost, moveBlobs, readConfig, rowLookup, startHost } from '../src/host.ts'
+import { DEVNET_REGISTRY, LABEL, choice, type RunningHost, moveBlobs, readConfig, rowLookup, startHost } from '../src/host.ts'
 
 const ORIGIN = 'https://host.example'
 /** Where credits are paid in these tests, and in what: the classic devnet test dollar. */
@@ -137,7 +137,7 @@ after(async () => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
 })
 
-test('`/` says what this is; every other path is forest’s host, with this policy', async () => {
+test('`/` says what this is; every other path is forest’s host, with these choices', async () => {
   const res = await fetch(`${host.url}/`)
   assert.equal(res.status, 200)
   assert.equal(await res.text(), LABEL)
@@ -146,9 +146,9 @@ test('`/` says what this is; every other path is forest’s host, with this poli
   const h = host.host
   assert.deepEqual(
     { keepDays: h.keepDays, maxBatch: h.maxBatch, maxPageRecords: h.maxPageRecords, maxPageBytes: h.maxPageBytes, maxBlobBytes: h.maxBlobBytes },
-    POLICY,
+    choice,
   )
-  assert.deepEqual(POLICY, { keepDays: 30, maxBatch: 100, maxPageRecords: 1000, maxPageBytes: 4_194_304, maxBlobBytes: 50_000_000 })
+  assert.deepEqual(choice, { keepDays: 30, maxBatch: 100, maxPageRecords: 1000, maxPageBytes: 4_194_304, maxBlobBytes: 50_000_000 })
 })
 
 /** One request as raw bytes, so a URL no client would send arrives as written; the status line's code, or null if none came. */
