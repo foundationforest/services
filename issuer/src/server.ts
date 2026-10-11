@@ -6,8 +6,8 @@
 //                       and, with a welcome gift, {"gift":{"<role>":{"credits":n,"origin":"<url>"}}}
 //   POST /session       {}                       -> 201 {sessionId, url}   a face check (stage 1)
 //   POST /note          {sessionId, noteNumber}  -> 200 {note}             a tier 1 note
-//                       with a gift, also {gift: {"<role>": "<pay link>"}}
-//                                                -> 200 {note, gift: {signature} or {error}}
+//                       with a gift, also {gift: {"<role>": "<buy's reference>"}}
+//                                                -> 200 {note, gift: {"<role>": "<ticket>"} or {error}}
 //   POST /id/session    {} or {payment}          -> 201 {sessionId, url}   a document check (stage 2),
 //                                                   or 402 with a payment to make first
 //   POST /id/note       {sessionId, note}        -> 200 {note}             the same note at tier 2
@@ -22,7 +22,7 @@
 // No request is logged. The client's address is read for one thing only, counting the sessions it
 // opens against the limit (`limit.ts`), and is never written anywhere.
 
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { type IssuerKey, type SignedNote, noteSigned, signNote } from '../../standard/registry/client/src/person.ts'
@@ -30,7 +30,8 @@ import { type FaceCheck, type Tier, judge } from './didit.ts'
 import { type Embedder, FACE_MATCH, FaceError, similarity } from './face.ts'
 import type { RateLimit } from './limit.ts'
 import { TIER, decimal, fingerprint, issuerHex, noteFromJson, noteToJson } from './notes.ts'
-import { type Directory, type Gift, type Payer, partsOf } from './gift.ts'
+import { type Gift, buysOf, ticketsFor } from './gift.ts'
+import type { IssuerKey as Key } from './key.ts'
 import type { Payments, Price } from './payment.ts'
 import type { Store } from './store.ts'
 
@@ -107,11 +108,10 @@ export type CheckDeps = {
   workflowId: string
 }
 
-/** The welcome gift, when there is one: its services, and how it reads them and pays. */
+/** The welcome gift, when there is one: its services, and the sponsor key its tickets are signed with. */
 export type GiftDeps = {
   gift: Gift
-  directory: Directory
-  payer: Payer
+  sponsor: Key
 }
 
 /** The document check's price, when it has one, and how a payment is found. */
@@ -206,26 +206,16 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
   const sign = (note: Omit<SignedNote, 'issuer' | 'signature'>) => [200, { note: noteToJson(signNote(deps.noteKey.privateKey, note)) }] as [number, Record<string, unknown>]
 
   /**
-   * The welcome gift for this note number, once: the app's links checked, the gift marked given,
-   * then paid. If it is not paid, the mark comes off, so the note asked for again pays it. Its
-   * outcome rides with the note, which never waits on it: `{signature}`, or `{error}`: `bad_gift`,
-   * `given` (paid before: the app collects the buys it sent then), or `gift_unavailable`.
+   * The welcome gift for this note number, once: a ticket for each of the app's buys, and the buys
+   * kept, hashed, next to the note number. The same buys asked for again get the same tickets; other
+   * buys get `given`. It rides with the note: the tickets by service, or `{error}`: `bad_gift` or
+   * `given`.
    */
-  async function giveGift(noteNumber: bigint, links: Record<string, unknown>): Promise<Record<string, string>> {
-    const parts = await partsOf(deps.gift!.gift, links, deps.gift!.directory)
-    if (typeof parts === 'string') return { error: parts }
-    if (!store.giveGift(noteNumber)) return { error: 'given' }
-    let signature: string | null
-    try {
-      signature = await deps.gift!.payer.pay(parts)
-    } catch {
-      signature = null
-    }
-    if (!signature) {
-      store.ungiveGift(noteNumber)
-      return { error: 'gift_unavailable' }
-    }
-    return { signature }
+  function giveGift(noteNumber: bigint, references: Record<string, unknown>): Record<string, string> {
+    const tickets = ticketsFor(deps.gift!.gift, references, deps.gift!.sponsor)
+    if (typeof tickets === 'string') return { error: tickets }
+    if (store.giveGift(noteNumber, buysOf(references)) === 'other') return { error: 'given' }
+    return tickets
   }
 
   /**
@@ -250,7 +240,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     // a note while this one waited for Didit.
     kept(store.remember({ sessionId, noteNumber, earlier }))
     const signed = sign({ noteNumber, embedding: embedded, model: embedder.model, tier: TIER.face })
-    if (asked) signed[1].gift = await giveGift(noteNumber, links as Record<string, unknown>)
+    if (asked) signed[1].gift = giveGift(noteNumber, links as Record<string, unknown>)
     return signed
   }
 
@@ -281,9 +271,10 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
   /**
    * The document check's session. Free, it opens like the face check's. With a price, `{}` answers
    * 402 with a new payment: its id, the reference the transfer must name, where to pay, in which
-   * dollar, how much. `{payment}` then opens the session once a payment naming that reference has
-   * landed and no session was opened with it before; until then it answers 402 `not_paid`, and the
-   * app asks again.
+   * dollar, how much. `{payment}` then opens a session once a payment naming that reference has
+   * landed; until then it answers 402 `not_paid`, and the app asks again. A payment is never given
+   * back. Each session a payment id opens carries its tag in Didit, so a lost answer is found again,
+   * and a session whose opening Didit never answered is found, or opened, on the next ask.
    */
   async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
     if (!payment) {
@@ -298,23 +289,51 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     }
     const paymentId = fields(body, { payment: 'string' }).payment as string
     if (!PAYMENT_ID.test(paymentId)) throw new HttpError(400, 'bad_payment')
+    // Two asks with one payment id at once share one answer, so they never open two sessions.
+    const running = opening.get(paymentId)
+    if (running) return running
+    const answer = paidSession(paymentId, req)
+    opening.set(paymentId, answer)
+    try {
+      return await answer
+    } finally {
+      opening.delete(paymentId)
+    }
+  }
+
+  const opening = new Map<string, Promise<[number, unknown]>>()
+
+  async function paidSession(paymentId: string, req: IncomingMessage): Promise<[number, unknown]> {
+    const reference = await payment!.reference(paymentId)
     let landed: string[]
     try {
-      landed = await payment.payments.landed(await payment.reference(paymentId))
+      landed = await payment!.payments.landed(reference)
     } catch {
       throw new HttpError(502, 'payment_check_unavailable')
     }
     if (landed.length === 0) throw new HttpError(402, 'not_paid')
-    const unused = landed.find((signature) => !store.isPaymentUsed(signature))
-    if (!unused) throw new HttpError(409, 'payment_used')
+    // What Didit knows the payment by: never the id itself, which claims it.
+    const tag = createHash('sha256').update(`payment/${paymentId}`).digest('hex')
+    const unused = landed.find((signature) => store.paymentFor(signature) === undefined)
+    if (!unused) {
+      // Every payment naming the reference is used: for this payment id, its session is found again,
+      // or, if Didit never answered when it was opened, opened now; for another, refused.
+      if (!landed.some((signature) => store.paymentFor(signature) === reference)) throw new HttpError(409, 'payment_used')
+      let found
+      try {
+        found = await id.check.tagged(tag)
+      } catch {
+        throw new HttpError(502, 'face_check_unavailable')
+      }
+      if (found) return [201, found]
+    }
     if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
-    // Marked in one statement: another request with the same payment may have got here first.
-    if (!store.usePayment(unused)) throw new HttpError(409, 'payment_used')
+    // Marked in one statement: another payment id naming this transaction may have got here first.
+    if (unused && !store.usePayment(unused, reference)) throw new HttpError(409, 'payment_used')
     try {
-      return [201, await id.check.createSession()]
+      return [201, await id.check.createSession(tag)]
     } catch {
-      // No session was opened, so the payment is still the person's to use.
-      store.releasePayment(unused)
+      // Opened or not, the payment stays used: the next ask finds the session by its tag, or opens it.
       throw new HttpError(502, 'face_check_unavailable')
     }
   }

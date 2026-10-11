@@ -10,8 +10,8 @@
 //   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
 //   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
 //     for one document check names; `payments`, the devnet address payments go to once there is a
-//     price; and `credits`, the key that pays for the welcome gift's credits (gift.ts), the one key
-//     here that holds money.
+//     price; and `sponsor`, the key that signs the welcome gift's tickets (gift.ts). None holds
+//     money.
 
 import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -28,7 +28,7 @@ export type IssuerKey = {
   derive(label: string): Promise<IssuerKey>
   /** 32 bytes forest's `hkdf` mixes from this key's secret under `info`. */
   mix(info: string): Promise<Uint8Array>
-  /** This key's Ed25519 signature of `message`: how the `credits` key signs the gift's transaction. */
+  /** This key's Ed25519 signature of `message`: how the `sponsor` key signs the gift's tickets. */
   sign(message: Uint8Array): Uint8Array
 }
 
