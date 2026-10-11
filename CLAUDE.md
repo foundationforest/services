@@ -31,8 +31,8 @@ sealed (for programs only). Plain words, no em-dashes.
 - A FAQ is only for what the explanation does not answer; when a question shows the explanation is
   missing something, the explanation changes.
 - Each service's README, in this order: what it is, in one plain sentence; who runs it, and that
-  anyone can run another; How it works; Policy, every number and choice the service makes, in plain
-  words; Promises; Limits; Who decides what; FAQ. The README is the directory's only doc.
+  anyone can run another; How it works; How we run it, every number and choice the service makes,
+  in plain words; Promises; Limits; Who decides what; FAQ. The README is the directory's only doc.
 - Use existing pieces unchanged, and write only what does not exist. A change one of forest's
   pieces needs is made in forest first; then `STANDARD` moves, in its own pull request.
 - Keep the docs true in the same pull request: a change that makes a README wrong fixes it. A README

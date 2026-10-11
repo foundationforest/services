@@ -1,6 +1,6 @@
 // The foundation's host: standard/records' reference host (standard/records/src/host.ts), unchanged, run
-// with this service's policy. It takes anyone's records, delivers messages to inboxes, and keeps
-// blobs, as forest's host does; every number it uses is in POLICY below, and README.md says each in
+// with this service's choices. It takes anyone's records, delivers messages to inboxes, and keeps
+// blobs, as forest's host does; every number it uses is in `choice` below, and README.md says each in
 // words.
 //
 // Around forest's host, one thing only: a front that answers `GET /` with one line saying what this
@@ -53,11 +53,11 @@ import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PAT
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
-  'A Forest host, run by the Forest Foundation on devnet: forest/records’ reference host with the policy in ' +
+  'A Forest host, run by the Forest Foundation on devnet: forest/records’ reference host with the choices in ' +
   'foundationforest/services, host/README.md. Anyone may write here, paying in credits, and on devnet it may be wiped at any time.\n'
 
-/** This host's policy: each number forest's host takes as an option. */
-export const POLICY = {
+/** This host's choices: each number forest's host takes as an option. */
+export const choice = {
   /** Days a replaced record, a message, or bytes no current record names are kept. */
   keepDays: 30,
   /** Records or messages one request may carry. */
@@ -421,7 +421,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
   const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
-    ...POLICY,
+    ...choice,
     recordChoice: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
     messageChoice: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
     blobChoice: paidBlobs(credits),

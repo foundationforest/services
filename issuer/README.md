@@ -1,32 +1,35 @@
 # issuer
 
-The issuer checks once, by face, that a person is one real human, and signs them a note; a person
-who then shows that note and a government document gets the same note signed at tier 2.
+Part of Forest's services: [the top README](../README.md).
 
-The foundation runs this one, on devnet, with a stand-in for both checks that passes everyone.
-Anyone can run another, with this code or their own: an issuer is anyone who signs notes for
-people, and each reader decides which issuers it trusts.
+The issuer checks once, by face, that a person is one real human, and signs them a note (a signed
+statement, which the person keeps, that they passed); a person who then shows that note and a
+government document gets the same note signed at tier 2.
 
-Up: [the repo](../README.md).
+The Open Forest Foundation runs this one, on devnet, with a stand-in for both checks that passes
+everyone. Anyone can run another, with this code or their own: an issuer is anyone who signs notes
+for people, and each reader decides which issuers it trusts.
 
 ## How it works
 
-A note is forest's
+A note is the standard's
 ([registry](https://github.com/foundationforest/standard/blob/main/registry/README.md#the-note-and-the-person-proof)):
 the person's note number, their face's embedding, the model that made it, and a tier, signed by
-the issuer's note key. The person keeps it, and from it proves on their device, for a registry row,
-that this issuer signed them a note, without showing the note or who they are.
+the issuer's note key. The person keeps it, and from it proves on their device, for a registry row
+(the public entry that says a profile holds a note), that this issuer signed them a note, without
+showing the note or who they are.
 
 The checks are Didit's: Didit runs each one on its own page, and holds the face and, for the
 document check, the document. The issuer signs notes, looks on chain for a payment when the
-document check has a price, signs a sponsor's ticket for a person's first credits when it gives a
-welcome gift, and does nothing else. It holds no money.
+document check has a price, signs a sponsor's ticket (a signed promise that the sponsor, here the issuer, pays for one buy)
+for a person's first credits (prepaid units of a service) when it gives a welcome gift, and does
+nothing else. It holds no money.
 
 **Who it is.** `GET /issuer.json` gives its name and its note key. The name is what each person's
 secret for this issuer is mixed from
 ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-issuer-secret)),
 so it never changes. The note key is the Baby Jubjub key that signs every note, mixed from the
-issuer's seed (`ISSUER_KEYPAIR`) with forest's `hkdf` under `issuer/notes`; a registry row names
+issuer's seed (`ISSUER_KEYPAIR`) with the standard's `hkdf` under `issuer/notes`; a registry row names
 it, and readers trust it.
 
 ### The flow
@@ -44,7 +47,8 @@ Tier 1, the face check, for anyone:
 4. **A face seen before.** Didit's face search names each earlier session with the same face. If
    the issuer signed any of them for another note number, it refuses (`duplicate_face`). For the
    same note number it signs again: a person who lost their note gets it back, and the same note
-   number gives the same stamps, so no second row.
+   number gives the same stamps (the number a person has for one label at one issuer), so no
+   second row.
 5. **The embedding.** It fetches the session's selfie from Didit and computes its embedding with
    an open model ([The face model](#the-face-model)). It keeps neither.
 6. **The note.** In one transaction it keeps the session, and every earlier session of the same
@@ -66,7 +70,7 @@ Tier 2, the document check, for a person who shows a note this issuer signed:
     (`duplicate_document`); for the same one, it signs again, so a lost tier 2 note comes back, for
     the price of another document check.
 11. **The same face.** The embedding of this session's selfie must match the note's
-    ([Policy](#policy)), or it refuses (`not_the_same_face`). The live embedding is then dropped.
+    ([How we run it](#how-we-run-it)), or it refuses (`not_the_same_face`). The live embedding is then dropped.
 12. **The note.** It keeps the session and the fingerprint next to the note number, then signs the
     shown note at tier 2: the same note number, embedding and model, since it is the same note at a
     higher tier.
@@ -88,10 +92,9 @@ One SQLite file, four tables:
 Nothing else: no face, no embedding, no name, no document, no time, no row number, and of a gift
 only a hash of its buys: not its tickets, not their references. A session id is kept only as its
 hash, so the file names no Didit session. Deleted bytes are overwritten
-(`secure_delete`). How long it keeps them is [Policy](#policy).
+(`secure_delete`). How long it keeps them is [How we run it](#how-we-run-it).
 
-**The fingerprint** is HMAC-SHA256, under a key mixed from the issuer's seed with forest's `hkdf`
-under `issuer/fingerprint`, of three things Didit reads on the document, each written one way: the
+**The fingerprint** is HMAC-SHA256, under a key mixed from the issuer's seed with the standard's `hkdf` under `issuer/fingerprint`, of three things Didit reads on the document, each written one way: the
 name (first and last, else the full name; Unicode NFKC, lower case, one space between words), the
 birth date (YYYY-MM-DD) and the document's country (`issuing_state`, ISO 3166-1 alpha-3). Without
 the key, a guessed name cannot be tested against the file.
@@ -117,7 +120,7 @@ published with its weights, is one any other issuer can run too.
   each checked against its SHA-256 (`scripts/fetch.ts`). Neither is in the repo.
 - **About a third of a second a photo** on one core. Nothing is written or logged.
 - **The stand-in.** With `FACE_MODEL=stand-in`, allowed only with a stand-in Didit on this
-  machine, every photo gives one fixed embedding, forest's own devnet stand-in vector, under the
+  machine, every photo gives one fixed embedding, the standard's own devnet stand-in vector, under the
   model `stand-in`.
 
 ### Payment
@@ -128,7 +131,7 @@ When the document check has a price (`ID_TIER_PRICE` above 0):
    `{"error":"payment_required","payment":{"id","reference","to","mint","amount"}}`.
 2. **The app pays** `amount` of the dollar `mint` to `to`, with `reference` listed as one more
    account on the transfer, as Solana Pay does, from an address that holds no profile
-   ([Policy](#policy)).
+   ([How we run it](#how-we-run-it)).
 3. **The app comes back** with `POST /id/session` `{"payment": "<id>"}`. Until a finalized
    transaction naming `reference` has paid `to` at least `amount` in `mint`, the answer is
    `402 not_paid`, and the app asks again. Then the issuer marks the payment used, for good, and
@@ -141,7 +144,7 @@ When the document check has a price (`ID_TIER_PRICE` above 0):
    given back. A second payment naming the same reference opens a second session.
 
 The reference is the address of a key mixed from the issuer's seed under `reference/<id>`, by
-forest's recipe for a main key. Only whoever holds the id can claim a payment that names it, and
+the standard's recipe for a main key. Only whoever holds the id can claim a payment that names it, and
 the id never goes on chain. To find a payment, the issuer asks its RPC for the 20 newest finalized
 transactions that name the reference (`getSignaturesForAddress`), and reads each
 (`getTransaction`): what `to`'s token accounts in the dollar gained in it must be at least the
@@ -174,8 +177,7 @@ blind, so the issuer never sees them. It pays nothing: each service lists the is
 6. **The app collects** each buy at its service with its ticket, at once, and finishes the
    credits.
 
-The sponsor key is mixed from the issuer's seed under `sponsor`, by forest's recipe for a main
-key. It signs tickets and nothing else, and holds no money.
+The sponsor key is mixed from the issuer's seed under `sponsor`, by the standard's recipe for a main key. It signs tickets and nothing else, and holds no money.
 
 ### The API
 
@@ -196,7 +198,7 @@ registry row holds it:
  "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},"tier":"1"}
 ```
 
-A note number is decimal text, as forest's `issuerSecret` gives it: no sign, no leading zero, below
+A note number is decimal text, as the standard's `issuerSecret` gives it: no sign, no leading zero, below
 BN254's field order. A payment's id is 32 lowercase hex characters. A body with any other field is
 refused. CORS is open to any origin. A session that gave a note, sent again with the same note
 number, gives the note again.
@@ -251,7 +253,7 @@ Node 22.18 or later. From the repo root:
 (cd shared/credits && npm ci)
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
-npm run check        # type-check, forest's files included
+npm run check        # type-check, the standard's files included
 npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP, a person proof from a note;
                      # the face models on the portraits; the devnet stand-in Didit, both tiers; the
                      # welcome gift's tickets, taken by stand-in services on standard's seller
@@ -303,7 +305,7 @@ https://issuer.devnet.forest.foundation:
 Setting `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` and `DIDIT_ID_WORKFLOW_ID` (secret) and redeploying
 puts the real checks, and the face model, in the stand-in's place.
 
-## Policy
+## How we run it
 
 - **Its provider is Didit,** for both checks. The foundation pays it per check: about $0.15 a face
   check from 1 November 2026, and up to $0.30 a document check on Didit's list (October 2026). On
@@ -312,8 +314,8 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The document check costs `ID_TIER_PRICE`,** in the dollar `ID_TIER_MINT`, paid before the
   session opens. On devnet the price is 0, since no entity can receive the money yet.
 - **Where it is paid:** `ID_TIER_PAY_TO`, an address of its own, never the issuer's seed. On devnet,
-  once a price is set, it is the address mixed from the issuer's seed under `payments`
-  ([the repo's devnet facts](../README.md#on-devnet)), in the classic test dollar.
+  once a price is set, it is a foundation address set in `ID_TIER_PAY_TO` that the issuer's seed
+  cannot derive, in the classic test dollar.
 - **Never from a profile's address.** A payment is public on chain for good. Paid from a profile's
   address, it would tell everyone that this profile took the document check, and tell the issuer,
   which sees when each payment lands and opens a session for it, which Didit session, and so which
@@ -354,10 +356,10 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The consent screen.** Before the document check the app shows this, word for word; the last
   sentence only when there is a price:
 
-  > Forest checks your face and a government ID with Didit, its provider, to make sure each person
-  > is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth
-  > and document number), your selfie, a short video and a template of your face, so it can tell if
-  > the same face or ID comes back. Forest keeps none of this: only a one-way fingerprint of your
+  > Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its
+  > provider, to make sure each person is checked once. Didit keeps photos of your ID and what it
+  > reads on it (your name, date of birth and document number), your selfie, a short video and a
+  > template of your face, so it can tell if the same face or ID comes back. Forest keeps none of this: only a one-way fingerprint of your
   > name, date of birth and country next to your note number, so the same person is not checked
   > twice, and it gives you a note that does not say who you are. The check costs {price}, paid
   > before it starts, whatever it decides.
@@ -367,7 +369,7 @@ puts the real checks, and the face model, in the stand-in's place.
   Didit, not in this code. The issuer never asks Didit to delete a session: the duplicate search
   needs the face and the document. On devnet the stand-in keeps, in memory, the ids of the sessions
   it opened, their workflows and the names it made up, and nothing else.
-- **Data law:** Forest is the responsible party for both checks, so three things sit outside this
+- **Data law:** the Open Forest Foundation is the responsible party for both checks, so three things sit outside this
   code: a processing agreement with Didit, the consent screen above, and Didit's retention setting.
   Paperwork and settings; nothing here does them.
 
@@ -403,10 +405,9 @@ puts the real checks, and the face model, in the stand-in's place.
   seen before and a name made up for each document, so anyone who asks gets a note from the devnet
   issuer, at either tier.
 - **The issuer sees each buy of a person's gift,** by its reference, while it signs its ticket, and
-  keeps only a hash of them. A service that sees a buy collected with the ticket and its credits
-  spent soon after, from one network address, can tie the two, and the issuer knows whose note the
-  buy came with; the foundation runs all three
-  ([credits, Limits](../shared/credits/README.md#limits)).
+  keeps only a hash of them. A service that sees a buy collected with the ticket, and the credits
+  spent, from one network address, can tie the two, and the issuer knows whose note the buy came
+  with; the foundation runs all three ([credits, Limits](../shared/credits/README.md#limits)).
 - **A lost gift is lost.** The same buys asked for again get the same tickets; buys the app no
   longer holds cannot be finished, and other buys get `given`.
 - **A lost tier 2 note costs another document check.** The issuer signs it again for the same note
@@ -458,13 +459,13 @@ puts the real checks, and the face model, in the stand-in's place.
 
 ## Who decides what
 
-- **The standard (forest):** the note, the issuer secret and the note number, the stamp, and the
+- **The standard:** the note, the issuer secret and the note number, the stamp, and the
   person proof a row carries.
-- **This issuer, by its policy:** whom it signs notes for (one face check per face, by Didit; one
+- **This issuer, by its own choice:** whom it signs notes for (one face check per face, by Didit; one
   document check per person, after a face check, by Didit), what its tiers mean, the face model and
   when two faces are the same, the document check's price and where it is paid, the welcome gift
   (which services, how many credits), and its limits.
-- **Readers, by their own policy:** whether an index, a fee payer or a host trusts this issuer's
+- **Readers, by their own choice:** whether an index, a fee payer or a host trusts this issuer's
   key, and how much each tier weighs.
 - **The person, through their app:** whether to be checked, by which check and which issuers, and
   which address to pay from.

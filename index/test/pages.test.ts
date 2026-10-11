@@ -272,7 +272,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       const links = [...llms.matchAll(/\]\((https?:\/\/[^)]+)\)/g)].map((m) => m[1])
       assert.ok(links.length >= 6)
       for (const link of links) {
-        if (link.startsWith('https://github.com/foundationforest/services') || link.startsWith('https://github.com/foundationforest/standard')) continue
+        if (['services', 'standard', 'markets'].some((repo) => link.startsWith(`https://github.com/foundationforest/${repo}`))) continue
         assert.ok(link.startsWith(base), `${link} is on this index`)
         assert.equal((await get(link)).status, 200, link)
       }

@@ -1,5 +1,5 @@
 // Forest credits: prepaid units for one service, bought once and spent without the service being
-// able to tell who bought them. A credit is a Privacy Pass token of type 2 (RFC 9578): an RSA
+// able to tell who bought them. A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA
 // signature the service made blind, over a nonce only the buyer's app knows, so when it comes back
 // to be spent the service sees a good signature and nothing that ties it to the buy. See README.md.
 //
@@ -21,7 +21,7 @@ import { base58, base64urlnopad } from '@scure/base'
 
 const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicVerif
 
-/** The Privacy Pass token type a credit is: Blind RSA (2048-bit), RSABSSA-SHA384-PSS-Deterministic. */
+/** The Privacy Pass credit type a credit is: Blind RSA (2048-bit), RSABSSA-SHA384-PSS-Deterministic. */
 export const CREDIT_TYPE = 0x0002
 /** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
 export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
@@ -45,13 +45,13 @@ export type Service = {
   unit: string
   /** The Solana address a buy is paid to. */
   address: string
-  /** What it is paid in: a token's mint address, or SOL. */
+  /** What it is paid in: a dollar's mint address, or SOL. */
   mint: string
   /** The price of one credit, in whole units of the mint, decimal text. */
   price: string
 }
 
-/** A credit, as the vault keeps it: the service's origin, and the token's bytes in base64url. */
+/** A credit, as the vault keeps it: the service's origin, and the credit's bytes in base64url. */
 export type Credit = { service: string; credit: string }
 
 /** A buy waiting for its answer, as the vault keeps it: what `finish` needs, all of it bytes. */
@@ -263,7 +263,7 @@ export function authorization(credit: Credit | Uint8Array | string): string {
 
 /**
  * Several credits shown with one request, as its body lists them: each credit's bytes, base64url, in
- * order. A service takes as many in one request as its policy says, and all of them or none.
+ * order. A service takes as many in one request as it chooses, and all of them or none.
  */
 export function creditList(credits: (Credit | Uint8Array | string)[]): string[] {
   return credits.map((credit) => b64u.encode(bytesOf(credit)))
@@ -292,7 +292,7 @@ export async function checkCredit(credit: Credit | Uint8Array | string, service:
   }
   if (!same(token.serialize(), bytes)) throw new Error('not a credit: not in its one spelling')
   const input = token.authInput
-  if (input.tokenType !== CREDIT_TYPE) throw new Error('not a credit: another token type')
+  if (input.tokenType !== CREDIT_TYPE) throw new Error('not a credit: another credit type')
   if (!same(input.challengeDigest, await sha256(challengeOf(service.origin).serialize()))) throw new Error("not this service's credit")
   let keyBytes: Uint8Array | undefined
   for (const k of service.keys) if (same(input.tokenKeyId, await sha256(k))) keyBytes = k

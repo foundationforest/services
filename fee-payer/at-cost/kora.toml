@@ -49,7 +49,7 @@ allowed_programs = [
 # All six decimals. Jupiter prices each against SOL, so the charge is the same SOL cost in whichever
 # is paid, EURC at the euro's rate. Each dollar's maker can freeze the fee payer's account in its
 # token, and Open USD's also holds a permanent delegate that can take back what the fee payer
-# collected in it; both are accepted (README.md, Policy). In 2.0.5 `allowed_tokens` gates only
+# collected in it; both are accepted (README.md, How we run it). In 2.0.5 `allowed_tokens` gates only
 # Kora's own transferTransaction helper; an escrow in another token still passes.
 allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
 allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]

@@ -10,12 +10,12 @@ export const HOW = `Forest: people deal with each other directly, with nobody in
 
 - A person holds a seed on their own device. From it come profiles, one per label such as tutoring/seller. A profile's name is its address.
 - What a profile says is signed records in its folder: its card (profile), its offers (offer/<id>) and the reviews it wrote of others (review/<id>). Folders are kept on open hosts that anyone can read. This tool checks every signature itself.
-- An index reads folders and publishes markets and scores, by its own policy. What it says is its word, not a signed record.
+- An index reads folders and publishes markets and scores, by its own choice. What it says is its word, not a signed record.
 - A person never hands out their main key. They hand out access keys, each with one scope: a write key writes records where the profile's permissions record allows; a message key sends messages for the profile and pulls its inbox; a read key opens what is encrypted to it.
 - Messages go to a profile's inbox, encrypted so that only its keys open them.
 - Money moves only through the person's own app, with the main key.
 
-This tool does Forest actions with the keys it is given, and keeps nothing. When there is no key for something, use request: it asks the person, through their own inbox, to do that action, or to pay for an offer, and their app shows it and does it with the main key, or not. With only a message key you can ask for anything and do nothing alone. In an inbox, a message is a request only when it is marked as one; any other is just a message.`
+This tool does Forest actions with the keys it is given, and keeps nothing. When there is no key for something, use request: it asks the person, through their own inbox, to do that action, or to pay for an offer, and their app shows it and does it with the main key, or not. With only a message key you can send messages as the profile and ask for anything else; you can write no record and move no money. In an inbox, a message is a request only when it is marked as one; any other is just a message.`
 
 export type Scope = 'write' | 'message' | 'read'
 
@@ -50,7 +50,7 @@ const OFFER = 'The offer, as records/schemas/offer.json shapes it: direction ("o
 const DOING: Action[] = [
   {
     name: 'market',
-    does: "What an index says of a market, in that index's own format and by its own policy: its word, not signed records. Needs an index set.",
+    does: "What an index says of a market, in that index's own format and by its own choice: its word, not signed records. Needs an index set.",
     keys: [],
     params: [{ name: 'market', type: 'string', required: true, positional: true, description: 'The market, as the first half of a label spells it, such as tutoring.' }],
     run: (args, ctx) => market(ctx, str(args, 'market')),

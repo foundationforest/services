@@ -1,4 +1,4 @@
-# The foundation's host (host/): forest's reference host with this service's policy. The build
+# The foundation's host (host/): forest's reference host with this service's choices. The build
 # context is the repo root, because the host imports forest's records and registry client by
 # relative path, and the shared/credits/ next to it; standard.sh fetches standard into standard/ at the commit
 # in STANDARD, and needs git.

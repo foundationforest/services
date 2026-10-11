@@ -1,13 +1,15 @@
 # registry payer
 
-The registry payer pays for a person's registry row against one credit, which anyone can buy for
-them.
+Part of Forest's services: [the top README](../../README.md).
 
-The foundation runs this one, on devnet. Anyone can run another, from this code or their own:
-whoever signs a transaction as payer pays for it, and the registry cares nothing for who that is
-([standard](https://github.com/foundationforest/standard/blob/main/README.md#for-builders)).
+The registry payer pays for a person's registry row (the registry's public entry that says a profile
+holds a note) against one credit (a prepaid unit it sells), which anyone can buy for them.
 
-Up: [the fee payer's folder](../README.md).
+The Open Forest Foundation runs this one, on devnet. Anyone can run another, from this code or
+their own: whoever signs a transaction as payer pays for it, and the registry cares nothing for who
+that is
+([the standard](https://github.com/foundationforest/standard/blob/main/README.md#for-builders)).
+
 
 ## How it works
 
@@ -35,11 +37,11 @@ whose unit is `one registration`. It sells and spends them with the seller in
 
 **Its directory,** `GET /.well-known/private-token-issuer-directory`, names its credit key, where a
 buy goes (`/credits/buy`), and its `forest-credit` entry: the unit, the address a credit is paid
-to, the token and one credit's price ([Policy](#policy)).
+to, the dollar and one credit's price ([How we run it](#how-we-run-it)).
 
 **Buying.** The app makes a buy of `n` credits (standard's `buy`), and it is paid in one of two
 ways: anyone pays its pay link, `n` × the price to the registry payer's address naming the buy's
-reference, and hands over the transaction's signature; or a sponsor in `SPONSORS` signs a ticket
+reference, and hands over the transaction's signature; or a sponsor, a key listed in `SPONSORS`, signs a ticket (a signed promise to pay for that buy)
 for it. Then anyone posts the buy's bytes to `POST /credits/buy`, with the proof in the
 `Forest-Payment` header. It checks the proof (a Solana payment in one `getTransaction` at
 finalized), and answers with the `n` blind signatures, the same each time the buy is collected with
@@ -115,8 +117,8 @@ Holds are kept in its file, so a restart settles them. No clock decides anything
 | `PUBLIC_ORIGIN` | yes | | Its public origin, `https://<host>`: the name every credit's challenge carries, so it must be the address apps use |
 | `CREDIT_KEY` | yes | | Its credit key: RSA-2048, PKCS #8 DER, in base64, as `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \| openssl pkcs8 -topk8 -nocrypt -outform DER \| base64 -w0` writes one. Read once at start and removed from the environment |
 | `CREDIT_ADDRESS` | yes | | The address a credit is paid to |
-| `CREDIT_MINT` | yes | | The token a credit is paid in, or `SOL` |
-| `CREDIT_PRICE` | yes | | One credit's price, decimal text in whole tokens |
+| `CREDIT_MINT` | yes | | The dollar a credit is paid in, by its mint, or `SOL` |
+| `CREDIT_PRICE` | yes | | One credit's price, decimal text in whole dollars |
 | `CREDITS_PER_BUY` | no | `10` | The most credits one buy may ask for |
 | `SPONSORS` | no | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
 | `REGISTRY_PROGRAM` | yes | | The registry a row is written by |
@@ -166,7 +168,7 @@ https://registry-payer.devnet.forest.foundation.
 | `DATABASE_PATH` | `/data/credits.sqlite` | no |
 | `PORT` | `8080` | no |
 
-## Policy
+## How we run it
 
 - **One program of ours, with its own key,** signing and sending each row it pays for.
 - **Rows only:** one `register` in a transaction and nothing else, the row under any issuer and any
@@ -223,8 +225,8 @@ https://registry-payer.devnet.forest.foundation.
   ([standard's registry](https://github.com/foundationforest/standard/blob/main/registry/README.md)).
 - **One container.** When it stops, the registry payer stops, until the hosting platform starts it
   again.
-- **A credit is a bearer token, and timing can link.** A buy collected and a credit spent moments
-  later, from one network address, can be matched
+- **Whoever holds a credit can spend it, and a network address can link.** A buy collected and a
+  credit spent from one network address can be matched
   ([credits, Limits](../../shared/credits/README.md#limits)).
 - **It trusts its RPC,** for a payment, a simulation, and whether a row exists.
 - **What it collects sits under its signing key,** in the key's own token account; nothing moves it
@@ -237,7 +239,7 @@ https://registry-payer.devnet.forest.foundation.
 - **`shared/credits/`:** the credit, its directory entry, the buy, the ways to pay, and the rules: a
   proof pays for one buy; a credit is spent once, only when its action lands, and never refunded.
   The registry takes no fee and cares nothing for who pays.
-- **This registry payer, by its policy:** what it pays for, its price, token and address, which
+- **This registry payer, by its own choice:** what it pays for, its price, dollar and address, which
   sponsors it takes, how many credits a buy may hold, and when a row has landed.
 - **An app, with the person:** which registry payer to use, or none, and when to spend a credit.
 - **A buyer or a sponsor:** whom it pays for.
