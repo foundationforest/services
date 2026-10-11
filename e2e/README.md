@@ -1,13 +1,15 @@
 # e2e
 
+Part of Forest's services: [the top README](../README.md).
+
 The loop, end to end on devnet: two new people do everything a person does on Forest, against the
 services this repo deploys, and the run checks that the index shows the result.
 
-It is not a service: the foundation runs it by hand, with the devnet phrase, against its host,
+It is not a service: the Open Forest Foundation runs it by hand, with the devnet phrase, against its host,
 issuer, registry payer, fee payer and index. Anyone running their own can point `devnet.json` at theirs. It runs on
 Solana's devnet, with test dollars and the stand-in for the issuer's checks.
 
-Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md).
+The host it writes to: [`host/`](../host/README.md).
 
 ## How it works
 
@@ -16,11 +18,13 @@ Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md
 
 ### What it proves
 
-That a person's app, with forest's pieces alone, takes a new person from 24 words to a profile the
-index counts as one real person, rated and ID-checked, through these services as deployed: the
-issuer's two checks and its welcome gift of credits, credits bought on Solana, a row through the registry payer with a credit
-and one through the fee payer, records, a photo and messages on the host paid for in credits, an
-assistant acting through the CLI ([`mcp/`](../mcp/README.md)) with access keys only, a payment
+That a person's app, with the standard's pieces alone, takes a new person from 24 words to a
+profile the index counts as one real person, rated and ID-checked, through these services as
+deployed: the issuer's two checks and its welcome gift of credits (prepaid units of a service),
+credits bought on Solana, a row (the registry's public entry that says a profile holds a note)
+through the registry payer with a credit and one through the fee payer, records, a photo and
+messages on the host paid for in credits, an assistant acting through mcp
+([`mcp/`](../mcp/README.md)) with access keys only, a payment
 through the escrow, reviews, and a rating proven on the device. The seller pays nothing but the
 gift's credits; the buyer pays only in test dollars and credits. Every step checks what it did, and the run passes only if every
 step does.
@@ -30,8 +34,9 @@ step does.
 Two people, a seller and a buyer, in the market `tutoring`, each the way their app would do it:
 
 1. **Keys.** A seed from 24 words, and from it the main key, the inbox key, and the person's secret
-   and note number for the issuer, mixed under the name the issuer publishes at `/issuer.json`
-   (forest's keys). The run checks that the key published there is the one in `devnet.json`.
+   and note number for the issuer (a note is the issuer's signed statement that the person was
+   checked), mixed under the name the issuer publishes at `/issuer.json`
+   (the standard's keys). The run checks that the key published there is the one in `devnet.json`.
 2. **Setup.** A test-dollar account each and some test dollars, paid by the devnet deploy key; and
    for the buyer, an address of its own apart from its profile, as a wallet app holds one, with a
    dollar and a little SOL. Nothing a profile does after this needs anything but test dollars and
@@ -41,7 +46,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    run checks the issuer's signature on it, its key, the note number and the tier. With the
    seller's note request its app sends the references of two buys it made, of as many credits as
    `/issuer.json`'s gift names, at the registry payer and at the host; the issuer answers a
-   sponsor's ticket for each, and the app collects each buy with its ticket, at once. The buyer
+   sponsor's ticket (a signed promise to pay for that buy) for each, and the app collects each buy with its ticket, at once. The buyer
    buys its host credits on Solana: a plain transfer from its own address to the host's, naming the
    buy's reference, not through the fee payer; once it is finalized, the app collects the buy with
    the transaction's signature.
@@ -61,7 +66,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    its assistant; the buyer's takes as many as come.
 6. **Keys for an assistant.** Each app makes its assistant's access keys at random and lists them in
    the profile's permissions record: the seller's a write key (offers and reviews), a message key
-   and the read key; the buyer's a write key. The assistants are the CLI (`mcp/`), given the profile,
+   and the read key; the buyer's a write key. The assistants are mcp (`mcp/`), given the profile,
    the host and those keys. The seller's posts an offer with a photo (`post-offer`), signed by the
    write key; the seller's app then puts the photo's bytes on the host, which takes them because the
    offer names them and the folder pays for them.
@@ -69,25 +74,26 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    read key open, signs it and delivers it to the seller's host, which checks that the buyer holds a
    row from the issuer. A second message is refused (`once`). The seller's app pulls its inbox with
    its main key and opens the message.
-8. **The seller's assistant,** through the CLI: `inbox` pulls with the message key and opens the
+8. **The seller's assistant,** through mcp: `inbox` pulls with the message key and opens the
    message with the read key; `send` replies, signed by the message key for the seller, which the
    buyer's host takes after reading the seller's permissions, and the buyer sees the message key
    sent it; `request` asks the seller, through the seller's own inbox, to post an offer the
    assistant drafted, which the seller's app pulls and opens, and `inbox` marks as a request. Then
    the seller makes the message key past and deletes the read key, from its permissions record and
-   its inbox's readers. The CLI refuses both keys; the host refuses the past key's pull at once
+   its inbox's readers. mcp refuses both keys; the host refuses the past key's pull at once
    (`permission`), and a message the past key signed (`permission`) once the host's cache time
    (`senderCacheSeconds` in `devnet.json`) and ten seconds more have passed.
 9. **The deal.** The buyer pays through the escrow in one tap, pay and release in one transaction,
    through the fee payer's at-cost door. The run checks that the escrow's address comes from its
    terms, and that its rent goes back to the fee payer, which paid it.
-10. **Reviews.** Each assistant reviews the other through the CLI (`post-review`), naming the deal.
+10. **Reviews.** Each assistant reviews the other through mcp (`post-review`), naming the deal.
 11. **The index shows it:** both profiles with their rows counted under the issuer's key, and the
     seller's page naming the issuer; the offer with its photo shown from the host; the deal released
     to the seller; both reviews counted at full weight. Not the messages, nor the request.
 12. **The rating, proven.** The seller's app finds its own leaf among the index's reputation leaves
-    by the stamp its secret gives under its label, scored 10 from one review. It proves that rating
-    in its market on the device, with forest's reputation circuit, for its own profile: the proof
+    by the stamp (the number a person has for one label at one issuer) its secret gives under its
+    label, scored 10 from one review. It proves that rating
+    in its market on the device, with the standard's reputation circuit, for its own profile: the proof
     shows the stamp of the seller's row, so it lands on that profile alone. It puts the proof on its
     card and publishes the card again. The index checks the proof and the row at its stamp, and the
     seller's page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
@@ -104,7 +110,7 @@ and had left, never a credit itself; the run exits 0 only if every step passed.
 ### Run it
 
 Node 22.18 or later, with standard fetched at the commit in `STANDARD`, and the reputation circuit's
-proving files (the person circuit's are in forest):
+proving files (the person circuit's are in the standard):
 
 ```sh
 ./standard.sh keys records registry/client escrow/client reputation/client
@@ -155,14 +161,14 @@ payment on Solana was collected and finished. Its record is
   folder held 491 and the buyer's 17: every write here cost one credit.
 - **Keys:** the seller's app made a write key `ngHpq7YV…`, a message key `AMuQNo3Z…` and the read
   key; the buyer's app a write key `FmPLUKSP…`.
-- **Records:** the offer `offer/maths`, posted through the CLI and signed by the write key, and its
+- **Records:** the offer `offer/maths`, posted through mcp and signed by the write key, and its
   photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, encrypted to the seller's inbox key and the
   read key, taken; a second refused (`once`); the seller pulled and opened it.
 - **The assistant:** `inbox` pulled and opened the message; `send` replied, 2,681 bytes, taken by
   the buyer's host after reading the seller's permissions; `request` put
   `{ request: "post-offer", offer, id: "physics" }` in the seller's inbox, which the seller's app
-  opened. Then the seller listed the message key as past and deleted the read key; the CLI refused
+  opened. Then the seller listed the message key as past and deleted the read key; mcp refused
   `send` ("this key is past") and `private` ("not listed"); the host refused the past key's pull at
   once (`permission`), and 71 seconds later a message it signed (`permission`).
 - **The deal:** escrow `2iAUA72u…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent
@@ -187,9 +193,9 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 
 - **No key, phrase or keyed URL in this directory.** The devnet phrase comes from the environment,
   and a run's record holds addresses, signatures and charges only.
-- **It does what an app would,** with forest's own pieces: keys, records, the registry and escrow
+- **It does what an app would,** with the standard's own pieces: keys, records, the registry and escrow
   clients, and the reputation circuit's client. Nothing in it reaches around a service.
-- **No credit in a run's record.** A credit is a bearer token; the record holds how many were
+- **No credit in a run's record.** A credit is a bearer credit; the record holds how many were
   bought and spent, and the buys' references.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
   and the error.
@@ -207,7 +213,7 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 - **One inbox rule and one photo.** It tests inboxes open to one issuer's rows, with and without
   one message from each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a
   profile's photo or a video.
-- **The CLI's actions, called in process; one host.** The assistants run the CLI's actions as
+- **mcp's actions, called in process; one host.** The assistants run mcp's actions as
   its typed door runs them, not through `forest` itself or its MCP door. A host other than the
   foundation's, or a seller and buyer on different hosts, is not tested.
 - **One proof:** the seller's own rating in its own market, from one profile. It does not prove
@@ -217,9 +223,9 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 
 ## Who decides what
 
-- **The standard (forest):** what each step makes and checks: keys, records, messages, rows, the
+- **The standard:** what each step makes and checks: keys, records, messages, rows, the
   escrow and the proofs.
-- **Each service, by its policy:** what it takes and what it charges; the run checks it as
+- **Each service, by its own choice:** what it takes and what it charges; the run checks it as
   deployed.
 - **The foundation:** when to run it, and what `devnet.json` points at.
 
