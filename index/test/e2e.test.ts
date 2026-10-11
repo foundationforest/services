@@ -180,13 +180,12 @@ test('the index, end to end', { timeout: 600_000 }, async (t) => {
     const markets = await serveMarkets()
     cleanups.push(() => markets.close())
     writeFileSync(join(scratch, 'hosts.json'), JSON.stringify({ hosts: [hostUrl] }))
-    writeFileSync(join(scratch, 'markets.json'), JSON.stringify({ directory: markets.url }))
     writeFileSync(join(scratch, 'issuers.json'), JSON.stringify({ issuers: { [foundation.key]: { name: 'Forest Foundation', weights: { '1': 1 } } } }))
     const config = loadConfig({
       DATABASE_URL: dbUrl.toString(),
       INDEX_SIGNING_SEED: '09'.repeat(32),
       HOSTS_FILE: join(scratch, 'hosts.json'),
-      MARKETS_FILE: join(scratch, 'markets.json'),
+      MARKETS_URL: markets.url,
       ISSUERS_FILE: join(scratch, 'issuers.json'),
       SOLANA_RPC_URL: RPC,
       REGISTRY_PROGRAM_ID: REGISTRY_ID.toBase58(),

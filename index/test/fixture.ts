@@ -210,18 +210,17 @@ export async function makeFixture(adminUrl: string): Promise<Fixture> {
   const url = new URL(adminUrl)
   url.pathname = `/${name}`
   const markets = await serveMarkets()
-  // The four lists, as files: no host (the records go straight in), the test markets directory, the test
+  // The lists, as files: no host (the records go straight in), the test
   // issuer, and the index itself as the one whose proofs count.
   const lists = mkdtempSync(join(tmpdir(), 'forest-index-lists-'))
   writeFileSync(join(lists, 'hosts.json'), JSON.stringify({ hosts: [] }))
-  writeFileSync(join(lists, 'markets.json'), JSON.stringify({ directory: markets.url }))
   writeFileSync(join(lists, 'issuers.json'), JSON.stringify({ issuers: { [ISSUER]: { name: ISSUER_NAME, weights: { '1': 1 } } } }))
   writeFileSync(join(lists, 'indexes.json'), JSON.stringify({ roots: ROOTS, indexes: { [INDEX]: { name: INDEX_NAME } } }))
   const env = {
     DATABASE_URL: url.toString(),
     INDEX_SIGNING_SEED: SIGNING_SEED,
     HOSTS_FILE: join(lists, 'hosts.json'),
-    MARKETS_FILE: join(lists, 'markets.json'),
+    MARKETS_URL: markets.url,
     ISSUERS_FILE: join(lists, 'issuers.json'),
     INDEXES_FILE: join(lists, 'indexes.json'),
     ESCROW_PROGRAM_ID: ESCROW_PROGRAM,

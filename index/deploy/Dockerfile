@@ -1,8 +1,9 @@
 # The index (index/): its readers and its pages. The build context is the repo root, because the
 # index imports forest's records, registry client, escrow client and reputation client (its
 # verification key module; no proving file) by relative path; standard.sh fetches them into
-# standard/ at the commit in STANDARD, and needs git. What it reads is its four lists
-# in index/lists/, and its opinions are index/config/: both are in the image.
+# standard/ at the commit in STANDARD, and needs git. What it reads is its lists in
+# index/lists/ and the markets directory, which it reads over the network, and its opinions are
+# index/config/: the lists and the config are in the image.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
 FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \

@@ -5,8 +5,8 @@ scores each profile, and serves it all at open URLs: pages for people, JSON for 
 
 The foundation runs this one, on devnet, at https://index.devnet.forest.foundation. Anyone can run
 another, from this code or their own. What this one reads and how it weighs it are its
-[Policy](#policy), files in this directory, so anyone can rebuild what it shows from them, the hosts
-and the chain.
+[Policy](#policy), files in this directory and the markets directory, so anyone can rebuild what it
+shows from them, the hosts and the chain.
 
 Up: [the repo](../README.md). For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
@@ -55,8 +55,8 @@ markets directory ── every market it lists ───────────
   ([escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)).
   Everything it knows of the escrow is in `src/chain/escrow.ts`.
 - **Markets, from the markets directory.** Every market its `directory.md` lists (the directory is
-  at the URL in `lists/markets.json`, which names no market), read at start and again every hour,
-  never copied, so there is one source of names. A market counts as soon as it appears there, with
+  at `MARKETS_URL`), read at start and again every hour, never copied, so there is one source of
+  names. A market counts as soon as it appears there, with
   no restart. Each file is checked for the fields the index reads (`name`, `folder`, `description`,
   `sides`, `roleNames`, `evidenceTypes`, `offerFields`, `reviewFields`, `ratings`, `howDealsGo`). A
   name the directory does not list, or a file that fails, is not used. An offer names no market: it
@@ -274,7 +274,8 @@ Environment variables, read once at start; a change means a restart.
 | `POLL_MS` | no | `5000` | How often the readers look for anything new |
 | `PUBLIC_URL` | no | `https://forest.foundation` | Where the pages are published: an origin |
 | `PORT` | no | `8080` | |
-| `HOSTS_FILE`, `MARKETS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
+| `HOSTS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
+| `MARKETS_URL` | no | `https://raw.githubusercontent.com/foundationforest/markets/main` | Where the markets are read from: a markets directory, `directory.md` and the files it links |
 | `SCORING_FILE`, `CURRENCIES_FILE` | no | the files in `config/` | |
 
 The `_FILE` variables point the index at another index's lists and weights ([Policy](#policy)).
@@ -379,8 +380,9 @@ key.
 ## Policy
 
 Each of these is this index's opinion, not a rule. The lists and weights are files in this
-directory, read at start, not settings on a server, so anyone can rebuild what this index shows from
-them, the hosts and the chain. Another index holds its own.
+directory, read at start, and the markets are the markets directory's, read every hour: none is a
+setting on a server, so anyone can rebuild what this index shows from them, the hosts and the chain.
+Another index holds its own.
 
 - **Which hosts it reads** (`lists/hosts.json`): each in full. Today one: the foundation's host on
   devnet, https://host.devnet.forest.foundation. It takes no hosts records (`POST /v1/hosts`,
@@ -393,9 +395,8 @@ them, the hosts and the chain. Another index holds its own.
   devnet issuer, "Forest issuer (devnet)", at 0.7 for tier 1 (its face check) and 0.9 for tier 2
   (its document check), with no `until`. A row whose card shows no tier counts at 0.7. Tier 2 shows
   as "ID-checked".
-- **Which markets count** (`lists/markets.json`): every market in the
-  [markets directory](https://github.com/foundationforest/markets)'s `main`, which that file points
-  to, read every hour.
+- **Which markets count** (`MARKETS_URL`): every market in the
+  [markets directory](https://github.com/foundationforest/markets)'s `main`, read every hour.
 - **How reviews weigh** (`config/scoring.json`): evidence `both` 1 (and so `oneSidedConfirmed`),
   `oneSided` 0.5, `none` 0.05; the floor for a reviewer's weight, 0.05; standing repeated until no
   profile moves by more than 10⁻⁹, for at most 100 rounds.
@@ -430,8 +431,10 @@ them, the hosts and the chain. Another index holds its own.
   open to anyone, with no login.
 - **It keeps no network address.** The pages log only a failed request's path and its error, never
   an address or a query.
-- **What it reads is public, and listed in this repo:** the hosts, the markets and the issuers it
-  uses are three files in `lists/`, and its weights are files in `config/`.
+- **What it reads is public, and listed:** the hosts and the issuers it uses are two files in
+  `lists/`, its markets are the `directory.md` of
+  [foundationforest/markets](https://github.com/foundationforest/markets), re-read every hour, and
+  its weights are files in `config/`.
 - **It scores each profile on its own.** Nothing here links two profiles; nothing ties a profile to
   a person.
 - **It never blends its scores into one number,** and signs every one it serves.

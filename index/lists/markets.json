@@ -1,4 +1,0 @@
-{
-  "about": "Where the foundation's index reads its markets from: the markets directory. Its directory.md is the only list of markets: every market it lists counts here, as soon as it appears, and a market it does not list is no market this index shows. The index reads it at start and every hour. This is the index's opinion, not a rule: another index reads another directory.",
-  "directory": "https://raw.githubusercontent.com/foundationforest/markets/main"
-}

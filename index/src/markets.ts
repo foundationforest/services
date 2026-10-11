@@ -1,5 +1,5 @@
 // The markets this index uses: every market the markets directory lists, read over HTTPS, never
-// copied; lists/markets.json says only where the directory is. The directory's `directory.md` names
+// copied; the markets repo's directory is the only list of them. Its `directory.md` names
 // each market with a link to its file, `<folder>/<name>.json`. A market is its one name, byte for
 // byte. The directory is read at start and again every hour (`refresh`), so a market counts as soon
 // as it appears there.
