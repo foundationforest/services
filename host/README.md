@@ -83,13 +83,14 @@ current stays as long as it is current; the price covers that.
 
 **A write costs exactly its price or nothing.**
 
-- **A record or a message** is claimed by its id in the same transaction that takes its price. A
-  second copy in flight at once, or the same write sent again after a stop between its price and
-  its store, costs nothing.
-- **Bytes** are stored first and charged after. Their price is reserved on the folder, so no other
-  write can spend it; the standard's host keeps them; then the price is taken. If they are not kept, the
-  reservation is released. The front sends on one put of the same bytes at a time, so a second copy
-  finds them kept and pays nothing.
+- **A record or a message** is charged before it is stored: its price is taken, and the write
+  claimed by its id, in one transaction; then the standard's host stores it. A second copy in
+  flight at once, or the same write sent again after a stop between its price and its store, costs
+  nothing.
+- **Bytes** are reserved, stored, then charged. Their price is reserved on the folder, so no other
+  write can spend it; the standard's host keeps them; then the price is taken. If they are not
+  kept, the reservation is released. The front sends on one put of the same bytes at a time, so a
+  second copy finds them kept and pays nothing.
 
 ### Settings
 
