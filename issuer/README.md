@@ -314,8 +314,8 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The document check costs `ID_TIER_PRICE`,** in the dollar `ID_TIER_MINT`, paid before the
   session opens. On devnet the price is 0, since no entity can receive the money yet.
 - **Where it is paid:** `ID_TIER_PAY_TO`, an address of its own, never the issuer's seed. On devnet,
-  once a price is set, it is the address mixed from the issuer's seed under `payments`
-  ([the repo's devnet facts](../README.md#on-devnet)), in the classic test dollar.
+  once a price is set, it is a foundation address set in `ID_TIER_PAY_TO` that the issuer's seed
+  cannot derive, in the classic test dollar.
 - **Never from a profile's address.** A payment is public on chain for good. Paid from a profile's
   address, it would tell everyone that this profile took the document check, and tell the issuer,
   which sees when each payment lands and opens a session for it, which Didit session, and so which
@@ -369,7 +369,7 @@ puts the real checks, and the face model, in the stand-in's place.
   Didit, not in this code. The issuer never asks Didit to delete a session: the duplicate search
   needs the face and the document. On devnet the stand-in keeps, in memory, the ids of the sessions
   it opened, their workflows and the names it made up, and nothing else.
-- **Data law:** Forest is the responsible party for both checks, so three things sit outside this
+- **Data law:** the Open Forest Foundation is the responsible party for both checks, so three things sit outside this
   code: a processing agreement with Didit, the consent screen above, and Didit's retention setting.
   Paperwork and settings; nothing here does them.
 

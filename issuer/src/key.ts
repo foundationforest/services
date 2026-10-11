@@ -9,9 +9,9 @@
 //     every note (standard/registry/README.md, "The note and the person proof");
 //   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
 //   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
-//     for one document check names; `payments`, the devnet address payments go to once there is a
-//     price; and `sponsor`, the key that signs the welcome gift's tickets (gift.ts). None holds
-//     money.
+//     for one document check names; and `sponsor`, the key that signs the welcome gift's tickets
+//     (gift.ts). None holds money. The address a price is paid to (ID_TIER_PAY_TO) is not mixed
+//     from it.
 
 import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
 import { readFileSync } from 'node:fs'

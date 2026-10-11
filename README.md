@@ -151,7 +151,7 @@ settings and its volume. Railway's service ids: `issuer`
 | The issuer's name, which each person's secret for it is mixed from | `issuer.devnet.forest.foundation` |
 | The issuer's seed, the devnet `issuer` key, which signs nothing itself | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` |
 | The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
-| The address the document check's price is paid to once one is set, mixed from the issuer's seed under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
+| Where the document check's price is paid, once one is set | A foundation address set in `ID_TIER_PAY_TO`, which the issuer's seed cannot derive; none is set on devnet |
 | The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW` |
 | The registry payer's key, which its credits are paid to: a random key made for it, not mixed from the devnet phrase | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
@@ -159,9 +159,9 @@ settings and its volume. Railway's service ids: `issuer`
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
 Every key but the registry payer's is derived from the devnet phrase by the recipe in the
-standard's `devnet/deploy.sh` scripts, and the issuer's note key, payments address and sponsor key
-from its seed, by the standard's `hkdf` and `mainKey`; the registry payer's is random. None is in
-this repo. Open in a browser: [the index](https://index.devnet.forest.foundation/) and
+standard's `devnet/deploy.sh` scripts, and the issuer's note key and sponsor key from its seed, by
+the standard's `hkdf` and `mainKey`; the registry payer's is random. None is in this repo. Open in a browser:
+[the index](https://index.devnet.forest.foundation/) and
 [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json); the latest e2e run's
 seller and deal are in [`e2e/`](e2e/README.md).
 
