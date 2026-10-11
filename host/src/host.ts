@@ -8,7 +8,7 @@
 // loopback.
 //
 // Every write is paid for in credits, from a folder's balance here, and costs exactly its price or
-// nothing: forest's host asks this host's policies (`policy`, `messagePolicy`, `blobPolicy`). A
+// nothing: forest's host asks this host's choices (`recordChoice`, `messageChoice`, `blobChoice`). A
 // record or message is claimed by its id as its price is taken, so two copies pay once. Bytes are
 // stored first: their price is reserved, then taken once forest answers that it kept them, or
 // released; the front sends on one put of the same bytes at a time. Forest's host asks nothing
@@ -39,7 +39,7 @@ import { Connection, PublicKey } from '@solana/web3.js'
 
 import { readPage } from '../../standard/records/src/client.ts'
 import { publicFetch } from '../../standard/records/src/public.ts'
-import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../standard/records/src/host.ts'
+import { type BlobChoice, type BlobDriver, Host, type HostOptions, defaultBlobChoice } from '../../standard/records/src/host.ts'
 import { encodeMessage, messageId, unsignedMessageOf } from '../../standard/records/src/message.ts'
 import { type Checked, encodeRecord, recordId, unsignedOf } from '../../standard/records/src/record.ts'
 import { type BlobStore, blobStore } from '../../standard/records/src/storage.ts'
@@ -205,8 +205,8 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
  * the first folder whose current records name them that holds it. The front takes it once forest has
  * kept them, or releases it (`Credits.stored`).
  */
-export function paidBlobs(credits: Credits): BlobPolicy {
-  return async (blob) => (await defaultBlobPolicy(blob)) ?? credits.reserve(blob.sha256, blob.folders, priceOf(blob.size))
+export function paidBlobs(credits: Credits): BlobChoice {
+  return async (blob) => (await defaultBlobChoice(blob)) ?? credits.reserve(blob.sha256, blob.folders, priceOf(blob.size))
 }
 
 /**
@@ -422,9 +422,9 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
     ...POLICY,
-    policy: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
-    messagePolicy: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
-    blobPolicy: paidBlobs(credits),
+    recordChoice: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
+    messageChoice: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
+    blobChoice: paidBlobs(credits),
     ...(lookup && { rowLookup: lookup }),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
   })

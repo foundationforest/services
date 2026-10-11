@@ -54,7 +54,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
    shows tier 1 against it.
 5. **Cards.** Each app sends the profile's hosts record and card to the host, which takes the hosts
-   record free and refuses the card (`policy`): the folder holds no credits there. The app spends the
+   record free and refuses the card (`refused`): the folder holds no credits there. The app spends the
    host credits it holds into the folder's balance, 100 a request, and sends the card again. The card has its inbox key and
    an inbox for senders holding a row from the issuer, named by its key. The seller's takes
    one message from each sender, and lists among its readers a read key its app made at random for
@@ -149,7 +149,7 @@ collected about two seconds after it was sent, already finalized. Its record is
   refused as `spent` once the row landed. The seller held no SOL and paid no dollar.
   `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test dollars. Each read back
   naming its profile, the issuer's key and the key that paid for it, and each proof showed tier 1.
-- **The host:** each folder's card was refused (`policy`) while it held no credits; then the seller
+- **The host:** each folder's card was refused (`refused`) while it held no credits; then the seller
   spent 500 credits into its folder in 5 requests and the buyer 20 in one. At the end the seller's
   folder held 491 and the buyer's 17: every write here cost one credit.
 - **Keys:** the seller's app made a write key `86HZRD51…`, a message key `kE8VG34P…` and the read
