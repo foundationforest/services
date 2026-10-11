@@ -1,12 +1,12 @@
 # services
 
-The first services on Forest's open standard, [forest](https://github.com/foundationforest/forest):
+The first services on Forest's open standard, [forest](https://github.com/foundationforest/standard):
 an issuer, a registry payer, a fee payer, a host, an index, and a CLI, with a hosted copy for AI
 chats. The Forest Foundation runs all six, on devnet. Anyone can run another of each, from this
 code (Apache 2.0) or their own.
 
 The foundation writes forest, and runs the first of each service until there are others
-([forest's pieces](https://github.com/foundationforest/forest/blob/main/README.md#the-pieces)).
+([forest's pieces](https://github.com/foundationforest/standard/blob/main/README.md#the-pieces)).
 The body that writes the standard runs the first of each, so no second body ever has a reason to
 lock people in, and it should want to lose each one: a person's seed, keys and records live with
 them, so each service must stay good, cheap and open, or people leave. One name, one set of books;
@@ -14,17 +14,25 @@ the foundation has no shareholders and pays nothing out.
 
 ## The services
 
-| Service | What it does | On devnet | Directory |
-|---|---|---|---|
-| issuer | Checks once, by face, that a person is one real human, and signs them a note; a second check, by face and a government document, signs the same note at tier 2. At the first note, it signs a sponsor's ticket for each of the person's first buys | https://issuer.devnet.forest.foundation | [`issuer/`](issuer/README.md) |
-| registry payer | Pays for a person's registry row against one of its credits, which anyone can buy for them | https://registry-payer.devnet.forest.foundation | [`fee-payer/registry/`](fee-payer/registry/README.md) |
-| fee payer | Pays Solana's costs for a person's transactions at cost, in the dollar they hold | https://fee-payer.devnet.forest.foundation | [`fee-payer/`](fee-payer/README.md) |
-| host | Keeps people's signed records, messages and photos, paid for in its credits, and serves them to anyone: forest's reference host, with its policy | https://host.devnet.forest.foundation | [`host/`](host/README.md) |
-| index | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree; serves pages for people and JSON for AI agents | https://index.devnet.forest.foundation | [`index/`](index/README.md) |
-| mcp | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats that cannot run a program on the person's device | https://mcp.devnet.forest.foundation/mcp | [`mcp/`](mcp/README.md) |
+| Folder | What it is |
+|---|---|
+| [`issuer`](issuer/README.md) | Checks once, by face, that a person is one real human, and signs them a note |
+| [`fee-payer`](fee-payer/README.md) | The registry payer in `registry/`, the fee payer in `at-cost/` |
+| [`host`](host/README.md) | Keeps people's signed records, messages and photos, paid for in its credits |
+| [`index`](index/README.md) | Reads the hosts it lists, the registry's rows and the escrow's receipts, and scores each profile |
+| [`mcp`](mcp/README.md) | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats |
+| [`shared/credits`](shared/credits/README.md) | Code the host, the registry payer and the issuer share |
+| [`e2e`](e2e/README.md) | The test of the whole loop |
 
-[`shared/credits/`](shared/credits/README.md) is the code the host, the registry payer and the issuer share to sell, take and gift credits.
-[`e2e/`](e2e/README.md) runs the loop below end to end on devnet, against these services, by hand.
+On devnet:
+
+- issuer: https://issuer.devnet.forest.foundation
+- registry payer: https://registry-payer.devnet.forest.foundation
+- fee payer: https://fee-payer.devnet.forest.foundation
+- host: https://host.devnet.forest.foundation
+- index: https://index.devnet.forest.foundation
+- mcp: https://mcp.devnet.forest.foundation/mcp
+
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
 
@@ -53,7 +61,7 @@ records and rows.
 
 A person's app holds their seed, and mixes from it a main key for each label, such as
 `tutoring/seller`
-([forest's keys](https://github.com/foundationforest/forest/blob/main/keys/README.md)). Then:
+([forest's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md)). Then:
 
 1. **A note.** The issuer checks the person's face once and signs a note for their note number, at
    tier 1; a document check later signs the same note at tier 2. With the first note it signs a
@@ -63,18 +71,18 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    It holds no money.
 2. **A row.** From the note, the app makes a person proof on the device and writes one row in the
    registry
-   ([forest's registry](https://github.com/foundationforest/forest/blob/main/registry/README.md)),
+   ([forest's registry](https://github.com/foundationforest/standard/blob/main/registry/README.md)),
    through the registry payer with one of its credits, or through the fee payer, paid in a dollar.
 3. **Records.** The app signs the profile's records with the main key and posts them to the hosts
    its hosts record names; the host takes each write's price from the folder's balance of credits.
    It makes access keys for the person's AI assistant and lists them in the profile's permissions
    record
-   ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions));
+   ([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions));
    with them, through the CLI ([`mcp/`](mcp/README.md)), the assistant posts offers and reviews,
    answers messages, and asks the person, through their own inbox, for what it holds no key for.
 4. **A deal.** A buyer pays into an escrow through the fee payer, and the money moves only as the
    escrow allows
-   ([forest's escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md)).
+   ([forest's escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)).
 5. **Scores.** The index reads the host, the rows of the issuers it trusts and the escrow's
    receipts, scores each profile, and serves every page as HTML and as JSON. It publishes its
    ratings as a tree; the seller's app proves its rating from it on the device and puts the proof
@@ -86,7 +94,7 @@ each reader decides which issuers it trusts.
 ### What this repo is not
 
 - **Not the standard.** Keys, records, the registry and the escrow live in
-  [foundationforest/forest](https://github.com/foundationforest/forest). This repo uses forest's
+  [foundationforest/standard](https://github.com/foundationforest/standard). This repo uses forest's
   pieces unchanged, at one pinned commit.
 - **Not an app.** Apps live in their own repos; the Forest app's is
   [foundationforest/app](https://github.com/foundationforest/app).
@@ -165,9 +173,9 @@ seller and deal are in [`e2e/`](e2e/README.md).
 
 ## Promises
 
-Forest's own [promises](https://github.com/foundationforest/forest/blob/main/README.md#promises)
+Forest's own [promises](https://github.com/foundationforest/standard/blob/main/README.md#promises)
 hold here, and what never goes on chain is in its
-[privacy](https://github.com/foundationforest/forest/blob/main/README.md#privacy-honestly).
+[privacy](https://github.com/foundationforest/standard/blob/main/README.md#privacy-honestly).
 Each README holds its service's own promises. One holds for all of them:
 
 - **Everything here competes.** Anyone can run another of each; prices and margins are each
