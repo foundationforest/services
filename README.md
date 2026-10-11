@@ -199,8 +199,8 @@ Everything but its secrets and what it keeps private for people:
   and the messages in an inbox, which only the recipient's main key, or a message key it lists,
   pulls, and only its inbox key and the read keys it lists open.
 - **Kept, not published:** the registry payer's and the host's spent lists (the id of each spent
-  credit) and the proofs each took (with the buy's reference each paid for), the host's balance of each folder, the issuer's list of note numbers given a gift, and
-  Railway's own request logs.
+  credit) and the proofs each took (with the buy's reference each paid for), the host's balance of
+  each folder, the issuer's list of note numbers given a gift, and Railway's own request logs.
 
 **Why is forest pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in
