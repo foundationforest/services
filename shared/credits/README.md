@@ -1,6 +1,6 @@
 # credits
 
-Up: [the repo](../README.md).
+Up: [the repo](../../README.md).
 
 ## What it is
 
@@ -23,10 +23,10 @@ network of its own. On devnet:
 
 | Who | Does what | Where |
 |---|---|---|
-| host | sells credits (a cent of writes each) and takes them into a folder's balance | [`host/`](../host/README.md#credits) |
-| registry payer | sells credits (a registration each) and takes one per registry row | [`fee-payer/registry/`](../fee-payer/registry/README.md#credits) |
-| issuer | gifts a person's first credits, as a sponsor: it signs a ticket for each buy | [`issuer/`](../issuer/README.md) |
-| the run on devnet | buys, pays, collects and spends them both ways | [`e2e/`](../e2e/README.md) |
+| host | sells credits (a cent of writes each) and takes them into a folder's balance | [`host/`](../../host/README.md#credits) |
+| registry payer | sells credits (a registration each) and takes one per registry row | [`fee-payer/registry/`](../../fee-payer/registry/README.md#credits) |
+| issuer | gifts a person's first credits, as a sponsor: it signs a ticket for each buy | [`issuer/`](../../issuer/README.md) |
+| the run on devnet | buys, pays, collects and spends them both ways | [`e2e/`](../../e2e/README.md) |
 
 ## How it works
 
@@ -143,7 +143,7 @@ the sponsor signs a ticket; the person's app collects and finishes.
 | `creditId(credit)`, `referenceOf(buy)`, `challengeOf(origin)`, `checkPending(value)` | A credit's id; a buy's reference; a service's challenge; a pending buy's shape |
 
 ```ts
-import { PAYMENT_HEADER, authorization, buy, finish, serviceOf } from '../credits/src/index.ts'
+import { PAYMENT_HEADER, authorization, buy, finish, serviceOf } from '../shared/credits/src/index.ts'
 
 const service = serviceOf(origin, directory)          // its directory, read at DIRECTORY_PATH
 const b = await buy(service, 1)                       // keep b.pending in the vault
@@ -188,7 +188,7 @@ logs what it is sent.
 ### Run it
 
 ```
-cd credits
+cd shared/credits
 npm ci
 npm run check   # type-check
 npm test        # against a stand-in service made of Cloudflare's own issuer and origin, and the service side against a stand-in RPC

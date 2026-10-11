@@ -1,6 +1,6 @@
 // The registry payer on loopback, with a stand-in RPC for payments, rows, simulations and sends.
 // Real credits: bought, paid by a Solana payment or a sponsor's ticket, collected and finished with
-// the credits/ client, checked with its checkCredit. Each refusal is provoked once, and
+// the shared/credits/ client, checked with its checkCredit. Each refusal is provoked once, and
 // nothing refused is held or sent. A row that exists is refused before anything is held; a credit
 // is held, with the row and its blockhash, before the row is sent; a simulation that fails, or
 // costs the payer more than the row's rent and the fee, frees it with nothing sent. Spent once the
@@ -9,8 +9,8 @@
 //
 //   npm test
 //
-// Needs the registry client's dependencies (`../../standard.sh registry/client`) and credits/'s
-// (`cd ../../credits && npm ci`). If either is missing the test says which and skips.
+// Needs the registry client's dependencies (`../../standard.sh registry/client`) and shared/credits/'s
+// (`cd ../../shared/credits && npm ci`). If either is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomBytes, sign as edSign } from 'node:crypto'
@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url'
 
 import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from '@solana/web3.js'
 
-import { type Credit, PAYMENT_HEADER, authorization, buy, finish, serviceOf, ticket, ticketMessage } from '../../../credits/src/index.ts'
-import { DIRECTORY_PATH, keyFrom } from '../../../credits/src/service.ts'
+import { type Credit, PAYMENT_HEADER, authorization, buy, finish, serviceOf, ticket, ticketMessage } from '../../../shared/credits/src/index.ts'
+import { DIRECTORY_PATH, keyFrom } from '../../../shared/credits/src/service.ts'
 import { issuerKeyOf, registerIx, rowSpace } from '../../../standard/registry/client/src/index.ts'
 import { base58 } from '../../../standard/registry/client/src/rows.ts'
 
@@ -33,7 +33,7 @@ import { type Config, UNIT, startFront } from '../src/payer.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const standard = join(here, '../../../standard')
-const creditsDir = join(here, '../../../credits')
+const creditsDir = join(here, '../../../shared/credits')
 const REGISTRY = new PublicKey('J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4')
 const ORIGIN = 'https://registry-payer.test.example'
 const MINT = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
@@ -45,7 +45,7 @@ const SPONSOR = new PublicKey(sponsor.publicKey.export({ format: 'der', type: 's
 
 function missing(): string | null {
   if (!existsSync(join(standard, 'registry/client', 'node_modules'))) return 'run `npm ci` in standard/registry/client'
-  if (!existsSync(join(creditsDir, 'node_modules'))) return 'run `npm ci` in credits'
+  if (!existsSync(join(creditsDir, 'node_modules'))) return 'run `npm ci` in shared/credits'
   return null
 }
 
