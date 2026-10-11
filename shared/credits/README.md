@@ -1,20 +1,20 @@
 # credits
 
-Up: [the repo](../../README.md).
+Part of Forest's services, shared by the host, the registry payer and the issuer: [the top README](../../README.md).
 
 ## What it is
 
-How our host and registry payer sell and take credits, and how our issuer gifts them. It is the
-code they share, at one version, and it is open: any operator can run the same, from this code or
-their own.
+How our host and registry payer sell and take credits (prepaid units of their services), and how
+our issuer gifts them. It is the code they share, at one version, and it is open: any operator can
+run the same, from this code or their own.
 
 A credit is a prepaid unit for one service, bought once and spent without the service being able
-to tell who bought it. A service that sells them says what one buys: for the foundation's registry
-payer, one registration; for its host, a cent of storage. Anyone can pay for someone else's
+to tell who bought it. A service that sells them says what one buys: for the Open Forest Foundation's
+registry payer, one registration; for its host, a cent of storage. Anyone can pay for someone else's
 credits, without learning which spends are theirs: that is how an issuer gives its people their
-first credits, as a sponsor.
+first credits, as a sponsor (someone who pays for another's buy).
 
-A credit is a Privacy Pass token (RFC 9576, RFC 9577, RFC 9578) of type 2, Blind RSA: the service
+A credit is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578): the service
 signs it blind, over a number only the buyer's app knows, so when the credit comes back to be
 spent, the service sees a good signature and nothing that ties it to the buy.
 
@@ -24,8 +24,8 @@ network of its own. On devnet:
 | Who | Does what | Where |
 |---|---|---|
 | host | sells credits (a cent of writes each) and takes them into a folder's balance | [`host/`](../../host/README.md#credits) |
-| registry payer | sells credits (a registration each) and takes one per registry row | [`fee-payer/registry/`](../../fee-payer/registry/README.md#credits) |
-| issuer | gifts a person's first credits, as a sponsor: it signs a ticket for each buy | [`issuer/`](../../issuer/README.md) |
+| registry payer | sells credits (a registration each) and takes one per registry row (its public entry that says a profile holds a note) | [`fee-payer/registry/`](../../fee-payer/registry/README.md#credits) |
+| issuer | gifts a person's first credits, as a sponsor: it signs a ticket (a signed promise to pay for that buy) for each buy | [`issuer/`](../../issuer/README.md) |
 | the run on devnet | buys, pays, collects and spends them both ways | [`e2e/`](../../e2e/README.md) |
 
 ## How it works
@@ -46,14 +46,14 @@ more field:
 - `unit` says what one credit buys, in the service's own words. This code never fixes it.
 - `price` is one credit's price, in whole units of `mint`, paid to `address`.
 - The latest type 2 key whose `not-before` has passed signs new credits. The service counts a key's
-  credits for as long as its policy says.
+  credits for as long as it says.
 
 ### A credit
 
-- Every credit of one service answers one challenge: token type 2, the service's host as the
+- Every credit of one service answers one challenge: credit type 2, the service's host as the
   issuer's name, no redemption context and no origin info. With no context, credits can be bought
   ahead and kept.
-- A credit is the token: its type (2 bytes), a nonce (32), the challenge's SHA-256 (32), the key's
+- A credit is these bytes: its type (2 bytes), a nonce (32), the challenge's SHA-256 (32), the key's
   id, SHA-256 of the key (32), and the signature (256). 354 bytes, written in base64url.
 - The signature is RSABSSA-SHA384-PSS-Deterministic (RFC 9474) over the first 98 bytes. The service
   made it blind: it signed a number the app had blinded, and never saw the nonce.
@@ -94,7 +94,7 @@ it took for another.
 Anyone pays it, from any wallet app that reads Solana Pay; the payment names the buy by carrying its
 reference. The app hands the service the transaction's signature.
 
-**A sponsor's ticket.** A sponsor is a key whose tickets a service takes, by its own policy: an
+**A sponsor's ticket.** A sponsor is a key whose tickets a service takes, by its own choice: an
 issuer giving its people their first credits, say. The app sends the sponsor the buy's reference.
 The sponsor signs, with Ed25519, `forest credit ticket\n<origin>\n<reference>\n<n>` in UTF-8
 (`ticketMessage`): the service's origin, the buy's reference and how many credits it holds, so the
@@ -156,7 +156,7 @@ const credits = await finish(b.pending, new Uint8Array(await res.arrayBuffer()))
 
 ### Selling credits
 
-A service's side, in `src/service.ts` (Node only, like forest's records host: its seller's file is SQLite):
+A service's side, in `src/service.ts` (Node only, like the standard's records host: its seller's file is SQLite):
 
 | Function | Gives |
 |---|---|
@@ -181,8 +181,8 @@ signature is Node's own RSA (OpenSSL), `m^d mod n` checked by `s^e mod n` as RFC
 privacypass-ts issuer signs with JavaScript big integers, hundreds of times slower.
 
 A service spends a credit this way: `checkCredit` (or, for several, `checkCredits`), then `hold`
-its id (or their ids, together) with a note of what to look for, and `land` or `free` it once it
-knows whether the action landed; it settles each of `holds()` as its policy says. Nothing in it
+its id (or their ids, together) with a note (what to look for when it settles), and `land` or `free` it once it
+knows whether the action landed; it settles each of `holds()` as it chooses. Nothing in it
 logs what it is sent.
 
 ### Run it
@@ -195,7 +195,7 @@ npm test        # against a stand-in service made of Cloudflare's own issuer and
 ```
 
 Node 22.18 or later. Built from existing pieces, used unchanged: `@cloudflare/privacypass-ts` 0.9.0,
-and its `@cloudflare/blindrsa-ts`, for the tokens, the blinding and the batch; Node's own crypto for
+and its `@cloudflare/blindrsa-ts`, for the credits, the blinding and the batch; Node's own crypto for
 a service's RSA signatures and a sponsor's Ed25519; `@scure/base` for base58 and base64url.
 
 ## Promises
@@ -209,11 +209,11 @@ a service's RSA signatures and a sponsor's Ed25519; `@scure/base` for base58 and
 
 ## Limits
 
-- **A credit names nobody, so it is a bearer token.** That is what makes it unlinkable. There is
+- **A credit names nobody, so it is a bearer credit.** That is what makes it unlinkable. There is
   no way to move a credit here, but nothing stops a person from handing its bytes to
   someone else, and whoever holds them can spend it. Credits are as safe as the vault.
-- **Timing and network address.** A service that sees a buy collected and a credit spent moments
-  later, or both from one network address, can match them. Wait between them, or use a VPN.
+- **Network address.** A service that sees a buy collected and a credit spent from one network
+  address can match them. Use a VPN.
 - **One key for everyone.** The app takes the key from the service's directory. A service could give
   one person a key of their own and so know their credits, and blinding holds only when the key is
   a real RSA key. An app can compare the key with what others see; this code cannot rule this
@@ -235,7 +235,7 @@ a service's RSA signatures and a sponsor's Ed25519; `@scure/base` for base58 and
   entry, the buy and its reference, the ways to pay (the pay link, the ticket), the headers, and the
   rules: a proof pays for one buy; spent once, only when the action lands; never refunded. Whoever
   runs another service may use these or their own.
-- **A service, by its own policy:** its unit, price, mint and address; which keys it counts and for
+- **A service, by its own choice:** its unit, price, mint and address; which keys it counts and for
   how long; which sponsors it takes; how many credits one buy may hold, and how many one request
   may show; what its action is and when it lands.
 - **An app, with the person:** when to buy, how many, and whom to ask to pay.
@@ -244,10 +244,9 @@ a service's RSA signatures and a sponsor's Ed25519; `@scure/base` for base58 and
 ## FAQ
 
 **Why Privacy Pass, and why type 2?**
-Privacy Pass is the IETF's standard for exactly this, with maintained libraries. Of its two token
-types, type 2 (Blind RSA) fits credits for three reasons:
-- anyone can check a type 2 token with the service's public key, so the app knows what it holds;
-  only the service can check a type 1 token;
+Privacy Pass is the IETF's standard for exactly this, with maintained libraries. Of its two credit types, type 2 (Blind RSA) fits credits for three reasons:
+- anyone can check a type 2 credit with the service's public key, so the app knows what it holds;
+  only the service can check a type 1 credit;
 - its blinding state is plain bytes, so a buy someone else pays days later can be finished on
   another device, from the vault; `privacypass-ts`'s type 1 client keeps that state in memory only;
 - it is the type deployed most widely, in Apple's Private Access Tokens and at Cloudflare.
