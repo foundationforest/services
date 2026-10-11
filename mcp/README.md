@@ -1,23 +1,24 @@
 # mcp
 
+Part of Forest's services: [the top README](../README.md).
+
 `forest`, one small program that does Forest actions for a profile, given its address and an
-access key, as typed commands and as MCP tools; and the foundation's hosted copy of its MCP door,
-for AI chats that cannot run a program on the person's device.
+access key, as typed commands and as MCP tools; and the Open Forest Foundation's hosted copy of its
+MCP door, for AI chats that cannot run a program on the person's device.
 
 The foundation runs the hosted copy, on devnet. Anyone can run another, from this Dockerfile or
 from this directory alone, or run `forest` on their own device instead.
 
-Up: [the repo](../README.md).
 
 ## How it works
 
-`forest` is for people, scripts and AI chats. It reads folders from hosts with forest's records
-library, and checks every signature itself. It reads markets and scores from an index. It writes
+`forest` is for people, scripts and AI chats. It reads folders from hosts with the standard's
+records library, and checks every signature itself. It reads markets and scores from an index. It writes
 and sends only with access keys
-([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
-never a main key, and it moves no money: an AI with only a message key can ask for anything and do
-nothing alone. It stores nothing: every call carries the key it needs, or the copy was started
-with it.
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
+never a main key. With only a message key you can send messages as the profile and ask for anything
+else; you can write no record and move no money. It stores nothing: every call carries the key it
+needs, or the copy was started with it.
 
 ### Two doors
 
@@ -47,8 +48,9 @@ words, key and parameters.
 | `send <to>` | message | A message to another profile's inbox |
 | `request <action>` | message | Ask for one of the actions above, or `pay`, through the profile's own inbox (Requests) |
 
-A key is written as a grant writes it
-([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#grants)).
+A key is written as a grant writes it (a grant is the message that hands an access key to
+someone)
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#grants)).
 Before it signs anything, `forest` checks the key against the profile's permissions record, and
 refuses in plain words:
 
@@ -56,10 +58,10 @@ refuses in plain words:
 - A key that is not listed, is listed with another scope or as past, or whose paths don't cover
   the path.
 - The profile's main key, or its inbox key: only access keys are taken
-  ([forest's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#rules-for-apps-that-hold-keys)).
+  ([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#rules-for-apps-that-hold-keys)).
 - A path the owner wrote. The owner wins, so only the owner's app can change it.
 - An offer or a review that does not fit its shape
-  ([forest's schemas](https://github.com/foundationforest/standard/tree/main/records/schemas)).
+  ([the standard's schemas](https://github.com/foundationforest/standard/tree/main/records/schemas)).
   `createdAt` is set if it is missing.
 
 ### Requests
@@ -67,7 +69,7 @@ refuses in plain words:
 The one way to have something done that no key here allows. `request` names one of the actions
 above that need a key, or `pay`, with that action's parameters, and sends them to the profile's
 own inbox as a request body
-([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
 Requests). Typed: `forest request post-offer --params '{"offer": {…}}'`. Over MCP: `action` and
 `params`. The parameters are checked against that action's own, so a request never carries a key.
 The person's app shows it, and does it with the main key, or not.
@@ -93,11 +95,11 @@ Over MCP, each tool also takes `profile` and its keys in the call (`writeKey`, `
 A folder is always read from hosts, never from an index:
 
 - `forest` reads the profile on each start host, then on every host its hosts record names, by
-  POST so the address is in no URL; forest's records library (`readProfile`) checks every record.
+  POST so the address is in no URL; the standard's records library (`readProfile`) checks every record.
 - Writes and messages go to the hosts that the hosts record names.
 - A profile with no records on any start host is out of reach until one of its hosts is added with
   `--host`.
-- A host other than the start hosts is reached only at a public address, through forest's public
+- A host other than the start hosts is reached only at a public address, through the standard's public
   fetch (`publicFetch`, records/src/public.ts): one in any range IANA marks as not globally
   reachable, written or looked up, is refused before anything is sent. No request follows a
   redirect, and a folder read, or an inbox pull, stops after 100 pages.
@@ -127,7 +129,7 @@ Who sees the keys, and what they open, depends on where `forest` and the AI run:
 
 ### The hosted copy
 
-`deploy/Dockerfile` builds one image: Node 22.22.2, forest's records library at the commit in
+`deploy/Dockerfile` builds one image: Node 22.22.2, the standard's records library at the commit in
 `STANDARD` (`standard.sh records`), and this directory, started as
 
     forest mcp --http 0.0.0.0:$PORT --index https://index.devnet.forest.foundation
@@ -176,7 +178,7 @@ npm run smoke -- https://mcp.devnet.forest.foundation/mcp [<profile address>]
 
 Node 22.18 or later. Built from existing pieces, used unchanged:
 
-- forest's records library, and its public fetch, to reach a host only at a public address;
+- the standard's records library, and its public fetch, to reach a host only at a public address;
 - `@modelcontextprotocol/sdk`, for the MCP door;
 - `ajv` and `ajv-formats`, for the record shapes;
 - `age-encryption`, to work out a read key's public half.
@@ -203,7 +205,7 @@ https://mcp.devnet.forest.foundation, the tools at `/mcp`:
   every other path 404.
 - **Variables:** `PORT=8080`. Nothing else, and no key.
 
-## Policy
+## How we run it
 
 The hosted copy's:
 
@@ -220,7 +222,7 @@ The hosted copy's:
   what it needs. The only thing it holds between calls is the public list of hosts to start from.
 - **Never a main key.** It refuses a profile's main key and its inbox key. It acts only with
   access keys, within the scopes and paths the permissions record lists.
-- **It checks what it reads from hosts.** Forest's records library checks every record and message
+- **It checks what it reads from hosts.** The standard's records library checks every record and message
   from a host, signature included. What an index says is passed on as the index's word, and
   labelled so.
 - **It moves no money.** There is no pay action. Paying is a request, answered by the person's own
@@ -239,7 +241,7 @@ The hosted copy's:
   read, written to or sent to until its host is added; for the hosted copy, until it is added to
   the foundation's index's list.
 - **An AI reading strangers' text can be steered** by what they wrote. With only a message key, it
-  can only ask.
+  can send messages as the profile and ask, and nothing else.
 - **What an index says goes unchecked.** It carries no signatures. `forest` can't tell whether an
   index is honest; it only passes on what the index says.
 - **Not here:**
@@ -250,23 +252,23 @@ The hosted copy's:
     writers' folders, and only an index gathers them.
 - **Slow.** On every call it reads the whole folder from every start host, and checks signatures
   in JavaScript
-  ([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#limits)).
+  ([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#limits)).
 - **No rate limit.** Anyone can keep the hosted copy busy, and every call reads whole folders from
   hosts.
 - **One replica.** When it stops, the tools stop until Railway starts it again.
 
 ## Who decides what
 
-- **The standard (forest):** only the request body, which
-  [forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)
+- **The standard:** only the request body, which
+  [the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)
   holds.
 - **The foundation, in this directory:** the actions, what each says and which key it needs; and,
-  by the hosted copy's policy, the index it reads, where it runs, and that it is free.
+  as it runs the hosted copy, the index it reads, where it runs, and that it is free.
 - **Whoever runs a copy:** the hosts it starts from, the index it reads, and, for a copy run at
   home, the keys it starts with.
 - **The person, through their app:** which access keys to hand out, with which scopes and paths,
   when to make one past, and what to do with each request.
-- **An index, by its own policy:** what its markets and scores say.
+- **An index, by its own choice:** what its markets and scores say.
 - **The AI's maker:** what it keeps of a conversation, keys included.
 
 ## FAQ
