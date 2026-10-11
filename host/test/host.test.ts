@@ -513,7 +513,7 @@ test('every write pays from its folder: a record or a message one credit, bytes 
   const control = await publish([host.url], [hostsRecord(owner, [host.url], now), permissionsRecord(owner, [], now)])
   assert.deepEqual(errors(control[0]), ['ok', 'ok'])
   const [broke] = await publish([host.url], [ownerRecord(owner, 'profile', profile, now)])
-  assert.deepEqual(errors(broke), ['policy'])
+  assert.deepEqual(errors(broke), ['refused'])
   assert.match(broke!.results[0]!.message!, /costs 1 credit, and the folder holds 0 here; credits are sold at \/\.well-known\/private-token-issuer-directory/)
 
   await fund(host, [owner.address], 2)
@@ -523,7 +523,7 @@ test('every write pays from its folder: a record or a message one credit, bytes 
   assert.equal(balance(owner), 1, 'a record already here costs nothing')
 
   // Bytes of a megabyte and one: two credits, from a folder whose records name them.
-  assert.match(await put(host.url, big), /^policy: this write costs 2 credits, and the folder holds 1 here/)
+  assert.match(await put(host.url, big), /^refused: this write costs 2 credits, and the folder holds 1 here/)
   assert.match(await put(host.url, big, 'image/gif'), /^unnamed/, 'forest’s rule first')
   await fund(host, [owner.address], 1)
   assert.equal(await put(host.url, big), 'ok')
@@ -546,7 +546,7 @@ test('every write pays from its folder: a record or a message one credit, bytes 
   await publish([host.url], [ownerRecord(other, 'profile', inbox.body, now)])
   const letter = async () => message(owner, other.address, { text: 'Tuesday?' }, Date.now(), inbox.body)
   const [unpaid] = await deliver([host.url], [await letter()])
-  assert.deepEqual(errors(unpaid), ['policy'], 'the sender holds nothing here')
+  assert.deepEqual(errors(unpaid), ['refused'], 'the sender holds nothing here')
   await fund(host, [owner.address], 1)
   assert.deepEqual(errors((await deliver([host.url], [await letter()]))[0]), ['ok'])
   assert.deepEqual([balance(owner), balance(other)], [0, 0], 'the sender paid; the recipient did not')
@@ -602,14 +602,14 @@ test('bytes: stored first, charged after; a put that fails costs nothing; two co
   assert.equal(balance(), 0)
   await fund(host, [owner.address], 1)
   const answers = await Promise.all([put(host.url, two), put(host.url, three)])
-  assert.deepEqual(answers.map((a) => a.split(':')[0]).sort(), ['ok', 'policy'])
+  assert.deepEqual(answers.map((a) => a.split(':')[0]).sort(), ['ok', 'refused'])
   assert.equal(balance(), 0)
 
   // A reservation holds its credits: a record can't spend them while the bytes are being stored.
   await fund(host, [owner.address], 1)
   assert.equal(host.credits.reserve('a'.repeat(64), [owner.address], 1), null)
   const [refused] = await publish([host.url], [ownerRecord(owner, 'offer/c', { title: 'x' }, now)])
-  assert.deepEqual(errors(refused), ['policy'], 'reserved for the bytes')
+  assert.deepEqual(errors(refused), ['refused'], 'reserved for the bytes')
   host.credits.stored('a'.repeat(64), false)
   assert.deepEqual(errors((await publish([host.url], [ownerRecord(owner, 'offer/c', { title: 'x' }, now)]))[0]), ['ok'], 'released: the record takes it')
 

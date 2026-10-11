@@ -35,8 +35,8 @@ anything.
   address, written or looked up, is in any range IANA marks as not globally reachable, and follows
   no redirect. A read that fails, or is refused, is not kept: forest's host answers `lookup`, and the
   sender tries again.
-- **The price of each write** (forest's record, message and blob policies), always: each takes the
-  write's price from a folder's balance here, or refuses it (`policy`), saying what it costs and
+- **The price of each write** (forest's record, message and blob choices), always: each takes the
+  write's price from a folder's balance here, or refuses it (`refused`), saying what it costs and
   what the folder holds ([Credits](#credits)).
 
 **Storage** is forest's: a data directory (`DATA_DIR`) holding a SQLite file per folder and
@@ -74,7 +74,7 @@ spends.
 
 **What a write costs:** one credit a started megabyte (1,048,576 bytes) of it, one at the least. A
 record is paid from its own folder's balance, a message from its sender's, and bytes from the first
-folder whose current records here name them that holds the price. Forest's host asks no policy
+folder whose current records here name them that holds the price. Forest's host never asks
 about a hosts or permissions record, so those are free: a person can always move and always remove
 an access key. A record, a message or bytes already here cost nothing again. A write that becomes
 current stays as long as it is current; the price covers that.

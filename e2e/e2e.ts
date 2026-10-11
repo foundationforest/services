@@ -480,12 +480,12 @@ async function publishCard(p: Person, readers: string[] = []) {
   }
   // A folder holding no credits here: its hosts record is free, its card is refused.
   const [unpaid] = await publish([cfg.host!], [hostsRecord(p.profile, [cfg.host!], now), ownerRecord(p.profile, 'profile', card, now)])
-  assert.deepEqual(unpaid!.results.map((r) => r.error ?? 'ok'), ['ok', 'policy'], `the host takes the hosts record free and refuses an unpaid card: ${JSON.stringify(unpaid)}`)
+  assert.deepEqual(unpaid!.results.map((r) => r.error ?? 'ok'), ['ok', 'refused'], `the host takes the hosts record free and refuses an unpaid card: ${JSON.stringify(unpaid)}`)
   const funded = await fundFolder(p)
   const [outcome] = await publish([cfg.host!], [ownerRecord(p.profile, 'profile', card, now)])
   assert.ok(outcome!.results.every((r) => r.ok), `the host took the card: ${JSON.stringify(outcome)}`)
   say(`${p.role}: hosts record and card on the host, as ${p.profile.address}`)
-  hostSteps[p.role] = { unpaidCard: 'policy', spent: funded.credits, requests: funded.requests }
+  hostSteps[p.role] = { unpaidCard: 'refused', spent: funded.credits, requests: funded.requests }
   return card
 }
 type Card = Awaited<ReturnType<typeof publishCard>>
