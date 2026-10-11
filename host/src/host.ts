@@ -7,10 +7,12 @@
 // is, sells and takes credits (credits.ts), and passes every other request, untouched, to the host on
 // loopback.
 //
-// Every write is paid for in credits, from a folder's balance here: forest's host asks this host's
-// policies (`policy`, `messagePolicy`, `blobPolicy`), and each takes the write's price from the
-// balance, or refuses it. Forest's host asks nothing about a hosts or permissions record, so those
-// are free. Reads are free.
+// Every write is paid for in credits, from a folder's balance here, and costs exactly its price or
+// nothing: forest's host asks this host's policies (`policy`, `messagePolicy`, `blobPolicy`). A
+// record or message is claimed by its id as its price is taken, so two copies pay once. Bytes are
+// stored first: their price is reserved, then taken once forest answers that it kept them, or
+// released; the front sends on one put of the same bytes at a time. Forest's host asks nothing
+// about a hosts or permissions record, so those are free. Reads are free.
 //
 // Where it keeps things is forest's storage: a data directory (DATA_DIR) with a SQLite file per
 // folder, and the blobs on disk there, or in an S3-compatible bucket when the S3_ variables are set.
@@ -38,8 +40,8 @@ import { Connection, PublicKey } from '@solana/web3.js'
 import { readPage } from '../../standard/records/src/client.ts'
 import { publicFetch } from '../../standard/records/src/public.ts'
 import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPolicy } from '../../standard/records/src/host.ts'
-import { encodeMessage } from '../../standard/records/src/message.ts'
-import { type Checked, encodeRecord } from '../../standard/records/src/record.ts'
+import { encodeMessage, messageId, unsignedMessageOf } from '../../standard/records/src/message.ts'
+import { type Checked, encodeRecord, recordId, unsignedOf } from '../../standard/records/src/record.ts'
 import { type BlobStore, blobStore } from '../../standard/records/src/storage.ts'
 import { PAYMENT_HEADER } from '../../standard/credits/src/index.ts'
 import { type Rpc, keyFrom } from '../../standard/credits/src/service.ts'
@@ -199,21 +201,12 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
 }
 
 /**
- * Bytes, paid for: forest's own types (png, jpeg and mp4), then their price, from the balance of the
- * first folder whose current records name them that holds it.
+ * Bytes, paid for once stored: forest's own types (png, jpeg and mp4), then their price, reserved on
+ * the first folder whose current records name them that holds it. The front takes it once forest has
+ * kept them, or releases it (`Credits.stored`).
  */
 export function paidBlobs(credits: Credits): BlobPolicy {
-  return async (blob) => {
-    const refused = await defaultBlobPolicy(blob)
-    if (refused) return refused
-    const price = priceOf(blob.size)
-    let why: string | null = null
-    for (const folder of blob.folders) {
-      why = credits.charge(folder, price)
-      if (!why) return null
-    }
-    return blob.folders.length === 1 ? why : `these bytes cost ${price} credits, and no folder whose records name them holds that many here`
-  }
+  return async (blob) => (await defaultBlobPolicy(blob)) ?? credits.reserve(blob.sha256, blob.folders, priceOf(blob.size))
 }
 
 /**
@@ -307,6 +300,39 @@ export type RunningHost = {
   close(): Promise<void>
 }
 
+const BLOB_PUT = /^\/v1\/blobs\/([0-9a-f]{64})$/
+
+/**
+ * A request sent on to forest's host, untouched, and its answer back. `answered` hears, once, whether
+ * forest took it (200) or not, before the answer goes back.
+ */
+function forward(inner: URL, req: IncomingMessage, res: ServerResponse, answered: (ok: boolean) => void = () => {}): void {
+  let heard = false
+  const hear = (ok: boolean) => {
+    if (!heard) answered(ok)
+    heard = true
+  }
+  let upstream
+  try {
+    upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
+      hear(answer.statusCode === 200)
+      res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
+      answer.pipe(res)
+    })
+  } catch {
+    // A request node:http will not send on, as it is.
+    hear(false)
+    req.resume()
+    return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
+  }
+  upstream.on('error', () => {
+    hear(false)
+    if (!res.headersSent) res.writeHead(502)
+    res.end()
+  })
+  req.pipe(upstream)
+}
+
 /** A credit route's body read whole: a buy of the most credits is a little over 260 bytes each. */
 const MAX_CREDIT_BODY = 512 * 1024
 const CORS = { 'access-control-allow-origin': '*' }
@@ -390,19 +416,20 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
   const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
   const lookup = rpc && rowLookup(rpc, config.registryProgramId)
   const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
-  // Each write's price is taken before forest's host keeps it. Two copies of one record or message
-  // in flight at once may both pay, though forest's host keeps one.
+  // A record's or message's price is taken, and the write claimed by its id, before forest's host
+  // keeps it; bytes' price is reserved, and taken once they are kept.
   const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
     ...POLICY,
-    policy: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record)))),
-    messagePolicy: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message)))),
+    policy: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
+    messagePolicy: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
     blobPolicy: paidBlobs(credits),
     ...(lookup && { rowLookup: lookup }),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
   })
   const inner = new URL(await host.listen(0))
+  const blobQueue = new Map<string, Promise<void>>()
 
   const server = createServer((req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
@@ -420,22 +447,20 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
     if (creditRoute(credits, path, req, res)) return
-    let upstream
-    try {
-      upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
-        res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
-        answer.pipe(res)
-      })
-    } catch {
-      // A request node:http will not send on, as it is.
-      req.resume()
-      return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
-    }
-    upstream.on('error', () => {
-      if (!res.headersSent) res.writeHead(502)
-      res.end()
+    const name = req.method === 'PUT' ? BLOB_PUT.exec(path)?.[1] : undefined
+    if (!name) return forward(inner, req, res)
+    // One put of the same bytes at a time: a second finds them kept, and pays nothing. Their reserved
+    // price is taken before the answer goes back, once forest answers that it kept them.
+    const turn = (blobQueue.get(name) ?? Promise.resolve()).then(
+      () => new Promise<void>((done) => forward(inner, req, res, (kept) => {
+        credits.stored(name, kept)
+        done()
+      })),
+    )
+    blobQueue.set(name, turn)
+    void turn.then(() => {
+      if (blobQueue.get(name) === turn) blobQueue.delete(name)
     })
-    req.pipe(upstream)
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
