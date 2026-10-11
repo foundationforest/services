@@ -51,9 +51,10 @@ export class Directory {
   }
 
   /**
-   * Every market the directory lists: `directory.md`, then each listed market's file. A file that
-   * can't be fetched stops the load, so a network failure never drops a market quietly; a market
-   * whose file is not a valid market file at its own path is refused.
+   * Every market the directory lists: `directory.md`, then each listed market's file. `directory.md`
+   * that can't be fetched stops the load. A market's own file that can't be fetched, is not JSON,
+   * is JSON `null` or another thing that is not a market file, or is not at its own path, is
+   * refused: skipped and listed in `refused`, and every other market still loads.
    */
   static async fetch(list: MarketsList, get: typeof fetch = fetch): Promise<Directory> {
     const read = async (path: string): Promise<string> => {
@@ -65,12 +66,22 @@ export class Directory {
     const files: { file: string; market: unknown }[] = []
     const refused: { market: string; errors: string[] }[] = []
     for (const [name, path] of links) {
+      let text: string
+      try {
+        text = await read(path)
+      } catch (err) {
+        refused.push({ market: name, errors: [`could not be fetched: ${err instanceof Error ? err.message : String(err)}`] })
+        continue
+      }
       let market: unknown
       try {
-        market = JSON.parse(await read(path))
-      } catch (err) {
-        if (!(err instanceof SyntaxError)) throw err
+        market = JSON.parse(text)
+      } catch {
         refused.push({ market: name, errors: ['not JSON'] })
+        continue
+      }
+      if (typeof market !== 'object' || market === null) {
+        refused.push({ market: name, errors: ['not a market file: the JSON is not an object'] })
         continue
       }
       const m = market as { name?: unknown; folder?: unknown }
@@ -88,10 +99,10 @@ export class Directory {
 
   /**
    * Reads the directory again and takes what it says now. True when the markets changed. The swap
-   * has no `await` in it, so a request never sees half a list. A read that fails (the directory
-   * does not answer, or a file it links can't be fetched) throws and leaves the markets as they
-   * were, to be tried again at the next read; so one linked file that can't be fetched holds every
-   * new market until it can.
+   * has no `await` in it, so a request never sees half a list. A read in which `directory.md` does
+   * not answer throws and leaves the markets as they were, to be tried again at the next read. A
+   * market whose own file can't be used is skipped and listed in `refused`, like any refused
+   * market: it is out until a read that can use it, and every other market is read as usual.
    */
   async refresh(): Promise<boolean> {
     if (!this.source) throw new Error('this directory was not read from a markets directory')
