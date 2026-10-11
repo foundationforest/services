@@ -1,14 +1,15 @@
 # fee payer
 
+Part of Forest's services: [the top README](../README.md).
+
 The fee payer pays Solana's costs for a person's transactions, at cost, paid back in the dollar
 they hold.
 
-The foundation runs this one, on devnet. Anyone can run another, from Kora's published binary and
-this configuration, or from their own: whoever signs a transaction as payer pays for it, and the
-programs care nothing for who that is
-([forest](https://github.com/foundationforest/standard/blob/main/README.md#for-builders)).
+The Open Forest Foundation runs this one, on devnet. Anyone can run another, from Kora's published
+binary and this configuration, or from their own: whoever signs a transaction as payer pays for it,
+and the programs care nothing for who that is
+([the standard](https://github.com/foundationforest/standard/blob/main/README.md#for-builders)).
 
-Up: [the repo](../README.md).
 
 ## How it works
 
@@ -22,11 +23,12 @@ pays the network fee and any deposit, and charges the person exactly what that c
 dollar they pay with. A request whose URL cannot be read (`//`) gets 405 from Kora, which goes on.
 
 Inside a transaction its key may do one thing, fund a new account it is paid for, and Kora refuses
-any transfer of its SOL or tokens. It holds no key of the person's, and decides nothing about the
+any transfer of its SOL or dollars. It holds no key of the person's, and decides nothing about the
 person, the market or the deal.
 
 This folder also holds the [registry payer](registry/README.md), a service of its own with its own
-key and no Kora, which pays for registry rows against credits. `at-cost/` holds the fee payer's
+key and no Kora, which pays for registry rows (the registry's public entries) against credits
+(prepaid units it sells). `at-cost/` holds the fee payer's
 configuration and its local run, `registry/` the registry payer's program. Kora's version (`KORA`),
 `build.sh`, `run.sh`, `signers.toml` and `deploy/devnet-config.sh`, at the top, are the fee payer's.
 
@@ -34,9 +36,9 @@ configuration and its local run, `registry/` the registry payer's program. Kora'
 
 The person's device:
 
-1. builds the transaction with the fee payer as payer, plus one plain token transfer to the fee
+1. builds the transaction with the fee payer as payer, plus one plain dollar transfer to the fee
    payer whose amount it fills in next;
-2. asks Kora the price of exactly that transaction, in that token (`estimateTransactionFee`);
+2. asks Kora the price of exactly that transaction, in that dollar (`estimateTransactionFee`);
 3. sets the transfer to that price, and signs with the main key;
 4. hands it to Kora (`signAndSendTransaction`).
 
@@ -73,10 +75,10 @@ blind, so nothing on chain says who paid for the row.
 | No API key or HMAC | | A page in a browser cannot keep a secret, and every transaction pays its way |
 
 The programs are the registry `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` and the escrow
-`FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`, as forest records them on devnet. The tokens it is
+`FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`, as the standard records them on devnet. The dollars it is
 paid in, in `at-cost/kora.toml`, are mainnet's, each its maker's own mint:
 
-| Token (mainnet) | Mint | Program |
+| Dollar (mainnet) | Mint | Program |
 |---|---|---|
 | USDC | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` | SPL Token |
 | USDT | `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB` | SPL Token |
@@ -86,11 +88,11 @@ paid in, in `at-cost/kora.toml`, are mainnet's, each its maker's own mint:
 All four have six decimals and no transfer fee, so each quote holds. Kora's Jupiter price source
 prices each in dollars against SOL, so the charge is the same SOL cost in whichever is paid, EURC
 at the euro's rate. In Kora 2.0.5, `allowed_tokens` gates only Kora's own `transferTransaction`
-helper; an escrow in another token still passes. `allowed_spl_paid_tokens` is the list it is paid
+helper; an escrow in another dollar still passes. `allowed_spl_paid_tokens` is the list it is paid
 in. `deploy/devnet-config.sh` prints a Kora's `kora.toml` with exactly three lines changed, and
-stops if any is not there exactly once: the two paid-token lists (the two devnet test dollars in
-place of the four mainnet tokens), and `price_source = "Mock"`. Kora's mock values the test dollars
-at 0.001 SOL a whole token: one base unit buys one lamport.
+stops if any is not there exactly once: the two lists of dollars it is paid in (the two devnet test dollars in
+place of the four mainnet dollars), and `price_source = "Mock"`. Kora's mock values the test dollars
+at 0.001 SOL a whole dollar: one base unit buys one lamport.
 
 Refused, each checked by the local run ([Run it](#run-it)) with nothing landing: a program not on
 the list (`… is not in the allowed list`); a priority fee; the fee payer's SOL sent anywhere
@@ -102,7 +104,7 @@ lamports`).
 
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. A
 cut in Solana's rent frees part of it, which only the program that owns the account can send on
-([forest's escrow, Rent](https://github.com/foundationforest/standard/blob/main/escrow/README.md#rent)).
+([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/main/escrow/README.md#rent)).
 The registry and the escrow send every rent back to whoever fronted it, here the fee payer:
 
 - **An escrow's deposit address:** its rent goes back to the escrow's payer, the fee payer, at
@@ -115,9 +117,9 @@ The registry and the escrow send every rent back to whoever fronted it, here the
 The fee payer fronted those deposits and charged only their cost, so it keeps what comes back. A
 row never grows after `register`, so nothing a row needs later asks the fee payer for SOL.
 
-What a row costs is in forest's
+What a row costs is in the standard's
 [registry](https://github.com/foundationforest/standard/blob/main/registry/README.md#what-one-row-costs),
-and an escrow's in forest's
+and an escrow's in the standard's
 [escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md#run-it-and-what-one-escrow-costs).
 The local run checks, for every transaction it sends, that the charge is exactly what the fee payer
 spent.
@@ -172,7 +174,7 @@ are in [its README](registry/README.md#run-it).
 published image `ghcr.io/solana-foundation/kora:v2.0.5`, pinned by digest, and checked against
 `KORA`; `at-cost/kora.toml` with the devnet lines `deploy/devnet-config.sh` changes; and
 `signers.toml` and `run.sh`, with `RUST_LOG=warn` set in the image. Before the first transaction,
-the key needs SOL for the deposits it funds, and a token account for each token it is paid in.
+the key needs SOL for the deposits it funds, and a token account for each dollar it is paid in.
 
 The foundation's fee payer runs that image on Railway, service `fee payer`, at
 https://fee-payer.devnet.forest.foundation, the address [`../e2e/devnet.json`](../e2e/devnet.json)
@@ -192,7 +194,7 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
 | `RUST_LOG` | `warn`, as the image sets it | no |
 | `PORT` | `8080` | no |
 
-## Policy
+## How we run it
 
 - **Kora,** 2.0.5, configured by `at-cost/kora.toml`, with no code of ours inside it or in front of
   it.
@@ -200,21 +202,21 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
   transaction that does not pay its cost is refused.
 - **Rent it fronts and later gets back stays with it:** an escrow's deposits, and what a cut in
   Solana's rent frees on a row or a receipt ([Rent](#rent)).
-- **Paid in four tokens on mainnet's configuration:** USDC, USDT, Open USD and EURC, each its
+- **Paid in four dollars on mainnet's configuration:** USDC, USDT, Open USD and EURC, each its
   maker's own mint, since people pay in what they hold. The makers' freeze and Open USD's permanent
   delegate are accepted. On devnet, the two test dollars.
 - **Prices:** Jupiter's, on mainnet's configuration; on devnet, Kora's mock.
 - **What its key may do:** fund a new account it is paid for, and nothing else; no priority fee.
 - **The float:** the SOL in its key, apart from the registry payer's. Nothing refills it but a
-  person; when it runs out, it refuses. It is paid back in tokens; turning them back into SOL is
+  person; when it runs out, it refuses. It is paid back in dollars; turning them back into SOL is
   done by hand, not by code.
 - **The rate limit:** Kora signs at most 100 transactions a second, across all callers.
 - **No API key for callers.** A page in a browser cannot keep a secret, and every transaction pays
   its way.
 - **No request logs:** Kora runs at `RUST_LOG=warn`, which writes no request, since at its
   default level Kora logs every request's body, and nothing server-side should hold a person's
-  transactions next to the hosting provider's record of their address. Kora still logs errors: a
-  token instruction type it cannot read, by its type alone, and an instruction with too few
+  transactions next to the hosting provider's record of their address. Kora still logs errors: an
+  SPL Token instruction type it cannot read, by its type alone, and an instruction with too few
   accounts, whole.
 - **What it keeps:** nothing.
 - **Where it runs:** Railway, one container, one replica; Helius's devnet RPC.
@@ -241,7 +243,7 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
   USDT or EURC; Kora handles them as it handles USDC.
 - **No priority fee,** so under congestion a transaction may land late.
 - **It trusts its RPC's simulation** of each transaction, for what it calls and what it costs, and
-  Jupiter's price for each paid token against SOL, with nothing for that price's error.
+  Jupiter's price for each dollar it is paid in against SOL, with nothing for that price's error.
 - **What it collects sits under its signing key,** in the key's own token accounts; nothing moves
   it but someone holding the key.
 - **Each dollar's maker can freeze the fee payer's account in it,** and Open USD's maker holds a
@@ -251,11 +253,11 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
 
 ## Who decides what
 
-- **The standard (forest):** nothing about the price. The registry and the escrow take no fee and
+- **The standard:** nothing about the price. The registry and the escrow take no fee and
   care nothing for who pays; every rent goes back to whoever fronted it.
-- **This fee payer, by its policy:** which programs and transactions it pays for, which tokens it is
-  paid in, and its price.
-- **An app, with the person:** which fee payer to use, or none, and which token to pay in.
+- **This fee payer, by its own choice:** which programs and transactions it pays for, which dollars
+  it is paid in, and its price.
+- **An app, with the person:** which fee payer to use, or none, and which dollar to pay in.
 
 ## FAQ
 
