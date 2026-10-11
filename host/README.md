@@ -68,9 +68,8 @@ in `src/credits.ts`:
 | `GET /credits/balance/<folder>` | `{ folder, credits }` |
 
 **A folder's balance** is a count of credits. Anyone holding credits can add them to any folder;
-only that folder's writes draw from it. A spend lands when the balance holds its credits: the
-balance and a mark for each credit are written in one transaction, then the credits are spent. A
-start settles each credit a stop left held by its mark. A 500-credit gift fills a folder in five
+only that folder's writes draw from it. A spend holds its credits, spends them and adds them to
+the balance in one transaction: all of it, or none. A 500-credit gift fills a folder in five
 spends.
 
 **What a write costs:** one credit a started megabyte (1,048,576 bytes) of it, one at the least. A
@@ -79,6 +78,16 @@ folder whose current records here name them that holds the price. Forest's host 
 about a hosts or permissions record, so those are free: a person can always move and always remove
 an access key. A record, a message or bytes already here cost nothing again. A write that becomes
 current stays as long as it is current; the price covers that.
+
+**A write costs exactly its price or nothing.**
+
+- **A record or a message** is claimed by its id in the same transaction that takes its price. A
+  second copy in flight at once, or the same write sent again after a stop between its price and
+  its store, costs nothing.
+- **Bytes** are stored first and charged after. Their price is reserved on the folder, so no other
+  write can spend it; forest's host keeps them; then the price is taken. If they are not kept, the
+  reservation is released. The front sends on one put of the same bytes at a time, so a second copy
+  finds them kept and pays nothing.
 
 ### Settings
 
@@ -104,8 +113,10 @@ current stays as long as it is current; the price covers that.
 
 The bucket takes all four of its first variables, or none: any `S3_` variable without all four
 stops the start. The credit settings are all needed: without one, the host does not start, so it is
-never free by mistake. Its credits are kept in `credits/` in the data directory: the spent list
-and the balances.
+never free by mistake. Its credits are kept in one file, `credits/credits.sqlite` in the data
+directory: the spent list, the proofs it took, its sponsors' bill, the balances, and the id of each
+write it took a price for. A start moves an older host's `credits/balances.sqlite` into it, once,
+settling a spend that host cut short between its two files.
 
 ### Run it
 
@@ -142,8 +153,11 @@ The test checks:
   one credit, refused without it, nothing for one already here; bytes of a megabyte and one, two
   credits, refused short, taken once paid, nothing again; bytes two folders name, through the one
   that can pay; a message one credit, from its sender.
-- A spend cut short between holding the credit and spending it, settled on the next start: spent
-  if the balance took it, free to show again if not.
+- A write costs exactly its price or nothing: two copies of one message in flight at once, paid
+  once; a record paid before a stop, kept free when sent again; two copies of one blob, paid once;
+  two blobs and a balance for one, one kept and paid and the balance never below zero; a reservation
+  a record cannot spend; a bucket that refuses every put, nothing paid.
+- One file: an older host's balances, and a spend it cut short, moved in once.
 
 ### On devnet
 
@@ -201,7 +215,8 @@ not set here: the largest record or message, and the blob types.
   ("When it grows").
 - **No request logs.** Neither forest's host nor the front logs a request or keeps an address.
 - **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with the
-  buy's reference, how many credits each sponsor paid for, and each folder's balance.
+  buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of each
+  write it took a price for.
   Nothing ties a credit to the folder it went into.
 - **Providers, on devnet:** Railway runs it, with a volume and a Railway bucket; the registry
   lookup and the payment check read Helius's devnet RPC.
@@ -226,8 +241,11 @@ not set here: the largest record or message, and the blob types.
   address, can be matched, and the issuer knows whose buy it paid. An app that waits between
   collecting and spending, or spends over a VPN, makes that harder (standard's
   [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
-- **Two copies of one write in flight at once may both pay,** though forest's host keeps one: the
-  price is taken before forest's host settles which is current.
+- **Hosts and permissions records are free, on purpose:** a person can always leave a host or
+  revoke a key with an empty balance.
+- **A stop between storing bytes and taking their price** leaves them kept and unpaid.
+- **Two different messages from one sender to an inbox that takes one from each,** in flight at
+  once, may both pay, though forest's host keeps one: it checks that rule after the price.
 - **On devnet it may be wiped at any time,** and with it every record the e2e runs left.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
   change to forest's storage first.

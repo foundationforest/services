@@ -26,6 +26,7 @@ import { inboxKey, mainKey } from '../../standard/keys/src/index.ts'
 import { base58, deliver, getBlob, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readAll, readProfile } from '../../standard/records/src/index.ts'
 import { Host } from '../../standard/records/src/host.ts'
 import { message, openMessage } from '../../standard/records/src/private.ts'
+import { recordId, unsignedOf } from '../../standard/records/src/record.ts'
 import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
@@ -551,26 +552,118 @@ test('every write pays from its folder: a record or a message one credit, bytes 
   assert.deepEqual([balance(owner), balance(other)], [0, 0], 'the sender paid; the recipient did not')
 })
 
-test('a spend that stopped between holding a credit and spending it settles on the next start', async () => {
+test('a write costs exactly its price or nothing: two copies of one message pay once; a record paid before costs nothing again', async () => {
+  const now = Date.now()
+  const owner = await mainKey(randomBytes(32), 'tutoring/seller')
+  const sender = keyFromPrivate(randomBytes(32))
+  const { body } = await card(owner, { senders: { issuer: ISSUER } })
+  // A lookup that takes a while, so both copies are in flight at once when they reach the price.
+  const chain = rpc([rowData(sender.publicKey)])
+  const slow = { getProgramAccounts: (async (...args: Parameters<typeof chain.getProgramAccounts>) => (await new Promise((r) => setTimeout(r, 50)), chain.getProgramAccounts(...args))) as never }
+  const h = await startHost(readConfig(credited({ PORT: '0' })), { connection: slow, rpc: paidRpc })
+  try {
+    await fund(h, [owner.address], 1)
+    await fund(h, [sender.address], 3)
+    await publish([h.url], [ownerRecord(owner, 'profile', body, now)])
+    const line = await message(sender, owner.address, { text: 'Is Tuesday free?' }, Date.now(), body)
+    const both = await Promise.all([deliver([h.url], [line]), deliver([h.url], [line])])
+    assert.deepEqual(both.map(([o]) => errors(o)[0]).sort(), ['duplicate', 'ok'], 'forest keeps one')
+    assert.equal(h.credits.balance(sender.address), 2, 'and it was paid once')
+
+    // A record whose price was taken before (a stop between the price and the store) is kept, free, when sent again.
+    const record = ownerRecord(owner, 'offer/a', { title: 'Maths' }, now)
+    await fund(h, [owner.address], 1)
+    assert.equal(h.credits.charge(owner.address, 1, recordId(unsignedOf(record))), null)
+    assert.equal(h.credits.balance(owner.address), 0)
+    assert.deepEqual(errors((await publish([h.url], [record]))[0]), ['ok'], 'paid already: kept')
+    assert.equal(h.credits.balance(owner.address), 0, 'nothing taken twice')
+  } finally {
+    await h.close()
+  }
+})
+
+test('bytes: stored first, charged after; a put that fails costs nothing; two copies pay once; a reservation is never spent twice', async () => {
+  const now = Date.now()
+  const owner = await mainKey(randomBytes(32), 'tutoring/seller')
+  const balance = () => host.credits.balance(owner.address)
+  const [one, two] = [photo(10), photo(10)]
+  await fund(host, [owner.address], 2)
+  await publish([host.url], [ownerRecord(owner, 'offer/a', { media: [one.named, two.named] }, now)])
+  assert.equal(balance(), 1)
+
+  // Two copies of one blob at once: both answered ok, one paid.
+  await fund(host, [owner.address], 1)
+  assert.deepEqual(await Promise.all([put(host.url, one), put(host.url, one)]), ['ok', 'ok'])
+  assert.equal(balance(), 1, 'paid once')
+
+  // Two blobs at once, and a balance for one: one kept and paid, the other refused; never below zero.
+  const three = photo(10)
+  await publish([host.url], [ownerRecord(owner, 'offer/b', { media: [three.named] }, now)])
+  assert.equal(balance(), 0)
+  await fund(host, [owner.address], 1)
+  const answers = await Promise.all([put(host.url, two), put(host.url, three)])
+  assert.deepEqual(answers.map((a) => a.split(':')[0]).sort(), ['ok', 'policy'])
+  assert.equal(balance(), 0)
+
+  // A reservation holds its credits: a record can't spend them while the bytes are being stored.
+  await fund(host, [owner.address], 1)
+  assert.equal(host.credits.reserve('a'.repeat(64), [owner.address], 1), null)
+  const [refused] = await publish([host.url], [ownerRecord(owner, 'offer/c', { title: 'x' }, now)])
+  assert.deepEqual(errors(refused), ['policy'], 'reserved for the bytes')
+  host.credits.stored('a'.repeat(64), false)
+  assert.deepEqual(errors((await publish([host.url], [ownerRecord(owner, 'offer/c', { title: 'x' }, now)]))[0]), ['ok'], 'released: the record takes it')
+
+  // A bucket that refuses every put: the bytes are not kept, and nothing is paid.
+  const broken = createServer((req, res) => {
+    req.resume()
+    res.writeHead(500).end()
+  })
+  await new Promise<void>((resolve) => broken.listen(0, '127.0.0.1', resolve))
+  const bucket = { S3_ENDPOINT: `http://127.0.0.1:${(broken.address() as { port: number }).port}`, S3_BUCKET: 'forest-host', S3_ACCESS_KEY_ID: 'id', S3_SECRET_ACCESS_KEY: 'secret' }
+  const h = await startHost(readConfig(credited({ PORT: '0', ...bucket })), { rpc: paidRpc })
+  try {
+    const lost = photo(10)
+    await fund(h, [owner.address], 2)
+    await publish([h.url], [ownerRecord(owner, 'offer/a', { media: [lost.named] }, now)])
+    assert.equal(h.credits.balance(owner.address), 1)
+    assert.notEqual(await put(h.url, lost), 'ok')
+    assert.equal(h.credits.balance(owner.address), 1, 'a put that failed cost nothing')
+    assert.equal(await getBlob([h.url], lost.named.sha256), null, 'and not kept')
+  } finally {
+    await h.close()
+    broken.close()
+  }
+})
+
+test('one file: an older host’s balances, and a spend it cut short between its two files, moved in once', async () => {
   const dir = scratch()
   const start = () => startHost(readConfig(credited({ PORT: '0', DATA_DIR: dir })), { rpc: paidRpc })
   let h = await start()
   const folder = (await mainKey(randomBytes(32), 'tutoring/seller')).address
   const [kept, lost] = await creditsFrom(h, 2)
   const ids = [creditId(kept!), creditId(lost!)]
-  // Two spends cut short: the first got as far as the balance, the second only as far as the hold.
+  // Two spends an older host cut short: the first got as far as its balances file, the second only as far as the hold.
   h.credits.spent.hold(ids[0]!)
   h.credits.spent.hold(ids[1]!)
   await h.close()
-  const balances = new DatabaseSync(join(dir, 'credits', 'balances.sqlite'))
-  balances.prepare('INSERT INTO landing (id) VALUES (?)').run(ids[0]!)
-  balances.prepare('INSERT INTO balances (folder, credits) VALUES (?, 1)').run(folder)
-  balances.close()
+  const old = new DatabaseSync(join(dir, 'credits', 'balances.sqlite'))
+  old.exec('CREATE TABLE balances (folder TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID; CREATE TABLE landing (id TEXT PRIMARY KEY) WITHOUT ROWID')
+  old.prepare('INSERT INTO landing (id) VALUES (?)').run(ids[0]!)
+  old.prepare('INSERT INTO balances (folder, credits) VALUES (?, 1)').run(folder)
+  old.close()
   h = await start()
   try {
+    assert.deepEqual(readdirSync(join(dir, 'credits')).sort(), ['credits.sqlite'], 'one file')
     assert.deepEqual(h.credits.spent.holds(), [], 'nothing held after the start')
+    assert.equal(h.credits.balance(folder), 1, 'the balance moved in')
     assert.deepEqual((await spend(h, folder, [kept!])).body, { error: 'spent' }, 'the one its folder took is spent')
     assert.deepEqual((await spend(h, folder, [lost!])).body, { folder, credits: 2 }, 'the other is free to show again')
+  } finally {
+    await h.close()
+  }
+  h = await start()
+  try {
+    assert.equal(h.credits.balance(folder), 2, 'moved once')
   } finally {
     await h.close()
   }
