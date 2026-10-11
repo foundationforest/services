@@ -74,7 +74,7 @@ export function urlsFor(base: string) {
 export const SOURCE = 'https://github.com/foundationforest/services'
 export const SCORING_DOC = `${SOURCE}/blob/main/index/README.md#how-it-scores`
 /** The Pay link's format: forest's escrow's. */
-export const PAYLINK_DOC = 'https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link'
+export const PAYLINK_DOC = 'https://github.com/foundationforest/standard/blob/main/escrow/README.md#the-pay-link'
 /** The four public lists the foundation's index reads. Another index's are its own. */
 export const LISTS = {
   hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,

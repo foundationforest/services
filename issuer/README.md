@@ -12,7 +12,7 @@ Up: [the repo](../README.md).
 ## How it works
 
 A note is forest's
-([registry](https://github.com/foundationforest/forest/blob/main/registry/README.md#the-note-and-the-person-proof)):
+([registry](https://github.com/foundationforest/standard/blob/main/registry/README.md#the-note-and-the-person-proof)):
 the person's note number, their face's embedding, the model that made it, and a tier, signed by
 the issuer's note key. The person keeps it, and from it proves on their device, for a registry row,
 that this issuer signed them a note, without showing the note or who they are.
@@ -24,7 +24,7 @@ welcome gift, and does nothing else. It holds no money.
 
 **Who it is.** `GET /issuer.json` gives its name and its note key. The name is what each person's
 secret for this issuer is mixed from
-([keys](https://github.com/foundationforest/forest/blob/main/keys/README.md#the-issuer-secret)),
+([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-issuer-secret)),
 so it never changes. The note key is the Baby Jubjub key that signs every note, mixed from the
 issuer's seed (`ISSUER_KEYPAIR`) with forest's `hkdf` under `issuer/notes`; a registry row names
 it, and readers trust it.
@@ -37,7 +37,7 @@ Tier 1, the face check, for anyone:
    answers the page the person does the check on.
 2. **The app sends the session and its note number,** which the device mixes from the person's
    seed and this issuer's name
-   ([keys](https://github.com/foundationforest/forest/blob/main/keys/README.md#the-note-number)).
+   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-note-number)).
    The issuer never learns the secret behind it.
 3. **The issuer asks Didit for the decision,** and takes it only if the session is on the face
    workflow, every liveness step passed, and the session is approved.

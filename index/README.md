@@ -23,13 +23,13 @@ markets directory ── the markets lists/markets.json names ──┘
 
 - **Records, from each host in `lists/hosts.json`, in full.** Everything new on the whole host
   (`GET /v1/records?after=`, forest's
-  [records](https://github.com/foundationforest/forest/blob/main/records/README.md#hosts)), from a
+  [records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)), from a
   cursor kept in Postgres, so a profile is found the first time it writes there. No other host is
   read, and a profile's hosts record is not followed.
   - Every record is checked by forest's reader (`readPage`): its canonical text and its signature.
     One that fails is dropped and logged; every one that checks is taken in, as its text, per host.
   - Each profile is viewed with forest's own `viewProfile`, which applies the access rule (forest's
-    [records](https://github.com/foundationforest/forest/blob/main/records/README.md), "Which record
+    [records](https://github.com/foundationforest/standard/blob/main/records/README.md), "Which record
     counts"), so this index sees exactly what any other reader sees.
   - Only each profile's current records are kept: what the view holds now, at every path, and any
     record dated ahead, until it comes due. A version its writer replaced, a record its writer
@@ -42,7 +42,7 @@ markets directory ── the markets lists/markets.json names ──┘
     records wait, kept, and are stored the day its row is read, with nothing to read again.
 - **Rows, from the registry.** Every row of each issuer key in `lists/issuers.json`, read from the
   program's own accounts on every poll (`fetchRows`). A row
-  ([registry](https://github.com/foundationforest/forest/blob/main/registry/README.md#the-row))
+  ([registry](https://github.com/foundationforest/standard/blob/main/registry/README.md#the-row))
   names the profile, its stamp, the issuer's key, the payer, when the chain wrote it, and the label.
   It never changes, so only new ones are stored. The program writes a row only after checking a
   person proof against the issuer's key the row names, so the row is the proof: nothing is asked of
@@ -52,7 +52,7 @@ markets directory ── the markets lists/markets.json names ──┘
   since RPC nodes are not an archive. Only events the program itself wrote are read (the escrow
   client's `decodeEvents`), since another program can print the same bytes. From `Created`,
   `Funded`, `Ended`, `Closed` and `Objected` it keeps each deal's receipt
-  ([escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md)).
+  ([escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)).
   Everything it knows of the escrow is in `src/chain/escrow.ts`.
 - **Markets, from the markets directory.** Each name in `lists/markets.json`, read at start from
   the directory that list names (its `directory.md` gives each name's file), never copied, so there
@@ -62,7 +62,7 @@ markets directory ── the markets lists/markets.json names ──┘
   offer names no market: it is listed in its profile's.
 - **Pictures, from the same hosts.** A profile's `photo`, and the `media` of an offer or a review,
   name bytes by their SHA-256, with a type
-  ([records](https://github.com/foundationforest/forest/blob/main/records/README.md#blobs)). For
+  ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#blobs)). For
   each picture a stored record names, the readers ask each listed host that served that record for
   the bytes (forest's `getBlob`, which checks the hash), and keep which host holds which hash as
   which type, never the bytes. One not there yet is asked for again after every read, since an app
@@ -194,13 +194,13 @@ record names it (`sha256`, `mimeType`) with its `url` on that host, or null.
 
 **Inboxes.** A profile's twin gives its card's `inboxKey` and `inbox`: who may send it a message,
 and the readers each message is encrypted to besides. A message goes to the profile's own hosts
-([records](https://github.com/foundationforest/forest/blob/main/records/README.md#inbox)): none
+([records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)): none
 passes through the index.
 
 #### The Pay link
 
 The one format for paying for an offer from any app is forest's
-[escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md)'s ("The pay link").
+[escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)'s ("The pay link").
 This index shows it on every live offer with a price, at its own address (`/pay?…`), and never pays
 or holds money: it links. `/pay.json?…` says whether the link still matches the offer as this index
 holds it (`check`): `matches`, `changed` (the offer was edited since), `differs` (the link was
@@ -209,7 +209,7 @@ altered), `notLive`, `noPrice`, `notFound` or `invalid`.
 #### The reputation tree
 
 The index publishes its ratings as a tree in forest's format (forest's
-[reputation](https://github.com/foundationforest/forest/blob/main/reputation/README.md), "The tree an
+[reputation](https://github.com/foundationforest/standard/blob/main/reputation/README.md), "The tree an
 index publishes"), so a person proves on their device a rating from their own profiles, naming none
 of them. The code is `src/scores/reputation.ts`.
 
@@ -236,7 +236,7 @@ formats a profile's proof carries, so an app copies them into its card as they a
 #### Proofs a profile shows
 
 A profile's card may carry reputation proofs and person proofs
-([records](https://github.com/foundationforest/forest/blob/main/records/README.md#proofs)). The
+([records](https://github.com/foundationforest/standard/blob/main/records/README.md#proofs)). The
 readers check them whenever they store the card, and store with it the ones that pass:
 
 - **A reputation proof** whose `index` is in `lists/indexes.json`: reputation's `verifyReputation`, for
@@ -383,7 +383,7 @@ them, the hosts and the chain. Another index holds its own.
 
 - **Which hosts it reads** (`lists/hosts.json`): each in full. Today one: the foundation's host on
   devnet, https://host.devnet.forest.foundation. It takes no hosts records (`POST /v1/hosts`,
-  forest's [records](https://github.com/foundationforest/forest/blob/main/records/README.md),
+  forest's [records](https://github.com/foundationforest/standard/blob/main/records/README.md),
   "Indexes"), so no profile can ask it to read another host.
 - **Which issuers count, and how much** (`lists/issuers.json`): each by its key (128 hex, x then y,
   as a row holds it), with a name, a weight from 0 to 1 for each tier (the tier in decimal) and, for
@@ -448,7 +448,7 @@ them, the hosts and the chain. Another index holds its own.
   few rated profiles, the leaves under one label with one score may be just one, and a proof that
   shows that market and that rating then points to it. A proof that shows no market narrows it too,
   when few leaves share its score. An app should say so before a proof is shown (forest's
-  [reputation](https://github.com/foundationforest/forest/blob/main/reputation/README.md#limits)).
+  [reputation](https://github.com/foundationforest/standard/blob/main/reputation/README.md#limits)).
 - **Roots go stale by number, not by age.** The root moves with every new rating, so on a busy index
   a proof goes stale sooner than on a quiet one.
 - **Only its own roots.** A proof made against another index's tree shows nothing here, even from an

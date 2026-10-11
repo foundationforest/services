@@ -1,5 +1,5 @@
 This repo is `services`: the first services on Forest's open standard, `forest`
-(github.com/foundationforest/forest), used here at the commit in `STANDARD`. The Forest Foundation
+(github.com/foundationforest/standard), used here at the commit in `STANDARD`. The Forest Foundation
 runs every service here. Read `README.md` and the README of the directory you work in before any
 task.
 
