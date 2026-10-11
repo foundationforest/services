@@ -108,7 +108,7 @@ proving files (the person circuit's are in forest):
 
 ```sh
 ./standard.sh keys records registry/client escrow/client reputation/client
-(cd credits && npm ci)
+(cd shared/credits && npm ci)
 (cd mcp && npm ci)
 (cd standard/reputation/circuit && npm run fetch)
 cd e2e && npm ci

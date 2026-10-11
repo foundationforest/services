@@ -52,13 +52,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
-        working-directory: credits
+        working-directory: shared/credits
         run: npm ci --no-audit --no-fund
       - name: Type-check
-        working-directory: credits
+        working-directory: shared/credits
         run: npm run check
       - name: Test
-        working-directory: credits
+        working-directory: shared/credits
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
@@ -74,7 +74,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh registry/client records keys
-          (cd credits && npm ci --no-audit --no-fund)
+          (cd shared/credits && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
@@ -125,7 +125,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh registry/client escrow/client
-          (cd credits && npm ci --no-audit --no-fund)
+          (cd shared/credits && npm ci --no-audit --no-fund)
           (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
       - name: The local run's type-check
@@ -153,7 +153,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh keys records registry/client
-          (cd credits && npm ci --no-audit --no-fund)
+          (cd shared/credits && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -175,7 +175,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh keys records registry/client escrow/client reputation/client
-          (cd credits && npm ci --no-audit --no-fund)
+          (cd shared/credits && npm ci --no-audit --no-fund)
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check
