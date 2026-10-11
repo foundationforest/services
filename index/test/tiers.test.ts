@@ -81,14 +81,13 @@ test('tiers: a person proof on a card weighs its row, and tier 2 says ID-checked
   const markets = await serveMarkets(folder)
   const issuers: IssuerConfig = { [ISSUER_A]: { name: 'Issuer A', weights: { '1': 0.7, '2': 0.9 } } }
   writeFileSync(join(folder, 'hosts.json'), JSON.stringify({ hosts: [] }))
-  writeFileSync(join(folder, 'markets.json'), JSON.stringify({ directory: markets.url, markets: ['tutoring'] }))
   writeFileSync(join(folder, 'issuers.json'), JSON.stringify({ issuers }))
   copyFileSync(join(INDEX_ROOT, 'lists/indexes.json'), join(folder, 'indexes.json'))
   const config = loadConfig({
     DATABASE_URL: url.toString(),
     INDEX_SIGNING_SEED: '07'.repeat(32),
     HOSTS_FILE: join(folder, 'hosts.json'),
-    MARKETS_FILE: join(folder, 'markets.json'),
+    MARKETS_URL: markets.url,
     ISSUERS_FILE: join(folder, 'issuers.json'),
     INDEXES_FILE: join(folder, 'indexes.json'),
   })

@@ -1,6 +1,8 @@
-// The markets this index uses: the names in lists/markets.json, each read from the markets directory
-// that list names, over HTTPS, never copied. The directory's `directory.md` names each market with a
-// link to its file, `<folder>/<name>.json`. A market is its one name, byte for byte.
+// The markets this index uses: every market the markets directory lists, read over HTTPS, never
+// copied; the markets repo's directory is the only list of them. Its `directory.md` names
+// each market with a link to its file, `<folder>/<name>.json`. A market is its one name, byte for
+// byte. The directory is read at start and again every hour (`refresh`), so a market counts as soon
+// as it appears there.
 //
 // A file is checked here for what this index reads from it, and nothing more (`checkMarket`).
 //
@@ -31,8 +33,10 @@ export type MarketFile = {
 
 export class Directory {
   readonly markets = new Map<string, MarketFile>()
-  /** Markets the list names that could not be used, with why. They count for nothing. */
+  /** Markets the directory lists that could not be used, with why. They count for nothing. */
   readonly refused: { market: string; errors: string[] }[] = []
+  /** Where `fetch` read this from, for `refresh`. Unset for a directory built from files. */
+  private source: { list: MarketsList; get: typeof fetch } | null = null
 
   constructor(files: { file: string; market: unknown }[]) {
     for (const { file, market } of files) {
@@ -47,10 +51,9 @@ export class Directory {
   }
 
   /**
-   * The markets the list names, each read from the directory the list names: `directory.md`, then
-   * each named market's file. A file that can't be fetched stops the load, so a network failure
-   * never drops a market quietly; a market the directory does not list, or whose file is not a
-   * valid market file at its own path, is refused.
+   * Every market the directory lists: `directory.md`, then each listed market's file. A file that
+   * can't be fetched stops the load, so a network failure never drops a market quietly; a market
+   * whose file is not a valid market file at its own path is refused.
    */
   static async fetch(list: MarketsList, get: typeof fetch = fetch): Promise<Directory> {
     const read = async (path: string): Promise<string> => {
@@ -61,12 +64,7 @@ export class Directory {
     const links = new Map(parseDirectory(await read('directory.md')).map((l) => [l.name, l.path]))
     const files: { file: string; market: unknown }[] = []
     const refused: { market: string; errors: string[] }[] = []
-    for (const name of list.markets) {
-      const path = links.get(name)
-      if (!path) {
-        refused.push({ market: name, errors: ['not in the directory'] })
-        continue
-      }
+    for (const [name, path] of links) {
       let market: unknown
       try {
         market = JSON.parse(await read(path))
@@ -84,7 +82,25 @@ export class Directory {
     }
     const directory = new Directory(files)
     directory.refused.push(...refused)
+    directory.source = { list, get }
     return directory
+  }
+
+  /**
+   * Reads the directory again and takes what it says now. True when the markets changed. The swap
+   * has no `await` in it, so a request never sees half a list. A read that fails (the directory
+   * does not answer, or a file it links can't be fetched) throws and leaves the markets as they
+   * were, to be tried again at the next read; so one linked file that can't be fetched holds every
+   * new market until it can.
+   */
+  async refresh(): Promise<boolean> {
+    if (!this.source) throw new Error('this directory was not read from a markets directory')
+    const next = await Directory.fetch(this.source.list, this.source.get)
+    const same = JSON.stringify([...this.markets]) === JSON.stringify([...next.markets])
+    this.markets.clear()
+    for (const [name, market] of next.markets) this.markets.set(name, market)
+    this.refused.splice(0, this.refused.length, ...next.refused)
+    return !same
   }
 
   /**

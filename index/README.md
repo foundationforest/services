@@ -5,8 +5,8 @@ scores each profile, and serves it all at open URLs: pages for people, JSON for 
 
 The foundation runs this one, on devnet, at https://index.devnet.forest.foundation. Anyone can run
 another, from this code or their own. What this one reads and how it weighs it are its
-[Policy](#policy), files in this directory, so anyone can rebuild what it shows from them, the hosts
-and the chain.
+[Policy](#policy), files in this directory and the markets directory, so anyone can rebuild what it
+shows from them, the hosts and the chain.
 
 Up: [the repo](../README.md). For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
@@ -16,7 +16,7 @@ Up: [the repo](../README.md). For AI agents: [`skill.md`](skill.md) and [`llms.t
 hosts in lists/hosts.json ── records ───────────────────────┐
 registry ── rows of the issuers in lists/issuers.json ──────┤
 escrow ── its own events: receipts ─────────────────────────┼──▶ scores ──▶ pages, JSON, the tree
-markets directory ── the markets lists/markets.json names ──┘
+markets directory ── every market it lists ─────────────────┘
 ```
 
 ### What it reads
@@ -54,12 +54,13 @@ markets directory ── the markets lists/markets.json names ──┘
   `Funded`, `Ended`, `Closed` and `Objected` it keeps each deal's receipt
   ([escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)).
   Everything it knows of the escrow is in `src/chain/escrow.ts`.
-- **Markets, from the markets directory.** Each name in `lists/markets.json`, read at start from
-  the directory that list names (its `directory.md` gives each name's file), never copied, so there
-  is one source of names. Each file is checked for the fields the index reads (`name`, `folder`,
-  `description`, `sides`, `roleNames`, `evidenceTypes`, `offerFields`, `reviewFields`, `ratings`,
-  `howDealsGo`). A name the directory does not list, or a file that fails, is not used. An
-  offer names no market: it is listed in its profile's.
+- **Markets, from the markets directory.** Every market its `directory.md` lists (the directory is
+  at `MARKETS_URL`), read at start and again every hour, never copied, so there is one source of
+  names. A market counts as soon as it appears there, with
+  no restart. Each file is checked for the fields the index reads (`name`, `folder`, `description`,
+  `sides`, `roleNames`, `evidenceTypes`, `offerFields`, `reviewFields`, `ratings`, `howDealsGo`). A
+  name the directory does not list, or a file that fails, is not used. An offer names no market: it
+  is listed in its profile's.
 - **Pictures, from the same hosts.** A profile's `photo`, and the `media` of an offer or a review,
   name bytes by their SHA-256, with a type
   ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#blobs)). For
@@ -273,7 +274,8 @@ Environment variables, read once at start; a change means a restart.
 | `POLL_MS` | no | `5000` | How often the readers look for anything new |
 | `PUBLIC_URL` | no | `https://forest.foundation` | Where the pages are published: an origin |
 | `PORT` | no | `8080` | |
-| `HOSTS_FILE`, `MARKETS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
+| `HOSTS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
+| `MARKETS_URL` | no | `https://raw.githubusercontent.com/foundationforest/markets/main` | Where the markets are read from: a markets directory, `directory.md` and the files it links |
 | `SCORING_FILE`, `CURRENCIES_FILE` | no | the files in `config/` | |
 
 The `_FILE` variables point the index at another index's lists and weights ([Policy](#policy)).
@@ -378,8 +380,9 @@ key.
 ## Policy
 
 Each of these is this index's opinion, not a rule. The lists and weights are files in this
-directory, read at start, not settings on a server, so anyone can rebuild what this index shows from
-them, the hosts and the chain. Another index holds its own.
+directory, read at start, and the markets are the markets directory's, read every hour: none is a
+setting on a server, so anyone can rebuild what this index shows from them, the hosts and the chain.
+Another index holds its own.
 
 - **Which hosts it reads** (`lists/hosts.json`): each in full. Today one: the foundation's host on
   devnet, https://host.devnet.forest.foundation. It takes no hosts records (`POST /v1/hosts`,
@@ -392,8 +395,8 @@ them, the hosts and the chain. Another index holds its own.
   devnet issuer, "Forest issuer (devnet)", at 0.7 for tier 1 (its face check) and 0.9 for tier 2
   (its document check), with no `until`. A row whose card shows no tier counts at 0.7. Tier 2 shows
   as "ID-checked".
-- **Which markets count** (`lists/markets.json`): 57 names, each read from the
-  [markets directory](https://github.com/foundationforest/markets)'s `main`.
+- **Which markets count** (`MARKETS_URL`): every market in the
+  [markets directory](https://github.com/foundationforest/markets)'s `main`, read every hour.
 - **How reviews weigh** (`config/scoring.json`): evidence `both` 1 (and so `oneSidedConfirmed`),
   `oneSided` 0.5, `none` 0.05; the floor for a reviewer's weight, 0.05; standing repeated until no
   profile moves by more than 10⁻⁹, for at most 100 rounds.
@@ -428,8 +431,10 @@ them, the hosts and the chain. Another index holds its own.
   open to anyone, with no login.
 - **It keeps no network address.** The pages log only a failed request's path and its error, never
   an address or a query.
-- **What it reads is public, and listed in this repo:** the hosts, the markets and the issuers it
-  uses are three files in `lists/`, and its weights are files in `config/`.
+- **What it reads is public, and listed:** the hosts and the issuers it uses are two files in
+  `lists/`, its markets are the `directory.md` of
+  [foundationforest/markets](https://github.com/foundationforest/markets), re-read every hour, and
+  its weights are files in `config/`.
 - **It scores each profile on its own.** Nothing here links two profiles; nothing ties a profile to
   a person.
 - **It never blends its scores into one number,** and signs every one it serves.
@@ -465,8 +470,10 @@ them, the hosts and the chain. Another index holds its own.
 - **A replaced version is gone for good.** If a path's newest version came from an access key the
   profile later removes from its permissions record, the path shows nothing here, where a reader
   holding every version would show the one before.
-- **The markets are read once, at start.** A change in the markets directory reaches the index at
-  its next restart, and while the directory does not answer, the index does not start.
+- **The markets are read every hour.** A market counts within an hour of appearing in the markets
+  directory, and the readers and the pages each read it for themselves. A read that fails keeps the
+  markets as they were and is tried again an hour later; while the directory does not answer at
+  start, the index does not start.
 - **Everything is computed again on every change,** and signing runs in JavaScript, inside one
   database transaction.
 - **Scale:** one sitemap file (past 50,000 pages it needs a sitemap index); a profile page lists
@@ -483,11 +490,12 @@ them, the hosts and the chain. Another index holds its own.
 ## Who decides what
 
 - **The standard (forest):** what a record, a row, a receipt and the tree are, and the access rule.
-- **This index, by its policy:** which hosts it reads, which issuers and markets count, how much
-  each tier and each review weighs, from when a leaked issuer's rows stop counting, which indexes'
-  reputation proofs it shows and how many roots back, and what its pages show.
-- **The markets directory:** each market's name and the fields it adds; which of them this index
-  uses is its own.
+- **This index, by its policy:** which hosts it reads, which issuers count, which markets directory
+  it reads, how much each tier and each review weighs, from when a leaked issuer's rows stop
+  counting, which indexes' reputation proofs it shows and how many roots back, and what its pages
+  show.
+- **The markets directory:** which markets there are, each one's name and the fields it adds; this
+  index uses every market it lists.
 - **A person, through their app:** where their records live, which index they read, and which
   proofs their card shows.
 

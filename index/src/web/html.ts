@@ -78,7 +78,7 @@ export const PAYLINK_DOC = 'https://github.com/foundationforest/standard/blob/ma
 /** The four public lists the foundation's index reads. Another index's are its own. */
 export const LISTS = {
   hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,
-  markets: `${SOURCE}/blob/main/index/lists/markets.json`,
+  markets: 'https://github.com/foundationforest/markets/blob/main/directory.md',
   issuers: `${SOURCE}/blob/main/index/lists/issuers.json`,
   indexes: `${SOURCE}/blob/main/index/lists/indexes.json`,
 }
