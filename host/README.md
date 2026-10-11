@@ -56,14 +56,14 @@ says what each moved:
 ### Credits
 
 A credit here is a [Forest credit](https://github.com/foundationforest/standard/blob/main/credits/README.md)
-whose unit is `one cent of writes`. The host sells and takes them with standard's service side,
+whose unit is `one cent of writes`. The host sells and takes them with standard's seller,
 unchanged ([Selling credits](https://github.com/foundationforest/standard/blob/main/credits/README.md#selling-credits)),
 in `src/credits.ts`:
 
 | Route | What |
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its credit key, where a buy goes, and its `forest-credit` entry: the unit, the address a credit is paid to, the token and one credit's price |
-| `POST /credits/buy` | A buy's bytes; once a finalized payment names the buy's reference and pays for every credit, its blind signatures, the same each time. Refused: `not_a_buy`, `too_many` (over `CREDITS_PER_BUY`), `not_paid` (402, with what to pay), `payment_check_unavailable` (503, the RPC did not answer, or there is none) |
+| `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header: `solana <signature>`, a finalized transaction naming the buy's reference and paying for every credit, or `ticket <ticket>`, from a sponsor in `SPONSORS`. Its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`, `too_many` (over `CREDITS_PER_BUY`), `bad_payment` (a header it cannot read), `not_paid` (402, with what to pay), `proof_used` (409, the proof paid for another buy), `payment_check_unavailable` (503, the RPC did not answer, or there is none) |
 | `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, as standard's `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice, checked with standard's `checkCredits`), `spent` or `held` (409: one is spent, or held by another request) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }` |
 
@@ -93,7 +93,8 @@ current stays as long as it is current; the price covers that.
 | `CREDIT_MINT` | required | The token a credit is paid in, or `SOL` |
 | `CREDIT_PRICE` | required | One credit's price, decimal text in whole tokens |
 | `CREDITS_PER_BUY` | `1000` | The most credits one buy may ask for |
-| `SOLANA_RPC_URL` | none: no lookup, and no buy collected | The Solana RPC the registry lookup reads and the payment check asks |
+| `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
+| `SOLANA_RPC_URL` | none: no lookup, and no buy paid on Solana | The Solana RPC the registry lookup reads and a Solana payment is checked through |
 | `REGISTRY_PROGRAM_ID` | the devnet registry | The registry the lookup reads |
 | `SENDER_CACHE_SECONDS` | `60` | How long a sender's records are kept once read; `0`: not kept |
 | `S3_ENDPOINT`, `S3_BUCKET` | none: blobs on disk | The bucket |
@@ -133,8 +134,8 @@ The test checks:
 - The sender check: an address that is not public is refused, written or looked up (`localhost`),
   before anything is sent; a message key's message is refused (`lookup`) when its sender's host is
   on loopback, or redirects.
-- Credits: the directory; a buy refused unpaid, over the most a buy may hold, with no RPC, or not a
-  buy; collected twice, the same answer; finished with standard's client, and spent into a folder,
+- Credits: the directory; a buy refused with no payment, with one the RPC does not have, over the
+  most a buy may hold, with no RPC, or not a buy; collected twice with its payment, the same answer; finished with standard's client, and spent into a folder,
   one or several in a request, each once, with every refusal, none taken when one is refused; the
   balance; a page's preflight.
 - What writes cost: a hosts and a permissions record taken with nothing in the balance; a record
@@ -199,7 +200,8 @@ not set here: the largest record or message, and the blob types.
   bytes in an S3-compatible bucket. When one machine is not enough, forest's records say the way
   ("When it grows").
 - **No request logs.** Neither forest's host nor the front logs a request or keeps an address.
-- **What it keeps for credits:** the spent list (each spent credit's id) and each folder's balance.
+- **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with the
+  buy's reference, how many credits each sponsor paid for, and each folder's balance.
   Nothing ties a credit to the folder it went into.
 - **Providers, on devnet:** Railway runs it, with a volume and a Railway bucket; the registry
   lookup and the payment check read Helius's devnet RPC.

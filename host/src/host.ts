@@ -41,6 +41,7 @@ import { type BlobDriver, type BlobPolicy, Host, type HostOptions, defaultBlobPo
 import { encodeMessage } from '../../standard/records/src/message.ts'
 import { type Checked, encodeRecord } from '../../standard/records/src/record.ts'
 import { type BlobStore, blobStore } from '../../standard/records/src/storage.ts'
+import { PAYMENT_HEADER } from '../../standard/credits/src/index.ts'
 import { type Rpc, keyFrom } from '../../standard/credits/src/service.ts'
 import { importSingleFile } from '../../standard/records/scripts/import-single-file.ts'
 import { fromBytes32 } from '../../standard/registry/client/src/field.ts'
@@ -94,6 +95,8 @@ export type Config = {
   credit: { address: string; mint: string; price: string }
   /** The most credits one buy may ask for. */
   maxBuy: number
+  /** The sponsors whose tickets pay for a buy here, by address. */
+  sponsors: string[]
 }
 
 /** The bucket's variables; the first four are needed once any of them is set. */
@@ -155,13 +158,13 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     creditKey,
     credit: { address: new PublicKey(env.CREDIT_ADDRESS!.trim()).toBase58(), mint: mint === 'SOL' ? 'SOL' : new PublicKey(mint).toBase58(), price },
     maxBuy,
+    sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
   }
 }
 
 /** A JSON-RPC call through `url`, for the payment check. Its errors never carry the URL, which may carry the RPC's key. */
-function rpcAt(url: string | null): Rpc {
+function rpcAt(url: string): Rpc {
   return async (method, params) => {
-    if (!url) throw new Error('no RPC')
     let answered: { result?: unknown; error?: unknown }
     try {
       const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(20_000) })
@@ -330,12 +333,12 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
   if (req.method === 'OPTIONS') {
     req.resume()
-    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }).end()
+    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': `content-type, ${PAYMENT_HEADER}`, 'access-control-max-age': '86400' }).end()
     return true
   }
   if (req.method === 'GET' && path === DIRECTORY_PATH) {
     req.resume()
-    send(res, { status: 200, body: credits.directory(), type: 'application/private-token-issuer-directory' })
+    send(res, { status: 200, body: credits.seller.directory(), type: 'application/private-token-issuer-directory' })
     return true
   }
   if (req.method === 'GET' && path.startsWith(BALANCE_PATH)) {
@@ -351,7 +354,7 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   readBytes(req)
     .then(async (bytes) => {
       if (!bytes) return send(res, { status: 413, body: { error: 'too_big' } })
-      if (path === BUY_PATH) return send(res, await credits.collect(bytes))
+      if (path === BUY_PATH) return send(res, await credits.seller.collect(bytes, req.headers[PAYMENT_HEADER] as string | undefined))
       let body: unknown
       try {
         body = JSON.parse(Buffer.from(bytes).toString('utf8'))
@@ -386,7 +389,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
 
   const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
   const lookup = rpc && rowLookup(rpc, config.registryProgramId)
-  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy }, stand.rpc ?? rpcAt(config.rpcUrl))
+  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
   // Each write's price is taken before forest's host keeps it. Two copies of one record or message
   // in flight at once may both pay, though forest's host keeps one.
   const host: Host = new Host({

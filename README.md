@@ -41,9 +41,9 @@ records and rows.
              face, then face and ID (Didit), note number, pay links
   person's app ─────────────────────────────▶ issuer ── a note back; pays for first credits
        │
-       │ a row and a credit            registry payer ──┐
-       ├──────────────────────────────────▶            ├─ co-signs, sends ──▶ Solana: registry
-       │ a payment, paid at cost       fee payer ───────┘                       rows, escrow
+       │ a row and a credit            registry payer ── signs, sends ─┐
+       ├──────────────────────────────────▶                            ├────▶ Solana: registry
+       │ a payment, paid at cost       fee payer ── co-signs, sends ───┘        rows, escrow
        └──────────────────────────────────▶                                      │ rows, receipts
   assistant (the CLI) ───────┐                                                   ▼
                              │ access keys sign                               index ──▶ pages, JSON
@@ -116,8 +116,7 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd mcp         && npm ci && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
-(cd fee-payer/at-cost  && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null \
-  && bash fee-payer/deploy/devnet-config.sh fee-payer/registry/kora.toml > /dev/null
+(cd fee-payer/at-cost  && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null
 (cd fee-payer/registry && npm ci && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
   node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts)
@@ -200,8 +199,8 @@ Everything but its secrets and what it keeps private for people:
   and the messages in an inbox, which only the recipient's main key, or a message key it lists,
   pulls, and only its inbox key and the read keys it lists open.
 - **Kept, not published:** the registry payer's and the host's spent lists (the id of each spent
-  credit), the host's balance of each folder, the issuer's list of note numbers given a gift, and
-  Railway's own request logs.
+  credit) and the proofs each took (with the buy's reference each paid for), the host's balance of
+  each folder, the issuer's list of note numbers given a gift, and Railway's own request logs.
 
 **Why is forest pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in

@@ -1,5 +1,4 @@
-// The registry payer's front: `npm start`, with the variables fee-payer/README.md lists.
-// deploy/registry.sh starts it beside its Kora.
+// The registry payer: `npm start`, with the variables its README lists.
 
 import { readConfig, startFront } from './payer.ts'
 

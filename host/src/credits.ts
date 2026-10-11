@@ -21,8 +21,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { base58 } from '../../standard/records/src/index.ts'
-import { checkCredits, referenceOf } from '../../standard/credits/src/index.ts'
-import { type CreditKey, type Rpc, DIRECTORY_PATH, SpentList, amountOf, answer, countOf, directoryOf, paid } from '../../standard/credits/src/service.ts'
+import { checkCredits } from '../../standard/credits/src/index.ts'
+import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, seller } from '../../standard/credits/src/service.ts'
 
 export { DIRECTORY_PATH }
 
@@ -46,6 +46,8 @@ export type CreditConfig = {
   credit: { address: string; mint: string; price: string }
   /** The most credits one buy may ask for. */
   maxBuy: number
+  /** The sponsors whose tickets pay for a buy here, by address. */
+  sponsors: string[]
 }
 
 export type Answer = { status: number; body: unknown; type?: string }
@@ -63,20 +65,20 @@ function isFolder(value: unknown): value is string {
 }
 
 export class Credits {
+  readonly seller: Seller
   readonly spent: SpentList
   readonly #db: DatabaseSync
   readonly #config: CreditConfig
-  readonly #rpc: Rpc
 
-  /** In `dir` (credits.sqlite, the spent list, and balances.sqlite), or in memory when null. */
-  constructor(dir: string | null, config: CreditConfig, rpc: Rpc) {
+  /** In `dir` (credits.sqlite, its seller's file, and balances.sqlite), or in memory when null. With no RPC, no Solana payment is checked. */
+  constructor(dir: string | null, config: CreditConfig, rpc: Rpc | null) {
     if (dir) mkdirSync(dir, { recursive: true })
-    this.spent = new SpentList(dir ? join(dir, 'credits.sqlite') : ':memory:')
+    this.seller = seller({ origin: config.origin, key: config.creditKey, unit: UNIT, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: dir ? join(dir, 'credits.sqlite') : ':memory:' })
+    this.spent = this.seller.spent
     this.#db = new DatabaseSync(dir ? join(dir, 'balances.sqlite') : ':memory:')
     this.#db.exec('CREATE TABLE IF NOT EXISTS balances (folder TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID')
     this.#db.exec('CREATE TABLE IF NOT EXISTS landing (id TEXT PRIMARY KEY) WITHOUT ROWID')
     this.#config = config
-    this.#rpc = rpc
     // A credit still held was in a spend that stopped between holding it and spending it: spent if
     // its folder's balance took it, free again if not.
     for (const { id } of this.spent.holds()) {
@@ -84,32 +86,6 @@ export class Credits {
       else this.spent.free(id)
       this.#db.prepare('DELETE FROM landing WHERE id = ?').run(id)
     }
-  }
-
-  directory(): Record<string, unknown> {
-    const { credit, creditKey } = this.#config
-    return directoryOf({ requestUri: BUY_PATH, keys: [{ key: creditKey.published }], credit: { unit: UNIT, ...credit } })
-  }
-
-  /** A buy, collected: its blind signatures once a finalized payment names it and pays for every credit it asks. */
-  async collect(buy: Uint8Array): Promise<Answer> {
-    let count: number
-    try {
-      count = countOf(buy)
-    } catch {
-      return refuse('not_a_buy')
-    }
-    if (count > this.#config.maxBuy) return refuse('too_many', 400, `at most ${this.#config.maxBuy} credits a buy`)
-    const { credit } = this.#config
-    const amount = amountOf(credit.price, count)
-    let signature: string | null
-    try {
-      signature = await paid(this.#rpc, { reference: await referenceOf(buy), address: credit.address, mint: credit.mint, amount })
-    } catch {
-      return refuse('payment_check_unavailable', 503)
-    }
-    if (!signature) return refuse('not_paid', 402, `${amount} to ${credit.address}, naming the buy's reference, finalized`)
-    return { status: 200, body: await answer(buy, this.#config.creditKey, this.#config.origin), type: 'application/private-token-generic-batch-response' }
   }
 
   /** Credits, as `{ folder, credits }` lists them (forest's `creditList`), into that folder's balance: all of them, or none. */
@@ -161,7 +137,7 @@ export class Credits {
   }
 
   close(): void {
-    this.spent.close()
+    this.seller.close()
     this.#db.close()
   }
 }

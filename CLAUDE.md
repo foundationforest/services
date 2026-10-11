@@ -7,14 +7,14 @@ task.
 
 Use these words: seed, main key, profile, address, label, stamp, issuer, list, registry, row,
 record, folder, host, access key, grant, permissions, private, envelope, inbox key, inbox, blob,
-escrow, receipt, deal, index, fee payer, connections, app, market, role, ramp, and sealed (for
-programs only). Plain words, no em-dashes.
+escrow, receipt, deal, index, fee payer, sponsor, ticket, connections, app, market, role, ramp, and
+sealed (for programs only). Plain words, no em-dashes.
 
 - issuer, never keeper; access key, never writer key; fee payer, never relayer or sponsor; main
   key, never profile key; address, never wallet, for a key ("a wallet app" is fine).
 - The foundation runs every service here, never Soil; the app is the Forest app.
 - The registry payer pays for registry rows, one per credit; the fee payer pays for anything else,
-  at cost. Each has its own Kora and its own key: the registry payer's Kora and the at-cost Kora.
+  at cost. Each has its own key; the fee payer is Kora, configured: the at-cost Kora.
 - A token's issuer is "the dollar's maker".
 - A folder is what one main key signs on a host; this repo's folders are directories.
 - Never "replace every app".

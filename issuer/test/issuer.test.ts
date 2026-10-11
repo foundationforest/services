@@ -22,7 +22,11 @@ import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
 import { buy, serviceOf } from '../../standard/credits/src/index.ts'
-import { directoryOf, keyFrom } from '../../standard/credits/src/service.ts'
+import { keyFrom, seller } from '../../standard/credits/src/service.ts'
+
+/** A service's directory, as standard's seller serves it. */
+const directoryOf = async (origin: string, unit: string, credit: { address: string; mint: string; price: string }, pkcs8: Uint8Array) =>
+  seller({ origin, key: await keyFrom(pkcs8), unit, requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [], rpc: null, path: ':memory:' }).directory()
 
 import type { Directory } from '../src/gift.ts'
 import { parseKeypair } from '../src/key.ts'
@@ -534,8 +538,8 @@ async function giftServices() {
   const pkcs8 = () => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
   const mint = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
   const directories = new Map<string, unknown>([
-    ['https://registry-payer.example', directoryOf({ requestUri: '/credits/buy', keys: [{ key: (await keyFrom(pkcs8())).published }], credit: { unit: 'one registration', address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint, price: '0.5' } })],
-    ['https://host.example', directoryOf({ requestUri: '/credits/buy', keys: [{ key: (await keyFrom(pkcs8())).published }], credit: { unit: 'one cent of writes', address: '2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9', mint, price: '0.01' } })],
+    ['https://registry-payer.example', await directoryOf('https://registry-payer.example', 'one registration', { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint, price: '0.5' }, pkcs8())],
+    ['https://host.example', await directoryOf('https://host.example', 'one cent of writes', { address: '2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9', mint, price: '0.01' }, pkcs8())],
   ])
   let down = false
   const directory: Directory = async (origin) => {

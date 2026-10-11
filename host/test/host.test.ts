@@ -29,7 +29,7 @@ import { message, openMessage } from '../../standard/records/src/private.ts'
 import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
-import { type Credit, buy, creditId, creditList, finish, serviceOf } from '../../standard/credits/src/index.ts'
+import { type Credit, PAYMENT_HEADER, buy, creditId, creditList, finish, serviceOf } from '../../standard/credits/src/index.ts'
 import type { Rpc } from '../../standard/credits/src/service.ts'
 
 import { BALANCE_PATH, BUY_PATH, DIRECTORY_PATH, SPEND_PATH, UNIT, priceOf } from '../src/credits.ts'
@@ -43,18 +43,23 @@ const CREDIT_KEY = Buffer.from(generateKeyPairSync('rsa', { modulusLength: 2048 
 /** The credit settings every start needs, as a fresh object each time: readConfig takes CREDIT_KEY out of what it reads. */
 const credited = (env: Record<string, string> = {}) => ({ PUBLIC_ORIGIN: ORIGIN, CREDIT_KEY, CREDIT_ADDRESS: PAY_TO, CREDIT_MINT: MINT, CREDIT_PRICE: '0.01', ...env })
 
-/** An RPC on which every buy is paid: one finalized transaction naming any reference, paying the host plenty. */
-const paidRpc: Rpc = async (method) => {
-  if (method === 'getSignaturesForAddress') return [{ signature: 'paid', err: null }]
+/** The signature of the stand-in payment for a buy: its reference's 32 bytes, then 32 zeros. */
+const paymentFor = (reference: string) => base58.encode(new Uint8Array([...base58.decode(reference), ...new Uint8Array(32)]))
+/** An RPC on which every buy is paid: the transaction `paymentFor` names is finalized, names its reference and pays the host plenty. */
+const paidRpc: Rpc = async (method, params) => {
+  if (method !== 'getTransaction') throw new Error(`no ${method}`)
+  const reference = base58.encode(base58.decode(params[0] as string).subarray(0, 32))
   const balance = (amount: string) => [{ accountIndex: 1, mint: MINT, owner: PAY_TO, uiTokenAmount: { amount, decimals: 6 } }]
-  return { meta: { err: null, preTokenBalances: balance('0'), postTokenBalances: balance('1000000000') }, transaction: { message: { accountKeys: [] } } }
+  return { meta: { err: null, preTokenBalances: balance('0'), postTokenBalances: balance('1000000000') }, transaction: { message: { accountKeys: ['Buyer', PAY_TO, reference] } } }
 }
+/** The headers a buy is collected with, paid on `paidRpc`. */
+const paidFor = (b: { reference: string }) => ({ [PAYMENT_HEADER]: `solana ${paymentFor(b.reference)}` })
 
 /** `n` credits from `h`: bought, collected (on `paidRpc`, every buy is paid) and finished, as an app does. */
 async function creditsFrom(h: RunningHost, n: number): Promise<Credit[]> {
   const service = serviceOf(ORIGIN, await (await fetch(`${h.url}${DIRECTORY_PATH}`)).json())
   const b = await buy(service, n)
-  const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: b.buy as Uint8Array<ArrayBuffer> })
+  const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: b.buy as Uint8Array<ArrayBuffer>, headers: paidFor(b) })
   assert.equal(res.status, 200, await res.clone().text())
   return finish(b.pending, new Uint8Array(await res.arrayBuffer()))
 }
@@ -167,7 +172,7 @@ test('a request whose URL cannot be read gets 400, and the host goes on answerin
 test('the settings: a data directory, the old file, a bucket by its variables, the time a sender’s records are kept, and credits', () => {
   const env = credited()
   const none = readConfig(env)
-  assert.deepEqual({ ...none, creditKey: undefined }, { dir: null, importFrom: null, blobs: { kind: 'disk' }, port: 8080, rpcUrl: null, registryProgramId: DEVNET_REGISTRY, senderCacheMs: 60_000, origin: ORIGIN, creditKey: undefined, credit: { address: PAY_TO, mint: MINT, price: '0.01' }, maxBuy: 1000 })
+  assert.deepEqual({ ...none, creditKey: undefined }, { dir: null, importFrom: null, blobs: { kind: 'disk' }, port: 8080, rpcUrl: null, registryProgramId: DEVNET_REGISTRY, senderCacheMs: 60_000, origin: ORIGIN, creditKey: undefined, credit: { address: PAY_TO, mint: MINT, price: '0.01' }, maxBuy: 1000, sponsors: [] })
   assert.deepEqual(none.creditKey, new Uint8Array(Buffer.from(CREDIT_KEY, 'base64')))
   assert.equal(env.CREDIT_KEY, undefined, 'the credit key leaves the environment once read')
   assert.throws(() => readConfig({}), /missing environment variables: PUBLIC_ORIGIN, CREDIT_KEY, CREDIT_ADDRESS, CREDIT_MINT, CREDIT_PRICE/, 'no credits, no start: never a free host by mistake')
@@ -428,21 +433,24 @@ test('credits: the directory, a buy collected only once paid, and spent into a f
   assert.deepEqual(directory['forest-credit'], { unit: UNIT, address: PAY_TO, mint: MINT, price: '0.01' })
   assert.equal(directory['issuer-request-uri'], BUY_PATH)
   const service = serviceOf(ORIGIN, directory)
-  const collect = async (h: RunningHost, bytes: Uint8Array) => {
-    const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: bytes as Uint8Array<ArrayBuffer> })
+  const collect = async (h: RunningHost, bytes: Uint8Array, headers: Record<string, string> = {}) => {
+    const res = await fetch(`${h.url}${BUY_PATH}`, { method: 'POST', body: bytes as Uint8Array<ArrayBuffer>, headers })
     return { status: res.status, body: res.headers.get('content-type') === 'application/json' ? await res.json() : null }
   }
   const owed = await buy(service, 3)
   assert.ok(owed.payLink.includes('amount=0.03&'), 'three cents')
 
   // Unpaid, or with no RPC to ask: no credits.
-  const unpaid: Rpc = async (method) => (method === 'getSignaturesForAddress' ? [] : null)
+  const unpaid: Rpc = async () => null
   const strict = await startHost(readConfig(credited({ PORT: '0', CREDITS_PER_BUY: '2' })), { rpc: unpaid })
   const noRpc = await startHost(readConfig(credited({ PORT: '0' })))
   try {
-    assert.deepEqual(await collect(strict, (await buy(service, 2)).buy), { status: 402, body: { error: 'not_paid', detail: `0.02 to ${PAY_TO}, naming the buy's reference, finalized` } })
+    const two = await buy(service, 2)
+    const owes = `0.02 to ${PAY_TO} in ${MINT}, the transaction naming the buy's reference ${two.reference}, finalized; or a ticket from a sponsor this service takes`
+    assert.deepEqual(await collect(strict, two.buy), { status: 402, body: { error: 'not_paid', detail: owes } }, 'no payment shown')
+    assert.deepEqual(await collect(strict, two.buy, paidFor(two)), { status: 402, body: { error: 'not_paid', detail: owes } }, 'a payment the RPC does not have')
     assert.deepEqual((await collect(strict, owed.buy)).body, { error: 'too_many', detail: 'at most 2 credits a buy' })
-    assert.deepEqual((await collect(noRpc, owed.buy)).body, { error: 'payment_check_unavailable' })
+    assert.deepEqual((await collect(noRpc, owed.buy, paidFor(owed))).body, { error: 'payment_check_unavailable' })
   } finally {
     await strict.close()
     await noRpc.close()
@@ -450,9 +458,9 @@ test('credits: the directory, a buy collected only once paid, and spent into a f
   assert.deepEqual((await collect(host, new Uint8Array([1, 2, 3]))).body, { error: 'not_a_buy' })
 
   // Paid: collected twice, the same credits.
-  const first = await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer> })
+  const first = await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer>, headers: paidFor(owed) })
   const answered = new Uint8Array(await first.arrayBuffer())
-  const again = new Uint8Array(await (await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer> })).arrayBuffer())
+  const again = new Uint8Array(await (await fetch(`${host.url}${BUY_PATH}`, { method: 'POST', body: owed.buy as Uint8Array<ArrayBuffer>, headers: paidFor(owed) })).arrayBuffer())
   assert.deepEqual(again, answered, 'the same buy, the same answer')
   const [a, b, c] = await finish(owed.pending, answered)
 
@@ -476,7 +484,7 @@ test('credits: the directory, a buy collected only once paid, and spent into a f
   assert.deepEqual(await (await fetch(`${host.url}${BALANCE_PATH}${folder}`)).json(), { folder, credits: 3 })
   assert.equal((await fetch(`${host.url}${BALANCE_PATH}nope`)).status, 400)
   const preflight = await fetch(`${host.url}${SPEND_PATH}`, { method: 'OPTIONS' })
-  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type', 'a page may post credits')
+  assert.equal(preflight.headers.get('access-control-allow-headers'), 'content-type, forest-payment', 'a page may post credits, and collect a buy with its payment')
 })
 
 /** Bytes, and their name as a record gives it. */

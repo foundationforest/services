@@ -60,7 +60,7 @@ import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, typ
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
-import { type Credit, type Service, DIRECTORY_PATH, amountOf, authorization, buy, creditList, finish, serviceOf } from '../standard/credits/src/index.ts'
+import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../standard/credits/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
@@ -323,11 +323,12 @@ async function faceNote(p: Person, issuer: Issuer) {
   p.sent = got.body.note
   say(`${p.role}: a tier 1 note from the issuer, model ${note.model}, and its gift paid, ${got.body.gift.signature}`)
 
-  // Collected once the payment is finalized: the service answers the blind signatures, the app finishes them.
+  // Collected once the payment is finalized, with its signature: the service answers the blind signatures, the app finishes them.
   const collect = async (role: 'registryPayer' | 'host') => {
     const b = buys[role]
     const answer = await waitFor(`${services[role].origin} to find the gift's payment finalized`, 180_000, async () => {
-      const res = await fetch(services[role].requestUri, { method: 'POST', headers: { 'content-type': 'application/private-token-generic-batch-request' }, body: b.buy as Uint8Array<ArrayBuffer> })
+      const headers = { 'content-type': 'application/private-token-generic-batch-request', [PAYMENT_HEADER]: `solana ${got.body.gift.signature}` }
+      const res = await fetch(services[role].requestUri, { method: 'POST', headers, body: b.buy as Uint8Array<ArrayBuffer> })
       if (res.status === 402) return null
       assert.equal(res.status, 200, `${services[role].origin} answers the buy: ${await res.clone().text()}`)
       return new Uint8Array(await res.arrayBuffer())
