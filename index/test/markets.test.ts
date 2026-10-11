@@ -145,7 +145,7 @@ test('a file listed under another name, at another path, or not a market file is
   assert.deepEqual(d.refused.map((r) => r.market).sort(), ['bare', 'broken', 'language-exchange', 'old', 'online-tutoring'])
 })
 
-test('a market file that cannot be fetched, is not JSON, or is JSON null is skipped; every other market counts', async () => {
+test('a market file that cannot be fetched, is not JSON, or is JSON null is refused; every other market counts, and one read before keeps its last good copy', async () => {
   const files: Record<string, string> = {
     'directory.md': md(
       [
@@ -182,6 +182,26 @@ test('a market file that cannot be fetched, is not JSON, or is JSON null is skip
   assert.equal(await d.refresh(), true)
   assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors', 'language-exchange'])
   assert.deepEqual(d.refused.map((r) => r.market).sort(), ['broken', 'down', 'nothing'])
+
+  // A market that was read keeps its last good copy while its file fails, whichever way: it is
+  // still refused and logged, and nothing changed. One never read successfully stays out.
+  const good = d.markets.get('online-tutors')
+  for (const bad of [undefined, '{', 'null']) {
+    if (bad === undefined) delete files['freelance-work/online-tutors.json']
+    else files['freelance-work/online-tutors.json'] = bad
+    assert.equal(await d.refresh(), false, String(bad))
+    assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors', 'language-exchange'], String(bad))
+    assert.equal(d.markets.get('online-tutors'), good)
+    assert.ok(d.refused.some((r) => r.market === 'online-tutors'), String(bad))
+    assert.ok(!d.markets.has('nothing') && !d.markets.has('broken') && !d.markets.has('down'))
+  }
+  // A read of it succeeds: the new copy is taken. Then the directory stops listing it: it goes.
+  files['freelance-work/online-tutors.json'] = JSON.stringify({ ...JSON.parse(tutors), description: 'Lessons, changed.' })
+  assert.equal(await d.refresh(), true)
+  assert.equal(d.markets.get('online-tutors')!.description, 'Lessons, changed.')
+  files['directory.md'] = md('- [`language-exchange`](learning/language-exchange.json): Fine.')
+  assert.equal(await d.refresh(), true)
+  assert.deepEqual([...d.markets.keys()], ['plumbing', 'language-exchange'])
 
   // The directory itself must answer.
   await assert.rejects(Directory.fetch(list, repo({})), /directory\.md answered 404/)

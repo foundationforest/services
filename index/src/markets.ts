@@ -35,6 +35,8 @@ export class Directory {
   readonly markets = new Map<string, MarketFile>()
   /** Markets the directory lists that could not be used, with why. They count for nothing. */
   readonly refused: { market: string; errors: string[] }[] = []
+  /** The names the directory listed at the last read, in its order, whether or not their files were usable. */
+  private listed: string[] = []
   /** Where `fetch` read this from, for `refresh`. Unset for a directory built from files. */
   private source: { list: MarketsList; get: typeof fetch } | null = null
 
@@ -54,7 +56,7 @@ export class Directory {
    * Every market the directory lists: `directory.md`, then each listed market's file. `directory.md`
    * that can't be fetched stops the load. A market's own file that can't be fetched, is not JSON,
    * is JSON `null` or another thing that is not a market file, or is not at its own path, is
-   * refused: skipped and listed in `refused`, and every other market still loads.
+   * refused: left out of `markets`, listed in `refused`, and every other market still loads.
    */
   static async fetch(list: MarketsList, get: typeof fetch = fetch): Promise<Directory> {
     const read = async (path: string): Promise<string> => {
@@ -93,6 +95,7 @@ export class Directory {
     }
     const directory = new Directory(files)
     directory.refused.push(...refused)
+    directory.listed = [...links.keys()]
     directory.source = { list, get }
     return directory
   }
@@ -101,15 +104,21 @@ export class Directory {
    * Reads the directory again and takes what it says now. True when the markets changed. The swap
    * has no `await` in it, so a request never sees half a list. A read in which `directory.md` does
    * not answer throws and leaves the markets as they were, to be tried again at the next read. A
-   * market whose own file can't be used is skipped and listed in `refused`, like any refused
-   * market: it is out until a read that can use it, and every other market is read as usual.
+   * market whose own file can't be used is listed in `refused`, but one this directory held before
+   * keeps its last good copy until a read of it succeeds; only a market never read successfully is
+   * left out. Every other market is read as usual, and one the directory no longer lists is dropped.
    */
   async refresh(): Promise<boolean> {
     if (!this.source) throw new Error('this directory was not read from a markets directory')
     const next = await Directory.fetch(this.source.list, this.source.get)
-    const same = JSON.stringify([...this.markets]) === JSON.stringify([...next.markets])
+    const now = new Map<string, MarketFile>()
+    for (const name of next.listed) {
+      const market = next.markets.get(name) ?? this.markets.get(name)
+      if (market) now.set(name, market)
+    }
+    const same = JSON.stringify([...this.markets]) === JSON.stringify([...now])
     this.markets.clear()
-    for (const [name, market] of next.markets) this.markets.set(name, market)
+    for (const [name, market] of now) this.markets.set(name, market)
     this.refused.splice(0, this.refused.length, ...next.refused)
     return !same
   }

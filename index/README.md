@@ -64,8 +64,9 @@ markets directory ── every market it lists ───────────
   restart. The index refuses a market file that cannot be fetched, one that is not JSON or is JSON `null`,
   one whose name and folder do not match its path, and one that lacks a field it reads (`name`, `folder`, `description`, `sides`,
   `evidenceTypes`, `offerFields`, `ratings`, `howDealsGo`; it also reads `roleNames` and
-  `reviewFields` when a file has them). A refused market is skipped and logged, and every other
-  market still counts. A name the directory does not list is not used. An offer
+  `reviewFields` when a file has them). A refused market is logged, and every other market still counts; one the index
+  read before keeps its last good copy until a read of it succeeds, and one it never read
+  successfully is left out. A name the directory does not list is not used. An offer
   names no market: it is listed in its profile's.
 - **Pictures, from the same hosts.** A profile's `photo`, and the `media` of an offer or a review,
   name bytes by their SHA-256, with a type
@@ -479,8 +480,9 @@ Another index holds its own.
   holding every version would show the one before.
 - **The directory is re-read every hour, and the readers and the pages each re-read it on their
   own, so for up to an hour they can disagree about which markets exist.** A market file that cannot be
-  fetched, is not JSON or is JSON `null` is skipped and logged, and the read keeps every other
-  market; that market is out until a read that can use its file. A read in which `directory.md`
+  fetched, is not JSON or is JSON `null` is logged, and the read keeps every other market; a
+  market read before keeps its last good copy until a read of it succeeds, and one never read
+  successfully is left out. A read in which `directory.md`
   does not answer keeps the markets as they were and is tried again an hour later; while it does not
   answer at start, the index does not start.
 - **Everything is computed again on every change,** and signing runs in JavaScript, inside one
