@@ -47,8 +47,9 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    the transaction's signature.
 4. **A row each,** from a person proof made from the note. The seller's goes through the registry
    payer, which signs and sends it itself, with one of its ticket's credits, free; the run reads the
-   row's account on chain, checks the seller still holds no SOL and paid no dollar, and that the
-   credit, shown again, is refused as spent once the row landed. The buyer's
+   row's account on chain, checks the seller still holds no SOL and paid no dollar, that the same
+   row shown again is refused as `row_exists`, and that the credit, shown with another row, is
+   refused as spent once the row landed. The buyer's
    goes through the fee payer, paid in test dollars. The run reads each row back (the profile, the
    issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
    shows tier 1 against it.
@@ -124,61 +125,65 @@ the host is paid in the classic test dollar.
 
 ### The latest run
 
-2026-10-09, 21:25 to 21:32 UTC, against the six services as deployed from `main` at `7dd4798`
-(standard at `97414c8`), after credits came in: **passed** in 441 seconds, most of it waiting for
-the two gift payments to finalize, about two minutes each, and for the host's cache time. Its
-record is [`runs/2026-10-09T21-25-34-141Z.json`](runs/2026-10-09T21-25-34-141Z.json).
+2026-10-11, 03:02 to 03:05 UTC, against the six services as deployed from `main` at `743e10f`
+(standard at `468d635`), after paying became a plug: **passed** in 187 seconds. The seller's
+credits came from the issuer's tickets, collected at once; the buyer's payment on Solana was
+collected about two seconds after it was sent, already finalized. Its record is
+[`runs/2026-10-11T03-02-05-527Z.json`](runs/2026-10-11T03-02-05-527Z.json).
 
-- **People:** seller `AxhrC6KVhsFtcJAgHvfpeP15Sbk5hKTt1NZQBwkMXJcd`, buyer
-  `5rdki3G3rYzfuouMgqQQ9pkPbm2LA1A5THoKxokfMvps`, each with its secret for
+- **People:** seller `CajTALRXDkr5MUCP2FgueyTzkwasT7k9jASuS4KX4qsv`, buyer
+  `6Nd3BHgYDz2cymPGFJVFidWUoa3QCxKWrru1qE5WxHVv`, each with its secret for
   `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` and a gift
   of 3 registry payer credits and 500 host credits.
-- **Setup:** the issuer's `credits` key `AWnaPY…` got 13.00 test dollars, what the two gifts cost,
-  and its SOL topped up to 0.05.
-- **Notes and gifts:** a tier 1 note each from the face check, model `stand-in`, signed by the
-  issuer's key `2185f564…`. With each note, the issuer paid both of that person's buys in one
-  transaction (the seller's `emgJ4FC5…`, the buyer's `5TCergvj…`); each app then collected and
-  finished its 3 and 500 credits.
-- **Rows:** `tutoring/seller` through the registry payer with one credit, 619 bytes, charged
-  nothing; the same credit shown again was refused as `spent` once the row landed. The seller held
-  no SOL and paid no dollar. `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test
-  dollars. Each read back at the registry `J4ES…` naming its profile, the issuer's key and the key
-  that paid for it, and each proof showed tier 1.
-- **The host:** each folder's card was refused (`policy`) while it held no credits; then each app
-  spent its 500 host credits into its folder in 5 requests. At the end the seller's folder held 491
-  and the buyer's 497: every write here cost one credit.
-- **Keys:** the seller's app made a write key `HYNJScan…`, a message key `Fvr3xYzZ…` and the read
-  key; the buyer's app a write key `HJbVVdqN…`.
+- **Setup:** each profile's test-dollar account, 5.00 and 10.00 test dollars; the buyer's own
+  address `43BwGaWw…`, with 1.00 test dollar and 0.01 SOL.
+- **Notes and both ways to pay:** a tier 1 note each from the face check, model `stand-in`, signed
+  by the issuer's key `2185f564…`. With the seller's note, a ticket for each of its two buys from
+  the issuer's sponsor key `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`; the registry payer and the
+  host took them, and the app finished 3 and 500 credits. The buyer paid the host 0.20 test dollars
+  from its own address, a plain transfer naming its buy's reference (`3UNtEjie…`), and collected 20
+  credits with the transaction's signature.
+- **Rows:** `tutoring/seller` through the registry payer, which signed and sent it itself, with one
+  ticket credit, 619 bytes, charged nothing: the row `AajFtgTa…` read on chain, owned by the
+  registry; the same row shown again refused as `row_exists`; the credit, shown with another row,
+  refused as `spent` once the row landed. The seller held no SOL and paid no dollar.
+  `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test dollars. Each read back
+  naming its profile, the issuer's key and the key that paid for it, and each proof showed tier 1.
+- **The host:** each folder's card was refused (`policy`) while it held no credits; then the seller
+  spent 500 credits into its folder in 5 requests and the buyer 20 in one. At the end the seller's
+  folder held 491 and the buyer's 17: every write here cost one credit.
+- **Keys:** the seller's app made a write key `86HZRD51…`, a message key `kE8VG34P…` and the read
+  key; the buyer's app a write key `3ujHjGP8…`.
 - **Records:** the offer `offer/maths`, posted through the CLI and signed by the write key, and its
   photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, encrypted to the seller's inbox key and the
   read key, taken; a second refused (`once`); the seller pulled and opened it.
-- **The assistant:** `inbox` pulled and opened the message; `send` replied, 2,681 bytes, taken by
-  the buyer's host after reading the seller's permissions, and the buyer saw the message key sent
-  it; `request` put `{ request: "post-offer", offer, id: "physics" }` in the seller's inbox, which
-  the seller's app opened and `inbox` marked. Then the seller listed the message key as past
-  (`{ key, was: "message" }`) and deleted the read key; the CLI refused `send` ("this key is past")
-  and `private` ("not listed"); the host refused the past key's pull at once (`permission`), and
-  71 seconds later a message it signed (`permission`).
-- **The deal:** escrow `6F7ivLeCwjcJFktsRo1hx6gcSax9N9dV95bQvkoDVGdq`, its address its terms', one
-  tap, 715 bytes, charged 3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…`.
+- **The assistant:** `inbox` pulled and opened the message; `send` replied, 2,680 bytes, taken by
+  the buyer's host after reading the seller's permissions; `request` put
+  `{ request: "post-offer", offer, id: "physics" }` in the seller's inbox, which the seller's app
+  opened. Then the seller listed the message key as past and deleted the read key; the CLI refused
+  `send` ("this key is past") and `private` ("not listed"); the host refused the past key's pull at
+  once (`permission`), and 71 seconds later a message it signed (`permission`).
+- **The deal:** escrow `25XFVbcEBJUgQa5gdPQWsYmYYdK44JK1Mfu1WCpwgqPi`, one tap, 715 bytes, charged
+  3.69808 test dollars; its rent goes back to the fee payer `9CKUm2s7…`.
 - **The index:** both rows counted under "Forest issuer (devnet)", weight 0.7; the offer with its
-  photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews counted
-  (`oneSidedConfirmed`, weight 1); no message and no request anywhere. Each rated 10.
-- **The proof:** the seller's leaf found by its stamp `2fa098ab…` among 7 leaves, 100 tenths from
-  one review; proven against root `183b69ff…`, signed by "Forest index (devnet)" (`8117HhEb…`), and
-  put on its card. The page says "Rated 10.0 of 10 in Tutoring (per Forest index (devnet), …)".
-- **The ID check:** the seller's note signed again at tier 2, the same note number, embedding and
-  model; its tier proven at its row's stamp and held against the row `4zkBGFHU…` (`verifyTier`),
+  photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews
+  counted. Each rated 10.
+- **The proof:** the seller's leaf found by its stamp `11683dfb…` among 9 leaves, 100 tenths;
+  proven against root `1de4ecce…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its
+  card; the index shows it.
+- **The ID check:** the seller's note signed again at tier 2; its tier proven at its row's stamp
   and put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight
-  0.9, uniqueness 0.9; the page says "Verified real person, one per market · ID-checked", and the
-  rating's proof still shows.
+  0.9, uniqueness 0.9.
+
+The deployed CLI's smoke run passed the same hour: 10 tools, both refusals, the market, and the
+seller's profile with its offer.
 
 Open them: [the seller][s], [the buyer][b], [the deal][d].
 
-[s]: https://index.devnet.forest.foundation/profiles/AxhrC6KVhsFtcJAgHvfpeP15Sbk5hKTt1NZQBwkMXJcd
-[b]: https://index.devnet.forest.foundation/profiles/5rdki3G3rYzfuouMgqQQ9pkPbm2LA1A5THoKxokfMvps
-[d]: https://index.devnet.forest.foundation/deals/6F7ivLeCwjcJFktsRo1hx6gcSax9N9dV95bQvkoDVGdq
+[s]: https://index.devnet.forest.foundation/profiles/CajTALRXDkr5MUCP2FgueyTzkwasT7k9jASuS4KX4qsv
+[b]: https://index.devnet.forest.foundation/profiles/6Nd3BHgYDz2cymPGFJVFidWUoa3QCxKWrru1qE5WxHVv
+[d]: https://index.devnet.forest.foundation/deals/25XFVbcEBJUgQa5gdPQWsYmYYdK44JK1Mfu1WCpwgqPi
 
 ## Promises
 
