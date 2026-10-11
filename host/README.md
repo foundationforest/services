@@ -55,16 +55,16 @@ says what each moved:
 
 ### Credits
 
-A credit here is a [Forest credit](https://github.com/foundationforest/standard/blob/main/credits/README.md)
-whose unit is `one cent of writes`. The host sells and takes them with standard's seller,
-unchanged ([Selling credits](https://github.com/foundationforest/standard/blob/main/credits/README.md#selling-credits)),
+A credit here is a [Forest credit](../credits/README.md)
+whose unit is `one cent of writes`. The host sells and takes them with the seller in
+[`credits/`](../credits/README.md), unchanged ([Selling credits](../credits/README.md#selling-credits)),
 in `src/credits.ts`:
 
 | Route | What |
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its credit key, where a buy goes, and its `forest-credit` entry: the unit, the address a credit is paid to, the token and one credit's price |
 | `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header: `solana <signature>`, a finalized transaction naming the buy's reference and paying for every credit, or `ticket <ticket>`, from a sponsor in `SPONSORS`. Its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`, `too_many` (over `CREDITS_PER_BUY`), `bad_payment` (a header it cannot read), `not_paid` (402, with what to pay), `proof_used` (409, the proof paid for another buy), `payment_check_unavailable` (503, the RPC did not answer, or there is none) |
-| `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, as standard's `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice, checked with standard's `checkCredits`), `spent` or `held` (409: one is spent, or held by another request) |
+| `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, as `credits/`'s `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice, checked with `credits/`'s `checkCredits`), `spent` or `held` (409: one is spent, or held by another request) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }` |
 
 **A folder's balance** is a count of credits. Anyone holding credits can add them to any folder;
@@ -121,7 +121,8 @@ settling a spend that host cut short between its two files.
 ### Run it
 
 ```sh
-./standard.sh keys records registry/client credits
+./standard.sh keys records registry/client
+(cd credits && npm ci)
 cd host && npm ci
 npm test
 DATA_DIR=./data/host npm start
@@ -162,7 +163,7 @@ The test checks:
 ### On devnet
 
 The build context is the repo root; `deploy/Dockerfile` builds it (Node 22.22.2 and git,
-`standard.sh records registry/client credits`, `npm ci`). Railway, project `forest-devnet`, service `host`,
+`standard.sh records registry/client`, `credits/` and `npm ci`). Railway, project `forest-devnet`, service `host`,
 at https://host.devnet.forest.foundation:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=host/deploy/Dockerfile`.
@@ -236,12 +237,12 @@ not set here: the largest record or message, and the blob types.
 
 - **Anyone can write records and messages here who pays,** anything forest's host accepts.
 - **A balance is never refunded,** and never moves to another folder: credits are never refunded
-  (standard's credits).
+  ([credits](../credits/README.md)).
 - **Timing can tie a buy to a folder.** The foundation runs this host and the issuer that buys a
   person's first credits; a buy collected and spent into a folder moments later, from one network
   address, can be matched, and the issuer knows whose buy it paid. An app that waits between
-  collecting and spending, or spends over a VPN, makes that harder (standard's
-  [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+  collecting and spending, or spends over a VPN, makes that harder
+  ([credits, Limits](../credits/README.md#limits)).
 - **Hosts and permissions records are free, on purpose:** a person can always leave a host or
   revoke a key with an empty balance.
 - **A stop between storing bytes and taking their price** leaves them kept and unpaid.

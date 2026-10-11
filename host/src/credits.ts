@@ -1,4 +1,4 @@
-// The host's credits: it sells them (forest's credits, one cent of writes each), and a credit spent
+// The host's credits: it sells them (credits/, one cent of writes each), and a credit spent
 // here goes into a folder's balance, which pays for that folder's writes.
 //
 //   GET  /.well-known/private-token-issuer-directory   its credit key and price
@@ -24,8 +24,8 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { base58 } from '../../standard/records/src/index.ts'
-import { checkCredits } from '../../standard/credits/src/index.ts'
-import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, seller } from '../../standard/credits/src/service.ts'
+import { checkCredits } from '../../credits/src/index.ts'
+import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, seller } from '../../credits/src/service.ts'
 
 export { DIRECTORY_PATH }
 

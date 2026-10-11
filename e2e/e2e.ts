@@ -1,6 +1,7 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
-//   ../standard.sh keys records registry/client escrow/client reputation/client credits
+//   ../standard.sh keys records registry/client escrow/client reputation/client
+//   (cd ../credits && npm ci)
 //   (cd ../mcp && npm ci)
 //   (cd ../standard/reputation/circuit && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
@@ -64,7 +65,7 @@ import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, typ
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, registerIx, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
-import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../standard/credits/src/index.ts'
+import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../credits/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'

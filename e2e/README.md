@@ -107,7 +107,8 @@ Node 22.18 or later, with standard fetched at the commit in `STANDARD`, and the 
 proving files (the person circuit's are in forest):
 
 ```sh
-./standard.sh keys records registry/client escrow/client reputation/client credits
+./standard.sh keys records registry/client escrow/client reputation/client
+(cd credits && npm ci)
 (cd mcp && npm ci)
 (cd standard/reputation/circuit && npm run fetch)
 cd e2e && npm ci

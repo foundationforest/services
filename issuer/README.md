@@ -153,14 +153,14 @@ With a gift (`REGISTRY_PAYER_URL`, `HOST_URL`), a person's first note comes with
 services those settings name: on devnet, three registrations at the
 [registry payer](../fee-payer/registry/README.md) and 500 cents of writes at the
 [host](../host/README.md). They are
-[Forest credits](https://github.com/foundationforest/standard/blob/main/credits/README.md): the
+[Forest credits](../credits/README.md): the
 app buys them, the issuer signs a sponsor's ticket for each buy, and each service signs them
 blind, so the issuer never sees them. It pays nothing: each service lists the issuer's sponsor key
 (its `SPONSORS` setting) and counts what its tickets paid for.
 
 1. **The app reads the gift** in `GET /issuer.json`: each service's origin, and how many of its
    credits a ticket there gives.
-2. **The app makes one buy at each service,** of exactly that many credits (standard's credits,
+2. **The app makes one buy at each service,** of exactly that many credits (`credits/`,
    `buy`), and keeps what finishes it in the vault.
 3. **It sends the buys' references with the note request:** `POST /note` with
    `"gift": {"registryPayer": "<reference>", "host": "<reference>"}`, one for each service in the
@@ -247,7 +247,8 @@ origin.
 Node 22.18 or later. From the repo root:
 
 ```
-./standard.sh registry/client records keys credits
+./standard.sh registry/client records keys
+(cd credits && npm ci)
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, forest's files included
@@ -265,7 +266,7 @@ point `ISSUER_KEYPAIR_PATH` at it.
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
 and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH`, or each deploy forgets which
 face was signed for which note number. The build context is the repo root. `deploy/Dockerfile`
-builds it (Node 22.22.2 and git, `standard.sh registry/client records keys credits`, `npm ci`, the face models
+builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `credits/`, `npm ci`, the face models
 by `npm run fetch -- models`) and runs `deploy/start.sh`. With no `DIDIT_API_KEY`, that first starts
 `deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that approves every session it opens, on both
 workflows, with no face seen before and, for a document, a name it makes up for that session; then
@@ -404,8 +405,8 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The issuer sees each buy of a person's gift,** by its reference, while it signs its ticket, and
   keeps only a hash of them. A service that sees a buy collected with the ticket and its credits
   spent soon after, from one network address, can tie the two, and the issuer knows whose note the
-  buy came with; the foundation runs all three (standard's
-  [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+  buy came with; the foundation runs all three
+  ([credits, Limits](../credits/README.md#limits)).
 - **A lost gift is lost.** The same buys asked for again get the same tickets; buys the app no
   longer holds cannot be finished, and other buys get `given`.
 - **A lost tier 2 note costs another document check.** The issuer signs it again for the same note

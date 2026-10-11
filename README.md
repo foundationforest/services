@@ -23,6 +23,7 @@ the foundation has no shareholders and pays nothing out.
 | index | Reads the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's receipts; scores each profile; publishes its ratings as a reputation tree; serves pages for people and JSON for AI agents | https://index.devnet.forest.foundation | [`index/`](index/README.md) |
 | mcp | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats that cannot run a program on the person's device | https://mcp.devnet.forest.foundation/mcp | [`mcp/`](mcp/README.md) |
 
+[`credits/`](credits/README.md) is the code the host, the registry payer and the issuer share to sell, take and gift credits.
 [`e2e/`](e2e/README.md) runs the loop below end to end on devnet, against these services, by hand.
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
@@ -58,7 +59,7 @@ A person's app holds their seed, and mixes from it a main key for each label, su
    tier 1; a document check later signs the same note at tier 2. With the first note it signs a
    sponsor's ticket for each of the person's first buys, which their app made: a few registrations
    at the registry payer, and writes at the host, each service billing the issuer
-   ([standard's credits](https://github.com/foundationforest/standard/blob/main/credits/README.md)).
+   ([credits](credits/README.md)).
    It holds no money.
 2. **A row.** From the note, the app makes a person proof on the device and writes one row in the
    registry
@@ -110,9 +111,10 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (`DATABASE_URL`).
 
 ```sh
-./standard.sh keys records registry/client escrow/client reputation/client credits
+./standard.sh keys records registry/client escrow/client reputation/client
 (cd standard/reputation/circuit && npm run fetch)
 
+(cd credits     && npm ci && npm run check && npm test)
 (cd host        && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd mcp         && npm ci && npm run check && npm test)
@@ -180,7 +182,7 @@ Each README holds its service's own promises. One holds for all of them:
 - **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind, so
   no service can tell from a credit which buy it came from; but a buy the issuer's ticket paid,
   collected and spent soon after from one network address, can be tied together by whoever sees all
-  three (standard's [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+  three ([credits, Limits](credits/README.md#limits)).
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC, the
   host its RPC and, for a message key's message, the sender's host. Each README says how.
 

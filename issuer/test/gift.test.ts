@@ -7,8 +7,8 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { test } from 'node:test'
 
-import { buy, finish, serviceOf } from '../../standard/credits/src/index.ts'
-import { keyFrom, seller } from '../../standard/credits/src/service.ts'
+import { buy, finish, serviceOf } from '../../credits/src/index.ts'
+import { keyFrom, seller } from '../../credits/src/service.ts'
 
 import { buysOf, ticketsFor } from '../src/gift.ts'
 import { parseKeypair } from '../src/key.ts'
