@@ -14,7 +14,7 @@ Up: [the repo](../README.md).
 `forest` is for people, scripts and AI chats. It reads folders from hosts with forest's records
 library, and checks every signature itself. It reads markets and scores from an index. It writes
 and sends only with access keys
-([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#permissions)),
+([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
 never a main key, and it moves no money: an AI with only a message key can ask for anything and do
 nothing alone. It stores nothing: every call carries the key it needs, or the copy was started
 with it.
@@ -48,7 +48,7 @@ words, key and parameters.
 | `request <action>` | message | Ask for one of the actions above, or `pay`, through the profile's own inbox (Requests) |
 
 A key is written as a grant writes it
-([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#grants)).
+([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#grants)).
 Before it signs anything, `forest` checks the key against the profile's permissions record, and
 refuses in plain words:
 
@@ -56,10 +56,10 @@ refuses in plain words:
 - A key that is not listed, is listed with another scope or as past, or whose paths don't cover
   the path.
 - The profile's main key, or its inbox key: only access keys are taken
-  ([forest's keys](https://github.com/foundationforest/forest/blob/main/keys/README.md#rules-for-apps-that-hold-keys)).
+  ([forest's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#rules-for-apps-that-hold-keys)).
 - A path the owner wrote. The owner wins, so only the owner's app can change it.
 - An offer or a review that does not fit its shape
-  ([forest's schemas](https://github.com/foundationforest/forest/tree/main/records/schemas)).
+  ([forest's schemas](https://github.com/foundationforest/standard/tree/main/records/schemas)).
   `createdAt` is set if it is missing.
 
 ### Requests
@@ -67,7 +67,7 @@ refuses in plain words:
 The one way to have something done that no key here allows. `request` names one of the actions
 above that need a key, or `pay`, with that action's parameters, and sends them to the profile's
 own inbox as a request body
-([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#inbox),
+([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
 Requests). Typed: `forest request post-offer --params '{"offer": {…}}'`. Over MCP: `action` and
 `params`. The parameters are checked against that action's own, so a request never carries a key.
 The person's app shows it, and does it with the main key, or not.
@@ -250,7 +250,7 @@ The hosted copy's:
     writers' folders, and only an index gathers them.
 - **Slow.** On every call it reads the whole folder from every start host, and checks signatures
   in JavaScript
-  ([forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#limits)).
+  ([forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#limits)).
 - **No rate limit.** Anyone can keep the hosted copy busy, and every call reads whole folders from
   hosts.
 - **One replica.** When it stops, the tools stop until Railway starts it again.
@@ -258,7 +258,7 @@ The hosted copy's:
 ## Who decides what
 
 - **The standard (forest):** only the request body, which
-  [forest's records](https://github.com/foundationforest/forest/blob/main/records/README.md#inbox)
+  [forest's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)
   holds.
 - **The foundation, in this directory:** the actions, what each says and which key it needs; and,
   by the hosted copy's policy, the index it reads, where it runs, and that it is free.

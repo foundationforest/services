@@ -6,7 +6,7 @@ chats. The Forest Foundation runs all six, on devnet. Anyone can run another of 
 code (Apache 2.0) or their own.
 
 The foundation writes forest, and runs the first of each service until there are others
-([forest's pieces](https://github.com/foundationforest/standard/blob/main/README.md#the-pieces)).
+([forest's pieces](https://github.com/foundationforest/standard/blob/main/README.md#the-folders)).
 The body that writes the standard runs the first of each, so no second body ever has a reason to
 lock people in, and it should want to lose each one: a person's seed, keys and records live with
 them, so each service must stay good, cheap and open, or people leave. One name, one set of books;
@@ -175,7 +175,7 @@ seller and deal are in [`e2e/`](e2e/README.md).
 
 Forest's own [promises](https://github.com/foundationforest/standard/blob/main/README.md#promises)
 hold here, and what never goes on chain is in its
-[privacy](https://github.com/foundationforest/standard/blob/main/README.md#privacy-honestly).
+[privacy](https://github.com/foundationforest/standard/blob/main/README.md#privacy).
 Each README holds its service's own promises. One holds for all of them:
 
 - **Everything here competes.** Anyone can run another of each; prices and margins are each

@@ -6,7 +6,7 @@ they hold.
 The foundation runs this one, on devnet. Anyone can run another, from Kora's published binary and
 this configuration, or from their own: whoever signs a transaction as payer pays for it, and the
 programs care nothing for who that is
-([forest](https://github.com/foundationforest/forest/blob/main/README.md#for-builders)).
+([forest](https://github.com/foundationforest/standard/blob/main/README.md#for-builders)).
 
 Up: [the repo](../README.md).
 
@@ -102,7 +102,7 @@ lamports`).
 
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. A
 cut in Solana's rent frees part of it, which only the program that owns the account can send on
-([forest's escrow, Rent](https://github.com/foundationforest/forest/blob/main/escrow/README.md#rent)).
+([forest's escrow, Rent](https://github.com/foundationforest/standard/blob/main/escrow/README.md#rent)).
 The registry and the escrow send every rent back to whoever fronted it, here the fee payer:
 
 - **An escrow's deposit address:** its rent goes back to the escrow's payer, the fee payer, at
@@ -116,9 +116,9 @@ The fee payer fronted those deposits and charged only their cost, so it keeps wh
 row never grows after `register`, so nothing a row needs later asks the fee payer for SOL.
 
 What a row costs is in forest's
-[registry](https://github.com/foundationforest/forest/blob/main/registry/README.md#what-one-row-costs),
+[registry](https://github.com/foundationforest/standard/blob/main/registry/README.md#what-one-row-costs),
 and an escrow's in forest's
-[escrow](https://github.com/foundationforest/forest/blob/main/escrow/README.md#run-it-and-what-one-escrow-costs).
+[escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md#run-it-and-what-one-escrow-costs).
 The local run checks, for every transaction it sends, that the charge is exactly what the fee payer
 spent.
 

@@ -92,7 +92,7 @@ sender, ever; `maxBytes` is the largest it takes; `readers` are keys every messa
 to besides `inboxKey`. No message passes through this index.
 
 How to send one is forest's: its records' Inbox section,
-https://github.com/foundationforest/forest/blob/main/records/README.md, or the CLI, `send`
+https://github.com/foundationforest/standard/blob/main/records/README.md, or the CLI, `send`
 (https://github.com/foundationforest/services/blob/main/mcp/README.md). The hosts this index reads
 are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json.
 
@@ -121,7 +121,7 @@ In `stamps[]`:
 
 To check it yourself, without trusting this index: `row` is the address of the row's account in the
 registry program on Solana
-(https://github.com/foundationforest/forest/blob/main/registry/README.md). Read it: it names the
+(https://github.com/foundationforest/standard/blob/main/registry/README.md). Read it: it names the
 profile's key, the row's stamp, the issuer's key and the label, and the program wrote it only after
 checking the person proof against that key. Then decide whether you trust that issuer. This
 index's issuers are listed at
@@ -190,7 +190,7 @@ its stamp names this profile, its index is in
 https://github.com/foundationforest/services/blob/main/index/lists/indexes.json, and its root is one
 of that index's newest roots. One that fails, or is too old, shows nothing: that is not an error.
 To check one yourself, take the proof from the profile's card on its hosts and run forest's
-`verifyReputation` (https://github.com/foundationforest/forest/blob/main/reputation/README.md) with
+`verifyReputation` (https://github.com/foundationforest/standard/blob/main/reputation/README.md) with
 the profile's address and a Solana RPC.
 
 This index's own tree, for an app that proves on the device:
@@ -210,7 +210,7 @@ which are theirs.
 ## Paying
 
 An offer's `payLink` is one documented format, forest's escrow's:
-https://github.com/foundationforest/forest/blob/main/escrow/README.md#the-pay-link. The seller is
+https://github.com/foundationforest/standard/blob/main/escrow/README.md#the-pay-link. The seller is
 the profile the offer names, paid at its address: the link carries no other key. This index never
 pays and never holds money.
 

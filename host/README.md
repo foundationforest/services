@@ -6,7 +6,7 @@ anyone who asks.
 The foundation runs this one, on devnet, at https://host.devnet.forest.foundation: forest's
 reference host with the policy below. Anyone can run another, with this code, forest's host alone,
 or their own. What every host must do is forest's
-([records](https://github.com/foundationforest/forest/blob/main/records/README.md#hosts)); this
+([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)); this
 README says only what this one adds and chooses.
 
 Up: [the repo](../README.md).
