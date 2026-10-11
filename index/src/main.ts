@@ -27,10 +27,36 @@ type Opts = {
   onError?: (err: unknown) => void
 }
 
+/** How often the markets directory is read again, after the read at start. */
+const MARKETS_MS = 60 * 60 * 1000
+
+function reportRefused(directory: Directory, onError: (err: unknown) => void): void {
+  for (const r of directory.refused) onError(new Error(`market ${r.market} refused: ${r.errors.join('; ')}`))
+}
+
 async function loadDirectory(config: Config, onError: (err: unknown) => void): Promise<Directory> {
   const directory = await Directory.fetch(config.markets)
-  for (const r of directory.refused) onError(new Error(`market ${r.market} refused: ${r.errors.join('; ')}`))
+  reportRefused(directory, onError)
   return directory
+}
+
+/**
+ * Reads the directory again every hour, so a market counts once it appears there. A read that fails
+ * leaves the markets as they were and is tried again at the next one. `onChange`, when given, runs when
+ * the markets changed. The timer does not keep the process alive.
+ */
+function refreshEvery(directory: Directory, onError: (err: unknown) => void, onChange?: () => void): () => void {
+  const timer = setInterval(() => {
+    directory.refresh().then(
+      (changed) => {
+        reportRefused(directory, onError)
+        if (changed) onChange?.()
+      },
+      onError,
+    )
+  }, MARKETS_MS)
+  timer.unref()
+  return () => clearInterval(timer)
 }
 
 export type Readers = {
@@ -57,6 +83,8 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
   const scorer = new Scorer(() => recompute(db, { directory, config, keys }))
   scorer.onError = onError
   await scorer.now()
+  // Which rows count depends on the markets, so a change in them is scored again.
+  const stopMarkets = refreshEvery(directory, onError, () => scorer.schedule())
 
   let records: HostReader | null = null
   if (config.hosts.length) {
@@ -93,6 +121,7 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
     chain,
     records,
     stop: async () => {
+      stopMarkets()
       chain?.stop()
       records?.stop()
       scorer.stop()
@@ -101,11 +130,18 @@ export async function startReaders(db: Db, config: Config, opts: Opts = {}): Pro
 }
 
 /** The pages on `db`, served on `config.port` unless `listen` is false. Reads only. */
-export async function startWeb(db: Db, config: Config, opts: Opts & { listen?: boolean } = {}): Promise<{ web: Web; server: Server | null }> {
-  const directory = await loadDirectory(config, opts.onError ?? ((err: unknown) => console.error(err)))
+export async function startWeb(
+  db: Db,
+  config: Config,
+  opts: Opts & { listen?: boolean } = {},
+): Promise<{ web: Web; server: Server | null; stopMarkets: () => void }> {
+  const onError = opts.onError ?? ((err: unknown) => console.error(err))
+  const directory = await loadDirectory(config, onError)
   const web = createWeb({ db, directory, config })
+  // This process reads the markets for itself: the pages hold their own copy, apart from the readers'.
+  const stopMarkets = refreshEvery(directory, onError)
   const server = opts.listen === false ? null : await serve(web, config.port)
-  return { web, server }
+  return { web, server, stopMarkets }
 }
 
 export type RunningIndex = Readers & { db: Db; web: Web; server: Server | null }
@@ -114,13 +150,14 @@ export type RunningIndex = Readers & { db: Db; web: Web; server: Server | null }
 export async function startIndex(config: Config, opts: Opts & { listen?: boolean } = {}): Promise<RunningIndex> {
   const db = createPool(config.databaseUrl)
   const readers = await startReaders(db, config, opts)
-  const { web, server } = await startWeb(db, config, opts)
+  const { web, server, stopMarkets } = await startWeb(db, config, opts)
   return {
     ...readers,
     db,
     web,
     server,
     stop: async () => {
+      stopMarkets()
       await readers.stop()
       await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
       await db.end()
@@ -136,7 +173,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const stops: (() => Promise<void>)[] = []
   if (role !== 'web') stops.push((await startReaders(db, config)).stop)
   if (role !== 'readers') {
-    const { server } = await startWeb(db, config)
+    const { server, stopMarkets } = await startWeb(db, config)
+    stops.push(async () => stopMarkets())
     stops.push(() => new Promise<void>((resolve) => server!.close(() => resolve())))
     console.log(`pages on :${config.port}, published as ${config.publicUrl}`)
   }

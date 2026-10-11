@@ -3,7 +3,8 @@
 // shows from them, the hosts and the chain. A fourth, lists/indexes.json, names the indexes whose
 // reputation proofs its pages show. Its opinions are two more files, in config/: the scoring
 // weights and the currencies its pages show. Environment variables say where things run. Everything
-// is read once at start; a change means a restart.
+// is read once at start; a change means a restart. The markets themselves are not in these files:
+// they are read from the markets directory, at start and every hour.
 
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -22,8 +23,8 @@ export const INDEX_ROOT = resolve(here, '..')
 export type IssuerConfig = Record<string, { name: string; weights: Record<string, number>; until?: string }>
 /** The indexes whose reputation proofs this index shows, by the address of their signing key, each with a name. */
 export type IndexConfig = Record<string, { name: string }>
-/** The markets this index uses: their names, and the directory their files are read from. */
-export type MarketsList = { directory: string; markets: string[] }
+/** Where the markets this index uses are read from: the markets directory. It is the only list of them. */
+export type MarketsList = { directory: string }
 /** A token the pages show as money: its ISO 4217 code, its symbol, and its base units' decimals. */
 export type CurrencyConfig = Record<string, { code: string; symbol: string; decimals: number }>
 export type ScoringConfig = {
@@ -87,15 +88,12 @@ export function readHosts(path: string): string[] {
   return out
 }
 
-/** The markets list: a directory to read from over http(s), and the names this index uses. */
+/** The markets list: the directory to read the markets from over http(s). It names no market. */
 export function readMarkets(path: string): MarketsList {
-  const file = readJson(path)
-  const directory = field<string>(path, file, 'directory')
+  const directory = field<string>(path, readJson(path), 'directory')
   const url = new URL(directory)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(`${path}: the directory is not an http(s) URL`)
-  const markets = field<unknown[]>(path, file, 'markets')
-  if (!markets.every((m) => typeof m === 'string' && m !== '')) throw new Error(`${path}: every market is a name`)
-  return { directory: directory.replace(/\/+$/, ''), markets: [...new Set(markets as string[])] }
+  return { directory: directory.replace(/\/+$/, '') }
 }
 
 /** A time in UTC to the second, as `2026-11-01T00:00:00Z` writes it, and a real one. */
