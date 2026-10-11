@@ -176,7 +176,8 @@ at https://host.devnet.forest.foundation:
   devnet `host` key's address, from the devnet phrase by the recipe in standard's
   `devnet/deploy.sh` scripts; the host never signs with it),
   `CREDIT_MINT=J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` (the classic test dollar),
-  `CREDIT_PRICE=0.01`.
+  `CREDIT_PRICE=0.01`, `SPONSORS=CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW` (the issuer's sponsor
+  key, whose tickets give a person's first credits).
 
 The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)), and the CLI
 ([`mcp/`](../mcp/README.md)) starts there when it is given no host (it reads that list).

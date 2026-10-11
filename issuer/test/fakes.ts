@@ -11,7 +11,6 @@ import { base58 } from '../../standard/records/src/bytes.ts'
 import { fromBytes32, toBytes32 } from '../../standard/registry/client/src/field.ts'
 import type { Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
-import type { Part, Payer } from '../src/gift.ts'
 import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
@@ -86,18 +85,6 @@ export class FakePayments implements Payments {
   }
 }
 
-/** The gift's payer, as far as the issuer sees it: what it was asked to pay, and, with `fail`, nothing paid. */
-export class FakePayer implements Payer {
-  readonly paid: Part[][] = []
-  fail = false
-
-  async pay(parts: Part[]) {
-    if (this.fail) return null
-    this.paid.push(parts)
-    return randomSignature()
-  }
-}
-
 /** A transaction signature's shape: 64 random bytes in base58. */
 export const randomSignature = () => base58.encode(randomBytes(64))
 
@@ -114,15 +101,30 @@ export class FakeFaceCheck implements FaceCheck {
   down = false
   photoDown = false
   waiting = 0
-  /** How many sessions Didit was asked to open. */
+  /** How many sessions Didit was asked to open; with `lost`, the next one is opened and its answer lost. */
   created = 0
+  lost = false
+  /** Each session opened with a tag, newest last. */
+  readonly tags: { tag: string; sessionId: string; url: string }[] = []
   #gate: Promise<void> | undefined
 
-  async createSession() {
+  async createSession(tag?: string) {
     if (this.down) throw new Error('down')
     this.created++
     const sessionId = randomUUID()
-    return { sessionId, url: `https://verify.example/session/${sessionId}` }
+    const opened = { sessionId, url: `https://verify.example/session/${sessionId}` }
+    if (tag) this.tags.push({ tag, ...opened })
+    if (this.lost) {
+      this.lost = false
+      throw new Error('opened, and the answer lost')
+    }
+    return opened
+  }
+
+  async tagged(tag: string) {
+    if (this.down) throw new Error('down')
+    const found = this.tags.findLast((t) => t.tag === tag)
+    return found ? { sessionId: found.sessionId, url: found.url } : null
   }
 
   set(sessionId: string, decision: Decision) {
@@ -168,18 +170,18 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY) WITHOUT ROWID',
-  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID',
+  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buys BLOB) WITHOUT ROWID',
+  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used; the note numbers given a gift. */
+/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used; the note numbers given a gift (and a hash of its buys). */
 export type Expected = { sessions: [string, bigint][]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
  * The file holds four tables and nothing else: each session that gave a note as the hash of its id,
- * next to its note number; each document's fingerprint next to its note number; the payments used;
- * the note numbers whose gift was paid.
+ * next to its note number; each document's fingerprint next to its note number; the payments used,
+ * each with its reference; the note numbers given a gift, each with a hash of its buys.
  * None of `never` (names, birth dates, embeddings, session ids) is anywhere in its bytes, and no
  * journal is left beside it.
  */
@@ -217,7 +219,7 @@ export function assertKept(path: string, expected: Expected): void {
       .all()
       .map((r) => fromBytes32(r.note_number as Uint8Array))
       .sort()
-    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and nothing of the gift')
+    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and of the gift only a hash of its buys')
   } finally {
     db.close()
   }

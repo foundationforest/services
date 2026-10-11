@@ -18,7 +18,7 @@ Up: [the repo](../README.md). The host it writes to: [`host/`](../host/README.md
 
 That a person's app, with forest's pieces alone, takes a new person from 24 words to a profile the
 index counts as one real person, rated and ID-checked, through these services as deployed: the
-issuer's two checks and its welcome gift of credits, a row through the registry payer with a credit
+issuer's two checks and its welcome gift of credits, credits bought on Solana, a row through the registry payer with a credit
 and one through the fee payer, records, a photo and messages on the host paid for in credits, an
 assistant acting through the CLI ([`mcp/`](../mcp/README.md)) with access keys only, a payment
 through the escrow, reviews, and a rating proven on the device. The seller pays nothing but the
@@ -32,25 +32,29 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
 1. **Keys.** A seed from 24 words, and from it the main key, the inbox key, and the person's secret
    and note number for the issuer, mixed under the name the issuer publishes at `/issuer.json`
    (forest's keys). The run checks that the key published there is the one in `devnet.json`.
-2. **Setup.** A test-dollar account each and some test dollars, paid by the devnet deploy key; and,
-   for the issuer's `credits` key, the test dollars the run's two welcome gifts cost, and SOL for its
-   fees when it runs low. Nothing after this needs anything but test dollars and credits, and the
-   seller's row not even dollars.
-3. **The face check, and the gift.** A session at the issuer, the check (the stand-in passes it,
-   with one embedding for everyone), the note number sent, and a tier 1 note back. The run checks
-   the issuer's signature on it, its key, the note number and the tier. With the note request the
-   app sends the pay links of two buys it made, of as many credits as `/issuer.json`'s gift names:
-   at the registry payer and at the host. The issuer pays both; once the payment is finalized, the
-   app collects each buy at its service with the payment's signature, and finishes the credits.
+2. **Setup.** A test-dollar account each and some test dollars, paid by the devnet deploy key; and
+   for the buyer, an address of its own apart from its profile, as a wallet app holds one, with a
+   dollar and a little SOL. Nothing a profile does after this needs anything but test dollars and
+   credits, and the seller's row not even dollars.
+3. **The face check, and both ways to pay.** A session at the issuer, the check (the stand-in
+   passes it, with one embedding for everyone), the note number sent, and a tier 1 note back. The
+   run checks the issuer's signature on it, its key, the note number and the tier. With the
+   seller's note request its app sends the references of two buys it made, of as many credits as
+   `/issuer.json`'s gift names, at the registry payer and at the host; the issuer answers a
+   sponsor's ticket for each, and the app collects each buy with its ticket, at once. The buyer
+   buys its host credits on Solana: a plain transfer from its own address to the host's, naming the
+   buy's reference, not through the fee payer; once it is finalized, the app collects the buy with
+   the transaction's signature.
 4. **A row each,** from a person proof made from the note. The seller's goes through the registry
-   payer with one of its credits, free; the run checks the seller still holds no SOL and paid no
-   dollar, and that the credit, shown again, is refused as spent once the row landed. The buyer's
+   payer, which signs and sends it itself, with one of its ticket's credits, free; the run reads the
+   row's account on chain, checks the seller still holds no SOL and paid no dollar, and that the
+   credit, shown again, is refused as spent once the row landed. The buyer's
    goes through the fee payer, paid in test dollars. The run reads each row back (the profile, the
    issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
    shows tier 1 against it.
 5. **Cards.** Each app sends the profile's hosts record and card to the host, which takes the hosts
    record free and refuses the card (`policy`): the folder holds no credits there. The app spends the
-   gift's host credits into the folder's balance, 100 a request, and sends the card again. The card has its inbox key and
+   host credits it holds into the folder's balance, 100 a request, and sends the card again. The card has its inbox key and
    an inbox for senders holding a row from the issuer, named by its key. The seller's takes
    one message from each sender, and lists among its readers a read key its app made at random for
    its assistant; the buyer's takes as many as come.
@@ -110,13 +114,13 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
 
 - **`FOREST_DEVNET_SEED`** (required): the devnet phrase. Its `deploy` key pays the setup; its
-  `test-dollar-authority` key mints the test dollars; its `issuer` key gives the issuer's `credits`
-  address, which the setup funds. Never in this repo.
+  `test-dollar-authority` key mints the test dollars. Never in this repo.
 - **`HELIUS_API_KEY`** (optional): read and send through Helius's devnet RPC instead of
   `api.devnet.solana.com`. The key never goes into a run's record.
 
 Run it against the services as deployed from `main`. The gift needs the issuer's gift to name the
-registry payer and the host in `devnet.json`, in the classic test dollar.
+registry payer and the host in `devnet.json`, each listing the issuer's sponsor key in `SPONSORS`;
+the host is paid in the classic test dollar.
 
 ### The latest run
 
@@ -225,9 +229,9 @@ and the services talking to each other over the internet.
 
 **Why does the deploy key pay the setup?**
 A new person has no test dollars. On mainnet they would come in at a ramp; on devnet the deploy key
-makes the accounts and the test dollar's own authority mints them. The issuer's gift is paid from
-its own `credits` key, which someone must fund; the setup mints what the run's two gifts cost into
-it, so a run never drains it. Nothing after setup touches SOL.
+makes the accounts and the test dollar's own authority mints them. The issuer's gift is tickets, so
+nothing funds it. Nothing a profile does after setup touches SOL; the buyer's own address pays its
+own fee for its transfer to the host, as a wallet app would.
 
 **Why keep every run's record in the repo?**
 So anyone can check, on devnet itself, what a run did: every address and signature in it is public.

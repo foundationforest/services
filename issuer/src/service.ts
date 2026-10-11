@@ -10,7 +10,7 @@ import { canonical } from '../../standard/records/src/canonical.ts'
 import { type IssuerKey as NoteKey, issuerKeyOf } from '../../standard/registry/client/src/person.ts'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
-import { type Directory, type Gift, type Payer, RpcPayer, readDirectory } from './gift.ts'
+import type { Gift } from './gift.ts'
 import { loadKeypair, parseKeypair, type IssuerKey } from './key.ts'
 import { RateLimit } from './limit.ts'
 import { issuerHex } from './notes.ts'
@@ -21,8 +21,8 @@ import { Store } from './store.ts'
 /** The hkdf labels the note key and the fingerprint key are mixed under, from the issuer's seed. */
 export const NOTE_KEY_INFO = 'issuer/notes'
 export const FINGERPRINT_KEY_INFO = 'issuer/fingerprint'
-/** The label the key that pays for the welcome gift is mixed under, from the issuer's seed (forest's `mainKey`). */
-export const CREDITS_KEY_LABEL = 'credits'
+/** The label the key that signs the welcome gift's tickets is mixed under, from the issuer's seed (forest's `mainKey`). */
+export const SPONSOR_KEY_LABEL = 'sponsor'
 
 export type Config = {
   /** The issuer's name: what a person's secret for it is mixed from (forest's `issuerSecret`). */
@@ -40,7 +40,7 @@ export type Config = {
   idTierMint?: string
   /** The address that receives it; never the issuer's own. Required when the price is above 0. */
   idTierPayTo?: string
-  /** The Solana RPC a payment is looked for, and the gift paid, through. Required when the price is above 0, or with a gift. */
+  /** The Solana RPC a payment is looked for through. Required when the price is above 0. */
   rpcUrl?: string
   /** The welcome gift: for each service, its origin and how many of its credits; empty for none. */
   gift: Gift
@@ -101,7 +101,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     const credits = whole(count, env[count] || fallback, 0)
     if (credits > 0) gift[role] = { origin, credits }
   }
-  if (Object.keys(gift).length && !env.RPC_URL && !missing.includes('RPC_URL')) missing.push('RPC_URL')
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   for (const name of ['ID_TIER_MINT', 'ID_TIER_PAY_TO']) {
     if (env[name] && !isAddress(env[name])) throw new Error(`${name} is not an address`)
@@ -164,8 +163,6 @@ export async function startIssuer(
     idCheck?: FaceCheck
     payments?: Payments
     embedder?: Embedder
-    directory?: Directory
-    payer?: Payer
     log?: (line: string) => void
   } = {},
 ): Promise<Issuer> {
@@ -194,9 +191,7 @@ export async function startIssuer(
     }
   }
 
-  const gift = Object.keys(config.gift).length
-    ? { gift: config.gift, directory: overrides.directory ?? readDirectory, payer: overrides.payer ?? new RpcPayer(config.rpcUrl!, await seed.derive(CREDITS_KEY_LABEL)) }
-    : undefined
+  const gift = Object.keys(config.gift).length ? { gift: config.gift, sponsor: await seed.derive(SPONSOR_KEY_LABEL) } : undefined
 
   const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(

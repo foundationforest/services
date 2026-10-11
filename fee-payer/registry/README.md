@@ -160,6 +160,7 @@ https://registry-payer.devnet.forest.foundation.
 | `CREDIT_MINT` | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`, the classic test dollar | no |
 | `CREDIT_PRICE` | `0.5` | no |
 | `REGISTRY_PROGRAM` | `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` | no |
+| `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`, the issuer's sponsor key | no |
 | `DATABASE_PATH` | `/data/credits.sqlite` | no |
 | `PORT` | `8080` | no |
 

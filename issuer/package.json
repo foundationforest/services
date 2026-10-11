@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's issuer: it signs notes. A passed Didit face check gives a person a tier 1 note for their note number, with their face embedding from an open model (SFace); a passed document check, with the live face matching the note's, the same note at tier 2. It keeps which check session gave which note number, and a keyed fingerprint of each document next to it. With a welcome gift, at a person's first note it pays for the credits their app buys at the registry payer and the host.",
+  "description": "The Forest Foundation's issuer: it signs notes. A passed Didit face check gives a person a tier 1 note for their note number, with their face embedding from an open model (SFace); a passed document check, with the live face matching the note's, the same note at tier 2. It keeps which check session gave which note number, and a keyed fingerprint of each document next to it. With a welcome gift, at a person's first note it signs a sponsor's ticket for the credits their app buys at the registry payer and the host.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -15,8 +15,6 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@solana/spl-token": "0.4.9",
-    "@solana/web3.js": "1.99.0",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.30.0",
     "pngjs": "7.0.0"

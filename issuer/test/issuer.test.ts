@@ -21,21 +21,15 @@ import { canonical, parseCanonical } from '../../standard/records/src/canonical.
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
-import { buy, serviceOf } from '../../standard/credits/src/index.ts'
+import { buy, finish, serviceOf } from '../../standard/credits/src/index.ts'
 import { keyFrom, seller } from '../../standard/credits/src/service.ts'
 
-/** A service's directory, as standard's seller serves it. */
-const directoryOf = async (origin: string, unit: string, credit: { address: string; mint: string; price: string }, pkcs8: Uint8Array) =>
-  seller({ origin, key: await keyFrom(pkcs8), unit, requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [], rpc: null, path: ':memory:' }).directory()
-
-import type { Directory } from '../src/gift.ts'
 import { parseKeypair } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
 import { issuerHex, noteFromJson, noteToJson } from '../src/notes.ts'
-import { NOTE_KEY_INFO, readConfig, startIssuer, type Issuer } from '../src/service.ts'
+import { NOTE_KEY_INFO, SPONSOR_KEY_LABEL, readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import {
   FakeFaceCheck,
-  FakePayer,
   FakePayments,
   ID_WORKFLOW,
   ISSUER_NAME,
@@ -82,7 +76,7 @@ type Harness = {
   idSession(decision: ReturnType<typeof passed>): Promise<string>
 }
 
-async function start(options: { env?: Record<string, string>; key?: string; dbPath?: string; gift?: { directory: Directory; payer: FakePayer } } = {}): Promise<Harness> {
+async function start(options: { env?: Record<string, string>; key?: string; dbPath?: string } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'issuer.sqlite')
   const config = readConfig({
     ISSUER_NAME,
@@ -101,7 +95,7 @@ async function start(options: { env?: Record<string, string>; key?: string; dbPa
   const payments = new FakePayments()
   const embedder = namedFaces()
   const logs: string[] = []
-  const issuer = await startIssuer(config, { faceCheck: faces, idCheck: ids, payments, embedder, ...options.gift, log: (line) => logs.push(line) })
+  const issuer = await startIssuer(config, { faceCheck: faces, idCheck: ids, payments, embedder, log: (line) => logs.push(line) })
   const post = async (path: string, body: unknown = {}, headers: Record<string, string> = {}) => {
     const res = await fetch(issuer.url + path, {
       method: 'POST',
@@ -470,18 +464,35 @@ test('with a price, a document check opens once a payment naming its reference h
     const opened = await h.post('/id/session', { payment: payment.id })
     assert.equal(opened.status, 201)
     assert.equal(h.ids.created, 1)
-    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 409, body: { error: 'payment_used' } })
+    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), opened, 'a lost answer: asked again, the same session')
+    assert.equal(h.ids.created, 1, 'and no second one opened')
     h.payments.paid.set(other.reference, [signature])
-    assert.deepEqual(await h.post('/id/session', { payment: other.id }), { status: 409, body: { error: 'payment_used' } }, 'one transaction pays for one check')
-    h.payments.paid.set(payment.reference, [randomSignature(), signature])
-    assert.equal((await h.post('/id/session', { payment: payment.id })).status, 201, 'a second payment naming the same reference opens a second')
+    assert.deepEqual(await h.post('/id/session', { payment: other.id }), { status: 409, body: { error: 'payment_used' } }, 'one transaction pays for one check, for its own payment')
+    const second = randomSignature()
+    h.payments.paid.set(payment.reference, [second, signature])
+    const twice = await h.post('/id/session', { payment: payment.id })
+    assert.equal(twice.status, 201)
+    assert.notEqual(twice.body.sessionId, opened.body.sessionId, 'a second payment naming the same reference opens a second')
+    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), twice, 'and its answer, lost, is the newest session')
+    assert.ok(!JSON.stringify(h.ids.tags).includes(payment.id), 'Didit never holds the payment id, only its tag')
 
+    // Didit opened a session and its answer was lost, or Didit did not answer at all: the payment is
+    // never given back, and the next ask finds the session, or opens it.
     const third = (await h.post('/id/session')).body.payment
     h.payments.paid.set(third.reference, [randomSignature()])
-    h.ids.down = true
+    h.ids.lost = true
     assert.deepEqual(await h.post('/id/session', { payment: third.id }), { status: 502, body: { error: 'face_check_unavailable' } })
+    const found = await h.post('/id/session', { payment: third.id })
+    assert.deepEqual([found.status, found.body.sessionId], [201, h.ids.tags.at(-1)!.sessionId], 'the session Didit opened, found by its tag')
+    const fourth = (await h.post('/id/session')).body.payment
+    h.payments.paid.set(fourth.reference, [randomSignature()])
+    h.ids.down = true
+    assert.deepEqual(await h.post('/id/session', { payment: fourth.id }), { status: 502, body: { error: 'face_check_unavailable' } })
     h.ids.down = false
-    assert.equal((await h.post('/id/session', { payment: third.id })).status, 201, 'Didit down: the payment is still good')
+    assert.equal((await h.post('/id/session', { payment: fourth.id })).status, 201, 'Didit down: the payment is still good')
+    const created = h.ids.created
+    const [a, b] = await Promise.all([h.post('/id/session', { payment: fourth.id }), h.post('/id/session', { payment: fourth.id })])
+    assert.deepEqual([a, h.ids.created], [b, created], 'two asks at once: one answer, no session opened')
 
     // The session it opened is a document session like any other.
     const { note } = await tier1(h, 'alice', await noteNumber())
@@ -525,93 +536,80 @@ test('the configuration names what is missing', () => {
 
   // The welcome gift: none unless a service is named; three registrations and 500 cents unless set.
   assert.deepEqual(config.gift, {})
-  const gifted = { ...base, REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example', RPC_URL: 'http://127.0.0.1:1' }
+  const gifted = { ...base, REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example' }
   assert.deepEqual(readConfig(gifted).gift, { registryPayer: { origin: 'https://registry-payer.example', credits: 3 }, host: { origin: 'https://host.example', credits: 500 } })
   assert.deepEqual(readConfig({ ...gifted, REGISTRY_CREDITS: '0', HOST_CREDITS: '20' }).gift, { host: { origin: 'https://host.example', credits: 20 } }, 'none of a service at 0')
-  assert.throws(() => readConfig({ ...base, HOST_URL: 'https://host.example' }), /missing environment variables: RPC_URL/, 'paying needs an RPC')
+  assert.equal(readConfig(gifted).rpcUrl, undefined, 'a gift needs no RPC: the issuer pays nothing')
   assert.throws(() => readConfig({ ...gifted, HOST_URL: 'https://host.example/' }), /HOST_URL is an origin/)
   assert.throws(() => readConfig({ ...gifted, HOST_CREDITS: '-1' }), /HOST_CREDITS/)
 })
 
-/** Two services selling credits, as their directories say: a registry payer at 0.5 a registration and a host at a cent. */
-async function giftServices() {
+/** Two services selling credits with standard's seller, each taking the issuer's sponsor key: a registry payer and a host. */
+function giftServices(sponsor: string) {
   const pkcs8 = () => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
-  const mint = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
-  const directories = new Map<string, unknown>([
-    ['https://registry-payer.example', await directoryOf('https://registry-payer.example', 'one registration', { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint, price: '0.5' }, pkcs8())],
-    ['https://host.example', await directoryOf('https://host.example', 'one cent of writes', { address: '2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9', mint, price: '0.01' }, pkcs8())],
-  ])
-  let down = false
-  const directory: Directory = async (origin) => {
-    if (down || !directories.has(origin)) throw new Error('not answering')
-    return directories.get(origin)
+  const credit = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', price: '0.5' }
+  const at = async (origin: string, unit: string) => {
+    const s = seller({ origin, key: await keyFrom(pkcs8()), unit, requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
+    return { seller: s, service: serviceOf(origin, s.directory()) }
   }
-  const service = (origin: string) => serviceOf(origin, directories.get(origin))
-  return { directory, service, mint, setDown: (value: boolean) => (down = value) }
+  return Promise.all([at('https://registry-payer.example', 'one registration'), at('https://host.example', 'one cent of writes')])
 }
 
-test('the welcome gift: at a first note, the app’s buys paid in one transaction, once a note number, and only as their links say', async () => {
-  const services = await giftServices()
-  const payer = new FakePayer()
-  const h = await start({
-    env: { REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example', HOST_CREDITS: '5', RPC_URL: 'http://127.0.0.1:1' },
-    gift: { directory: services.directory, payer },
-  })
+test('the welcome gift: at a first note, a sponsor’s ticket for each of the app’s buys, once a note number; the issuer pays nothing', async () => {
+  const key = keypairJson()
+  const sponsor = (await parseKeypair(key.json, 'test').derive(SPONSOR_KEY_LABEL)).address
+  const [registry, host] = await giftServices(sponsor)
+  const h = await start({ key: key.json, env: { REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
   try {
     // issuer.json says what the gift holds, so the app knows what to buy.
     const about = await (await fetch(h.issuer.url + '/issuer.json')).json()
     assert.deepEqual(about.gift, { host: { credits: 5, origin: 'https://host.example' }, registryPayer: { credits: 3, origin: 'https://registry-payer.example' } })
-    const registry = services.service('https://registry-payer.example')
-    const host = services.service('https://host.example')
-    const buys = async (r = 3, w = 5) => ({ registry: await buy(registry, r), host: await buy(host, w) })
-    const links = (b: Awaited<ReturnType<typeof buys>>) => ({ registryPayer: b.registry.payLink, host: b.host.payLink })
+    const buys = async (r = 3, w = 5) => ({ registry: await buy(registry.service, r), host: await buy(host.service, w) })
+    const refs = (b: Awaited<ReturnType<typeof buys>>) => ({ registryPayer: b.registry.reference, host: b.host.reference })
     const note = (sessionId: string, n: bigint, gift: unknown) => h.post('/note', { sessionId, noteNumber: n.toString(), gift })
 
     const n = await noteNumber()
     const sessionId = await h.session(passed('alice'))
     const mine = await buys()
-    const first = await note(sessionId, n, links(mine))
+    const first = await note(sessionId, n, refs(mine))
     assert.equal(first.status, 200)
     assert.ok(noteSigned(noteFromJson(first.body.note)!))
-    assert.match(first.body.gift.signature, /^[1-9A-HJ-NP-Za-km-z]{80,90}$/)
-    assert.deepEqual(payer.paid, [[
-      { address: host.address, mint: services.mint, amount: '0.05', reference: mine.host.reference },
-      { address: registry.address, mint: services.mint, amount: '1.5', reference: mine.registry.reference },
-    ]], 'both buys in one transaction, each naming its reference, at the price its directory says')
+    assert.deepEqual(Object.keys(first.body.gift).sort(), ['host', 'registryPayer'])
 
-    // Once a note number: the same session again gives the note, and not the gift.
-    const again = await note(sessionId, n, links(await buys()))
-    assert.deepEqual([again.status, again.body.gift], [200, { error: 'given' }])
+    // Each service takes its ticket, from the sponsor it lists, and the app finishes the credits.
+    const collect = async (at: typeof registry, b: Awaited<ReturnType<typeof buy>>, ticket: string) => {
+      const answered = await at.seller.collect(b.buy, `ticket ${ticket}`)
+      assert.equal(answered.status, 200, JSON.stringify(answered.body))
+      return finish(b.pending, answered.body as Uint8Array)
+    }
+    assert.equal((await collect(registry, mine.registry, first.body.gift.registryPayer)).length, 3)
+    assert.equal((await collect(host, mine.host, first.body.gift.host)).length, 5)
+    assert.deepEqual([registry.seller.bill(), host.seller.bill()], [{ [sponsor]: 3 }, { [sponsor]: 5 }], 'each service bills the sponsor')
+    assert.equal((await host.seller.collect(mine.registry.buy, `ticket ${first.body.gift.registryPayer}`)).status, 402, 'a ticket pays at its own service only')
+
+    // Once a note number: the same buys again, the same tickets; other buys, none.
+    const again = await note(sessionId, n, refs(mine))
+    assert.deepEqual([again.status, again.body.gift], [200, first.body.gift], 'a retry: the same tickets')
     assert.equal(again.body.note.noteNumber, first.body.note.noteNumber)
-    assert.equal(payer.paid.length, 1)
+    assert.deepEqual((await note(sessionId, n, refs(await buys()))).body.gift, { error: 'given' })
 
-    // A link that is not the one the issuer would write for that service, count and reference.
+    // Buys the gift does not name, or more credits than it gives.
     const m = await noteNumber()
     const bob = await h.session(passed('bob'))
     const b = await buys()
     const refused = async (gift: unknown) => (await note(bob, m, gift)).body.gift
-    assert.deepEqual(await refused({ registryPayer: b.registry.payLink }), { error: 'bad_gift' }, 'one service missing')
-    assert.deepEqual(await refused({ ...links(b), other: b.host.payLink }), { error: 'bad_gift' }, 'one service too many')
-    assert.deepEqual(await refused({ ...links(b), host: b.host.payLink.replace('amount=0.05', 'amount=0.5') }), { error: 'bad_gift' }, 'another amount')
-    assert.deepEqual(await refused({ ...links(b), host: b.registry.payLink }), { error: 'bad_gift' }, 'another service’s link')
-    assert.deepEqual(await refused(links(await buys(4))), { error: 'bad_gift' }, 'more credits than the gift')
-    assert.deepEqual(await refused({ ...links(b), host: b.host.payLink.replace(/reference=[^&]+/, 'reference=nope') }), { error: 'bad_gift' })
-    services.setDown(true)
-    assert.deepEqual(await refused(links(b)), { error: 'gift_unavailable' }, 'a directory not answering')
-    services.setDown(false)
-    payer.fail = true
-    assert.deepEqual(await refused(links(b)), { error: 'gift_unavailable' }, 'not paid')
-    payer.fail = false
-    assert.equal(payer.paid.length, 1, 'nothing refused was paid')
-    // Not paid, not given: the same note asked for again pays it.
-    assert.match((await refused(links(b))).signature, /^[1-9A-HJ-NP-Za-km-z]+$/)
-    assert.equal(payer.paid.length, 2)
+    assert.deepEqual(await refused({ registryPayer: b.registry.reference }), { error: 'bad_gift' }, 'one service missing')
+    assert.deepEqual(await refused({ ...refs(b), other: b.host.reference }), { error: 'bad_gift' }, 'one service too many')
+    assert.deepEqual(await refused({ ...refs(b), host: 'nope' }), { error: 'bad_gift' }, 'not a reference')
+    const four = await buys(4)
+    const tickets = (await note(bob, m, refs(four))).body.gift
+    assert.equal((await registry.seller.collect(four.registry.buy, `ticket ${tickets.registryPayer}`)).status, 402, 'a buy of more credits than the ticket gives is not paid')
 
     // The note is never held back by the gift; a gift that is not an object is refused before anything.
-    assert.equal((await note(bob, m, 'links')).status, 400)
+    assert.equal((await note(bob, m, 'refs')).status, 400)
     assert.equal((await h.post('/note', { sessionId: bob, noteNumber: m.toString() })).body.gift, undefined, 'no gift asked, none answered')
     await h.issuer.close()
-    assertKept(h.dbPath, { sessions: [[sessionId, n], [bob, m]], fingerprints: [], gifts: [n, m], never: [mine.registry.reference, mine.host.reference] })
+    assertKept(h.dbPath, { sessions: [[sessionId, n], [bob, m]], fingerprints: [], gifts: [n, m], never: [mine.registry.reference, mine.host.reference, four.registry.reference] })
   } finally {
     await h.issuer.close().catch(() => {})
   }

@@ -5,13 +5,15 @@
 //                  was signed for, so a face seen again is signed again only for the same note number
 //   fingerprints   for each document that gave a note: its fingerprint (notes.ts), and the note number
 //                  it was signed for, so a person seen again is signed again only for the same one
-//   id_payments    the transaction signature of each payment that opened a document check, so one
-//                  payment opens one
-//   gifts          each note number whose welcome gift was paid (gift.ts), so a person gets one
+//   id_payments    the transaction signature of each payment that opened a document check, with the
+//                  reference it named (public in that transaction), so one payment opens one, for
+//                  its own payment id only
+//   gifts          each note number given its welcome gift (gift.ts), with a hash of the buys it was
+//                  given for, so a person gets one, and the same buys asked again get the same tickets
 //
-// Nothing else: no face, no embedding, no name, no document, no time, no row number, and nothing of
-// a gift but that it was paid: not its transaction, not its buys. A session id is
-// kept only as its hash, so the file names no Didit session. The note number links the two tables
+// Nothing else: no face, no embedding, no name, no document, no time, no row number, and of a gift
+// only a hash of its buys: not its tickets, not its references. A session id is kept only as its
+// hash, so the file names no Didit session. The note number links the two tables
 // of notes: a document's fingerprint sits next to the same note number as the hashes of the
 // sessions signed for it, its face-check sessions included. So the file does say which document
 // went with which face-check sessions, and whoever also holds Didit's records of those sessions can
@@ -44,10 +46,9 @@ export class Store {
   readonly #addSession: StatementSync
   readonly #addFingerprint: StatementSync
   readonly #pay: StatementSync
-  readonly #unpay: StatementSync
-  readonly #isPaid: StatementSync
+  readonly #paidFor: StatementSync
   readonly #give: StatementSync
-  readonly #ungive: StatementSync
+  readonly #given: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -64,18 +65,21 @@ export class Store {
     this.#db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY, buys BLOB) WITHOUT ROWID;
     `)
+    // A file from before payments kept their reference and gifts their buys: the column added, empty.
+    const has = (table: string, column: string) => this.#db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(column) !== undefined
+    if (!has('id_payments', 'reference')) this.#db.exec('ALTER TABLE id_payments ADD COLUMN reference TEXT')
+    if (!has('gifts', 'buys')) this.#db.exec('ALTER TABLE gifts ADD COLUMN buys BLOB')
     this.#session = this.#db.prepare('SELECT note_number FROM sessions WHERE hash = ?')
     this.#fingerprint = this.#db.prepare('SELECT note_number FROM fingerprints WHERE fingerprint = ?')
     this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, note_number) VALUES (?, ?)')
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, note_number) VALUES (?, ?)')
-    this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature) VALUES (?)')
-    this.#unpay = this.#db.prepare('DELETE FROM id_payments WHERE signature = ?')
-    this.#isPaid = this.#db.prepare('SELECT 1 FROM id_payments WHERE signature = ?')
-    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number) VALUES (?)')
-    this.#ungive = this.#db.prepare('DELETE FROM gifts WHERE note_number = ?')
+    this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature, reference) VALUES (?, ?)')
+    this.#paidFor = this.#db.prepare('SELECT reference FROM id_payments WHERE signature = ?')
+    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number, buys) VALUES (?, ?)')
+    this.#given = this.#db.prepare('SELECT buys FROM gifts WHERE note_number = ?')
   }
 
   /** The note number this session gave, if it gave one. */
@@ -122,29 +126,23 @@ export class Store {
     }
   }
 
-  /** Whether this payment, by its transaction's signature (base58), has opened a check. */
-  isPaymentUsed(signature: string): boolean {
-    return this.#isPaid.get(base58.decode(signature)) !== undefined
+  /** Whom this payment, by its transaction's signature (base58), opened a check for: its reference; null for one kept before references were; undefined if unused. */
+  paymentFor(signature: string): string | null | undefined {
+    const row = this.#paidFor.get(base58.decode(signature))
+    return row === undefined ? undefined : ((row.reference as string | null) ?? null)
   }
 
-  /** Marks a payment used: true if it was not before. Checking and marking are one statement. */
-  usePayment(signature: string): boolean {
-    return Number(this.#pay.run(base58.decode(signature)).changes) === 1
+  /** Marks a payment used for `reference`: true if it was free, or already used for that reference. It is never given back. */
+  usePayment(signature: string, reference: string): boolean {
+    this.#pay.run(base58.decode(signature), reference)
+    return this.paymentFor(signature) === reference
   }
 
-  /** Gives a payment back, when the check it was to open could not be opened. */
-  releasePayment(signature: string): void {
-    this.#unpay.run(base58.decode(signature))
-  }
-
-  /** Marks this note number's gift given: true if it was not before. Checking and marking are one statement. */
-  giveGift(noteNumber: bigint): boolean {
-    return Number(this.#give.run(toBytes32(noteNumber)).changes) === 1
-  }
-
-  /** Takes the mark back, when the gift was not paid after all. */
-  ungiveGift(noteNumber: bigint): void {
-    this.#ungive.run(toBytes32(noteNumber))
+  /** Marks this note number's gift given for these buys: `given` the first time, `again` for the same buys, `other` for others. */
+  giveGift(noteNumber: bigint, buys: Uint8Array): 'given' | 'again' | 'other' {
+    if (Number(this.#give.run(toBytes32(noteNumber), buys).changes) === 1) return 'given'
+    const kept = this.#given.get(toBytes32(noteNumber))?.buys as Uint8Array | null | undefined
+    return kept && Buffer.from(kept).equals(Buffer.from(buys)) ? 'again' : 'other'
   }
 
   close(): void {

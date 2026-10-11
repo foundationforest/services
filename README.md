@@ -16,7 +16,7 @@ the foundation has no shareholders and pays nothing out.
 
 | Service | What it does | On devnet | Directory |
 |---|---|---|---|
-| issuer | Checks once, by face, that a person is one real human, and signs them a note; a second check, by face and a government document, signs the same note at tier 2. At the first note, it pays for the person's first credits | https://issuer.devnet.forest.foundation | [`issuer/`](issuer/README.md) |
+| issuer | Checks once, by face, that a person is one real human, and signs them a note; a second check, by face and a government document, signs the same note at tier 2. At the first note, it signs a sponsor's ticket for each of the person's first buys | https://issuer.devnet.forest.foundation | [`issuer/`](issuer/README.md) |
 | registry payer | Pays for a person's registry row against one of its credits, which anyone can buy for them | https://registry-payer.devnet.forest.foundation | [`fee-payer/registry/`](fee-payer/registry/README.md) |
 | fee payer | Pays Solana's costs for a person's transactions at cost, in the dollar they hold | https://fee-payer.devnet.forest.foundation | [`fee-payer/`](fee-payer/README.md) |
 | host | Keeps people's signed records, messages and photos, paid for in its credits, and serves them to anyone: forest's reference host, with its policy | https://host.devnet.forest.foundation | [`host/`](host/README.md) |
@@ -38,8 +38,8 @@ records and rows.
 ## How it works
 
 ```
-             face, then face and ID (Didit), note number, pay links
-  person's app ─────────────────────────────▶ issuer ── a note back; pays for first credits
+             face, then face and ID (Didit), note number, buys' references
+  person's app ─────────────────────────────▶ issuer ── a note back; tickets for first credits
        │
        │ a row and a credit            registry payer ── signs, sends ─┐
        ├──────────────────────────────────▶                            ├────▶ Solana: registry
@@ -55,10 +55,11 @@ A person's app holds their seed, and mixes from it a main key for each label, su
 ([forest's keys](https://github.com/foundationforest/forest/blob/main/keys/README.md)). Then:
 
 1. **A note.** The issuer checks the person's face once and signs a note for their note number, at
-   tier 1; a document check later signs the same note at tier 2. With the first note it pays for
-   the person's first credits, which their app bought: a few registrations at the registry payer,
-   and writes at the host
+   tier 1; a document check later signs the same note at tier 2. With the first note it signs a
+   sponsor's ticket for each of the person's first buys, which their app made: a few registrations
+   at the registry payer, and writes at the host, each service billing the issuer
    ([standard's credits](https://github.com/foundationforest/standard/blob/main/credits/README.md)).
+   It holds no money.
 2. **A row.** From the note, the app makes a person proof on the device and writes one row in the
    registry
    ([forest's registry](https://github.com/foundationforest/forest/blob/main/registry/README.md)),
@@ -148,14 +149,14 @@ settings and its volume. Railway's service ids: `issuer`
 | The issuer's seed, the devnet `issuer` key, which signs nothing itself | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` |
 | The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
 | The address the document check's price is paid to once one is set, mixed from the issuer's seed under `payments` | `3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH` |
-| The issuer's `credits` key, mixed from its seed under `credits`, which pays the welcome gift | `AWnaPYoUSbBHKqmhre77yrtfETysvYyw6j8cP5PkYSzK` |
+| The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW` |
 | The registry payer's key, which its credits are paid to: a random key made for it, not mixed from the devnet phrase | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
 | The address the host's credits are paid to, the devnet `host` key's; the host never signs with it | `2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9` |
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
 Every key but the registry payer's is derived from the devnet phrase by the recipe in forest's
-`devnet/deploy.sh` scripts, and the issuer's note key, payments address and `credits` key from its
+`devnet/deploy.sh` scripts, and the issuer's note key, payments address and sponsor key from its
 seed, by forest's `hkdf` and `mainKey`; the registry payer's is random. None is in this repo. Open in a browser: [the index](https://index.devnet.forest.foundation/) and
 [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json); the latest e2e run's
 seller and deal are in [`e2e/`](e2e/README.md).
@@ -177,9 +178,9 @@ Each README holds its service's own promises. One holds for all of them:
   dollars are test dollars, which their maker mints at will, so credits bought with them are
   unlimited too; every service is one replica on Railway.
 - **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind, so
-  no service can tell from a credit which buy it came from; but a buy the issuer paid, collected and
-  spent soon after from one network address, can be tied together by whoever sees all three
-  (standard's [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+  no service can tell from a credit which buy it came from; but a buy the issuer's ticket paid,
+  collected and spent soon after from one network address, can be tied together by whoever sees all
+  three (standard's [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC, the
   host its RPC and, for a message key's message, the sender's host. Each README says how.
 
@@ -201,7 +202,7 @@ Everything but its secrets and what it keeps private for people:
 - **Kept, not published:** the registry payer's and the host's spent lists (the id of each spent
   credit) and the proofs each took (with the buy's reference each paid for), the host's balance of
   each folder and the id of each write it took a price for, the issuer's list of note numbers given
-  a gift, and Railway's own request logs.
+  a gift, each with a hash of its buys, and Railway's own request logs.
 
 **Why is forest pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from forest. One commit in
