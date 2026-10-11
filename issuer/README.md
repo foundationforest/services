@@ -356,10 +356,10 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The consent screen.** Before the document check the app shows this, word for word; the last
   sentence only when there is a price:
 
-  > Forest checks your face and a government ID with Didit, its provider, to make sure each person
-  > is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth
-  > and document number), your selfie, a short video and a template of your face, so it can tell if
-  > the same face or ID comes back. Forest keeps none of this: only a one-way fingerprint of your
+  > Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its
+  > provider, to make sure each person is checked once. Didit keeps photos of your ID and what it
+  > reads on it (your name, date of birth and document number), your selfie, a short video and a
+  > template of your face, so it can tell if the same face or ID comes back. Forest keeps none of this: only a one-way fingerprint of your
   > name, date of birth and country next to your note number, so the same person is not checked
   > twice, and it gives you a note that does not say who you are. The check costs {price}, paid
   > before it starts, whatever it decides.
