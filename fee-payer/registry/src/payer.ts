@@ -1,31 +1,32 @@
-// The registry payer's front: the one program of ours in the registry payer, in front of its Kora,
-// which pays for anything its rules allow and charges nothing. It sells credits, one registration
-// each, and spends them, one per registry row.
+// The registry payer: one program, with its own key. It sells credits, one registration each, and
+// spends them, one per registry row: it signs the row's transaction as payer and sends it itself.
 //
-//   GET  /.well-known/private-token-issuer-directory   its credit key and price (forest's credits)
+//   GET  /.well-known/private-token-issuer-directory   its credit key and price (standard's credits)
 //   POST /credits/buy                                   a paid buy's blind signatures
 //   POST /register                                      one row, paid with one credit
-//   POST /  getPayerSigner                              its Kora's address, which a row names as payer
-//   GET  /liveness                                      its Kora's
+//   POST /  getPayerSigner                              its address, which a row names as payer
+//   GET  /liveness                                      200 while it runs
 //
-// A credit is spent only once its row lands. It is held from the moment it is shown; held, a second
-// request with it is refused. If Kora refuses the row, it is freed at once. Once Kora sends the row,
-// the front watches it: confirmed, the credit is spent; failed, or its blockhash past while it
-// never landed, the credit is freed and can be shown again. A hold outlives a restart, with the
-// signature and blockhash to settle it by. What it keeps is the spent list: credit ids, and for each
-// held one that signature and blockhash. It logs nothing.
+// A credit is spent only once its row exists on chain: one rule. Before anything is held, a row
+// that already exists is refused. The credit is then held with the row's address and the
+// blockhash; the payer signs; one simulation must pass, and fund nothing from the payer but the row's
+// rent; then it sends. A settle loop, one round at a time, spends each held
+// credit whose row exists, and frees each whose row is absent once its blockhash expired. What it
+// keeps is its seller's file: credit ids, each held one's row and blockhash, the proofs it took
+// and its sponsors' bill. It logs nothing.
 
 import { createPublicKey, verify } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
-import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from 'node:http'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { dirname } from 'node:path'
+import { dirname, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
+import { Keypair, PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 
-import { checkCredit, creditOf, referenceOf } from '../../../standard/credits/src/index.ts'
-import { type CreditKey, DIRECTORY_PATH, SpentList, amountOf, answer, countOf, directoryOf, keyFrom, paid } from '../../../standard/credits/src/service.ts'
-import { discriminator } from '../../../standard/registry/client/src/index.ts'
+import { PAYMENT_HEADER, checkCredit, creditOf } from '../../../standard/credits/src/index.ts'
+import { type CreditKey, DIRECTORY_PATH, type Rpc, type Seller, keyFrom, seller } from '../../../standard/credits/src/service.ts'
+import { discriminator, rowSpace } from '../../../standard/registry/client/src/index.ts'
 
 /** What one credit buys here, as the directory says it. */
 export const UNIT = 'one registration'
@@ -33,10 +34,8 @@ export const UNIT = 'one registration'
 export const BUY_PATH = '/credits/buy'
 
 export type Config = {
-  /** Its Kora's JSON-RPC, in this container. */
-  koraUrl: string
-  /** The key its Kora asks for (`x-api-key`): made at each start, known only to this program and that Kora. */
-  koraApiKey: string
+  /** Its own key: it signs every row it pays for, and a row records it as payer. */
+  key: Keypair
   /** The registry program a row is written by. */
   registry: PublicKey
   /** Its public origin, `https://host`: the name its credits' challenge carries. */
@@ -47,26 +46,39 @@ export type Config = {
   credit: { address: string; mint: string; price: string }
   /** The most credits one buy may ask for. */
   maxBuy: number
-  /** The Solana RPC it finds payments and watches rows through. */
+  /** The sponsors whose tickets pay for a buy here, by address. */
+  sponsors: string[]
+  /** The Solana RPC it checks payments and rows, and sends rows, through. */
   rpcUrl: string
-  /** The spent list's one file. */
+  /** Its seller's one file. */
   databasePath: string
   port: number
-  /** How often it settles what it holds, in ms. */
+  /** How long it waits after one settle round before the next, in ms. */
   settleMs?: number
 }
 
 /** A request body larger than this is refused unread: a transaction is at most 1,232 bytes, and a buy of the most credits a little over 260 bytes each. */
 const MAX_BODY = 64 * 1024
 const REGISTER = discriminator('global', 'register')
+/** `register`'s data before the label: discriminator, stamp, issuer's key, tier, proof. Then the label's u32 length and its bytes. */
+const BEFORE_LABEL = 8 + 32 + 64 + 32 + 32 + 64 + 32
+const SYSTEM = SystemProgram.programId.toBase58()
 /** An ed25519 public key's DER prefix, for node:crypto. */
 const ED25519_SPKI = Buffer.from('302a300506032b6570032100', 'hex')
-/** A hold with no row sent yet (the process stopped between): freed once a blockhash can no longer be live, about 150 blocks. */
-const STALE_HOLD_MS = 120_000
+const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
-/** Reads the variables fee-payer/README.md lists. Fails naming every required one that is missing. */
+/** Its key, from FOREST_FEE_PAYER_KEY: the key itself as the Solana CLI's JSON array, or a path to that file outside this repo. */
+function keyOf(value: string): Keypair {
+  const text = value.trim()
+  if (text.startsWith('[')) return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(text) as number[]))
+  const path = resolve(text)
+  if (path.startsWith(REPO + sep)) throw new Error('FOREST_FEE_PAYER_KEY is a file inside the repo')
+  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, 'utf8')) as number[]))
+}
+
+/** Reads the variables README.md lists. Fails naming every required one that is missing. */
 export async function readConfig(env: Record<string, string | undefined> = process.env): Promise<Config> {
-  const required = ['KORA_URL', 'KORA_API_KEY', 'REGISTRY_PROGRAM', 'PUBLIC_ORIGIN', 'CREDIT_KEY', 'CREDIT_ADDRESS', 'CREDIT_MINT', 'CREDIT_PRICE', 'RPC_URL']
+  const required = ['FOREST_FEE_PAYER_KEY', 'REGISTRY_PROGRAM', 'PUBLIC_ORIGIN', 'CREDIT_KEY', 'CREDIT_ADDRESS', 'CREDIT_MINT', 'CREDIT_PRICE', 'RPC_URL']
   const missing = required.filter((name) => !env[name]?.trim())
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   const whole = (name: string, fallback: string, min: number) => {
@@ -76,24 +88,31 @@ export async function readConfig(env: Record<string, string | undefined> = proce
   }
   const origin = env.PUBLIC_ORIGIN!.trim()
   if (new URL(origin).origin !== origin) throw new Error('PUBLIC_ORIGIN is an origin: https://host')
+  // Both variables are private keys: nothing of either goes in a message.
+  let key: Keypair
+  try {
+    key = keyOf(env.FOREST_FEE_PAYER_KEY!)
+  } catch {
+    throw new Error('FOREST_FEE_PAYER_KEY is not a keypair: its JSON array, or a path to that file outside the repo')
+  }
   let creditKey: CreditKey
   try {
     creditKey = await keyFrom(new Uint8Array(Buffer.from(env.CREDIT_KEY!.trim(), 'base64')))
   } catch {
-    // The variable is a private key: nothing of it goes in the message.
     throw new Error('CREDIT_KEY is not an RSA-2048 private key in PKCS #8, base64')
   }
+  delete env.FOREST_FEE_PAYER_KEY
   delete env.CREDIT_KEY
   const price = env.CREDIT_PRICE!.trim()
   if (!/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(price) || !/[1-9]/.test(price)) throw new Error('CREDIT_PRICE is decimal text above 0')
   return {
-    koraUrl: env.KORA_URL!.trim(),
-    koraApiKey: env.KORA_API_KEY!.trim(),
+    key,
     registry: new PublicKey(env.REGISTRY_PROGRAM!.trim()),
     origin,
     creditKey,
     credit: { address: new PublicKey(env.CREDIT_ADDRESS!.trim()).toBase58(), mint: env.CREDIT_MINT!.trim() === 'SOL' ? 'SOL' : new PublicKey(env.CREDIT_MINT!.trim()).toBase58(), price },
     maxBuy: whole('CREDITS_PER_BUY', '10', 1),
+    sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     rpcUrl: env.RPC_URL!.trim(),
     databasePath: env.DATABASE_PATH || './data/credits.sqlite',
     port: whole('PORT', '8080', 0),
@@ -113,23 +132,28 @@ export function decodeTransaction(transaction: string): VersionedTransaction | n
 }
 
 /**
- * The main key the row is for, if the transaction is one `register` and nothing else: one top-level
- * instruction, to the registry, with `register`'s discriminator and its four accounts (the row, the
- * main key, the payer, System), no address lookup table, and no account the instruction does not
- * name. System appears only as `register`'s own account: a top-level System instruction beside it
- * could move the payer's SOL to the person (fee-payer/README.md, FAQ).
+ * The row's address, the main key's index and the label's length, if the transaction is one
+ * `register` and nothing else, paid for by `payer`: one top-level instruction, to the registry, with
+ * `register`'s discriminator, a whole label, and its four accounts (the row, the main key, the payer,
+ * System); `payer` pays the fee and is the row's payer; no address lookup table, and no account the
+ * instruction does not name. System appears only as `register`'s own account: a top-level System
+ * instruction beside it could move the payer's SOL to the person (README.md, FAQ).
  */
-export function registration(tx: VersionedTransaction, registry: PublicKey): number | null {
+export function registration(tx: VersionedTransaction, registry: PublicKey, payer: PublicKey): { row: PublicKey; mainKey: number; label: number } | null {
   const message = tx.message
   const keys = message.staticAccountKeys
   if (message.addressTableLookups.length !== 0 || message.compiledInstructions.length !== 1) return null
   const ix = message.compiledInstructions[0]!
   if (!keys[ix.programIdIndex]?.equals(registry)) return null
-  if (ix.data.length < REGISTER.length || !REGISTER.every((b, i) => ix.data[i] === b)) return null
-  if (ix.accountKeyIndexes.length !== 4 || !keys[ix.accountKeyIndexes[3]!]?.equals(SystemProgram.programId)) return null
+  if (ix.data.length < BEFORE_LABEL + 4 || !REGISTER.every((b, i) => ix.data[i] === b)) return null
+  const label = Buffer.from(ix.data).readUInt32LE(BEFORE_LABEL)
+  if (BEFORE_LABEL + 4 + label !== ix.data.length) return null
+  const [row, mainKey, rowPayer, system] = ix.accountKeyIndexes
+  if (ix.accountKeyIndexes.length !== 4 || !keys[system!]?.equals(SystemProgram.programId)) return null
+  if (!keys[0]!.equals(payer) || !keys[rowPayer!]?.equals(payer)) return null
   const named = new Set([...ix.accountKeyIndexes, ix.programIdIndex])
   if (keys.some((_, i) => !named.has(i))) return null
-  return ix.accountKeyIndexes[1]!
+  return { row: keys[row!]!, mainKey: mainKey!, label }
 }
 
 /** Whether the key at this index signed the transaction's message. */
@@ -144,7 +168,7 @@ export function signedBy(tx: VersionedTransaction, index: number): boolean {
 }
 
 /** A JSON-RPC call through `url`. Its errors never carry the URL, which may carry the RPC's key. */
-export function rpcAt(url: string): (method: string, params: unknown[]) => Promise<unknown> {
+export function rpcAt(url: string): Rpc {
   return async (method, params) => {
     let answer: { result?: unknown; error?: unknown }
     try {
@@ -165,67 +189,73 @@ export type Refusal =
   | 'not_signed_by_main_key'
   | 'no_credit'
   | 'credit'
+  | 'row_exists'
   | 'spent'
   | 'held'
-  | 'fee_payer_refused'
-  | 'not_a_buy'
-  | 'too_many'
-  | 'not_paid'
-  | 'payment_check_unavailable'
+  | 'row_refused'
+  | 'over_cap'
+  | 'not_sent'
+  | 'rpc_unavailable'
 
 type Answer = { status: number; body: unknown; type?: string }
 const refuse = (error: Refusal, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
 
-/** A note on a hold: the row's signature and the blockhash it was sent with, so a restart can settle it. */
-const noteOf = (signature: string, blockhash: string) => `${signature} ${blockhash}`
+/** An instruction a simulation ran inside another, as the RPC returns it: System's, jsonParsed. */
+type Inner = { instructions: { programId: string; parsed?: { type?: string; info?: { source?: string; lamports?: number } } }[] }
 
-/** The front's work, apart from HTTP: what each route answers. */
+/**
+ * What `payer` funds in a simulation, in lamports beyond the network fee: every System instruction
+ * the transaction ran inside the registry whose source is the payer. A System instruction the RPC
+ * did not parse counts as more than any cap.
+ */
+function funded(inner: Inner[] | null | undefined, payer: string): number {
+  if (!inner) return Infinity
+  let lamports = 0
+  for (const ix of inner.flatMap((i) => i.instructions)) {
+    if (ix.programId !== SYSTEM) continue
+    if (!ix.parsed?.info) return Infinity
+    if (ix.parsed.info.source === payer) lamports += ix.parsed.info.lamports ?? Infinity
+  }
+  return lamports
+}
+
+/** A note on a hold: the row's address and the blockhash it was sent with, what settles it. */
+const noteOf = (row: PublicKey, blockhash: string) => `${row.toBase58()} ${blockhash}`
+const isAddress = (text: string | undefined) => {
+  try {
+    return text !== undefined && new PublicKey(text).toBase58() === text
+  } catch {
+    return false
+  }
+}
+
+/** The registry payer's work, apart from HTTP: what each route answers, and the settling. */
 export class RegistryPayer {
-  readonly spent: SpentList
+  readonly seller: Seller
   readonly #config: Config
-  readonly #rpc: (method: string, params: unknown[]) => Promise<unknown>
+  readonly #rpc: Rpc
 
-  constructor(config: Config, rpc = rpcAt(config.rpcUrl)) {
+  constructor(config: Config, rpc: Rpc = rpcAt(config.rpcUrl)) {
     if (config.databasePath !== ':memory:') mkdirSync(dirname(config.databasePath), { recursive: true })
-    this.spent = new SpentList(config.databasePath)
     this.#config = config
     this.#rpc = rpc
+    this.seller = seller({ origin: config.origin, key: config.creditKey, unit: UNIT, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: config.databasePath })
   }
 
-  directory(): Record<string, unknown> {
-    const { credit, creditKey } = this.#config
-    return directoryOf({ requestUri: BUY_PATH, keys: [{ key: creditKey.published }], credit: { unit: UNIT, ...credit } })
+  get spent() {
+    return this.seller.spent
   }
 
-  /** A buy, collected: its blind signatures once a finalized payment names it and pays for every credit it asks. */
-  async collect(buy: Uint8Array): Promise<Answer> {
-    let count: number
-    try {
-      count = countOf(buy)
-    } catch {
-      return refuse('not_a_buy')
-    }
-    if (count > this.#config.maxBuy) return refuse('too_many', 400, `at most ${this.#config.maxBuy} credits a buy`)
-    const { credit } = this.#config
-    let signature: string | null
-    try {
-      signature = await paid(this.#rpc, { reference: await referenceOf(buy), address: credit.address, mint: credit.mint, amount: amountOf(credit.price, count) })
-    } catch {
-      return refuse('payment_check_unavailable', 503)
-    }
-    if (!signature) return refuse('not_paid', 402, `${amountOf(credit.price, count)} to ${credit.address}, naming the buy's reference, finalized`)
-    return { status: 200, body: await answer(buy, this.#config.creditKey, this.#config.origin), type: 'application/private-token-generic-batch-response' }
-  }
-
-  /** One row, paid with the credit `authorization` shows: checked, held, sent through Kora, and watched until it lands or cannot. */
+  /** One row, paid with the credit `authorization` shows: checked, held, signed, simulated and sent. */
   async register(authorization: string | undefined, body: unknown): Promise<Answer> {
     const transaction = typeof body === 'object' && body !== null && Object.keys(body).length === 1 ? (body as { transaction?: unknown }).transaction : undefined
     if (typeof transaction !== 'string') return refuse('bad_request')
     const tx = decodeTransaction(transaction)
     if (!tx) return refuse('bad_transaction')
-    const at = registration(tx, this.#config.registry)
-    if (at === null) return refuse('not_one_registration')
-    if (!signedBy(tx, at)) return refuse('not_signed_by_main_key')
+    const payer = this.#config.key.publicKey
+    const one = registration(tx, this.#config.registry, payer)
+    if (!one) return refuse('not_one_registration')
+    if (!signedBy(tx, one.mainKey)) return refuse('not_signed_by_main_key')
     let credit: Uint8Array
     try {
       credit = creditOf(authorization ?? '')
@@ -238,72 +268,71 @@ export class RegistryPayer {
     } catch {
       return refuse('credit', 402)
     }
-    // Held in one statement, with nothing awaited since the check: two requests with one credit
-    // cannot both get past here.
-    const held = this.spent.hold(id)
+    // Before anything is held: the row must not exist yet; and its rent, for its size.
+    let rent: number
+    try {
+      const { value } = (await this.#rpc('getAccountInfo', [one.row.toBase58(), { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }])) as { value: unknown }
+      if (value !== null) return refuse('row_exists', 409)
+      rent = (await this.#rpc('getMinimumBalanceForRentExemption', [rowSpace(one.label)])) as number
+    } catch {
+      return refuse('rpc_unavailable', 503)
+    }
+    const held = this.spent.hold(id, noteOf(one.row, tx.message.recentBlockhash))
     if (held === 'spent') return refuse('spent', 409)
     if (held === 'busy') return refuse('held', 409)
-    let signature: string
+    tx.sign([this.#config.key])
+    const wire = Buffer.from(tx.serialize()).toString('base64')
+    // One simulation: it must pass, and the payer may fund no more than the row's rent in it.
     try {
-      const res = await fetch(this.#config.koraUrl, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': this.#config.koraApiKey },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'signAndSendTransaction', params: { transaction } }),
-      })
-      const answered = (await res.json()) as { result?: { signature?: unknown }; error?: { message?: unknown } }
-      if (typeof answered.result?.signature !== 'string') {
+      const { value } = (await this.#rpc('simulateTransaction', [wire, { encoding: 'base64', sigVerify: true, commitment: 'confirmed', innerInstructions: true }])) as { value: { err: unknown; innerInstructions?: Inner[] | null } }
+      if (value.err !== null) {
         this.spent.free(id)
-        return refuse('fee_payer_refused', 502, String(answered.error?.message ?? `HTTP ${res.status}`))
+        return refuse('row_refused', 400, JSON.stringify(value.err))
       }
-      signature = answered.result.signature
+      if (funded(value.innerInstructions, payer.toBase58()) > rent) {
+        this.spent.free(id)
+        return refuse('over_cap', 400, `a row here costs the payer at most ${rent} lamports beyond the network fee`)
+      }
     } catch {
       this.spent.free(id)
-      return refuse('fee_payer_refused', 502, 'the registry payer did not answer')
+      return refuse('rpc_unavailable', 503)
     }
-    // The hold again, now with what settles it: no await between the two, so no request gets in.
-    this.spent.free(id)
-    this.spent.hold(id, noteOf(signature, tx.message.recentBlockhash))
+    let signature: string
+    try {
+      signature = (await this.#rpc('sendTransaction', [wire, { encoding: 'base64', skipPreflight: true }])) as string
+    } catch {
+      // It may have gone out: the hold stays, and settles by the one rule.
+      return refuse('not_sent', 502, 'the RPC did not take the row; its credit is freed once its blockhash passes with no row')
+    }
     return { status: 200, body: { signature } }
   }
 
   /**
-   * Settles what it holds: each row sent and confirmed, its credit spent; failed, or never landed
-   * while its blockhash went past, its credit freed. A hold with no row sent, from before a restart,
-   * is freed once it is older than any blockhash could live. One that cannot be checked now waits.
+   * Settles what it holds, by one rule: a held credit whose row exists is spent; one whose row is
+   * absent once its blockhash expired is freed; the rest wait. A hold from before this rule, which
+   * names no row, is freed. One that cannot be checked now waits.
    */
-  async settle(now: number = Date.now()): Promise<void> {
-    for (const { id, note, at } of this.spent.holds()) {
-      if (note === null) {
-        if (now - at > STALE_HOLD_MS) this.spent.free(id)
+  async settle(): Promise<void> {
+    for (const { id, note } of this.spent.holds()) {
+      const [row, blockhash] = (note ?? '').split(' ')
+      if (!isAddress(row) || !blockhash) {
+        this.spent.free(id)
         continue
       }
-      const [signature, blockhash] = note.split(' ') as [string, string]
       try {
-        const landed = await this.#status(signature)
-        if (landed === 'landed') this.spent.land(id)
-        else if (landed === 'failed') this.spent.free(id)
-        else if (!((await this.#rpc('isBlockhashValid', [blockhash, { commitment: 'processed' }])) as { value: boolean }).value) {
-          // Past its blockhash: it can no longer land, unless it did a moment ago. Ask once more.
-          const last = await this.#status(signature)
-          if (last === 'landed') this.spent.land(id)
-          else this.spent.free(id)
-        }
+        // The blockhash first: expired before the row is looked for, a row absent then never lands.
+        const live = ((await this.#rpc('isBlockhashValid', [blockhash, { commitment: 'confirmed' }])) as { value: boolean }).value
+        const { value } = (await this.#rpc('getAccountInfo', [row, { commitment: 'confirmed', encoding: 'base64', dataSlice: { offset: 0, length: 0 } }])) as { value: unknown }
+        if (value !== null) this.spent.land(id)
+        else if (!live) this.spent.free(id)
       } catch {
         // The RPC did not answer: the hold waits for the next round.
       }
     }
   }
 
-  async #status(signature: string): Promise<'landed' | 'failed' | 'unknown'> {
-    const { value } = (await this.#rpc('getSignatureStatuses', [[signature], { searchTransactionHistory: true }])) as { value: ({ err: unknown; confirmationStatus?: string } | null)[] }
-    const status = value[0]
-    if (!status) return 'unknown'
-    if (status.err !== null) return 'failed'
-    return status.confirmationStatus === 'confirmed' || status.confirmationStatus === 'finalized' ? 'landed' : 'unknown'
-  }
-
   close(): void {
-    this.spent.close()
+    this.seller.close()
   }
 }
 
@@ -337,30 +366,10 @@ const json = (bytes: Uint8Array | undefined): unknown => {
   }
 }
 
-const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding', 'content-length']
-const passed = (headers: IncomingHttpHeaders) => {
-  const out = { ...headers }
-  for (const name of HOP_BY_HOP) delete out[name]
-  return out
-}
-
-/** A request to its Kora, its answer passed back unchanged. */
-function toKora(res: ServerResponse, to: URL, method: string, path: string, headers: IncomingHttpHeaders, body?: Uint8Array): void {
-  const upstream = request({ host: to.hostname, port: to.port, method, path, headers: { ...passed(headers), ...(body && { 'content-length': String(body.length) }) } }, (answer) => {
-    res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
-    answer.pipe(res)
-  })
-  upstream.on('error', () => {
-    if (!res.headersSent) res.writeHead(502)
-    res.end()
-  })
-  upstream.end(body)
-}
-
-/** Starts the front on `config.port`. */
-export async function startFront(config: Config, rpc?: (method: string, params: unknown[]) => Promise<unknown>): Promise<{ url: string; payer: RegistryPayer; close: () => Promise<void> }> {
+/** Starts the registry payer on `config.port`, and its settle loop. */
+export async function startFront(config: Config, rpc?: Rpc): Promise<{ url: string; payer: RegistryPayer; close: () => Promise<void> }> {
   const payer = new RegistryPayer(config, rpc)
-  const kora = new URL(config.koraUrl)
+  const address = config.key.publicKey.toBase58()
   const server = createServer((req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
     // the process.
@@ -373,11 +382,11 @@ export async function startFront(config: Config, rpc?: (method: string, params: 
     }
     // Browsers ask first (OPTIONS).
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type, authorization', 'access-control-max-age': '86400' }).end()
+      res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': `content-type, authorization, ${PAYMENT_HEADER}`, 'access-control-max-age': '86400' }).end()
       return
     }
-    if (path === '/liveness' && req.method === 'GET') return toKora(res, kora, 'GET', '/liveness', {})
-    if (path === DIRECTORY_PATH && req.method === 'GET') return send(res, 200, payer.directory(), 'application/private-token-issuer-directory')
+    if (path === '/liveness' && req.method === 'GET') return send(res, 200)
+    if (path === DIRECTORY_PATH && req.method === 'GET') return send(res, 200, payer.seller.directory(), 'application/private-token-issuer-directory')
     if (req.method !== 'POST' || ![BUY_PATH, '/register', '/'].includes(path)) {
       req.resume()
       return send(res, 404)
@@ -386,33 +395,45 @@ export async function startFront(config: Config, rpc?: (method: string, params: 
       .then(async (bytes) => {
         if (!bytes) return send(res, 413)
         if (path === BUY_PATH) {
-          const answered = await payer.collect(bytes)
+          const answered = await payer.seller.collect(bytes, req.headers[PAYMENT_HEADER] as string | undefined)
           return send(res, answered.status, answered.body, answered.type)
         }
         if (path === '/register') {
           const answered = await payer.register(req.headers.authorization, json(bytes))
           return send(res, answered.status, answered.body)
         }
-        // At `/`, Kora's JSON-RPC for one method only: the address that pays, which a row names.
-        const call = json(bytes) as { method?: unknown } | undefined
+        // At `/`, one JSON-RPC method, as Kora names it: the address that pays, which a row names.
+        const call = json(bytes) as { method?: unknown; id?: unknown } | undefined
         if (call?.method !== 'getPayerSigner') return send(res, 404, { error: 'only getPayerSigner here' })
-        return toKora(res, kora, 'POST', '/', { 'content-type': 'application/json', 'x-api-key': config.koraApiKey }, bytes)
+        return send(res, 200, { jsonrpc: '2.0', id: call.id ?? null, result: { signer_address: address, payment_address: address } })
       })
       .catch(() => send(res, 500))
   })
   await new Promise<void>((resolve) => server.listen(config.port, resolve))
-  const timer = setInterval(() => void payer.settle(), config.settleMs ?? 3_000)
-  timer.unref()
+  // One settle round at a time: the next is scheduled only once the last has finished.
+  let stopped = false
+  let timer: NodeJS.Timeout | undefined
+  let round: Promise<void> = Promise.resolve()
+  const loop = () => {
+    round = payer.settle().catch(() => {})
+    void round.then(() => {
+      if (!stopped) timer = setTimeout(loop, config.settleMs ?? 3_000).unref()
+    })
+  }
+  timer = setTimeout(loop, config.settleMs ?? 3_000).unref()
   const { port } = server.address() as AddressInfo
   return {
     url: `http://127.0.0.1:${port}`,
     payer,
     close: () =>
       new Promise<void>((resolve) => {
-        clearInterval(timer)
+        stopped = true
+        clearTimeout(timer)
         server.close(() => {
-          payer.close()
-          resolve()
+          void round.then(() => {
+            payer.close()
+            resolve()
+          })
         })
         server.closeAllConnections()
       }),

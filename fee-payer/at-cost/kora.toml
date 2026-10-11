@@ -25,7 +25,7 @@ rate_limit = 100
 # The most SOL one transaction may take from the fee payer beyond its network fee: storage deposits.
 # 0.01 SOL. An escrow's creation, the largest (its account and its deposit address), takes about
 # 0.0037 at today's rent (standard/escrow/README.md); a registry row, at most 0.0022 (a 128-byte
-# label: registry/kora.toml).
+# label, 308 bytes, at 5,080 lamports a byte).
 max_allowed_lamports = 10000000
 # The fee payer, and an escrow's two parties when both sign a split. A registration needs two: the
 # fee payer, and the main key, which signs the row and its payment.

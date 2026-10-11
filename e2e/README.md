@@ -41,7 +41,7 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    the issuer's signature on it, its key, the note number and the tier. With the note request the
    app sends the pay links of two buys it made, of as many credits as `/issuer.json`'s gift names:
    at the registry payer and at the host. The issuer pays both; once the payment is finalized, the
-   app collects each buy at its service and finishes the credits.
+   app collects each buy at its service with the payment's signature, and finishes the credits.
 4. **A row each,** from a person proof made from the note. The seller's goes through the registry
    payer with one of its credits, free; the run checks the seller still holds no SOL and paid no
    dollar, and that the credit, shown again, is refused as spent once the row landed. The buyer's

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Prints a devnet Kora's kora.toml: fee-payer/at-cost/kora.toml or fee-payer/registry/kora.toml with
-# exactly these lines changed, and nothing else. Each old line must appear exactly once, or it stops.
+# Prints the devnet fee payer's kora.toml: fee-payer/at-cost/kora.toml with exactly these lines
+# changed, and nothing else. Each old line must appear exactly once, or it stops.
 # The programs each allows are already devnet's, in the file itself.
 #
 #   the four paid tokens -> the classic test dollar and the one shaped like Open USD

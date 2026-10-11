@@ -25,10 +25,10 @@ Inside a transaction its key may do one thing, fund a new account it is paid for
 any transfer of its SOL or tokens. It holds no key of the person's, and decides nothing about the
 person, the market or the deal.
 
-This folder also holds the [registry payer](registry/README.md), which pays for registry rows
-against credits, with its own key, as a service of its own. `at-cost/` holds the fee payer's
-configuration and its local run, `registry/` the registry payer's. What both use stays at the
-top: Kora's version (`KORA`), `build.sh`, `run.sh`, `signers.toml` and `deploy/devnet-config.sh`.
+This folder also holds the [registry payer](registry/README.md), a service of its own with its own
+key and no Kora, which pays for registry rows against credits. `at-cost/` holds the fee payer's
+configuration and its local run, `registry/` the registry payer's program. Kora's version (`KORA`),
+`build.sh`, `run.sh`, `signers.toml` and `deploy/devnet-config.sh`, at the top, are the fee payer's.
 
 ### Paying at cost
 
@@ -52,7 +52,10 @@ falls 5,000 lamports short and Kora refuses the transaction it quoted.
 **A registry row** through the fee payer takes two signatures: the fee payer's, which pays the network
 fee and the row's deposit and is recorded in the row as its payer, and the main key's, which signs
 the row and the payment. The proof names the profile and the label, so nothing the fee payer sees
-lets it take the row.
+lets it take the row. The person pays in a dollar from the main key's account, so whatever address
+filled that account, one of their own in a wallet app, say, is tied to the row on chain for good.
+The [registry payer](registry/README.md) is the private way to register: its credits are signed
+blind, so nothing on chain says who paid for the row.
 
 ### What the at-cost Kora allows
 
@@ -121,7 +124,7 @@ spent.
 
 ### Settings
 
-Kora, `run.sh`, for the fee payer and the registry payer alike:
+Kora, `run.sh`:
 
 | Variable | What |
 |---|---|
@@ -129,7 +132,7 @@ Kora, `run.sh`, for the fee payer and the registry payer alike:
 | `RPC_URL` | The Solana RPC Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
 | `JUPITER_API_KEY` | For `price_source = "Jupiter"` |
 | `PORT` | Default `8080` |
-| `KORA_CONFIG` | Default `at-cost/kora.toml`; the fee payer's image sets its devnet config, and `deploy/registry.sh` passes the registry payer's |
+| `KORA_CONFIG` | Default `at-cost/kora.toml`; the image sets its devnet config |
 | `KORA_BIN` | Default `.kora/bin/kora` |
 | `RUST_LOG` | Kora's log filter. Unset, Kora logs at `info`, which writes the body of every request: each transaction it is asked to price or sign. `warn` writes no request |
 
@@ -232,6 +235,8 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
   instead.
 - **One container.** When Kora stops, the fee payer stops, until the hosting platform starts it
   again.
+- **It takes EURC too,** a euro, on purpose: people pay in what they hold, and Jupiter prices it
+  against SOL like the dollars, so the charge is the same SOL cost at the euro's rate.
 - **Mainnet is not deployed,** and Jupiter's price was never called. No test pays the fee payer in
   USDT or EURC; Kora handles them as it handles USDC.
 - **No priority fee,** so under congestion a transaction may land late.
@@ -257,12 +262,6 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
 **Why Kora 2.0.5, configured only?**
 No custom code inside Kora. The 2.2 betas are not stable, and no longer read the key from a path,
 which `FOREST_FEE_PAYER_KEY` allows.
-
-**Why no key on Kora, when the registry payer's Kora has one?**
-Kora 2.0.5 always listens on every interface, so other services in the same project could reach it
-over the private network. Whatever reaches the fee payer pays its way, from the public address or
-the private one, so it needs no key; the registry payer's Kora pays for free what its front lets
-through, so only its front may reach it ([registry payer, FAQ](registry/README.md#faq)).
 
 **Why does every payment that creates its deposit address do so at the top of the transaction?**
 Kora 2.0.5 accepts a transfer to an account that does not exist yet only when the same transaction
