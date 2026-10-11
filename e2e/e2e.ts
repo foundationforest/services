@@ -63,7 +63,7 @@ import { Connection, Keypair, PublicKey, SystemProgram, Transaction, type Transa
 import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, type InboxKey, type MainKey } from '../standard/keys/src/index.ts'
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
-import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
+import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, registerIx, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
 import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../standard/credits/src/index.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
@@ -400,7 +400,7 @@ async function throughRegistryPayer(p: Person, register: TransactionInstruction,
   const wire = tx.serialize()
   const dollars = async () => (await connection.getTokenAccountBalance(escrow.associatedTokenAddress(p.signer.publicKey, token.mint, token.program))).value.amount
   const before = await dollars()
-  const shown = () => post(`${cfg.registryPayer}/register`, { transaction: Buffer.from(wire).toString('base64') }, { authorization: authorization(credit) })
+  const shown = (transaction: Uint8Array = wire) => post(`${cfg.registryPayer}/register`, { transaction: Buffer.from(transaction).toString('base64') }, { authorization: authorization(credit) })
   const { status, body } = await shown()
   assert.equal(status, 200, `the registry payer: ${JSON.stringify(body)}`)
   await confirm(body.signature)
@@ -410,8 +410,17 @@ async function throughRegistryPayer(p: Person, register: TransactionInstruction,
   assert.ok(account.owner.equals(REGISTRY), 'written by the registry')
   assert.equal(await connection.getBalance(p.signer.publicKey), 0, 'the person still holds no SOL')
   assert.equal(await dollars(), before, 'and paid no dollar')
+  // The same row again is refused before anything is held: it exists.
+  assert.equal((await shown()).body?.error, 'row_exists', 'the same row again: refused, it exists')
+  // The credit with another row (a stamp of nobody's, never sent) is refused once the row it paid for counts it spent.
+  const another = async () => {
+    const ix = registerIx({ profile: new PublicKey(p.profile.publicKey) as never, label: p.label, stamp: new Uint8Array(randomBytes(32)), issuer: p.note!.issuer, tier: 1n, proof: { a: new Uint8Array(32), b: new Uint8Array(64), c: new Uint8Array(32) }, payer: payer as never, programId: REGISTRY as never }) as never as TransactionInstruction
+    const other = new VersionedTransaction(new TransactionMessage({ payerKey: payer, recentBlockhash: (await connection.getLatestBlockhash('confirmed')).blockhash, instructions: [ix] }).compileToV0Message())
+    other.sign([p.signer])
+    return other.serialize()
+  }
   const again = await waitFor('the registry payer to count the credit spent', 90_000, async () => {
-    const r = await shown()
+    const r = await shown(await another())
     return r.body?.error === 'spent' ? r.body.error : null
   }, 3000)
   return { signature: body.signature, charge: '0', bytes: wire.length, credit: again, rowOnChain: account.lamports }

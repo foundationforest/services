@@ -47,8 +47,9 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    the transaction's signature.
 4. **A row each,** from a person proof made from the note. The seller's goes through the registry
    payer, which signs and sends it itself, with one of its ticket's credits, free; the run reads the
-   row's account on chain, checks the seller still holds no SOL and paid no dollar, and that the
-   credit, shown again, is refused as spent once the row landed. The buyer's
+   row's account on chain, checks the seller still holds no SOL and paid no dollar, that the same
+   row shown again is refused as `row_exists`, and that the credit, shown with another row, is
+   refused as spent once the row landed. The buyer's
    goes through the fee payer, paid in test dollars. The run reads each row back (the profile, the
    issuer's key, the key that paid as payer, when the program wrote it), and checks that the proof
    shows tier 1 against it.
