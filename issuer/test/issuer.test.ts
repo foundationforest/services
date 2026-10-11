@@ -21,8 +21,8 @@ import { canonical, parseCanonical } from '../../standard/records/src/canonical.
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
-import { buy, finish, serviceOf } from '../../standard/credits/src/index.ts'
-import { keyFrom, seller } from '../../standard/credits/src/service.ts'
+import { buy, finish, serviceOf } from '../../credits/src/index.ts'
+import { keyFrom, seller } from '../../credits/src/service.ts'
 
 import { parseKeypair } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'

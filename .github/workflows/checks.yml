@@ -1,6 +1,8 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
 # first fetches standard at the commit in STANDARD (standard.sh) and installs the standard packages it uses.
 #
+#   credits      the credits the host, the registry payer and the issuer share: its type-check and its tests
+#                (a stand-in service made of Cloudflare's own issuer and origin, and a stand-in RPC)
 #   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
 #                the real models and portraits its `npm run fetch` checks by SHA-256
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
@@ -41,6 +43,26 @@ defaults:
     shell: bash
 
 jobs:
+  credits:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install
+        working-directory: credits
+        run: npm ci --no-audit --no-fund
+      - name: Type-check
+        working-directory: credits
+        run: npm run check
+      - name: Test
+        working-directory: credits
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
   issuer:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -51,7 +73,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client records keys credits
+          ./standard.sh registry/client records keys
+          (cd credits && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
@@ -101,7 +124,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client escrow/client credits
+          ./standard.sh registry/client escrow/client
+          (cd credits && npm ci --no-audit --no-fund)
           (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
       - name: The local run's type-check
@@ -128,7 +152,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client credits
+          ./standard.sh keys records registry/client
+          (cd credits && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -149,7 +174,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client credits
+          ./standard.sh keys records registry/client escrow/client reputation/client
+          (cd credits && npm ci --no-audit --no-fund)
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check

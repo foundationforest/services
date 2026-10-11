@@ -1,7 +1,7 @@
 // The registry payer: one program, with its own key. It sells credits, one registration each, and
 // spends them, one per registry row: it signs the row's transaction as payer and sends it itself.
 //
-//   GET  /.well-known/private-token-issuer-directory   its credit key and price (standard's credits)
+//   GET  /.well-known/private-token-issuer-directory   its credit key and price (credits/)
 //   POST /credits/buy                                   a paid buy's blind signatures
 //   POST /register                                      one row, paid with one credit
 //   POST /  getPayerSigner                              its address, which a row names as payer
@@ -24,8 +24,8 @@ import { fileURLToPath } from 'node:url'
 
 import { Keypair, PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 
-import { PAYMENT_HEADER, checkCredit, creditOf } from '../../../standard/credits/src/index.ts'
-import { type CreditKey, DIRECTORY_PATH, type Rpc, type Seller, keyFrom, seller } from '../../../standard/credits/src/service.ts'
+import { PAYMENT_HEADER, checkCredit, creditOf } from '../../../credits/src/index.ts'
+import { type CreditKey, DIRECTORY_PATH, type Rpc, type Seller, keyFrom, seller } from '../../../credits/src/service.ts'
 import { discriminator, rowSpace } from '../../../standard/registry/client/src/index.ts'
 
 /** What one credit buys here, as the directory says it. */

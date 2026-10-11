@@ -28,9 +28,10 @@ address, its own container.
 
 ### Credits
 
-A credit here is a [Forest credit](https://github.com/foundationforest/standard/blob/main/credits/README.md)
-whose unit is `one registration`. It sells and spends them with standard's seller, unchanged
-([Selling credits](https://github.com/foundationforest/standard/blob/main/credits/README.md#selling-credits)).
+A credit here is a [Forest credit](../../credits/README.md)
+whose unit is `one registration`. It sells and spends them with the seller in
+[`credits/`](../../credits/README.md), unchanged
+([Selling credits](../../credits/README.md#selling-credits)).
 
 **Its directory,** `GET /.well-known/private-token-issuer-directory`, names its credit key, where a
 buy goes (`/credits/buy`), and its `forest-credit` entry: the unit, the address a credit is paid
@@ -126,7 +127,8 @@ Holds are kept in its file, so a restart settles them. No clock decides anything
 ### Run it
 
 ```
-./standard.sh registry/client credits                    # from the repo root
+./standard.sh registry/client                            # from the repo root
+(cd credits && npm ci)                                   # from the repo root
 (cd fee-payer/registry && npm ci && npm run check && npm test)   # real credits, a stand-in RPC; seconds
 ```
 
@@ -222,8 +224,8 @@ https://registry-payer.devnet.forest.foundation.
 - **One container.** When it stops, the registry payer stops, until the hosting platform starts it
   again.
 - **A credit is a bearer token, and timing can link.** A buy collected and a credit spent moments
-  later, from one network address, can be matched (standard's
-  [credits, Limits](https://github.com/foundationforest/standard/blob/main/credits/README.md#limits)).
+  later, from one network address, can be matched
+  ([credits, Limits](../../credits/README.md#limits)).
 - **It trusts its RPC,** for a payment, a simulation, and whether a row exists.
 - **What it collects sits under its signing key,** in the key's own token account; nothing moves it
   but someone holding the key.
@@ -232,7 +234,7 @@ https://registry-payer.devnet.forest.foundation.
 
 ## Who decides what
 
-- **The standard:** the credit, its directory entry, the buy, the ways to pay, and the rules: a
+- **`credits/`:** the credit, its directory entry, the buy, the ways to pay, and the rules: a
   proof pays for one buy; a credit is spent once, only when its action lands, and never refunded.
   The registry takes no fee and cares nothing for who pays.
 - **This registry payer, by its policy:** what it pays for, its price, token and address, which
