@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end on devnet, against the deployed services: two people from 24 words, each given a note by the issuer's face check and its welcome gift of credits, registered with a person proof (the seller through the registry payer with a credit, the buyer through the fee payer), paying the host in credits, assistants acting through the CLI (mcp/) with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the index showing it, and the seller proving its rating on its card.",
+  "description": "Forest end to end on devnet: the deployed host, registry payer, fee payer and programs, with its own issuer (a stand-in Didit) and index on loopback, since the deployed issuer is real and a script has no face. Two people from 24 words, each given a note by the loop issuer's face check, buying credits with test dollars, registered with a person proof (the seller through the registry payer with a credit, the buyer through the fee payer), paying the host in credits, assistants acting through the CLI (mcp/) with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the loop index showing it, and the seller proving its rating on its card.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,14 +10,19 @@
   },
   "scripts": {
     "e2e": "node --disable-warning=ExperimentalWarning e2e.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@cloudflare/privacypass-ts": "0.9.0",
+    "@scure/base": "2.4.0",
     "@solana/spl-token": "0.4.9",
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "1.99.0",
+    "pg": "8.23.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
+    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
   }
 }
