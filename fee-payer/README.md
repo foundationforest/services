@@ -3,7 +3,8 @@
 Part of Forest's services: [the top README](../README.md).
 
 The fee payer pays Solana's costs for a person's transactions, at cost, paid back in the dollar
-they hold.
+they hold. At cost means it charges what the network costs it, deposits included; the person does
+not get those deposits back, and what comes back of them goes to the fee payer ([Rent](#rent)).
 
 The Open Forest Foundation runs this one, on devnet. Anyone can run another, from Kora's published
 binary and this configuration, or from their own: whoever signs a transaction as payer pays for it,
@@ -20,7 +21,8 @@ The fee payer is one address, and behind it one copy of
 configured and nothing else: `at-cost/kora.toml`. Nothing of ours runs in front of it. Kora answers
 its own JSON-RPC at `/` (POST) and `GET /liveness`. It co-signs any transaction its rules allow,
 pays the network fee and any deposit, and charges the person exactly what that cost it, in the
-dollar they pay with. A request whose URL cannot be read (`//`) gets 405 from Kora, which goes on.
+dollar they pay with. A request to an address Kora cannot read, such as `//`, gets a 405 error, and
+Kora keeps running.
 
 Inside a transaction its key may do one thing, fund a new account it is paid for, and Kora refuses
 any transfer of its SOL or dollars. It holds no key of the person's, and decides nothing about the
@@ -47,9 +49,10 @@ The at-cost Kora simulates it, reads every program call inside it, checks it aga
 
 **The price** is the network fee (per signature, the person's included) plus every account the
 fee payer funds, counted from the simulation, including accounts a program creates inside its own
-call. The transfer must already be in the transaction when the device asks: without it, Kora adds a
-fixed 50 lamports for the payment it expects and misses that payment's signature, so the quote
-falls 5,000 lamports short and Kora refuses the transaction it quoted.
+call. The transfer must already be in the transaction when the device asks for the price. Without
+it, Kora adds a fixed 50 lamports for the payment it expects but leaves out the signature that
+payment needs, so the price comes out 5,000 lamports short, and Kora then refuses the very
+transaction it priced.
 
 **A registry row** through the fee payer takes two signatures: the fee payer's, which pays the network
 fee and the row's deposit and is recorded in the row as its payer, and the main key's, which signs
@@ -57,7 +60,7 @@ the row and the payment. The proof names the profile and the label, so nothing t
 lets it take the row. The person pays in a dollar from the main key's account, so whatever address
 filled that account, one of their own in a wallet app, say, is tied to the row on chain for good.
 The [registry payer](registry/README.md) is the private way to register: its credits are signed
-blind, so nothing on chain says who paid for the row.
+blind (it signs each credit without seeing it), so nothing on chain says who paid for the row.
 
 ### What the at-cost Kora allows
 
@@ -87,9 +90,9 @@ paid in, in `at-cost/kora.toml`, are mainnet's, each its maker's own mint:
 
 All four have six decimals and no transfer fee, so each quote holds. Kora's Jupiter price source
 prices each in dollars against SOL, so the charge is the same SOL cost in whichever is paid, EURC
-at the euro's rate. In Kora 2.0.5, `allowed_tokens` gates only Kora's own `transferTransaction`
-helper; an escrow in another dollar still passes. `allowed_spl_paid_tokens` is the list it is paid
-in. `deploy/devnet-config.sh` prints a Kora's `kora.toml` with exactly three lines changed, and
+at the euro's rate. In Kora 2.0.5, `allowed_tokens` limits only Kora's own `transferTransaction`
+helper, so an escrow paid in a dollar not on that list still goes through. The list of dollars the
+fee payer is paid in is `allowed_spl_paid_tokens`. `deploy/devnet-config.sh` prints a Kora's `kora.toml` with exactly three lines changed, and
 stops if any is not there exactly once: the two lists of dollars it is paid in (the two devnet test dollars in
 place of the four mainnet dollars), and `price_source = "Mock"`. Kora's mock values the test dollars
 at 0.001 SOL a whole dollar: one base unit buys one lamport.
@@ -107,8 +110,10 @@ cut in Solana's rent frees part of it, which only the program that owns the acco
 ([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/main/escrow/README.md#rent)).
 The registry and the escrow send every rent back to whoever fronted it, here the fee payer:
 
-- **An escrow's deposit address:** its rent goes back to the escrow's payer, the fee payer, at
-  every ending. The person was charged for it when the escrow opened, so the person pays an escrow's deposits and does not get them back; the fee payer keeps them.
+- **An escrow's deposit address** (the account that holds an escrow's money): its rent goes back to
+  the escrow's payer, the fee payer, at every ending. The person was charged for it when the escrow
+  opened, so the person pays an escrow's deposits and does not get them back; the fee payer keeps
+  them.
 - **An escrow never funded, closed:** both rents go back to the fee payer.
 - **What a cut in Solana's rent frees** on an account the fee payer funded goes to the fee payer,
   which keeps it: a registry row's (`refund`, to the payer the row records) and an escrow
@@ -130,7 +135,7 @@ Kora, `run.sh`:
 
 | Variable | What |
 |---|---|
-| `FOREST_FEE_PAYER_KEY` | The payer's key: a path to a keypair file (the Solana CLI's JSON form) outside this repo, or, where a hosting platform has no files, the key itself, as that JSON array or base58. Kora 2.0.5 built `--locked` uses solana-keychain 0.1.0, which reads a path first and otherwise takes the key itself. If it is unset, `run.sh` takes the key from `FOREST_RELAYER_KEY`, the name the devnet fee payer holds it under |
+| `FOREST_FEE_PAYER_KEY` | The payer's key: a path to a keypair file (the Solana CLI's JSON form) outside this repo, or, where a hosting platform has no files, the key itself, as that JSON array or base58. Kora 2.0.5 built `--locked` uses solana-keychain 0.1.0, which reads a path first and otherwise takes the key itself. If it is unset, `run.sh` takes the key from `FOREST_RELAYER_KEY`, the name the devnet fee payer holds it under (relayer is the fee payer's old name) |
 | `RPC_URL` | The Solana RPC Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
 | `JUPITER_API_KEY` | For `price_source = "Jupiter"` |
 | `PORT` | Default `8080` |
@@ -184,7 +189,7 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
 - **One replica,** health check `GET /liveness`, a public domain to port 8080. It keeps nothing,
   so it needs no volume.
 - **Signs as** the devnet `payer` key, which is also the Open-USD-shaped test dollar's mint
-  authority; **paid in** the two test dollars. Both are in
+  authority (the key that may make more of it); **paid in** the two test dollars. Both are in
   [the repo's devnet facts](../README.md#on-devnet).
 
 | Variable | On devnet | Secret |
@@ -204,7 +209,8 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
   Solana's rent frees on a row or a receipt ([Rent](#rent)).
 - **Paid in four dollars on mainnet's configuration:** USDC, USDT, Open USD and EURC, each its
   maker's own mint, since people pay in what they hold. The makers' freeze and Open USD's permanent
-  delegate are accepted. On devnet, the two test dollars.
+  delegate (a key Open USD's maker holds, which can move or burn Open USD out of any account) are
+  accepted. On devnet, the two test dollars.
 - **Prices:** Jupiter's, on mainnet's configuration; on devnet, Kora's mock.
 - **What its key may do:** fund a new account it is paid for, and nothing else; no priority fee.
 - **The float:** the SOL in its key, apart from the registry payer's. Nothing refills it but a
@@ -233,8 +239,8 @@ names: Kora's JSON-RPC at `/` (POST) and `GET /liveness`.
 
 ## Limits
 
-- **A one tap in a Token-2022 dollar is refused** by Kora 2.0.5 ([FAQ](#faq)): two transactions
-  instead.
+- **A one tap (an escrow opened, paid and released in one transaction) in a Token-2022 dollar is
+  refused** by Kora 2.0.5 ([FAQ](#faq)): two transactions instead.
 - **One container.** When Kora stops, the fee payer stops, until the hosting platform starts it
   again.
 - **It takes EURC too,** a euro, on purpose: people pay in what they hold, and Jupiter prices it

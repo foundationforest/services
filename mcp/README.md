@@ -4,7 +4,8 @@ Part of Forest's services: [the top README](../README.md).
 
 `forest`, one small program that does Forest actions for a profile, given its address and an
 access key, as typed commands and as MCP tools; and the Open Forest Foundation's hosted copy of its
-MCP door, for AI chats that cannot run a program on the person's device.
+MCP door (a door is one way in: typed commands, or MCP tools), for AI chats that cannot run a
+program on the person's device. Next to it, `credits/`: the client that buys and spends credits.
 
 The foundation runs the hosted copy, on devnet. Anyone can run another, from this Dockerfile or
 from this directory alone, or run `forest` on their own device instead.
@@ -106,8 +107,31 @@ A folder is always read from hosts, never from an index:
 
 An index is read for two things only, `GET <index>/markets/<market>.json` and
 `GET <index>/profiles/<address>.json`. Both are passed on as that index's word. This JSON is the
-foundation's index's own format ([`index/`](../index/README.md)), not part of the standard: it
-carries no signatures, and other indexes may differ.
+foundation's index's own format ([`index/`](../index/README.md)), not part of the standard: the
+market's carries no signatures, a profile's carries its scores signed, and other indexes may
+differ. `forest` checks none of it.
+
+### Credits
+
+`credits/client.ts` is the buyer's side of credits, the prepaid units the host and the registry
+payer sell ([host](../host/README.md#credits),
+[registry payer](../fee-payer/registry/README.md#credits)). Both keep one wire format, so one
+client works at both:
+
+- `serviceOf`: a service, from its directory: its key, where a buy goes, its unit, address, mint
+  and price;
+- `buy`: a buy of `n` credits, blinded, with its reference (a code that names the buy, not its
+  credits) and its pay link, and what the app keeps in the vault to finish it;
+- `finish`: the credits, from the service's answer, each checked against the service's key;
+- `authorization` and `creditList`: one credit shown in an `Authorization` header, or several in a
+  request's body.
+
+It talks to no network of its own: the caller collects the buy, with a payment's signature or a
+sponsor's ticket (someone else's signed promise to pay for the buy, such as the issuer's) in the
+`Forest-Payment` header (`PAYMENT_HEADER`), and spends the credits. Who
+uses it today: e2e, for its people's buys, and the host's, the registry payer's and the issuer's
+tests. No `forest` action buys or spends credits yet, and the hosted copy's image leaves
+`credits/` out.
 
 ### Three setups
 
@@ -171,7 +195,7 @@ the person's app made for it, which the person gives it in the chat.
 ./standard.sh keys records         # the CLI runs on records' library; the tests take their keys from keys/
 cd mcp && npm ci
 npm run check                      # type-check
-npm test                           # every action on records' reference host on loopback; both doors; the image's own command
+npm test                           # every action on records' reference host on loopback; both doors; the image's own command; the credits client
 node src/main.ts help
 npm run smoke -- https://mcp.devnet.forest.foundation/mcp [<profile address>]
 ```
@@ -181,7 +205,9 @@ Node 22.18 or later. Built from existing pieces, used unchanged:
 - the standard's records library, and its public fetch, to reach a host only at a public address;
 - `@modelcontextprotocol/sdk`, for the MCP door;
 - `ajv` and `ajv-formats`, for the record shapes;
-- `age-encryption`, to work out a read key's public half.
+- `age-encryption`, to work out a read key's public half;
+- `@cloudflare/privacypass-ts` 0.9.0 and `@scure/base`, for the credits client: the blinding, the
+  batch and the encodings.
 
 `test/actions.test.ts` and `test/doors.test.ts` run every action, through both doors, against
 records' reference host on loopback. `test/smoke.test.ts` reads the command and working directory
@@ -192,7 +218,10 @@ a call refused before it reads anything (an address that is not one, a write wit
 in the CLI's words; and that a request for `//` gets 400 and it goes on answering. It also checks
 that the same command, with a key in its environment, refuses to start. `npm run smoke` runs the
 same client against a deployed copy, and reads the market `tutoring` and, if given, a profile
-through it.
+through it. `test/credits.test.ts` runs the credits client against a stand-in service made of
+Cloudflare's own Privacy Pass issuer and origin: a service read from its directory, a buy and its
+pay link, the credits finished and shown, a buy finished later from what the vault keeps, and
+every answer that must finish nothing.
 
 ### On devnet
 
@@ -242,8 +271,9 @@ The hosted copy's:
   the foundation's index's list.
 - **An AI reading strangers' text can be steered** by what they wrote. With only a message key, it
   can send messages as the profile and ask, and nothing else.
-- **What an index says goes unchecked.** It carries no signatures. `forest` can't tell whether an
-  index is honest; it only passes on what the index says.
+- **What an index says goes unchecked.** The market list carries no signatures; the scores on a
+  profile's page are signed, and `forest` passes them on as the index gave them, without checking
+  the signatures. It can't tell whether an index is honest; it only passes on what the index says.
 - **Not here:**
   - paying;
   - blobs (photos and videos);
@@ -274,9 +304,10 @@ The hosted copy's:
 ## FAQ
 
 **Why is there no pay action?**
-With only an allowance, a program can't open an escrow in the person's name: the buyer signs
-`create`. It could pay into the deposit address of an escrow nobody has opened yet. But opening
-that escrow needs its terms, a random id among them, and if those were lost the money would wait
+An allowance (the person's permission for a key to spend up to some amount of their dollars) is
+not enough to open an escrow in the person's name: the buyer signs `create` itself. A program with
+an allowance could pay into the deposit address of an escrow nobody has opened yet, but opening
+that escrow later needs its terms, a random id among them; if those were lost, the money would sit
 there for good. So paying is a request: the person's app pays with the main key, as it does for
 any deal.
 

@@ -36,14 +36,16 @@ it, and readers trust it.
 
 Tier 1, the face check, for anyone:
 
-1. **The app opens a face check.** `POST /session` opens a Didit session on the face workflow and
-   answers the page the person does the check on.
+1. **The app opens a face check.** `POST /session` opens a Didit session on the face workflow (a
+   workflow is Didit's word for one check's set of steps) and answers the page the person does the
+   check on.
 2. **The app sends the session and its note number,** which the device mixes from the person's
    seed and this issuer's name
    ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-note-number)).
    The issuer never learns the secret behind it.
 3. **The issuer asks Didit for the decision,** and takes it only if the session is on the face
-   workflow, every liveness step passed, and the session is approved.
+   workflow, every liveness step (Didit's check that a live person, not a photo, is in front of the
+   camera) passed, and the session is approved.
 4. **A face seen before.** Didit's face search names each earlier session with the same face. If
    the issuer signed any of them for another note number, it refuses (`duplicate_face`). For the
    same note number it signs again: a person who lost their note gets it back, and the same note
@@ -65,8 +67,8 @@ Tier 2, the document check, for a person who shows a note this issuer signed:
 9. **It asks Didit for the decision:** the document workflow; every liveness step, every document
    step and every face match (the selfie against the document's photo) passed; the session
    approved. Each document once is Didit's own setting.
-10. **A person seen before.** It makes the document's fingerprint
-    ([What it keeps](#what-it-keeps-and-why)). Signed before for another note number, it refuses
+10. **A person seen before.** It makes the document's fingerprint, a keyed hash of the name, birth
+    date and country Didit reads on it ([What it keeps](#what-it-keeps-and-why)). Signed before for another note number, it refuses
     (`duplicate_document`); for the same one, it signs again, so a lost tier 2 note comes back, for
     the price of another document check.
 11. **The same face.** The embedding of this session's selfie must match the note's
@@ -84,7 +86,7 @@ One SQLite file, four tables:
 
 | Table | What | Why |
 |---|---|---|
-| `sessions` | The SHA-256 of each session id that gave a note, and of each earlier session of the same face, next to the note number | To sign a face for one note number: Didit names a face's earlier sessions, and the issuer must know which note number each was signed for. The earlier ones are kept too, so one of them sent late, whose own search could not see the later one, is refused for another note number |
+| `sessions` | The SHA-256 of each session id that gave a note, and of each earlier session of the same face, next to the note number | So a face gets one note number. Didit names the earlier sessions with the same face, and the issuer must know which note number each one gave. The earlier sessions are kept too: one of them sent late, whose own search could not see the later session, is still refused for another note number |
 | `fingerprints` | Each document's fingerprint next to the note number it was signed for | To sign a document's person for one note number. Next to the note number, not alone, so a lost tier 2 note can be signed again: a fingerprint alone could only refuse |
 | `id_payments` | The transaction signature of each payment used, with the reference it named (public in that transaction) | So one payment opens one session, for its own payment id only |
 | `gifts` | Each note number given its welcome gift, with a hash of the buys it was given for | So a person gets one: a face seen again gives the same note number; the same buys asked for again get the same tickets |
@@ -155,27 +157,29 @@ price. It reads nothing about who paid.
 With a gift (`REGISTRY_PAYER_URL`, `HOST_URL`), a person's first note comes with credits at the
 services those settings name: on devnet, three registrations at the
 [registry payer](../fee-payer/registry/README.md) and 500 cents of writes at the
-[host](../host/README.md). They are
-[Forest credits](../shared/credits/README.md): the
-app buys them, the issuer signs a sponsor's ticket for each buy, and each service signs them
-blind, so the issuer never sees them. It pays nothing: each service lists the issuer's sponsor key
-(its `SPONSORS` setting) and counts what its tickets paid for.
+[host](../host/README.md). They are credits, each service's prepaid units
+([host](../host/README.md#credits), [registry payer](../fee-payer/registry/README.md#credits)): the
+app buys them, the issuer signs a sponsor's ticket for each buy, and each service signs them blind
+(it signs each credit without seeing it), so the issuer never sees them. It pays nothing: each
+service lists the issuer's sponsor key (its `SPONSORS` setting) and counts what its tickets paid
+for.
 
 1. **The app reads the gift** in `GET /issuer.json`: each service's origin, and how many of its
    credits a ticket there gives.
-2. **The app makes one buy at each service,** of exactly that many credits (`shared/credits/`,
-   `buy`), and keeps what finishes it in the vault.
-3. **It sends the buys' references with the note request:** `POST /note` with
+2. **The app makes one buy at each service,** for exactly the credits a ticket there gives (with
+   mcp's credits client, `buy`), and keeps in the vault what it needs to finish the buy later.
+3. **It sends the buys' references (a code that names each buy, not its credits) with the note
+   request:** `POST /note` with
    `"gift": {"registryPayer": "<reference>", "host": "<reference>"}`, one for each service in the
    gift and no other. Anything else is `bad_gift`.
 4. **Once a note number,** the issuer keeps a hash of the buys next to it, and signs a ticket for
-   each with its sponsor key (standard's `ticketMessage`): that service, that buy, that many
-   credits.
+   each with its sponsor key (`ticketMessage` in `src/ticket.ts`): that service, that buy, that
+   many credits.
 5. **The answer** is the note, with `"gift": {"registryPayer": "<ticket>", "host": "<ticket>"}`,
    or `"gift": {"error": …}`: `bad_gift`, or `given`, for other buys than the ones the note number
    was given its gift for. The same buys asked for again get the same tickets.
-6. **The app collects** each buy at its service with its ticket, at once, and finishes the
-   credits.
+6. **The app collects** each buy at its service with its ticket, at once, and finishes the credits
+   (it unblinds each and checks it against the service's key).
 
 The sponsor key is mixed from the issuer's seed under `sponsor`, by the standard's recipe for a main key. It signs tickets and nothing else, and holds no money.
 
@@ -250,13 +254,13 @@ Node 22.18 or later. From the repo root:
 
 ```
 ./standard.sh registry/client records keys
-(cd shared/credits && npm ci)
+(cd mcp && npm ci) && (cd host && npm ci) && (cd fee-payer/registry && npm ci)
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, the standard's files included
 npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP, a person proof from a note;
                      # the face models on the portraits; the devnet stand-in Didit, both tiers; the
-                     # welcome gift's tickets, taken by stand-in services on standard's seller
+                     # welcome gift's tickets, taken by the host's and the registry payer's own sellers
 npm start            # the service, with the variables above
 ```
 
@@ -268,7 +272,7 @@ point `ISSUER_KEYPAIR_PATH` at it.
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
 and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH`, or each deploy forgets which
 face was signed for which note number. The build context is the repo root. `deploy/Dockerfile`
-builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `shared/credits/`, `npm ci`, the face models
+builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `npm ci`, the face models
 by `npm run fetch -- models`) and runs `deploy/start.sh`. With no `DIDIT_API_KEY`, that first starts
 `deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that approves every session it opens, on both
 workflows, with no face seen before and, for a document, a name it makes up for that session; then
@@ -341,8 +345,9 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The face model:** SFace, named `opencv-sface-2021dec` in a note
   ([The face model](#the-face-model)).
 - **The same face:** a cosine similarity of at least 0.5 (`FACE_MATCH`) between the live selfie's
-  embedding and the note's. OpenCV gives 0.363 for SFace, but across six official portraits of five
-  people, two of them scored 0.41 against each other, and one person eight years apart 0.80.
+  embedding and the note's. OpenCV gives 0.363 for SFace, but in six official portraits of five
+  people, two different people scored 0.41 against each other, while the same person, eight years
+  apart, scored 0.80.
 - **What Didit holds.** For the face check: the selfie, the liveness video, a template of the face
   for its face search, and its decision. For the document check, also: the document's images, what
   Didit reads on it (name, date of birth, document number, nationality, dates), and the match
@@ -407,7 +412,7 @@ puts the real checks, and the face model, in the stand-in's place.
 - **The issuer sees each buy of a person's gift,** by its reference, while it signs its ticket, and
   keeps only a hash of them. A service that sees a buy collected with the ticket, and the credits
   spent, from one network address, can tie the two, and the issuer knows whose note the buy came
-  with; the foundation runs all three ([credits, Limits](../shared/credits/README.md#limits)).
+  with; the foundation runs all three ([host, Limits](../host/README.md#limits)).
 - **A lost gift is lost.** The same buys asked for again get the same tickets; buys the app no
   longer holds cannot be finished, and other buys get `given`.
 - **A lost tier 2 note costs another document check.** The issuer signs it again for the same note
@@ -423,15 +428,19 @@ puts the real checks, and the face model, in the stand-in's place.
 - **A note carries a face's embedding.** The person keeps it, and an app should keep it as it keeps
   a key: whoever has it holds numbers made from that face. Only its hash enters the person proof,
   and the note goes back to the issuer only for the document check.
+- **A person refused as a face seen before has no appeal here.** The refusal (`duplicate_face`)
+  rests on Didit's face search alone: while it names an earlier session the issuer signed for
+  another note number, the issuer refuses, even once a review in Didit approves the session. Only
+  that earlier note number is signed again.
 - **A face seen before is known only through Didit's search.** The issuer keeps no embedding, so a
   face Didit's search misses is a new face to it, and can be signed for a second note number.
 - **It trusts Didit's decision,** for a session on the check's own workflow: status, each step's
   status, the selfie, each face-search match's session, and what the document step read. It reads
-  those and drops everything else Didit returns. It cannot see the workflows' setup: a liveness step
-  with face search on (Didit's default); on the document workflow, a duplicate face set to no action
-  (else Didit declines a person moving up from the face check) and a document seen before declined;
-  both workflows in one Didit application, so that face search covers both; and an API key from that
-  application.
+  those and drops everything else Didit returns. It cannot see how the workflows are set up in
+  Didit, and relies on this: a liveness step with face search on (Didit's default); on the document
+  workflow, a face seen before set to no action (otherwise Didit would decline a person moving up
+  from the face check) and a document seen before set to decline; both workflows in one Didit
+  application, so the face search covers both; and an API key from that application.
 - **The fingerprint is as exact as Didit's reading.** A name read two ways (a middle name, another
   script) is two fingerprints, so one person with two documents may pass twice, for the note number
   their face allows.

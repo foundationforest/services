@@ -186,15 +186,16 @@ are for machines.
   live offers by full-text search (Postgres's `simple` configuration).
 - **`/pay?…`**: an offer's Pay link, checked against the offer as indexed (The Pay link, below).
 
-A live offer is an offer, not expired, from a profile whose market this index uses. The pages show
-the scores side by side, never as one number: uniqueness as a percentage with who checked it, and
-"ID-checked" for a row shown at tier 2; the rating out of 10 and the standing. Also `/llms.txt`,
-`/skill.md` (the read skill, for AI agents), `/sitemap.xml` and `/robots.txt`; schema.org JSON-LD on
-every page (each profile's an `AggregateRating` from its rating); GET and HEAD only,
-`access-control-allow-origin: *`, `cache-control: public, max-age=30, stale-while-revalidate=300`.
-`llms.txt` and `skill.md` are files in this directory, written for `https://forest.foundation`; each
-index serves them with its own `PUBLIC_URL` in its place. Search, Pay links, a market filtered by
-`near`, and a deal with no receipt say `noindex` and are left out of the sitemap.
+A live offer is an offer, not expired (its `expires` time, when it has one, still ahead), from a
+profile whose market this index uses. The pages show the scores side by side, never as one number:
+uniqueness as a percentage with who checked it, and "ID-checked" for a row shown at tier 2; the
+rating out of 10 and the standing. Also `/llms.txt`, `/skill.md` (the read skill, for AI agents),
+`/sitemap.xml` and `/robots.txt`; schema.org JSON-LD on every page (each profile's an
+`AggregateRating` from its rating); GET and HEAD only, `access-control-allow-origin: *`,
+`cache-control: public, max-age=30, stale-while-revalidate=300`. `llms.txt` and `skill.md` are files
+in this directory, written for `https://forest.foundation`; each index serves them with its own
+`PUBLIC_URL` in its place. Search, Pay links, a market filtered by `near`, and a deal with no
+receipt say `noindex` and are left out of the sitemap.
 
 **Pictures** show from the host that holds them, never from the index: an image for a png or a
 jpeg, a video for an mp4. A page shows one only when a listed host that served its record holds the
@@ -390,7 +391,8 @@ key.
 Each of these is this index's opinion, not a rule. The lists and weights are files in this
 directory, read at start, and the markets are the markets directory's, read every hour: none is a
 setting on a server, so anyone can rebuild what this index shows from them, the hosts and the chain.
-Another index holds its own.
+Another index holds its own. Today the lists are ours. As other issuers and hosts appear, the lists
+open to them.
 
 - **Which hosts it reads** (`lists/hosts.json`): each in full. Today one: the foundation's host on
   devnet, https://host.devnet.forest.foundation. It takes no hosts records (`POST /v1/hosts`,
@@ -401,7 +403,7 @@ Another index holds its own.
   a key that leaked, `until`: the last time a row of it counts, in UTC to the second
   (`2026-11-01T00:00:00Z`). No issuer counts unless it is named there. Today one: the foundation's
   devnet issuer, "Forest issuer (devnet)", at 0.7 for tier 1 (its face check) and 0.9 for tier 2
-  (its document check), with no `until`. A row whose card shows no tier counts at 0.7. Tier 2 shows
+  (its document check), placeholders, with no `until`. A row whose card shows no tier counts at 0.7. Tier 2 shows
   as "ID-checked".
 - **Which markets count** (`MARKETS_URL`): every market in the `directory.md` of the
   [markets directory](https://github.com/foundationforest/markets), re-read every hour.
