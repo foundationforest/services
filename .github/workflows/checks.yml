@@ -1,21 +1,23 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
 # first fetches standard at the commit in STANDARD (standard.sh) and installs the standard packages it uses.
 #
-#   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
-#                the real models and portraits its `npm run fetch` checks by SHA-256, and its welcome
-#                gift's tickets taken by the host's and the registry payer's own sellers
+#   issuer       its type-check (the stand-in Didit for tests included) and its tests, the face
+#                embedding's on the real models and portraits its `npm run fetch` checks by SHA-256,
+#                and its welcome gift's tickets taken by the host's and the registry payer's own sellers
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
 #                (real reputation proofs: the reputation circuit's proving files; a real person proof: the
 #                standard's example card's)
 #   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml its Dockerfile makes from
 #                at-cost/, and the registry payer: its type-check and tests (registry/; real credits,
-#                bought with mcp's credits client, collected and spent, against a stand-in RPC)
-#   host         the foundation's host: its type-check and its tests, its credits bought with mcp's
-#                credits client
-#   e2e          the devnet run's type-check, with mcp, which it runs and buys its credits with
+#                bought with the credits client in e2e/credits/, collected and spent, against a
+#                stand-in RPC)
+#   host         the foundation's host: its type-check and its tests, its credits bought with the
+#                credits client in e2e/credits/
+#   e2e          the devnet run's type-check, with mcp's actions it runs and the index's signing key
+#                it reads, and the credits client's tests against a stand-in service made of
+#                Cloudflare's own issuer
 #   mcp          mcp's type-check and tests: every action on records' reference host, both doors,
-#                the hosted copy's smoke test, the image's own command through the MCP SDK's client,
-#                and the credits client against a stand-in service made of Cloudflare's own issuer
+#                the hosted copy's smoke test, and the image's own command through the MCP SDK's client
 #
 # Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
 # run against the deployed mcp. The first two need the standard's programs, its proving files, a local
@@ -55,7 +57,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh registry/client records keys
-          (cd mcp && npm ci --no-audit --no-fund)
+          (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
@@ -108,7 +110,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh registry/client escrow/client records
-          (cd mcp && npm ci --no-audit --no-fund)
+          (cd e2e && npm ci --no-audit --no-fund)
           (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
       - name: The local run's type-check
@@ -136,7 +138,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh keys records registry/client
-          (cd mcp && npm ci --no-audit --no-fund)
+          (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -159,10 +161,16 @@ jobs:
         run: |
           ./standard.sh keys records registry/client escrow/client reputation/client
           (cd mcp && npm ci --no-audit --no-fund)
+          (cd index && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: e2e
         run: npm run check
+      - name: Test (the credits client)
+        working-directory: e2e
+        run: |
+          npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   mcp:
     runs-on: ubuntu-latest

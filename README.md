@@ -119,19 +119,24 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 (cd standard/reputation/circuit && npm run fetch)
 
 (cd mcp         && npm ci && npm run check && npm test)
+(cd index       && npm ci && npm run check && \
+  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts)
+(cd e2e         && npm ci && npm run check && npm test)
 (cd host        && npm ci && npm run check && npm test)
-(cd e2e         && npm ci && npm run check)
 (cd fee-payer/at-cost  && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null
 (cd fee-payer/registry && npm ci && npm run check && npm test)
 (cd issuer      && npm ci && npm run fetch && npm run check && npm test)
-(cd index       && npm ci && npm run check && \
-  node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts)
 ```
+
+`e2e/` holds the buyer's credits client, which the host's, the registry payer's and the issuer's
+tests buy with, so it is installed before them; its type-check reads mcp's actions and the
+index's signing key, so they come first.
 
 A test that cannot find what it needs skips, and the workflow fails on any skip, so a missing piece
 never passes as green. Not in CI: the index's end-to-end test and the fee payer's local run, which
 need the standard's programs built, its proving files, a local validator and (for the fee payer)
-Kora built; the e2e run, which needs the devnet phrase; and the smoke run against the deployed `mcp`.
+Kora built; the e2e run, which needs the devnet phrase and a Postgres; and the smoke run against the
+deployed `mcp`.
 Each directory's README says how to run them.
 
 ### On devnet
@@ -151,18 +156,18 @@ settings and its volume. Railway's service ids: `issuer`
 | The classic test dollar (six decimals) | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` |
 | The Open-USD-shaped test dollar (Token-2022 with Open USD's extensions, six decimals) | `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz` |
 | The issuer's name, which each person's secret for it is mixed from | `issuer.devnet.forest.foundation` |
-| The issuer's seed, the devnet `issuer` key, which signs nothing itself | `7zPD6AZc7RJv4Z15AoHvzJ2ZMCTW57XZTJanMZYsU7U7` |
-| The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `2185f564303f0c1cd8efdb1e35e59cc128f388f1da07511a412c186b6bb5b4bf186ac19097701f2619d447c5cd68484674e48194dd7ed4d025b20ea9d063a549` |
+| The issuer's seed, which signs nothing itself | Made by the issuer on its own machine at its first start, and kept on its volume: mixed from no phrase, held by no variable |
+| The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `key` in [its `/issuer.json`](https://issuer.devnet.forest.foundation/issuer.json); the devnet index trusts the one its list names (`index/lists/issuers.json`) |
 | Where the document check's price is paid, once one is set | A foundation address set in `ID_TIER_PAY_TO`, which the issuer's seed cannot derive; none is set on devnet |
-| The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW` |
+| The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `sponsor` in its `/issuer.json` |
 | The registry payer's key, which its credits are paid to: a random key made for it, not mixed from the devnet phrase | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
 | The address the host's credits are paid to, the devnet `host` key's; the host never signs with it | `2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9` |
 | The deploy key, which pays e2e's setup | `2mz33wBK7FKRXoAi7LptGGTwVQJDbrSyrVwbYRCqwP3A` |
 
-Every key but the registry payer's is derived from the devnet phrase by the recipe in the
-standard's `devnet/deploy.sh` scripts, and the issuer's note key and sponsor key from its seed, by
-the standard's `hkdf` and `mainKey`; the registry payer's is random. None is in this repo. Open in a browser:
+Every key but the registry payer's and the issuer's seed is derived from the devnet phrase by the
+recipe in the standard's `devnet/deploy.sh` scripts; those two are random, and the issuer's note key
+and sponsor key are mixed from its seed, by the standard's `hkdf` and `mainKey`. None is in this repo. Open in a browser:
 [the index](https://index.devnet.forest.foundation/) and
 [who the issuer is](https://issuer.devnet.forest.foundation/issuer.json); the latest e2e run's
 seller and deal are in [`e2e/`](e2e/README.md).
@@ -179,10 +184,10 @@ README holds its service's own promises. One holds for all of them:
 
 ## Limits
 
-- **Devnet only.** Nothing is on mainnet, and nothing is shipped. The issuer's two checks are a
-  stand-in that passes everyone, so notes, and the welcome gift's credits, are unlimited; the
-  dollars are test dollars, which their maker mints at will, so credits bought with them are
-  unlimited too; every service is one replica on Railway.
+- **Devnet only.** Nothing is on mainnet, and nothing is shipped. The issuer's checks are real
+  (Didit, one note number a face) and, with its key, carry over to mainnet; registry rows do not.
+  The dollars are test dollars, which the dollar's maker mints at will, so credits bought with them
+  are unlimited; every service is one replica on Railway.
 - **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind (a
   service signs each credit without seeing it), so no service can tell from a credit which buy it
   came from; whoever runs all three could still match a buy to a spend by the network address both
