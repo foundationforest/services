@@ -1,6 +1,6 @@
 // The registry payer on loopback, with a stand-in RPC for payments, rows, simulations and sends.
 // Real credits: bought, paid by a Solana payment or a sponsor's ticket (as the issuer signs one),
-// collected and finished with mcp's credits client, checked with the payer's own checkCredit. Each refusal is provoked once, and
+// collected and finished with the buyer's credits client (e2e/credits/), checked with the payer's own checkCredit. Each refusal is provoked once, and
 // nothing refused is held or sent. A row that exists is refused before anything is held; a credit
 // is held, with the row and its blockhash, before the row is sent; a simulation that fails, or
 // costs the payer more than the row's rent and the fee, frees it with nothing sent. Spent once the
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url'
 
 import { Keypair, PublicKey, SystemProgram, TransactionMessage, VersionedTransaction, type TransactionInstruction } from '@solana/web3.js'
 
-import { type Credit, PAYMENT_HEADER, authorization, buy, finish, serviceOf } from '../../../mcp/credits/client.ts'
+import { type Credit, PAYMENT_HEADER, authorization, buy, finish, serviceOf } from '../../../e2e/credits/client.ts'
 import { ticket, ticketMessage } from '../../../issuer/src/ticket.ts'
 import { DIRECTORY_PATH, keyFrom } from '../credits/seller.ts'
 import { issuerKeyOf, registerIx, rowSpace } from '../../../standard/registry/client/src/index.ts'

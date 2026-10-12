@@ -32,8 +32,8 @@ address, its own container.
 
 A credit here is a prepaid unit of this registry payer, `one registration`. It sells and takes
 them with the code in `credits/`: a copy of the service's side of Forest's credits, trimmed to what
-the registry payer uses, on the same wire format as the host's, so one buyer works at both (mcp's
-client, [`mcp/`](../../mcp/README.md#credits)).
+the registry payer uses, on the same wire format as the host's, so one buyer works at both (the
+buyer's client in [`e2e/credits/`](../../e2e/README.md) is one).
 
 **A credit** is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578): the
 registry payer signs it blind, over a number only the buyer's app knows, so when the credit comes
@@ -120,7 +120,7 @@ The person's device:
 1. builds the row's transaction with the registry payer as payer (`getPayerSigner` at its address
    names it), and signs it with the main key;
 2. sends it to `POST /register`, as `{ transaction }` in base64, with one credit in
-   `Authorization: PrivateToken token="<credit>"`, as RFC 9577 shows one (mcp's `authorization`).
+   `Authorization: PrivateToken token="<credit>"`, as RFC 9577 shows one (the credits client's `authorization`).
 
 It checks, in this order, and refuses by name at the first that fails:
 
@@ -188,22 +188,22 @@ Holds are kept in its file, so a restart settles them. No clock decides anything
 
 ```
 ./standard.sh registry/client records                           # from the repo root
-(cd mcp && npm ci)                                              # from the repo root
+(cd e2e && npm ci)                                              # from the repo root
 (cd fee-payer/registry && npm ci && npm run check && npm test)   # real credits, a stand-in RPC; seconds
 ```
 
-The tests buy real credits with mcp's credits client, paid on Solana and by a sponsor's ticket as
-the issuer signs one (`issuer/src/ticket.ts`), collect and finish them, register with them, and
-check every refusal above, nothing held or sent for any of them; a credit held before its row is
-sent, spent once the row exists, freed once the row is absent and its blockhash expired; one settle
-round at a time; and a hold kept across a restart. `test/credits.test.ts` checks the code in
-`credits/` on its own: the key from PKCS #8; the directory as mcp's client reads it; a buy answered
-byte for byte as privacypass-ts's own issuer answers it, and under another key an empty slot,
-nothing logged; a Solana payment checked in one call (short by one unit, another mint, a failed
-transaction, no reference, SOL, a reference from a lookup table); a ticket refused from another
-sponsor, for another count, service or buy, and billed once; every refusal; one credit read from
-the Authorization header; a changed byte, another key or another service's credit refused; and the
-spent list across a restart.
+The tests buy real credits with the buyer's credits client (`e2e/credits/`), paid on Solana and by a
+sponsor's ticket as the issuer signs one (`issuer/src/ticket.ts`), collect and finish them, register
+with them, and check every refusal above, nothing held or sent for any of them; a credit held before
+its row is sent, spent once the row exists, freed once the row is absent and its blockhash expired;
+one settle round at a time; and a hold kept across a restart. `test/credits.test.ts` checks the code
+in `credits/` on its own: the key from PKCS #8; the directory as the buyer's client reads it; a buy
+answered byte for byte as privacypass-ts's own issuer answers it, and under another key an empty
+slot, nothing logged; a Solana payment checked in one call (short by one unit, another mint, a
+failed transaction, no reference, SOL, a reference from a lookup table); a ticket refused from
+another sponsor, for another count, service or buy, and billed once; every refusal; one credit read
+from the Authorization header; a changed byte, another key or another service's credit refused; and
+the spent list across a restart.
 
 ### On devnet
 
@@ -230,7 +230,7 @@ https://registry-payer.devnet.forest.foundation.
 | `CREDIT_MINT` | `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`, the classic test dollar | no |
 | `CREDIT_PRICE` | `0.5` | no |
 | `REGISTRY_PROGRAM` | `J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4` | no |
-| `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`, the issuer's sponsor key | no |
+| `SPONSORS` | the issuer's sponsor key, as its `/issuer.json` names it | no |
 | `DATABASE_PATH` | `/data/credits.sqlite` | no |
 | `PORT` | `8080` | no |
 

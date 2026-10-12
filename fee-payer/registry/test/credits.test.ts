@@ -16,7 +16,7 @@ import { test } from 'node:test'
 import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad as b64u } from '@scure/base'
 
-import { type Credit, authorization, buy, finish, serviceOf } from '../../../mcp/credits/client.ts'
+import { type Credit, authorization, buy, finish, serviceOf } from '../../../e2e/credits/client.ts'
 import { ticket, ticketMessage } from '../../../issuer/src/ticket.ts'
 import { challengeOf, checkCredit, creditId, creditOf } from '../credits/credit.ts'
 import { type Rpc, type SellerConfig, UNIT, answer, keyFrom, seller } from '../credits/seller.ts'
