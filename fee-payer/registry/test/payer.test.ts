@@ -10,7 +10,7 @@
 //   npm test
 //
 // Needs the registry client's and records' dependencies (`../../standard.sh registry/client records`)
-// and mcp's (`cd ../../mcp && npm ci`). If one is missing the test says which and skips.
+// and the credits client's (`cd ../../e2e && npm ci`). If one is missing the test says which and skips.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, randomBytes, sign as edSign } from 'node:crypto'
@@ -34,7 +34,7 @@ import { type Config, UNIT, startFront } from '../src/payer.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const standard = join(here, '../../../standard')
-const mcp = join(here, '../../../mcp')
+const e2e = join(here, '../../../e2e')
 const REGISTRY = new PublicKey('J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4')
 const ORIGIN = 'https://registry-payer.test.example'
 const MINT = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
@@ -47,7 +47,7 @@ const SPONSOR = new PublicKey(sponsor.publicKey.export({ format: 'der', type: 's
 function missing(): string | null {
   if (!existsSync(join(standard, 'registry/client', 'node_modules'))) return 'run `npm ci` in standard/registry/client'
   if (!existsSync(join(standard, 'records', 'node_modules'))) return 'run `npm ci` in standard/records'
-  if (!existsSync(join(mcp, 'node_modules'))) return 'run `npm ci` in mcp'
+  if (!existsSync(join(e2e, 'node_modules'))) return 'run `npm ci` in e2e'
   return null
 }
 
