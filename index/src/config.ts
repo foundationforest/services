@@ -67,6 +67,8 @@ export type Config = {
   port: number
   /** Where the pages are published, with no trailing slash: every canonical link, the sitemap and the read skill use it. */
   publicUrl: string
+  /** The app a page's message link opens, as an origin: `<appUrl>/message?to=<address>`. */
+  appUrl: string
   scoring: ScoringConfig
   currencies: CurrencyConfig
 }
@@ -105,7 +107,7 @@ function utcSecond(text: unknown): boolean {
   return !Number.isNaN(t) && new Date(t).toISOString() === text.replace('Z', '.000Z')
 }
 
-/** A tier as a card's person proof writes it: decimal, no sign, no leading zero (forest's records/schemas/profile.json). */
+/** A tier as a card's person proof writes it: decimal, no sign, no leading zero (the standard's records/schemas/profile.json). */
 const TIER = /^(0|[1-9][0-9]{0,76})$/
 
 /**
@@ -159,6 +161,14 @@ export function publicUrl(raw: string | undefined): string {
   return url.origin
 }
 
+/** The app a message link opens: an origin, like PUBLIC_URL. */
+export function appUrl(raw: string | undefined): string {
+  const url = new URL(raw || 'https://app.devnet.forest.foundation')
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('APP_URL must be an http or https URL')
+  if (url.pathname !== '/' || url.search || url.hash) throw new Error('APP_URL is an origin, such as https://app.devnet.forest.foundation, with no path')
+  return url.origin
+}
+
 /**
  * `seed: false` for the web process: it reads the database and serves pages, and never holds the
  * signing seed.
@@ -180,6 +190,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     signingSeed: needSeed ? hexSeed(env.INDEX_SIGNING_SEED) : null,
     port: Number(env.PORT || 8080),
     publicUrl: publicUrl(env.PUBLIC_URL),
+    appUrl: appUrl(env.APP_URL),
     scoring: readScoring(env.SCORING_FILE || join(INDEX_ROOT, 'config/scoring.json')),
     currencies: field(env.CURRENCIES_FILE || 'currencies', readJson(env.CURRENCIES_FILE || join(INDEX_ROOT, 'config/currencies.json')), 'currencies'),
   }

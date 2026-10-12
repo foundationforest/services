@@ -178,15 +178,3 @@ export function searchLd(m: SearchModel, currencies: Currencies): unknown {
     },
   ])
 }
-
-export function payLd(url: string, offer: Offer | null, currencies: Currencies): unknown {
-  return graph([
-    {
-      '@type': 'WebPage',
-      '@id': url,
-      url,
-      name: 'Pay for an offer',
-      ...(offer ? { mainEntity: offerNode(offer, currencies, personRef(offer.name, offer.profileUrl)) } : {}),
-    },
-  ])
-}

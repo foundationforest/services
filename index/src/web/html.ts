@@ -34,7 +34,7 @@ export function html(strings: TemplateStringsArray, ...values: unknown[]): Raw {
 }
 
 // -----------------------------------------------------------------------------------------------
-// URLs. One place builds them, so the pages, their twins, the sitemap and the pay link agree.
+// URLs. One place builds them, so the pages, their twins, the sitemap and the message link agree.
 // -----------------------------------------------------------------------------------------------
 
 /** A path segment, encoded. */
@@ -73,8 +73,8 @@ export function urlsFor(base: string) {
 
 export const SOURCE = 'https://github.com/foundationforest/services'
 export const SCORING_DOC = `${SOURCE}/blob/main/index/README.md#how-it-scores`
-/** The Pay link's format: forest's escrow's. */
-export const PAYLINK_DOC = 'https://github.com/foundationforest/standard/blob/main/escrow/README.md#the-pay-link'
+/** Where a person sends a profile a message: the app's own page for it (`APP_URL`), which the index only links to. */
+export const messageLink = (appUrl: string, address: string): string => `${appUrl}/message?${new URLSearchParams({ to: address })}`
 /** The four public lists the foundation's index reads. Another index's are its own. */
 export const LISTS = {
   hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,
@@ -97,7 +97,7 @@ header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding-top:1
 header a.home{font-weight:700;color:var(--fg);text-decoration:none;font-size:1.15rem}
 form.search{display:flex;gap:6px;flex:1;min-width:14rem}
 form.search input{flex:1;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);font:inherit}
-form.search button,a.pay{padding:6px 12px;border:0;border-radius:6px;background:var(--accent);color:var(--bg);font:inherit;font-weight:600;text-decoration:none;display:inline-block}
+form.search button,a.message{padding:6px 12px;border:0;border-radius:6px;background:var(--accent);color:var(--bg);font:inherit;font-weight:600;text-decoration:none;display:inline-block}
 h1{font-size:1.6rem;line-height:1.25;margin:20px 0 4px}
 h2{font-size:1.15rem;margin:28px 0 8px}
 h3{font-size:1rem;margin:0 0 4px}
@@ -126,7 +126,7 @@ export type Head = {
   /** The twin's URL; null for a page with no twin (a 404). */
   json: string | null
   jsonLd: unknown | null
-  /** Search results, near views of a market, pay links and deals with no receipt: open to all, not for search engines to list. */
+  /** Search results, near views of a market and deals with no receipt: open to all, not for search engines to list. */
   noindex?: boolean
 }
 

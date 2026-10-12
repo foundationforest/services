@@ -50,7 +50,7 @@ Each offer carries:
 - `media`: its photos and videos (Pictures, below);
 - the seller's `profile`, `name`, `profileUrl`, `uniqueness`, `rating` and `standing`;
 - its `market` and `role`: its author profile's, since an offer names neither;
-- a `payLink` (Paying, below); none when it names no price.
+- a `messageLink`: where a person writes to its profile in an app (Write to a profile, below).
 
 ## Read a profile
 
@@ -60,9 +60,9 @@ A profile is one key: its address is its permanent name, and also where it is pa
 in one market, under one label (`market/role`); a person in two markets holds two profiles, linked
 only if the person chose to link them. The answer carries:
 
-- `address`, and `profile`: `name`, the `market` it lives in and its `role` there (with `side`, the
-  market's word for it), `about`, `photo` (Pictures, below), `inboxKey` and `inbox` (Write to a
-  profile, below).
+- `address`, `messageLink` (Write to a profile, below), and `profile`: `name`, the `market` it lives
+  in and its `role` there (with `side`, the market's word for it), `about`, `photo` (Pictures,
+  below), `inboxKey` and `inbox` (Write to a profile, below).
 - `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not
   (Check a real person, below).
 - `scores`: `uniqueness` (one per counted label), `rating` and `standing`, each signed.
@@ -94,7 +94,9 @@ to besides `inboxKey`. No message passes through this index.
 How to send one is the standard's: its records' Inbox section,
 https://github.com/foundationforest/standard/blob/main/records/README.md, or the CLI, `send`
 (https://github.com/foundationforest/services/blob/main/mcp/README.md). The hosts this index reads
-are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json.
+are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json. For a person,
+each profile and each offer carries a `messageLink`: the page in an app where they write to that
+profile, which this index only links to.
 
 ## Check a real person
 
@@ -206,21 +208,6 @@ gives every leaf in the tree's order, with the `root` they make: `stamp` and `sc
 `score` (the rating times ten) and `count` (the reviews it comes from). An app finds its person's
 own leaves here and proves on the device; it never asks for one leaf, so this index never learns
 which are theirs.
-
-## Paying
-
-An offer's `payLink` is one documented format, the standard's escrow's:
-https://github.com/foundationforest/standard/blob/main/escrow/README.md#the-pay-link. The seller is
-the profile the offer names, paid at its address: the link carries no other key. This index never
-pays and never holds money.
-
-An example, from this index's test data:
-
-    https://forest.foundation/pay?v=2&offer=3ds35BYoks9R95FJ3XfwfvtuDGkaM3LeEiqUP2wWBfJm%2Foffer%2Fportuguese&record=3192bff03b2c8009281f892c58d389cbecc3ac99e2d93655e692e2e2ba4ff302&price.amount=25&price.mint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&price.per=hour
-
-Its twin, `https://forest.foundation/pay.json?…` with the same query, says whether the link still
-matches the offer (`check`: `matches`, `changed`, `differs`, `notLive`, `noPrice`, `notFound`,
-`invalid`).
 
 ## Examples
 

@@ -174,17 +174,17 @@ are for machines.
   the index's public key, how its scores are signed, its four lists, and where its tree is.
 - **`/folders/{folder}`**: one folder's markets.
 - **`/markets/{market}?near=&km=&offset=`**: the market's description, how deals go, counts, and its
-  live offers, 50 a page; the twin gives the whole market file, with the role names of its two sides
-  and the review fields it names. Offers are listed with sellers who have a counted row there first,
+  live offers, 50 a page, each with a Message link to its profile
+  ([The message link](#the-message-link)); the twin gives the whole market file, with the role
+  names of its two sides and the review fields it names. Offers are listed with sellers who have a counted row there first,
   then by standing, then newest. `near=lat,lon&km=N` keeps the offers whose point is within N km.
-- **`/profiles/{address}`**: a stored profile: its rows, counted or not and why, their issuers and
-  the tier each shows; its scores, apart and signed; the reputation proofs it shows; its offers and
+- **`/profiles/{address}`**: a stored profile: a Message link to it; its rows, counted or not and
+  why, their issuers and the tier each shows; its scores, apart and signed; the reputation proofs it shows; its offers and
   requests; the reviews it received and gave, each with the payment behind it.
 - **`/deals/{dealId}`**: the receipt in plain words (or none), the two profiles with their scores,
   and the reviews that name the deal.
 - **`/search?q=&near=&km=`**: the markets whose name, folder, roles or role names contain `q`, and
-  live offers by full-text search (Postgres's `simple` configuration).
-- **`/pay?…`**: an offer's Pay link, checked against the offer as indexed (The Pay link, below).
+  live offers by full-text search (Postgres's `simple` configuration), each with its Message link.
 
 A live offer is an offer, not expired (its `expires` time, when it has one, still ahead), from a
 profile whose market this index uses. The pages show the scores side by side, never as one number:
@@ -194,8 +194,8 @@ rating out of 10 and the standing. Also `/llms.txt`, `/skill.md` (the read skill
 `AggregateRating` from its rating); GET and HEAD only, `access-control-allow-origin: *`,
 `cache-control: public, max-age=30, stale-while-revalidate=300`. `llms.txt` and `skill.md` are files
 in this directory, written for `https://forest.foundation`; each index serves them with its own
-`PUBLIC_URL` in its place. Search, Pay links, a market filtered by `near`, and a deal with no
-receipt say `noindex` and are left out of the sitemap.
+`PUBLIC_URL` in its place. Search, a market filtered by `near`, and a deal with no receipt say
+`noindex` and are left out of the sitemap.
 
 **Pictures** show from the host that holds them, never from the index: an image for a png or a
 jpeg, a video for an mp4. A page shows one only when a listed host that served its record holds the
@@ -207,14 +207,13 @@ and the readers each message is encrypted to besides. A message goes to the prof
 ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)): none
 passes through the index.
 
-#### The Pay link
+#### The message link
 
-The one format for paying for an offer from any app is the standard's
-[escrow](https://github.com/foundationforest/standard/blob/main/escrow/README.md)'s ("The pay link").
-This index shows it on every live offer with a price, at its own address (`/pay?…`), and never pays
-or holds money: it links. `/pay.json?…` says whether the link still matches the offer as this index
-holds it (`check`): `matches`, `changed` (the offer was edited since), `differs` (the link was
-altered), `notLive`, `noPrice`, `notFound` or `invalid`.
+Each offer and each profile links to an app where a person writes to that profile:
+`<APP_URL>/message?to=<the profile's address>`, "Message" on the page and `messageLink` in the
+twin. `APP_URL` is the app's origin; on devnet, the Forest app,
+https://app.devnet.forest.foundation. The app writes and delivers the message to the profile's own
+hosts (Inboxes, above); the index only links, and never pays or holds money.
 
 #### The reputation tree
 
@@ -282,6 +281,7 @@ Environment variables, read once at start; a change means a restart.
 | `CHAIN_COMMITMENT` | no | `finalized` | Or `confirmed` (tests) |
 | `POLL_MS` | no | `5000` | How often the readers look for anything new |
 | `PUBLIC_URL` | no | `https://forest.foundation` | Where the pages are published: an origin |
+| `APP_URL` | no | `https://app.devnet.forest.foundation` | The app a Message link opens: an origin |
 | `PORT` | no | `8080` | |
 | `HOSTS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
 | `MARKETS_URL` | no | `https://raw.githubusercontent.com/foundationforest/markets/main` | Where the markets are read from: a markets directory, `directory.md` and the files it links |
@@ -336,8 +336,8 @@ DATABASE_URL=postgres://… npm test                 # all of the above and the 
 - **The page tests** need Postgres. On a fixed story in a fresh database: every page and twin
   renders; every JSON-LD block validates against schema.org's vocabulary; each twin matches its
   page; the sitemap lists every page; every URL in `skill.md` and `llms.txt` resolves; no page says
-  a crypto word; the Pay link reads back to the offer; a past write key's record stands and a
-  message key's does not; a private record is never stored; a picture shows from the host that
+  a crypto word; every offer and profile links to the app's message page, at `APP_URL`; a past
+  write key's record stands and a message key's does not; a private record is never stored; a picture shows from the host that
   holds it, as the type its record names, and not at all when no host does; a row made after its
   issuer's `until` counts for nothing. In a database of their own: renaming the foundation's host
   keeps its cursor, records and pictures.
@@ -453,7 +453,7 @@ open to them.
 ## Limits
 
 - **It trusts its issuers** to sign notes only for the people they say they do (the foundation's
-  devnet issuer: one note number per face, with a stand-in that passes everyone). It cannot tell.
+  devnet issuer: one note number per face, by Didit's face search). It cannot tell.
 - **It trusts its Solana RPC** for rows, escrow events and the checks of tiers against rows; no
   second source cross-checks it.
 - **One person's two profiles can raise each other's standing** with small deals between them: each

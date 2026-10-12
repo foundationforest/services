@@ -4,8 +4,7 @@
 import type { CurrencyConfig } from '../config.ts'
 import type { DealModel, FolderModel, HomeModel, MarketModel, Numbers, Offer, Picture, ProfileModel, Review, SearchModel } from './data.ts'
 import { type Near, type Raw, type Urls, SCORING_DOC, html, layout } from './html.ts'
-import { dealLd, folderLd, homeLd, marketLd, payLd, profileLd, searchLd } from './jsonld.ts'
-import type { PayModel } from './pay.ts'
+import { dealLd, folderLd, homeLd, marketLd, profileLd, searchLd } from './jsonld.ts'
 import * as w from './words.ts'
 
 export type View = { urls: Urls; currencies: CurrencyConfig }
@@ -53,7 +52,7 @@ ${!showSeller && o.marketUrl ? html`<p class="small"><a href="${o.marketUrl}">${
 <p>${o.description}</p>
 ${pictures(o.media, 'A photo of this offer')}
 <p class="row">${price ? html`<strong>${price}</strong>` : ''}${place ? html`<span class="muted">${place}</span>` : ''}${o.availability ? html`<span class="muted">${o.availability}</span>` : ''}</p>
-${o.payLink ? html`<p><a class="pay" href="${o.payLink}" rel="nofollow">Pay</a></p>` : ''}
+${showSeller ? html`<p><a class="message" href="${o.messageLink}" rel="nofollow">Message</a></p>` : ''}
 </li>`
 }
 
@@ -138,6 +137,7 @@ export function profilePage(v: View, m: ProfileModel): string {
 ${p.photo ? pictures([p.photo], `Photo of ${p.name}`, 'photo') : ''}
 ${home}
 ${p.about ? html`<p>${p.about}</p>` : ''}
+<p><a class="message" href="${m.messageLink}" rel="nofollow">Message</a></p>
 
 <h2>Real person</h2>
 ${counted.length
@@ -231,28 +231,6 @@ export function searchPage(v: View, m: SearchModel): string {
 ${m.q && m.markets.length ? html`<h2>Markets</h2>${marketList(m.markets)}` : ''}
 ${m.q ? html`<h2>Offers</h2>${nearLine(m.near)}${m.offers.length ? html`<ul class="cards">${m.offers.map((o) => offerCard(v, o, true))}</ul>` : html`<p class="muted">No offers match.</p>`}` : html`<p class="muted">Type what you need above: a service, a skill, a place.</p>`}`
   return layout(v.urls, { title: m.q ? `${m.q} · Search · Forest` : 'Search · Forest', description: 'Search offers on Forest.', url: m.url, json: m.json, jsonLd: searchLd(m, v.currencies), noindex: true }, body, m.q)
-}
-
-const PAY_CHECK: Record<PayModel['check'], string> = {
-  matches: 'This link matches the offer as it is now.',
-  changed: 'The offer has changed since this link was made. Below is the offer as it is now.',
-  differs: 'This link doesn’t match the offer it names: its price or terms were changed.',
-  notLive: 'This offer isn’t open any more.',
-  noPrice: 'This offer names no price.',
-  notFound: 'This index has no offer at the address in this link.',
-  invalid: 'This isn’t a complete pay link.',
-}
-
-export function payPage(v: View, m: PayModel): string {
-  const o = m.offer
-  const ok = m.check === 'matches' || m.check === 'changed'
-  const body = html`<h1>Pay for an offer</h1>
-<p class="${ok ? '' : 'warn'}">${PAY_CHECK[m.check]}</p>
-${o
-    ? html`<ul class="cards">${offerCard(v, { ...o, payLink: null }, true)}</ul>`
-    : ''}
-${ok ? html`<p>To pay, open this link in the app you pay with. Forest itself never takes or holds anyone’s money: the payment is held between you and the seller until you both agree.</p>` : ''}`
-  return layout(v.urls, { title: 'Pay · Forest', description: 'A link to pay for an offer on Forest.', url: m.url, json: m.json, jsonLd: payLd(m.url, o, v.currencies), noindex: true }, body)
 }
 
 export function notFoundPage(v: View, url: string, message: string): string {

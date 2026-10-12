@@ -14,7 +14,6 @@ import * as data from './data.ts'
 import { type Near, urlsFor } from './html.ts'
 import { robots, sitemap, textFile } from './machine.ts'
 import * as pages from './pages.ts'
-import { pay } from './pay.ts'
 
 export type Web = { handle: (req: Request) => Promise<Response> }
 
@@ -132,7 +131,6 @@ export function createWeb(ctx: { db: Db; directory: Directory; config: Config })
       if (typeof near === 'string') return badRequest(asJson, url, near)
       return page(await data.search(c, q, near), asJson, pages.searchPage)
     }
-    if (a === 'pay' && parts.length === 1) return page(await pay(c, url.searchParams), asJson, pages.payPage)
     return notFound(asJson, url, `There is no page at ${url.pathname}.`)
   }
 

@@ -14,8 +14,7 @@ import { type Directory, type MarketFile, splitLabel } from '../markets.ts'
 import type { StoredProof, StoredTier } from '../records/store.ts'
 import { rowWeight, stampStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
-import { type Near, type Urls, LISTS, PAYLINK_DOC, SCORING_DOC, SOURCE } from './html.ts'
-import { type PayLink, payLink } from './paylink.ts'
+import { type Near, type Urls, LISTS, SCORING_DOC, SOURCE, messageLink } from './html.ts'
 import { badge } from './words.ts'
 
 export type Ctx = { db: Db; directory: Directory; config: Config; urls: Urls }
@@ -62,11 +61,14 @@ async function pictures(ctx: Ctx, records: { id: string; named: Named[] }[]): Pr
 
 export type Offer = ReturnType<typeof offerOut>
 
+/** An offer's price and its escrow options, as the post writes them (the standard's records/schemas/offer.json). */
+type Price = { amount: string; mint: string; per: 'hour' | 'day' | 'job' }
+type Terms = { arbiter?: string; timer?: { days: number; to: 'seller' | 'buyer' } } | null
+
 function offerOut(ctx: Ctx, row: any, seen: (id: string, n: Named) => Picture) {
   const r = row.record
   // A post names no market or side: they are its author profile's.
   const market = ctx.directory.markets.has(row.profile_market) ? (row.profile_market as string) : null
-  const live = row.direction === 'offer' && market !== null && (row.expires === null || new Date(row.expires) > new Date())
   return {
     uri: row.uri as string,
     /** The id of the record that holds the offer now: which version its terms are from. */
@@ -81,9 +83,9 @@ function offerOut(ctx: Ctx, row: any, seen: (id: string, n: Named) => Picture) {
     role: (row.profile_role ?? null) as string | null,
     description: row.description as string,
     /** Optional on every post. */
-    price: (r.price ?? null) as PayLink['price'] | null,
+    price: (r.price ?? null) as Price | null,
     /** The escrow's two options as the post writes them, plain data; what to say about them is an app's. */
-    terms: (r.terms ?? null) as PayLink['terms'],
+    terms: (r.terms ?? null) as Terms,
     availability: (r.availability ?? null) as string | null,
     remote: (row.remote ?? null) as boolean | null,
     /** As the post wrote it: degrees as decimal text, how far the real place may be, and the place. */
@@ -96,8 +98,8 @@ function offerOut(ctx: Ctx, row: any, seen: (id: string, n: Named) => Picture) {
     uniqueness: micro(row.uniqueness),
     rating: { value: row.rating === null ? null : micro(row.rating), reviews: Number(row.rating_reviews ?? 0) },
     standing: micro(row.standing),
-    /** The Pay link (README.md, "The Pay link"): only on a live offer with a price. The profile's address is where it is paid. */
-    payLink: live && r.price ? payLink(ctx.urls.base, { uri: row.uri, id: row.id, record: r }) : null,
+    /** Where a person sends its profile a message: the app's page for it (README.md, "The message link"). */
+    messageLink: messageLink(ctx.config.appUrl, row.profile),
   }
 }
 
@@ -279,7 +281,6 @@ export async function home(ctx: Ctx) {
       name: 'Forest index',
       about: 'Profiles, offers, reviews and payment receipts, read from signed records on the hosts it lists, the registry’s rows of the issuers it trusts, and the escrow’s own events, each profile scored apart: a rating, a standing, and how sure the index is it is one real person.',
       scoring: { version: 'v2', rules: SCORING_DOC },
-      payLink: PAYLINK_DOC,
       source: SOURCE,
       /** What this index reads, as three public lists: anyone can rebuild it from them, the hosts and the chain. */
       lists: LISTS,
@@ -431,6 +432,8 @@ export async function profile(ctx: Ctx, address: string) {
     ...self(ctx, 'profile', ctx.urls.profile(address)),
     /** The profile's name: its key's address, which is also where it is paid. */
     address,
+    /** Where a person sends it a message: the app's page for it (README.md, "The message link"). */
+    messageLink: messageLink(ctx.config.appUrl, address),
     profile: {
       name: p.name as string,
       /** The one market this profile lives in, and its side there, as its record names them. */
