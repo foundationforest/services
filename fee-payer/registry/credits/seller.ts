@@ -1,12 +1,14 @@
-// Forest credits, a service's side: its credit key, and its seller: the directory, a buy collected
-// once a proof pays for it, the blind signatures it answers with, the proofs it took, its sponsors'
-// bill, and its spent list. See README.md, "Selling credits".
+// The registry payer's credits, its seller: its credit key, its directory, a buy collected once a
+// proof pays for it, the blind signatures it answers with, the proofs it took, its sponsors' bill,
+// and its spent list, in one SQLite file. A copy of the service's side of Forest's credits, trimmed
+// to what the registry payer uses: its unit is one registration, and a registration shows one
+// credit, held with its row until the row exists. See README.md, "Credits".
 //
-// Node only, like records' host: the seller's one file is SQLite (node:sqlite). It talks to no
-// network of its own: a Solana payment is checked through the RPC the service passes it, one call.
-// privacypass-ts reads the buy and writes the answer, unchanged; each signature is Node's own RSA
-// (OpenSSL), a raw `m^d mod n`, since privacypass-ts's issuer signs with JavaScript big integers,
-// hundreds of milliseconds a credit. Nothing here logs what it is sent.
+// Node only: the file is SQLite (node:sqlite). It talks to no network of its own: a Solana payment
+// is checked through the RPC the payer passes it, one call. privacypass-ts reads the buy and writes
+// the answer, unchanged; each signature is Node's own RSA (OpenSSL), a raw `m^d mod n`, since
+// privacypass-ts's issuer signs with JavaScript big integers, hundreds of milliseconds a credit.
+// Nothing here logs what it is sent.
 
 import { constants, createPrivateKey, createPublicKey, privateDecrypt, publicEncrypt, verify, type KeyObject } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
@@ -14,9 +16,12 @@ import { DatabaseSync } from 'node:sqlite'
 import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad } from '@scure/base'
 
-import { CREDIT_TYPE, DIRECTORY_PATH, amountOf, referenceOf, ticketMessage } from './index.ts'
+import { CREDIT_TYPE, DIRECTORY_PATH, amountOf, referenceOf, ticketMessage } from './credit.ts'
 
 const { getPublicKeyBytes } = publicVerif
+
+/** What one credit buys here, as the directory says it. */
+export const UNIT = 'one registration'
 
 /** Bytes in an array of their own: privacypass-ts reads a view's whole underlying buffer from its start. */
 const own = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes)
@@ -38,9 +43,9 @@ export async function keyFrom(pkcs8: Uint8Array): Promise<CreditKey> {
   return { privateKey, publicKey, published: await getPublicKeyBytes(spki) }
 }
 
-/** The directory a service serves at DIRECTORY_PATH (RFC 9578 §4), with its `forest-credit` entry. */
-function directoryOf(requestUri: string, key: Uint8Array, credit: { unit: string; address: string; mint: string; price: string }): Record<string, unknown> {
-  return { 'issuer-request-uri': requestUri, 'token-keys': [{ 'token-type': CREDIT_TYPE, 'token-key': base64urlnopad.encode(key) }], 'forest-credit': { ...credit } }
+/** The directory the payer serves at DIRECTORY_PATH (RFC 9578 §4), with its `forest-credit` entry. */
+function directoryOf(requestUri: string, key: Uint8Array, credit: { address: string; mint: string; price: string }): Record<string, unknown> {
+  return { 'issuer-request-uri': requestUri, 'token-keys': [{ 'token-type': CREDIT_TYPE, 'token-key': base64urlnopad.encode(key) }], 'forest-credit': { unit: UNIT, ...credit } }
 }
 
 /** How many credits a buy asks for: its requests, each one credit. Throws on bytes that are not a batch of requests. */
@@ -155,9 +160,8 @@ function readTicket(text: string): { sponsor: string; key: Uint8Array; credits: 
 export type Answer = { status: number; body: unknown; type?: string }
 const refuse = (error: string, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
 
-/** `work` in one transaction: all of it, or, if it throws, none. Inside one already open, it is part of that one. */
+/** `work` in one transaction: all of it, or, if it throws, none. */
 function together<T>(db: DatabaseSync, work: () => T): T {
-  if (db.isTransaction) return work()
   db.exec('BEGIN IMMEDIATE')
   try {
     const done = work()
@@ -173,70 +177,52 @@ function together<T>(db: DatabaseSync, work: () => T): T {
 export type Hold = 'held' | 'spent' | 'busy'
 
 /**
- * The spent list: every credit id the service took, held while its action is in flight, spent once
- * it lands, freed if it fails or can no longer land. Ids only, and, for a hold, a note the service
- * writes for itself (what to look for to know whether the action landed) and when. In its own file,
- * or in a file the service already has open, such as its seller's.
+ * The spent list, in the seller's file: every credit id the payer took, held while its row is in
+ * flight, spent once the row exists, freed once it can no longer land. Ids only, and, for a hold, a
+ * note the payer writes for itself (the row and the blockhash, what it looks for to know whether
+ * the row landed) and when.
  */
 export class SpentList {
   readonly #db: DatabaseSync
-  readonly #own: boolean
 
-  constructor(file: string | DatabaseSync) {
-    this.#own = typeof file === 'string'
-    this.#db = typeof file === 'string' ? new DatabaseSync(file) : file
+  constructor(db: DatabaseSync) {
+    this.#db = db
     this.#db.exec('CREATE TABLE IF NOT EXISTS credits (id TEXT PRIMARY KEY, spent INTEGER NOT NULL, note TEXT, at INTEGER) WITHOUT ROWID')
   }
 
-  /**
-   * Hold `id` for a request now, or several ids together, all or none: `held` if each was free,
-   * `spent` if one was spent, `busy` if another request holds one.
-   */
-  hold(id: string | string[], note: string | null = null, at: number = Date.now()): Hold {
-    const ids = typeof id === 'string' ? [id] : id
-    if (!ids.length || new Set(ids).size !== ids.length) throw new Error('hold one id or more, each once')
+  /** Hold `id` for a request now: `held` if it was free, `spent` if it was spent, `busy` if another request holds it. */
+  hold(id: string, note: string | null = null, at: number = Date.now()): Hold {
     return together(this.#db, () => {
-      const rows = ids.map((i) => this.#db.prepare('SELECT spent FROM credits WHERE id = ?').get(i) as { spent: number } | undefined)
-      if (rows.some((r) => r?.spent)) return 'spent'
-      if (rows.some((r) => r)) return 'busy'
-      for (const i of ids) this.#db.prepare('INSERT INTO credits (id, spent, note, at) VALUES (?, 0, ?, ?)').run(i, note, at)
+      const row = this.#db.prepare('SELECT spent FROM credits WHERE id = ?').get(id) as { spent: number } | undefined
+      if (row?.spent) return 'spent'
+      if (row) return 'busy'
+      this.#db.prepare('INSERT INTO credits (id, spent, note, at) VALUES (?, 0, ?, ?)').run(id, note, at)
       return 'held'
     })
   }
 
-  /** The action landed: `id`, or each of several, is spent, for good. */
-  land(id: string | string[]): void {
-    together(this.#db, () => {
-      for (const i of typeof id === 'string' ? [id] : id) this.#db.prepare('UPDATE credits SET spent = 1, note = NULL, at = NULL WHERE id = ?').run(i)
-    })
+  /** The row landed: `id` is spent, for good. */
+  land(id: string): void {
+    this.#db.prepare('UPDATE credits SET spent = 1, note = NULL, at = NULL WHERE id = ?').run(id)
   }
 
-  /** The action failed, or can no longer land: `id`, or each of several, is free to be shown again. A spent id stays spent. */
-  free(id: string | string[]): void {
-    together(this.#db, () => {
-      for (const i of typeof id === 'string' ? [id] : id) this.#db.prepare('DELETE FROM credits WHERE id = ? AND spent = 0').run(i)
-    })
+  /** The row failed, or can no longer land: `id` is free to be shown again. A spent id stays spent. */
+  free(id: string): void {
+    this.#db.prepare('DELETE FROM credits WHERE id = ? AND spent = 0').run(id)
   }
 
-  /** Every id held now, with its note and when: what a service settles. */
+  /** Every id held now, with its note and when: what the payer settles. */
   holds(): { id: string; note: string | null; at: number }[] {
     const rows = this.#db.prepare('SELECT id, note, at FROM credits WHERE spent = 0 ORDER BY at').all() as { id: string; note: string | null; at: number }[]
     return rows.map(({ id, note, at }) => ({ id, note, at }))
   }
-
-  /** Closes its file, if it opened it. */
-  close(): void {
-    if (this.#own) this.#db.close()
-  }
 }
 
-/** What a service sells and how: see `seller`. */
+/** How the payer sells its credits: see `seller`. */
 export type SellerConfig = {
   /** Its public origin, `https://host`: the name its credits' challenge carries, and that a ticket names. */
   origin: string
   key: CreditKey
-  /** What one credit buys, in the service's own words. */
-  unit: string
   /** Where a buy is collected, as its directory names it. */
   requestUri: string
   /** Where a credit is paid, in what, and one credit's price in whole units. */
@@ -251,13 +237,9 @@ export type SellerConfig = {
   path: string
 }
 
-/** A service's seller: see `seller`. */
+/** The payer's seller: see `seller`. */
 export type Seller = {
-  /** The seller's one file, open: the spent list, the proofs, the bill, and any table the service adds. */
-  db: DatabaseSync
   spent: SpentList
-  /** `work` in one transaction of the seller's file. */
-  together<T>(work: () => T): T
   /** The directory to serve at DIRECTORY_PATH. */
   directory(): Record<string, unknown>
   /** A buy collected, with the payment header that came with it: its blind signatures, or a refusal. */
@@ -268,7 +250,7 @@ export type Seller = {
 }
 
 /**
- * A service's seller of credits, in one SQLite file: its directory; each buy collected once a proof
+ * The payer's seller of credits, in one SQLite file: its directory; each buy collected once a proof
  * pays for it, a Solana payment (`solana <signature>`) or a sponsor's ticket (`ticket <ticket>`),
  * in the PAYMENT_HEADER; the proofs it took, each for one buy's reference only; how many credits
  * each sponsor's tickets paid for (its bill, counted, never capped); and the spent list.
@@ -330,14 +312,12 @@ export function seller(config: SellerConfig): Seller {
   }
 
   return {
-    db,
     spent,
-    together: (work) => together(db, work),
-    directory: () => directoryOf(config.requestUri, key.published, { unit: config.unit, ...credit }),
+    directory: () => directoryOf(config.requestUri, key.published, credit),
     collect,
     bill: () => Object.fromEntries((db.prepare('SELECT sponsor, credits FROM bill').all() as { sponsor: string; credits: number }[]).map((r) => [r.sponsor, r.credits])),
     close: () => db.close(),
   }
 }
 
-export { DIRECTORY_PATH, amountOf }
+export { DIRECTORY_PATH }

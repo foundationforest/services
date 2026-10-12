@@ -1,7 +1,7 @@
 // The registry payer: one program, with its own key. It sells credits, one registration each, and
 // spends them, one per registry row: it signs the row's transaction as payer and sends it itself.
 //
-//   GET  /.well-known/private-token-issuer-directory   its credit key and price (shared/credits/)
+//   GET  /.well-known/private-token-issuer-directory   its credit key and price (credits/)
 //   POST /credits/buy                                   a paid buy's blind signatures
 //   POST /register                                      one row, paid with one credit
 //   POST /  getPayerSigner                              its address, which a row names as payer
@@ -24,12 +24,11 @@ import { fileURLToPath } from 'node:url'
 
 import { Keypair, PublicKey, SystemProgram, VersionedTransaction } from '@solana/web3.js'
 
-import { PAYMENT_HEADER, checkCredit, creditOf } from '../../../shared/credits/src/index.ts'
-import { type CreditKey, DIRECTORY_PATH, type Rpc, type Seller, keyFrom, seller } from '../../../shared/credits/src/service.ts'
+import { PAYMENT_HEADER, checkCredit, creditOf } from '../credits/credit.ts'
+import { type CreditKey, DIRECTORY_PATH, type Rpc, type Seller, UNIT, keyFrom, seller } from '../credits/seller.ts'
 import { discriminator, rowSpace } from '../../../standard/registry/client/src/index.ts'
 
-/** What one credit buys here, as the directory says it. */
-export const UNIT = 'one registration'
+export { UNIT }
 /** Where a buy is collected. */
 export const BUY_PATH = '/credits/buy'
 
@@ -239,7 +238,7 @@ export class RegistryPayer {
     if (config.databasePath !== ':memory:') mkdirSync(dirname(config.databasePath), { recursive: true })
     this.#config = config
     this.#rpc = rpc
-    this.seller = seller({ origin: config.origin, key: config.creditKey, unit: UNIT, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: config.databasePath })
+    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: config.databasePath })
   }
 
   get spent() {

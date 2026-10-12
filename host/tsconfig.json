@@ -22,6 +22,7 @@
   },
   "include": [
     "src",
+    "credits",
     "test",
     "../standard/registry/client/types"
   ]

@@ -1,7 +1,6 @@
 // e2e: Forest end to end on devnet, against the services this repo deploys (devnet.json). Devnet only.
 //
 //   ../standard.sh keys records registry/client escrow/client reputation/client
-//   (cd ../shared/credits && npm ci)
 //   (cd ../mcp && npm ci)
 //   (cd ../standard/reputation/circuit && npm run fetch)
 //   npm ci && FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
@@ -44,7 +43,7 @@
 //  11. the index shows it: both profiles, their rows counted under the issuer's key, the offer with
 //      its photo from the host, the deal and both reviews at full weight; and not the messages;
 //  12. the loop proves: the seller's app finds its leaf among the index's reputation leaves, proves
-//      its own rating in its market on the device (forest's reputation circuit), at the stamp of its
+//      its own rating in its market on the device (the standard's reputation circuit), at the stamp of its
 //      own row, writes the proof into its card and publishes it again, and the index shows it;
 //  13. the ID check: the seller takes the issuer's second check (the stand-in passes it; free on
 //      devnet), gets its note back at tier 2, proves its tier on the device, puts the proof on its
@@ -65,7 +64,7 @@ import { exportWords, importWords, inboxKey, issuerSecret, mainKey, newSeed, typ
 import { type AccessKey, type Body, type Json, RecordError, b64u, deliver, encodeMessage, getBlob, hex, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, pull, pullRequest, putBlob, readProfile } from '../standard/records/src/index.ts'
 import { message, openMessage, readerCount } from '../standard/records/src/private.ts'
 import { type SignedNote, buildRegistration, fetchRow, issuerKeyBytes, noteFromJson, noteSigned, provePerson, registerIx, stampOf, toBytes32, verifyTier } from '../standard/registry/client/src/index.ts'
-import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../shared/credits/src/index.ts'
+import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, authorization, buy, creditList, finish, serviceOf } from '../mcp/credits/client.ts'
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
@@ -79,7 +78,7 @@ const REPUTATION = { wasm: join(here, '../standard/reputation/circuit/devnet/rep
 const DOLLAR = 1_000_000n
 
 /**
- * A devnet key from the devnet phrase, by the recipe in forest's devnet/deploy.sh scripts:
+ * A devnet key from the devnet phrase, by the recipe in the standard's devnet/deploy.sh scripts:
  * PBKDF2-HMAC-SHA256(phrase, "forest-devnet:" + label, 600,000 iterations, 32 bytes) as the ed25519 seed.
  */
 function devnetKey(label: string): Keypair {
@@ -370,7 +369,7 @@ async function buyHostCredits(p: Person, token: escrow.Token) {
 
 /**
  * Every host credit of the gift into the person's folder's balance, up to 100 a request, as the app
- * spends them (the host's `/credits/spend`, each list as forest's `creditList` writes it). Before, the
+ * spends them (the host's `/credits/spend`, each list as mcp's `creditList` writes it). Before, the
  * host refuses the folder's card; `publishCard` checks that first.
  */
 async function fundFolder(p: Person): Promise<{ credits: number; requests: number }> {
@@ -864,7 +863,7 @@ async function main() {
   steps.bought = { buyer: await buyHostCredits(buyer, token) }
   steps.rows = { seller: await register(seller, token, 'credit'), buyer: await register(buyer, token, 'paid') }
 
-  // The read key the seller's app makes for its assistant, at random (forest's records, "Access
+  // The read key the seller's app makes for its assistant, at random (the standard's records, "Access
   // keys"): listed among the seller's inbox's readers, so every message to it is sealed to it too.
   const readKey = await inboxKey(randomBytes(32))
   const sellerCard = await publishCard(seller, [readKey.recipient])

@@ -1,4 +1,4 @@
-// The welcome gift's tickets, as a service checks them with standard's seller: one for each service
+// The welcome gift's tickets, as the registry payer's seller checks them: one for each service
 // in the gift and no other, each for that service, that buy and the count the gift gives there,
 // signed by the issuer's sponsor key; the same references give the same tickets; and what the file
 // keeps of the buys, a hash.
@@ -7,8 +7,8 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { test } from 'node:test'
 
-import { buy, finish, serviceOf } from '../../shared/credits/src/index.ts'
-import { keyFrom, seller } from '../../shared/credits/src/service.ts'
+import { buy, finish, serviceOf } from '../../mcp/credits/client.ts'
+import { keyFrom, seller } from '../../fee-payer/registry/credits/seller.ts'
 
 import { buysOf, ticketsFor } from '../src/gift.ts'
 import { parseKeypair } from '../src/key.ts'
@@ -19,7 +19,6 @@ const gift = { registryPayer: { origin: 'https://registry-payer.example', credit
 const s = seller({
   origin: gift.registryPayer.origin,
   key: await keyFrom(new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))),
-  unit: 'one registration',
   requestUri: '/credits/buy',
   credit: { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'SOL', price: '0.01' },
   maxBuy: 10,

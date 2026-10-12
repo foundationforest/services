@@ -30,22 +30,79 @@ address, its own container.
 
 ### Credits
 
-A credit here is a [Forest credit](../../shared/credits/README.md)
-whose unit is `one registration`. It sells and spends them with the seller in
-[`shared/credits/`](../../shared/credits/README.md), unchanged
-([Selling credits](../../shared/credits/README.md#selling-credits)).
+A credit here is a prepaid unit of this registry payer, `one registration`. It sells and takes
+them with the code in `credits/`: a copy of the service's side of Forest's credits, trimmed to what
+the registry payer uses, on the same wire format as the host's, so one buyer works at both (mcp's
+client, [`mcp/`](../../mcp/README.md#credits)).
 
-**Its directory,** `GET /.well-known/private-token-issuer-directory`, names its credit key, where a
-buy goes (`/credits/buy`), and its `forest-credit` entry: the unit, the address a credit is paid
-to, the dollar and one credit's price ([How we run it](#how-we-run-it)).
+**A credit** is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578): the
+registry payer signs it blind, over a number only the buyer's app knows, so when the credit comes
+back to be spent, it sees a good signature and nothing that ties it to the buy.
 
-**Buying.** The app makes a buy of `n` credits (standard's `buy`), and it is paid in one of two
-ways: anyone pays its pay link, `n` × the price to the registry payer's address naming the buy's
-reference, and hands over the transaction's signature; or a sponsor, a key listed in `SPONSORS`, signs a ticket (a signed promise to pay for that buy)
-for it. Then anyone posts the buy's bytes to `POST /credits/buy`, with the proof in the
-`Forest-Payment` header. It checks the proof (a Solana payment in one `getTransaction` at
-finalized), and answers with the `n` blind signatures, the same each time the buy is collected with
-that proof. The app finishes the credits and keeps them.
+- Every credit of this registry payer answers one challenge: credit type 2, its host name as the
+  issuer's name, no redemption context and no origin info. With no context, credits can be bought
+  ahead and kept.
+- A credit is these bytes: its type (2 bytes), a nonce (32), the challenge's SHA-256 (32), the
+  key's id, SHA-256 of the key (32), and the signature (256). 354 bytes, written in base64url.
+- The signature is RSABSSA-SHA384-PSS-Deterministic (RFC 9474) over the first 98 bytes. The
+  registry payer made it blind: it signed a number the app had blinded, and never saw the nonce.
+  Each signature is Node's own RSA (OpenSSL); privacypass-ts's issuer signs with JavaScript big
+  integers, hundreds of times slower.
+- A credit's id, on the spent list (the ids of the credits already spent), is its nonce in hex.
+
+**Its directory,** `GET /.well-known/private-token-issuer-directory`, is Privacy Pass's issuer
+directory as RFC 9578 writes it, with one more field:
+
+```
+{ "issuer-request-uri": "/credits/buy",
+  "token-keys": [{ "token-type": 2, "token-key": <base64url> }],
+  "forest-credit": { "unit": "one registration", "address": <Solana address>,
+                     "mint": <mint address> | "SOL", "price": <decimal text> } }
+```
+
+`price` is one credit's price, in whole units of `mint`, paid to `address`
+([How we run it](#how-we-run-it)). An app takes the latest type 2 key whose `not-before` has
+passed; this registry payer lists one key, with no `not-before`.
+
+**Buying** is four steps:
+
+1. **The buy.** The app makes `n` requests, each the blinded first 98 bytes of a credit to be, in
+   one batch, as `draft-ietf-privacypass-batched-tokens` writes it. It keeps each nonce and each
+   blinding's inverse, what it needs to finish, in the vault (the person's own folder for what the
+   seed alone cannot give back,
+   [records](https://github.com/foundationforest/standard/blob/main/records/README.md#the-vault)).
+   The buy's reference is SHA-256 of its bytes, written as a Solana address.
+2. **Pay.** Someone pays for the buy, in one of the two ways below.
+3. **Get signed.** Anyone holding the buy collects it: its bytes to `POST /credits/buy`, as
+   `application/private-token-generic-batch-request`, with the proof in the `Forest-Payment`
+   header. The registry payer checks that the proof pays for this buy and answers the `n` blind
+   signatures. Signing is deterministic, so the same buy collected again with the same proof gets
+   the same answer: a lost answer costs nothing, and gives no credit more.
+4. **Finish.** The app finishes the buy: it unblinds each signature, checks it against the
+   registry payer's key, and keeps the credits. An answer for another buy, or with an empty slot,
+   finishes nothing, and the app collects again.
+
+**The ways to pay.** A proof pays for one buy: the registry payer keeps which proof paid which
+reference, and refuses a proof it took for another.
+
+- **A Solana payment,** `Forest-Payment: solana <transaction signature>`. The buy's pay link is a
+  Solana Pay transfer request,
+  `solana:<address>?amount=<n × price>[&spl-token=<mint>]&reference=<reference>&label=<host>`,
+  which anyone pays from any wallet app that reads Solana Pay. The registry payer checks that one
+  transaction, at finalized, in one `getTransaction`: no error, the buy's reference among its
+  accounts, and `address` gained at least `n` × `price` in `mint`.
+- **A sponsor's ticket,** `Forest-Payment: ticket <ticket>`. A sponsor is a key listed in
+  `SPONSORS`, such as the issuer's, that pays for other people's buys. The app sends the sponsor
+  the buy's reference; the sponsor signs, with Ed25519,
+  `forest credit ticket\n<origin>\n<reference>\n<n>` in UTF-8, so the ticket pays for that buy at
+  this registry payer, of `n` credits, and no other. The ticket is
+  `<sponsor's address>.<n>.<signature in base64url>`. The registry payer keeps a bill: how many
+  credits each sponsor's tickets paid for.
+
+The buyer or the sponsor sees the reference, never the credits; the registry payer sees who paid,
+or which sponsor, and the blinded buy, never which spends they become.
+
+`POST /credits/buy` checks, and refuses by name:
 
 | Check | Refusal |
 |---|---|
@@ -63,7 +120,7 @@ The person's device:
 1. builds the row's transaction with the registry payer as payer (`getPayerSigner` at its address
    names it), and signs it with the main key;
 2. sends it to `POST /register`, as `{ transaction }` in base64, with one credit in
-   `Authorization: PrivateToken token="<credit>"`.
+   `Authorization: PrivateToken token="<credit>"`, as RFC 9577 shows one (mcp's `authorization`).
 
 It checks, in this order, and refuses by name at the first that fails:
 
@@ -74,7 +131,7 @@ It checks, in this order, and refuses by name at the first that fails:
 | It is one instruction, `register`, to the registry, with a whole label and its four accounts (the row, the main key, the payer, System); the registry payer pays its fee and is the row's payer; no address lookup table and no other account | `not_one_registration` (400) |
 | The main key it names signed it | `not_signed_by_main_key` (400) |
 | The request shows a credit | `no_credit` (401) |
-| The credit is this registry payer's: its challenge, its key, its signature (standard's `checkCredit`) | `credit` (402) |
+| The credit is this registry payer's: its type, its challenge, its key, its signature (`checkCredit` in `credits/credit.ts`) | `credit` (402) |
 | The row does not exist yet | `row_exists` (409) |
 | The credit is not spent | `spent` (409) |
 | No other request holds it now | `held` (409) |
@@ -84,10 +141,11 @@ Then the credit is held, with the row's address and the transaction's blockhash,
 1. the registry payer signs the transaction as payer;
 2. one simulation must pass, or the credit is freed and the answer is `row_refused` (400), with the
    simulation's error: a row that would fail costs nothing, not even a network fee;
-3. **the lamport cap:** beyond the network fee, the registry payer may fund no more than the row's
-   rent (`getMinimumBalanceForRentExemption` for the row's size, from its label): every System
-   instruction the simulation ran with the registry payer as source counts, and one the RPC did not
-   parse counts as too much. Otherwise the credit is freed and the answer is `over_cap` (400);
+3. **the lamport cap** (a lamport is the smallest unit of SOL): beyond the network fee, the
+   registry payer pays for nothing but the row's rent, the deposit Solana holds to keep the row
+   (`getMinimumBalanceForRentExemption` for the row's size, which its label sets). It adds up every
+   System instruction in the simulation that takes from the registry payer; one the RPC could not
+   read counts as too much. Over the cap, the credit is freed and the answer is `over_cap` (400);
 4. it sends the transaction and answers `{ signature }`. If the RPC does not take it, the answer is
    `not_sent` (502), and the credit stays held: it may have gone out.
 
@@ -129,20 +187,28 @@ Holds are kept in its file, so a restart settles them. No clock decides anything
 ### Run it
 
 ```
-./standard.sh registry/client                            # from the repo root
-(cd shared/credits && npm ci)                                   # from the repo root
+./standard.sh registry/client records                           # from the repo root
+(cd mcp && npm ci)                                              # from the repo root
 (cd fee-payer/registry && npm ci && npm run check && npm test)   # real credits, a stand-in RPC; seconds
 ```
 
-The tests buy real credits, paid on Solana and by a sponsor's ticket, collect and finish them,
-register with them, and check every refusal above, nothing held or sent for any of them; a credit
-held before its row is sent, spent once the row exists, freed once the row is absent and its
-blockhash expired; one settle round at a time; and a hold kept across a restart.
+The tests buy real credits with mcp's credits client, paid on Solana and by a sponsor's ticket as
+the issuer signs one (`issuer/src/ticket.ts`), collect and finish them, register with them, and
+check every refusal above, nothing held or sent for any of them; a credit held before its row is
+sent, spent once the row exists, freed once the row is absent and its blockhash expired; one settle
+round at a time; and a hold kept across a restart. `test/credits.test.ts` checks the code in
+`credits/` on its own: the key from PKCS #8; the directory as mcp's client reads it; a buy answered
+byte for byte as privacypass-ts's own issuer answers it, and under another key an empty slot,
+nothing logged; a Solana payment checked in one call (short by one unit, another mint, a failed
+transaction, no reference, SOL, a reference from a lookup table); a ticket refused from another
+sponsor, for another count, service or buy, and billed once; every refusal; one credit read from
+the Authorization header; a changed byte, another key or another service's credit refused; and the
+spent list across a restart.
 
 ### On devnet
 
-`deploy/registry.Dockerfile` builds one image from Node's image: the registry payer, with
-standard's `registry/client` and `credits` at the commit in `STANDARD`. Before the first row, its
+`deploy/registry.Dockerfile` builds one image from Node's image: the registry payer, its
+`credits/`, and the standard's `registry/client` at the commit in `STANDARD`. Before the first row, its
 key needs SOL for the deposits it funds.
 
 The foundation's registry payer runs that image on Railway, service `registry payer`, at
@@ -167,6 +233,14 @@ https://registry-payer.devnet.forest.foundation.
 | `SPONSORS` | `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`, the issuer's sponsor key | no |
 | `DATABASE_PATH` | `/data/credits.sqlite` | no |
 | `PORT` | `8080` | no |
+
+## How you pay us
+
+One credit pays for one registration. You buy credits with a payment, or with a sponsor's ticket
+(someone else, such as the issuer, signing to pay for your buy). The registry payer signs credits
+blind, so it cannot tell which buy a credit came from. A credit you show is spent once the row
+exists on chain; if the row never lands, the credit is yours to show again. The details:
+[Credits](#credits) and [When a credit is spent](#when-a-credit-is-spent).
 
 ## How we run it
 
@@ -204,6 +278,11 @@ https://registry-payer.devnet.forest.foundation.
 - **It keeps no network address.** It logs nothing.
 - **Nothing it keeps ties a spent credit to its row,** or a credit to its buy: the spent list holds
   each spent credit's id alone.
+- **It cannot tell which buy a credit came from.** It signed the credit blind and never saw its
+  nonce (but see Limits).
+- **A buy is paid once.** Collecting it again gives the same credits, never more.
+- **Credits are never refunded, never move between people, and never stand in for money.** One
+  credit is one registration here, and nothing anywhere else.
 
 ## Limits
 
@@ -225,9 +304,23 @@ https://registry-payer.devnet.forest.foundation.
   ([standard's registry](https://github.com/foundationforest/standard/blob/main/registry/README.md)).
 - **One container.** When it stops, the registry payer stops, until the hosting platform starts it
   again.
-- **Whoever holds a credit can spend it, and a network address can link.** A buy collected and a
-  credit spent from one network address can be matched
-  ([credits, Limits](../../shared/credits/README.md#limits)).
+- **A credit names nobody, so it is a bearer credit.** That is what makes it unlinkable. There is
+  no way to move a credit here, but nothing stops a person from handing its bytes to someone else,
+  and whoever holds them can spend it. Credits are as safe as the vault.
+- **A network address can link.** A buy collected and a credit spent from one network address can
+  be matched. Use a VPN.
+- **One key for everyone.** The app takes the key from the registry payer's directory. A registry
+  payer could give one person a key of their own and so know their credits, and blinding holds only
+  when the key is a real RSA key. An app can compare the key with what others see; this code cannot
+  rule this out.
+- **The count can show.** A buy of an unusual number of credits, spent in a burst, is easier to
+  tell apart.
+- **Not post-quantum.** A large quantum computer could break RSA-2048 and make credits; the
+  registry payer would change its key. It could still not link a spend to its buy: blinding hides
+  that from any computer.
+- **The batch is a draft.** `draft-ietf-privacypass-batched-tokens` is not an RFC yet; its encoding
+  is the one `privacypass-ts` 0.9.0 writes.
+- **The credits code is not audited.**
 - **It trusts its RPC,** for a payment, a simulation, and whether a row exists.
 - **What it collects sits under its signing key,** in the key's own token account; nothing moves it
   but someone holding the key.
@@ -236,11 +329,12 @@ https://registry-payer.devnet.forest.foundation.
 
 ## Who decides what
 
-- **`shared/credits/`:** the credit, its directory entry, the buy, the ways to pay, and the rules: a
-  proof pays for one buy; a credit is spent once, only when its action lands, and never refunded.
-  The registry takes no fee and cares nothing for who pays.
+- **The standard's registry:** it takes no fee and cares nothing for who pays.
 - **This registry payer, by its own choice:** what it pays for, its price, dollar and address, which
-  sponsors it takes, how many credits a buy may hold, and when a row has landed.
+  sponsors it takes, how many credits a buy may hold, and when a row has landed; and its credit's
+  format (type 2, its challenge, its id, the directory's `forest-credit` entry, the buy and its
+  reference, the pay link, the ticket, the headers), which it keeps the same as the host's, so one
+  buyer works at both.
 - **An app, with the person:** which registry payer to use, or none, and when to spend a credit.
 - **A buyer or a sponsor:** whom it pays for.
 
@@ -261,3 +355,20 @@ an account the main key can empty. So it pays for the one `register` and nothing
 A Kora pays for whatever its rules allow, so this one needed a program of ours in front of it and a
 key between the two: two processes in one container. Every check that mattered was already the
 program's; what Kora added, a simulation and a cap on what the payer spends, is two RPC calls here.
+
+**Why Privacy Pass, and why type 2?**
+Privacy Pass is the IETF's standard for exactly this, with maintained libraries. Of its two credit
+types, type 2 (Blind RSA) fits credits for three reasons:
+- anyone can check a type 2 credit with the registry payer's public key, so the app knows what it
+  holds; only the registry payer can check a type 1 credit;
+- its blinding state is plain bytes, so a buy someone else pays days later can be finished on
+  another device, from the vault; `privacypass-ts`'s type 1 client keeps that state in memory only;
+- it is the type deployed most widely, in Apple's Private Access Tokens and at Cloudflare.
+
+The cost: a credit is 354 bytes rather than 146, and the registry payer makes one RSA signature per
+credit.
+
+**Why is a credit never refunded?**
+A refund pays someone back, so the registry payer would need to know whom: and a credit names
+nobody. Refunding would mean linking the credit to its buyer, which is what credits exist to
+prevent.

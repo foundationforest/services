@@ -10,10 +10,12 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/host.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test test/host.test.ts test/credits.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@cloudflare/privacypass-ts": "0.9.0",
+    "@scure/base": "2.4.0",
     "@solana/web3.js": "1.99.0"
   },
   "devDependencies": {

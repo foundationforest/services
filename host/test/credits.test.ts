@@ -1,9 +1,11 @@
-// Credits, a service's side: its key from PKCS #8, its seller's directory as the client reads it,
-// a buy answered with Node's own RSA, byte for byte privacypass-ts's answer, and finished and taken
-// by the client; nothing logged. Then each way a buy is paid: a Solana payment checked in one call,
-// and a sponsor's ticket; every refusal; a proof that pays one buy only, the same answer again, and
-// the bill counted once. And the spent list's hold, land and free, of one id or several together,
-// kept across a restart, and inside a transaction the service opened.
+// The host's credits (credits/): its key from PKCS #8, its seller's directory as mcp's client reads
+// it, a buy answered with Node's own RSA, byte for byte privacypass-ts's answer, and finished by the
+// client and taken by the host; nothing logged. Then each way a buy is paid: a Solana payment
+// checked in one call, and a sponsor's ticket as the issuer signs it (issuer/src/ticket.ts); every
+// refusal; a proof that pays one buy only, the same answer again, and the bill counted once. The
+// check a spend makes: a list of credits, all or none, and every credit that must not hold. And the
+// spent list's hold, land and free, of one id or several together, kept across a restart, and
+// inside the transaction that fills a folder's balance.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
@@ -12,21 +14,33 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
-import { base58 } from '@scure/base'
-import { buy, checkCredit, finish, serviceOf, ticket, ticketMessage } from '../src/index.ts'
-import { type Rpc, type SellerConfig, SpentList, answer, keyFrom, seller } from '../src/service.ts'
+import { base58, base64urlnopad as b64u } from '@scure/base'
 
-const ORIGIN = 'https://payer.example'
+import { type Credit, buy, creditList, finish, serviceOf } from '../../mcp/credits/client.ts'
+import { ticket, ticketMessage } from '../../issuer/src/ticket.ts'
+import { challengeOf, checkCredit, checkCredits, creditId } from '../credits/credit.ts'
+import { type Rpc, type SellerConfig, UNIT, answer, keyFrom, seller } from '../credits/seller.ts'
+
+const ORIGIN = 'https://host.example'
 const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 const ADDRESS = base58.encode(new Uint8Array(32).fill(3))
 const pkcs8 = (bits: number) => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: bits }).privateKey.export({ type: 'pkcs8', format: 'der' }))
 
 const der = pkcs8(2048)
 const key = await keyFrom(der)
-const config: SellerConfig = { origin: ORIGIN, key, unit: 'one registration', requestUri: '/credits/buy', credit: { address: ADDRESS, mint: MINT, price: '0.5' }, maxBuy: 10, sponsors: [], rpc: null, path: ':memory:' }
+const config: SellerConfig = { origin: ORIGIN, key, requestUri: '/credits/buy', credit: { address: ADDRESS, mint: MINT, price: '0.5' }, maxBuy: 10, sponsors: [], rpc: null, path: ':memory:' }
 const service = serviceOf(ORIGIN, seller(config).directory())
 
-/** A sponsor: an Ed25519 key, its address, and the ticket it signs for a buy. */
+/** privacypass-ts's own issuer, from the host's private key. */
+async function cloudflareIssuer() {
+  const algorithm = { name: 'RSA-PSS', hash: 'SHA-384' }
+  const privateKey = await crypto.subtle.importKey('pkcs8', der as Uint8Array<ArrayBuffer>, algorithm, true, ['sign'])
+  const jwk = await crypto.subtle.exportKey('jwk', privateKey)
+  const publicKey = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e }, algorithm, true, ['verify'])
+  return new publicVerif.Issuer(publicVerif.BlindRSAMode.PSS, 'host.example', privateKey, publicKey)
+}
+
+/** A sponsor: an Ed25519 key, its address, and the ticket it signs for a buy, as the issuer signs one. */
 function sponsor() {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519')
   const address = base58.encode(new Uint8Array(publicKey.export({ format: 'der', type: 'spki' }).subarray(-32)))
@@ -36,26 +50,26 @@ function sponsor() {
 
 test('its key, from PKCS #8, and its directory, as the client reads it', async () => {
   assert.deepEqual(service.key, key.published)
-  assert.deepEqual([service.requestUri, service.unit, service.address, service.mint, service.price], [`${ORIGIN}/credits/buy`, 'one registration', ADDRESS, MINT, '0.5'])
+  assert.deepEqual([service.requestUri, service.unit, service.address, service.mint, service.price], [`${ORIGIN}/credits/buy`, UNIT, ADDRESS, MINT, '0.5'])
   await assert.rejects(keyFrom(pkcs8(1024)), /RSA-2048/)
   await assert.rejects(keyFrom(new Uint8Array(32)))
   assert.throws(() => seller({ ...config, sponsors: ['not-an-address'] }), /sponsor/)
 })
 
-test('a buy answered with Node’s RSA: byte for byte privacypass-ts’s answer; the client finishes it and the service takes each credit', async () => {
+test('a buy answered with Node’s RSA: byte for byte privacypass-ts’s answer; the client finishes it and the host takes each credit', async () => {
   const b = await buy(service, 3)
   const answered = await answer(b.buy, key)
   assert.deepEqual(await answer(b.buy, key), answered, 'the same buy gets the same answer')
   // privacypass-ts's own issuer, from the same private key, answers the same bytes: RSA signing is deterministic.
-  const algorithm = { name: 'RSA-PSS', hash: 'SHA-384' }
-  const privateKey = await crypto.subtle.importKey('pkcs8', der as Uint8Array<ArrayBuffer>, algorithm, true, ['sign'])
-  const jwk = await crypto.subtle.exportKey('jwk', privateKey)
-  const publicKey = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e }, algorithm, true, ['verify'])
-  const theirs = await new genericBatched.Issuer(new publicVerif.Issuer(publicVerif.BlindRSAMode.PSS, 'payer.example', privateKey, publicKey)).issue(genericBatched.BatchedTokenRequest.deserialize(b.buy))
+  const theirs = await new genericBatched.Issuer(await cloudflareIssuer()).issue(genericBatched.BatchedTokenRequest.deserialize(b.buy))
   assert.deepEqual(answered, theirs.serialize())
   const credits = await finish(b.pending, answered)
   assert.equal(credits.length, 3)
-  for (const c of credits) assert.match(await checkCredit(c, { origin: ORIGIN, keys: [key.published] }), /^[0-9a-f]{64}$/)
+  for (const [i, c] of credits.entries()) {
+    const id = await checkCredit(c.credit, { origin: ORIGIN, keys: [key.published] })
+    assert.equal(id, creditId(c.credit))
+    assert.equal(id, Buffer.from(b64u.decode(b.pending.blinds[i]!.nonce)).toString('hex'), 'its id is its nonce')
+  }
 })
 
 test('a request under another key gets an empty slot, and nothing is logged', async () => {
@@ -142,7 +156,7 @@ test('a sponsor’s ticket: for this service, this buy and its count, from a spo
   const status = async (header: string, bytes = b.buy) => (await s.collect(bytes, header)).status
   assert.equal(await status(`ticket ${stranger.signs(ORIGIN, b.reference, 3)}`), 402, 'a sponsor it does not take')
   assert.equal(await status(`ticket ${foundation.signs(ORIGIN, b.reference, 2)}`), 402, 'a ticket for another count')
-  assert.equal(await status(`ticket ${foundation.signs('https://host.example', b.reference, 3)}`), 402, 'a ticket for another service')
+  assert.equal(await status(`ticket ${foundation.signs('https://registry-payer.example', b.reference, 3)}`), 402, 'a ticket for another service')
   const good = foundation.signs(ORIGIN, b.reference, 3)
   const [address, count, signature] = good.split('.') as [string, string, string]
   const flipped = signature.slice(0, -2) + (signature.at(-2) === 'A' ? 'B' : 'A') + signature.at(-1)
@@ -167,10 +181,11 @@ test('what a buy is refused for', async () => {
 })
 
 test('the spent list: hold, land and free, of one or several together, kept across a restart', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'forest-credits-spent-'))
+  const dir = mkdtempSync(join(tmpdir(), 'forest-host-credits-'))
   try {
-    const path = join(dir, 'spent.sqlite')
-    let list = new SpentList(path)
+    const path = join(dir, 'credits.sqlite')
+    let s = seller({ ...config, path })
+    let list = s.spent
     assert.equal(list.hold('a', 'sig-a', 1), 'held')
     assert.equal(list.hold('a'), 'busy', 'held by another request in flight')
     assert.equal(list.hold('b', 'sig-b', 2), 'held')
@@ -180,8 +195,9 @@ test('the spent list: hold, land and free, of one or several together, kept acro
     assert.equal(list.hold('a'), 'spent', 'a spent credit stays spent')
     list.free('b')
     assert.equal(list.hold('b', 'sig-b2', 3), 'held', 'a freed credit can be shown again')
-    list.close()
-    list = new SpentList(path)
+    s.close()
+    s = seller({ ...config, path })
+    list = s.spent
     assert.deepEqual(list.holds(), [{ id: 'b', note: 'sig-b2', at: 3 }], 'what is held, after a restart')
     assert.equal(list.hold('a'), 'spent')
 
@@ -195,13 +211,13 @@ test('the spent list: hold, land and free, of one or several together, kept acro
     list.land(['c', 'd'])
     list.free(['e', 'c'])
     assert.deepEqual([list.hold('c'), list.hold('d'), list.hold('e')], ['spent', 'spent', 'held'], 'landed together, freed together; a spent one stays spent')
-    list.close()
+    s.close()
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
 })
 
-test('the spent list in the seller’s file: held and spent inside the service’s own transaction, or not at all', () => {
+test('the spent list in the seller’s file: held and spent inside the host’s own transaction, or not at all', () => {
   const s = seller(config)
   s.db.exec('CREATE TABLE balances (folder TEXT PRIMARY KEY, credits INTEGER NOT NULL)')
   s.together(() => {
@@ -217,7 +233,56 @@ test('the spent list in the seller’s file: held and spent inside the service�
       throw new Error('the balance could not take it')
     }),
   )
-  assert.equal(s.spent.hold('z'), 'held', 'rolled back with the service’s transaction')
+  assert.equal(s.spent.hold('z'), 'held', 'rolled back with the host’s transaction')
   assert.deepEqual({ ...s.db.prepare('SELECT credits FROM balances').get() }, { credits: 2 })
   s.close()
+})
+
+/** `n` credits from a seller, bought with mcp's client and answered as a paid buy is. */
+async function creditsFrom(origin: string, k: typeof key, n: number): Promise<Credit[]> {
+  const b = await buy(serviceOf(origin, seller({ ...config, origin, key: k }).directory()), n)
+  return finish(b.pending, await answer(b.buy, k))
+}
+
+test('several shown with one spend, as its body lists them: checked together, all or none', async () => {
+  const credits = await creditsFrom(ORIGIN, key, 4)
+  const host = { origin: ORIGIN, keys: [key.published] }
+  const list = creditList(credits)
+  assert.deepEqual(await checkCredits(list, host, 4), credits.map((c) => creditId(c.credit)), 'their ids, in order')
+  await assert.rejects(checkCredits(list, host, 3), /from 1 to 3 credits/, 'more than the host takes at once')
+  await assert.rejects(checkCredits([], host, 4), /from 1 to 4/)
+  await assert.rejects(checkCredits(list[0], host, 4), /from 1 to 4/, 'a list, not one credit')
+  await assert.rejects(checkCredits([list[0], list[1], list[0]], host, 4), /the same credit twice/)
+  await assert.rejects(checkCredits([list[0], 7], host, 4), /not a credit/)
+  // One that does not hold refuses them all: another service's among them.
+  const [theirs] = await creditsFrom('https://registry-payer.example', await keyFrom(pkcs8(2048)), 1)
+  await assert.rejects(checkCredits([...list.slice(0, 2), theirs!.credit], host, 4), /not this service's credit/)
+})
+
+test('a token Cloudflare’s own client made for the same challenge is a credit too', async () => {
+  const client = new publicVerif.Client(publicVerif.BlindRSAMode.PSS)
+  const request = await client.createTokenRequest(challengeOf(ORIGIN), key.published)
+  const token = await client.finalize(await (await cloudflareIssuer()).issue(request))
+  assert.ok(await checkCredit(token.serialize(), { origin: ORIGIN, keys: [key.published] }))
+})
+
+test('refused by the host: another service’s credit, a key it does not count, a changed byte, not a credit', async () => {
+  const [credit] = await creditsFrom(ORIGIN, key, 1)
+  const bytes = b64u.decode(credit!.credit)
+  const other = await keyFrom(pkcs8(2048))
+  await assert.rejects(checkCredit(bytes, { origin: 'https://registry-payer.example', keys: [key.published] }), /not this service's credit/)
+  await assert.rejects(checkCredit(bytes, { origin: ORIGIN, keys: [other.published] }), /not under a key/)
+  for (const at of [2, 40, 100, bytes.length - 1]) {
+    const changed = bytes.slice()
+    changed[at]! ^= 1
+    await assert.rejects(checkCredit(changed, { origin: ORIGIN, keys: [key.published] }), Error, `byte ${at}`)
+  }
+  await assert.rejects(checkCredit(new Uint8Array(354), { origin: ORIGIN, keys: [key.published] }))
+  // A short view into a good credit's buffer: privacypass-ts alone would read the whole buffer.
+  await assert.rejects(checkCredit(bytes.subarray(0, 300), { origin: ORIGIN, keys: [key.published] }), /not a credit/)
+  await assert.rejects(checkCredit(new Uint8Array([...bytes, 0]), { origin: ORIGIN, keys: [key.published] }), /not a credit/)
+  // And a good credit inside a larger buffer, as a Node Buffer from the pool often is, still holds.
+  const inside = new Uint8Array(1000)
+  inside.set(bytes, 123)
+  assert.equal(await checkCredit(inside.subarray(123, 123 + bytes.length), { origin: ORIGIN, keys: [key.published] }), creditId(bytes))
 })

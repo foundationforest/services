@@ -1,13 +1,15 @@
-// Forest credits: prepaid units for one service, bought once and spent without the service being
-// able to tell who bought them. A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA
+// Forest credits, the buyer's side: what an app does to buy a service's credits and spend them. A
+// credit is a prepaid unit for one service, a Privacy Pass credit of type 2 (RFC 9578): an RSA
 // signature the service made blind, over a nonce only the buyer's app knows, so when it comes back
-// to be spent the service sees a good signature and nothing that ties it to the buy. See README.md.
+// to be spent the service sees a good signature and nothing that ties it to the buy. See README.md,
+// "Credits".
 //
-// This is the client side, and the one check every service makes: the buy, its pay link, what a
-// sponsor signs for it, finishing the credits from the service's answer, showing one or several, and
-// checking them. It talks to no network of its own. The blinding and the signatures are Cloudflare's privacypass-ts, unchanged; its type 2
-// client keeps the blinding in memory only, so the buy here keeps it as bytes, to finish later, on
-// any device, from the vault.
+// The service, from its directory; the buy and its pay link; finishing the credits from the
+// service's answer; showing one or several. It talks to no network of its own. The blinding and the
+// signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
+// memory only, so the buy here keeps it as bytes, to finish later, on any device, from the vault.
+// The host (host/credits/) and the registry payer (fee-payer/registry/credits/) each check and sell
+// credits with their own copy of the service's side, on the same wire format.
 
 import {
   AuthenticatorInput,
@@ -31,7 +33,6 @@ export const PAYMENT_HEADER = 'forest-payment'
 const suite = () => BLIND_RSA.suite[BlindRSAMode.PSS]()
 const sha256 = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
 const b64u = base64urlnopad
-const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i])
 
 /** A service that sells credits, as its directory describes it. */
 export type Service = {
@@ -174,24 +175,6 @@ export async function buy(service: Service, count: number): Promise<{ buy: Uint8
   return { buy: bytes, reference, payLink, pending: { service: service.origin, key: b64u.encode(service.key), buy: b64u.encode(bytes), blinds } }
 }
 
-/**
- * What a sponsor signs, with Ed25519, to pay for a buy: the service, the buy's reference and how many
- * credits it holds. So a ticket pays for that buy at that service, of that many credits, and no other.
- */
-export function ticketMessage(origin: string, reference: string, credits: number): Uint8Array {
-  originOf(origin)
-  addressBytes(reference, 'reference')
-  if (!Number.isSafeInteger(credits) || credits < 1) throw new RangeError('a ticket is for one credit or more')
-  return new TextEncoder().encode(`forest credit ticket\n${origin}\n${reference}\n${credits}`)
-}
-
-/** A ticket as the payment header carries it: the sponsor's address, the credits, and its signature of `ticketMessage`, base64url. */
-export function ticket(sponsor: string, credits: number, signature: Uint8Array): string {
-  addressBytes(sponsor, 'sponsor')
-  if (signature.length !== 64) throw new Error('a signature is 64 bytes')
-  return `${sponsor}.${credits}.${b64u.encode(signature)}`
-}
-
 /** A pending buy's shape, as the vault keeps it. Throws on any other. */
 export function checkPending(value: unknown): asserts value is Pending {
   if (!isObject(value)) throw new Error('a pending buy is an object')
@@ -250,12 +233,6 @@ function bytesOf(credit: Credit | Uint8Array | string): Uint8Array {
   return bytes
 }
 
-/** What a credit is named by on a service's spent list: its nonce, lowercase hex. */
-export function creditId(credit: Credit | Uint8Array | string): string {
-  const token = Token.deserialize(BLIND_RSA, bytesOf(credit))
-  return Array.from(token.authInput.nonce, (b) => b.toString(16).padStart(2, '0')).join('')
-}
-
 /** The Authorization header that shows one credit with a request (RFC 9577 §2.2). */
 export function authorization(credit: Credit | Uint8Array | string): string {
   return new AuthorizationHeader(Token.deserialize(BLIND_RSA, bytesOf(credit))).toString(true)
@@ -267,52 +244,4 @@ export function authorization(credit: Credit | Uint8Array | string): string {
  */
 export function creditList(credits: (Credit | Uint8Array | string)[]): string[] {
   return credits.map((credit) => b64u.encode(bytesOf(credit)))
-}
-
-/** The credit an Authorization header shows, as bytes; throws when it shows none, or more than one. */
-export function creditOf(header: string): Uint8Array {
-  const shown = AuthorizationHeader.parse(BLIND_RSA, header)
-  if (shown.length !== 1) throw new Error('show one credit')
-  return shown[0]!.token.serialize()
-}
-
-/**
- * For a service: does this credit hold? Type 2, this service's challenge, one of `keys` (the keys
- * whose credits it still counts), and the signature. Gives its id for the spent list; throws on
- * anything else. Whether it is spent, or held by a request in flight, is the service's list to say.
- */
-export async function checkCredit(credit: Credit | Uint8Array | string, service: { origin: string; keys: Uint8Array[] }): Promise<string> {
-  let token: Token
-  let bytes: Uint8Array
-  try {
-    bytes = bytesOf(credit)
-    token = Token.deserialize(BLIND_RSA, bytes)
-  } catch {
-    throw new Error('not a credit')
-  }
-  if (!same(token.serialize(), bytes)) throw new Error('not a credit: not in its one spelling')
-  const input = token.authInput
-  if (input.tokenType !== CREDIT_TYPE) throw new Error('not a credit: another credit type')
-  if (!same(input.challengeDigest, await sha256(challengeOf(service.origin).serialize()))) throw new Error("not this service's credit")
-  let keyBytes: Uint8Array | undefined
-  for (const k of service.keys) if (same(input.tokenKeyId, await sha256(k))) keyBytes = k
-  if (!keyBytes) throw new Error('not under a key this service counts')
-  if (!(await suite().verify(await importKey(keyBytes), token.authenticator, input.serialize()))) throw new Error('the signature does not hold')
-  return creditId(bytes)
-}
-
-/**
- * For a service: several credits shown together, as a request body lists them (`creditList`). At
- * least one and at most `max`, each one that holds (`checkCredit`), and no credit twice. Gives their
- * ids, in order; throws on anything else, so the service takes none of them.
- */
-export async function checkCredits(list: unknown, service: { origin: string; keys: Uint8Array[] }, max: number): Promise<string[]> {
-  if (!Array.isArray(list) || list.length < 1 || list.length > max) throw new Error(`show from 1 to ${max} credits`)
-  const ids: string[] = []
-  for (const credit of list) {
-    if (typeof credit !== 'string') throw new Error('not a credit')
-    ids.push(await checkCredit(credit, service))
-  }
-  if (new Set(ids).size !== ids.length) throw new Error('the same credit twice')
-  return ids
 }

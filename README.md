@@ -10,13 +10,14 @@ every one.
 
 | Folder | What it is |
 |---|---|
-| [`issuer`](issuer/README.md) | Checks once, by face, that a person is one real human, and signs them a note (a signed statement, which the person keeps, that they passed) |
+| [`issuer`](issuer/README.md) | Checks once, by face, that a person is one real human, through Didit (an outside company that runs the face and ID checks), and signs them a note (a signed statement, which the person keeps, that they passed) |
 | [`fee-payer`](fee-payer/README.md) | The registry payer in `registry/`, the fee payer in `at-cost/` |
 | [`host`](host/README.md) | Keeps people's signed records, messages and photos, paid for in its credits (prepaid units a person buys) |
 | [`index`](index/README.md) | Reads the hosts it lists, the registry's rows (its public entries, each saying a profile holds a note) and the escrow's receipts, and scores each profile |
 | [`mcp`](mcp/README.md) | The CLI: Forest's actions as typed commands and as MCP tools; hosted, for AI chats |
-| [`shared/credits`](shared/credits/README.md) | Code the host, the registry payer and the issuer share |
 | [`e2e`](e2e/README.md) | The test of the whole loop |
+
+Credits, the prepaid units the host and the registry payer sell, are explained in each of those READMEs.
 
 On devnet:
 
@@ -58,10 +59,12 @@ A person's app holds their seed, and mixes from it a main key for each label, su
 Then:
 
 1. **A note.** The issuer checks the person's face once and signs a note for their note number, at
-   tier 1; a document check later signs the same note at tier 2. With the first note it signs a
-   sponsor's ticket (a signed promise to pay for a buy) for each of the person's first buys, which
-   their app made: a few registrations at the registry payer, and writes at the host, each service
-   billing the issuer ([credits](shared/credits/README.md)). It holds no money.
+   tier 1; a document check later signs the same note at tier 2. The first note comes with a
+   welcome gift: the person's first credits, a few registrations at the registry payer and writes
+   at the host, paid for by the issuer as their sponsor (someone who pays for another person's
+   buy). The app makes each buy and sends the issuer its reference (a code that names the buy, not
+   the credits in it). For each, the issuer signs a ticket (a signed promise to pay for that buy),
+   and each service bills the issuer. The issuer holds no money.
 2. **A row.** From the note, the app makes a person proof on the device and writes one row in the
    registry
    ([the standard's registry](https://github.com/foundationforest/standard/blob/main/registry/README.md)),
@@ -115,13 +118,12 @@ on `main`, from a clean install. Node 22.18 or later; the index's tests need a P
 ./standard.sh keys records registry/client escrow/client reputation/client
 (cd standard/reputation/circuit && npm run fetch)
 
-(cd shared/credits && npm ci && npm run check && npm test)
-(cd host        && npm ci && npm run check && npm test)
-(cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd mcp         && npm ci && npm run check && npm test)
+(cd host        && npm ci && npm run check && npm test)
 (cd e2e         && npm ci && npm run check)
 (cd fee-payer/at-cost  && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null
 (cd fee-payer/registry && npm ci && npm run check && npm test)
+(cd issuer      && npm ci && npm run fetch && npm run check && npm test)
 (cd index       && npm ci && npm run check && \
   node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts)
 ```
@@ -181,10 +183,10 @@ README holds its service's own promises. One holds for all of them:
   stand-in that passes everyone, so notes, and the welcome gift's credits, are unlimited; the
   dollars are test dollars, which their maker mints at will, so credits bought with them are
   unlimited too; every service is one replica on Railway.
-- **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind, so
-  no service can tell from a credit which buy it came from; whoever runs all three could still match
-  a buy to a spend by the network address both came from
-  ([credits, Limits](shared/credits/README.md#limits)).
+- **One foundation runs the issuer, the registry payer and the host.** Credits are signed blind (a
+  service signs each credit without seeing it), so no service can tell from a credit which buy it
+  came from; whoever runs all three could still match a buy to a spend by the network address both
+  came from ([host, Limits](host/README.md#limits)).
 - **The services trust what they read:** the index its lists, the issuer Didit and its RPC, the
   host its RPC and, for a message key's message, the sender's host. Each README says how.
 
@@ -199,14 +201,16 @@ Everything but its secrets and what it keeps private for people:
   and each e2e run's record.
 - **Secret:** the signing keys (the registry payer's, the fee payer's, the issuer's, the index's),
   the credit keys (the registry payer's, the host's), the devnet phrase, the API keys and keyed URLs
-  (Didit's, the RPC's), and the keys to the host's bucket.
+  (web addresses with a key inside: Didit's, the RPC's), and the keys to the host's bucket (the
+  online storage that holds its photos and videos).
 - **Private by design:** what the issuer keeps ([issuer](issuer/README.md#what-it-keeps-and-why)),
   and the messages in an inbox, which only the recipient's main key, or a message key it lists,
   pulls, and only its inbox key and the read keys it lists open.
-- **Kept, not published:** the registry payer's and the host's spent lists (the id of each spent
-  credit) and the proofs each took (with the buy's reference each paid for), the host's balance of
-  each folder and the id of each write it took a price for, the issuer's list of note numbers given
-  a gift, each with a hash of its buys, and Railway's own request logs.
+- **Kept, not published:** the registry payer's and the host's spent lists (the id of each credit
+  already spent, so none is spent twice) and the proofs each took (with the buy's reference each
+  paid for), the host's balance of each folder and the id of each write it took a price for, the
+  issuer's list of note numbers given a gift, each with a hash of its buys, and Railway's own
+  request logs.
 
 **Why is the standard pinned by `standard.sh`, and not a submodule or a copy?**
 Railway builds every image from the repo root, and a copy would drift from the standard. One commit in
@@ -215,7 +219,3 @@ one file is the whole pin, and moving it is a one-line change plus whatever it t
 **Why one repo for six services?**
 They share one pin of the standard, one CI and one devnet. Each directory stands alone: its own package, its
 own Dockerfile, its own README.
-
-**Why has `shared/` no README of its own?**
-It holds one folder, `shared/credits/`, which has its README. A README one level up would say nothing
-the folder table does not.

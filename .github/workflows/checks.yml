@@ -1,20 +1,21 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
 # first fetches standard at the commit in STANDARD (standard.sh) and installs the standard packages it uses.
 #
-#   credits      the credits the host, the registry payer and the issuer share: its type-check and its tests
-#                (a stand-in service made of Cloudflare's own issuer and origin, and a stand-in RPC)
 #   issuer       its type-check (the stand-in Didit included) and its tests, the face embedding's on
-#                the real models and portraits its `npm run fetch` checks by SHA-256
+#                the real models and portraits its `npm run fetch` checks by SHA-256, and its welcome
+#                gift's tickets taken by the host's and the registry payer's own sellers
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
 #                (real reputation proofs: the reputation circuit's proving files; a real person proof: the
 #                standard's example card's)
 #   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml its Dockerfile makes from
 #                at-cost/, and the registry payer: its type-check and tests (registry/; real credits,
-#                bought, collected and spent, against a stand-in RPC)
-#   host         the foundation's host: its type-check and its tests
-#   e2e          the devnet run's type-check, with mcp, which it runs
+#                bought with mcp's credits client, collected and spent, against a stand-in RPC)
+#   host         the foundation's host: its type-check and its tests, its credits bought with mcp's
+#                credits client
+#   e2e          the devnet run's type-check, with mcp, which it runs and buys its credits with
 #   mcp          mcp's type-check and tests: every action on records' reference host, both doors,
-#                and the hosted copy's smoke test, the image's own command through the MCP SDK's client
+#                the hosted copy's smoke test, the image's own command through the MCP SDK's client,
+#                and the credits client against a stand-in service made of Cloudflare's own issuer
 #
 # Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
 # run against the deployed mcp. The first two need the standard's programs, its proving files, a local
@@ -43,26 +44,6 @@ defaults:
     shell: bash
 
 jobs:
-  credits:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Install
-        working-directory: shared/credits
-        run: npm ci --no-audit --no-fund
-      - name: Type-check
-        working-directory: shared/credits
-        run: npm run check
-      - name: Test
-        working-directory: shared/credits
-        run: |
-          npm test | tee "$RUNNER_TEMP/tap"
-          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
-
   issuer:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -74,7 +55,9 @@ jobs:
       - name: Install
         run: |
           ./standard.sh registry/client records keys
-          (cd shared/credits && npm ci --no-audit --no-fund)
+          (cd mcp && npm ci --no-audit --no-fund)
+          (cd host && npm ci --no-audit --no-fund)
+          (cd fee-payer/registry && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
@@ -124,8 +107,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client escrow/client
-          (cd shared/credits && npm ci --no-audit --no-fund)
+          ./standard.sh registry/client escrow/client records
+          (cd mcp && npm ci --no-audit --no-fund)
           (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
           (cd fee-payer/registry && npm ci --no-audit --no-fund)
       - name: The local run's type-check
@@ -153,7 +136,7 @@ jobs:
       - name: Install
         run: |
           ./standard.sh keys records registry/client
-          (cd shared/credits && npm ci --no-audit --no-fund)
+          (cd mcp && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -175,7 +158,6 @@ jobs:
       - name: Install
         run: |
           ./standard.sh keys records registry/client escrow/client reputation/client
-          (cd shared/credits && npm ci --no-audit --no-fund)
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check

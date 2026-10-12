@@ -1,13 +1,15 @@
-// Credits, end to end against a stand-in service made of Cloudflare's own Privacy Pass issuer and
-// origin: a buy, its pay link, the service's answer, the credits finished from it, shown and
-// checked; a buy finished later from what the vault keeps; and every way a credit must fail.
+// The credits client (credits/client.ts), against a stand-in service made of Cloudflare's own
+// Privacy Pass issuer and origin: a service read from its directory, a buy, its pay link, the
+// service's answer, the credits finished from it and shown; a buy finished later from what the
+// vault keeps; and every answer that must finish nothing. The services' own checks of a credit are
+// tested where they live: host/ and fee-payer/registry/.
 
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { AuthorizationHeader, Token, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad as b64u } from '@scure/base'
-import { CREDIT_TYPE, type Pending, authorization, buy, challengeOf, checkCredit, checkCredits, checkPending, creditId, creditList, creditOf, finish, referenceOf, serviceOf } from '../src/index.ts'
+import { CREDIT_TYPE, type Pending, authorization, buy, challengeOf, checkPending, creditList, finish, referenceOf, serviceOf } from '../credits/client.ts'
 
 const { BLIND_RSA, BlindRSAMode, Issuer, Origin, getPublicKeyBytes } = publicVerif
 const T = Date.UTC(2026, 9, 9)
@@ -73,22 +75,17 @@ test('a buy: blinded requests, the reference a payment carries, and the pay link
   await assert.rejects(buy(payer.info, 1.5), /one credit or more/)
 })
 
-test('the credits: finished from the answer, each checked; the service checks them, and so does Cloudflare’s origin', async () => {
+test('the credits: finished from the answer, each a Privacy Pass token Cloudflare’s origin checks', async () => {
   const b = await buy(payer.info, 2)
   const credits = await finish(b.pending, await payer.answer(b.buy))
   assert.equal(credits.length, 2)
-  const ids = new Set<string>()
-  for (const c of credits) {
+  for (const [i, c] of credits.entries()) {
     assert.equal(c.service, payer.origin)
-    const id = await checkCredit(c, { origin: payer.origin, keys: [payer.key] })
-    assert.equal(id, creditId(c))
-    assert.equal(id, Buffer.from(b64u.decode(b.pending.blinds[ids.size]!.nonce)).toString('hex'), 'its id is its nonce')
-    ids.add(id)
     const token = Token.deserialize(BLIND_RSA, b64u.decode(c.credit))
     assert.equal(token.authInput.tokenType, CREDIT_TYPE)
+    assert.deepEqual(token.authInput.nonce, b64u.decode(b.pending.blinds[i]!.nonce), 'it carries the nonce the app kept')
     assert.equal(await new Origin(BlindRSAMode.PSS).verify(token, payer.keys.publicKey), true, 'a Privacy Pass token, as Cloudflare checks one')
   }
-  assert.equal(ids.size, 2)
 })
 
 test('shown with a request: one Authorization header, PrivateToken, as RFC 9577 writes it', async () => {
@@ -96,36 +93,18 @@ test('shown with a request: one Authorization header, PrivateToken, as RFC 9577 
   const [credit] = await finish(b.pending, await payer.answer(b.buy))
   const header = authorization(credit!)
   assert.match(header, /^PrivateToken token="[A-Za-z0-9_-]+=*"$/)
-  assert.deepEqual(creditOf(header), b64u.decode(credit!.credit))
-  assert.deepEqual(AuthorizationHeader.parse(BLIND_RSA, header)[0]!.token.serialize(), b64u.decode(credit!.credit), 'Cloudflare reads it the same')
-  assert.throws(() => creditOf(`${header}, ${header}`), /one credit/)
-  assert.throws(() => creditOf('Bearer x'))
+  assert.deepEqual(AuthorizationHeader.parse(BLIND_RSA, header)[0]!.token.serialize(), b64u.decode(credit!.credit), 'Cloudflare reads it')
+  assert.throws(() => authorization(b64u.decode(credit!.credit).subarray(0, 300)), /not a credit/, 'only a whole credit')
 })
 
-test('several shown with one request, as its body lists them: checked together, all or none', async () => {
+test('several shown with one request, as its body lists them: each credit’s bytes, base64url, in order', async () => {
   const b = await buy(payer.info, 4)
   const credits = await finish(b.pending, await payer.answer(b.buy))
-  const service = { origin: payer.origin, keys: [payer.key] }
   const list = creditList(credits)
   assert.deepEqual(list, credits.map((c) => c.credit), 'each credit as the vault keeps it')
   assert.deepEqual(JSON.parse(JSON.stringify({ credits: list })).credits, list, 'and as JSON carries it')
-  assert.deepEqual(await checkCredits(list, service, 4), credits.map((c) => creditId(c)), 'their ids, in order')
-  await assert.rejects(checkCredits(list, service, 3), /from 1 to 3 credits/, 'more than the service takes at once')
-  await assert.rejects(checkCredits([], service, 4), /from 1 to 4/)
-  await assert.rejects(checkCredits(list[0], service, 4), /from 1 to 4/, 'a list, not one credit')
-  await assert.rejects(checkCredits([list[0], list[1], list[0]], service, 4), /the same credit twice/)
-  await assert.rejects(checkCredits([list[0], 7], service, 4), /not a credit/)
-  // One that does not hold refuses them all: another service's among them.
-  const h = await buy(host.info, 1)
-  const [theirs] = await finish(h.pending, await host.answer(h.buy))
-  await assert.rejects(checkCredits([...list.slice(0, 2), theirs!.credit], service, 4), /not this service's credit/)
-})
-
-test('a token Cloudflare’s own client made for the same challenge is a credit too', async () => {
-  const client = new publicVerif.Client(BlindRSAMode.PSS)
-  const request = await client.createTokenRequest(challengeOf(payer.origin), payer.key)
-  const token = await client.finalize(await payer.issuer.issue(request))
-  assert.ok(await checkCredit(token.serialize(), { origin: payer.origin, keys: [payer.key] }))
+  assert.deepEqual(creditList(credits.map((c) => b64u.decode(c.credit))), list, 'the same from bytes')
+  assert.throws(() => creditList([...list, 'AAAA']), /not a credit/)
 })
 
 test('the same buy collected twice gives the same credits; what the vault keeps finishes it later', async () => {
@@ -149,31 +128,6 @@ test('refused: an answer for another buy, an empty slot, a slot too few', async 
   // A buyer that swaps in a request of its own gets an answer that finishes nothing.
   const swapped = await payer.answer(other.buy)
   await assert.rejects(finish(mine.pending, swapped))
-})
-
-test('refused by the service: another service’s credit, a key it does not count, a changed byte, not a credit', async () => {
-  const b = await buy(payer.info, 1)
-  const [credit] = await finish(b.pending, await payer.answer(b.buy))
-  const bytes = b64u.decode(credit!.credit)
-  await assert.rejects(checkCredit(credit!, { origin: host.origin, keys: [payer.key] }), /not this service's credit/)
-  await assert.rejects(checkCredit(credit!, { origin: payer.origin, keys: [host.key] }), /not under a key/)
-  for (const at of [2, 40, 100, bytes.length - 1]) {
-    const changed = bytes.slice()
-    changed[at]! ^= 1
-    await assert.rejects(checkCredit(changed, { origin: payer.origin, keys: [payer.key] }), Error, `byte ${at}`)
-  }
-  await assert.rejects(checkCredit(new Uint8Array(354), { origin: payer.origin, keys: [payer.key] }))
-  // A short view into a good credit's buffer: privacypass-ts alone would read the whole buffer.
-  await assert.rejects(checkCredit(bytes.subarray(0, 300), { origin: payer.origin, keys: [payer.key] }), /not a credit/)
-  await assert.rejects(checkCredit(new Uint8Array([...bytes, 0]), { origin: payer.origin, keys: [payer.key] }), /not a credit/)
-  // And a good credit inside a larger buffer, as a Node Buffer from the pool often is, still holds.
-  const inside = new Uint8Array(1000)
-  inside.set(bytes, 123)
-  assert.equal(await checkCredit(inside.subarray(123, 123 + bytes.length), { origin: payer.origin, keys: [payer.key] }), creditId(credit!))
-  // The host's credits are the host's alone, even bought by the same person.
-  const h = await buy(host.info, 1)
-  const [hostCredit] = await finish(h.pending, await host.answer(h.buy))
-  await assert.rejects(checkCredit(hostCredit!, { origin: payer.origin, keys: [payer.key] }))
 })
 
 test('a pending buy’s shape is checked before it is finished', () => {
