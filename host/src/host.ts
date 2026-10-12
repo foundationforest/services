@@ -11,7 +11,7 @@
 // nothing: the standard's host asks this host's choices (`recordChoice`, `messageChoice`, `blobChoice`). A
 // record or message is claimed by its id as its price is taken, so two copies pay once. Bytes are
 // stored first: their price is reserved, then taken once the standard's host answers that it kept them, or
-// released; the front sends on one put of the same bytes at a time. Forest's host asks nothing
+// released; the front sends on one put of the same bytes at a time. The standard's host asks nothing
 // about a hosts or permissions record, so those are free. Reads are free.
 //
 // Where it keeps things is the standard's storage: a data directory (DATA_DIR) with a SQLite file per
@@ -21,7 +21,7 @@
 // left on disk go to the bucket.
 //
 // An inbox can take messages only from keys holding a registry row from one issuer, named by its key
-// as a row holds it (128 hex). Forest's host asks `rowLookup` whether a sender holds one; this host
+// as a row holds it (128 hex). The standard's host asks `rowLookup` whether a sender holds one; this host
 // answers from the registry, over the RPC in SOLANA_RPC_URL, with the standard's registry client. Without
 // an RPC there is no lookup, and the standard's host refuses messages to such inboxes (`rule_unsupported`).
 //
@@ -49,7 +49,7 @@ import { importSingleFile } from '../../standard/records/scripts/import-single-f
 import { fromBytes32 } from '../../standard/registry/client/src/field.ts'
 import { fetchRows } from '../../standard/registry/client/src/rows.ts'
 
-import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, priceOf } from './credits.ts'
+import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -99,7 +99,13 @@ export type Config = {
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
   sponsors: string[]
+  /** What a write costs, in credits as decimal text: `write` each, and `kilobyte` for each 1,000 bytes. */
+  cost: { write: string; kilobyte: string }
 }
+
+/** What a write costs unless set, in credits: a hundredth of a cent each, and a thousandth of a cent a kilobyte. */
+export const WRITE_PRICE = '0.01'
+export const KILOBYTE_PRICE = '0.001'
 
 /** The bucket's variables; the first four are needed once any of them is set. */
 const S3_NEEDED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']
@@ -148,6 +154,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   delete env.CREDIT_KEY
   const maxBuy = whole('CREDITS_PER_BUY', env.CREDITS_PER_BUY || '1000')
   if (maxBuy < 1) throw new Error('CREDITS_PER_BUY must be a whole number of at least 1')
+  const cost = { write: (env.WRITE_PRICE || WRITE_PRICE).trim(), kilobyte: (env.KILOBYTE_PRICE || KILOBYTE_PRICE).trim() }
+  millionthsOf('WRITE_PRICE', cost.write)
+  millionthsOf('KILOBYTE_PRICE', cost.kilobyte)
   return {
     dir: env.DATA_DIR || null,
     importFrom: env.IMPORT_FROM || null,
@@ -161,6 +170,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     credit: { address: new PublicKey(env.CREDIT_ADDRESS!.trim()).toBase58(), mint: mint === 'SOL' ? 'SOL' : new PublicKey(mint).toBase58(), price },
     maxBuy,
     sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    cost,
   }
 }
 
@@ -206,7 +216,7 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
  * kept them, or releases it (`Credits.stored`).
  */
 export function paidBlobs(credits: Credits): BlobChoice {
-  return async (blob) => (await defaultBlobChoice(blob)) ?? credits.reserve(blob.sha256, blob.folders, priceOf(blob.size))
+  return async (blob) => (await defaultBlobChoice(blob)) ?? credits.reserve(blob.sha256, blob.folders, credits.priceOf(blob.size))
 }
 
 /**
@@ -364,7 +374,7 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   }
   if (req.method === 'GET' && path === DIRECTORY_PATH) {
     req.resume()
-    send(res, { status: 200, body: credits.seller.directory(), type: 'application/private-token-issuer-directory' })
+    send(res, { status: 200, body: credits.directory(), type: 'application/private-token-issuer-directory' })
     return true
   }
   if (req.method === 'GET' && path.startsWith(BALANCE_PATH)) {
@@ -415,15 +425,15 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
 
   const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
   const lookup = rpc && rowLookup(rpc, config.registryProgramId)
-  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
+  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
   // A record's or message's price is taken, and the write claimed by its id, before the standard's host
   // keeps it; bytes' price is reserved, and taken once they are kept.
   const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
     blobs: config.blobs,
     ...choice,
-    recordChoice: (record) => credits.charge(record.profile, priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
-    messageChoice: (message) => credits.charge(message.from, priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
+    recordChoice: (record) => credits.charge(record.profile, credits.priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
+    messageChoice: (message) => credits.charge(message.from, credits.priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
     blobChoice: paidBlobs(credits),
     ...(lookup && { rowLookup: lookup }),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),

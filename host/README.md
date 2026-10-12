@@ -40,8 +40,9 @@ anything.
   no redirect. A read that fails, or is refused, is not kept: the standard's host answers `lookup`, and the
   sender tries again.
 - **The price of each write** (the standard's record, message and blob choices), always: each takes the
-  write's price from a folder's balance here (a folder is what one main key signs on a host), or
-  refuses it (`refused`), saying what it costs and what the folder holds ([Credits](#credits)).
+  write's price, a floor and its bytes by the kilobyte, from a folder's balance here (a folder is
+  what one main key signs on a host), or refuses it (`refused`), saying what it costs and what the
+  folder holds ([Credits](#credits)).
 
 **Storage** is the standard's: a data directory (`DATA_DIR`) holding a SQLite file per folder and
 `host.sqlite`, the log across them; the blobs go in that directory, or in an S3-compatible bucket
@@ -61,8 +62,9 @@ says what each moved:
 
 A credit here is a prepaid unit of this host, `one cent of writes`. The host sells and takes them
 with the code in `credits/`: a copy of the service's side of Forest's credits, trimmed to what the
-host uses, on the same wire format as the registry payer's, so one buyer works at both (mcp's
-client, [`mcp/`](../mcp/README.md#credits)). `src/credits.ts` keeps the balances.
+host uses, on the same wire format as the registry payer's, so one buyer works at both (the
+buyer's client in [`e2e/credits/`](../e2e/README.md) is one). `src/credits.ts` keeps the balances
+and the price.
 
 **A credit** is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578): the host
 signs it blind, over a number only the buyer's app knows, so when the credit comes back to be
@@ -86,12 +88,15 @@ directory as RFC 9578 writes it, with one more field:
 { "issuer-request-uri": "/credits/buy",
   "token-keys": [{ "token-type": 2, "token-key": <base64url> }],
   "forest-credit": { "unit": "one cent of writes", "address": <Solana address>,
-                     "mint": <mint address> | "SOL", "price": <decimal text> } }
+                     "mint": <mint address> | "SOL", "price": <decimal text>,
+                     "write": <decimal text>, "kilobyte": <decimal text> } }
 ```
 
-`price` is one credit's price, in whole units of `mint`, paid to `address`
-([How we run it](#how-we-run-it)). An app takes the latest type 2 key whose `not-before` has
-passed; this host lists one key, with no `not-before`.
+`price` is one credit's price, in whole units of `mint`, paid to `address`. `write` and `kilobyte`
+are what a write costs here, in credits: `write` for each write, and `kilobyte` for each 1,000 bytes
+of it ([How we run it](#how-we-run-it)); the registry payer's directory has neither. An app takes
+the latest type 2 key whose `not-before` has passed; this host lists one key, with no
+`not-before`.
 
 **Buying** is four steps:
 
@@ -135,18 +140,21 @@ sponsor, and the blinded buy, never which spends they become.
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its directory, above |
 | `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`, `too_many` (over `CREDITS_PER_BUY`), `bad_payment` (a header it cannot read), `not_paid` (402, with what to pay), `proof_used` (409, the proof paid for another buy), `payment_check_unavailable` (503, the RPC did not answer, or there is none) |
-| `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, each in base64url, as mcp's `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice: its type, this host's challenge, its key and its signature, `checkCredits` in `credits/credit.ts`), `spent` or `held` (409: one is spent, or held by another request) |
-| `GET /credits/balance/<folder>` | `{ folder, credits }` |
+| `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, each in base64url, as the credits client's `creditList` writes them, all go into that folder's balance, or none; the answer is `{ folder, credits }`, the balance, a number with up to six decimals. Refused: `bad_request` (with `from 1 to 100 credits` when the list is empty or longer), `credit` (402: one does not hold, or one is there twice: its type, this host's challenge, its key and its signature, `checkCredits` in `credits/credit.ts`), `spent` or `held` (409: one is spent, or held by another request) |
+| `GET /credits/balance/<folder>` | `{ folder, credits }`, `credits` a number with up to six decimals |
 
-**A folder's balance** is a count of credits. Anyone holding credits can add them to any folder;
-only that folder's writes draw from it. A spend holds its credits, spends them and adds them to
-the balance in one transaction: all of it, or none. The spent list keeps each spent credit's id,
-and nothing ties it to the folder. A 500-credit gift fills a folder in five spends.
+**A folder's balance** is kept in millionths of a credit, so the fraction of a cent each write
+costs adds up. Anyone holding credits can add them to any folder, a whole credit each; only that
+folder's writes draw from it. A spend holds its credits, spends them and adds them to the balance
+in one transaction: all of it, or none. The spent list keeps each spent credit's id, and nothing
+ties it to the folder. A balance this host kept in whole credits, before writes cost fractions of
+one, is counted in millionths at the next start, once.
 
-**What a write costs:** one credit a started megabyte (1,048,576 bytes) of it, one at the least. A
-record is paid from its own folder's balance, and a message from its sender's. Bytes (a photo or a
-video) are paid by a folder whose current records here name them: the first such folder whose
-balance holds the price. The standard's host never asks about a hosts or permissions record, so
+**What a write costs:** `WRITE_PRICE` for the write, plus its bytes at `KILOBYTE_PRICE` for each
+1,000 bytes, rounded up to a millionth of a credit. The bytes are the record's or the message's
+canonical text, or the blob's own. A record is paid from its own folder's balance, and a message
+from its sender's. Bytes (a photo or a video) are paid by a folder whose current records here name
+them: the first such folder whose balance holds the price. The standard's host never asks about a hosts or permissions record, so
 those are free: a person can always move and always remove an access key (a key the person's app
 gave someone, such as their assistant, to act for a profile). A record, a message or bytes already
 here cost nothing again. A write is paid once, and a write that becomes current stays as long as
@@ -175,6 +183,8 @@ it is current.
 | `CREDIT_ADDRESS` | required | The address a credit is paid to |
 | `CREDIT_MINT` | required | The dollar a credit is paid in, by its mint, or `SOL` |
 | `CREDIT_PRICE` | required | One credit's price, decimal text in whole dollars |
+| `WRITE_PRICE` | `0.01` | What each write costs, in credits: decimal text, at most six decimals |
+| `KILOBYTE_PRICE` | `0.001` | What each 1,000 bytes of a write add, in credits: decimal text, at most six decimals |
 | `CREDITS_PER_BUY` | `1000` | The most credits one buy may ask for |
 | `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
 | `SOLANA_RPC_URL` | none: no lookup, and no buy paid on Solana | The Solana RPC the registry lookup reads and a Solana payment is checked through |
@@ -187,7 +197,7 @@ it is current.
 
 The bucket takes all four of its first variables, or none: any `S3_` variable without all four
 stops the start. The credit settings are all needed: without one, the host does not start, so it is
-never free by mistake. Its credits are kept in one file, `credits/credits.sqlite` in the data
+never free by mistake. The two prices have defaults, so they are never unset. Its credits are kept in one file, `credits/credits.sqlite` in the data
 directory: the spent list, the proofs it took, its sponsors' bill, the balances, and the id of each
 write it took a price for. An older host kept the balances in a second file,
 `credits/balances.sqlite`; a start moves them into the one file, once. A spend that older host
@@ -198,7 +208,7 @@ host had marked them so, and are free to show again if not.
 
 ```sh
 ./standard.sh keys records registry/client
-(cd mcp && npm ci)
+(cd e2e && npm ci)
 cd host && npm ci
 npm test
 DATA_DIR=./data/host npm start
@@ -224,26 +234,31 @@ The test checks:
   on loopback, or redirects.
 - Credits, through the routes: the directory; a buy refused with no payment, with one the RPC does
   not have, over the most a buy may hold, with no RPC, or not a buy; collected twice with its
-  payment, the same answer; finished with mcp's credits client, and spent into a folder, one or
+  payment, the same answer; finished with the buyer's credits client, and spent into a folder, one or
   several in a request, each once, with every refusal, none taken when one is refused; the balance;
   a page's preflight.
 - Credits, the code in `credits/` (`test/credits.test.ts`): the key from PKCS #8; the directory as
-  mcp's client reads it; a buy answered byte for byte as privacypass-ts's own issuer answers it, and
+  the buyer's client reads it; a buy answered byte for byte as privacypass-ts's own issuer answers it, and
   under another key an empty slot, nothing logged; a Solana payment checked in one call (short by
   one unit, another mint, a failed transaction, no reference, SOL, a reference from a lookup
   table); a sponsor's ticket as the issuer signs it (`issuer/src/ticket.ts`), refused from another
   sponsor, for another count, service or buy, and billed once; every refusal; the check of a
   spend's list, all or none, and of a changed byte, another key or another service's credit; the
   spent list across a restart and inside the balance's transaction.
-- What writes cost: a hosts and a permissions record taken with nothing in the balance; a record
-  one credit, refused without it, nothing for one already here; bytes of a megabyte and one, two
-  credits, refused short, taken once paid, nothing again; bytes two folders name, through the one
-  that can pay; a message one credit, from its sender.
-- A write costs exactly its price or nothing: two copies of one message in flight at once, paid
+- What writes cost, at the prices this host runs with: both published in the directory; the price of
+  0, 1, 1,000, 1,001 and 5,000,000 bytes; a hosts and a permissions record taken with nothing in
+  the balance; a record refused with the price in its words, then taken from one credit, nothing for
+  one already here; twenty records whose fractions add up to the millionth, and the balance answered
+  in credits; bytes of two megabytes and one refused short, taken once paid, nothing again; bytes two
+  folders name, through one that can pay; a message from its sender, never its recipient.
+- Who pays and how often, at a whole credit a write (`WRITE_PRICE=1`, `KILOBYTE_PRICE=0`), so these
+  tests count in credits:
+  a write costs exactly its price or nothing: two copies of one message in flight at once, paid
   once; a record paid before a stop, kept free when sent again; two copies of one blob, paid once;
   two blobs and a balance for one, one kept and paid and the balance never below zero; a reservation
   a record cannot spend; a bucket that refuses every put, nothing paid.
-- One file: an older host's balances, and a spend it cut short, moved in once.
+- One file: an older host's balances, and a spend it cut short, moved in once; balances kept in
+  whole credits counted in millionths, once.
 
 ### On devnet
 
@@ -262,8 +277,9 @@ at https://host.devnet.forest.foundation:
   devnet `host` key's address, from the devnet phrase by the recipe in standard's
   `devnet/deploy.sh` scripts; the host never signs with it),
   `CREDIT_MINT=J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` (the classic test dollar),
-  `CREDIT_PRICE=0.01`, `SPONSORS=CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW` (the issuer's sponsor
-  key, whose tickets give a person's first credits).
+  `CREDIT_PRICE=0.01`, `SPONSORS` (the issuer's sponsor key, as its `/issuer.json` names it, whose
+  tickets give a person's first credits); `WRITE_PRICE` and `KILOBYTE_PRICE` unset, so 0.01 and
+  0.001.
 
 The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)), and mcp
 ([`mcp/`](../mcp/README.md)) starts there when it is given no host (it reads that list).
@@ -271,9 +287,11 @@ The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)
 ## How you pay us
 
 You pay for writes in credits. A credit is a cent: on devnet, 0.01 of the classic test dollar. A
-write costs one credit for each started megabyte, so a record or a message costs one and a 5 MB
-photo five, taken from the balance of the folder it belongs to. Hosts and permissions records are
-free. A write is paid once.
+write costs a hundredth of a cent, plus a thousandth of a cent for each kilobyte (1,000 bytes) in
+it: a text record or a message of about a kilobyte costs about 0.011 cent, so one cent pays for
+about ninety of them, and a 5 MB photo costs about 5 cents. Each is taken from the balance of the
+folder it belongs to, which keeps the fractions of a cent. Hosts and permissions records are free.
+A write is paid once.
 
 You buy credits with a payment, or with a sponsor's ticket (someone else, such as the issuer,
 signing to pay for your buy). The host signs credits blind, so it cannot tell which buy a credit
@@ -281,7 +299,7 @@ came from. The details: [Credits](#credits).
 
 ## How we run it
 
-Every number here is set in `src/host.ts` (`choice`, `SENDER_READ_MS`), `src/credits.ts` (`priceOf`, `SPEND_MAX`) or by a setting,
+Every number here is set in `src/host.ts` (`choice`, `SENDER_READ_MS`, `WRITE_PRICE`, `KILOBYTE_PRICE`), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting,
 so moving the standard's pin cannot change it without a pull request here; two are the standard's defaults,
 not set here: the largest record or message, and the blob types.
 
@@ -289,9 +307,11 @@ not set here: the largest record or message, and the blob types.
   request; **1,000** a page, and at most **4,194,304 bytes** a page, though always one line.
 - **Photos and videos (blobs):** png, jpeg and mp4 (the standard's default), up to **50,000,000 bytes**
   each.
-- **The price of a write:** **one credit a started megabyte** of it, one at the least: a record or a
-  message one credit, a 5 MB photo five. A hosts or permissions record is free. Paid from a
-  folder's balance here: a record's own folder, a message's sender, bytes any folder that names
+- **The price of a write:** **0.01 credit** a write (`WRITE_PRICE`), plus **0.001 credit** a
+  kilobyte of it, 1,000 bytes (`KILOBYTE_PRICE`), rounded up to a millionth of a credit: a 1 KB
+  record or message about 0.011 credit, a 5 MB photo about 5.01. Both are in the directory, where
+  an app reads them. A hosts or permissions record is free. Paid from a folder's balance here, kept
+  in millionths of a credit: a record's own folder, a message's sender, bytes any folder that names
   them.
 - **One credit is one cent:** **0.01** of the classic test dollar on devnet, a placeholder, paid to
   the devnet `host` key's address. At most **1,000** credits a buy, and **100** a spend (`SPEND_MAX`).
@@ -398,7 +418,7 @@ The standard's host is the reference for what a host does. A host written here c
 the e2e run would test the wrong thing.
 
 **Why a balance per folder, and not a credit shown on each write?**
-A write can cost more than one credit, and an app should not have to show credits on every write.
+A write costs a fraction of a credit, and an app should not have to show credits on every write.
 The standard's host also takes records and messages in batches, and an app rewrites its vault often. A
 balance takes credits once, through one route, and every write after draws from it.
 
