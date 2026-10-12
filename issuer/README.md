@@ -349,7 +349,9 @@ https://issuer.devnet.forest.foundation:
 - **No money:** the issuer holds no key that holds money. The document check's price goes straight
   to `ID_TIER_PAY_TO`; the gift is tickets, which each service counts.
 - **Session limits per address:** `SESSION_LIMIT_PER_HOUR` sessions an hour from one network
-  address, both checks together, paid or not: 5 by default, 20 on devnet. Counted in memory as keyed hashes, an IPv6 address by its /64. `/note`, `/id/note` and a
+  address, both checks together, paid or not: 5 by default, 20 on devnet, a cost guard: each face
+  check is paid to Didit, and the limit keeps a flood of them from one place from running up the
+  bill. Counted in memory as keyed hashes, an IPv6 address by its /64. `/note`, `/id/note` and a
   payment's polling have no limit.
 - **Tiers:** 1 after the face check, 2 after the document check. What they mean is this issuer's
   word; a reader weighs them.
