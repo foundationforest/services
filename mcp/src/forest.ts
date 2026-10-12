@@ -5,7 +5,8 @@
 //
 // A folder is always read from hosts, every signature checked (records' readProfile). An index is
 // read only for markets and scores, and what it says is passed on as its own word: its JSON is its
-// own format, with no signatures, so nothing here checks it.
+// own format, the market's with no signatures and a profile's with its scores signed, and nothing
+// here checks it.
 //
 // The start hosts are reached as they are: whoever runs this copy chose them. Any other host, one a
 // profile's hosts record names, is reached only at a public address; no request follows a
@@ -84,7 +85,7 @@ const MAX_JSON_BYTES = 4 * 1024 * 1024
 export const MAX_PAGES = 100
 
 // ---------------------------------------------------------------------------------------------
-// Reaching hosts: forest's public fetch (records/src/public.ts), the one services' host reads
+// Reaching hosts: the standard's public fetch (records/src/public.ts), the one services' host reads
 // senders' hosts with.
 
 /** How a call reaches hosts: the start hosts by the plain fetch, every other host by publicFetch, never after a redirect. */

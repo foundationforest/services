@@ -1,5 +1,5 @@
 // The issuer end to end, in one process: a stand-in Didit, an embedder that knows people by name, a
-// real SQLite file, real HTTP, and every note checked the way forest checks one. One test runs the
+// real SQLite file, real HTTP, and every note checked the way the standard checks one. One test runs the
 // devnet stand-in Didit (deploy/fake-didit.ts) itself, with the stand-in embedding.
 //
 //   npm test
@@ -170,10 +170,10 @@ test('stage 1: a passed face check gives a tier 1 note for the note number sent,
     assert.equal(note.model, 'test-model')
     assert.deepEqual(note.embedding, await namedFaces().embed(new TextEncoder().encode('alice')), "alice's face")
     assert.deepEqual(note.issuer, h.issuer.noteKey)
-    assert.ok(noteSigned(note), "forest's check: the issuer signed it")
+    assert.ok(noteSigned(note), "the standard's check: the issuer signed it")
     assert.deepEqual(noteToJson(note), json)
 
-    // The note does what it is for: a person proof, made with forest's own code, that the program checks.
+    // The note does what it is for: a person proof, made with the standard's own code, that the program checks.
     const profile = new Uint8Array(randomBytes(32))
     const proof = await provePerson({ secret, note, label: 'tutoring/seller', profile, artifacts: ARTIFACTS })
     assert.equal(proof.tier, 1n)

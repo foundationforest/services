@@ -14,7 +14,7 @@
 // A write costs exactly its price or nothing. A record or message is claimed once, by its id, in
 // the same transaction that takes its price: a second copy in flight, or the same write sent again
 // after a stop, costs nothing. Bytes are stored first and charged after: their price is reserved
-// from the balance before forest stores them, taken once they are stored, released if they are not.
+// from the balance before the standard's host stores them, taken once they are stored, released if they are not.
 //
 // One SQLite file, its seller's: the spent list, the proofs, the bill, each folder's balance and
 // each write id it took a price for. A spend holds the credits, spends them and adds them to the
@@ -54,7 +54,7 @@ export type CreditConfig = {
 export type Answer = { status: number; body: unknown; type?: string }
 const refuse = (error: string, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
 
-/** A folder's name: a main key's address, base58 of 32 bytes, as forest writes it. */
+/** A folder's name: a main key's address, base58 of 32 bytes, as the standard writes it. */
 function isFolder(value: unknown): value is string {
   if (typeof value !== 'string') return false
   try {

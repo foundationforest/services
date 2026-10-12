@@ -1,34 +1,34 @@
 // The foundation's host: standard/records' reference host (standard/records/src/host.ts), unchanged, run
 // with this service's choices. It takes anyone's records, delivers messages to inboxes, and keeps
-// blobs, as forest's host does; every number it uses is in `choice` below, and README.md says each in
+// blobs, as the standard's host does; every number it uses is in `choice` below, and README.md says each in
 // words.
 //
-// Around forest's host, one thing only: a front that answers `GET /` with one line saying what this
+// Around the standard's host, one thing only: a front that answers `GET /` with one line saying what this
 // is, sells and takes credits (credits.ts), and passes every other request, untouched, to the host on
 // loopback.
 //
 // Every write is paid for in credits, from a folder's balance here, and costs exactly its price or
-// nothing: forest's host asks this host's choices (`recordChoice`, `messageChoice`, `blobChoice`). A
+// nothing: the standard's host asks this host's choices (`recordChoice`, `messageChoice`, `blobChoice`). A
 // record or message is claimed by its id as its price is taken, so two copies pay once. Bytes are
-// stored first: their price is reserved, then taken once forest answers that it kept them, or
+// stored first: their price is reserved, then taken once the standard's host answers that it kept them, or
 // released; the front sends on one put of the same bytes at a time. Forest's host asks nothing
 // about a hosts or permissions record, so those are free. Reads are free.
 //
-// Where it keeps things is forest's storage: a data directory (DATA_DIR) with a SQLite file per
+// Where it keeps things is the standard's storage: a data directory (DATA_DIR) with a SQLite file per
 // folder, and the blobs on disk there, or in an S3-compatible bucket when the S3_ variables are set.
 // Before it starts, two moves, each done once: the single SQLite file this host kept before
-// (IMPORT_FROM) goes into the data directory with forest's import script, and, with a bucket, bytes
+// (IMPORT_FROM) goes into the data directory with the standard's import script, and, with a bucket, bytes
 // left on disk go to the bucket.
 //
 // An inbox can take messages only from keys holding a registry row from one issuer, named by its key
 // as a row holds it (128 hex). Forest's host asks `rowLookup` whether a sender holds one; this host
-// answers from the registry, over the RPC in SOLANA_RPC_URL, with forest's registry client. Without
-// an RPC there is no lookup, and forest's host refuses messages to such inboxes (`rule_unsupported`).
+// answers from the registry, over the RPC in SOLANA_RPC_URL, with the standard's registry client. Without
+// an RPC there is no lookup, and the standard's host refuses messages to such inboxes (`rule_unsupported`).
 //
-// A message a message key signed is taken only if the sender's own host lists that key: forest's
-// host asks `readSender` for the sender's records, and this host reads them with forest's client,
+// A message a message key signed is taken only if the sender's own host lists that key: the standard's
+// host asks `readSender` for the sender's records, and this host reads them with the standard's client,
 // within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS. It reads them only from a
-// public address, and follows no redirect (forest's `publicFetch`, records/src/public.ts).
+// public address, and follows no redirect (the standard's `publicFetch`, records/src/public.ts).
 //
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -53,10 +53,10 @@ import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PAT
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
-  'A Forest host, run by the Forest Foundation on devnet: forest/records’ reference host with the choices in ' +
+  'A Forest host, run by the Forest Foundation on devnet: the standard’s reference host with the choices in ' +
   'foundationforest/services, host/README.md. Anyone may write here, paying in credits, and on devnet it may be wiped at any time.\n'
 
-/** This host's choices: each number forest's host takes as an option. */
+/** This host's choices: each number the standard's host takes as an option. */
 export const choice = {
   /** Days a replaced record, a message, or bytes no current record names are kept. */
   keepDays: 30,
@@ -66,7 +66,7 @@ export const choice = {
   maxPageRecords: 1000,
   /** Bytes one page holds at most, though always one line. */
   maxPageBytes: 4 * 1024 * 1024,
-  /** The largest blob it takes. Its types are forest's default: png, jpeg and mp4. */
+  /** The largest blob it takes. Its types are the standard's default: png, jpeg and mp4. */
   maxBlobBytes: 50_000_000,
 } as const satisfies HostOptions
 
@@ -201,8 +201,8 @@ export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, pr
 }
 
 /**
- * Bytes, paid for once stored: forest's own types (png, jpeg and mp4), then their price, reserved on
- * the first folder whose current records name them that holds it. The front takes it once forest has
+ * Bytes, paid for once stored: the standard's own types (png, jpeg and mp4), then their price, reserved on
+ * the first folder whose current records name them that holds it. The front takes it once the standard's host has
  * kept them, or releases it (`Credits.stored`).
  */
 export function paidBlobs(credits: Credits): BlobChoice {
@@ -210,7 +210,7 @@ export function paidBlobs(credits: Credits): BlobChoice {
 }
 
 /**
- * A profile's records, every page, as `host` serves them, each checked by forest's reader; all within
+ * A profile's records, every page, as `host` serves them, each checked by the standard's reader; all within
  * SENDER_READ_MS. Through `get`, `publicFetch` but for tests, and never after a redirect.
  */
 async function readRecords(host: string, profile: string, get: typeof fetch): Promise<Checked[]> {
@@ -228,7 +228,7 @@ async function readRecords(host: string, profile: string, get: typeof fetch): Pr
 
 /**
  * Forest's `readSender`: a sender's records from the host a message names, kept for `cacheMs` per
- * sender and host. Two messages at once share one read; a read that fails is not kept, so forest's
+ * sender and host. Two messages at once share one read; a read that fails is not kept, so the standard's
  * host answers `lookup` and the sender's next try reads again. So a message key its owner made past
  * is still taken until what was read before expires. A host at no public address, or one that
  * redirects, is a read that fails.
@@ -303,8 +303,8 @@ export type RunningHost = {
 const BLOB_PUT = /^\/v1\/blobs\/([0-9a-f]{64})$/
 
 /**
- * A request sent on to forest's host, untouched, and its answer back. `answered` hears, once, whether
- * forest took it (200) or not, before the answer goes back.
+ * A request sent on to the standard's host, untouched, and its answer back. `answered` hears, once, whether
+ * the standard's host took it (200) or not, before the answer goes back.
  */
 function forward(inner: URL, req: IncomingMessage, res: ServerResponse, answered: (ok: boolean) => void = () => {}): void {
   let heard = false
@@ -353,7 +353,7 @@ async function readBytes(req: IncomingMessage): Promise<Uint8Array | undefined> 
   return new Uint8Array(Buffer.concat(chunks))
 }
 
-/** The credit routes (credits.ts); false for any other path, which goes to forest's host. */
+/** The credit routes (credits.ts); false for any other path, which goes to the standard's host. */
 function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: ServerResponse): boolean {
   const routes = [DIRECTORY_PATH, BUY_PATH, SPEND_PATH]
   if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
@@ -416,7 +416,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
   const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
   const lookup = rpc && rowLookup(rpc, config.registryProgramId)
   const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
-  // A record's or message's price is taken, and the write claimed by its id, before forest's host
+  // A record's or message's price is taken, and the write claimed by its id, before the standard's host
   // keeps it; bytes' price is reserved, and taken once they are kept.
   const host: Host = new Host({
     ...(config.dir && { dir: config.dir }),
@@ -450,7 +450,7 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
     const name = req.method === 'PUT' ? BLOB_PUT.exec(path)?.[1] : undefined
     if (!name) return forward(inner, req, res)
     // One put of the same bytes at a time: a second finds them kept, and pays nothing. Their reserved
-    // price is taken before the answer goes back, once forest answers that it kept them.
+    // price is taken before the answer goes back, once the standard's host answers that it kept them.
     const turn = (blobQueue.get(name) ?? Promise.resolve()).then(
       () => new Promise<void>((done) => forward(inner, req, res, (kept) => {
         credits.stored(name, kept)

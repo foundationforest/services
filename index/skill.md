@@ -91,7 +91,7 @@ A profile whose `profile.inbox` is set takes messages, on its own hosts. `inbox.
 sender, ever; `maxBytes` is the largest it takes; `readers` are keys every message is encrypted
 to besides `inboxKey`. No message passes through this index.
 
-How to send one is forest's: its records' Inbox section,
+How to send one is the standard's: its records' Inbox section,
 https://github.com/foundationforest/standard/blob/main/records/README.md, or the CLI, `send`
 (https://github.com/foundationforest/services/blob/main/mcp/README.md). The hosts this index reads
 are in https://github.com/foundationforest/services/blob/main/index/lists/hosts.json.
@@ -189,7 +189,7 @@ This index shows a proof only when it checks for this profile's own key and the 
 its stamp names this profile, its index is in
 https://github.com/foundationforest/services/blob/main/index/lists/indexes.json, and its root is one
 of that index's newest roots. One that fails, or is too old, shows nothing: that is not an error.
-To check one yourself, take the proof from the profile's card on its hosts and run forest's
+To check one yourself, take the proof from the profile's card on its hosts and run the standard's
 `verifyReputation` (https://github.com/foundationforest/standard/blob/main/reputation/README.md) with
 the profile's address and a Solana RPC.
 
@@ -209,7 +209,7 @@ which are theirs.
 
 ## Paying
 
-An offer's `payLink` is one documented format, forest's escrow's:
+An offer's `payLink` is one documented format, the standard's escrow's:
 https://github.com/foundationforest/standard/blob/main/escrow/README.md#the-pay-link. The seller is
 the profile the offer names, paid at its address: the link carries no other key. This index never
 pays and never holds money.

@@ -1,7 +1,7 @@
-// The foundation's host: forest's host behind the front, with this service's choices; its storage,
+// The foundation's host: the standard's host behind the front, with this service's choices; its storage,
 // with the import of the old single file and the move of bytes to a bucket; the registry lookup for
 // an inbox that takes messages from one issuer's rows; the sender's records read, and kept a while,
-// to take a message a message key signed, never after a redirect (forest's public fetch keeps the
+// to take a message a message key signed, never after a redirect (the standard's public fetch keeps the
 // read to public addresses, and its own tests try every range); and credits: sold, collected,
 // finished with mcp's credits client (mcp/credits/) and spent into a folder's balance, which every write but a
 // hosts or permissions record pays from, bytes by the megabyte.
@@ -138,7 +138,7 @@ after(async () => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
 })
 
-test('`/` says what this is; every other path is forest’s host, with these choices', async () => {
+test('`/` says what this is; every other path is the standard’s host, with these choices', async () => {
   const res = await fetch(`${host.url}/`)
   assert.equal(res.status, 200)
   assert.equal(await res.text(), LABEL)
@@ -186,7 +186,7 @@ test('the settings: a data directory, the old file, a bucket by its variables, t
   const full = readConfig(credited({ DATA_DIR: '/data/host', IMPORT_FROM: '/data/host.sqlite', SENDER_CACHE_SECONDS: '5', ...bucket, S3_REGION: 'auto', S3_STYLE: 'virtual' }))
   assert.deepEqual([full.dir, full.importFrom, full.senderCacheMs], ['/data/host', '/data/host.sqlite', 5000])
   assert.deepEqual(full.blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret', region: 'auto', style: 'virtual' }, 'the region as given, `auto` too')
-  assert.deepEqual(readConfig(credited(bucket)).blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret' }, 'forest’s defaults: us-east-1, path style')
+  assert.deepEqual(readConfig(credited(bucket)).blobs, { kind: 's3', endpoint: 'https://s3.example.com', bucket: 'forest-host', accessKeyId: 'id', secretAccessKey: 'secret' }, 'the standard’s defaults: us-east-1, path style')
   assert.throws(() => readConfig(credited({ S3_BUCKET: 'forest-host', S3_REGION: 'auto' })), /missing: S3_ENDPOINT, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY/, 'half a bucket is no bucket, and no silent disk')
   assert.throws(() => readConfig(credited({ ...bucket, S3_STYLE: 'sideways' })), /S3_STYLE/)
   assert.throws(() => readConfig(credited({ ...bucket, S3_ENDPOINT: 'not a url' })))
@@ -224,12 +224,12 @@ test('the old single file goes into the data directory once, under the same numb
   let h = await startHost(config)
   try {
     assert.deepEqual(h.moved, { imported: { folders: 2, records: 10, messages: 3, blobs: 3 }, toBucket: null })
-    assert.deepEqual(readdirSync(dir).filter((n) => !/-(wal|shm)$/.test(n)).sort(), ['blobs', 'credits', 'folders', 'host.sqlite'], 'forest’s layout and the credits, and nothing half-made beside them')
+    assert.deepEqual(readdirSync(dir).filter((n) => !/-(wal|shm)$/.test(n)).sort(), ['blobs', 'credits', 'folders', 'host.sqlite'], 'the standard’s layout and the credits, and nothing half-made beside them')
     assert.equal(existsSync(`${dir}.import`), false)
     const all = await readAll(h.url)
     assert.equal(all.records.length, 10)
     assert.equal(all.cursor, 10, 'the cursors readers hold go on working')
-    // A new record takes a number after them: forest's host numbers by the clock, in microseconds.
+    // A new record takes a number after them: the standard's host numbers by the clock, in microseconds.
     const someone = await mainKey(randomBytes(32), 'tutoring/seller')
     await publish([h.url], [hostsRecord(someone, [h.url], Date.now())])
     assert.ok((await readAll(h.url)).cursor > 10)
@@ -270,7 +270,7 @@ test('bytes on disk move to another store under the same names and types, and le
 })
 
 /**
- * A bucket on loopback, path style, that takes a request only if forest's own SigV4 signature for
+ * A bucket on loopback, path style, that takes a request only if the standard's own SigV4 signature for
  * these credentials, in region `auto`, matches it; objects in memory, with their content-type.
  */
 async function bucketStandIn(credentials: { accessKeyId: string; secretAccessKey: string; region: string }) {
@@ -525,7 +525,7 @@ test('every write pays from its folder: a record or a message one credit, bytes 
 
   // Bytes of a megabyte and one: two credits, from a folder whose records name them.
   assert.match(await put(host.url, big), /^refused: this write costs 2 credits, and the folder holds 1 here/)
-  assert.match(await put(host.url, big, 'image/gif'), /^unnamed/, 'forest’s rule first')
+  assert.match(await put(host.url, big, 'image/gif'), /^unnamed/, 'the standard’s rule first')
   await fund(host, [owner.address], 1)
   assert.equal(await put(host.url, big), 'ok')
   assert.equal(balance(owner), 0)
@@ -568,7 +568,7 @@ test('a write costs exactly its price or nothing: two copies of one message pay 
     await publish([h.url], [ownerRecord(owner, 'profile', body, now)])
     const line = await message(sender, owner.address, { text: 'Is Tuesday free?' }, Date.now(), body)
     const both = await Promise.all([deliver([h.url], [line]), deliver([h.url], [line])])
-    assert.deepEqual(both.map(([o]) => errors(o)[0]).sort(), ['duplicate', 'ok'], 'forest keeps one')
+    assert.deepEqual(both.map(([o]) => errors(o)[0]).sort(), ['duplicate', 'ok'], 'the standard’s host keeps one')
     assert.equal(h.credits.balance(sender.address), 2, 'and it was paid once')
 
     // A record whose price was taken before (a stop between the price and the store) is kept, free, when sent again.
