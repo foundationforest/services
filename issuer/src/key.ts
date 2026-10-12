@@ -1,20 +1,23 @@
-// The issuer's seed: the Ed25519 keypair in ISSUER_KEYPAIR, whose 32-byte secret every key the issuer
-// uses is mixed from. The keypair itself signs nothing.
+// The issuer's seed: an Ed25519 keypair, whose 32-byte secret every key the issuer uses is mixed from.
+// The keypair itself signs nothing.
 //
-// It is written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret
-// then the 32-byte public key.
+// It is made on the issuer's own machine, the first time the issuer starts without one, and kept in
+// one file beside its database (`issuer-keypair.json` in DATABASE_PATH's directory), on the same
+// volume: the key and the record of which checks it signed for are lost or kept together. It is
+// written down as `solana-keygen` writes a key: a JSON list of 64 numbers, the 32-byte secret then
+// the 32-byte public key. Nothing prints or logs it.
 //
 // What is mixed from the secret, the same every time:
-//   - with forest's `hkdf` under `issuer/notes`: the note key, a Baby Jubjub private key that signs
+//   - with the standard's `hkdf` under `issuer/notes`: the note key, a Baby Jubjub private key that signs
 //     every note (standard/registry/README.md, "The note and the person proof");
-//   - with forest's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
-//   - with forest's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
+//   - with the standard's `hkdf` under `issuer/fingerprint`: the key of the document fingerprints (notes.ts);
+//   - with the standard's recipe for a key under a label (`mainKey`): `reference/<n>`, the address a payment
 //     for one document check names; and `sponsor`, the key that signs the welcome gift's tickets
 //     (gift.ts). None holds money. The address a price is paid to (ID_TIER_PAY_TO) is not mixed
 //     from it.
 
-import { createPrivateKey, createPublicKey, sign, type KeyObject } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { createPrivateKey, createPublicKey, generateKeyPairSync, sign, type KeyObject } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { hkdf } from '../../standard/keys/src/hkdf.ts'
 import { mainKey } from '../../standard/keys/src/profile.ts'
@@ -24,9 +27,9 @@ export type IssuerKey = {
   publicKey: Uint8Array
   /** The keypair's public key in base58. */
   address: string
-  /** The key forest's `mainKey` mixes from this key's secret under `label`. */
+  /** The key the standard's `mainKey` mixes from this key's secret under `label`. */
   derive(label: string): Promise<IssuerKey>
-  /** 32 bytes forest's `hkdf` mixes from this key's secret under `info`. */
+  /** 32 bytes the standard's `hkdf` mixes from this key's secret under `info`. */
   mix(info: string): Promise<Uint8Array>
   /** This key's Ed25519 signature of `message`: how the `sponsor` key signs the gift's tickets. */
   sign(message: Uint8Array): Uint8Array
@@ -82,7 +85,15 @@ function fromSecret(secret: Uint8Array): IssuerKey {
   }
 }
 
-/** The issuer's seed, from a keypair file. */
-export function loadKeypair(path: string): IssuerKey {
-  return parseKeypair(readFileSync(path, 'utf8'), `the key file ${path}`)
+/**
+ * The issuer's seed from its file at `path`; with no file there, a fresh seed made here and written
+ * to `path` first, readable by this user only and never over a file that exists. `made` says which.
+ */
+export function loadOrMakeKey(path: string): { key: IssuerKey; made: boolean } {
+  const made = !existsSync(path)
+  if (made) {
+    const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
+    writeFileSync(path, JSON.stringify([...Buffer.from(jwk.d!, 'base64url'), ...Buffer.from(jwk.x!, 'base64url')]), { flag: 'wx', mode: 0o600 })
+  }
+  return { key: parseKeypair(readFileSync(path, 'utf8'), `the key file ${path}`), made }
 }

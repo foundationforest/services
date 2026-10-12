@@ -1,13 +1,13 @@
 // The issuer end to end, in one process: a stand-in Didit, an embedder that knows people by name, a
 // real SQLite file, real HTTP, and every note checked the way the standard checks one. One test runs the
-// devnet stand-in Didit (deploy/fake-didit.ts) itself, with the stand-in embedding.
+// stand-in Didit the e2e loop runs (test/fake-didit.ts) itself, with the stand-in embedding.
 //
 //   npm test
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { generateKeyPairSync, randomBytes } from 'node:crypto'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -21,14 +21,14 @@ import { canonical, parseCanonical } from '../../standard/records/src/canonical.
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
-import { buy, finish, serviceOf } from '../../mcp/credits/client.ts'
+import { buy, finish, serviceOf } from '../../e2e/credits/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 import * as payerCredits from '../../fee-payer/registry/credits/seller.ts'
 
 import { parseKeypair } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
 import { issuerHex, noteFromJson, noteToJson } from '../src/notes.ts'
-import { NOTE_KEY_INFO, SPONSOR_KEY_LABEL, readConfig, startIssuer, type Issuer } from '../src/service.ts'
+import { KEY_FILE, NOTE_KEY_INFO, SPONSOR_KEY_LABEL, readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import {
   FakeFaceCheck,
   FakePayments,
@@ -77,14 +77,15 @@ type Harness = {
   idSession(decision: ReturnType<typeof passed>): Promise<string>
 }
 
+/** The issuer, with `key` in its key file beside the database when given; with none there, it makes one. */
 async function start(options: { env?: Record<string, string>; key?: string; dbPath?: string } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'issuer.sqlite')
+  if (options.key) writeFileSync(join(dirname(dbPath), KEY_FILE), options.key, { mode: 0o600 })
   const config = readConfig({
     ISSUER_NAME,
     DIDIT_API_KEY: 'not-used',
     DIDIT_WORKFLOW_ID: WORKFLOW,
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
-    ISSUER_KEYPAIR: options.key ?? keypairJson().json,
     DATABASE_PATH: dbPath,
     // Every request here comes from one address; the limit has its own test.
     SESSION_LIMIT_PER_HOUR: '100000',
@@ -513,8 +514,8 @@ test('with a price, a document check opens once a payment naming its reference h
 })
 
 test('the configuration names what is missing', () => {
-  assert.throws(() => readConfig({}), /ISSUER_NAME, DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID, ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH/)
-  const base = { ISSUER_NAME, DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i', ISSUER_KEYPAIR_PATH: 'p' }
+  assert.throws(() => readConfig({}), /missing environment variables: ISSUER_NAME, DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID$/)
+  const base = { ISSUER_NAME, DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i' }
   const config = readConfig(base)
   assert.equal(config.issuerName, ISSUER_NAME)
   assert.equal(config.diditBaseUrl, 'https://verification.didit.me')
@@ -535,14 +536,20 @@ test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({ ...base, ...PRICED, ID_TIER_PAY_TO: 'not-an-address' }), /ID_TIER_PAY_TO is not an address/)
   assert.equal(readConfig({ ...base, ...PRICED }).idTierPrice, 2_500_000n)
 
-  // The welcome gift: none unless a service is named; three registrations and 500 cents unless set.
+  // The welcome gift: none unless a service is named; ten registrations and ten cents unless set.
   assert.deepEqual(config.gift, {})
   const gifted = { ...base, REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example' }
-  assert.deepEqual(readConfig(gifted).gift, { registryPayer: { origin: 'https://registry-payer.example', credits: 3 }, host: { origin: 'https://host.example', credits: 500 } })
+  assert.deepEqual(readConfig(gifted).gift, { registryPayer: { origin: 'https://registry-payer.example', credits: 10 }, host: { origin: 'https://host.example', credits: 10 } })
   assert.deepEqual(readConfig({ ...gifted, REGISTRY_CREDITS: '0', HOST_CREDITS: '20' }).gift, { host: { origin: 'https://host.example', credits: 20 } }, 'none of a service at 0')
   assert.equal(readConfig(gifted).rpcUrl, undefined, 'a gift needs no RPC: the issuer pays nothing')
   assert.throws(() => readConfig({ ...gifted, HOST_URL: 'https://host.example/' }), /HOST_URL is an origin/)
   assert.throws(() => readConfig({ ...gifted, HOST_CREDITS: '-1' }), /HOST_CREDITS/)
+
+  // The apps a person may be sent back to: none unless named, each an origin.
+  assert.deepEqual(config.appOrigins, [])
+  assert.deepEqual(readConfig({ ...base, APP_ORIGINS: 'https://app.example, http://localhost:5173' }).appOrigins, ['https://app.example', 'http://localhost:5173'])
+  assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'https://app.example/' }), /APP_ORIGINS is an origin/)
+  assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'app.example' }), /APP_ORIGINS is an origin/)
 })
 
 /** The two services' own sellers, each taking the issuer's sponsor key: the registry payer's and the host's. */
@@ -560,11 +567,12 @@ test('the welcome gift: at a first note, a sponsor’s ticket for each of the ap
   const key = keypairJson()
   const sponsor = (await parseKeypair(key.json, 'test').derive(SPONSOR_KEY_LABEL)).address
   const [registry, host] = await giftServices(sponsor)
-  const h = await start({ key: key.json, env: { REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
+  const h = await start({ key: key.json, env: { REGISTRY_PAYER_URL: 'https://registry-payer.example', REGISTRY_CREDITS: '3', HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
   try {
     // issuer.json says what the gift holds, so the app knows what to buy.
     const about = await (await fetch(h.issuer.url + '/issuer.json')).json()
     assert.deepEqual(about.gift, { host: { credits: 5, origin: 'https://host.example' }, registryPayer: { credits: 3, origin: 'https://registry-payer.example' } })
+    assert.equal(about.sponsor, sponsor, 'and the sponsor key, which each service lists')
     const buys = async (r = 3, w = 5) => ({ registry: await buy(registry.service, r), host: await buy(host.service, w) })
     const refs = (b: Awaited<ReturnType<typeof buys>>) => ({ registryPayer: b.registry.reference, host: b.host.reference })
     const note = (sessionId: string, n: bigint, gift: unknown) => h.post('/note', { sessionId, noteNumber: n.toString(), gift })
@@ -694,30 +702,72 @@ test('the limit: a fresh share each hour, and nothing kept past it', () => {
   assert.equal(addressGroup('not an address'), 'not an address')
 })
 
-test('the seed from ISSUER_KEYPAIR: read from the variable itself, which leaves the environment', async () => {
-  const { json: contents, publicKey } = keypairJson()
-  const numbers = JSON.parse(contents) as number[]
-  const env: Record<string, string | undefined> = { ISSUER_NAME, DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i', ISSUER_KEYPAIR: contents }
-  const config = readConfig(env)
-  assert.equal(config.issuerKeypair, contents)
-  assert.equal(config.issuerKeypairPath, undefined)
-  assert.equal(env.ISSUER_KEYPAIR, undefined, 'taken out of the environment once read')
-  assert.throws(() => readConfig({ ...env, ISSUER_KEYPAIR: contents, ISSUER_KEYPAIR_PATH: '/k.json' }), /not both/)
-  assert.deepEqual(parseKeypair(contents, 'ISSUER_KEYPAIR').publicKey, publicKey)
+test('the key: made on the first start beside the database, kept there, the same on every start after', async () => {
+  const dir = tempDir()
+  const dbPath = join(dir, 'issuer.sqlite')
+  const keyFile = join(dir, KEY_FILE)
+  const first = await start({ dbPath })
+  let about: string
+  try {
+    assert.equal(first.issuer.madeKey, true, 'no key beside the database: one is made')
+    about = await (await fetch(first.issuer.url + '/issuer.json')).text()
+  } finally {
+    await first.issuer.close()
+  }
+  assert.equal(statSync(keyFile).mode & 0o777, 0o600, 'readable by this user only')
+  const contents = readFileSync(keyFile, 'utf8')
+  const key = parseKeypair(contents, 'the key file')
+  assert.equal(JSON.parse(about).key, issuerHex(issuerKeyOf(await key.mix(NOTE_KEY_INFO))), '/issuer.json names the note key mixed from it')
+  assert.deepEqual(first.logs, [], 'and the key is never logged')
 
-  // A value that is no keypair stops the issuer, with a message that quotes none of it.
+  // The next start reads it, and the old ISSUER_KEYPAIR variable is not read at all.
+  const second = await start({ dbPath, env: { ISSUER_KEYPAIR: keypairJson().json } })
+  try {
+    assert.equal(second.issuer.madeKey, false)
+    assert.equal(await (await fetch(second.issuer.url + '/issuer.json')).text(), about, 'the same issuer')
+  } finally {
+    await second.issuer.close()
+  }
+  assert.equal(readFileSync(keyFile, 'utf8'), contents, 'the file is never written again')
+
+  // A key file that is no keypair stops the issuer, with a message that quotes none of it.
+  const numbers = JSON.parse(contents) as number[]
   const broken = [contents.slice(0, 40), JSON.stringify(numbers.slice(0, 32)), JSON.stringify([...numbers.slice(0, 32), ...JSON.parse(keypairJson().json).slice(32)])]
   for (const text of broken) {
     await assert.rejects(
       () => start({ key: text }),
-      (error: Error) => /^ISSUER_KEYPAIR is not a Solana keypair/.test(error.message) && !error.message.includes(text.slice(1, 12)),
+      (error: Error) => /^the key file .* is not a Solana keypair/.test(error.message) && !error.message.includes(text.slice(1, 12)),
     )
   }
 })
 
-test('the devnet stand-in: deploy/fake-didit.ts and the stand-in embedding, both stages, for two people', async () => {
+test('a face check sends the person back only to an app the issuer names in APP_ORIGINS', async () => {
+  const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
+  try {
+    const opened = await h.post('/session', { returnUrl: 'https://app.example/checked?from=face' })
+    assert.equal(opened.status, 201)
+    assert.equal(h.faces.callbacks.get(opened.body.sessionId), 'https://app.example/checked?from=face', 'Didit is told where to send the person back')
+    assert.equal(h.faces.callbacks.get((await h.post('/session')).body.sessionId), undefined, 'none asked, none sent')
+    for (const returnUrl of ['https://other.example/', 'http://app.example/', 'https://app.example.evil/', 'not a url']) {
+      assert.deepEqual(await h.post('/session', { returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
+    }
+    assert.deepEqual(await h.post('/session', { returnUrl: 3 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
+    assert.deepEqual(await h.post('/session', { returnUrl: 'https://app.example/', x: 1 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
+    assert.equal(h.faces.created, 2, 'a refused request never reaches Didit')
+  } finally {
+    await h.issuer.close()
+  }
+  const none = await start()
+  try {
+    assert.deepEqual(await none.post('/session', { returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'with no APP_ORIGINS, no return URL is taken')
+  } finally {
+    await none.issuer.close()
+  }
+})
+
+test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, both stages, for two people', async () => {
   const port = 20000 + Math.floor(Math.random() * 20000)
-  const fake = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(here, '../deploy/fake-didit.ts')], {
+  const fake = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(here, 'fake-didit.ts')], {
     env: { ...process.env, FAKE_DIDIT_PORT: String(port), FAKE_DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
@@ -729,7 +779,6 @@ test('the devnet stand-in: deploy/fake-didit.ts and the stand-in embedding, both
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     DIDIT_BASE_URL: `http://127.0.0.1:${port}`,
     FACE_MODEL: 'stand-in',
-    ISSUER_KEYPAIR: keypairJson().json,
     DATABASE_PATH: join(tempDir(), 'issuer.sqlite'),
     PORT: '0',
   })

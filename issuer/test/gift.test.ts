@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { test } from 'node:test'
 
-import { buy, finish, serviceOf } from '../../mcp/credits/client.ts'
+import { buy, finish, serviceOf } from '../../e2e/credits/client.ts'
 import { keyFrom, seller } from '../../fee-payer/registry/credits/seller.ts'
 
 import { buysOf, ticketsFor } from '../src/gift.ts'

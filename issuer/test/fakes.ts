@@ -106,13 +106,16 @@ export class FakeFaceCheck implements FaceCheck {
   lost = false
   /** Each session opened with a tag, newest last. */
   readonly tags: { tag: string; sessionId: string; url: string }[] = []
+  /** The callback each session was opened with, by session id. */
+  readonly callbacks = new Map<string, string | undefined>()
   #gate: Promise<void> | undefined
 
-  async createSession(tag?: string) {
+  async createSession({ tag, callback }: { tag?: string; callback?: string } = {}) {
     if (this.down) throw new Error('down')
     this.created++
     const sessionId = randomUUID()
     const opened = { sessionId, url: `https://verify.example/session/${sessionId}` }
+    this.callbacks.set(sessionId, callback)
     if (tag) this.tags.push({ tag, ...opened })
     if (this.lost) {
       this.lost = false

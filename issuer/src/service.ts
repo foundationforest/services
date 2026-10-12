@@ -3,7 +3,7 @@
 import { mkdirSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { base58 } from '../../standard/records/src/bytes.ts'
 import { canonical } from '../../standard/records/src/canonical.ts'
@@ -11,7 +11,7 @@ import { type IssuerKey as NoteKey, issuerKeyOf } from '../../standard/registry/
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
-import { loadKeypair, parseKeypair, type IssuerKey } from './key.ts'
+import { loadOrMakeKey } from './key.ts'
 import { RateLimit } from './limit.ts'
 import { issuerHex } from './notes.ts'
 import { RpcPayments, type Payments } from './payment.ts'
@@ -21,11 +21,11 @@ import { Store } from './store.ts'
 /** The hkdf labels the note key and the fingerprint key are mixed under, from the issuer's seed. */
 export const NOTE_KEY_INFO = 'issuer/notes'
 export const FINGERPRINT_KEY_INFO = 'issuer/fingerprint'
-/** The label the key that signs the welcome gift's tickets is mixed under, from the issuer's seed (forest's `mainKey`). */
+/** The label the key that signs the welcome gift's tickets is mixed under, from the issuer's seed (the standard's `mainKey`). */
 export const SPONSOR_KEY_LABEL = 'sponsor'
 
 export type Config = {
-  /** The issuer's name: what a person's secret for it is mixed from (forest's `issuerSecret`). */
+  /** The issuer's name: what a person's secret for it is mixed from (the standard's `issuerSecret`). */
   issuerName: string
   diditApiKey: string
   diditWorkflowId: string
@@ -44,10 +44,9 @@ export type Config = {
   rpcUrl?: string
   /** The welcome gift: for each service, its origin and how many of its credits; empty for none. */
   gift: Gift
-  /** The seed as a file, for local runs. */
-  issuerKeypairPath?: string
-  /** Or its contents, from a sealed variable, as on Railway. Exactly one of the two is set. */
-  issuerKeypair?: string
+  /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
+  appOrigins: string[]
+  /** The one file; the issuer's key file sits beside it (`KEY_FILE`). */
   databasePath: string
   /** How many sessions one address may open in an hour. */
   sessionLimitPerHour: number
@@ -75,6 +74,18 @@ function onThisMachine(url: string): boolean {
   }
 }
 
+/** A setting that names an origin: `https://host`, written as its origin is. */
+function origin(name: string, value: string): string {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`${name} is an origin: https://host`)
+  }
+  if (url.origin !== value) throw new Error(`${name} is an origin: https://host`)
+  return value
+}
+
 function whole(name: string, value: string, min: number): number {
   const n = Number(value)
   if (!Number.isSafeInteger(n) || n < min) throw new Error(`${name} must be a whole number of at least ${min}`)
@@ -82,31 +93,26 @@ function whole(name: string, value: string, min: number): number {
 }
 
 /**
- * Reads the variables `README.md` lists. Fails naming every required one that is missing. The seed's
- * contents (`ISSUER_KEYPAIR`) are taken out of `env` once read, so nothing that reads the environment
- * later finds them.
+ * Reads the variables `README.md` lists. Fails naming every required one that is missing. The seed is
+ * no variable: it is the key file beside the database (`KEY_FILE`).
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
   const required = ['ISSUER_NAME', 'DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID']
   const missing = required.filter((name) => !env[name])
-  if (!env.ISSUER_KEYPAIR && !env.ISSUER_KEYPAIR_PATH) missing.push('ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH')
   const price = env.ID_TIER_PRICE || '0'
   if (!/^(0|[1-9][0-9]{0,19})$/.test(price)) throw new Error('ID_TIER_PRICE must be a whole number: the price in the dollar’s smallest unit')
   if (BigInt(price) > 0n) missing.push(...['ID_TIER_MINT', 'ID_TIER_PAY_TO', 'RPC_URL'].filter((name) => !env[name]))
   const gift: Gift = {}
-  for (const [role, url, count, fallback] of [['registryPayer', 'REGISTRY_PAYER_URL', 'REGISTRY_CREDITS', '3'], ['host', 'HOST_URL', 'HOST_CREDITS', '500']] as const) {
+  for (const [role, url, count, fallback] of [['registryPayer', 'REGISTRY_PAYER_URL', 'REGISTRY_CREDITS', '10'], ['host', 'HOST_URL', 'HOST_CREDITS', '10']] as const) {
     if (!env[url]) continue
-    const origin = env[url]!
-    if (new URL(origin).origin !== origin) throw new Error(`${url} is an origin: https://host`)
+    const at = origin(url, env[url]!)
     const credits = whole(count, env[count] || fallback, 0)
-    if (credits > 0) gift[role] = { origin, credits }
+    if (credits > 0) gift[role] = { origin: at, credits }
   }
+  const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
   for (const name of ['ID_TIER_MINT', 'ID_TIER_PAY_TO']) {
     if (env[name] && !isAddress(env[name])) throw new Error(`${name} is not an address`)
-  }
-  if (env.ISSUER_KEYPAIR && env.ISSUER_KEYPAIR_PATH) {
-    throw new Error('set ISSUER_KEYPAIR or ISSUER_KEYPAIR_PATH, not both')
   }
   const faceModel = env.FACE_MODEL || 'sface'
   if (faceModel !== 'sface' && faceModel !== 'stand-in') throw new Error('FACE_MODEL is sface or stand-in')
@@ -114,8 +120,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   if (faceModel === 'stand-in' && !onThisMachine(diditBaseUrl)) {
     throw new Error('FACE_MODEL=stand-in is for a stand-in Didit on this machine only: DIDIT_BASE_URL is not on loopback')
   }
-  const issuerKeypair = env.ISSUER_KEYPAIR || undefined
-  delete env.ISSUER_KEYPAIR
   return {
     issuerName: env.ISSUER_NAME!,
     diditApiKey: env.DIDIT_API_KEY!,
@@ -128,8 +132,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     idTierPayTo: env.ID_TIER_PAY_TO || undefined,
     rpcUrl: env.RPC_URL || undefined,
     gift,
-    issuerKeypairPath: env.ISSUER_KEYPAIR_PATH || undefined,
-    issuerKeypair,
+    appOrigins,
     databasePath: env.DATABASE_PATH || './data/issuer.sqlite',
     sessionLimitPerHour: whole('SESSION_LIMIT_PER_HOUR', env.SESSION_LIMIT_PER_HOUR || '5', 1),
     clientAddressHeader: env.CLIENT_ADDRESS_HEADER?.toLowerCase() || undefined,
@@ -143,14 +146,14 @@ export type Issuer = {
   store: Store
   /** The note key's public half: what a row names, and what readers trust. */
   noteKey: NoteKey
+  /** Whether this start made the issuer's key, finding none beside the database. */
+  madeKey: boolean
   /** Stops taking requests, and closes the file. */
   close(): Promise<void>
 }
 
-/** The issuer's seed: read from `ISSUER_KEYPAIR`'s contents, or from its file. Nothing reads it again. */
-function issuerSeed(config: Config): IssuerKey {
-  return config.issuerKeypair ? parseKeypair(config.issuerKeypair, 'ISSUER_KEYPAIR') : loadKeypair(config.issuerKeypairPath!)
-}
+/** The issuer's key file's name, in the database's directory. */
+export const KEY_FILE = 'issuer-keypair.json'
 
 /**
  * Starts the service. Tests pass their own checks, payments and embedder; otherwise it talks to Didit
@@ -166,7 +169,8 @@ export async function startIssuer(
     log?: (line: string) => void
   } = {},
 ): Promise<Issuer> {
-  const seed = issuerSeed(config)
+  mkdirSync(dirname(config.databasePath), { recursive: true })
+  const { key: seed, made: madeKey } = loadOrMakeKey(join(dirname(config.databasePath), KEY_FILE))
   if (config.idTierPayTo === seed.address) {
     throw new Error("ID_TIER_PAY_TO is the issuer's own key; payments go to an address of their own")
   }
@@ -178,7 +182,6 @@ export async function startIssuer(
   const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, tier: 'id' })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
 
-  mkdirSync(dirname(config.databasePath), { recursive: true })
   const store = new Store(config.databasePath)
 
   let payment: PaymentDeps | undefined
@@ -202,9 +205,10 @@ export async function startIssuer(
       embedder,
       noteKey: { privateKey: notePrivate, key: noteKey },
       fingerprintKey,
-      about: canonical({ v: 1, name: config.issuerName, key: issuerHex(noteKey), ...(gift && { gift: config.gift }) }),
+      about: canonical({ v: 1, name: config.issuerName, key: issuerHex(noteKey), ...(gift && { gift: config.gift, sponsor: gift.sponsor.address }) }),
       payment,
       gift,
+      appOrigins: config.appOrigins,
       limit,
       clientAddressHeader: config.clientAddressHeader,
       log: overrides.log,
@@ -221,6 +225,7 @@ export async function startIssuer(
     server,
     store,
     noteKey,
+    madeKey,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())

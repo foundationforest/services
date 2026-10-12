@@ -11,7 +11,8 @@
 //
 // Didit's API as read in October 2026 (docs.didit.me, "Retrieve Session", "Create Session",
 // "Liveness report", "ID verification report"): version 3, `x-api-key` header, `POST /v3/session/`
-// and `GET /v3/session/{id}/decision/`. A liveness step's `reference_image` is a signed URL to the
+// (with `callback`, the page Didit sends the person to when the check is done) and
+// `GET /v3/session/{id}/decision/`. A liveness step's `reference_image` is a signed URL to the
 // selfie, valid for hours; its `matches` are the earlier sessions with the same face, each with its
 // `session_id`. A document step reads `first_name`, `last_name`, `full_name`, `date_of_birth`
 // (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3).
@@ -48,8 +49,11 @@ export type Decision = {
 }
 
 export interface FaceCheck {
-  /** Open a session on the check's workflow: the page the person does the check on. With a tag, it carries it, to be found by. */
-  createSession(tag?: string): Promise<{ sessionId: string; url: string }>
+  /**
+   * Open a session on the check's workflow: the page the person does the check on. With a tag, it
+   * carries it, to be found by; with a callback, Didit sends the person there when the check is done.
+   */
+  createSession(options?: { tag?: string; callback?: string }): Promise<{ sessionId: string; url: string }>
   /** The newest session on the check's workflow that carries this tag, or null. Throws if Didit can't answer. */
   tagged(tag: string): Promise<{ sessionId: string; url: string } | null>
   /** What the session decided, or null if Didit has no such session. Throws if Didit can't answer. */
@@ -178,11 +182,11 @@ export class DiditClient implements FaceCheck {
    * `vendor_data`; its documents don't say what it does when there is none, so every session carries
    * one that no other session shares, but the sessions one payment opens, which share its tag.
    */
-  async createSession(tag?: string): Promise<{ sessionId: string; url: string }> {
+  async createSession({ tag, callback }: { tag?: string; callback?: string } = {}): Promise<{ sessionId: string; url: string }> {
     const res = await this.#fetch('/v3/session/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workflow_id: this.#workflowId, vendor_data: vendorData(this.#tier, tag) }),
+      body: JSON.stringify({ workflow_id: this.#workflowId, vendor_data: vendorData(this.#tier, tag), ...(callback && { callback }) }),
     })
     if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a new session`)
     const json = (await body(res)) as Record<string, unknown> | null

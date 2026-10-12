@@ -6,9 +6,10 @@ The issuer checks once, by face, that a person is one real human, and signs them
 statement, which the person keeps, that they passed); a person who then shows that note and a
 government document gets the same note signed at tier 2.
 
-The Open Forest Foundation runs this one, on devnet, with a stand-in for both checks that passes
-everyone. Anyone can run another, with this code or their own: an issuer is anyone who signs notes
-for people, and each reader decides which issuers it trusts.
+The Open Forest Foundation runs this one, on devnet, with Didit's checks and the face model. It is
+the issuer that stays when mainnet starts: its key and its checks carry over, and only registry rows
+reset. Anyone can run another, with this code or their own: an issuer is anyone who signs notes for
+people, and each reader decides which issuers it trusts.
 
 ## How it works
 
@@ -29,8 +30,14 @@ nothing else. It holds no money.
 secret for this issuer is mixed from
 ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-issuer-secret)),
 so it never changes. The note key is the Baby Jubjub key that signs every note, mixed from the
-issuer's seed (`ISSUER_KEYPAIR`) with the standard's `hkdf` under `issuer/notes`; a registry row names
-it, and readers trust it.
+issuer's seed with the standard's `hkdf` under `issuer/notes`; a registry row names it, and readers
+trust it.
+
+**Its key.** The issuer's seed is an Ed25519 key the issuer makes itself, on its own machine, the
+first time it starts and finds none. It keeps it in one file, `issuer-keypair.json`, beside its
+database (in `DATABASE_PATH`'s directory), readable by its own user only, so the key and the record
+of what it signed are kept, or lost, together. No variable holds it, and nothing prints or logs it;
+the log says only that a key was made, and where.
 
 ### The flow
 
@@ -46,7 +53,8 @@ Tier 1, the face check, for anyone:
 3. **The issuer asks Didit for the decision,** and takes it only if the session is on the face
    workflow, every liveness step (Didit's check that a live person, not a photo, is in front of the
    camera) passed, and the session is approved.
-4. **A face seen before.** Didit's face search names each earlier session with the same face. If
+4. **A face seen before.** Didit's face search names each earlier session with the same face, and
+   Didit leaves the decision to the issuer (the workflow takes no action on a face seen before). If
    the issuer signed any of them for another note number, it refuses (`duplicate_face`). For the
    same note number it signs again: a person who lost their note gets it back, and the same note
    number gives the same stamps (the number a person has for one label at one issuer), so no
@@ -121,9 +129,9 @@ published with its weights, is one any other issuer can run too.
 - **The files:** `npm run fetch` puts the models in `models/` from OpenCV's own Hugging Face pages,
   each checked against its SHA-256 (`scripts/fetch.ts`). Neither is in the repo.
 - **About a third of a second a photo** on one core. Nothing is written or logged.
-- **The stand-in.** With `FACE_MODEL=stand-in`, allowed only with a stand-in Didit on this
-  machine, every photo gives one fixed embedding, the standard's own devnet stand-in vector, under the
-  model `stand-in`.
+- **The stand-in, for tests.** With `FACE_MODEL=stand-in`, allowed only with a Didit on this
+  machine (the stand-in in `test/fake-didit.ts`, which the tests and the e2e loop run), every photo
+  gives one fixed embedding, the standard's own devnet stand-in vector, under the model `stand-in`.
 
 ### Payment
 
@@ -155,8 +163,8 @@ price. It reads nothing about who paid.
 ### The welcome gift
 
 With a gift (`REGISTRY_PAYER_URL`, `HOST_URL`), a person's first note comes with credits at the
-services those settings name: on devnet, three registrations at the
-[registry payer](../fee-payer/registry/README.md) and 500 cents of writes at the
+services those settings name: on devnet, ten registrations at the
+[registry payer](../fee-payer/registry/README.md) and 10 cents of writes at the
 [host](../host/README.md). They are credits, each service's prepaid units
 ([host](../host/README.md#credits), [registry payer](../fee-payer/registry/README.md#credits)): the
 app buys them, the issuer signs a sponsor's ticket for each buy, and each service signs them blind
@@ -164,10 +172,11 @@ app buys them, the issuer signs a sponsor's ticket for each buy, and each servic
 service lists the issuer's sponsor key (its `SPONSORS` setting) and counts what its tickets paid
 for.
 
-1. **The app reads the gift** in `GET /issuer.json`: each service's origin, and how many of its
-   credits a ticket there gives.
-2. **The app makes one buy at each service,** for exactly the credits a ticket there gives (with
-   mcp's credits client, `buy`), and keeps in the vault what it needs to finish the buy later.
+1. **The app reads the gift** in `GET /issuer.json`: each service's origin, how many of its
+   credits a ticket there gives, and the sponsor key that signs the tickets.
+2. **The app makes one buy at each service,** for exactly the credits a ticket there gives (as the
+   buyer's credits client in `e2e/credits/` does, `buy`), and keeps in the vault what it needs to
+   finish the buy later.
 3. **It sends the buys' references (a code that names each buy, not its credits) with the note
    request:** `POST /note` with
    `"gift": {"registryPayer": "<reference>", "host": "<reference>"}`, one for each service in the
@@ -187,8 +196,8 @@ The sponsor key is mixed from the issuer's seed under `sponsor`, by the standard
 
 | Route | Body | Answer |
 |---|---|---|
-| `GET /issuer.json` | | `200 {"key":"<128 hex>","name":"<name>","v":1}`, canonical JSON; with a gift, also `"gift":{"<service>":{"credits":<n>,"origin":"<origin>"}}` |
-| `POST /session` | `{}` or none | `201 {"sessionId": "…", "url": "…"}` |
+| `GET /issuer.json` | | `200 {"key":"<128 hex>","name":"<name>","v":1}`, canonical JSON; with a gift, also `"gift":{"<service>":{"credits":<n>,"origin":"<origin>"}}` and `"sponsor":"<address>"` |
+| `POST /session` | `{}` or none; or `{"returnUrl": "<url>"}`, a page on one of the origins in `APP_ORIGINS`, where Didit sends the person when the check is done | `201 {"sessionId": "…", "url": "…"}` |
 | `POST /note` | `{"sessionId": "<uuid>", "noteNumber": "<decimal>"}`; with a gift, may add `"gift": {"<service>": "<buy's reference>"}` | `200 {"note": <note>}`, tier 1; with `gift` asked, also `"gift"`: `{"<service>": "<ticket>"}` or `{"error"}` |
 | `POST /id/session` | `{}` or none; with a price, `{"payment": "<id>"}` once paid | `201 {"sessionId": "…", "url": "…"}`, the same session for the same payment asked again, or `402` with a payment to make |
 | `POST /id/note` | `{"sessionId": "<uuid>", "note": <note>}` | `200 {"note": <note>}`, tier 2 |
@@ -211,7 +220,7 @@ Errors are `{"error": "<code>"}`:
 
 | Status | Codes |
 |---|---|
-| `400` | `bad_session_id`, `bad_note_number`, `bad_note`, `bad_payment`, `bad_gift` (a gift that is not an object), `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_sessionId_and_note`, `expected_exactly_payment` |
+| `400` | `bad_session_id`, `bad_note_number`, `bad_note`, `bad_payment`, `bad_gift` (a gift that is not an object), `bad_return_url` (not a URL on an origin in `APP_ORIGINS`), `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_sessionId_and_note`, `expected_exactly_payment` |
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `not_approved`, `no_face`, `duplicate_face`, `not_our_note`, `other_model`, `not_the_same_face`, `no_document_data`, `duplicate_document` |
 | `409` | `session_used` (this session is kept for another note number), `payment_used` |
@@ -226,27 +235,26 @@ Errors are `{"error": "<code>"}`:
 | `DIDIT_API_KEY` | yes | | The issuer's Didit API key, from the application that owns both workflows. A secret |
 | `DIDIT_WORKFLOW_ID` | yes | | The face check's workflow; any other is refused for tier 1 |
 | `DIDIT_ID_WORKFLOW_ID` | yes | | The document check's workflow (document, liveness, face match); any other is refused for tier 2 |
-| `ISSUER_KEYPAIR` | one of these two | | The issuer's seed: a JSON list of 64 numbers, as `solana-keygen` writes a key, read from the variable itself at start. The issuer's own process removes it from its environment once read. The note key, the fingerprint key, the payment references and the sponsor key are mixed from it |
-| `ISSUER_KEYPAIR_PATH` | one of these two | | Or a path to that file, for local runs. `.gitignore` covers `*keypair*.json` |
-| `FACE_MODEL` | no | `sface` | `sface`, or `stand-in` with a stand-in Didit on this machine (`DIDIT_BASE_URL` on loopback); `deploy/start.sh` sets it |
+| `FACE_MODEL` | no | `sface` | `sface`, or `stand-in`, for tests, with a Didit on this machine (`DIDIT_BASE_URL` on loopback) |
+| `APP_ORIGINS` | no | none: no `returnUrl` taken | The apps a person may be sent back to after a check, by origin, comma-separated |
 | `ID_TIER_PRICE` | no | `0` | The document check's price, a whole number in the dollar's smallest unit: `2500000` is 2.50 of a six-decimal dollar. 0 is free |
 | `ID_TIER_MINT` | when priced | | The dollar it is paid in, by its mint's address |
 | `ID_TIER_PAY_TO` | when priced | | The address that receives it |
 | `RPC_URL` | when priced | | The Solana RPC it looks for payments through, at `finalized` |
 | `REGISTRY_PAYER_URL` | no | none: no registrations in the gift | The registry payer's origin, `https://<host>`, whose credits its tickets pay for |
-| `REGISTRY_CREDITS` | no | `3` | How many registrations; 0 for none |
+| `REGISTRY_CREDITS` | no | `10` | How many registrations; 0 for none |
 | `HOST_URL` | no | none: no host credits in the gift | The host's origin, whose credits its tickets pay for |
-| `HOST_CREDITS` | no | `500` | How many of the host's credits, a cent each; 0 for none |
-| `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file |
+| `HOST_CREDITS` | no | `10` | How many of the host's credits, a cent each; 0 for none |
+| `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file. The key file, `issuer-keypair.json`, is in the same directory, made there at the first start (Its key) |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour, both checks together |
 | `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy puts the client's address in (`x-real-ip` on Railway) |
 | `DIDIT_BASE_URL` | no | `https://verification.didit.me` | For a stand-in |
 | `PORT` | no | `8080` | |
 
-It refuses to start if a required variable is missing, if both seed variables are set, if the seed
-is not a keypair (the message quotes none of it), if `FACE_MODEL=stand-in` is set with a Didit off
-this machine, if `ID_TIER_PAY_TO` is the seed's own address, or if a gift's service is not an
-origin.
+It refuses to start if a required variable is missing (so never without Didit), if the key file is
+not a keypair (the message quotes none of it), if `FACE_MODEL=stand-in` is set with a Didit off
+this machine, if `ID_TIER_PAY_TO` is the seed's own address, or if a gift's service or an app is
+not an origin. `ISSUER_KEYPAIR`, which once held the seed, is not read.
 
 ### Run it
 
@@ -254,29 +262,27 @@ Node 22.18 or later. From the repo root:
 
 ```
 ./standard.sh registry/client records keys
-(cd mcp && npm ci) && (cd host && npm ci) && (cd fee-payer/registry && npm ci)
+(cd e2e && npm ci) && (cd host && npm ci) && (cd fee-payer/registry && npm ci)
 cd issuer && npm ci
 npm run fetch        # the face models, and the three test portraits, each checked by SHA-256
 npm run check        # type-check, the standard's files included
 npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP, a person proof from a note;
-                     # the face models on the portraits; the devnet stand-in Didit, both tiers; the
-                     # welcome gift's tickets, taken by the host's and the registry payer's own sellers
+                     # the key made, kept and read again; the face models on the portraits; the
+                     # stand-in Didit the e2e loop runs, both tiers; the welcome gift's tickets, taken
+                     # by the host's and the registry payer's own sellers
 npm start            # the service, with the variables above
 ```
 
-To run it by hand, make a seed outside the repo (`solana-keygen new -o …/issuer-keypair.json`) and
-point `ISSUER_KEYPAIR_PATH` at it.
+Run by hand, it makes its key in `data/`, beside its file; `.gitignore` covers both.
 
 ### On devnet
 
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
-and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH`, or each deploy forgets which
-face was signed for which note number. The build context is the repo root. `deploy/Dockerfile`
-builds it (Node 22.22.2 and git, `standard.sh registry/client records keys`, `npm ci`, the face models
-by `npm run fetch -- models`) and runs `deploy/start.sh`. With no `DIDIT_API_KEY`, that first starts
-`deploy/fake-didit.ts`, a stand-in Didit on 127.0.0.1 that approves every session it opens, on both
-workflows, with no face seen before and, for a document, a name it makes up for that session; then
-points the issuer at it with `FACE_MODEL=stand-in`, and says so.
+and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH` and the key beside it, or a
+deploy loses which face was signed for which note number, and the key with it. The build context
+is the repo root. `deploy/Dockerfile` builds it (Node 22.22.2 and git, `standard.sh registry/client
+records keys`, `npm ci`, the face models by `npm run fetch -- models`) and runs `npm start` in
+`issuer/`.
 
 The foundation's devnet issuer runs that image on Railway, service `issuer`, at
 https://issuer.devnet.forest.foundation:
@@ -284,36 +290,44 @@ https://issuer.devnet.forest.foundation:
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=issuer/deploy/Dockerfile`.
 - **One replica,** a volume at `/data`, a public domain to port 8080. No health check: Railway
   refuses a path with a dot, and the other routes are POST.
-- **Who it is:** `issuer.devnet.forest.foundation`; its note key is in
-  [the repo's devnet facts](../README.md#on-devnet) and at `/issuer.json`. It is the issuer the
-  devnet index trusts (`index/lists/issuers.json`).
-- **No Didit key,** so the stand-in passes everyone, at both tiers.
+- **Its key and its file** in a directory of their own on the volume, `/data/issuer/`, where its
+  first start made the key.
+- **Who it is:** `issuer.devnet.forest.foundation`; its note key and its sponsor key are at
+  `/issuer.json`. The devnet index trusts the note key its list names (`index/lists/issuers.json`),
+  and the registry payer and the host take the sponsor key's tickets (their `SPONSORS`).
+- **Didit,** both checks, in the foundation's Didit application: the face check's workflow is
+  "Forest Proof of Human", the document check's "Forest Proof of ID" (see Limits). The face model
+  is SFace.
 - **No price:** `ID_TIER_PRICE` is unset, so 0.
-- **A welcome gift:** three registrations at https://registry-payer.devnet.forest.foundation and
-  500 cents at https://host.devnet.forest.foundation, as tickets its sponsor key,
-  `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`, signs; both services list it in `SPONSORS`.
+- **A welcome gift:** ten registrations at https://registry-payer.devnet.forest.foundation and
+  10 cents at https://host.devnet.forest.foundation, as tickets its sponsor key signs.
+- **Apps it sends people back to:** the Forest app, https://app.devnet.forest.foundation.
 
 | Variable | On devnet | Secret |
 |---|---|---|
 | `ISSUER_NAME` | `issuer.devnet.forest.foundation` | no |
-| `ISSUER_KEYPAIR` | the devnet `issuer` key | yes |
-| `DATABASE_PATH` | `/data/issuer.sqlite` | no |
+| `DIDIT_API_KEY` | the foundation's Didit API key | yes |
+| `DIDIT_WORKFLOW_ID` | `ddc392c5-1230-45c3-a5b8-d7fe6a312dcd`, "Forest Proof of Human" | no |
+| `DIDIT_ID_WORKFLOW_ID` | `1324949e-9468-44cf-b7f7-18cb240575bf`, "Forest Proof of ID" | no |
+| `APP_ORIGINS` | `https://app.devnet.forest.foundation` | no |
+| `DATABASE_PATH` | `/data/issuer/issuer.sqlite` | no |
 | `SESSION_LIMIT_PER_HOUR` | `20` | no |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |
 | `REGISTRY_PAYER_URL` | `https://registry-payer.devnet.forest.foundation` | no |
-| `REGISTRY_CREDITS` | `3` | no |
+| `REGISTRY_CREDITS` | `10` | no |
 | `HOST_URL` | `https://host.devnet.forest.foundation` | no |
-| `HOST_CREDITS` | `500` | no |
+| `HOST_CREDITS` | `10` | no |
 | `PORT` | `8080` | no |
-
-Setting `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` and `DIDIT_ID_WORKFLOW_ID` (secret) and redeploying
-puts the real checks, and the face model, in the stand-in's place.
 
 ## How we run it
 
+- **One issuer, devnet and mainnet.** The devnet issuer is the one that stays when mainnet starts:
+  its checks are real, and its key and its file carry over, so a person checked on devnet is not
+  checked again and their note stays good. Only registry rows reset, with the new chain.
+- **Its key is made on its machine** at its first start, and kept on its volume beside its file
+  ([Its key](#how-it-works)). No person, phrase or variable holds it.
 - **Its provider is Didit,** for both checks. The foundation pays it per check: about $0.15 a face
-  check from 1 November 2026, and up to $0.30 a document check on Didit's list (October 2026). On
-  devnet the stand-in costs nothing.
+  check from 1 November 2026, and up to $0.30 a document check on Didit's list (October 2026).
 - **The face check is free to the person.**
 - **The document check costs `ID_TIER_PRICE`,** in the dollar `ID_TIER_MINT`, paid before the
   session opens. On devnet the price is 0, since no entity can receive the money yet.
@@ -328,20 +342,22 @@ puts the real checks, and the face model, in the stand-in's place.
   issuer cannot tell, and does not check.
 - **The price pays for the check, whatever Didit decides.** Nothing is refunded. A refused request
   uses nothing up, so the same session can still be sent again once a review in Didit approves it.
-- **The welcome gift:** at a person's first note, three registrations at the registry payer
-  (`REGISTRY_CREDITS`) and 500 cents of writes at the host (`HOST_CREDITS`), as sponsor's tickets:
-  on devnet's prices, 1.50 and 5.00 of the classic test dollar, 6.50 a person, placeholders, on
-  each service's bill. Once a note number.
+- **The welcome gift:** at a person's first note, ten registrations at the registry payer
+  (`REGISTRY_CREDITS`) and 10 cents of writes at the host (`HOST_CREDITS`, its credits are cents),
+  as sponsor's tickets: on devnet's prices, 5.00 and 0.10 of the classic test dollar, 5.10 a
+  person, placeholders, on each service's bill. Once a note number, so once a face.
 - **No money:** the issuer holds no key that holds money. The document check's price goes straight
   to `ID_TIER_PAY_TO`; the gift is tickets, which each service counts.
 - **Session limits per address:** `SESSION_LIMIT_PER_HOUR` sessions an hour from one network
-  address, both checks together, paid or not: 5 by default, 20 on devnet so a few e2e runs an hour
-  fit. Counted in memory as keyed hashes, an IPv6 address by its /64. `/note`, `/id/note` and a
+  address, both checks together, paid or not: 5 by default, 20 on devnet. Counted in memory as keyed hashes, an IPv6 address by its /64. `/note`, `/id/note` and a
   payment's polling have no limit.
 - **Tiers:** 1 after the face check, 2 after the document check. What they mean is this issuer's
   word; a reader weighs them.
 - **One face, one note number; one document's person, one note number.** Seen again with the same
-  note number, the note is signed again; with another, refused.
+  note number, the note is signed again; with another, refused. Didit flags a face seen before and
+  leaves the decision to the issuer.
+- **Where Didit sends the person back:** a page of an app in `APP_ORIGINS`, when the app asks; on
+  devnet, the Forest app.
 - **The face model:** SFace, named `opencv-sface-2021dec` in a note
   ([The face model](#the-face-model)).
 - **The same face:** a cosine similarity of at least 0.5 (`FACE_MATCH`) between the live selfie's
@@ -372,8 +388,7 @@ puts the real checks, and the face model, in the stand-in's place.
 - **Retention.** The issuer keeps what [What it keeps](#what-it-keeps-and-why) lists for as long as
   it runs. Didit keeps what it holds for as long as its retention setting says; that setting is in
   Didit, not in this code. The issuer never asks Didit to delete a session: the duplicate search
-  needs the face and the document. On devnet the stand-in keeps, in memory, the ids of the sessions
-  it opened, their workflows and the names it made up, and nothing else.
+  needs the face and the document.
 - **Data law:** the Open Forest Foundation is the responsible party for both checks, so three things sit outside this
   code: a processing agreement with Didit, the consent screen above, and Didit's retention setting.
   Paperwork and settings; nothing here does them.
@@ -406,9 +421,8 @@ puts the real checks, and the face model, in the stand-in's place.
 
 ## Limits
 
-- **On devnet, anyone passes.** The stand-in approves every session, on both checks, with no face
-  seen before and a name made up for each document, so anyone who asks gets a note from the devnet
-  issuer, at either tier.
+- **Tier 2 waits on Didit.** The document check's workflow, "Forest Proof of ID", is a draft in
+  Didit: until it is published, with a face seen before set to no action, no document check opens.
 - **The issuer sees each buy of a person's gift,** by its reference, while it signs its ticket, and
   keeps only a hash of them. A service that sees a buy collected with the ticket, and the credits
   spent, from one network address, can tie the two, and the issuer knows whose note the buy came
@@ -418,7 +432,7 @@ puts the real checks, and the face model, in the stand-in's place.
 - **A lost tier 2 note costs another document check.** The issuer signs it again for the same note
   number, after a document check that passes, at the check's price.
 - **One person per issuer rests on Didit's face search.** The issuer keeps no face; a face Didit's
-  search misses is a new person to it. The devnet stand-in has no face search at all.
+  search misses is a new person to it.
 - **A payment's session is found again through Didit's list of sessions,** by its tag; the API key
   must be allowed to read sessions. A session Didit opened whose answer was lost, if Didit's list
   misses it, is opened again on the next ask, and the foundation pays Didit for both.
@@ -437,9 +451,10 @@ puts the real checks, and the face model, in the stand-in's place.
 - **It trusts Didit's decision,** for a session on the check's own workflow: status, each step's
   status, the selfie, each face-search match's session, and what the document step read. It reads
   those and drops everything else Didit returns. It cannot see how the workflows are set up in
-  Didit, and relies on this: a liveness step with face search on (Didit's default); on the document
-  workflow, a face seen before set to no action (otherwise Didit would decline a person moving up
-  from the face check) and a document seen before set to decline; both workflows in one Didit
+  Didit, and relies on this: a liveness step with face search on (Didit's default); on both
+  workflows, a face seen before set to no action (otherwise Didit would decline a person who lost
+  their note, or one moving up from the face check, before the issuer could decide); on the
+  document workflow, a document seen before set to decline; both workflows in one Didit
   application, so the face search covers both; and an API key from that application.
 - **The fingerprint is as exact as Didit's reading.** A name read two ways (a middle name, another
   script) is two fingerprints, so one person with two documents may pass twice, for the note number
@@ -453,10 +468,11 @@ puts the real checks, and the face model, in the stand-in's place.
   session. It stops one person running up the Didit bill from one place, and nothing more: someone
   with many addresses opens many sessions, and people behind one shared address share one count.
   The counts live in memory and reset on restart.
-- **A new seed is a new note key.** Readers trust the key; there is no signed handover. The name
-  stays, so a person's stamps do not change and a row made under the old key cannot be made again.
-- **If the issuer's file is lost,** so is which face and which document were signed for which note
-  number: a person seen before could then be signed for a second one.
+- **Losing the volume means a new key and new checks.** The key and the file live only there: a
+  start without them makes a new key, which readers must trust anew, with no signed handover, and
+  everyone is checked again, since which face and which document were signed for which note number
+  is gone too (a person seen before could be signed for a second one). The name stays, so a
+  person's stamps do not change and a row made under the old key cannot be made again.
 - **The face model's training data is not ours to vouch for.** SFace's weights are Apache 2.0, but
   its paper trains it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, whose own terms are for research.
   No widely used face model is trained on data with cleaner terms.
@@ -491,6 +507,11 @@ So the issuer holds none of the money a document check is paid with, nor a key t
 goes straight to the address that receives it, and that address is a setting, which can change
 without a change here. The reference lets the issuer find each payment and count it once. The
 issuer holds no money at all: its welcome gift is tickets.
+
+**Why does it refuse to start without Didit?**
+Its key is the one that stays for mainnet, and every note it signs counts with every reader that
+trusts it. Started with a stand-in that passes everyone, as the devnet issuer once was, that key
+would sign notes for anyone. The stand-in is for tests on this machine, with keys made for them.
 
 **Could someone rebuild this issuer from public data?**
 Its name and key are public, and its code is here. What it keeps, which face and which document were

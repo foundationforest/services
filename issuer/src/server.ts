@@ -3,8 +3,11 @@
 // client's address).
 //
 //   GET  /issuer.json   {"key":"<128 hex>","name":"<the issuer's name>","v":1}   who this issuer is,
-//                       and, with a welcome gift, {"gift":{"<role>":{"credits":n,"origin":"<url>"}}}
-//   POST /session       {}                       -> 201 {sessionId, url}   a face check (stage 1)
+//                       and, with a welcome gift, {"gift":{"<role>":{"credits":n,"origin":"<url>"}},
+//                       "sponsor":"<the sponsor key's address>"}
+//   POST /session       {} or {returnUrl}        -> 201 {sessionId, url}   a face check (stage 1); Didit
+//                                                   sends the person back to returnUrl, an app's own
+//                                                   page, when its origin is in APP_ORIGINS
 //   POST /note          {sessionId, noteNumber}  -> 200 {note}             a tier 1 note
 //                       with a gift, also {gift: {"<role>": "<buy's reference>"}}
 //                                                -> 200 {note, gift: {"<role>": "<ticket>"} or {error}}
@@ -80,6 +83,17 @@ function fields(body: Record<string, unknown>, shape: Record<string, 'string' | 
   return body
 }
 
+/** Where Didit sends the person when the check is done: a page on one of the apps' origins, and nowhere else. */
+function returnUrlIn(origins: string[], value: unknown): string {
+  try {
+    const url = new URL(value as string)
+    if (origins.includes(url.origin)) return url.href
+  } catch {
+    // Refused below.
+  }
+  throw new HttpError(400, 'bad_return_url')
+}
+
 function sessionIdFrom(value: unknown): string {
   if (typeof value !== 'string' || !UUID.test(value)) throw new HttpError(400, 'bad_session_id')
   return value
@@ -137,6 +151,8 @@ export type IssuerDeps = {
   payment?: PaymentDeps
   /** Unset: no welcome gift. */
   gift?: GiftDeps
+  /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
+  appOrigins?: string[]
   /** How often one address may open a session, on either check. */
   limit: RateLimit
   /** The header a proxy puts the client's address in; unset, the connection's own address. */
@@ -154,14 +170,15 @@ function clientAddress(req: IncomingMessage, header: string | undefined): string
 export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const { face, id, store, embedder, payment, limit } = deps
   const log = deps.log ?? ((line) => console.log(line))
+  const returnUrl = (value: unknown) => returnUrlIn(deps.appOrigins ?? [], value)
 
   type Route = (body: Record<string, unknown>, req: IncomingMessage) => Promise<[number, unknown]>
 
   /** A session on the check's workflow, counted against the address's share of the hour. */
-  async function open(c: CheckDeps, req: IncomingMessage): Promise<[number, unknown]> {
+  async function open(c: CheckDeps, req: IncomingMessage, callback?: string): Promise<[number, unknown]> {
     if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
     try {
-      return [201, await c.check.createSession()]
+      return [201, await c.check.createSession({ callback })]
     } catch {
       throw new HttpError(502, 'face_check_unavailable')
     }
@@ -331,7 +348,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     // Marked in one statement: another payment id naming this transaction may have got here first.
     if (unused && !store.usePayment(unused, reference)) throw new HttpError(409, 'payment_used')
     try {
-      return [201, await id.check.createSession(tag)]
+      return [201, await id.check.createSession({ tag })]
     } catch {
       // Opened or not, the payment stays used: the next ask finds the session by its tag, or opens it.
       throw new HttpError(502, 'face_check_unavailable')
@@ -340,8 +357,11 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
 
   const routes: Record<string, Route> = {
     async '/session'(body, req) {
-      fields(body)
-      return open(face, req)
+      if (!('returnUrl' in body)) {
+        fields(body)
+        return open(face, req)
+      }
+      return open(face, req, returnUrl(fields(body, { returnUrl: 'string' }).returnUrl))
     },
     '/note': faceNote,
     '/id/session': openId,
