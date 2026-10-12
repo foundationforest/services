@@ -18,16 +18,15 @@ The host it writes to: [`host/`](../host/README.md).
 
 ### What it proves
 
-That a person's app, with the standard's pieces alone, takes a new person from 24 words to a
-profile the index counts as one real person, rated and ID-checked, through these services as
-deployed: the issuer's two checks and its welcome gift of credits (prepaid units of a service),
-credits bought on Solana, a row (the registry's public entry that says a profile holds a note)
-through the registry payer with a credit and one through the fee payer, records, a photo and
+That a person's app, with the standard's pieces and mcp's credits client alone, takes a new person
+from 24 words to a profile the index counts as one real person, rated and ID-checked, through these
+services as deployed: the issuer's two checks and its welcome gift of credits (prepaid units of a
+service), credits bought on Solana, a row (the registry's public entry that says a profile holds a
+note) through the registry payer with a credit and one through the fee payer, records, a photo and
 messages on the host paid for in credits, an assistant acting through mcp
-([`mcp/`](../mcp/README.md)) with access keys only, a payment
-through the escrow, reviews, and a rating proven on the device. The seller pays nothing but the
-gift's credits; the buyer pays only in test dollars and credits. Every step checks what it did, and the run passes only if every
-step does.
+([`mcp/`](../mcp/README.md)) with access keys only, a payment through the escrow, reviews, and a
+rating proven on the device. The seller pays nothing but the gift's credits; the buyer pays only in
+test dollars and credits. Every step checks what it did, and the run passes only if every step does.
 
 ### The steps
 
@@ -44,9 +43,11 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
 3. **The face check, and both ways to pay.** A session at the issuer, the check (the stand-in
    passes it, with one embedding for everyone), the note number sent, and a tier 1 note back. The
    run checks the issuer's signature on it, its key, the note number and the tier. With the
-   seller's note request its app sends the references of two buys it made, of as many credits as
-   `/issuer.json`'s gift names, at the registry payer and at the host; the issuer answers a
-   sponsor's ticket (a signed promise to pay for that buy) for each, and the app collects each buy with its ticket, at once. The buyer
+   seller's note request its app sends the references (a code that names a buy, not its credits)
+   of two buys it made, of as many credits as `/issuer.json`'s gift names, at the registry payer
+   and at the host; the issuer, as sponsor (someone who pays for another person's buy), answers a
+   ticket (a signed promise to pay for that buy) for each, and the app collects each buy with its
+   ticket, at once. The buyer
    buys its host credits on Solana: a plain transfer from its own address to the host's, naming the
    buy's reference, not through the fee payer; once it is finalized, the app collects the buy with
    the transaction's signature.
@@ -84,8 +85,9 @@ Two people, a seller and a buyer, in the market `tutoring`, each the way their a
    (`permission`), and a message the past key signed (`permission`) once the host's cache time
    (`senderCacheSeconds` in `devnet.json`) and ten seconds more have passed.
 9. **The deal.** The buyer pays through the escrow in one tap, pay and release in one transaction,
-   through the fee payer's at-cost door. The run checks that the escrow's address comes from its
-   terms, and that its rent goes back to the fee payer, which paid it.
+   through the fee payer's at-cost door (the Kora that charges what it costs). The run checks that
+   the escrow's address comes from its terms, and that its rent goes back to the fee payer, which
+   paid it.
 10. **Reviews.** Each assistant reviews the other through mcp (`post-review`), naming the deal.
 11. **The index shows it:** both profiles with their rows counted under the issuer's key, and the
     seller's page naming the issuer; the offer with its photo shown from the host; the deal released
@@ -114,7 +116,6 @@ proving files (the person circuit's are in the standard):
 
 ```sh
 ./standard.sh keys records registry/client escrow/client reputation/client
-(cd shared/credits && npm ci)
 (cd mcp && npm ci)
 (cd standard/reputation/circuit && npm run fetch)
 cd e2e && npm ci
@@ -122,7 +123,7 @@ FOREST_DEVNET_SEED='<the devnet phrase>' npm run e2e
 ```
 
 - **`FOREST_DEVNET_SEED`** (required): the devnet phrase. Its `deploy` key pays the setup; its
-  `test-dollar-authority` key mints the test dollars. Never in this repo.
+  `test-dollar-authority` key (the key allowed to make test dollars) mints them. Never in this repo.
 - **`HELIUS_API_KEY`** (optional): read and send through Helius's devnet RPC instead of
   `api.devnet.solana.com`. The key never goes into a run's record.
 
@@ -132,26 +133,29 @@ the host is paid in the classic test dollar.
 
 ### The latest run
 
-2026-10-11, 17:55 to 17:58 UTC, against the six services as deployed from `main` at `b9239a4`
-(standard at `40d736b`), after credits moved to `shared/credits/` and the pin moved: **passed** in
-176 seconds. The seller's credits came from the issuer's tickets, collected at once; the buyer's
-payment on Solana was collected and finished. Its record is
-[`runs/2026-10-11T17-55-42-975Z.json`](runs/2026-10-11T17-55-42-975Z.json).
+2026-10-12, 03:18 to 03:21 UTC, against the six services as deployed from `main` at `ee73989`
+(standard at `40d736b`), with this run's code from the branch that moved credits into the host and
+the registry payer and the buyer's side to `mcp/credits/`: **passed** in 181 seconds. So the
+client in `mcp/credits/` bought, collected and spent at the services as they ran before that move,
+on the same wire format. The seller's credits came from the issuer's tickets, collected at once;
+the buyer's payment on Solana was collected and finished (each credit unblinded and checked
+against the service's key). Its record is
+[`runs/2026-10-12T03-18-28-623Z.json`](runs/2026-10-12T03-18-28-623Z.json).
 
-- **People:** seller `DCZh3tUS9z1FPJVfVLzdB4GMfcDbn7eGDySmHozsHVNt`, buyer
-  `83LXW3Lgrb94aaVKzc3QdJwwqUrobikygdmAn6YnmD4Q`, each with its secret for
+- **People:** seller `E2hGXPBjuDzdV3sBEvw2HH5yqkUD6LfgMkUjfjffbDsA`, buyer
+  `85NmMvpQzZwp6J9Vp6sC5PchvGDVhbRVPWT2QEvjTGsm`, each with its secret for
   `issuer.devnet.forest.foundation`, whose `/issuer.json` named the key in `devnet.json` and a gift
   of 3 registry payer credits and 500 host credits.
 - **Setup:** each profile's test-dollar account, 5.00 and 10.00 test dollars; the buyer's own
-  address `6XD3bzEj…`, with 1.00 test dollar and 0.01 SOL.
+  address `7gbD4xLg…`, with 1.00 test dollar and 0.01 SOL.
 - **Notes and both ways to pay:** a tier 1 note each from the face check, model `stand-in`, signed
   by the issuer's key `2185f564…`. With the seller's note, a ticket for each of its two buys from
   the issuer's sponsor key `CS5PvzxdfYuvaTWzfoCZmSLWK8bF91vQqwzbRxrDeBwW`; the registry payer and the
   host took them, and the app finished 3 and 500 credits. The buyer paid the host 0.20 test dollars
-  from its own address, a plain transfer naming its buy's reference (`2nrY8V1V…`), and collected 20
+  from its own address, a plain transfer naming its buy's reference (`F3skYHVu…`), and collected 20
   credits with the transaction's signature.
 - **Rows:** `tutoring/seller` through the registry payer, which signed and sent it itself, with one
-  ticket credit, 619 bytes, charged nothing: the row `74f4giFv…` read on chain, owned by the
+  ticket credit, 619 bytes, charged nothing: the row `HwEZocMp…` read on chain, owned by the
   registry; the same row shown again refused as `row_exists`; the credit, shown with another row,
   refused as `spent` once the row landed. The seller held no SOL and paid no dollar.
   `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test dollars. Each read back
@@ -159,8 +163,8 @@ payment on Solana was collected and finished. Its record is
 - **The host:** each folder's card was refused (`refused`) while it held no credits; then the seller
   spent 500 credits into its folder in 5 requests and the buyer 20 in one. At the end the seller's
   folder held 491 and the buyer's 17: every write here cost one credit.
-- **Keys:** the seller's app made a write key `ngHpq7YV…`, a message key `AMuQNo3Z…` and the read
-  key; the buyer's app a write key `FmPLUKSP…`.
+- **Keys:** the seller's app made a write key `EEPzE2V6…`, a message key `E56xoeC4…` and the read
+  key; the buyer's app a write key `3NUXvszA…`.
 - **Records:** the offer `offer/maths`, posted through mcp and signed by the write key, and its
   photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, encrypted to the seller's inbox key and the
@@ -171,13 +175,13 @@ payment on Solana was collected and finished. Its record is
   opened. Then the seller listed the message key as past and deleted the read key; mcp refused
   `send` ("this key is past") and `private` ("not listed"); the host refused the past key's pull at
   once (`permission`), and 71 seconds later a message it signed (`permission`).
-- **The deal:** escrow `2iAUA72u…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent
+- **The deal:** escrow `AWzgzECi…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent
   goes back to the fee payer `9CKUm2s7…`.
 - **The index:** both rows counted under "Forest issuer (devnet)", weight 0.7; the offer with its
   photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews
   counted. Each rated 10.
-- **The proof:** the seller's leaf found by its stamp `0d9def90…` among 11 leaves, 100 tenths;
-  proven against root `25cf534b…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its
+- **The proof:** the seller's leaf found by its stamp `29ee8491…` among 13 leaves, 100 tenths;
+  proven against root `16481766…`, signed by "Forest index (devnet)" (`8117HhEb…`), and put on its
   card; the index shows it.
 - **The ID check:** the seller's note signed again at tier 2; its tier proven at its row's stamp
   and put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight
@@ -185,16 +189,18 @@ payment on Solana was collected and finished. Its record is
 
 Open them: [the seller][s], [the buyer][b], [the deal][d].
 
-[s]: https://index.devnet.forest.foundation/profiles/DCZh3tUS9z1FPJVfVLzdB4GMfcDbn7eGDySmHozsHVNt
-[b]: https://index.devnet.forest.foundation/profiles/83LXW3Lgrb94aaVKzc3QdJwwqUrobikygdmAn6YnmD4Q
-[d]: https://index.devnet.forest.foundation/deals/2iAUA72ubmfrUcsuurdfwidf66uasWjGppBtwMuqsBbq
+[s]: https://index.devnet.forest.foundation/profiles/E2hGXPBjuDzdV3sBEvw2HH5yqkUD6LfgMkUjfjffbDsA
+[b]: https://index.devnet.forest.foundation/profiles/85NmMvpQzZwp6J9Vp6sC5PchvGDVhbRVPWT2QEvjTGsm
+[d]: https://index.devnet.forest.foundation/deals/AWzgzECiWBYTXeRuK93xUSHS1j5FHgLBScYG1XtogBHy
 
 ## Promises
 
-- **No key, phrase or keyed URL in this directory.** The devnet phrase comes from the environment,
-  and a run's record holds addresses, signatures and charges only.
-- **It does what an app would,** with the standard's own pieces: keys, records, the registry and escrow
-  clients, and the reputation circuit's client. Nothing in it reaches around a service.
+- **No key, phrase or keyed URL (a web address with a key inside) in this directory.** The devnet
+  phrase comes from the environment, and a run's record holds addresses, signatures and charges
+  only.
+- **It does what an app would,** with the standard's own pieces and mcp's credits client: keys,
+  records, the registry and escrow clients, and the reputation circuit's client. Nothing in it
+  reaches around a service.
 - **No credit in a run's record.** A credit is a bearer credit; the record holds how many were
   bought and spent, and the buys' references.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
@@ -213,8 +219,9 @@ Open them: [the seller][s], [the buyer][b], [the deal][d].
 - **One inbox rule and one photo.** It tests inboxes open to one issuer's rows, with and without
   one message from each sender, not `anyone` or `maxBytes`; and a photo on an offer, not a
   profile's photo or a video.
-- **mcp's actions, called in process; one host.** The assistants run mcp's actions as
-  its typed door runs them, not through `forest` itself or its MCP door. A host other than the
+- **mcp's actions, called in process; one host.** The assistants call mcp's actions inside the
+  run's own process, the way its typed commands call them, not by starting `forest` or through its
+  MCP tools. A host other than the
   foundation's, or a seller and buyer on different hosts, is not tested.
 - **One proof:** the seller's own rating in its own market, from one profile. It does not prove
   across several profiles or hide the market.
