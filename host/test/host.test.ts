@@ -3,7 +3,7 @@
 // an inbox that takes messages from one issuer's rows; the sender's records read, and kept a while,
 // to take a message a message key signed, never after a redirect (forest's public fetch keeps the
 // read to public addresses, and its own tests try every range); and credits: sold, collected,
-// finished with the shared/credits/ client and spent into a folder's balance, which every write but a
+// finished with mcp's credits client (mcp/credits/) and spent into a folder's balance, which every write but a
 // hosts or permissions record pays from, bytes by the megabyte.
 //
 // A request whose URL cannot be read is refused at the front, and the host goes on.
@@ -30,8 +30,9 @@ import { recordId, unsignedOf } from '../../standard/records/src/record.ts'
 import { blobStore, signS3 } from '../../standard/records/src/storage.ts'
 import { ROW_DISCRIMINATOR, ROW_OFFSET, rowSpace } from '../../standard/registry/client/src/program.ts'
 import { issuerKeyBytes, issuerKeyOf } from '../../standard/registry/client/src/index.ts'
-import { type Credit, PAYMENT_HEADER, buy, creditId, creditList, finish, serviceOf } from '../../shared/credits/src/index.ts'
-import type { Rpc } from '../../shared/credits/src/service.ts'
+import { type Credit, PAYMENT_HEADER, buy, creditList, finish, serviceOf } from '../../mcp/credits/client.ts'
+import { creditId } from '../credits/credit.ts'
+import type { Rpc } from '../credits/seller.ts'
 
 import { BALANCE_PATH, BUY_PATH, DIRECTORY_PATH, SPEND_PATH, UNIT, priceOf } from '../src/credits.ts'
 import { DEVNET_REGISTRY, LABEL, choice, type RunningHost, moveBlobs, readConfig, rowLookup, startHost } from '../src/host.ts'
@@ -641,7 +642,7 @@ test('one file: an older host’s balances, and a spend it cut short between its
   let h = await start()
   const folder = (await mainKey(randomBytes(32), 'tutoring/seller')).address
   const [kept, lost] = await creditsFrom(h, 2)
-  const ids = [creditId(kept!), creditId(lost!)]
+  const ids = [creditId(kept!.credit), creditId(lost!.credit)]
   // Two spends an older host cut short: the first got as far as its balances file, the second only as far as the hold.
   h.credits.spent.hold(ids[0]!)
   h.credits.spent.hold(ids[1]!)

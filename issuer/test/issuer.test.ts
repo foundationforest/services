@@ -21,8 +21,9 @@ import { canonical, parseCanonical } from '../../standard/records/src/canonical.
 import { toBytes32 } from '../../standard/registry/client/src/field.ts'
 import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
 
-import { buy, finish, serviceOf } from '../../shared/credits/src/index.ts'
-import { keyFrom, seller } from '../../shared/credits/src/service.ts'
+import { buy, finish, serviceOf } from '../../mcp/credits/client.ts'
+import * as hostCredits from '../../host/credits/seller.ts'
+import * as payerCredits from '../../fee-payer/registry/credits/seller.ts'
 
 import { parseKeypair } from '../src/key.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
@@ -544,15 +545,15 @@ test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({ ...gifted, HOST_CREDITS: '-1' }), /HOST_CREDITS/)
 })
 
-/** Two services selling credits with standard's seller, each taking the issuer's sponsor key: a registry payer and a host. */
+/** The two services' own sellers, each taking the issuer's sponsor key: the registry payer's and the host's. */
 function giftServices(sponsor: string) {
   const pkcs8 = () => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
   const credit = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', price: '0.5' }
-  const at = async (origin: string, unit: string) => {
-    const s = seller({ origin, key: await keyFrom(pkcs8()), unit, requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
+  const at = async (origin: string, sells: typeof hostCredits | typeof payerCredits) => {
+    const s = sells.seller({ origin, key: await sells.keyFrom(pkcs8()), requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
     return { seller: s, service: serviceOf(origin, s.directory()) }
   }
-  return Promise.all([at('https://registry-payer.example', 'one registration'), at('https://host.example', 'one cent of writes')])
+  return Promise.all([at('https://registry-payer.example', payerCredits), at('https://host.example', hostCredits)])
 }
 
 test('the welcome gift: at a first note, a sponsor’s ticket for each of the app’s buys, once a note number; the issuer pays nothing', async () => {

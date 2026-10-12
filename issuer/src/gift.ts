@@ -2,18 +2,17 @@
 // services its settings name, a few registrations at the registry payer and writes at the host, as
 // their sponsor.
 //
-// The app makes each buy (shared/credits/, `buy`) and keeps what finishes it; it sends the issuer
-// each buy's reference. For each, the issuer's sponsor key signs a ticket (standard's
-// `ticketMessage`): that service, that buy, the count the gift gives there. The app collects each
-// buy at its service with its ticket. The issuer sees each buy's reference, never the credits: the
-// service signs them blind. It pays nothing and holds no money: each service lists the issuer's
-// sponsor key and counts what its tickets paid for.
+// The app makes each buy and keeps what finishes it; it sends the issuer each buy's reference. For
+// each, the issuer's sponsor key signs a ticket (ticket.ts): that service, that buy, the count the
+// gift gives there. The app collects each buy at its service with its ticket. The issuer sees each
+// buy's reference, never the credits: the service signs them blind. It pays nothing and holds no
+// money: each service lists the issuer's sponsor key and counts what its tickets paid for.
 
 import { createHash } from 'node:crypto'
 
-import { ticket, ticketMessage } from '../../shared/credits/src/index.ts'
 import { base58 } from '../../standard/records/src/bytes.ts'
 import type { IssuerKey } from './key.ts'
+import { ticket, ticketMessage } from './ticket.ts'
 
 /** One service in the gift: where it is, and how many of its credits a ticket there gives. */
 export type GiftService = { origin: string; credits: number }

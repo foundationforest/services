@@ -1,5 +1,5 @@
-// The host's credits: it sells them (shared/credits/, one cent of writes each), and a credit spent
-// here goes into a folder's balance, which pays for that folder's writes.
+// The host's credits: it sells them (credits/, one cent of writes each), and a credit spent here
+// goes into a folder's balance, which pays for that folder's writes.
 //
 //   GET  /.well-known/private-token-issuer-directory   its credit key and price
 //   POST /credits/buy                                   a paid buy's blind signatures
@@ -24,13 +24,11 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { base58 } from '../../standard/records/src/index.ts'
-import { checkCredits } from '../../shared/credits/src/index.ts'
-import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, seller } from '../../shared/credits/src/service.ts'
+import { checkCredits } from '../credits/credit.ts'
+import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, UNIT, seller } from '../credits/seller.ts'
 
-export { DIRECTORY_PATH }
+export { DIRECTORY_PATH, UNIT }
 
-/** What one credit buys here, as the directory says it. */
-export const UNIT = 'one cent of writes'
 export const BUY_PATH = '/credits/buy'
 export const SPEND_PATH = '/credits/spend'
 export const BALANCE_PATH = '/credits/balance/'
@@ -78,7 +76,7 @@ export class Credits {
   /** In `dir`, credits.sqlite, its seller's one file; or in memory when null. With no RPC, no Solana payment is checked. */
   constructor(dir: string | null, config: CreditConfig, rpc: Rpc | null) {
     if (dir) mkdirSync(dir, { recursive: true })
-    this.seller = seller({ origin: config.origin, key: config.creditKey, unit: UNIT, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: dir ? join(dir, 'credits.sqlite') : ':memory:' })
+    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: dir ? join(dir, 'credits.sqlite') : ':memory:' })
     this.spent = this.seller.spent
     const db = this.seller.db
     db.exec('CREATE TABLE IF NOT EXISTS balances (folder TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID')
@@ -107,7 +105,7 @@ export class Credits {
     return this.seller.directory()
   }
 
-  /** Credits, as `{ folder, credits }` lists them (forest's `creditList`), into that folder's balance: all of them, or none. */
+  /** Credits, as `{ folder, credits }` lists them (mcp/credits/'s `creditList`), into that folder's balance: all of them, or none. */
   async spend(body: unknown): Promise<Answer> {
     const shown = typeof body === 'object' && body !== null && !Array.isArray(body) && Object.keys(body).sort().join() === 'credits,folder' ? (body as { folder: unknown; credits: unknown }) : undefined
     if (!shown || !isFolder(shown.folder)) return refuse('bad_request')
