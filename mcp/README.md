@@ -47,7 +47,7 @@ words, key and parameters.
 | `inbox` | message; read to open | The messages to the profile, from each of its hosts; each one opened if the read key is one of the inbox's readers, and marked `unopened` if not |
 | `post-offer`, `update-offer <id>`, `remove-offer <id>` | write | An offer at `offer/<id>` |
 | `post-review` | write | A review at `review/<id>` |
-| `send <to>` | message | A message to another profile's inbox |
+| `send <to>` | message | A message to another profile's inbox; and, when it is text, a copy, `{ text, to }`, in the profile's own inbox, where the person's app shows it. The copy costs the sender's folder one write, as any message does |
 | `request <action>` | message | Ask for one of the actions above, or `pay`, through the profile's own inbox (Requests) |
 
 A key is written as a grant writes it (a grant is the message that hands an access key to

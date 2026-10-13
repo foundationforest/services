@@ -124,7 +124,7 @@ const DOING: Action[] = [
   },
   {
     name: 'send',
-    does: "Send a message to another profile's inbox, encrypted to its inbox key and the readers its inbox lists.",
+    does: "Send a message to another profile's inbox, encrypted to its inbox key and the readers its inbox lists. Text also leaves a copy, { text, to }, in the profile's own inbox, where the person's app shows it.",
     keys: ['message'],
     params: [
       { name: 'to', type: 'string', required: true, positional: true, description: "The recipient profile's address." },

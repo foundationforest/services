@@ -105,7 +105,8 @@ buyer, in the market `tutoring`, each the way their app would do it:
 8. **The seller's assistant,** through mcp: `inbox` pulls with the message key and opens the
    message with the read key; `send` replies, signed by the message key for the seller, which the
    buyer's host takes after reading the seller's permissions, and the buyer sees the message key
-   sent it; `request` asks the seller, through the seller's own inbox, to post an offer the
+   sent it; the seller's app pulls the reply's copy, `{ text, to }`, from its own inbox and opens
+   it, signed by the same message key; `request` asks the seller, through the seller's own inbox, to post an offer the
    assistant drafted, which the seller's app pulls and opens, and `inbox` marks as a request. Then
    the seller makes the message key past and deletes the read key, from its permissions record and
    its inbox's readers. mcp refuses both keys; the host refuses the past key's pull at once

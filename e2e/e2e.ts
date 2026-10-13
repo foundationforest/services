@@ -34,7 +34,8 @@
 //      read key, and a second one is refused (one each); the seller pulls it with a pull its main
 //      key signs, and opens it;
 //   8. the seller's assistant, through the CLI: it opens the buyer's message (the message key and
-//      the read key) and replies; the buyer sees the message key sent it; it asks the seller, through
+//      the read key) and replies; the buyer sees the message key sent it, and the seller's app opens
+//      the reply's copy, { text, to }, in the seller's own inbox; it asks the seller, through
 //      the seller's own inbox, to post an offer it drafted (`request`), and the seller's app opens
 //      the request. The seller makes the message key past and deletes the read key: the CLI refuses
 //      both, the host refuses the past key's pull at once, and its message once the host no longer
@@ -593,8 +594,9 @@ async function inbox(from: Person, to: Person, readKey: InboxKey) {
  * The seller's assistant, through the CLI, with the keys the seller's app made. It opens the
  * seller's inbox (`inbox`, the message key and the read key), replies to the buyer (`send`, signed by
  * the message key for the seller and naming the seller's host, where the buyer's host reads the
- * seller's permissions), and asks the seller to post an offer it drafted (`request`, a message to the
- * seller's own inbox), which the seller's app pulls with its main key and opens, and the CLI marks.
+ * seller's permissions), whose copy, `{ text, to }`, the seller's app opens in its own inbox, and
+ * asks the seller to post an offer it drafted (`request`, a message to the seller's own inbox),
+ * which the seller's app pulls with its main key and opens, and the CLI marks.
  * Then the seller makes the message key past and deletes the read key, from its permissions record
  * and from its card's readers. The CLI refuses both keys; the host refuses the past key's pull at
  * once, and its message once it no longer keeps the seller's records it read (`senderCacheSeconds`
@@ -622,12 +624,17 @@ async function assistant(seller: Person, buyer: Person, ctx: Context, keys: Made
   assert.equal(buyerPage.messages.length, 1, 'one message in the buyer’s inbox')
   const got = await openMessage(buyerPage.messages[0]!.message, buyer.inboxKey.identity)
   assert.deepEqual([got.from, got.key, got.body], [seller.profile.address, messageKey.listed.key, { text }], 'from the seller, sent by its message key')
-  say(`seller's assistant: opened the buyer's message with the message key ${messageKey.listed.key} and the read key, and replied; the buyer saw the message key sent it`)
+  assert.deepEqual(reply.copy?.hosts, [cfg.host], `the reply's copy landed on the seller's host: ${JSON.stringify(reply.copy)}`)
+  const ownCopy = (await pull(cfg.host!, pullRequest(seller.profile, 0, Date.now()))).messages.find((m) => m.id === reply.copy.id)
+  assert.ok(ownCopy, 'the copy is in the seller’s own inbox')
+  const copy = await openMessage(ownCopy.message, seller.inboxKey.identity)
+  assert.deepEqual([copy.from, copy.to, copy.key, copy.time, copy.body], [seller.profile.address, seller.profile.address, messageKey.listed.key, got.time, { text, to: buyer.profile.address }], 'the seller’s app opens the copy, { text, to }, with its inbox key')
+  say(`seller's assistant: opened the buyer's message with the message key ${messageKey.listed.key} and the read key, and replied; the buyer saw the message key sent it, and the seller's app opened the copy in its own inbox`)
 
   const drafted = { offer: { direction: 'offer', description: 'One hour of physics tutoring, online. A devnet test offer, drafted by an assistant through e2e.', remote: true }, id: 'physics' }
   const requested = await sent('request', { action: 'post-offer', params: drafted }, 'the seller’s host to take the request')
   const own = await pull(cfg.host!, pullRequest(seller.profile, 0, Date.now()))
-  const asking = own.messages.find((m) => m.message.from === seller.profile.address && m.message.key === messageKey.listed.key)
+  const asking = own.messages.find((m) => m.id === requested.id)
   assert.ok(asking, 'the request is in the seller’s inbox')
   const opened = await openMessage(asking.message, seller.inboxKey.identity)
   assert.deepEqual(opened.body, { request: 'post-offer', ...drafted }, 'the seller’s app opens the request with its inbox key')
@@ -666,6 +673,7 @@ async function assistant(seller: Person, buyer: Person, ctx: Context, keys: Made
       keys: Object.fromEntries(keys.map((k) => [k.listed.scope, k.listed.key])),
       pulled: box.messages.length,
       reply: { id: reply.id, bytes: Buffer.byteLength(encodeMessage(buyerPage.messages[0]!.message)), from: got.from, key: got.key, hosts: reply.hosts },
+      copy: { id: reply.copy.id, bytes: Buffer.byteLength(encodeMessage(ownCopy.message)), body: copy.body, hosts: reply.copy.hosts },
       request: { id: requested.id, body: opened.body },
       after: { cli: { send: pastSend, private: goneRead }, pull: 'permission', waitedMs: Date.now() - pastAt, message: 'permission' },
       texts: [text, drafted.offer.description],

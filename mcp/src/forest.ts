@@ -383,7 +383,10 @@ export const postReview = async (ctx: Context, review: unknown, id?: string) => 
 // ---------------------------------------------------------------------------------------------
 // Messages
 
-/** A message to another profile's inbox, signed by the message key for the profile. */
+/**
+ * A message to another profile's inbox, signed by the message key for the profile; then, when it
+ * is text, a copy in the profile's own inbox, `{ text, to }`, as the Forest app keeps one.
+ */
 export async function send(ctx: Context, to: string, body: Body) {
   return sendFrom(ctx, to, body)
 }
@@ -405,16 +408,32 @@ async function sendFrom(ctx: Context, recipient: string | null, body: Body) {
   listed(mine, key.address, 'message')
   const host = mine.hosts[0] ?? refuse(`${address} has no hosts record, so no host can check this message key`)
   const theirs = to === address ? mine : await folder(ctx, to)
+  const sender = { key, from: address, host }
+  const time = Date.now()
   let signed
   try {
-    signed = await message({ key, from: address, host }, to, body, Date.now(), card(theirs) ?? {})
+    signed = await message(sender, to, body, time, card(theirs) ?? {})
   } catch (err) {
     if (err instanceof RecordError && err.code === 'no_inbox') {
       refuse(to === address ? `${address} has no inbox, so nothing can reach the person this way` : `${to} has no inbox this tool can read; nothing can be sent there`)
     }
     throw err
   }
-  return { from: address, to, id: messageId(unsignedMessageOf(signed)), ...landed(await deliver(theirs.hosts, [signed], reach(await startHosts(ctx)))) }
+  const how = reach(await startHosts(ctx))
+  const sent = { from: address, to, id: messageId(unsignedMessageOf(signed)), ...landed(await deliver(theirs.hosts, [signed], how)) }
+  // Only text is copied: the copy is always { text, to }, so it never reads as a request from the
+  // profile to itself, as a copied object could.
+  if (to === address || typeof body.text !== 'string') return sent
+  // The message is already sent, so a copy that does not land is said, not refused: a refusal
+  // would have it sent again. A message to its own inbox skips the inbox's rules.
+  let copy
+  try {
+    const own = await message(sender, address, { text: body.text, to }, time, card(mine) ?? {})
+    copy = { id: messageId(unsignedMessageOf(own)), ...landed(await deliver(mine.hosts, [own], how)) }
+  } catch (err) {
+    copy = { unsent: (err as Error).message }
+  }
+  return { ...sent, copy }
 }
 
 // ---------------------------------------------------------------------------------------------
