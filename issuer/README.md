@@ -292,9 +292,10 @@ https://issuer.devnet.forest.foundation:
   refuses a path with a dot, and the other routes are POST.
 - **Its key and its file** in a directory of their own on the volume, `/data/issuer/`, where its
   first start made the key.
-- **Who it is:** `issuer.devnet.forest.foundation`; its note key and its sponsor key are at
-  `/issuer.json`. The devnet index trusts the note key its list names (`index/lists/issuers.json`),
-  and the registry payer and the host take the sponsor key's tickets (their `SPONSORS`).
+- **Who it is:** `issuer.devnet.forest.foundation`; its note key and its sponsor key are in
+  [the repo's devnet facts](../README.md#on-devnet) and at `/issuer.json`. It is the issuer the
+  devnet index trusts (`index/lists/issuers.json`), and the registry payer and the host take its
+  sponsor key's tickets, `FAWrifUUu84ck7tS5SVzNsQzzVamjx3JwzkDNhX3em86` (their `SPONSORS`).
 - **Didit,** both checks, in the foundation's Didit application: the face check's workflow is
   "Forest Proof of Human", the document check's "Forest Proof of ID" (see Limits). The face model
   is SFace.
