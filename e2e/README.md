@@ -166,48 +166,51 @@ the classic test dollar.
 
 ### The latest run
 
-2026-10-13, 06:11 to 06:14 UTC, with this repo at `7e28dd5` (standard at `dcec0f9`; mcp's actions
-and the loop index from that commit) against the services as deployed from `main`: **passed** in
-167 seconds. Its record is
-[`runs/2026-10-13T06-11-50-957Z.json`](runs/2026-10-13T06-11-50-957Z.json).
+2026-10-13, 07:16 to 07:19 UTC, with this repo at `c3cb619` (standard at `dcec0f9`; mcp's actions,
+with `send`'s copy, and the loop index from that commit) against the services as deployed from
+`main`: **passed** in 166 seconds. Its record is
+[`runs/2026-10-13T07-16-48-274Z.json`](runs/2026-10-13T07-16-48-274Z.json).
 
 - **Deployed, answering:** the issuer, `/issuer.json` naming `issuer.devnet.forest.foundation`, the
   key `0a536f8d…` and the sponsor `FAWrifUU…`, and the index.
-- **The loop:** its issuer `issuer.e2e-loop.invalid`, key `06221b7b…`, made at its first start; its
-  index, signing key `6dBGCkp5…`, in a database of its own, dropped at the end.
-- **People:** seller `7XAgJpz8HRjZpWa58WkxYwaRerTXVdf38LKtXfHt3VKf`, buyer
-  `6RbHMxQiqyEVBT4J3VAc7M71NNR7ztnN4mHRXsuMrS91`.
+- **The loop:** its issuer `issuer.e2e-loop.invalid`, key `2b122177…`, made at its first start; its
+  index, signing key `FzzgEnPe…`, in a database of its own, dropped at the end.
+- **People:** seller `2sFb8DRVZQMQSebdxipgTJB7JUgdRbsgCighWE3qHtBr`, buyer
+  `BrzefdCmojoFk6YAiF2JPWHWDtDNbmhzr6p6Ya7T5Myd`.
 - **Setup:** each profile's test-dollar account, 5.00 and 10.00 test dollars; each one's own
-  address, `GwbGZz1n…` and `6k8WPapr…`, with 1.00 test dollar and 0.01 SOL.
+  address, `Apya3JUS…` and `6bS1ijyt…`, with 1.00 test dollar and 0.01 SOL.
 - **Notes:** a tier 1 note each from the loop issuer's face check, model `stand-in`.
 - **Credits, bought on Solana:** the seller paid the host 0.20 test dollars for 20 credits and the
   registry payer 0.50 for one; the buyer paid the host 0.20 for 20. Each a plain transfer naming its
   buy's reference, collected with the transaction's signature and finished.
 - **Rows:** `tutoring/seller` through the registry payer with the seller's credit, 619 bytes, the
-  row `6TveJpqw…` read on chain; the same row again refused as `row_exists`; the credit, shown with
+  row `CU1dNTmM…` read on chain; the same row again refused as `row_exists`; the credit, shown with
   another row, refused as `spent`. The seller's profile held no SOL and paid no dollar.
   `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test dollars. Each read back
   naming its profile, the loop issuer's key and the key that paid for it, and each proof showed
   tier 1.
 - **The host:** each folder's card was refused (`refused`) while it held no credits; then each
-  spent its 20 credits in one request. At the end the seller's folder held 19.88698 credits and the
-  buyer's 19.962378: the seller's writes cost 0.11302 credits in all, the buyer's 0.037622, each
-  write 0.01 and its bytes at 0.001 a kilobyte.
-- **Records:** the offer `offer/maths`, posted through mcp and signed by the write key `Cm53RxaA…`,
+  spent its 20 credits in one request. At the end the seller's folder held 19.872154 credits and the
+  buyer's 19.962378: the seller's writes cost 0.127846 credits in all, the reply's copy among them,
+  the buyer's 0.037622, each write 0.01 and its bytes at 0.001 a kilobyte.
+- **Records:** the offer `offer/maths`, posted through mcp and signed by the write key `HBXbTmae…`,
   and its photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, sealed to the seller's inbox key and the read
   key, taken; a second refused (`once`); the seller pulled and opened it.
-- **The assistant:** `inbox` opened the message with the message key `DyTWug4f…` and the read key;
-  `send` replied, 2,681 bytes; `request` reached the seller's app. Then the seller made the message
-  key past and deleted the read key; mcp refused both; the host refused the past key's pull at once
-  (`permission`), and 71 seconds later a message it signed (`permission`).
-- **The deal:** escrow `Cu1bWo7E…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent goes
+- **The assistant:** `inbox` opened the message with the message key `HiwXEPrw…` and the read key;
+  `send` replied, 2,681 bytes, and left its copy, `{ text, to }`, 4,826 bytes, in the seller's own
+  inbox, sealed to its inbox key and the read key, signed by the same message key; the seller's app
+  pulled and opened it, at a cost of 0.014826 credits to the seller's folder. `request` reached the
+  seller's app. Then the seller made the message key past and deleted the read key; mcp refused
+  both; the host refused the past key's pull at once (`permission`), and 70 seconds later a message
+  it signed (`permission`).
+- **The deal:** escrow `5bgwttZN…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent goes
   back to the fee payer `9CKUm2s7…`.
 - **The loop index:** both rows counted under "e2e loop issuer (loopback)", weight 0.7; the offer
   with its photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews
   counted. The seller rated 10.
-- **The proof:** the seller's leaf found by its stamp `1a3916a9…` among 2 leaves, 100 tenths,
-  proven against root `26b0ebff…`, signed by "e2e loop index (loopback)", and put on its card; the
+- **The proof:** the seller's leaf found by its stamp `272888ef…` among 2 leaves, 100 tenths,
+  proven against root `18ef79d8…`, signed by "e2e loop index (loopback)", and put on its card; the
   index shows it.
 - **The ID check:** the seller's note signed again at tier 2; its tier proven at its row's stamp and
   put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight 0.9,
@@ -216,9 +219,9 @@ and the loop index from that commit) against the services as deployed from `main
 The loop index stopped with the run, so its pages are gone; what it read is on devnet: [the
 seller][s], [the buyer][b], [the deal][d], on Solana's explorer.
 
-[s]: https://explorer.solana.com/address/7XAgJpz8HRjZpWa58WkxYwaRerTXVdf38LKtXfHt3VKf?cluster=devnet
-[b]: https://explorer.solana.com/address/6RbHMxQiqyEVBT4J3VAc7M71NNR7ztnN4mHRXsuMrS91?cluster=devnet
-[d]: https://explorer.solana.com/address/Cu1bWo7ELgBwSk1a4w6xcU8F2xN1K6hHQXyv3gWQLPUX?cluster=devnet
+[s]: https://explorer.solana.com/address/2sFb8DRVZQMQSebdxipgTJB7JUgdRbsgCighWE3qHtBr?cluster=devnet
+[b]: https://explorer.solana.com/address/BrzefdCmojoFk6YAiF2JPWHWDtDNbmhzr6p6Ya7T5Myd?cluster=devnet
+[d]: https://explorer.solana.com/address/5bgwttZNeky1vTJztvHCNUCLeXAWm3mJji4BQt4X8qjg?cluster=devnet
 
 ## Promises
 
