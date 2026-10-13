@@ -164,17 +164,33 @@ describe('a read key', () => {
 })
 
 describe('a message key', () => {
-  test("sends to another profile's inbox, which its owner opens with its own inbox key", async () => {
+  test("sends to another profile's inbox, which its owner opens with its own inbox key, and leaves a copy of the text in the profile's own inbox", async () => {
     const sent = await run('send', { to: seller.address, text: 'Is Tuesday at six free?' }, w.ctx({ message: KEYS.message }))
     assert.deepEqual(sent.hosts, [w.host.url])
     const got = await opened(seller, sellerInbox.identity)
     assert.deepEqual(got.map((m) => [m.from, m.key, m.body]), [[buyer.address, messageKey.address, { text: 'Is Tuesday at six free?' }]])
+    const mine = await opened(buyer, buyerInbox.identity)
+    assert.deepEqual(
+      mine.map((m) => [m.id, m.from, m.to, m.key, m.time, m.body]),
+      [[sent.copy.id, buyer.address, buyer.address, messageKey.address, got[0]!.time, { text: 'Is Tuesday at six free?', to: seller.address }]],
+      'the copy, signed by the same message key, opened by the buyer’s own inbox key',
+    )
+    assert.deepEqual(sent.copy.hosts, [w.host.url])
+  })
+
+  test('a copy that cannot land is said, not refused: the message is already sent', async () => {
+    const mute = await mainKey(newSeed(), 'tutoring/buyer')
+    const now = Date.now()
+    const card = { market: 'tutoring', role: 'buyer', name: 'mute', createdAt: '2026-10-07T12:00:00Z' }
+    await publish([w.host.url], [hostsRecord(mute, [w.host.url], now), permissionsRecord(mute, [{ key: messageKey.address, scope: 'message' }], now), ownerRecord(mute, 'profile', card, now)])
+    const sent = await run('send', { to: seller.address, text: 'Hello.' }, w.ctx({ message: KEYS.message }, mute.address))
+    assert.deepEqual([sent.hosts, sent.copy], [[w.host.url], { unsent: 'the card declares no inbox this code can read' }])
   })
 
   test("requests: one for each action a request may name, each landing in the profile's own inbox as { request, ...its parameters }", async () => {
     assert.deepEqual(ASKED.map(([action]) => action).sort(), [...REQUESTS.keys()].sort(), 'one for each')
     for (const [action, params] of ASKED) await run('request', { action, params }, w.ctx({ message: KEYS.message }))
-    const mine = await opened(buyer, buyerInbox.identity)
+    const mine = (await opened(buyer, buyerInbox.identity)).slice(1)
     assert.deepEqual(
       mine.map((m) => [m.from, m.key, m.body]),
       ASKED.map(([action, params]) => [buyer.address, messageKey.address, { ...params, request: action }]),
@@ -211,11 +227,15 @@ describe('a message key', () => {
     await run('send', { to: buyer.address, body: { request: 'fly' } }, w.ctx({ message: KEYS.message }))
     await run('send', { to: buyer.address, body: { request: 'pay' } }, w.ctx({ message: KEYS.message }))
     await run('send', { to: buyer.address, body: { request: 'pay', offer: OFFER, units: 'two' } }, w.ctx({ message: KEYS.message }))
+    // An object sent to another profile leaves no copy, so no request reaches the inbox that way.
+    const object = await run('send', { to: seller.address, body: { request: 'pay', offer: OFFER } }, w.ctx({ message: KEYS.message }))
+    assert.equal(object.copy, undefined)
 
     const all = await run('inbox', {}, w.ctx({ message: KEYS.message, read: KEYS.read }))
     assert.deepEqual(
       all.messages.map((m: { from: string; request?: string; body: Body }) => [m.from, m.request ?? null, m.body]),
       [
+        [buyer.address, null, { text: 'Is Tuesday at six free?', to: seller.address }],
         ...ASKED.map(([action, params]) => [buyer.address, action, { ...params, request: action }]),
         [buyer.address, 'remove-offer', { request: 'remove-offer', id: 'main' }],
         [seller.address, null, { request: 'pay', offer: OFFER }],
