@@ -22,6 +22,8 @@
   },
   "include": [
     "*.ts",
+    "credits",
+    "test",
     "../standard/registry/client/types"
   ],
   "exclude": [

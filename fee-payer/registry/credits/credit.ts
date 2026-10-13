@@ -2,7 +2,7 @@
 // makes when one is shown, in the Authorization header, for a registration; a buy's reference and
 // price, and what a sponsor's ticket signs, as the seller (seller.ts) reads them. A copy of the
 // service's side of Forest's credits, trimmed to what the registry payer uses; the host keeps its
-// own, and an app buys with the client in mcp/credits/, on the same wire format. See README.md,
+// own, and an app buys as the client in e2e/credits/ does, on the same wire format. See README.md,
 // "Credits".
 //
 // A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA signature the payer made blind,

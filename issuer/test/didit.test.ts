@@ -83,13 +83,19 @@ test("a session is opened on the workflow, each with its own vendor_data: its li
   assert.match(bodyA.vendor_data, /^face-[0-9a-f-]{36}$/)
   assert.notEqual(bodyA.vendor_data, bodyB.vendor_data)
   assert.match(JSON.parse(c.body).vendor_data, /^id-[0-9a-f-]{36}$/)
+
+  // With a callback, Didit is told where to send the person back to, and nothing more.
+  await client().createSession({ callback: 'https://app.example/after?check=face' })
+  const withCallback = JSON.parse(seen[3]!.body)
+  assert.deepEqual(Object.keys(withCallback).sort(), ['callback', 'vendor_data', 'workflow_id'])
+  assert.equal(withCallback.callback, 'https://app.example/after?check=face')
 })
 
 test('a session opened with a tag carries it, and is found again by it: GET /v3/sessions/, newest first', async () => {
   seen.length = 0
   const tag = 'ab'.repeat(32)
   reply = () => [201, { session_id: SESSION, url: 'https://verify.didit.me/session/abc' }]
-  await client('id').createSession(tag)
+  await client('id').createSession({ tag })
   assert.equal(JSON.parse(seen[0]!.body).vendor_data, `id-${tag}`)
   reply = () => [200, { count: 2, next: null, previous: null, results: [{ session_id: SESSION, session_kind: 'user', session_url: 'https://verify.didit.me/session/abc', status: 'Not Started', vendor_data: `id-${tag}` }] }]
   assert.deepEqual(await client('id').tagged(tag), { sessionId: SESSION, url: 'https://verify.didit.me/session/abc' })

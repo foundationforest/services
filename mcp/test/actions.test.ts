@@ -42,7 +42,8 @@ async function opened(owner: MainKey, identity: string) {
   return Promise.all(page.messages.map((m) => openMessage(m.message, identity)))
 }
 
-const PAY_LINK = `https://forest.foundation/pay?v=2&offer=${seller.address}/offer/maths`
+/** A pay request names the offer by its address, `<profile address>/offer/<id>`. */
+const OFFER = `${seller.address}/offer/maths`
 
 /** One request for each action a request may name, with that action's parameters. */
 const ASKED: Array<[string, Body]> = [
@@ -53,7 +54,7 @@ const ASKED: Array<[string, Body]> = [
   ['remove-offer', { id: 'owned' }],
   ['post-review', { review: { subject: seller.address, text: 'Kind and clear.' } }],
   ['send', { to: seller.address, text: 'Thank you.' }],
-  ['pay', { offer: PAY_LINK, units: 2, note: 'Tuesday and Thursday, at six.' }],
+  ['pay', { offer: OFFER, units: 2, note: 'Tuesday and Thursday, at six.' }],
 ]
 
 describe('no key', () => {
@@ -177,13 +178,13 @@ describe('a message key', () => {
     await refused(ask('request', {}), `a request names one of ${names}; not request`)
     await refused(ask('fly'), `a request names one of ${names}; not fly`)
     await refused(ask('pay'), 'pay needs offer')
-    await refused(ask('pay', { offer: PAY_LINK, units: 0 }), 'units is a whole number, from 1')
-    await refused(ask('pay', { offer: PAY_LINK, units: 1.5 }), 'units is a whole number, from 1')
-    await refused(ask('pay', { offer: PAY_LINK, units: '2' }), 'units is a whole number, from 1')
-    await refused(ask('pay', { offer: PAY_LINK, note: 3 }), 'note is text')
+    await refused(ask('pay', { offer: OFFER, units: 0 }), 'units is a whole number, from 1')
+    await refused(ask('pay', { offer: OFFER, units: 1.5 }), 'units is a whole number, from 1')
+    await refused(ask('pay', { offer: OFFER, units: '2' }), 'units is a whole number, from 1')
+    await refused(ask('pay', { offer: OFFER, note: 3 }), 'note is text')
     await refused(ask('post-offer', { offer: 'cheap' }), 'offer is an object')
     await refused(ask('post-offer', { offer: offer('x'), writeKey: KEYS.write }), 'post-offer takes no writeKey')
-    await refused(run('request', { action: 'pay', params: { offer: PAY_LINK } }, w.ctx({ write: KEYS.write })), NO_KEY)
+    await refused(run('request', { action: 'pay', params: { offer: OFFER } }, w.ctx({ write: KEYS.write })), NO_KEY)
   })
 
   test('in the inbox, a request counts only when the profile sent it to itself, by its main key or a message key it lists; any other is a plain message', async () => {
@@ -191,7 +192,7 @@ describe('a message key', () => {
     // The person's own app, with the main key.
     await deliver([w.host.url], [await message(buyer, buyer.address, { request: 'remove-offer', id: 'main' }, Date.now(), card)])
     // A stranger.
-    await deliver([w.host.url], [await message(seller, buyer.address, { request: 'pay', offer: PAY_LINK }, Date.now(), card)])
+    await deliver([w.host.url], [await message(seller, buyer.address, { request: 'pay', offer: OFFER }, Date.now(), card)])
     // A message key the owner then makes past: it no longer speaks for the profile.
     await run('request', { action: 'remove-offer', params: { id: 'past' } }, w.ctx({ message: KEYS.laterPast }))
     await publish([w.host.url], [permissionsRecord(buyer, ACCESS.map((k) => (k.key === laterPastKey.address ? { key: k.key, was: 'message' as const } : k)), Date.now())])
@@ -199,7 +200,7 @@ describe('a message key', () => {
     // The profile's own message key, with bodies that ask for no action this tool knows, or leave out what it needs.
     await run('send', { to: buyer.address, body: { request: 'fly' } }, w.ctx({ message: KEYS.message }))
     await run('send', { to: buyer.address, body: { request: 'pay' } }, w.ctx({ message: KEYS.message }))
-    await run('send', { to: buyer.address, body: { request: 'pay', offer: PAY_LINK, units: 'two' } }, w.ctx({ message: KEYS.message }))
+    await run('send', { to: buyer.address, body: { request: 'pay', offer: OFFER, units: 'two' } }, w.ctx({ message: KEYS.message }))
 
     const all = await run('inbox', {}, w.ctx({ message: KEYS.message, read: KEYS.read }))
     assert.deepEqual(
@@ -207,11 +208,11 @@ describe('a message key', () => {
       [
         ...ASKED.map(([action, params]) => [buyer.address, action, { ...params, request: action }]),
         [buyer.address, 'remove-offer', { request: 'remove-offer', id: 'main' }],
-        [seller.address, null, { request: 'pay', offer: PAY_LINK }],
+        [seller.address, null, { request: 'pay', offer: OFFER }],
         [buyer.address, null, { request: 'remove-offer', id: 'past' }],
         [buyer.address, null, { request: 'fly' }],
         [buyer.address, null, { request: 'pay' }],
-        [buyer.address, null, { request: 'pay', offer: PAY_LINK, units: 'two' }],
+        [buyer.address, null, { request: 'pay', offer: OFFER, units: 'two' }],
       ],
     )
   })
@@ -230,7 +231,7 @@ describe('a message key', () => {
   test('refuses no key, another scope, the inbox key, a grant, and a profile with no inbox', async () => {
     const others = w.ctx({ write: KEYS.write, read: KEYS.read })
     await refused(run('send', { to: seller.address, text: 'x' }, others), NO_KEY)
-    await refused(run('request', { action: 'pay', params: { offer: PAY_LINK } }, others), NO_KEY)
+    await refused(run('request', { action: 'pay', params: { offer: OFFER } }, others), NO_KEY)
     await refused(run('inbox', {}, others), NO_KEY)
     await refused(run('send', { to: seller.address, text: 'x' }, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use request')
     await refused(run('inbox', {}, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use request')

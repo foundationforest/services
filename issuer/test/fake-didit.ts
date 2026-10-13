@@ -1,6 +1,6 @@
-// A stand-in for Didit, for the devnet issuer only: the issuer runs on devnet without a real face
-// check or document check. It answers the calls the issuer's Didit client makes (issuer/src/didit.ts),
-// in Didit's API v3 shape:
+// A stand-in for Didit, for tests on this machine only: the issuer's own test of both stages, and the
+// e2e loop's issuer (e2e/), since a script has no face. It answers the calls the issuer's Didit client
+// makes (issuer/src/didit.ts), in Didit's API v3 shape:
 //
 //   POST /v3/session/                   opens a session on the workflow the body names: {session_id, url}
 //   GET  /v3/sessions/?vendor_data=     the sessions it opened with that vendor_data on that workflow
@@ -14,12 +14,11 @@
 //                                       FACE_MODEL=stand-in beside it, one embedding for everyone, so
 //                                       nothing reads them as a face.
 //
-// So every face check passes, and so does every document check, each for a person no one has seen:
-// anyone who asks the devnet issuer gets a note, at either tier (the issuer's own limit on sessions an
-// hour per address still holds). deploy/start.sh starts it only when DIDIT_API_KEY is unset, on
-// 127.0.0.1 inside the issuer's container, where nothing else reaches it. It keeps in memory the
-// sessions it opened, their workflows and vendor_data and, for a document session, the name it made
-// up, nothing else, and forgets them on restart. It logs nothing per request.
+// So every face check passes, and so does every document check, each for a person no one has seen.
+// It listens on 127.0.0.1 only, and the issuer takes the stand-in embedding only with a Didit on
+// loopback; nothing in the issuer's image starts it. It keeps in memory the sessions it opened, their
+// workflows and vendor_data and, for a document session, the name it made up, nothing else, and
+// forgets them when it stops. It logs nothing per request.
 
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'

@@ -2,7 +2,7 @@
 // list of them is spent into a folder's balance; a buy's reference and price, and what a sponsor's
 // ticket signs, as the seller (seller.ts) reads them. A copy of the service's side of Forest's
 // credits, trimmed to what this host uses; the registry payer keeps its own, and an app buys with
-// the client in mcp/credits/, on the same wire format. See README.md, "Credits".
+// the client in e2e/credits/, on the same wire format. See README.md, "Credits".
 //
 // A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA signature the host made blind, over
 // a nonce only the buyer's app knows, so when it comes back to be spent the host sees a good
@@ -127,7 +127,7 @@ export async function checkCredit(credit: Uint8Array | string, service: { origin
 
 /**
  * For the host: several credits shown together, as a spend's body lists them (each credit's bytes,
- * base64url, as mcp/credits/'s `creditList` writes them). At least one and at most `max`, each one
+ * base64url, as e2e/credits/'s `creditList` writes them). At least one and at most `max`, each one
  * that holds (`checkCredit`), and no credit twice. Gives their ids, in order; throws on anything
  * else, so the host takes none of them.
  */

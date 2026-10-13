@@ -134,9 +134,9 @@ const DOING: Action[] = [
   },
 ]
 
-/** Paying, which this tool never does: it is only ever asked for, with the offer's pay link (forest's escrow/README.md). */
+/** Paying, which this tool never does: it is only ever asked for, naming the offer by its address (the standard's records/README.md, Requests). */
 const PAY: Param[] = [
-  { name: 'offer', type: 'string', required: true, description: "The offer's pay link." },
+  { name: 'offer', type: 'string', required: true, description: "The offer's address: <profile address>/offer/<id>." },
   { name: 'units', type: 'integer', description: 'How many hours or days, for an offer priced per hour or per day: a whole number, from 1.' },
   { name: 'note', type: 'string', description: 'A note for the person.' },
 ]
@@ -165,7 +165,7 @@ export const ACTIONS: Action[] = [
     keys: ['message'],
     params: [
       { name: 'action', type: 'string', required: true, positional: true, description: `The action asked for: ${[...REQUESTS.keys()].join(', ')}.` },
-      { name: 'params', type: 'object', description: 'Its parameters, as that action takes them, such as { "offer": { … } } for post-offer, { "to": "<address>", "text": "…" } for send, or { "offer": "<pay link>", "units": 2, "note": "…" } for pay, where units (how many hours or days) and note may be left out. Never a key.' },
+      { name: 'params', type: 'object', description: 'Its parameters, as that action takes them, such as { "offer": { … } } for post-offer, { "to": "<address>", "text": "…" } for send, or { "offer": "<profile address>/offer/<id>", "units": 2, "note": "…" } for pay, where units (how many hours or days) and note may be left out. Never a key.' },
     ],
     run: async (args, ctx) => {
       const name = str(args, 'action')

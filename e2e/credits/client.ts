@@ -1,15 +1,16 @@
 // Forest credits, the buyer's side: what an app does to buy a service's credits and spend them. A
 // credit is a prepaid unit for one service, a Privacy Pass credit of type 2 (RFC 9578): an RSA
 // signature the service made blind, over a nonce only the buyer's app knows, so when it comes back
-// to be spent the service sees a good signature and nothing that ties it to the buy. See README.md,
-// "Credits".
+// to be spent the service sees a good signature and nothing that ties it to the buy. See the host's
+// README.md, "Credits", and the registry payer's.
 //
 // The service, from its directory; the buy and its pay link; finishing the credits from the
 // service's answer; showing one or several. It talks to no network of its own. The blinding and the
 // signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
 // memory only, so the buy here keeps it as bytes, to finish later, on any device, from the vault.
 // The host (host/credits/) and the registry payer (fee-payer/registry/credits/) each check and sell
-// credits with their own copy of the service's side, on the same wire format.
+// credits with their own copy of the service's side, on the same wire format. The e2e run buys with
+// it, and so do the services' and the issuer's tests.
 
 import {
   AuthenticatorInput,

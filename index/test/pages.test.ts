@@ -7,11 +7,11 @@
 //   5. robots.txt lets everyone in; llms.txt says what Forest is and its links resolve;
 //   6. every URL in the read skill resolves;
 //   7. no crypto word anywhere a person reads;
-//   8. the Pay link reads back to the offer's own terms, and the pay page checks it;
+//   8. the message link: each offer and profile links to the app's message page for its profile;
 //   9. markets: two numbers, one label per profile, role names, near, no price, review fields, and
 //      no word of the index's own on an offer's or a receipt's options (a market's own text may say
 //      anything);
-//  10. records: the access rule, by forest's view, and private records left alone;
+//  10. records: the access rule, by the standard's view, and private records left alone;
 //  11. pictures: shown from a host that holds them, with the type the record names; none when no
 //      host does;
 //  12. the leak rule: a row the chain wrote after its issuer's until counts for nothing.
@@ -41,9 +41,11 @@ import { startWeb } from '../src/main.ts'
 import { loadInputs } from '../src/scores/run.ts'
 import type { Web } from '../src/web/routes.ts'
 import { serve } from '../src/web/server.ts'
-import { parsePayLink } from '../src/web/paylink.ts'
 import * as w from '../src/web/words.ts'
 import { ACCESS, BUYER, CLIP, DEAL, EXCHANGE, FOLDER, HOST, ISSUER, ISSUER_NAME, LISBON, MADE_UP_DEAL, MARKET, NO_PHOTO, OFFERS, PEER, PHOTO, SELLER, USDC, ana, ben, cleo, dara, eve, makeFixture } from './fixture.ts'
+
+/** The app a message link opens unless APP_URL says another. */
+const APP = 'https://app.devnet.forest.foundation'
 import { validateJsonLd } from './schemaorg/validate.ts'
 
 // -----------------------------------------------------------------------------------------------
@@ -86,8 +88,6 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
     const anaTwin = await json(`/profiles/${ana.address}.json`)
     const portuguese = anaTwin.offers.find((o: any) => o.uri === OFFERS.portuguese.uri)
     const spanish = anaTwin.offers.find((o: any) => o.uri === OFFERS.spanish.uri)
-    const altered = new URL(portuguese.payLink)
-    altered.searchParams.set('price.amount', '1')
 
     /** Every page, with the URL its canonical link must name. */
     const PAGES: { path: string; canonical: string }[] = [
@@ -103,9 +103,6 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       { path: '/search?q=portuguese', canonical: `${base}/search?q=portuguese` },
       { path: '/search?q=english&near=38.7,-9.1&km=25', canonical: `${base}/search?q=english&near=38.7,-9.1&km=25` },
       { path: '/search', canonical: `${base}/search?q=` },
-      { path: new URL(portuguese.payLink).pathname + new URL(portuguese.payLink).search, canonical: portuguese.payLink },
-      { path: new URL(spanish.payLink).pathname + new URL(spanish.payLink).search, canonical: spanish.payLink },
-      { path: altered.pathname + altered.search, canonical: altered.toString() },
     ]
     const rendered = new Map<string, string>()
     for (const p of PAGES) rendered.set(p.path, (await get(p.path)).text)
@@ -128,11 +125,12 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.equal(jsonLd(res.text).length, 1, `${p.path}: one JSON-LD block`)
         assert.equal([...res.text.matchAll(/<script\b/g)].length, 1, `${p.path}: no script but the data block`)
       }
-      // Search engines are kept off search results, pay links and deals with no receipt.
+      // Search engines are kept off search results and deals with no receipt.
       for (const p of PAGES) {
         const noindex = /<meta name="robots" content="noindex">/.test(rendered.get(p.path)!)
-        assert.equal(noindex, p.path.startsWith('/search') || p.path.startsWith('/pay') || p.path.includes('near=') || p.path.endsWith(MADE_UP_DEAL), `${p.path}: noindex`)
+        assert.equal(noindex, p.path.startsWith('/search') || p.path.includes('near=') || p.path.endsWith(MADE_UP_DEAL), `${p.path}: noindex`)
       }
+      assert.equal((await get('/pay?v=2')).status, 404, 'no pay page: the index only links to the app')
 
       // No aliases: another spelling of a market is no market here.
       assert.equal((await get('/markets/online-tutor')).status, 404)
@@ -229,9 +227,6 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
             twin.offers.forEach(offer)
             if (twin.q) facts.push(twin.q)
             break
-          case 'pay':
-            if (twin.offer) offer(twin.offer)
-            break
           default:
             assert.fail(`${p.path}: a twin of kind ${twin.kind}`)
         }
@@ -290,12 +285,11 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         if (res.status === 301) res = await get(res.headers.get('location')!)
         assert.equal(res.status, 200, u)
       }
-      assert.ok(local.includes(portuguese.payLink), 'the Pay link example is the offer’s own link')
       for (const u of found.filter((x) => !x.startsWith(base))) assert.ok(u.startsWith('https://github.com/foundationforest/services') || u.startsWith('https://github.com/foundationforest/standard'), u)
     })
 
     await t.test('7. no crypto word anywhere a person reads', async () => {
-      const everyPage = [...rendered.values(), (await get('/nope')).text, (await get('/pay?v=1')).text, (await get(`/deals/${MADE_UP_DEAL}`)).text]
+      const everyPage = [...rendered.values(), (await get('/nope')).text, (await get(`/deals/${MADE_UP_DEAL}`)).text]
       for (const html of everyPage) {
         const text = readable(html)
         const hit = BANNED.exec(text)
@@ -303,24 +297,20 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       }
     })
 
-    await t.test('8. the Pay link reads back to the offer’s own terms', async () => {
-      const read = parsePayLink(new URL(spanish.payLink).searchParams)
-      assert.ok(read.ok)
-      assert.deepEqual(read.link, { v: 2, offer: OFFERS.spanish.uri, record: OFFERS.spanish.id, price: spanish.price, terms: { timer: { days: 30, to: 'buyer' } } })
-      assert.equal(new URL(portuguese.payLink).searchParams.has('seller'), false, 'no other key in the link: the seller is the profile the offer names')
-      const check = async (u: string) => (await json(`${base}/pay.json${new URL(u, base).search}`)).check
-      assert.equal(await check(portuguese.payLink), 'matches')
-      assert.equal(await check(altered.toString()), 'differs')
-      const moved = new URL(portuguese.payLink)
-      moved.searchParams.set('record', 'e'.repeat(64))
-      assert.equal(await check(moved.toString()), 'changed')
-      const gone = new URL(portuguese.payLink)
-      gone.searchParams.set('offer', `${ben.address}/offer/nothing`)
-      assert.equal(await check(gone.toString()), 'notFound')
-      assert.equal(await check(`${base}/pay?v=1`), 'invalid')
-      const alteredPage = readable(rendered.get(altered.pathname + altered.search)!)
-      assert.match(alteredPage, /its price or terms were changed\./)
-      assert.doesNotMatch(alteredPage, /Don’t pay/, 'the index shows; the app advises')
+    await t.test('8. the message link: each offer and profile links to the app’s page for writing to its profile', async () => {
+      const link = (address: string) => `${APP}/message?to=${address}`
+      assert.equal(anaTwin.messageLink, link(ana.address))
+      assert.deepEqual([portuguese.messageLink, spanish.messageLink], [link(ana.address), link(ana.address)], 'an offer links to its own profile')
+      const message = (address: string) => `<a class="message" href="${link(address).replace(/&/g, '&amp;')}" rel="nofollow">Message</a>`
+      assert.ok(rendered.get(`/profiles/${ana.address}`)!.includes(message(ana.address)), 'the profile page shows it')
+      const market = rendered.get(`/markets/${MARKET}`)!
+      for (const o of (await json(`/markets/${MARKET}.json`)).offers) assert.ok(market.includes(message(o.profile)), `the market page shows it on ${o.uri}`)
+      // Another app, by its origin; anything but an origin stops the start.
+      const other = await startWeb(fixture.db, fixture.config({ PUBLIC_URL: base, APP_URL: 'http://localhost:5173' }), { listen: false })
+      other.stopMarkets()
+      const twin = await (await other.web.handle(new Request(`${base}/profiles/${ana.address}.json`))).json()
+      assert.equal(twin.messageLink, `http://localhost:5173/message?to=${ana.address}`)
+      assert.throws(() => fixture.config({ APP_URL: 'https://app.example/forest' }), /APP_URL is an origin/)
     })
 
     await t.test('9. markets: two numbers, one label per profile, role names, near, no price, review fields', async () => {
@@ -405,21 +395,16 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.deepEqual([daraTwin.profile.side, daraTwin.scores.uniqueness.map((u: any) => u.label)], [null, [PEER]])
       assert.match(readable(rendered.get(`/profiles/${dara.address}`)!), /In\s+Language exchange/, 'a one-sided market names no side')
 
-      // An offer with no price has no Pay link; the market page says how deals go. The offer names
+      // An offer with no price still has its message link; the market page says how deals go. The offer names
       // no market or side: they are Dara's profile's.
       const exchange = await json(`/markets/${EXCHANGE}.json`)
       assert.equal('money' in exchange.market, false)
       assert.deepEqual(exchange.market.roles, ['peer'])
       assert.deepEqual(exchange.counts, { offers: 1, requests: 0, realPeople: 1 })
       const [daraOffer] = exchange.offers
-      assert.deepEqual([daraOffer.uri, daraOffer.price, daraOffer.payLink, daraOffer.location], [OFFERS.exchange.uri, null, null, LISBON])
+      assert.deepEqual([daraOffer.uri, daraOffer.price, daraOffer.messageLink, daraOffer.location], [OFFERS.exchange.uri, null, `${APP}/message?to=${dara.address}`, LISBON])
       assert.deepEqual([daraOffer.market, daraOffer.role, 'marketWritten' in daraOffer], [EXCHANGE, 'peer', false])
       assert.ok(readable(rendered.get(`/markets/${EXCHANGE}`)!).includes('Arroios, Lisbon (within 2 km)'))
-      assert.equal(
-        (await json(`/pay.json?v=2&offer=${encodeURIComponent(OFFERS.exchange.uri)}&record=${OFFERS.exchange.id}&price.amount=1&price.mint=${portuguese.price.mint}&price.per=job`)).check,
-        'differs',
-        'a pay link for an offer with no price does not match it',
-      )
 
       // near=lat,lon&km=N keeps the offers whose point is within km, and drops the rest.
       const near = async (path: string) => (await json(path)).offers.map((o: any) => o.uri)
@@ -438,7 +423,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       }
     })
 
-    await t.test('10. records: the access rule, by forest’s view, and private records left alone', async () => {
+    await t.test('10. records: the access rule, by the standard’s view, and private records left alone', async () => {
       // Two keys Ana lists wrote an offer each into her profile: the access key she revoked, whose
       // offer counts, and her message key, whose offer does not: only a write key, or a revoked one,
       // writes. Neither is her own record, and the first counts in full: an offer is an offer,
