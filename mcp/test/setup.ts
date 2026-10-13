@@ -48,6 +48,14 @@ export const KEYS = {
 export const offer = (description: string): Body => ({ direction: 'request', description, price: { amount: '30', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', per: 'hour' } })
 export const MARKET = { about: 'the stand-in index', market: 'tutoring', profiles: [seller.address] }
 export const SCORES = { profile: seller.address, score: 7 }
+/** The stand-in index's home, in the foundation's index's shape: its folders, their markets and each one's role words. */
+export const HOME = {
+  folders: [
+    { folder: 'education', markets: [{ name: 'tutoring', roleWords: { seller: 'teacher', buyer: 'student' } }] },
+    { folder: 'home', markets: [{ name: 'plumbing', roleWords: { seller: 'seller', buyer: 'buyer' } }] },
+    { folder: 'sports', markets: [{ name: 'tennis', roleWords: { peer: 'peer' } }] },
+  ],
+}
 
 const card = (role: string, inboxKey: string, readers?: string[]): Body => ({
   market: 'tutoring',
@@ -100,7 +108,7 @@ export async function world(): Promise<World> {
       ownerRecord(quiet, 'profile', { market: 'tutoring', role: 'seller', name: 'quiet', createdAt: '2026-10-07T12:00:00Z' }, now),
     ],
   )
-  const index = await serveJson({ '/markets/tutoring.json': MARKET, [`/profiles/${seller.address}.json`]: SCORES })
+  const index = await serveJson({ '/index.json': HOME, '/markets/tutoring.json': MARKET, [`/profiles/${seller.address}.json`]: SCORES })
   const list = await serveJson({ '/index/lists/hosts.json': { about: 'the stand-in list', hosts: [host.url] } })
   return {
     host,

@@ -1,7 +1,7 @@
-// The story, as data, for the page tests: Ana tutors; Ben is her student; Cleo is a stranger; Eve
-// holds a row from an issuer the index does not trust, so the index stores nothing of hers. Dara offers
-// a language exchange in a place, with no price, in a one-sided market. Every profile lives in one
-// market, as one side of it: its label.
+// The story, as data, for the page tests: Ana tutors; Ben is her student; Cleo is a stranger, whose
+// card gives no name; Eve holds a row from an issuer the index does not trust, so the index stores
+// nothing of hers. Dara offers a language exchange in a place, with no price, in a one-sided market.
+// Every profile lives in one market, as one side of it: its label.
 //
 //   - Records are real signed records (standard/records), one host's, taken in through the index's own
 //     view and store, so each body is checked against its shape exactly as a record read from a host
@@ -83,15 +83,16 @@ export const LISBON = { lat: '38.72', lon: '-9.14', precisionKm: 2, area: 'Arroi
 export const HOST = 'https://host.example'
 
 /** `secret`: the person's secret for the test issuer, which their stamps come from. */
-type Person = { key: MainKey; address: string; name: string; secret: Uint8Array }
-const person = async (fill: number, label: string, name: string): Promise<Person> => {
+type Person = { key: MainKey; address: string; name: string | null; secret: Uint8Array }
+const person = async (fill: number, label: string, name: string | null): Promise<Person> => {
   const seed = new Uint8Array(32).fill(fill)
   const key = await mainKey(seed, label)
   return { key, address: key.address, name, secret: (await issuerSecret(seed, ISSUER_DOMAIN)).secret }
 }
 export const ana = await person(21, SELLER, 'Ana Ribeiro')
 export const ben = await person(22, BUYER, 'Ben Okafor')
-export const cleo = await person(23, SELLER, 'Cleo')
+/** Her card gives no name: the pages call her by her market and its word for her role. */
+export const cleo = await person(23, SELLER, null)
 /** A peer in the language exchange: another market, so another profile. */
 export const dara = await person(24, PEER, 'Dara Mensah')
 /** Her row is from an issuer the index does not trust: no row counts, and nothing of hers is stored. */
@@ -157,7 +158,7 @@ const { price: _p, remote: _q, ...exchange } = offer('English for Portuguese, an
 
 const records = (p: Person, d: number, card: Record<string, unknown>, rest: [string, Record<string, unknown>, number][]): SignedRecord[] => [
   hostsRecord(p.key, [HOST], at(d)),
-  ownerRecord(p.key, 'profile', { ...card, name: p.name } as Body, at(d)),
+  ownerRecord(p.key, 'profile', { ...card, ...(p.name !== null && { name: p.name }) } as Body, at(d)),
   ...rest.map(([path, body, when]) => ownerRecord(p.key, path, body as Body, at(when))),
 ]
 

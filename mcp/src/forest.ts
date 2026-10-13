@@ -209,6 +209,28 @@ export async function market(ctx: Context, name: string) {
   return { index, market: name, says: await fromIndex(index, `markets/${encodeURIComponent(name)}.json`) }
 }
 
+/** A market as the foundation's index's `/index.json` lists it: its name, and each role with its plain word. */
+type Listed = { name: string; roleWords?: { [role: string]: string } }
+
+/**
+ * The markets an index uses, one line each, with each role's word, the role beside it when they
+ * differ: `tutoring: teacher (seller), student (buyer)`, `plumbing: seller, buyer`, `tennis: peer`.
+ * Read from its `/index.json`, the foundation's index's format, and passed on as its word.
+ */
+export async function markets(ctx: Context) {
+  const index = ctx.index ?? refuse('no index set; set --index')
+  const says = (await fromIndex(index, 'index.json')) as { folders: { markets: Listed[] }[] }
+  const line = (m: Listed) => {
+    const words = Object.entries(m.roleWords ?? {}).map(([role, word]) => (word === role ? role : `${word} (${role})`))
+    return words.length ? `${m.name}: ${words.join(', ')}` : m.name
+  }
+  try {
+    return { index, markets: says.folders.flatMap((f) => f.markets.map(line)) }
+  } catch {
+    return refuse(`the index ${index} lists no markets in its index.json`)
+  }
+}
+
 /** A profile's card, its offers and the reviews it wrote, from its hosts; and an index's summary of it, if one is set. */
 export async function profile(ctx: Context, address: string) {
   const view = await folder(ctx, address)

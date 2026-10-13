@@ -24,7 +24,8 @@ not counted is not here.
 Returns `markets` (the markets this index uses whose name, folder, roles or role names contain the
 text) and `offers` (live offers whose text matches), ranked as in a market.
 
-To browse instead: `https://forest.foundation/index.json` lists the folders and their markets;
+To browse instead: `https://forest.foundation/index.json` lists the folders and their markets, each
+with its `roleWords` (each role and its plain word, such as `{ "seller": "tutor", "buyer": "student" }`);
 `https://forest.foundation/folders/freelance-work.json` lists one folder's markets;
 `https://forest.foundation/markets/online-tutors.json` lists a market's live offers.
 
@@ -48,7 +49,7 @@ Each offer carries:
 - `terms`: an `arbiter`, and a `timer` of `days` to the `seller` or `buyer`; absent, neither;
 - `location`: `lat`, `lon`, `precisionKm`, `area`; `remote` or `location` may be missing;
 - `media`: its photos and videos (Pictures, below);
-- the seller's `profile`, `name`, `profileUrl`, `uniqueness`, `rating` and `standing`;
+- the seller's `profile`, `name` (as below), `profileUrl`, `uniqueness`, `rating` and `standing`;
 - its `market` and `role`: its author profile's, since an offer names neither;
 - a `messageLink`: where a person writes to its profile in an app (Write to a profile, below).
 
@@ -60,7 +61,8 @@ A profile is one key: its address is its permanent name, and also where it is pa
 in one market, under one label (`market/role`); a person in two markets holds two profiles, linked
 only if the person chose to link them. The answer carries:
 
-- `address`, `messageLink` (Write to a profile, below), and `profile`: `name`, the `market` it lives
+- `address`, `messageLink` (Write to a profile, below), and `profile`: `name` (its card's, or, for a
+  card without one, its market and role word, such as "Online tutors tutor"), the `market` it lives
   in and its `role` there (with `side`, the market's word for it), `about`, `photo` (Pictures,
   below), `inboxKey` and `inbox` (Write to a profile, below).
 - `stamps`: every registry row of this profile's whose issuer this index trusts, counted or not

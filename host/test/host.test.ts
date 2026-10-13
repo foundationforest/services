@@ -216,6 +216,11 @@ test('records go in and come back through the front, for the whole host and by p
     assert.ok(outcomes[0]!.results.every((r) => r.ok), JSON.stringify(outcomes))
   }
   assert.equal((await readAll(host.url)).records.length, 4, 'what is new on the whole host')
+  // A page in a browser reads the cursor too: the front passes on the header that lets it.
+  const page = await fetch(`${host.url}/v1/records?after=0`)
+  await page.body?.cancel()
+  assert.ok(page.headers.get('forest-cursor'))
+  assert.equal(page.headers.get('access-control-expose-headers'), 'forest-cursor')
   const view = await readProfile([host.url], people[0]!.address, Date.now())
   assert.deepEqual(view.hosts, [host.url])
   assert.equal(view.current.get('profile')!.record.profile, people[0]!.address)
