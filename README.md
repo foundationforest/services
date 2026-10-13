@@ -157,9 +157,9 @@ settings and its volume. Railway's service ids: `issuer`
 | The Open-USD-shaped test dollar (Token-2022 with Open USD's extensions, six decimals) | `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz` |
 | The issuer's name, which each person's secret for it is mixed from | `issuer.devnet.forest.foundation` |
 | The issuer's seed, which signs nothing itself | Made by the issuer on its own machine at its first start, and kept on its volume: mixed from no phrase, held by no variable |
-| The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `key` in [its `/issuer.json`](https://issuer.devnet.forest.foundation/issuer.json); the devnet index trusts the one its list names (`index/lists/issuers.json`) |
+| The issuer's note key, mixed from its seed under `issuer/notes` (Baby Jubjub, x then y) | `0a536f8d3ac40ce76c70ef8dfd2db7b6c98de273270e1e51f2651f3f0c35262717917d8df88f1712d8e9fae02c8dc575a4c3d68a71442527f23a7dd9efa1a5bf`, as [its `/issuer.json`](https://issuer.devnet.forest.foundation/issuer.json) gives it; the devnet index trusts it (`index/lists/issuers.json`) |
 | Where the document check's price is paid, once one is set | A foundation address set in `ID_TIER_PAY_TO`, which the issuer's seed cannot derive; none is set on devnet |
-| The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `sponsor` in its `/issuer.json` |
+| The issuer's sponsor key, mixed from its seed under `sponsor`, which signs the welcome gift's tickets; the registry payer and the host list it in `SPONSORS` | `FAWrifUUu84ck7tS5SVzNsQzzVamjx3JwzkDNhX3em86` |
 | The registry payer's key, which its credits are paid to: a random key made for it, not mixed from the devnet phrase | `7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA` |
 | The fee payer's key, the devnet `payer` key | `9CKUm2s7nwT7HrCpjtaffNH3PnUUVyQr2gELjHrWYBUd` |
 | The address the host's credits are paid to, the devnet `host` key's; the host never signs with it | `2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9` |

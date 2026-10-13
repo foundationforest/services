@@ -277,8 +277,8 @@ at https://host.devnet.forest.foundation:
   devnet `host` key's address, from the devnet phrase by the recipe in standard's
   `devnet/deploy.sh` scripts; the host never signs with it),
   `CREDIT_MINT=J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa` (the classic test dollar),
-  `CREDIT_PRICE=0.01`, `SPONSORS` (the issuer's sponsor key, as its `/issuer.json` names it, whose
-  tickets give a person's first credits); `WRITE_PRICE` and `KILOBYTE_PRICE` unset, so 0.01 and
+  `CREDIT_PRICE=0.01`, `SPONSORS=FAWrifUUu84ck7tS5SVzNsQzzVamjx3JwzkDNhX3em86` (the issuer's sponsor key, whose tickets give a
+  person's first credits); `WRITE_PRICE` and `KILOBYTE_PRICE` unset, so 0.01 and
   0.001.
 
 The devnet index reads it ([`index/lists/hosts.json`](../index/lists/hosts.json)), and mcp
