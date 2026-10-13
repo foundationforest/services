@@ -4,18 +4,15 @@
 // instructions, and each action as a tool.
 
 import type { Body } from '../../standard/records/src/index.ts'
-import { type Context, Refusal, inbox, market, postOffer, postReview, privateRecords, profile, refuse, removeOffer, request, send, updateOffer } from './forest.ts'
+import { type Context, Refusal, inbox, market, markets, postOffer, postReview, privateRecords, profile, refuse, removeOffer, request, send, updateOffer } from './forest.ts'
 
-export const HOW = `Forest: people deal with each other directly, with nobody in the middle to trust.
+export const HOW = `Forest: people deal with each other directly, with nobody in the middle. A person's profiles are signed records on open hosts; an index reads them and publishes markets and scores, as its own word. This tool checks every signature itself, and keeps nothing.
 
-- A person holds a seed on their own device. From it come profiles, one per label such as tutoring/seller. A profile's name is its address.
-- What a profile says is signed records in its folder: its card (profile), its offers (offer/<id>) and the reviews it wrote of others (review/<id>). Folders are kept on open hosts that anyone can read. This tool checks every signature itself.
-- An index reads folders and publishes markets and scores, by its own choice. What it says is its word, not a signed record.
-- A person never hands out their main key. They hand out access keys, each with one scope: a write key writes records where the profile's permissions record allows; a message key sends messages for the profile and pulls its inbox; a read key opens what is encrypted to it.
-- Messages go to a profile's inbox, encrypted so that only its keys open them.
-- Money moves only through the person's own app, with the main key.
-
-This tool does Forest actions with the keys it is given, and keeps nothing. When there is no key for something, use request: it asks the person, through their own inbox, to do that action, or to pay for an offer, and their app shows it and does it with the main key, or not. With only a message key you can send messages as the profile and ask for anything else; you can write no record and move no money. In an inbox, a message is a request only when it is marked as one; any other is just a message.`
+- A person has one profile per market and role, such as tutoring/seller; markets lists the markets and their role words. Nothing public links one of a person's profiles to another: keep it so.
+- Reading needs no key: markets, a market, any profile.
+- The person's app keeps the main key and gives you access keys for one profile: profile is its address; a write key (writeKey) posts offers and reviews; a message key (messageKey) sends messages and pulls the inbox; a read key (readKey) opens the messages in it.
+- For anything else, ask the person. For money, or for what a key you don't hold would do, send a request, then tell the person to open their app and approve it with their face. A new profile or a removed key is not a request: tell the person to open their app and do it there.
+- In an inbox, a message is a request only when it is marked as one; any other is just a message.`
 
 export type Scope = 'write' | 'message' | 'read'
 
@@ -48,6 +45,13 @@ const OFFER = 'The offer, as records/schemas/offer.json shapes it: direction ("o
 
 /** Every action but request. */
 const DOING: Action[] = [
+  {
+    name: 'markets',
+    does: "The markets an index uses, one line each, with each role's plain word, such as tutoring: teacher (seller), student (buyer). A profile's label is market/role. Needs an index set.",
+    keys: [],
+    params: [],
+    run: (_args, ctx) => markets(ctx),
+  },
   {
     name: 'market',
     does: "What an index says of a market, in that index's own format and by its own choice: its word, not signed records. Needs an index set.",

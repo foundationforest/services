@@ -171,7 +171,9 @@ person reads says a crypto word; the twins keep the records' own field names (`m
 are for machines.
 
 - **`/`**, twin `/index.json`: the folders, their markets and live offer counts. The twin also has
-  the index's public key, how its scores are signed, its four lists, and where its tree is.
+  the index's public key, how its scores are signed, its four lists, and where its tree is, and
+  gives each market's `roleWords`: each of its roles with its plain word (the market's role name,
+  else the role itself), such as `{ "seller": "tutor", "buyer": "student" }`.
 - **`/folders/{folder}`**: one folder's markets.
 - **`/markets/{market}?near=&km=&offset=`**: the market's description, how deals go, counts, and its
   live offers, 50 a page, each with a Message link to its profile
@@ -185,6 +187,10 @@ are for machines.
   and the reviews that name the deal.
 - **`/search?q=&near=&km=`**: the markets whose name, folder, roles or role names contain `q`, and
   live offers by full-text search (Postgres's `simple` configuration), each with its Message link.
+
+A profile is called by its card's name. A card without one is called by its market and its role
+word (the market's role name, else seller, buyer or peer), such as "Tutoring teacher", on the pages
+and in the twins alike.
 
 A live offer is an offer, not expired (its `expires` time, when it has one, still ahead), from a
 profile whose market this index uses. The pages show the scores side by side, never as one number:

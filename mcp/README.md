@@ -40,6 +40,7 @@ words, key and parameters.
 
 | Action | Key | What it does |
 |---|---|---|
+| `markets` | none | The markets an index uses, one line each, with each role's plain word: `tutoring: teacher (seller), student (buyer)`, `plumbing: seller, buyer`, `tennis: peer` |
 | `market <market>` | none | What an index says of a market |
 | `profile <address>` | none | A profile's card, its offers and the reviews it wrote, from its hosts, every signature checked; and, if an index is set, that index's summary of it, such as its scores |
 | `private` | read | The profile's private records this read key opens |
@@ -107,8 +108,9 @@ A folder is always read from hosts, never from an index:
   reachable, written or looked up, is refused before anything is sent. No request follows a
   redirect, and a folder read, or an inbox pull, stops after 100 pages.
 
-An index is read for two things only, `GET <index>/markets/<market>.json` and
-`GET <index>/profiles/<address>.json`. Both are passed on as that index's word. This JSON is the
+An index is read for three things only: `GET <index>/index.json`, for its markets and each one's
+role words (`roleWords`); `GET <index>/markets/<market>.json`; and
+`GET <index>/profiles/<address>.json`. All are passed on as that index's word. This JSON is the
 foundation's index's own format ([`index/`](../index/README.md)), not part of the standard: the
 market's carries no signatures, a profile's carries its scores signed, and other indexes may
 differ. `forest` checks none of it.
@@ -166,8 +168,19 @@ The address is `https://mcp.devnet.forest.foundation/mcp`. It asks for no sign-i
   mode on, then add an MCP app with that address and no authentication. OpenAI moves these menus;
   its help article "Developer mode and MCP apps in ChatGPT" says where they are now.
 
-Reading needs no key. To act for a profile, the chat needs the profile's address and an access key
-the person's app made for it, which the person gives it in the chat.
+On connecting, a chat gets a short text on how Forest works (`HOW` in `src/actions.ts`):
+
+- one profile per market and role, and nothing public links a person's profiles: keep it so;
+- reading needs no key: `markets`, a `market`, any `profile`;
+- what each key allows: `writeKey` posts offers and reviews, `messageKey` sends messages and pulls
+  the inbox, `readKey` opens the messages in it;
+- for money, or what a key it doesn't hold would do, it sends a `request` and tells the person to
+  open their app and approve it with their face; for a new profile or a removed key, which are not
+  requests, it tells the person to do it in their app.
+
+To act for a profile, the person pastes into the chat the block their app gives: `profile` (the
+profile's address) and the access keys the app made for it, as `writeKey`, `messageKey` and
+`readKey`, the tools' own names.
 
 ### Run it
 
@@ -281,6 +294,12 @@ The hosted copy's:
 **Why is there no pay action?**
 A seller's invoice is an escrow anyone can pay into with a plain transfer, so a person's own setup
 could let an AI pay one; this copy offers no tool that moves money.
+
+**Why can't a request ask for a new profile or a removed key?**
+A request names one of the standard's request kinds: the actions here that need a key, and `pay`
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
+Requests). A new profile and a removed key are neither, so the chat tells the person to do them in
+their app.
 
 **Why does it refuse the inbox key?**
 The inbox key opens every message and grant sent to the profile, and grants hold keys. It is mixed

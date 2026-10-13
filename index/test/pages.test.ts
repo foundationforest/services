@@ -168,7 +168,7 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
         assert.deepEqual([o.additionalProperty.name, o.additionalProperty.value], ['standing', anaTwin.scores.standing.value])
       }
       const reviews = g.filter((n) => n['@type'] === 'Review')
-      assert.deepEqual(reviews.map((r) => [r.author.name, r.reviewRating.ratingValue, r.reviewRating.bestRating]).sort(), [['Ben Okafor', 10, 10], ['Cleo', 1, 10]])
+      assert.deepEqual(reviews.map((r) => [r.author.name, r.reviewRating.ratingValue, r.reviewRating.bestRating]).sort(), [['Ben Okafor', 10, 10], ['Online tutors tutor', 1, 10]], 'Cleo’s card gives no name')
       // Dara's offer names no price and a place: an Offer with no price, served in an area.
       const exchange: any = jsonLd(rendered.get(`/markets/${EXCHANGE}`)!)[0]['@graph'][0].mainEntity.itemListElement[0]
       assert.equal(exchange.price, undefined)
@@ -320,7 +320,11 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       // tutors' market names a timer.
       assert.deepEqual([portuguese.terms, spanish.terms], [null, { timer: { days: 30, to: 'buyer' } }])
       assert.equal('options' in spanish, false)
-      const names: string[] = (await json('/index.json')).folders.flatMap((f: any) => f.markets.map((m: any) => m.name))
+      const home = await json('/index.json')
+      const names: string[] = home.folders.flatMap((f: any) => f.markets.map((m: any) => m.name))
+      // Each market's roles, each with its word: the market's role name, or the role itself.
+      const words = Object.fromEntries(home.folders.flatMap((f: any) => f.markets.map((m: any) => [m.name, m.roleWords])))
+      assert.deepEqual(words, { [MARKET]: { seller: 'tutor', buyer: 'student' }, [EXCHANGE]: { peer: 'peer' } })
       const content = (await Promise.all(names.map(async (n) => (await json(`/markets/${n}.json`)).market.howDealsGo as string))).flatMap((text) => text.split(/\n+/))
       assert.ok(content.some((line) => /timer/i.test(line)), 'the test market’s own text names a timer')
       for (const [path, html] of rendered) {
@@ -357,6 +361,11 @@ test('pages for people and machines', { timeout: 120_000 }, async (t) => {
       assert.deepEqual(deal.receipt.sellerProfiles[0].rating, portuguese.rating)
       assert.equal((await json(`/profiles/${cleo.address}.json`)).scores.rating, null, 'no review, no rating')
       assert.ok(readable(rendered.get(`/profiles/${cleo.address}`)!).includes('No review that counts gives an overall rating yet.'))
+      // Cleo's card gives no name: the page and its twin call her by her market and its word for her role.
+      assert.equal((await json(`/profiles/${cleo.address}.json`)).profile.name, 'Online tutors tutor')
+      assert.ok(rendered.get(`/profiles/${cleo.address}`)!.includes('<h1>Online tutors tutor</h1>'))
+      assert.equal(anaTwin.reviews.received.find((r: any) => r.reviewer === cleo.address).reviewerName, 'Online tutors tutor')
+      assert.ok(readable(rendered.get(`/profiles/${ana.address}`)!).includes('By Online tutors tutor'))
 
       // A review's market is its subject's: Ana lives in online-tutors, whose file adds `sessions`.
       const byBen = anaTwin.reviews.received.find((r: any) => r.reviewer === ben.address)

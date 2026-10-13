@@ -15,12 +15,25 @@ import type { StoredProof, StoredTier } from '../records/store.ts'
 import { rowWeight, stampStatus } from '../scores/compute.ts'
 import { STATEMENT_HEADER } from '../scores/sign.ts'
 import { type Near, type Urls, LISTS, SCORING_DOC, SOURCE, messageLink } from './html.ts'
-import { badge } from './words.ts'
+import { badge, title } from './words.ts'
 
 export type Ctx = { db: Db; directory: Directory; config: Config; urls: Urls }
 
 const iso = (v: unknown): string | null => (v ? new Date(v as string).toISOString() : null)
 const micro = (v: string | bigint | null | undefined): number => (v === null || v === undefined ? 0 : Number(BigInt(v)) / 1_000_000)
+
+/** A role's plain word: the market's role name for seller and buyer, else the role itself (peer). */
+const roleWord = (ctx: Ctx, market: string, role: string): string => (role === 'seller' || role === 'buyer' ? ctx.directory.sideWord(market, role) : role)
+
+/**
+ * What a profile is called: its card's name, or, for a card without one, its market and its role
+ * word, such as `Online tutors tutor`. Null for a profile this index does not hold. The twins carry
+ * the same name the pages show, since a twin is what its page shows.
+ */
+function nameOf(ctx: Ctx, p: { name: string | null; market: string | null; role: string | null }): string | null {
+  if (p.name !== null) return p.name
+  return p.market !== null && p.role !== null ? `${title(p.market)} ${roleWord(ctx, p.market, p.role)}` : null
+}
 
 /** Every model says what page it is and where it and its twin live. */
 type Self = { kind: string; url: string; json: string }
@@ -74,7 +87,7 @@ function offerOut(ctx: Ctx, row: any, seen: (id: string, n: Named) => Picture) {
     /** The id of the record that holds the offer now: which version its terms are from. */
     id: row.id as string,
     profile: row.profile as string,
-    name: (row.name as string | null) ?? null,
+    name: nameOf(ctx, { name: row.name ?? null, market: row.profile_market ?? null, role: row.profile_role ?? null }),
     profileUrl: ctx.urls.profile(row.profile),
     direction: row.direction as 'offer' | 'request',
     /** The author profile's market, when this index's directory has it; its side there. */
@@ -190,7 +203,8 @@ export type Review = Awaited<ReturnType<typeof reviews>>[number]
 async function reviews(ctx: Ctx, where: string, params: unknown[]) {
   const { rows } = await ctx.db.query(
     `select v.*, w.counted, w.skipped, w.evidence_kind, w.evidence_note, w.evidence_weight, w.reviewer_weight, w.contribution,
-            a.name as reviewer_name, b.name as subject_name, (e.escrow is not null) as has_receipt,
+            a.name as reviewer_name, a.market as reviewer_market, a.role as reviewer_role,
+            b.name as subject_name, b.market as subject_market, b.role as subject_role, (e.escrow is not null) as has_receipt,
             e.objected_by, e.objected_at
      from reviews v left join review_weights w on w.uri = v.uri
        left join profiles a on a.address = v.reviewer left join profiles b on b.address = v.subject
@@ -209,10 +223,10 @@ async function reviews(ctx: Ctx, where: string, params: unknown[]) {
     return {
       uri: row.uri as string,
       reviewer: row.reviewer as string,
-      reviewerName: (row.reviewer_name ?? null) as string | null,
+      reviewerName: nameOf(ctx, { name: row.reviewer_name ?? null, market: row.reviewer_market ?? null, role: row.reviewer_role ?? null }),
       reviewerUrl: ctx.urls.profile(row.reviewer),
       subject: row.subject as string,
-      subjectName: (row.subject_name ?? null) as string | null,
+      subjectName: nameOf(ctx, { name: row.subject_name ?? null, market: row.subject_market ?? null, role: row.subject_role ?? null }),
       subjectUrl: ctx.urls.profile(row.subject),
       /** The subject's market, whose file names this review's extra fields; null when the subject lives in no one market. */
       market,
@@ -255,7 +269,14 @@ function scoreOut(row: any) {
 }
 
 function marketOut(ctx: Ctx, m: MarketFile, counts: Map<string, number>) {
-  return { name: m.name, url: ctx.urls.market(m.name), description: m.description, offers: counts.get(m.name) ?? 0 }
+  return {
+    name: m.name,
+    url: ctx.urls.market(m.name),
+    description: m.description,
+    /** Each role in it and its plain word: `{ seller: 'tutor', buyer: 'student' }`, `{ peer: 'peer' }`. */
+    roleWords: Object.fromEntries(m.roles.map((r) => [r, roleWord(ctx, m.name, r)])),
+    offers: counts.get(m.name) ?? 0,
+  }
 }
 
 async function liveOfferCounts(ctx: Ctx): Promise<Map<string, number>> {
@@ -435,7 +456,7 @@ export async function profile(ctx: Ctx, address: string) {
     /** Where a person sends it a message: the app's page for it (README.md, "The message link"). */
     messageLink: messageLink(ctx.config.appUrl, address),
     profile: {
-      name: p.name as string,
+      name: nameOf(ctx, p) as string,
       /** The one market this profile lives in, and its side there, as its record names them. */
       market: p.market as string | null,
       marketUrl: home ? ctx.urls.market(p.market) : null,
@@ -506,13 +527,13 @@ export async function deal(ctx: Ctx, dealId: string) {
   if (receipt.rowCount) {
     const e = receipt.rows[0]
     // A party's key is a profile's address: each side is one profile here, or none this index holds.
-    const profiles = await ctx.db.query('select address, name from profiles where address = any($1) order by address', [[e.buyer, e.seller]])
+    const profiles = await ctx.db.query('select address, name, market, role from profiles where address = any($1) order by address', [[e.buyer, e.seller]])
     const addresses = profiles.rows.map((p) => p.address as string)
     const [scores, markets] = await Promise.all([numbers(ctx, addresses), profileMarkets(ctx, addresses)])
     const of = (key: string) =>
       profiles.rows
         .filter((p) => p.address === key)
-        .map((p) => ({ address: p.address as string, name: p.name as string, url: ctx.urls.profile(p.address), ...scores.get(p.address)! }))
+        .map((p) => ({ address: p.address as string, name: nameOf(ctx, p) as string, url: ctx.urls.profile(p.address), ...scores.get(p.address)! }))
     const sellerProfiles = of(e.seller)
     // A deal names no market; the seller's profile lives in one, whose role names name the two sides.
     const sellerMarkets = [...new Set(sellerProfiles.map((p) => markets.get(p.address)).filter((m) => m))]

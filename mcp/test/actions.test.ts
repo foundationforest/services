@@ -58,6 +58,16 @@ const ASKED: Array<[string, Body]> = [
 ]
 
 describe('no key', () => {
+  test('the markets, from the index: one line each, with each role and its word', async () => {
+    assert.deepEqual(await run('markets', {}, w.ctx()), {
+      index: w.index,
+      markets: ['tutoring: teacher (seller), student (buyer)', 'plumbing: seller, buyer', 'tennis: peer'],
+    })
+    await refused(run('markets', {}, { keys: {} }), 'no index set; set --index')
+    // An index whose index.json is no list of markets: here a market's JSON, the fragment dropped as it is fetched.
+    await refused(run('markets', {}, { ...w.ctx(), index: `${w.index}/markets/tutoring.json#` }), /lists no markets/)
+  })
+
   test('a market, from the index, as its own word', async () => {
     assert.deepEqual(await run('market', { market: 'tutoring' }, w.ctx()), { index: w.index, market: 'tutoring', says: MARKET })
     await refused(run('market', { market: 'gardening' }, w.ctx()), /gave nothing for markets\/gardening\.json/)
