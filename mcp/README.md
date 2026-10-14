@@ -157,13 +157,13 @@ not the person's.
 
 ### Connect a chat
 
-The address is `https://mcp.devnet.forest.foundation/mcp`. It asks for no sign-in.
+The address is `https://mcp.forest.foundation/mcp`. It asks for no sign-in.
 
 - **Claude** (claude.ai and Claude's apps): Customize > Connectors > Add custom connector, that
   address, and No sign-in for Authentication. On a Team or Enterprise plan, an Owner adds it under
   Organization settings > Connectors. Claude connects from Anthropic's cloud
   ([Anthropic's steps](https://claude.com/docs/connectors/custom/remote-mcp)).
-- **Claude Code:** `claude mcp add --transport http forest https://mcp.devnet.forest.foundation/mcp`.
+- **Claude Code:** `claude mcp add --transport http forest https://mcp.forest.foundation/mcp`.
 - **ChatGPT,** on a plan with developer mode (Plus, Pro, Business, Enterprise, Edu): turn developer
   mode on, then add an MCP app with that address and no authentication. OpenAI moves these menus;
   its help article "Developer mode and MCP apps in ChatGPT" says where they are now.
@@ -190,7 +190,7 @@ cd mcp && npm ci
 npm run check                      # type-check
 npm test                           # every action on records' reference host on loopback; both doors; the image's own command
 node src/main.ts help
-npm run smoke -- https://mcp.devnet.forest.foundation/mcp [<profile address>]
+npm run smoke -- https://mcp.forest.foundation/mcp [<profile address>]
 ```
 
 Node 22.18 or later. Built from existing pieces, used unchanged:
@@ -214,7 +214,7 @@ through it.
 ### On devnet
 
 The foundation's devnet copy runs that image on Railway, service `mcp`, at
-https://mcp.devnet.forest.foundation, the tools at `/mcp`:
+https://mcp.forest.foundation, the tools at `/mcp`:
 
 - **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`.
 - **One replica,** a public domain to the port in `PORT`, no volume.

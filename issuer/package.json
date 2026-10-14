@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
     "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts test/gift.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts test/gift.test.ts test/fetch.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
