@@ -127,7 +127,12 @@ published with its weights, is one any other issuer can run too.
   out in the file, so no native library is needed.
 - **Its name in a note:** `opencv-sface-2021dec`.
 - **The files:** `npm run fetch` puts the models in `models/` from OpenCV's own Hugging Face pages,
-  each checked against its SHA-256 (`scripts/fetch.ts`). Neither is in the repo.
+  and when those fail, from this repo's release `face-models`, which holds the same two files, each
+  with its licence. Each source is tried four times, 2, 4 and 8 seconds apart; the fetch fails only
+  if both sources fail. Each file is checked against its SHA-256 (`scripts/fetch.ts`), whichever
+  source gave it. Neither is in the repo. `.github/workflows/face-models.yml` adds to the release, from
+  Hugging Face, each model the script lists that the release does not hold yet, and never replaces
+  one.
 - **About a third of a second a photo** on one core. Nothing is written or logged.
 - **The stand-in, for tests.** With `FACE_MODEL=stand-in`, allowed only with a Didit on this
   machine (the stand-in in `test/fake-didit.ts`, which the tests and the e2e loop run), every photo
@@ -269,7 +274,8 @@ npm run check        # type-check, the standard's files included
 npm test             # a stand-in Didit and RPC, a real SQLite file, real HTTP, a person proof from a note;
                      # the key made, kept and read again; the face models on the portraits; the
                      # stand-in Didit the e2e loop runs, both tiers; the welcome gift's tickets, taken
-                     # by the host's and the registry payer's own sellers
+                     # by the host's and the registry payer's own sellers; the fetch's tries and its
+                     # second source, against sources on loopback
 npm start            # the service, with the variables above
 ```
 
@@ -302,7 +308,8 @@ https://issuer.devnet.forest.foundation:
 - **No price:** `ID_TIER_PRICE` is unset, so 0.
 - **A welcome gift:** ten registrations at https://registry-payer.devnet.forest.foundation and
   10 cents at https://host.devnet.forest.foundation, as tickets its sponsor key signs.
-- **Apps it sends people back to:** the Forest app, https://app.devnet.forest.foundation.
+- **Apps it sends people back to:** the Forest app, at https://app.forest.foundation and
+  https://app.devnet.forest.foundation.
 
 | Variable | On devnet | Secret |
 |---|---|---|
@@ -310,7 +317,7 @@ https://issuer.devnet.forest.foundation:
 | `DIDIT_API_KEY` | the foundation's Didit API key | yes |
 | `DIDIT_WORKFLOW_ID` | `ddc392c5-1230-45c3-a5b8-d7fe6a312dcd`, "Forest Proof of Human" | no |
 | `DIDIT_ID_WORKFLOW_ID` | `1324949e-9468-44cf-b7f7-18cb240575bf`, "Forest Proof of ID" | no |
-| `APP_ORIGINS` | `https://app.devnet.forest.foundation` | no |
+| `APP_ORIGINS` | `https://app.forest.foundation,https://app.devnet.forest.foundation` | no |
 | `DATABASE_PATH` | `/data/issuer/issuer.sqlite` | no |
 | `SESSION_LIMIT_PER_HOUR` | `20` | no |
 | `CLIENT_ADDRESS_HEADER` | `x-real-ip` | no |

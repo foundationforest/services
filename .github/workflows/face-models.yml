@@ -1,0 +1,59 @@
+# The issuer's second source for its face models: this repo's release `face-models`, which holds the
+# two models issuer/scripts/fetch.ts lists, as OpenCV publishes them on Hugging Face, and each one's
+# licence from the same page. The script takes a model from here when Hugging Face fails, checked
+# against the same SHA-256.
+#
+# It runs when the script or this file changes, and by hand: it fetches the models with the script,
+# each checked by its SHA-256, and adds to the release each file it does not hold yet. A file in the
+# release is never replaced. On a pull request it runs only from a branch of this repo, since a
+# fork's token cannot write.
+
+name: face-models
+
+on:
+  pull_request:
+    paths: [issuer/scripts/fetch.ts, .github/workflows/face-models.yml]
+  push:
+    branches: [main]
+    paths: [issuer/scripts/fetch.ts, .github/workflows/face-models.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: face-models
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: The models, each checked by its SHA-256
+        working-directory: issuer
+        run: npm run fetch -- models
+      - name: Each model's licence, from its Hugging Face page
+        working-directory: issuer/models
+        run: |
+          curl -fsSL --retry 4 -o face_detection_yunet.LICENSE https://huggingface.co/opencv/face_detection_yunet/resolve/main/LICENSE
+          curl -fsSL --retry 4 -o face_recognition_sface.LICENSE https://huggingface.co/opencv/face_recognition_sface/resolve/main/LICENSE
+      - name: The release, with each file it does not hold yet
+        working-directory: issuer/models
+        run: |
+          gh release view face-models > /dev/null 2>&1 || gh release create face-models --title 'Face models' --notes \
+            "The issuer's face models, as OpenCV publishes them on Hugging Face, each with its licence: YuNet, face_detection_yunet_2023mar.onnx (MIT, https://huggingface.co/opencv/face_detection_yunet), and SFace, face_recognition_sface_2021dec.onnx (Apache 2.0, https://huggingface.co/opencv/face_recognition_sface). issuer/scripts/fetch.ts takes them from here when Hugging Face fails, each checked against the SHA-256 it pins. Made by .github/workflows/face-models.yml, which never replaces a file here."
+          held=$(gh release view face-models --json assets --jq '.assets[].name')
+          for f in *; do
+            grep -qxF "$f" <<< "$held" || gh release upload face-models "$f"
+          done

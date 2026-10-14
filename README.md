@@ -26,7 +26,7 @@ On devnet:
 - fee payer: https://fee-payer.devnet.forest.foundation
 - host: https://host.devnet.forest.foundation
 - index: https://index.devnet.forest.foundation
-- mcp: https://mcp.devnet.forest.foundation/mcp
+- mcp: https://mcp.forest.foundation/mcp
 
 None of them holds a person's main key, and nothing here has user accounts: there are keys,
 records and rows.
