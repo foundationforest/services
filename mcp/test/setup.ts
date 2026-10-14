@@ -47,7 +47,15 @@ export const KEYS = {
 
 export const offer = (description: string): Body => ({ direction: 'request', description, price: { amount: '30', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', per: 'hour' } })
 export const MARKET = { about: 'the stand-in index', market: 'tutoring', profiles: [seller.address] }
-export const SCORES = { profile: seller.address, score: 7 }
+/** The stand-in index's page for the seller, in the foundation's index's shape: its card's copy, its scores, and what the hosts give too. */
+export const SCORES = {
+  address: seller.address,
+  profile: { name: 'a seller', inboxKey: sellerInbox.recipient, inbox: { senders: 'anyone', readers: ['age1pq1reader'] } },
+  scores: { rating: { value: 7 } },
+  offers: [{ uri: `${seller.address}/offer/maths` }],
+  requests: [],
+  reviews: { received: [{ reviewer: 'someone' }], given: [{ subject: 'someone' }] },
+}
 /** The stand-in index's home, in the foundation's index's shape: its folders, their markets and each one's role words. */
 export const HOME = {
   folders: [

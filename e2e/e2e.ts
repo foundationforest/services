@@ -28,15 +28,17 @@
 //      message from each, and lists a read key the seller's app made for its assistant as a reader;
 //   6. each app makes its assistant's access keys and lists them in the profile's permissions
 //      record: the seller's a write, a message and a read key, the buyer's a write key; the
-//      assistants are the CLI (../mcp), given those keys; the seller's posts an offer with a photo, and
-//      the seller's app then puts the photo's bytes on the host;
+//      assistants are the CLI (../mcp), given those keys as the app gives them: a writing key and,
+//      for the seller, an inbox key (the message key and the read key, joined by a dot); the
+//      seller's posts an offer with a photo, and the seller's app then puts the photo's bytes on the
+//      host;
 //   7. the inbox: the buyer delivers a message to the seller's inbox, sealed to its inbox key and the
 //      read key, and a second one is refused (one each); the seller pulls it with a pull its main
 //      key signs, and opens it;
 //   8. the seller's assistant, through the CLI: it opens the buyer's message (the message key and
 //      the read key) and replies; the buyer sees the message key sent it, and the seller's app opens
 //      the reply's copy, { text, to }, in the seller's own inbox; it asks the seller, through
-//      the seller's own inbox, to post an offer it drafted (`request`), and the seller's app opens
+//      the seller's own inbox, to post an offer it drafted (`ask`), and the seller's app opens
 //      the request. The seller makes the message key past and deletes the read key: the CLI refuses
 //      both, the host refuses the past key's pull at once, and its message once the host no longer
 //      keeps the seller's records it read;
@@ -73,7 +75,7 @@ import { type Credit, type Service, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, au
 import * as escrow from '../standard/escrow/client/src/index.ts'
 import { proofBytes, proveReputation } from '../standard/reputation/client/src/index.ts'
 import { ACTIONS, Refusal, checkArgs } from '../mcp/src/actions.ts'
-import type { Context } from '../mcp/src/forest.ts'
+import { type Context, keysFrom } from '../mcp/src/forest.ts'
 import { INDEX_SHOWN, ISSUER_SHOWN, type Loop, startLoop } from './loop.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -507,14 +509,17 @@ function made(scope: 'write' | 'message'): Made {
 
 /**
  * The app lists the keys it made in the profile's permissions record, signed with the main key, and
- * gives them to the assistant: the CLI (../mcp), with the profile, the host to start from and the keys.
+ * gives them to the assistant: the CLI (../mcp), with the profile, the host to start from and the keys
+ * as the app gives them: the writing key, and the inbox key, `<message key>.<read key>`, which the
+ * CLI splits on its dot.
  */
 async function assistantFor(p: Person, keys: Made[]): Promise<Context> {
   const [outcome] = await publish([cfg.host!], [permissionsRecord(p.profile, keys.map((k) => k.listed), Date.now())])
   assert.ok(outcome!.results[0]!.ok, `the host took the permissions record: ${JSON.stringify(outcome)}`)
-  const given = Object.fromEntries(keys.map((k) => [k.listed.scope, k.key]))
-  say(`${p.role}: an assistant given ${keys.map((k) => `a ${k.listed.scope} key`).join(', ')}, each on the profile's permissions list`)
-  return { hosts: [cfg.host!], profile: p.profile.address, keys: given }
+  const of = (scope: AccessKey['scope']) => keys.find((k) => k.listed.scope === scope)?.key
+  const given = { writingKey: of('write'), ...(of('message') && { inboxKey: `${of('message')}.${of('read')}` }) }
+  say(`${p.role}: an assistant given ${keys.map((k) => `a ${k.listed.scope} key`).join(', ')}, each on the profile's permissions list, as ${Object.keys(given).join(' and ')}`)
+  return { hosts: [cfg.host!], profile: p.profile.address, keys: keysFrom(given) }
 }
 
 /**
@@ -595,7 +600,7 @@ async function inbox(from: Person, to: Person, readKey: InboxKey) {
  * seller's inbox (`inbox`, the message key and the read key), replies to the buyer (`send`, signed by
  * the message key for the seller and naming the seller's host, where the buyer's host reads the
  * seller's permissions), whose copy, `{ text, to }`, the seller's app opens in its own inbox, and
- * asks the seller to post an offer it drafted (`request`, a message to the seller's own inbox),
+ * asks the seller to post an offer it drafted (`ask`, a request in the seller's own inbox),
  * which the seller's app pulls with its main key and opens, and the CLI marks.
  * Then the seller makes the message key past and deletes the read key, from its permissions record
  * and from its card's readers. The CLI refuses both keys; the host refuses the past key's pull at
@@ -632,7 +637,7 @@ async function assistant(seller: Person, buyer: Person, ctx: Context, keys: Made
   say(`seller's assistant: opened the buyer's message with the message key ${messageKey.listed.key} and the read key, and replied; the buyer saw the message key sent it, and the seller's app opened the copy in its own inbox`)
 
   const drafted = { offer: { direction: 'offer', description: 'One hour of physics tutoring, online. A devnet test offer, drafted by an assistant through e2e.', remote: true }, id: 'physics' }
-  const requested = await sent('request', { action: 'post-offer', params: drafted }, 'the seller’s host to take the request')
+  const requested = await sent('ask', { action: 'post-offer', params: drafted }, 'the seller’s host to take the request')
   const own = await pull(cfg.host!, pullRequest(seller.profile, 0, Date.now()))
   const asking = own.messages.find((m) => m.id === requested.id)
   assert.ok(asking, 'the request is in the seller’s inbox')
@@ -904,7 +909,7 @@ async function main() {
     remote: true,
     media: [picture],
   }
-  const posted = await cli(sellerAssistant, 'post-offer', { offer, id: 'maths' })
+  const posted = await cli(sellerAssistant, 'offer', { action: 'post', offer, id: 'maths' })
   const offerUri = `${seller.profile.address}/${posted.path}`
   const view = await readProfile([cfg.host!], seller.profile.address, Date.now())
   assert.equal(view.current.get('offer/maths')!.record.by, sellerKeys[0]!.listed.key, 'the offer is signed by the write key, not the main key')
@@ -923,8 +928,8 @@ async function main() {
   const deal = await pay(buyer, seller, offer, token)
   steps.deal = deal
 
-  const byBuyer = await cli(buyerAssistant, 'post-review', { id: 'maths', review: { subject: seller.profile.address, ratings: { overall: '10' }, text: 'Clear and patient. A devnet test review.', dealId: deal.escrow } })
-  const bySeller = await cli(sellerAssistant, 'post-review', { id: 'maths', review: { subject: buyer.profile.address, ratings: { overall: '10' }, text: 'On time, paid at once. A devnet test review.', dealId: deal.escrow } })
+  const byBuyer = await cli(buyerAssistant, 'review', { id: 'maths', review: { subject: seller.profile.address, ratings: { overall: '10' }, text: 'Clear and patient. A devnet test review.', dealId: deal.escrow } })
+  const bySeller = await cli(sellerAssistant, 'review', { id: 'maths', review: { subject: buyer.profile.address, ratings: { overall: '10' }, text: 'On time, paid at once. A devnet test review.', dealId: deal.escrow } })
   steps.reviews = [`${buyer.profile.address}/${byBuyer.path}`, `${seller.profile.address}/${bySeller.path}`]
   say('two reviews posted by the assistants through the CLI, each naming the deal')
 

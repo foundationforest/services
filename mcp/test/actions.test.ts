@@ -12,8 +12,8 @@ import { type AccessKey, type Body, deliver, hostsRecord, ownerRecord, permissio
 import { message, openMessage } from '../../standard/records/src/private.ts'
 import { type MainKey, inboxKey, mainKey, newSeed } from '../../standard/keys/src/index.ts'
 import { ACTIONS, REQUESTS, checkArgs } from '../src/actions.ts'
-import { type Context, MAX_PAGES, NO_KEY, Refusal } from '../src/forest.ts'
-import { ACCESS, KEYS, MARKET, SCORES, type World, buyer, buyerInbox, laterPastKey, messageKey, offer, quiet, seller, sellerInbox, strayKey, world, writeKey } from './setup.ts'
+import { type Context, MAX_PAGES, NO_KEY, Refusal, keysFrom } from '../src/forest.ts'
+import { ACCESS, KEYS, MARKET, SCORES, type World, buyer, buyerInbox, laterPastKey, messageKey, offer, quiet, readRecipient, seller, sellerInbox, strayKey, world, writeKey } from './setup.ts'
 
 let w: World
 before(async () => {
@@ -21,7 +21,7 @@ before(async () => {
 })
 after(() => w.close())
 
-const run = (name: string, args: { [name: string]: unknown }, ctx: Context): Promise<any> => {
+const run = async (name: string, args: { [name: string]: unknown }, ctx: Context): Promise<any> => {
   const action = ACTIONS.find((a) => a.name === name)!
   return action.run(checkArgs(action, args), ctx)
 }
@@ -74,13 +74,23 @@ describe('no key', () => {
     await refused(run('market', { market: 'tutoring' }, { keys: {} }), 'no index set; set --index')
   })
 
-  test("a profile: its card and offers from its hosts, every signature checked, and the index's summary beside them", async () => {
+  test("a profile: its card and offers from its hosts, every signature checked, and the index's summary beside them, each said once", async () => {
     const p = await run('profile', { address: seller.address }, w.ctx())
     assert.deepEqual(p.hosts, [w.host.url])
     assert.equal(p.card.body.role, 'seller')
     assert.deepEqual(p.offers.map((o: { path: string }) => o.path), ['offer/maths'])
     assert.deepEqual(p.reviews, [])
-    assert.deepEqual(p.index, SCORES)
+    // The index's summary without the offers, requests and reviews written the hosts gave, and without the card's keys.
+    const { offers: _o, requests: _r, ...summary } = SCORES
+    const { inboxKey: _k, ...shown } = SCORES.profile
+    assert.deepEqual(p.index, { ...summary, profile: { ...shown, inbox: { senders: 'anyone' } }, reviews: { received: SCORES.reviews.received } })
+    assert.equal(p.card.body.inboxKey, undefined, 'the card’s inbox key, left out unless asked for')
+    // Asked for: the card's keys, here and in the summary.
+    const keyed = await run('profile', { address: buyer.address, publicKeys: true }, w.ctx({}, buyer.address))
+    assert.deepEqual([keyed.card.body.inboxKey, keyed.card.body.inbox.readers], [buyerInbox.recipient, [readRecipient]])
+    assert.deepEqual((await run('profile', { address: buyer.address }, w.ctx())).card.body.inbox, { senders: 'anyone' })
+    assert.deepEqual((await run('profile', { address: seller.address, publicKeys: true }, w.ctx())).index.profile, SCORES.profile)
+    await refused(run('profile', { address: seller.address, publicKeys: 'yes' }, w.ctx()), 'publicKeys is true or false')
     // Without an index, the hosts alone.
     assert.equal((await run('profile', { address: buyer.address }, { hosts: [w.host.url], keys: {} })).index, null)
     // An index that has nothing for it hides nothing the hosts serve.
@@ -98,10 +108,19 @@ describe('no key', () => {
   })
 })
 
+describe('keys, as the app gives them', () => {
+  test('the inbox key is the message key and the read key joined by a dot; the older names are taken too, the app’s winning', () => {
+    assert.deepEqual(keysFrom({ writingKey: 'w', inboxKey: 'm.r' }), { write: 'w', message: 'm', read: 'r' })
+    assert.deepEqual(keysFrom({ writeKey: 'w', messageKey: 'm', readKey: 'r' }), { write: 'w', message: 'm', read: 'r' })
+    assert.deepEqual(keysFrom({ writingKey: 'w', writeKey: 'old', inboxKey: 'm.r', messageKey: 'old' }), { write: 'w', message: 'm', read: 'r' })
+    for (const bad of ['m', 'm.', '.r', 'm.r.x']) assert.throws(() => keysFrom({ inboxKey: bad }), /^Refusal: the inbox key is a message key and a read key joined by a dot/)
+  })
+})
+
 describe('a write key', () => {
   test("posts, updates and removes an offer, and posts a review, each landing as the access key's record", async () => {
     const write = w.ctx({ write: KEYS.write })
-    const posted = await run('post-offer', { offer: offer('Physics, one hour.'), id: 'physics' }, write)
+    const posted = await run('offer', { action: 'post', offer: offer('Physics, one hour.'), id: 'physics' }, write)
     assert.deepEqual([posted.path, posted.hosts], ['offer/physics', [w.host.url]])
     let at = (await live()).get('offer/physics')!.record
     assert.equal(at.by, writeKey.address)
@@ -109,40 +128,46 @@ describe('a write key', () => {
     const createdAt = at.body!.createdAt
     assert.match(String(createdAt), /^\d{4}-\d\d-\d\dT/, 'createdAt is set when missing')
 
-    await run('update-offer', { id: 'physics', offer: offer('Physics, ninety minutes.') }, write)
+    await run('offer', { action: 'update', id: 'physics', offer: offer('Physics, ninety minutes.') }, write)
     at = (await live()).get('offer/physics')!.record
     assert.equal(at.body!.description, 'Physics, ninety minutes.')
     assert.equal(at.body!.createdAt, createdAt, 'an update keeps when the offer was made')
 
-    await run('remove-offer', { id: 'physics' }, write)
+    await run('offer', { action: 'remove', id: 'physics' }, write)
     assert.equal((await live()).get('offer/physics')!.record.body, null)
 
-    assert.match((await run('post-offer', { offer: offer('Chemistry.') }, write)).path, /^offer\/[0-9a-f]{16}$/)
+    assert.match((await run('offer', { action: 'post', offer: offer('Chemistry.') }, write)).path, /^offer\/[0-9a-f]{16}$/)
 
-    const review = await run('post-review', { review: { subject: seller.address, ratings: { overall: '9' }, text: 'Clear and on time.' } }, w.ctx({ write: KEYS.review }))
+    const review = await run('review', { review: { subject: seller.address, ratings: { overall: '9' }, text: 'Clear and on time.' } }, w.ctx({ write: KEYS.review }))
     assert.equal((await live()).get(review.path)!.record.body!.subject, seller.address)
   })
 
   test("refuses before signing: no key, another scope, past its paths, the main key, the owner's path, a broken shape", async () => {
     const others = w.ctx({ message: KEYS.message, read: KEYS.read })
-    await refused(run('post-offer', { offer: offer('x') }, others), NO_KEY)
-    await refused(run('update-offer', { id: 'x', offer: offer('x') }, others), NO_KEY)
-    await refused(run('remove-offer', { id: 'x' }, others), NO_KEY)
-    await refused(run('post-review', { review: { subject: seller.address } }, others), NO_KEY)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, others), NO_KEY)
+    await refused(run('offer', { action: 'update', id: 'x', offer: offer('x') }, others), NO_KEY)
+    await refused(run('offer', { action: 'remove', id: 'x' }, others), NO_KEY)
+    await refused(run('review', { review: { subject: seller.address } }, others), NO_KEY)
 
-    await refused(run('post-offer', { offer: offer('x') }, w.ctx({ write: KEYS.message })), 'this key is listed as a message key, not a write key; use request')
-    await refused(run('post-offer', { offer: offer('x') }, w.ctx({ write: KEYS.stray })), `this write key is not listed in ${buyer.address}'s permissions record; use request`)
-    await refused(run('post-offer', { offer: offer('x') }, w.ctx({ write: KEYS.review })), /^this write key writes only under review, not at offer\/[0-9a-f]+; use request$/)
-    await refused(run('post-offer', { offer: offer('x') }, w.ctx({ write: KEYS.main })), /main key; give an access key/)
-    await refused(run('post-offer', { offer: offer('x') }, w.ctx({ write: 'not a key' })), /not 32 bytes in base64url/)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, w.ctx({ write: KEYS.message })), 'this key is listed as a message key, not a write key; use ask')
+    await refused(run('offer', { action: 'post', offer: offer('x') }, w.ctx({ write: KEYS.stray })), `this write key is not listed in ${buyer.address}'s permissions record; use ask`)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, w.ctx({ write: KEYS.review })), /^this write key writes only under review, not at offer\/[0-9a-f]+; use ask$/)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, w.ctx({ write: KEYS.main })), /main key; give an access key/)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, w.ctx({ write: 'not a key' })), /not 32 bytes in base64url/)
 
     const write = w.ctx({ write: KEYS.write })
-    await refused(run('update-offer', { id: 'owned', offer: offer('x') }, write), "the owner wrote offer/owned; only the owner's app can change it; use request")
-    await refused(run('remove-offer', { id: 'owned' }, write), "the owner wrote offer/owned; only the owner's app can change it; use request")
-    await refused(run('remove-offer', { id: 'never' }, write), 'nothing at offer/never')
-    await refused(run('post-offer', { offer: { direction: 'sideways', description: 'x' } }, write), /^the offer does not fit its shape: offer\/direction must be equal to one of the allowed values/)
-    await refused(run('post-offer', { offer: offer('x'), id: 'Not/This' }, write), /^an id is/)
-    await refused(run('post-offer', { offer: offer('x') }, { ...write, profile: undefined }), /^no profile given/)
+    await refused(run('offer', { action: 'update', id: 'owned', offer: offer('x') }, write), "the owner wrote offer/owned; only the owner's app can change it; use ask")
+    await refused(run('offer', { action: 'remove', id: 'owned' }, write), "the owner wrote offer/owned; only the owner's app can change it; use ask")
+    await refused(run('offer', { action: 'remove', id: 'never' }, write), 'nothing at offer/never')
+    await refused(run('offer', { action: 'post', offer: { direction: 'sideways', description: 'x' } }, write), /^the offer does not fit its shape: offer\/direction must be equal to one of the allowed values/)
+    await refused(run('offer', { action: 'post', offer: offer('x'), id: 'Not/This' }, write), /^an id is/)
+    await refused(run('offer', { action: 'post', offer: offer('x') }, { ...write, profile: undefined }), /^no profile given/)
+    // Each of offer's actions takes what its request kind takes.
+    await refused(run('offer', { action: 'post' }, write), 'offer post needs offer')
+    await refused(run('offer', { action: 'update', id: 'x' }, write), 'offer update needs offer')
+    await refused(run('offer', { action: 'remove', offer: offer('x') }, write), 'offer remove takes no offer')
+    await refused(run('offer', { action: 'remove' }, write), 'offer remove needs id')
+    await refused(run('offer', { action: 'move', id: 'x' }, write), 'action is one of post, update, remove')
     assert.equal((await live()).get('offer/owned')!.record.body!.description, 'Maths, written by the main key.')
   })
 })
@@ -158,7 +183,7 @@ describe('a read key', () => {
   test('refuses no key, the inbox key, and a read key the folder does not list', async () => {
     await refused(run('private', {}, w.ctx({ write: KEYS.write })), NO_KEY)
     await refused(run('private', {}, w.ctx({ read: KEYS.inbox })), /inbox key; give a read key/)
-    await refused(run('private', {}, w.ctx({ read: KEYS.read }, seller.address)), `this read key is not listed in ${seller.address}'s permissions record; use request`)
+    await refused(run('private', {}, w.ctx({ read: KEYS.read }, seller.address)), `this read key is not listed in ${seller.address}'s permissions record; use ask`)
     await refused(run('private', {}, w.ctx({ read: 'AGE-SECRET-KEY-1ABC' })), /not an age identity/)
   })
 })
@@ -189,7 +214,7 @@ describe('a message key', () => {
 
   test("requests: one for each action a request may name, each landing in the profile's own inbox as { request, ...its parameters }", async () => {
     assert.deepEqual(ASKED.map(([action]) => action).sort(), [...REQUESTS.keys()].sort(), 'one for each')
-    for (const [action, params] of ASKED) await run('request', { action, params }, w.ctx({ message: KEYS.message }))
+    for (const [action, params] of ASKED) await run('ask', { action, params }, w.ctx({ message: KEYS.message }))
     const mine = (await opened(buyer, buyerInbox.identity)).slice(1)
     assert.deepEqual(
       mine.map((m) => [m.from, m.key, m.body]),
@@ -197,12 +222,13 @@ describe('a message key', () => {
     )
   })
 
-  test('refuses a request for an action that needs no key or is not one, and parameters that do not fit the action, a key among them', async () => {
-    const ask = (action: string, params?: Body) => run('request', { action, ...(params && { params }) }, w.ctx({ message: KEYS.message }))
-    const names = [...REQUESTS.keys()].join(', ')
-    await refused(ask('profile', { address: seller.address }), `a request names one of ${names}; not profile`)
-    await refused(ask('request', {}), `a request names one of ${names}; not request`)
-    await refused(ask('fly'), `a request names one of ${names}; not fly`)
+  test('refuses a request of a kind the standard does not name, and parameters that do not fit the kind, a key among them', async () => {
+    const ask = (action: string, params?: Body) => run('ask', { action, ...(params && { params }) }, w.ctx({ message: KEYS.message }))
+    const names = 'post-offer, update-offer, remove-offer, post-review, send, inbox, private, pay'
+    assert.equal([...REQUESTS.keys()].join(', '), names, 'the standard’s kinds')
+    await refused(ask('profile', { address: seller.address }), `action is one of ${names}`)
+    await refused(ask('offer', {}), `action is one of ${names}`)
+    await refused(ask('fly'), `action is one of ${names}`)
     await refused(ask('pay'), 'pay needs offer')
     await refused(ask('pay', { offer: OFFER, units: 0 }), 'units is a whole number, from 1')
     await refused(ask('pay', { offer: OFFER, units: 1.5 }), 'units is a whole number, from 1')
@@ -210,7 +236,7 @@ describe('a message key', () => {
     await refused(ask('pay', { offer: OFFER, note: 3 }), 'note is text')
     await refused(ask('post-offer', { offer: 'cheap' }), 'offer is an object')
     await refused(ask('post-offer', { offer: offer('x'), writeKey: KEYS.write }), 'post-offer takes no writeKey')
-    await refused(run('request', { action: 'pay', params: { offer: OFFER } }, w.ctx({ write: KEYS.write })), NO_KEY)
+    await refused(run('ask', { action: 'pay', params: { offer: OFFER } }, w.ctx({ write: KEYS.write })), NO_KEY)
   })
 
   test('in the inbox, a request counts only when the profile sent it to itself, by its main key or a message key it lists; any other is a plain message', async () => {
@@ -220,9 +246,9 @@ describe('a message key', () => {
     // A stranger.
     await deliver([w.host.url], [await message(seller, buyer.address, { request: 'pay', offer: OFFER }, Date.now(), card)])
     // A message key the owner then makes past: it no longer speaks for the profile.
-    await run('request', { action: 'remove-offer', params: { id: 'past' } }, w.ctx({ message: KEYS.laterPast }))
+    await run('ask', { action: 'remove-offer', params: { id: 'past' } }, w.ctx({ message: KEYS.laterPast }))
     await publish([w.host.url], [permissionsRecord(buyer, ACCESS.map((k) => (k.key === laterPastKey.address ? { key: k.key, was: 'message' as const } : k)), Date.now())])
-    await refused(run('send', { to: seller.address, text: 'x' }, w.ctx({ message: KEYS.laterPast })), `this key is past in ${buyer.address}'s permissions record: the owner removed it; use request`)
+    await refused(run('send', { to: seller.address, text: 'x' }, w.ctx({ message: KEYS.laterPast })), `this key is past in ${buyer.address}'s permissions record: the owner removed it; use ask`)
     // The profile's own message key, with bodies that ask for no action this tool knows, or leave out what it needs.
     await run('send', { to: buyer.address, body: { request: 'fly' } }, w.ctx({ message: KEYS.message }))
     await run('send', { to: buyer.address, body: { request: 'pay' } }, w.ctx({ message: KEYS.message }))
@@ -261,10 +287,10 @@ describe('a message key', () => {
   test('refuses no key, another scope, the inbox key, a grant, and a profile with no inbox', async () => {
     const others = w.ctx({ write: KEYS.write, read: KEYS.read })
     await refused(run('send', { to: seller.address, text: 'x' }, others), NO_KEY)
-    await refused(run('request', { action: 'pay', params: { offer: OFFER } }, others), NO_KEY)
+    await refused(run('ask', { action: 'pay', params: { offer: OFFER } }, others), NO_KEY)
     await refused(run('inbox', {}, others), NO_KEY)
-    await refused(run('send', { to: seller.address, text: 'x' }, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use request')
-    await refused(run('inbox', {}, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use request')
+    await refused(run('send', { to: seller.address, text: 'x' }, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use ask')
+    await refused(run('inbox', {}, w.ctx({ message: KEYS.write })), 'this key is listed as a write key, not a message key; use ask')
     await refused(run('inbox', {}, w.ctx({ message: KEYS.message, read: KEYS.inbox })), /inbox key; give a read key/)
     await refused(run('inbox', { after: { [w.host.url]: 'soon' } }, w.ctx({ message: KEYS.message })), /^after holds the cursors/)
     await refused(run('send', { to: seller.address, body: { grant: { key: KEYS.write } } }, w.ctx({ message: KEYS.message })), /never carries a grant/)
@@ -303,7 +329,7 @@ describe('hosts', () => {
       const as = w.ctx({ write: KEYS.write, message: KEYS.message }, someone)
       const read = await run('profile', { address: someone }, w.ctx())
       assert.deepEqual([read.hosts, read.card.body.name], [[w.host.url, inside.url], 'someone'])
-      const posted = await run('post-offer', { offer: offer('Chess, asked for.') }, as)
+      const posted = await run('offer', { action: 'post', offer: offer('Chess, asked for.') }, as)
       assert.deepEqual([posted.hosts, posted.refused.map((r: { host: string }) => r.host)], [[w.host.url], [inside.url]])
       const sent = await run('send', { to: someone, text: 'Hello.' }, w.ctx({ message: KEYS.message }))
       assert.deepEqual([sent.hosts, sent.refused.map((r: { host: string }) => r.host)], [[w.host.url], [inside.url]])

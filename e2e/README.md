@@ -95,9 +95,11 @@ buyer, in the market `tutoring`, each the way their app would do it:
 6. **Keys for an assistant.** Each app makes its assistant's access keys at random and lists them in
    the profile's permissions record: the seller's a write key (offers and reviews), a message key
    and the read key; the buyer's a write key. The assistants are mcp (`mcp/`), given the profile,
-   the host and those keys. The seller's posts an offer with a photo (`post-offer`), signed by the
-   write key; the seller's app then puts the photo's bytes on the host, which takes them because the
-   offer names them and the folder pays for them.
+   the host and those keys as the app gives them: a writing key and, for the seller, an inbox key,
+   the message key and the read key joined by a dot, which mcp splits. The seller's posts an offer
+   with a photo (`offer`, action `post`), signed by the write key; the seller's app then puts the
+   photo's bytes on the host, which takes them because the offer names them and the folder pays for
+   them.
 7. **The inbox.** The buyer's app puts a message in one envelope only the seller's inbox key and the
    read key open, signs it and delivers it to the seller's host, which checks that the buyer holds a
    row from the loop issuer. A second message is refused (`once`). The seller's app pulls its inbox
@@ -106,8 +108,9 @@ buyer, in the market `tutoring`, each the way their app would do it:
    message with the read key; `send` replies, signed by the message key for the seller, which the
    buyer's host takes after reading the seller's permissions, and the buyer sees the message key
    sent it; the seller's app pulls the reply's copy, `{ text, to }`, from its own inbox and opens
-   it, signed by the same message key; `request` asks the seller, through the seller's own inbox, to post an offer the
-   assistant drafted, which the seller's app pulls and opens, and `inbox` marks as a request. Then
+   it, signed by the same message key; `ask` asks the seller, through the seller's own inbox, to
+   post an offer the assistant drafted (a `post-offer` request), which the seller's app pulls and
+   opens, and `inbox` marks as a request. Then
    the seller makes the message key past and deletes the read key, from its permissions record and
    its inbox's readers. mcp refuses both keys; the host refuses the past key's pull at once
    (`permission`), and a message the past key signed (`permission`) once the host's cache time
@@ -116,7 +119,7 @@ buyer, in the market `tutoring`, each the way their app would do it:
    through the fee payer's at-cost door (the Kora that charges what it costs). The run checks that
    the escrow's address comes from its terms, and that its rent goes back to the fee payer, which
    paid it.
-10. **Reviews.** Each assistant reviews the other through mcp (`post-review`), naming the deal.
+10. **Reviews.** Each assistant reviews the other through mcp (`review`), naming the deal.
 11. **The loop index shows it:** both profiles with their rows counted under the loop issuer's key,
     and the seller's page naming the issuer; the offer with its photo shown from the host; the deal
     released to the seller; both reviews counted at full weight. Not the messages, nor the request.
@@ -166,25 +169,26 @@ the classic test dollar.
 
 ### The latest run
 
-2026-10-14, 04:25 to 04:28 UTC, with this repo at `d6d02d1` (standard at `dcec0f9`; mcp's actions,
-the loop issuer and the loop index from that commit, the same code as `main`'s) against the services
-as deployed from `main`: **passed** in 181 seconds. Its record is
-[`runs/2026-10-14T04-25-09-902Z.json`](runs/2026-10-14T04-25-09-902Z.json).
+2026-10-14, 05:33 to 05:36 UTC, with this repo at `dae7ae0` (standard at `dcec0f9`; mcp's actions,
+the loop issuer and the loop index from that commit: mcp with the keys as the app gives them and
+the actions `offer`, `review` and `ask`) against the services as deployed from `main`: **passed**
+in 175 seconds. Its record is
+[`runs/2026-10-14T05-33-43-474Z.json`](runs/2026-10-14T05-33-43-474Z.json).
 
 - **Deployed, answering:** the issuer, `/issuer.json` naming `issuer.devnet.forest.foundation`, the
   key `0a536f8d…` and the sponsor `FAWrifUU…`, and the index.
-- **The loop:** its issuer `issuer.e2e-loop.invalid`, key `1d82b5e0…`, made at its first start; its
-  index, signing key `2gYpCtz2…`, in a database of its own, dropped at the end.
-- **People:** seller `FC7rddfqMXU27SqGK5Z35YGDnXohZqt5Md9bERWGEqeG`, buyer
-  `HqwDqajeGeDKUsoS91a4Yf9obkuZ3dhQNtTeheP49oo6`.
+- **The loop:** its issuer `issuer.e2e-loop.invalid`, key `2bf05c40…`, made at its first start; its
+  index, signing key `CTc3SNS1…`, in a database of its own, dropped at the end.
+- **People:** seller `9Y7PtoMViXot1FcKDcjhE8wSwPFiFaQuguU7X4toWEyQ`, buyer
+  `GnryCu1gSxSG1xbEcp11sDmU1Fb2rG5XzVoV2xATUSxk`.
 - **Setup:** each profile's test-dollar account, 5.00 and 10.00 test dollars; each one's own
-  address, `8e4XEYRM…` and `GyR6VkcS…`, with 1.00 test dollar and 0.01 SOL.
+  address, `7ZBtfroP…` and `5ziEdKWu…`, with 1.00 test dollar and 0.01 SOL.
 - **Notes:** a tier 1 note each from the loop issuer's face check, model `stand-in`.
 - **Credits, bought on Solana:** the seller paid the host 0.20 test dollars for 20 credits and the
   registry payer 0.50 for one; the buyer paid the host 0.20 for 20. Each a plain transfer naming its
   buy's reference, collected with the transaction's signature and finished.
 - **Rows:** `tutoring/seller` through the registry payer with the seller's credit, 619 bytes, the
-  row `FEWgaR6H…` read on chain; the same row again refused as `row_exists`; the credit, shown with
+  row `DMn4ZTYg…` read on chain; the same row again refused as `row_exists`; the credit, shown with
   another row, refused as `spent`. The seller's profile held no SOL and paid no dollar.
   `tutoring/buyer` through the fee payer, 763 bytes, charged 1.64576 test dollars. Each read back
   naming its profile, the loop issuer's key and the key that paid for it, and each proof showed
@@ -193,24 +197,26 @@ as deployed from `main`: **passed** in 181 seconds. Its record is
   spent its 20 credits in one request. At the end the seller's folder held 19.872154 credits and the
   buyer's 19.962378: the seller's writes cost 0.127846 credits in all, the reply's copy among them,
   the buyer's 0.037622, each write 0.01 and its bytes at 0.001 a kilobyte.
-- **Records:** the offer `offer/maths`, posted through mcp and signed by the write key `5gBRqYRR…`,
-  and its photo, 79 bytes, paid from the seller's folder; two reviews, one by each assistant.
+- **Records:** the offer `offer/maths`, posted through mcp (`offer`, action `post`) and signed by
+  the write key `HipNgfq6…`, given as the writing key, and its photo, 79 bytes, paid from the
+  seller's folder; two reviews (`review`), one by each assistant.
 - **The inbox:** the buyer's message, 4,639 bytes, sealed to the seller's inbox key and the read
   key, taken; a second refused (`once`); the seller pulled and opened it.
-- **The assistant:** `inbox` opened the message with the message key `F6LuxGux…` and the read key;
-  `send` replied, 2,681 bytes, and left its copy, `{ text, to }`, 4,826 bytes, in the seller's own
-  inbox, sealed to its inbox key and the read key, signed by the same message key; the seller's app
-  pulled and opened it, at a cost of 0.014826 credits to the seller's folder. `request` reached the
-  seller's app. Then the seller made the message key past and deleted the read key; mcp refused
-  both; the host refused the past key's pull at once (`permission`), and 70 seconds later a message
-  it signed (`permission`).
-- **The deal:** escrow `GqJCmM4k…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent goes
+- **The assistant:** given the message key `3bRCVbAV…` and the read key as one inbox key, split
+  on its dot; `inbox` opened the message with them; `send` replied, 2,681 bytes, and left its copy,
+  `{ text, to }`, 4,826 bytes, in the seller's own inbox, sealed to its inbox key and the read key,
+  signed by the same message key; the seller's app pulled and opened it, at a cost of 0.014826
+  credits to the seller's folder. `ask` reached the seller's app as a `post-offer` request. Then
+  the seller made the message key past and deleted the read key; mcp refused both; the host refused
+  the past key's pull at once (`permission`), and 70 seconds later a message it signed
+  (`permission`).
+- **The deal:** escrow `4C6tgk1y…`, one tap, 715 bytes, charged 3.69808 test dollars; its rent goes
   back to the fee payer `9CKUm2s7…`.
 - **The loop index:** both rows counted under "e2e loop issuer (loopback)", weight 0.7; the offer
   with its photo from `host.devnet.forest.foundation`; the deal released to the seller; both reviews
   counted. The seller rated 10.
-- **The proof:** the seller's leaf found by its stamp `087a5c28…` among 2 leaves, 100 tenths,
-  proven against root `0ab511b7…`, signed by "e2e loop index (loopback)", and put on its card; the
+- **The proof:** the seller's leaf found by its stamp `22db5db7…` among 2 leaves, 100 tenths,
+  proven against root `25f422b0…`, signed by "e2e loop index (loopback)", and put on its card; the
   index shows it.
 - **The ID check:** the seller's note signed again at tier 2; its tier proven at its row's stamp and
   put on its card beside the rating's proof. The index: the row at tier 2, "ID-checked", weight 0.9,
@@ -219,9 +225,9 @@ as deployed from `main`: **passed** in 181 seconds. Its record is
 The loop index stopped with the run, so its pages are gone; what it read is on devnet: [the
 seller][s], [the buyer][b], [the deal][d], on Solana's explorer.
 
-[s]: https://explorer.solana.com/address/FC7rddfqMXU27SqGK5Z35YGDnXohZqt5Md9bERWGEqeG?cluster=devnet
-[b]: https://explorer.solana.com/address/HqwDqajeGeDKUsoS91a4Yf9obkuZ3dhQNtTeheP49oo6?cluster=devnet
-[d]: https://explorer.solana.com/address/GqJCmM4kyPvciouwLqJUiBhit68RZ3DxLSUEuJnUgr41?cluster=devnet
+[s]: https://explorer.solana.com/address/9Y7PtoMViXot1FcKDcjhE8wSwPFiFaQuguU7X4toWEyQ?cluster=devnet
+[b]: https://explorer.solana.com/address/GnryCu1gSxSG1xbEcp11sDmU1Fb2rG5XzVoV2xATUSxk?cluster=devnet
+[d]: https://explorer.solana.com/address/4C6tgk1y1UXLhyf467p6qG7zETxTqdFCkxtRL3jWWsUU?cluster=devnet
 
 ## Promises
 

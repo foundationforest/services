@@ -59,10 +59,28 @@ export function refuse(why: string): never {
 }
 
 /** What every action refuses with when the call carries no key for it. */
-export const NO_KEY = 'no key for this; use request'
+export const NO_KEY = 'no key for this; use ask'
 
 /** Access keys, written as a grant writes them: 32 bytes in base64url, or a read key's age identity. */
 export type Keys = { write?: string; message?: string; read?: string }
+
+/** The keys by the names the app gives them, and by the older names, each still taken. */
+export type Given = { writingKey?: string; inboxKey?: string; writeKey?: string; messageKey?: string; readKey?: string }
+
+/**
+ * The access keys in what a call or a start gives: the writing key, a write key; and the inbox key,
+ * a message key and a read key joined by a dot, `<message key>.<read key>`, neither of which holds
+ * a dot. A name the app gives wins over its older name.
+ */
+export function keysFrom(given: Given): Keys {
+  let { messageKey: message, readKey: read } = given
+  if (given.inboxKey !== undefined) {
+    const halves = given.inboxKey.split('.')
+    if (halves.length !== 2 || !halves[0] || !halves[1]) refuse('the inbox key is a message key and a read key joined by a dot, <message key>.<read key>, as the app gives it')
+    ;[message, read] = halves
+  }
+  return { write: given.writingKey ?? given.writeKey, message, read }
+}
 
 /** What one call acts with: the settings the program started with, and what the call carries. */
 export type Context = {
@@ -169,7 +187,7 @@ async function readKey(text: string, view: View): Promise<{ identity: string; re
   if (!IDENTITY.test(text)) refuse('the read key is not an age identity, AGE-SECRET-KEY-PQ-1…, as a grant writes it')
   const recipient = await identityToRecipient(text)
   if (card(view)?.inboxKey === recipient) {
-    refuse(`that is ${view.profile}'s inbox key; give a read key. The inbox key opens every message and grant, and stays on the person's device`)
+    refuse(`that is ${view.profile}'s own inbox key; give a read key. It opens every message and grant, and stays on the person's device`)
   }
   return { identity: text, recipient }
 }
@@ -177,11 +195,11 @@ async function readKey(text: string, view: View): Promise<{ identity: string; re
 /** The permissions record lists `key` with `scope`, and for a write key, covering `path`. */
 function listed(view: View, key: string, scope: 'write' | 'message' | 'read', path?: string): void {
   const entry = view.access.find((k) => k.key === key)
-  if (!entry) refuse(`this ${scope} key is not listed in ${view.profile}'s permissions record; use request`)
-  if (!entry.scope) refuse(`this key is past in ${view.profile}'s permissions record: the owner removed it; use request`)
-  if (entry.scope !== scope) refuse(`this key is listed as a ${entry.scope} key, not a ${scope} key; use request`)
+  if (!entry) refuse(`this ${scope} key is not listed in ${view.profile}'s permissions record; use ask`)
+  if (!entry.scope) refuse(`this key is past in ${view.profile}'s permissions record: the owner removed it; use ask`)
+  if (entry.scope !== scope) refuse(`this key is listed as a ${entry.scope} key, not a ${scope} key; use ask`)
   if (path !== undefined && !covers(entry, path)) {
-    refuse(`this write key writes only under ${entry.paths ? entry.paths.join(', ') : 'any path but profile and grants'}, not at ${path}; use request`)
+    refuse(`this write key writes only under ${entry.paths ? entry.paths.join(', ') : 'any path but profile and grants'}, not at ${path}; use ask`)
   }
 }
 
@@ -231,16 +249,47 @@ export async function markets(ctx: Context) {
   }
 }
 
-/** A profile's card, its offers and the reviews it wrote, from its hosts; and an index's summary of it, if one is set. */
-export async function profile(ctx: Context, address: string) {
+/**
+ * A profile's card, its offers and the reviews it wrote, from its hosts; and an index's summary of
+ * it, if one is set, without what the hosts gave. The card's inbox key and its inbox's readers, on
+ * the card and in the summary, only when `publicKeys`: each is about 2 KB, and send finds them
+ * itself.
+ */
+export async function profile(ctx: Context, address: string, publicKeys = false) {
   const view = await folder(ctx, address)
   const live = liveContent(view)
   const under = (prefix: string) => [...live].filter(([path]) => pathCovers(prefix, path)).map(([, c]) => shown(c))
   const top = live.get('profile')
+  const card = top ? shown(top) : null
+  if (card && 'body' in card && card.body && !publicKeys) card.body = withoutKeys(card.body)
   let index: unknown = null
   // A down index never hides what the hosts serve.
-  if (ctx.index) index = await fromIndex(ctx.index, `profiles/${address}.json`).catch((err: Error) => ({ unread: err.message }))
-  return { address, hosts: view.hosts, card: top ? shown(top) : null, offers: under('offer'), reviews: under('review'), index }
+  if (ctx.index) index = await fromIndex(ctx.index, `profiles/${address}.json`).then((says) => summary(says, publicKeys), (err: Error) => ({ unread: err.message }))
+  return { address, hosts: view.hosts, card, offers: under('offer'), reviews: under('review'), index }
+}
+
+/** A card, or an index's copy of one, without its inbox key and its inbox's readers. */
+function withoutKeys(card: Body): Body {
+  const { inboxKey: _, inbox, ...rest } = card
+  if (!isObject(inbox)) return inbox === undefined ? rest : { ...rest, inbox }
+  const { readers: __, ...box } = inbox
+  return { ...rest, inbox: box }
+}
+
+/**
+ * An index's summary of a profile, in the foundation's index's format, without what the hosts
+ * gave: its offers and requests, and the reviews it wrote; and its card's keys unless asked for.
+ * Another index's passes as it came, but for fields of those names.
+ */
+function summary(says: unknown, publicKeys: boolean): unknown {
+  if (!isObject(says)) return says
+  const { offers: _, requests: __, ...rest } = says
+  if (isObject(rest.reviews)) {
+    const { given: ___, ...reviews } = rest.reviews
+    rest.reviews = reviews
+  }
+  if (!publicKeys && isObject(rest.profile)) rest.profile = withoutKeys(rest.profile)
+  return rest
 }
 
 /** The private records in the profile's folder this read key opens; `under`, a path prefix, narrows them. */
@@ -283,7 +332,7 @@ export async function inbox(ctx: Context, after: { [host: string]: number } = {}
     const read = await readKey(ctx.keys.read, view)
     const box = inboxOf(card(view))
     if (!box || box === 'unsupported' || !box.readers?.includes(read.recipient)) {
-      refuse(`this read key is not one of ${address}'s inbox readers, so no message is encrypted to it; use request`)
+      refuse(`this read key is not one of ${address}'s inbox readers, so no message is encrypted to it; use ask`)
     }
     identity = read.identity
   }
@@ -357,7 +406,7 @@ async function write(ctx: Context, path: string, kind: 'new' | 'existing', body:
   const view = await folder(ctx, address)
   listed(view, key.address, 'write', path)
   const before = view.current.get(path)
-  if (before && before.record.by === undefined) refuse(`the owner wrote ${path}; only the owner's app can change it; use request`)
+  if (before && before.record.by === undefined) refuse(`the owner wrote ${path}; only the owner's app can change it; use ask`)
   const there = before !== undefined && before.record.body !== null
   if (kind === 'new' && there) refuse(`${path} is already there`)
   if (kind === 'existing' && !there) refuse(`nothing at ${path}`)
