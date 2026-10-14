@@ -1,8 +1,8 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
 // in this directory, on loopback, with Railway's PORT set to 0 (any free port).
-//   1. the MCP SDK's client finds the CLI's MCP door there (../smoke.ts): its instructions, every
-//      action as a tool, no session, and refusals in the CLI's words; a request whose URL is no path
-//      (`//`) gets 400, and it goes on answering;
+//   1. the MCP SDK's client finds the CLI's MCP door there (../smoke.ts): its instructions and icon,
+//      the hosted copy's tools, no session, refusals in the CLI's words, the same tools at /mcp, and
+//      the icon's two files; a request whose URL is no path (`//`) gets 400, and it goes on answering;
 //   2. with a key in its environment, the same command refuses to start.
 //
 //   ../standard.sh keys records && npm ci && npm test
@@ -38,7 +38,7 @@ function run(env: Record<string, string>): { child: ChildProcess; started: Promi
   const started = new Promise<{ port: number } | { code: number | null; stderr: string }>((resolve) => {
     child.stderr!.on('data', (chunk: Buffer) => {
       stderr += chunk.toString('utf8')
-      const at = /forest mcp: http:\/\/[^:]+:(\d+)\/mcp/.exec(stderr)
+      const at = /forest mcp: http:\/\/[^:]+:(\d+)/.exec(stderr)
       if (at) resolve({ port: Number(at[1]) })
     })
     child.on('exit', (code) => resolve({ code, stderr }))
@@ -60,15 +60,15 @@ function raw(port: number, request: string): Promise<number | null> {
 test('the hosted copy, as its image runs it', async (t) => {
   if (!existsSync(join(CLI, 'node_modules')) || !existsSync(join(RECORDS, 'node_modules'))) return t.skip('not installed: ../standard.sh records, then npm ci')
 
-  await t.test('1. the MCP SDK’s client finds forest’s door, with every action and no session', async () => {
+  await t.test('1. the MCP SDK’s client finds forest’s door at the root, with the hosted copy’s tools and no session', async () => {
     const { child, started } = run({ PORT: '0' })
     try {
       const got = await started
       assert.ok('port' in got, `it started: ${JSON.stringify(got)}`)
-      const seen = await smoke(`http://127.0.0.1:${got.port}/mcp`)
-      assert.ok((seen.tools as number) > 0)
+      const seen = await smoke(`http://127.0.0.1:${got.port}`)
+      assert.deepEqual(seen.tools, ['markets', 'market', 'profile', 'offer', 'review', 'inbox', 'send', 'ask'])
       assert.equal(await raw(got.port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')
-      assert.ok(((await smoke(`http://127.0.0.1:${got.port}/mcp`)).tools as number) > 0, 'and it goes on answering')
+      assert.deepEqual((await smoke(`http://127.0.0.1:${got.port}`)).tools, seen.tools, 'and it goes on answering')
     } finally {
       child.kill()
     }

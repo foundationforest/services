@@ -2,10 +2,11 @@
 # directory. The build context is the repo root; standard.sh fetches the standard into standard/ at the
 # commit in STANDARD and installs records' library, which the CLI runs on, and needs git.
 #
-# It serves Streamable HTTP at /mcp on the port Railway gives (PORT), on every address, with the
-# foundation's devnet index as its index. No key is set: the CLI refuses to start a hosted copy with
-# one, since every caller would act as that person. The hosts it starts from are the CLI's default,
-# the public list in index/lists/hosts.json on this repo's main.
+# It serves Streamable HTTP at its root and at /mcp, and the icon at /favicon.ico and /icon.svg, on
+# the port Railway gives (PORT), on every address, with the foundation's devnet index as its index.
+# No key is set: the CLI refuses to start a hosted copy with one, since every caller would act as
+# that person. The hosts it starts from are the CLI's default, the public list in
+# index/lists/hosts.json on this repo's main.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
 FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \

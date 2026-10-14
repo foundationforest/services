@@ -7,7 +7,7 @@
 import type { AddressInfo } from 'node:net'
 import { type ParseArgsConfig, parseArgs } from 'node:util'
 import { ACTIONS, checkArgs, help } from './actions.ts'
-import { type Context, refuse } from './forest.ts'
+import { type Context, keysFrom, refuse } from './forest.ts'
 import { serveHttp, serveStdio } from './mcp.ts'
 
 const SETTINGS = {
@@ -18,7 +18,10 @@ const SETTINGS = {
 
 type Flags = { host?: string[]; index?: string; profile?: string }
 
-/** The settings and keys a run starts with: each flag, else its variable. An empty variable is none. */
+/**
+ * The settings and keys a run starts with: each flag, else its variable. An empty variable is none.
+ * The keys by the names the app gives them, or by the older ones.
+ */
 function settings(flags: Flags): Context {
   const env = (name: string) => process.env[name] || undefined
   const hosts = flags.host ?? env('FOREST_HOSTS')?.split(',').map((h) => h.trim()).filter(Boolean)
@@ -28,7 +31,13 @@ function settings(flags: Flags): Context {
     ...(hosts?.length && { hosts }),
     ...(index !== undefined && { index }),
     ...(profile !== undefined && { profile }),
-    keys: { write: env('FOREST_WRITE_KEY'), message: env('FOREST_MESSAGE_KEY'), read: env('FOREST_READ_KEY') },
+    keys: keysFrom({
+      writingKey: env('FOREST_WRITING_KEY'),
+      inboxKey: env('FOREST_INBOX_KEY'),
+      writeKey: env('FOREST_WRITE_KEY'),
+      messageKey: env('FOREST_MESSAGE_KEY'),
+      readKey: env('FOREST_READ_KEY'),
+    }),
   }
 }
 
@@ -45,7 +54,7 @@ async function main([name, ...rest]: string[]): Promise<void> {
     const at = /^(?:(.+):)?(\d{1,5})$/.exec(values.http) ?? refuse('--http is [hostname:]port')
     const hostname = at[1] ?? '127.0.0.1'
     const http = await serveHttp(start, hostname, Number(at[2]))
-    console.error(`forest mcp: http://${hostname}:${(http.address() as AddressInfo).port}/mcp`)
+    console.error(`forest mcp: http://${hostname}:${(http.address() as AddressInfo).port}`)
     return
   }
 

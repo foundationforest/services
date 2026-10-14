@@ -95,9 +95,11 @@ buyer, in the market `tutoring`, each the way their app would do it:
 6. **Keys for an assistant.** Each app makes its assistant's access keys at random and lists them in
    the profile's permissions record: the seller's a write key (offers and reviews), a message key
    and the read key; the buyer's a write key. The assistants are mcp (`mcp/`), given the profile,
-   the host and those keys. The seller's posts an offer with a photo (`post-offer`), signed by the
-   write key; the seller's app then puts the photo's bytes on the host, which takes them because the
-   offer names them and the folder pays for them.
+   the host and those keys as the app gives them: a writing key and, for the seller, an inbox key,
+   the message key and the read key joined by a dot, which mcp splits. The seller's posts an offer
+   with a photo (`offer`, action `post`), signed by the write key; the seller's app then puts the
+   photo's bytes on the host, which takes them because the offer names them and the folder pays for
+   them.
 7. **The inbox.** The buyer's app puts a message in one envelope only the seller's inbox key and the
    read key open, signs it and delivers it to the seller's host, which checks that the buyer holds a
    row from the loop issuer. A second message is refused (`once`). The seller's app pulls its inbox
@@ -106,8 +108,9 @@ buyer, in the market `tutoring`, each the way their app would do it:
    message with the read key; `send` replies, signed by the message key for the seller, which the
    buyer's host takes after reading the seller's permissions, and the buyer sees the message key
    sent it; the seller's app pulls the reply's copy, `{ text, to }`, from its own inbox and opens
-   it, signed by the same message key; `request` asks the seller, through the seller's own inbox, to post an offer the
-   assistant drafted, which the seller's app pulls and opens, and `inbox` marks as a request. Then
+   it, signed by the same message key; `ask` asks the seller, through the seller's own inbox, to
+   post an offer the assistant drafted (a `post-offer` request), which the seller's app pulls and
+   opens, and `inbox` marks as a request. Then
    the seller makes the message key past and deletes the read key, from its permissions record and
    its inbox's readers. mcp refuses both keys; the host refuses the past key's pull at once
    (`permission`), and a message the past key signed (`permission`) once the host's cache time
@@ -116,7 +119,7 @@ buyer, in the market `tutoring`, each the way their app would do it:
    through the fee payer's at-cost door (the Kora that charges what it costs). The run checks that
    the escrow's address comes from its terms, and that its rent goes back to the fee payer, which
    paid it.
-10. **Reviews.** Each assistant reviews the other through mcp (`post-review`), naming the deal.
+10. **Reviews.** Each assistant reviews the other through mcp (`review`), naming the deal.
 11. **The loop index shows it:** both profiles with their rows counted under the loop issuer's key,
     and the seller's page naming the issuer; the offer with its photo shown from the host; the deal
     released to the seller; both reviews counted at full weight. Not the messages, nor the request.
