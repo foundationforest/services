@@ -3,6 +3,8 @@
 // Everything interpolated is escaped unless it is `Raw` (already-built HTML). No page runs any
 // JavaScript; the only script element is the JSON-LD data block, which browsers never execute.
 
+import { MARKETS_COMMIT } from '../config.ts'
+
 export class Raw {
   readonly value: string
   constructor(value: string) {
@@ -78,7 +80,7 @@ export const messageLink = (appUrl: string, address: string): string => `${appUr
 /** The four public lists the foundation's index reads. Another index's are its own. */
 export const LISTS = {
   hosts: `${SOURCE}/blob/main/index/lists/hosts.json`,
-  markets: 'https://github.com/foundationforest/markets/blob/main/directory.md',
+  markets: `https://github.com/foundationforest/markets/blob/${MARKETS_COMMIT}/directory.md`,
   issuers: `${SOURCE}/blob/main/index/lists/issuers.json`,
   indexes: `${SOURCE}/blob/main/index/lists/indexes.json`,
 }

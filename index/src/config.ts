@@ -26,8 +26,14 @@ export type IndexConfig = Record<string, { name: string }>
 /** Where the markets this index uses are read from: the markets directory. It is the only list of them. */
 export type MarketsList = { directory: string }
 
-/** The markets repo's `main`, where the foundation's index reads its markets from. */
-export const MARKETS_DIRECTORY = 'https://raw.githubusercontent.com/foundationforest/markets/main'
+/**
+ * The markets repo's last commit in the format this index reads (`directory.md` linking
+ * `<folder>/<name>.json`), where the foundation's index reads its markets from. The repo's `main`
+ * moves to a new format (`directory.json`, `markets/<name>.json`) that this index does not read yet,
+ * so reading `main` would drop every market until it does.
+ */
+export const MARKETS_COMMIT = 'c8eb23eb539eb3503e2cac21574f59632dce6e1a'
+export const MARKETS_DIRECTORY = `https://raw.githubusercontent.com/foundationforest/markets/${MARKETS_COMMIT}`
 /** A token the pages show as money: its ISO 4217 code, its symbol, and its base units' decimals. */
 export type CurrencyConfig = Record<string, { code: string; symbol: string; decimals: number }>
 export type ScoringConfig = {
@@ -93,7 +99,7 @@ export function readHosts(path: string): string[] {
   return out
 }
 
-/** The markets directory to read the markets from: an http(s) URL, `MARKETS_URL` or the markets repo's `main`. */
+/** The markets directory to read the markets from: an http(s) URL, `MARKETS_URL` or the markets repo at `MARKETS_COMMIT`. */
 export function marketsDirectory(raw: string | undefined): MarketsList {
   const url = new URL(raw || MARKETS_DIRECTORY)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('MARKETS_URL must be an http or https URL')

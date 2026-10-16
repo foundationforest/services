@@ -290,7 +290,7 @@ Environment variables, read once at start; a change means a restart.
 | `APP_URL` | no | `https://app.devnet.forest.foundation` | The app a Message link opens: an origin |
 | `PORT` | no | `8080` | |
 | `HOSTS_FILE`, `ISSUERS_FILE`, `INDEXES_FILE` | no | the files in `lists/` | |
-| `MARKETS_URL` | no | `https://raw.githubusercontent.com/foundationforest/markets/main` | Where the markets are read from: a markets directory, `directory.md` and the files it links |
+| `MARKETS_URL` | no | `https://raw.githubusercontent.com/foundationforest/markets/c8eb23eb539eb3503e2cac21574f59632dce6e1a` | Where the markets are read from: a markets directory, `directory.md` and the files it links |
 | `SCORING_FILE`, `CURRENCIES_FILE` | no | the files in `config/` | |
 
 The `_FILE` variables point the index at another index's lists and weights ([How we run it](#how-we-run-it)).
@@ -412,7 +412,8 @@ open to them.
   (its document check), placeholders, with no `until`. A row whose card shows no tier counts at 0.7. Tier 2 shows
   as "ID-checked".
 - **Which markets count** (`MARKETS_URL`): every market in the `directory.md` of the
-  [markets directory](https://github.com/foundationforest/markets), re-read every hour.
+  [markets directory](https://github.com/foundationforest/markets) at commit `c8eb23e`, the last
+  in the format this index reads, re-read every hour.
 - **How reviews weigh** (`config/scoring.json`): evidence `both` 1 (and so `oneSidedConfirmed`),
   `oneSided` 0.5, `none` 0.05; the floor for a reviewer's weight, 0.05; standing repeated until no
   profile moves by more than 10⁻⁹, for at most 100 rounds.
@@ -449,7 +450,8 @@ open to them.
   an address or a query.
 - **What it reads is public, and listed:** the hosts and the issuers it uses are two files in
   `lists/`, its markets are the `directory.md` of
-  [foundationforest/markets](https://github.com/foundationforest/markets), re-read every hour, and
+  [foundationforest/markets](https://github.com/foundationforest/markets) at one commit, re-read
+  every hour, and
   its weights are files in `config/`.
 - **It scores each profile on its own.** Nothing here links two profiles; nothing ties a profile to
   a person.
