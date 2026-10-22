@@ -23,11 +23,6 @@
   "include": [
     "*.ts",
     "credits",
-    "test",
-    "../standard/registry/client/types"
-  ],
-  "exclude": [
-    "host",
-    "node_modules"
+    "test"
   ]
 }
