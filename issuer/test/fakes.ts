@@ -113,6 +113,10 @@ export class FakeFaceCheck implements FaceCheck {
   readonly tags: { tag: string; sessionId: string; url: string }[] = []
   /** The callback each session was opened with, by session id. */
   readonly callbacks = new Map<string, string | undefined>()
+  /** Each session deleted, in order; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with the face. */
+  readonly deleted: string[] = []
+  deleteDown = false
+  outcome = 'retained_with_user'
   #gate: Promise<void> | undefined
 
   async createSession({ tag, callback }: { tag?: string; callback?: string } = {}) {
@@ -131,7 +135,8 @@ export class FakeFaceCheck implements FaceCheck {
 
   async tagged(tag: string) {
     if (this.down) throw new Error('down')
-    const found = this.tags.findLast((t) => t.tag === tag)
+    // Didit's list no longer shows a deleted session.
+    const found = this.tags.findLast((t) => t.tag === tag && !this.deleted.includes(t.sessionId))
     return found ? { sessionId: found.sessionId, url: found.url } : null
   }
 
@@ -159,6 +164,13 @@ export class FakeFaceCheck implements FaceCheck {
     }
   }
 
+  async deleteSession(sessionId: string) {
+    if (this.deleteDown) throw new Error('down')
+    if (!this.sessions.delete(sessionId)) return 'gone'
+    this.deleted.push(sessionId)
+    return this.outcome
+  }
+
   async photo(url: string) {
     if (this.photoDown) throw new Error('down')
     return new TextEncoder().encode(url.split('/').at(-1))
@@ -177,7 +189,7 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
 ]
 

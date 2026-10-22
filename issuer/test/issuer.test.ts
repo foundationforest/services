@@ -237,8 +237,8 @@ test('one name and birth date, one note number: refused for another, signed agai
     const again = await idNote(h, await h.idSession(passedId('ada', same)), n1)
     assert.equal(again.status, 200, JSON.stringify(again.body))
     assert.equal(again.body.note.noteNumber, n1.toString())
-    // The first session, sent again with its note number: the same note.
-    assert.equal((await idNote(h, first, n1)).status, 200)
+    // The first session, sent again: deleted in Didit once its note was signed, so used.
+    assert.deepEqual(await idNote(h, first, n1), { status: 409, body: { error: 'session_used' } })
     // Ada Lovelace born another day is someone else.
     assert.equal((await idNote(h, await h.idSession(passedId('ada2', doc('Lovelace', { birth: '1815-12-10' }))), n2)).status, 200)
   } finally {
@@ -246,16 +246,17 @@ test('one name and birth date, one note number: refused for another, signed agai
   }
 })
 
-test('a session gives notes to one note number: sent with another, refused, on either check', async () => {
+test('a session gives one note: sent again, refused, on either check', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await noteNumber(), await noteNumber()]
     const { sessionId } = await face(h, 'alice', n1)
-    assert.equal((await faceNote(h, sessionId, n1)).status, 200, 'the same note number gives the note again: a lost answer')
-    assert.deepEqual(await faceNote(h, sessionId, n2), { status: 409, body: { error: 'session_used' } })
+    assert.deepEqual(await faceNote(h, sessionId, n2), { status: 409, body: { error: 'session_used' } }, 'for another note number')
+    assert.deepEqual(await faceNote(h, sessionId, n1), { status: 409, body: { error: 'session_used' } }, 'and for its own: Didit deleted it once its note was signed')
     const id = await h.idSession(passedId('bob', doc('Byron')))
     assert.equal((await idNote(h, id, n1)).status, 200)
     assert.deepEqual(await idNote(h, id, n2), { status: 409, body: { error: 'session_used' } })
+    assert.deepEqual(await idNote(h, id, n1), { status: 409, body: { error: 'session_used' } })
   } finally {
     await h.issuer.close()
   }
@@ -290,6 +291,49 @@ test('In Review is waiting: 202, nothing kept, and once a person approves it in 
 
     const id = await h.idSession(passedId('ida', doc('Pfeiffer'), { status: 'IN_REVIEW' }))
     assert.deepEqual(await idNote(h, id, n), { status: 202, body: { waiting: 'review' } }, 'the ID check too')
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('once its note is signed, a session is deleted in Didit, keeping its face template; never one In Review or refused', async () => {
+  const h = await start()
+  try {
+    const n = await noteNumber()
+    const held = await h.session(passed('known', { status: 'In Review', liveness: [{ status: 'In Review' }] }))
+    assert.equal((await faceNote(h, held, n)).status, 202)
+    const declined = await h.session(passed('gone', { status: 'Declined' }))
+    assert.equal((await faceNote(h, declined, n)).status, 403)
+    const idHeld = await h.idSession(passedId('ida', doc('Pfeiffer'), { status: 'In Review' }))
+    assert.equal((await idNote(h, idHeld, n)).status, 202)
+    assert.deepEqual([h.faces.deleted, h.ids.deleted], [[], []], 'a session In Review, or refused, is never deleted')
+
+    h.faces.set(held, passed('known'))
+    assert.equal((await faceNote(h, held, n)).status, 200)
+    assert.deepEqual(h.faces.deleted, [held], 'deleted once its note is signed')
+    h.ids.set(idHeld, passedId('ida', doc('Pfeiffer')))
+    assert.equal((await idNote(h, idHeld, n)).status, 200)
+    assert.deepEqual(h.ids.deleted, [idHeld])
+    assert.deepEqual(h.logs, [], 'Didit kept each face template: nothing to say')
+
+    // Didit not answering the deletion: the note goes out, the session stays, and sent again with its
+    // note number, it gives the same note and is deleted then.
+    const m = await noteNumber()
+    h.faces.deleteDown = true
+    const kept = await h.session(passed('lena'))
+    const first = await faceNote(h, kept, m)
+    assert.equal(first.status, 200)
+    assert.deepEqual(h.logs, ['issuer: a session whose note is signed could not be deleted in Didit (Error)'], 'logged, without the session')
+    h.faces.deleteDown = false
+    const again = await faceNote(h, kept, m)
+    assert.deepEqual([again.status, again.body.note], [200, first.body.note], 'the same note')
+    assert.deepEqual(h.faces.deleted.at(-1), kept)
+    assert.deepEqual(await faceNote(h, kept, m), { status: 409, body: { error: 'session_used' } })
+
+    // Didit deleting a session without keeping its face template: logged, by Didit's outcome only.
+    h.faces.outcome = 'deleted'
+    assert.equal((await faceNote(h, await h.session(passed('mo')), await noteNumber())).status, 200)
+    assert.equal(h.logs.at(-1), 'issuer: Didit kept no face template for a deleted session (deleted)')
   } finally {
     await h.issuer.close()
   }
@@ -463,6 +507,17 @@ test('the ID check opens once a payment naming its reference has landed, and eac
     h.ids.set(opened.body.sessionId, passedId('alice'))
     assert.equal((await idNote(h, opened.body.sessionId, await noteNumber())).status, 200)
 
+    // A payment whose session gave its note, and was deleted with it, is used: asked again, no new session.
+    const fifth = (await h.post('/id/session')).body.payment
+    h.payments.paid.set(fifth.reference, [randomSignature()])
+    const its = await h.post('/id/session', { payment: fifth.id })
+    h.ids.set(its.body.sessionId, passedId('fay', doc('Fairfax')))
+    assert.equal((await idNote(h, its.body.sessionId, await noteNumber())).status, 200)
+    assert.ok(h.ids.deleted.includes(its.body.sessionId))
+    const before = h.ids.created
+    assert.deepEqual(await h.post('/id/session', { payment: fifth.id }), { status: 409, body: { error: 'payment_used' } })
+    assert.equal(h.ids.created, before, 'and no session opened')
+
     for (const [body, status, error] of [
       [{ payment: 'ABC' }, 400, 'bad_payment'],
       [{ payment: payment.id, more: 'x' }, 400, 'expected_exactly_payment'],
@@ -559,26 +614,37 @@ test('the welcome gift: at a note number’s first face note, a sponsor’s tick
     assert.equal((await finish(mine.pending, answered.body as Uint8Array)).length, 5)
     assert.deepEqual(host.seller.bill(), { [sponsor]: 5 }, 'the host bills the sponsor')
 
-    // Once a note number: the same buy again, the same ticket; another buy, none.
-    const again = await note(sessionId, n, mine.reference)
+    // Once a note number: the same buy again, from a new check for the same note number, the same
+    // ticket; another buy, none.
+    const second = await h.session(passed('alice'))
+    const again = await note(second, n, mine.reference)
     assert.deepEqual([again.status, again.body.gift], [200, first.body.gift], 'a retry: the same ticket')
-    assert.deepEqual((await note(sessionId, n, (await buy(host.service, 5)).reference)).body.gift, { error: 'given' })
+    assert.deepEqual((await note(await h.session(passed('alice')), n, (await buy(host.service, 5)).reference)).body.gift, { error: 'given' })
 
-    // Anything but a buy's reference; a buy of more credits than the gift gives is not paid.
+    // Anything but a buy's reference; a buy of more credits than the gift gives is not paid. Each
+    // request is a new check of bob's, since a session gives one note.
     const m = await noteNumber()
-    const bob = await h.session(passed('bob'))
-    assert.deepEqual((await note(bob, m, 'nope')).body.gift, { error: 'bad_gift' })
-    assert.deepEqual((await note(bob, m, { host: mine.reference })).body.gift, { error: 'bad_gift' })
+    const bob = async (gift?: unknown) => {
+      const session = await h.session(passed('bob'))
+      const res = await h.post('/face/note', { sessionId: session, noteNumber: m.toString(), ...(gift !== undefined && { gift }) })
+      assert.equal(res.status, 200)
+      return res.body
+    }
+    assert.deepEqual((await bob('nope')).gift, { error: 'bad_gift' })
+    assert.deepEqual((await bob({ host: mine.reference })).gift, { error: 'bad_gift' })
     const six = await buy(host.service, 6)
-    const tickets = (await note(bob, m, six.reference)).body.gift
+    const tickets = (await bob(six.reference)).gift
     assert.equal((await host.seller.collect(six.buy, `ticket ${tickets.ticket}`)).status, 402, 'a buy of more credits than the ticket gives is not paid')
 
     // The note is never held back by the gift; none asked, none answered; the ID check gives none.
-    assert.equal((await h.post('/face/note', { sessionId: bob, noteNumber: m.toString() })).body.gift, undefined)
+    assert.equal((await bob()).gift, undefined)
     const id = await h.idSession(passedId('bob', doc('Byron')))
     assert.deepEqual(await h.post('/id/note', { sessionId: id, noteNumber: m.toString(), gift: six.reference }), { status: 400, body: { error: 'expected_exactly_sessionId_and_noteNumber' } })
     await h.issuer.close()
-    assertKept(h.dbPath, { sessions: [[sessionId, n, 'face'], [bob, m, 'face']], fingerprints: [], gifts: [n, m], never: [mine.reference, six.reference, ticket] })
+    // Every face session that gave a note was deleted in Didit: three of alice's, for n, then four of bob's, for m.
+    assert.equal(h.faces.deleted.length, 7)
+    const sessions = h.faces.deleted.map((s, i) => [s, i < 3 ? n : m, 'face'] as [string, bigint, 'face'])
+    assertKept(h.dbPath, { sessions, fingerprints: [], gifts: [n, m], never: [mine.reference, six.reference, ticket] })
   } finally {
     await h.issuer.close().catch(() => {})
   }
@@ -740,6 +806,7 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
   })
   // Each payment counts as landed, under its own reference: the stand-in has no chain.
   const payments = { landed: async (reference: string) => [reference] }
+  const didit = new DiditClient({ apiKey: 'fake-didit', workflowId: FACE_WORKFLOW, check: 'face', baseUrl })
   const issuer = await startIssuer(config, { payments, log: () => {} })
   const reviewed = await startIssuer(
     { ...config, databasePath: join(tempDir(), 'issuer.sqlite') },
@@ -758,6 +825,8 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
       assert.equal(faceNote.body.note.model, 'stand-in')
       assert.equal(faceNote.body.note.issuer, issuer.keys.face)
       assert.ok(noteSigned(noteFromJson(faceNote.body.note)))
+      assert.equal(await didit.decision(face.body.sessionId), null, 'deleted in Didit once its note was signed')
+      assert.deepEqual(await post(issuer, '/face/note', { sessionId: face.body.sessionId, noteNumber: n.toString() }), { status: 409, body: { error: 'session_used' } })
       const { payment } = (await post(issuer, '/id/session')).body
       const id = await post(issuer, '/id/session', { payment: payment.id })
       assert.equal(id.status, 201, JSON.stringify(id.body))
@@ -767,9 +836,11 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
       assert.deepEqual([idNote.body.note.birth, idNote.body.note.country], ['1990-01-01', 826])
       assert.ok(noteSigned(noteFromJson(idNote.body.note)))
     }
-    // A session opened with a review scenario: Didit holds it In Review, and the issuer says it is waiting.
+    // A session opened with a review scenario: Didit holds it In Review, the issuer says it is waiting,
+    // and the session stays in Didit.
     const held = await post(reviewed, '/face/session')
     assert.deepEqual(await post(reviewed, '/face/note', { sessionId: held.body.sessionId, noteNumber: (await noteNumber()).toString() }), { status: 202, body: { waiting: 'review' } })
+    assert.equal((await didit.decision(held.body.sessionId))?.status, 'In Review')
   } finally {
     await issuer.close()
     await reviewed.close()

@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 
-import { DiditClient, DiditUnavailable, judge, parseDecision } from '../src/didit.ts'
+import { DiditClient, DiditUnavailable, FACE_RETENTION_DAYS, judge, parseDecision } from '../src/didit.ts'
 
 const KEY = 'test-api-key'
 const WORKFLOW = '550e8400-e29b-41d4-a716-446655440000'
@@ -191,6 +191,24 @@ test('a photo is fetched from its signed address without the API key, and only f
   await assert.rejects(client().photo(`${base}/photo/abc`), DiditUnavailable)
   for (const url of ['http://example.com/face.jpg', 'ftp://example.com/face.jpg', 'not a url']) {
     await assert.rejects(client().photo(url), DiditUnavailable, url)
+  }
+})
+
+test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to keep its face template for 3650 days', async () => {
+  seen.length = 0
+  reply = () => [200, { session_id: SESSION, session_number: 1024, face_retention_outcome: 'retained_with_user', biometric_template_uuid: '9d2f4b6e-1c3a-4e8f-b7d5-0a1c2e3f4a5b', biometric_template_expires_at: '2036-10-20T00:00:00Z', deleted_child_verifications: 0 }]
+  assert.equal(await client().deleteSession(SESSION), 'retained_with_user')
+  assert.deepEqual([seen[0]!.method, seen[0]!.url, seen[0]!.key], ['DELETE', `/v3/session/${SESSION}/delete/`, KEY])
+  assert.deepEqual(JSON.parse(seen[0]!.body), { retain_face_embeddings: true, face_retention_days: 3650 })
+  assert.equal(FACE_RETENTION_DAYS, 3650, 'the longest Didit allows')
+
+  reply = () => [200, { session_id: SESSION, face_retention_outcome: 'deleted' }]
+  assert.equal(await client('id').deleteSession(SESSION), 'deleted', 'what Didit did, as it says it')
+  reply = () => [404, { detail: 'Not found.' }]
+  assert.equal(await client().deleteSession(SESSION), 'gone', 'a session already deleted')
+  for (const answer of [[503, { detail: 'The session could not be deleted because a storage service is unavailable.' }], [403, {}]] as [number, unknown][]) {
+    reply = () => answer
+    await assert.rejects(client().deleteSession(SESSION), (error: Error) => error instanceof DiditUnavailable && !error.message.includes(SESSION))
   }
 })
 

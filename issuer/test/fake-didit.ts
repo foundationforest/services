@@ -15,6 +15,10 @@
 //                                       workflow, one document step and one face match of that status
 //                                       too, the document read as a name made up for that session, a
 //                                       fixed birth date and GBR. A session it never opened is a 404.
+//   DELETE /v3/session/{id}/delete/     deletes the session: its decision, its photo and its listing are
+//                                       gone; 200 {session_id, face_retention_outcome}, `retained_with_user`
+//                                       when the body asks to retain the face (`retain_face_embeddings`),
+//                                       else `deleted`; 404 for a session it does not have
 //   GET  /photo/{id}                    the selfie: a few bytes that are no photo. The issuer runs with
 //                                       FACE_MODEL=stand-in beside it, one embedding for everyone, so
 //                                       nothing reads them as a face.
@@ -35,6 +39,7 @@ const idWorkflow = process.env.FAKE_DIDIT_ID_WORKFLOW_ID || 'bfbdb912-d2f5-41d8-
 /** Each session it opened, oldest first: its workflow, its vendor_data, its status, and for an ID session the name it makes up. */
 const opened = new Map<string, { workflow: string; vendorData: string; status: string; lastName?: string }>()
 const decision = /^\/v3\/session\/([0-9a-f-]{36})\/decision\/$/
+const deletion = /^\/v3\/session\/([0-9a-f-]{36})\/delete\/$/
 const photo = /^\/photo\/([0-9a-f-]{36})$/
 
 /** The status a sandbox scenario comes to. */
@@ -59,6 +64,16 @@ const server = createServer((req, res) => {
       const session = { workflow, vendorData: String(body.vendor_data ?? ''), status: statusOf(String(body.sandbox_scenario ?? '')) }
       opened.set(id, workflow === idWorkflow ? { ...session, lastName: `Standin ${randomBytes(6).toString('hex')}` } : session)
       return send(201, { session_id: id, url: `https://fake-didit.invalid/session/${id}`, status: 'Not Started', workflow_id: workflow })
+    }
+    const deleted = req.method === 'DELETE' ? deletion.exec(req.url ?? '') : null
+    if (deleted) {
+      if (!opened.delete(deleted[1]!)) return send(404, { detail: 'Not found.' })
+      let body: { retain_face_embeddings?: unknown } = {}
+      try {
+        body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      } catch {}
+      const outcome = body.retain_face_embeddings === true ? 'retained_with_user' : 'deleted'
+      return send(200, { session_id: deleted[1], session_number: 0, face_retention_outcome: outcome, deleted_child_verifications: 0 })
     }
     const url = new URL(req.url ?? '/', 'http://x')
     if (req.method === 'GET' && url.pathname === '/v3/sessions/') {

@@ -21,8 +21,12 @@
 // 404 `not_offered` for the ID check when it has no price, 409 a session or payment already used for
 // another note number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
 // share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
-// nothing up: the same session can be sent again; sent again with the same note number once it has
-// given a note, it gives the note again.
+// nothing up: the same session can be sent again.
+//
+// A session gives one note. Once the note is signed the issuer deletes the session in Didit, keeping
+// only its face template (didit.ts), and then answers; sent again, the session is refused,
+// `session_used`. If Didit did not answer the deletion, the session is still there: sent again with
+// its note number, it gives the same note, and the deletion is tried again.
 //
 // No request is logged. The client's address is read for one thing only, counting the sessions it
 // opens against the limit (`limit.ts`), and is never written anywhere.
@@ -194,6 +198,8 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       throw new HttpError(502, 'face_check_unavailable')
     }
     const refusal = judge(decision, c.workflowId, c.kind)
+    // A session that gave a note and is gone from Didit was deleted once its note was signed.
+    if (refusal === 'unknown_session' && store.holds(sessionId)) throw new HttpError(409, 'session_used')
     if (refusal === 'in_review') throw new Waiting()
     if (refusal) throw new HttpError(403, refusal)
     return decision!
@@ -214,6 +220,20 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       if (error instanceof FaceError) throw new HttpError(403, 'no_face')
       throw error
     }
+  }
+
+  /**
+   * Deletes a session whose note is signed, keeping its face template. The note is answered either
+   * way: a session Didit did not delete is deleted when it is sent again. Logged without the session.
+   */
+  async function forget(c: CheckDeps, sessionId: string): Promise<void> {
+    let outcome: string
+    try {
+      outcome = await c.check.deleteSession(sessionId)
+    } catch (error) {
+      return log(`issuer: a session whose note is signed could not be deleted in Didit (${errorKind(error)})`)
+    }
+    if (outcome !== 'retained_with_user' && outcome !== 'gone') log(`issuer: Didit kept no face template for a deleted session (${outcome || 'no outcome'})`)
   }
 
   /** The store's answer, as the refusal it is. */
@@ -252,6 +272,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     const model = embedder.model
     const answer = signed(deps.noteKeys.face, { noteNumber, attributes: faceAttributes(model, embedded), model, embedding: b64u.encode(embedded) })
     if (asked) answer.gift = giveGift(noteNumber, reference)
+    await forget(face, sessionId)
     return [200, answer]
   }
 
@@ -273,7 +294,9 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     kept(store.remember({ sessionId, noteNumber, kind: 'id', fingerprint: print }))
     const model = embedder.model
     const attributes = idAttributes(model, embedded, who)
-    return [200, signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
+    const answer = signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
+    await forget(id, sessionId)
+    return [200, answer]
   }
 
   /**
@@ -282,7 +305,8 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
    * once a payment naming that reference has landed; until then it answers 402 `not_paid`, and the
    * app asks again. A payment is never given back. Each session a payment id opens carries its tag in
    * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
-   * found, or opened, on the next ask.
+   * found, or opened, on the next ask. A payment whose session Didit answered it opened, and no longer
+   * lists, gave its note and was deleted with it: it is used.
    */
   async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
     if (!payment) throw new HttpError(404, 'not_offered')
@@ -320,10 +344,12 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     // What Didit knows the payment by: never the id itself, which claims it.
     const tag = createHash('sha256').update(`payment/${paymentId}`).digest('hex')
     const unused = landed.find((signature) => store.paymentFor(signature) === undefined)
+    let paid = unused
     if (!unused) {
       // Every payment naming the reference is used: for this payment id, its session is found again,
-      // or, if Didit never answered when it was opened, opened now; for another, refused.
-      if (!landed.some((signature) => store.paymentFor(signature) === reference)) throw new HttpError(409, 'payment_used')
+      // or, for a payment whose opening Didit never answered, opened now; for another, refused.
+      const mine = landed.filter((signature) => store.paymentFor(signature) === reference)
+      if (mine.length === 0) throw new HttpError(409, 'payment_used')
       let found
       try {
         found = await id.check.tagged(tag)
@@ -331,16 +357,21 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
         throw new HttpError(502, 'face_check_unavailable')
       }
       if (found) return [201, found]
+      paid = mine.find((signature) => !store.opened(signature))
+      if (!paid) throw new HttpError(409, 'payment_used')
     }
     if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
     // Marked in one statement: another payment id naming this transaction may have got here first.
     if (unused && !store.usePayment(unused, reference)) throw new HttpError(409, 'payment_used')
+    let session
     try {
-      return [201, await id.check.createSession({ tag })]
+      session = await id.check.createSession({ tag })
     } catch {
       // Opened or not, the payment stays used: the next ask finds the session by its tag, or opens it.
       throw new HttpError(502, 'face_check_unavailable')
     }
+    store.markOpened(paid!)
+    return [201, session]
   }
 
   const routes: Record<string, Route> = {

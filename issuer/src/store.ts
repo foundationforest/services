@@ -1,13 +1,14 @@
 // The issuer's one file, four tables:
 //
 //   sessions       for each check session that gave a note: the SHA-256 of its id, the note number it
-//                  was signed for, and which check it was (`face` or `id`), so a session gives notes to
-//                  one note number only
+//                  was signed for, and which check it was (`face` or `id`), so a session gives its note
+//                  to one note number only, and once Didit has deleted it, is known as used
 //   fingerprints   for each person the ID check signed: their fingerprint (notes.ts), and the note
 //                  number it was signed for, so a person seen again is signed again only for that one
 //   id_payments    the transaction signature of each payment that opened an ID check, with the
-//                  reference it named (public in that transaction), so one payment opens one, for its
-//                  own payment id only
+//                  reference it named (public in that transaction) and whether Didit answered that it
+//                  opened the session, so one payment opens one, for its own payment id only, and a
+//                  session deleted once its note was signed is not opened again
 //   gifts          each note number given its welcome gift (gift.ts), with a hash of the buy it was
 //                  given for, so a person gets one, and the same buy asked again gets the same ticket
 //
@@ -40,6 +41,7 @@ export class Store {
   readonly #addFingerprint: StatementSync
   readonly #pay: StatementSync
   readonly #paidFor: StatementSync
+  readonly #open: StatementSync
   readonly #give: StatementSync
   readonly #given: StatementSync
 
@@ -52,7 +54,7 @@ export class Store {
       PRAGMA journal_mode = DELETE;
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
     `)
     this.#session = this.#db.prepare('SELECT note_number FROM sessions WHERE hash = ?')
@@ -60,9 +62,15 @@ export class Store {
     this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, note_number, kind) VALUES (?, ?, ?)')
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, note_number) VALUES (?, ?)')
     this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature, reference) VALUES (?, ?)')
-    this.#paidFor = this.#db.prepare('SELECT reference FROM id_payments WHERE signature = ?')
+    this.#paidFor = this.#db.prepare('SELECT reference, opened FROM id_payments WHERE signature = ?')
+    this.#open = this.#db.prepare('UPDATE id_payments SET opened = 1 WHERE signature = ?')
     this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number, buy) VALUES (?, ?)')
     this.#given = this.#db.prepare('SELECT buy FROM gifts WHERE note_number = ?')
+  }
+
+  /** Whether this session gave a note. */
+  holds(sessionId: string): boolean {
+    return this.#session.get(sessionHash(sessionId)) !== undefined
   }
 
   /**
@@ -108,6 +116,16 @@ export class Store {
   usePayment(signature: string, reference: string): boolean {
     this.#pay.run(base58.decode(signature), reference)
     return this.paymentFor(signature) === reference
+  }
+
+  /** Whether Didit answered that it opened this payment's session. */
+  opened(signature: string): boolean {
+    return this.#paidFor.get(base58.decode(signature))?.opened === 1
+  }
+
+  /** Marks that Didit answered that it opened this payment's session. */
+  markOpened(signature: string): void {
+    this.#open.run(base58.decode(signature))
   }
 
   /** Marks this note number's gift given for this buy: `given` the first time, `again` for the same buy, `other` for another. */

@@ -1,8 +1,9 @@
 // The two checks: Didit's API, and what the issuer requires of what it says.
 //
 // Didit runs each check on its own page and holds the face, and for the ID check the document. The
-// issuer asks it three things: to open a session on a check's workflow, later what that session
-// decided, and the selfie the session took, to compute the face's embedding (face.ts). From a
+// issuer asks it four things: to open a session on a check's workflow, later what that session
+// decided, the selfie the session took, to compute the face's embedding (face.ts), and, once the
+// session's note is signed, to delete it. From a
 // decision it reads the session's workflow, its status, the status of each step (liveness; for the ID
 // check also the document and the face match), the selfie's address, and, from the document step, the
 // name, the birth date and the document's country. Everything else Didit returns is dropped the
@@ -12,10 +13,18 @@
 // seen and sends a known one to review, where a person at the foundation decides in Didit's console.
 // While a session is In Review the issuer answers that it is waiting, and the app asks again.
 //
+// Once a session's note is signed, the issuer deletes it (`deleteSession`), so Didit no longer holds
+// its selfie, its liveness video, its document's images, what it read or its decision. Each deletion
+// asks Didit to keep one image-free face template, anchored to the session's own `vendor_data`, for
+// FACE_RETENTION_DAYS: its face search goes on seeing the face, so a face that comes back still goes
+// to review. Didit drops the template with the session unless asked, and gives every kept template
+// an end. Only a session whose note is signed is deleted, so never one In Review.
+//
 // Didit's API as read in October 2026 (docs.didit.me: creating and retrieving a session, and the
 // liveness and document reports): version 3, `x-api-key` header, `POST /v3/session/`
-// (with `callback`, the page Didit sends the person to when the check is done) and
-// `GET /v3/session/{id}/decision/`. A liveness step's `reference_image` is a signed URL to the
+// (with `callback`, the page Didit sends the person to when the check is done),
+// `GET /v3/session/{id}/decision/` and `DELETE /v3/session/{id}/delete/` (200 with
+// `face_retention_outcome`, 404 for a session already gone). A liveness step's `reference_image` is a signed URL to the
 // selfie, valid for hours. A document step reads `first_name`, `last_name`, `full_name`,
 // `date_of_birth` (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3).
 //
@@ -60,7 +69,16 @@ export interface FaceCheck {
   decision(sessionId: string): Promise<Decision | null>
   /** The bytes of a photo a decision named (`faceImage`). Throws if they can't be had. */
   photo(url: string): Promise<Uint8Array>
+  /**
+   * Delete the session, keeping its face template: what Didit did with the face
+   * (`retained_with_user` when it kept the template), or `gone` for a session Didit no longer has.
+   * Throws if Didit can't answer, and the session is then still there.
+   */
+  deleteSession(sessionId: string): Promise<string>
 }
+
+/** How many days Didit keeps a deleted session's face template: 3650, the longest it allows. */
+export const FACE_RETENTION_DAYS = 3650
 
 export type Refusal =
   | 'unknown_session'
@@ -212,6 +230,19 @@ export class DiditClient implements FaceCheck {
     if (!first) return null
     if (typeof first.session_id !== 'string' || typeof first.session_url !== 'string') throw new DiditUnavailable('Didit listed a session without an id or a page')
     return { sessionId: first.session_id, url: first.session_url }
+  }
+
+  /** Keeps the face template on every deletion, whatever the application's own setting says. */
+  async deleteSession(sessionId: string): Promise<string> {
+    const res = await this.#fetch(`/v3/session/${encodeURIComponent(sessionId)}/delete/`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ retain_face_embeddings: true, face_retention_days: FACE_RETENTION_DAYS }),
+    })
+    if (res.status === 404) return 'gone'
+    if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a deletion`)
+    const outcome = ((await body(res)) as { face_retention_outcome?: unknown } | null)?.face_retention_outcome
+    return typeof outcome === 'string' ? outcome : ''
   }
 
   async decision(sessionId: string): Promise<Decision | null> {
