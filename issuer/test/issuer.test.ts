@@ -622,9 +622,10 @@ test("the ID check's price is never paid to the issuer's own sponsor key", async
 /** The host's own seller, taking the issuer's sponsor key. */
 async function hostSeller(sponsor: string) {
   const pkcs8 = new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
-  const credit = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', price: '0.01' }
+  // Tickets buy here; the RPC a Solana payment would be checked through is never asked.
+  const payment = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', rpc: async () => Promise.reject(new Error('no chain here')) }
   const origin = 'https://host.example'
-  const seller = hostCredits.seller({ origin, key: await hostCredits.keyFrom(pkcs8), requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
+  const seller = hostCredits.seller({ origin, key: await hostCredits.keyFrom(pkcs8), requestUri: '/credits/buy', price: '0.01', payment, maxBuy: 1000, sponsors: [sponsor], path: ':memory:' })
   return { seller, service: serviceOf(origin, seller.directory()) }
 }
 
