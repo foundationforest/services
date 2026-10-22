@@ -1,5 +1,5 @@
 {
-  "about": "The mints this index takes as money, each with its currency code and how many decimals its base units have. A receipt or a payment counts as evidence only in one of these, and the pages show its amount with them. The fee payer's four dollars, and two test dollars whose maker mints them at will. This is this index's opinion: another index takes other mints.",
+  "about": "The mints this index takes as money, each with its currency code and how many decimals its base units have. A receipt or a payment counts as evidence only in one of these, and the pages show its amount with them. The fee payer's four dollars, and two test dollars: the classic one, which its maker, a key from the phrase that funds the loop, mints at will; and the one shaped like Open USD, which no one can mint any more, since its maker's key came from a phrase that is lost. This is this index's opinion: another index takes other mints.",
   "mints": {
     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": { "name": "USDC", "code": "USD", "decimals": 6 },
     "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB": { "name": "USDT", "code": "USD", "decimals": 6 },
