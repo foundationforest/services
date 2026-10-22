@@ -2,7 +2,7 @@
   "name": "@forest/host",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's host: the standard's records' reference host, unchanged, run with this service's choices: a file per folder, blobs on disk or in a bucket, every write paid in credits it sells (one cent each; a write 0.01 of one, plus 0.001 a kilobyte) from a folder's balance, a registry lookup for inboxes that take messages from one issuer's rows, and senders' records read, from public addresses only, to take a message key's messages.",
+  "description": "The Forest Foundation's host: the standard's reference host, unchanged, run with this service's choices, and credits: it sells them blind, and every write is paid from its folder's balance.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,15 +10,17 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/host.test.ts test/credits.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/credits.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",
-    "@scure/base": "2.4.0",
-    "@solana/web3.js": "1.99.0"
+    "@foundationforest/note": "file:../standard/proofs/note/client",
+    "@foundationforest/records": "file:../standard/records",
+    "@scure/base": "2.4.0"
   },
   "devDependencies": {
+    "@foundationforest/keys": "file:../standard/keys",
     "@types/node": "22.20.2",
     "typescript": "5.9.3"
   }

@@ -9,8 +9,8 @@
 #                standard's example card's)
 #   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
 #                its Dockerfile makes with deploy/devnet-config.sh
-#   host         the foundation's host: its type-check and its tests, its credits bought with the
-#                credits client in e2e/credits/
+#   host         the foundation's host: its type-check and its credits' tests, through the standard's
+#                reference host (standard.sh installs and builds the whole standard)
 #   e2e          the devnet run's type-check, with mcp's actions it runs and the index's signing key
 #                it reads, and the credits client's tests against a stand-in service made of
 #                Cloudflare's own issuer
@@ -125,8 +125,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client
-          (cd e2e && npm ci --no-audit --no-fund)
+          ./standard.sh
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
