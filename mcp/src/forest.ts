@@ -193,13 +193,24 @@ function landed(outcomes: PublishOutcome[]) {
 // ---------------------------------------------------------------------------------------------
 // Messages
 
+/** A copy, in the profile's own inbox, of a message it sent to `to`: `{ sent, to }`. */
+const copyOf = (body: Body, to: string): Body => ({ sent: body, to })
+
+/** Whom a copy's message went to, when `body` is one: `sent`, an object, and `to`, an address, and nothing else. */
+function sentTo(body: Body): string | null {
+  const { sent, to, ...rest } = body
+  return isObject(sent) && typeof to === 'string' && publicKeyFromAddress(to) && !Object.keys(rest).length ? to : null
+}
+
 /**
  * A message to `to`'s inbox, or the profile's own when `to` is null: the body `bodyFor` gives,
  * sealed by the records library to the inbox key and the readers `to`'s profile record names,
  * and signed by the write key for the profile, naming its first host, where a receiving host
- * checks the key. The write key must be listed for the inbox.
+ * checks the key. The write key must be listed for the inbox. With `copy`, the same body then
+ * goes to the profile's own inbox too, marked as sent, so the person sees what was said in their
+ * name.
  */
-export async function deliverAs(args: Args, ctx: Context, recipient: string | null, bodyFor: (mine: View) => Promise<Body>) {
+export async function deliverAs(args: Args, ctx: Context, recipient: string | null, bodyFor: (mine: View) => Promise<Body>, copy = false) {
   const key = writer(args)
   const address = acting(args)
   const mine = await folder(ctx, address)
@@ -208,9 +219,12 @@ export async function deliverAs(args: Args, ctx: Context, recipient: string | nu
   const body = await bodyFor(mine)
   const to = recipient ?? address
   const theirs = to === address ? mine : await folder(ctx, to)
+  const sender = { key, from: address, host }
+  const time = Date.now()
+  const how = reach(ctx.hosts)
   const signed = await signing(async () => {
     try {
-      return await message({ key, from: address, host }, to, body, Date.now(), profileOf(theirs) ?? {})
+      return await message(sender, to, body, time, profileOf(theirs) ?? {})
     } catch (err) {
       if (err instanceof RecordError && err.code === 'no_inbox') {
         refuse(to === address ? `${address} declares no inbox, so nothing reaches the person this way` : `${to} declares no inbox this tool can read; nothing can be sent there`)
@@ -218,16 +232,27 @@ export async function deliverAs(args: Args, ctx: Context, recipient: string | nu
       throw err
     }
   })
-  return { from: address, to, id: messageId(unsignedMessageOf(signed)), ...landed(await deliver(theirs.hosts, [signed], reach(ctx.hosts))) }
+  const sent = { from: address, to, id: messageId(unsignedMessageOf(signed)), ...landed(await deliver(theirs.hosts, [signed], how)) }
+  if (!copy || to === address) return sent
+  // The message is already sent, so a copy that does not land is said, not refused: a refusal
+  // would have it sent again. A message to its own inbox skips its senders, once and maxBytes.
+  try {
+    const own = await message(sender, address, copyOf(body, to), time, profileOf(mine) ?? {})
+    return { ...sent, copy: { id: messageId(unsignedMessageOf(own)), ...landed(await deliver(mine.hosts, [own], how)) } }
+  } catch (err) {
+    const why = err instanceof RecordError && err.code === 'no_inbox' ? `${address} declares no inbox, so the person gets no copy` : (err as Error).message
+    return { ...sent, copy: { unsent: why } }
+  }
 }
 
-export type Pulled = { id: string; from: string; time: number; key?: string; request?: string; body?: Body; unopened?: true }
+export type Pulled = { id: string; from: string; time: number; key?: string; sent?: string; request?: string; body?: Body; unopened?: true }
 
 /**
  * The messages to the profile, pulled from each of its hosts with the read key, each page in turn,
  * a message on two hosts shown once, each opened with the read key's identity when it is sealed to
  * it. A message the profile sent itself, by its main key or a write key its permissions record
- * lists, is marked as the request `requestOf` names, if any. `after` holds the cursors a pull
+ * lists, shows as sent when it is a copy (`sent`, whom it went to, and `body`, what it said), or
+ * is marked as the request `requestOf` names, if any. `after` holds the cursors a pull
  * returned, by host. It stops after MAX_PAGES pages in all; the cursors say where to pull again.
  */
 export async function pullAs(args: Args, ctx: Context, after: { [host: string]: number }, requestOf: (body: Body) => string | null) {
@@ -250,8 +275,11 @@ export async function pullAs(args: Args, ctx: Context, after: { [host: string]: 
         for (const { message: m, id } of page.messages) {
           if (found.has(id)) continue
           const body = (await openMessage(m, key.identity).catch(() => undefined))?.body
-          const asked = body && itself(m) ? requestOf(body) : null
-          found.set(id, { id, from: m.from, time: m.time, ...(m.key !== undefined && { key: m.key }), ...(asked && { request: asked }), ...(body ? { body } : { unopened: true as const }) })
+          const own = body !== undefined && itself(m)
+          const to = own ? sentTo(body) : null
+          const asked = own && !to ? requestOf(body) : null
+          const shown = to ? { sent: to, body: body!.sent as Body } : asked ? { request: asked, body: body! } : body ? { body } : { unopened: true as const }
+          found.set(id, { id, from: m.from, time: m.time, ...(m.key !== undefined && { key: m.key }), ...shown })
         }
         cursors[host] = page.cursor
         if (page.cursor === cursor) break

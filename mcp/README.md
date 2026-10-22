@@ -45,8 +45,8 @@ Both doors read one list: every file in `src/tools/`, each exporting its name, i
 | `profile <address>` | none | The profile record, its posts and the reviews it wrote, read from its hosts, each with its full address; and the index's checks (which issuers' notes it shows) and rating for it. The profile record's inbox key and its inbox's readers, long public keys `send` finds itself, are left out |
 | `post <post\|update\|remove> [<id>]` | write | A post at `offer/<id>` in the profile's folder, on each of its hosts; a fresh id, 16 hex digits, when none is given to post |
 | `review <post\|update\|remove> [<id>]` | write | A review at `review/<id>`, so a person can correct or withdraw one |
-| `send <to>` | write | A message to another profile's inbox: the body, any JSON object the two apps agree on, sealed to that profile's inbox key and its inbox's readers, and signed with the write key for the profile |
-| `inbox` | read | The messages to the profile, pulled from each of its hosts with the read key and opened with it; one not sealed to it shows who sent it and when, unopened. `after` takes the cursors a pull returned |
+| `send <to>` | write | A message to another profile's inbox: the body, any JSON object the two apps agree on, sealed to that profile's inbox key and its inbox's readers, and signed with the write key for the profile; then the same body in the profile's own inbox, marked as sent ([Copies](#copies)) |
+| `inbox` | read | The messages to the profile, pulled from each of its hosts with the read key and opened with it; one not sealed to it shows who sent it and when, unopened. A copy shows as sent; a request is marked with its kind. `after` takes the cursors a pull returned |
 | `ask <kind>` | write | A request in the profile's own inbox, for the person to act on ([Requests](#requests)) |
 
 Each description starts with the key it needs: `No key.`, `Write key.` or `Read key.`
@@ -98,6 +98,18 @@ A review's shared fields are checked by what the manual says they mean: `subject
 field the market keeps for reviews of some roles reads the subject's profile record for its role.
 A field the market marks `required` is not asked for here: the manual says an app asks for it, and
 nothing enforces it.
+
+### Copies
+
+`send` delivers the message, then sends the same body to the profile's own inbox as
+`{ "sent": <body>, "to": <address> }`, signed by the same write key, so the person sees what was
+said in their name. The shape is this tool's own, as the request kinds are. A copy that does not
+land is said in the answer, `copy: { unsent: <why> }`, and not refused: the message itself already
+went, and a refusal would have it sent again.
+
+`inbox` shows a copy as `sent`, whom it went to, with `body`, what it said, only when the profile
+sent it to itself, by its main key or a write key its permissions record lists. Any other body of
+that shape, such as a stranger's, shows as a plain message.
 
 ### Requests
 
@@ -198,8 +210,9 @@ front that counts each request, and a stand-in index serving the four answers. I
 the nine tools, what they write read back with the records library; a write with a key not listed
 for its path refused with no record reaching the host; a post failing its market's fields refused
 naming the field; a review with a score out of range refused; `send` sealed so that only the
-recipient's inbox key opens it; `inbox` pulling with the read key and opening; and `ask` landing in
-the person's own inbox with its kind. `test/doors.test.ts` runs the typed door, the MCP door over
+recipient's inbox key opens it, and its copy in the person's own inbox, shown as sent, or said when
+it cannot land; `inbox` pulling with the read key and opening; and `ask` landing in the person's own
+inbox with its kind. `test/doors.test.ts` runs the typed door, the MCP door over
 stdio with keys from the start, and over HTTP with keys in the call. `test/smoke.test.ts` reads the
 command and working directory from `deploy/Dockerfile`, runs them here with `PORT=0`, and connects
 with the MCP SDK's own client (`smoke.ts`): `HOW` first, as the server's instructions, the mark as
@@ -309,7 +322,7 @@ profile's address, and the keys it made for it, as `writeKey` and `readKey`, the
   envelopes.
 - **The markets directory, at the commit in `MARKETS`:** each market's roles and fields.
 - **The foundation, in this directory:** the tools, what each says and which key it needs, the
-  request kinds and their fields; and, as it runs the hosted copy, the host and index it reads,
+  request kinds and their fields, and the copy's shape; and, as it runs the hosted copy, the host and index it reads,
   where it runs, and that it is free.
 - **Whoever runs a copy:** the hosts it starts from, the index it reads, and, for a copy run at
   home, the keys it starts with.

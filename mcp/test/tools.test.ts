@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import type { MainKey } from '@foundationforest/keys'
-import { deliver, pull, pullRequest, readProfile } from '@foundationforest/records'
+import { deliver, messageId, pull, pullRequest, readProfile, unsignedMessageOf } from '@foundationforest/records'
 import { message, openMessage } from '@foundationforest/records/private'
 import { Refusal } from '../src/forest.ts'
 import { checkArgs } from '../src/params.ts'
@@ -166,6 +166,29 @@ describe('messages', () => {
     for (const identity of [tutorInbox.identity, reader.identity]) await assert.rejects(openMessage(got.message, identity), 'no other key opens it')
   })
 
+  test('send leaves the same body in the profile’s own inbox, marked as sent, and inbox shows it so', async () => {
+    const body = { text: 'Thursday at six, then.' }
+    const sent = await run('send', { to: student.address, body, ...asTutor })
+    assert.deepEqual(sent.copy.hosts, [w.host])
+    const copy = (await pulled(tutor)).find((m) => m.id === sent.copy.id)!
+    assert.deepEqual([copy.message.from, copy.message.key], [tutor.address, writer.address])
+    assert.deepEqual((await openMessage(copy.message, tutorInbox.identity)).body, { sent: body, to: student.address }, 'opened by the owner’s inbox key')
+    const shown = (await run('inbox', reading)).messages.find((m: { id: string }) => m.id === sent.copy.id)
+    assert.deepEqual([shown.sent, shown.body, shown.request], [student.address, body, undefined])
+
+    // A stranger's body shaped like a copy is just a message.
+    await deliver([w.host], [await message(student, tutor.address, { sent: body, to: student.address }, Date.now(), (await live(tutor)).get('profile')!.record.body!)])
+    const strangers = (await run('inbox', reading)).messages.filter((m: { from: string }) => m.from === student.address)
+    assert.ok(strangers.some((m: { body?: { sent?: unknown } }) => m.body?.sent) && strangers.every((m: { sent?: string }) => m.sent === undefined))
+  })
+
+  test('a copy that cannot land is said, not refused: the message itself went', async () => {
+    const sent = await run('send', { to: student.address, body: { text: 'From a profile with no inbox.' }, profile: quiet.address, writeKey: KEYS.write })
+    assert.deepEqual(sent.hosts, [w.host])
+    assert.deepEqual(sent.copy, { unsent: `${quiet.address} declares no inbox, so the person gets no copy` })
+    assert.ok((await pulled(student)).some((m) => m.id === sent.id))
+  })
+
   test('send to a profile with no inbox, or with a key not listed for the inbox, is refused before delivering', async () => {
     const before = deliveries()
     await refused(run('send', { to: quiet.address, body: { text: 'Hello?' }, ...asTutor }), `${quiet.address} declares no inbox this tool can read; nothing can be sent there`)
@@ -177,8 +200,8 @@ describe('messages', () => {
     const asked = await message(student, tutor.address, { text: 'Can we start in June?' }, Date.now(), (await live(tutor)).get('profile')!.record.body!)
     await deliver([w.host], [asked])
     const out = await run('inbox', reading)
-    const got = out.messages.find((m: { from: string }) => m.from === student.address)
-    assert.deepEqual(got.body, { text: 'Can we start in June?' })
+    const got = out.messages.find((m: { id: string }) => m.id === messageId(unsignedMessageOf(asked)))
+    assert.deepEqual([got.from, got.body], [student.address, { text: 'Can we start in June?' }])
     assert.ok(out.cursors[w.host] > 0)
     const later = await run('inbox', { ...reading, after: out.cursors })
     assert.deepEqual(later.messages, [], 'nothing after the cursors')

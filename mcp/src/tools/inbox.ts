@@ -6,7 +6,7 @@ import { requestOf } from './ask.ts'
 
 export const name = 'inbox'
 export const description =
-  "Read key. The messages to the profile, pulled from each of its hosts with the read key, each opened when it is sealed to it; one that is not shows who sent it and when, unopened. A message the profile sent itself with ask is marked with its request's kind; any other is just a message. Give after, the cursors a pull returned, for newer messages only."
+  "Read key. The messages to the profile, pulled from each of its hosts with the read key, each opened when it is sealed to it; one that is not shows who sent it and when, unopened. A copy of a message sent with send shows as sent, with whom it went to; a request the profile sent itself with ask is marked with its kind; any other is just a message. Give after, the cursors a pull returned, for newer messages only."
 export const params: Param[] = [
   { name: 'after', type: 'object', description: 'The cursors a pull returned, by host: { "<host>": <cursor> }. Left out: every message.' },
   PROFILE,

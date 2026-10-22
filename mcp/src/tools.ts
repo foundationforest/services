@@ -13,6 +13,7 @@ export const HOW = `Forest: people offer, pay and review each other directly, wi
 - An index reads hosts and says which posts there are, which checks each profile has and how it is rated: its own word, not signed records.
 - Reading needs no key: markets, market, search, profile.
 - To act for one profile, the person's app gives you its address (profile) and two access keys, and keeps the main key. The write key (writeKey) posts, updates and removes posts and reviews, sends messages, and asks the person. The read key (readKey) pulls and opens the profile's inbox. Each works only where the profile's permissions record lists it.
+- Every message you send also goes to the person's own inbox, marked as sent, so they see what you said in their name.
 - Give the keys in each call that needs one; a copy started with keys needs none.
 - Before you post, read the market: its fields, and whether the profile's role posts offers, requests or just posts. A body that does not fit is refused, naming the field.
 - For money, or for anything no key you hold does, use ask: it leaves a request in the person's own inbox, and their app shows it to them. A new profile or a new key is not a request: tell the person to open their app and do it there.
