@@ -181,7 +181,7 @@ address, and charged 5,111,680 test-dollar units.
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a
   key Open USD's maker holds, which can move or burn Open USD out of any account) are accepted.
   Where it stands, in two test dollars instead: the classic one,
-  `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`, and the one shaped like Open USD,
+  `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`, and the one shaped like Open USD,
   `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`.
 - **Prices:** Jupiter's, for real dollars; for the test dollars, Kora's mock, one base unit a
   lamport.
