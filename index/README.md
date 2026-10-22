@@ -337,8 +337,9 @@ Another index holds its own.
   `src/evidence/payment.ts`); until then a payment the RPC does not hold is asked for again on each
   pass.
 - **Which money counts** (`config/currencies.json`): USDC, USDT, Open USD and EURC, the dollars the
-  fee payer takes, and two test dollars whose maker mints them at will, each with its code and six
-  decimals.
+  fee payer takes, and two test dollars, each with its code and six decimals: the classic one, which
+  its maker, a key from the phrase that funds the loop, mints at will; and the one shaped like Open
+  USD, which no one can mint any more, since its maker's key came from a phrase that is lost.
 - **Which escrow:** the standard's, its program at `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`.
 - **Which reputation proofs it shows, and how old a signed root may be** (`lists/indexes.json`): its
   own (`self`), against one of its newest 10 roots.

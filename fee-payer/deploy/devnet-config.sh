@@ -3,16 +3,16 @@
 # with exactly these lines changed, and nothing else. Each old line must appear exactly once, or it
 # stops. The escrow's address is already that chain's, in the file itself.
 #
-#   the four paid tokens -> the classic test dollar and the one shaped like Open USD
-#   (USDC, USDT, Open USD,  (standard/escrows/solana/devnet/devnet.json: testDollar, openUsdShaped):
-#   EURC)                   it is paid in those two only
+#   the four paid tokens -> the classic test dollar (e2e/services.json: testDollar) and the one
+#   (USDC, USDT, Open USD,  shaped like Open USD (standard/escrows/solana/devnet/devnet.json:
+#   EURC)                   openUsdShaped): it is paid in those two only
 #   Jupiter's price      -> Kora's mock, since Jupiter prices real dollars only (fee-payer/README.md).
 #                           The mock values the test dollar at 0.001 SOL a whole token: one base unit
 #                           buys one lamport.
 set -euo pipefail
 src="${1:?usage: devnet-config.sh path/to/kora.toml}"
 
-TEST_DOLLAR=J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa
+TEST_DOLLAR=537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt
 OPEN_USD_SHAPED=g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz
 USDC=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 USDT=Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB

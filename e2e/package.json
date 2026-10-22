@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end on devnet: the deployed host, registry payer, fee payer and programs, with its own issuer (a stand-in Didit) and index on loopback, since the deployed issuer is real and a script has no face. Two people from 24 words, each given a note by the loop issuer's face check, buying credits with test dollars, registered with a person proof (the seller through the registry payer with a credit, the buyer through the fee payer), paying the host in credits, assistants acting through the CLI (mcp/) with the keys each app makes (an offer with a photo, the seller's inbox opened, a reply, a request to the seller, until the seller makes its message key past and deletes its read key), a message to the seller's inbox, a payment through the escrow, reviews, the loop index showing it, and the seller proving its rating on its card.",
+  "description": "Forest end to end: two people from two seeds, each with a note from the loop's issuer and a profile record carrying a real note proof on a host; an offer and a message through mcp with access keys their app listed; a deal paid directly and through an escrow with a schedule, both through the fee payer; two reviews naming their evidence; the loop's index counting it all and serving both ratings; and the tutor carrying its rating to a second profile with a reputation proof. Every service on loopback from this repo by default, or the deployed ones a services.json names; the chain is remote.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,19 +10,23 @@
   },
   "scripts": {
     "e2e": "node --disable-warning=ExperimentalWarning e2e.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/*.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",
+    "@foundationforest/escrow-client": "file:../standard/escrows/solana/client",
+    "@foundationforest/keys": "file:../standard/keys",
+    "@foundationforest/note": "file:../standard/proofs/note/client",
+    "@foundationforest/records": "file:../standard/records",
+    "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@scure/base": "2.4.0",
     "@solana/spl-token": "0.4.9",
-    "@solana/web3.js": "1.99.0",
-    "pg": "8.23.0"
+    "@solana/web3.js": "1.99.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
-    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
   }
 }

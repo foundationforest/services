@@ -1,8 +1,13 @@
-# Each image fetches standard itself (standard.sh) and installs its own dependencies.
+# Each image fetches the standard and the markets itself (standard.sh) and installs its own
+# dependencies; no image copies the loop, and none takes what a service keeps when run by hand.
 .git
 standard/
 markets/
 **/node_modules
+e2e/
+host/data
+index/data
+issuer/data
 issuer/models
 issuer/test/faces
-fee-payer/registry/data
+fee-payer/.kora

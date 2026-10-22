@@ -12,8 +12,8 @@ key of theirs, it signs only as the transaction's payer, and the money in an esc
 the escrow allows
 ([the standard's escrow](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md)).
 
-**Where it stands:** the escrow runs on Solana's devnet today, so this fee payer runs there, paid in
-two test dollars, at https://fee-payer.devnet.forest.foundation.
+**Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
+there, paid in two test dollars, at https://fee-payer.forest.foundation.
 
 ## How it works
 
@@ -181,7 +181,7 @@ address, and charged 5,111,680 test-dollar units.
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a
   key Open USD's maker holds, which can move or burn Open USD out of any account) are accepted.
   Where it stands, in two test dollars instead: the classic one,
-  `J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa`, and the one shaped like Open USD,
+  `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`, and the one shaped like Open USD,
   `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`.
 - **Prices:** Jupiter's, for real dollars; for the test dollars, Kora's mock, one base unit a
   lamport.
