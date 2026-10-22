@@ -1,43 +1,36 @@
 // The issuer's one file, four tables:
 //
-//   sessions       for each check session that gave a note, and each earlier session Didit's face
-//                  search found the same face in: the SHA-256 of its id, and the note number that face
-//                  was signed for, so a face seen again is signed again only for the same note number
-//   fingerprints   for each document that gave a note: its fingerprint (notes.ts), and the note number
-//                  it was signed for, so a person seen again is signed again only for the same one
-//   id_payments    the transaction signature of each payment that opened a document check, with the
-//                  reference it named (public in that transaction), so one payment opens one, for
-//                  its own payment id only
-//   gifts          each note number given its welcome gift (gift.ts), with a hash of the buys it was
-//                  given for, so a person gets one, and the same buys asked again get the same tickets
+//   sessions       for each check session that gave a note: the SHA-256 of its id, the note number it
+//                  was signed for, and which check it was (`face` or `id`), so a session gives notes to
+//                  one note number only
+//   fingerprints   for each person the ID check signed: their fingerprint (notes.ts), and the note
+//                  number it was signed for, so a person seen again is signed again only for that one
+//   id_payments    the transaction signature of each payment that opened an ID check, with the
+//                  reference it named (public in that transaction), so one payment opens one, for its
+//                  own payment id only
+//   gifts          each note number given its welcome gift (gift.ts), with a hash of the buy it was
+//                  given for, so a person gets one, and the same buy asked again gets the same ticket
 //
-// Nothing else: no face, no embedding, no name, no document, no time, no row number, and of a gift
-// only a hash of its buys: not its tickets, not its references. A session id is kept only as its
-// hash, so the file names no Didit session. The note number links the two tables
-// of notes: a document's fingerprint sits next to the same note number as the hashes of the
-// sessions signed for it, its face-check sessions included. So the file does say which document
-// went with which face-check sessions, and whoever also holds Didit's records of those sessions can
-// tell which face.
-//
-// A file the issuer kept before notes, when it published lists, holds their tables: the lists, their
-// snapshots, the stamps waiting and the sessions used. They are dropped at start, and the file
-// rewritten (`VACUUM`), so none of their bytes stays. Deleted bytes are overwritten (`secure_delete`).
+// Nothing else: no face, no embedding, no name, no birth date, no document, no time, and of a gift
+// only a hash of its buy. A session id is kept only as its hash, so the file names no Didit session.
+// The note number links the tables: a person's fingerprint sits next to the same note number as the
+// hashes of the sessions signed for it, face sessions included. Deleted bytes are overwritten
+// (`secure_delete`).
 
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { base58 } from '../../standard/records/src/bytes.ts'
-import { fromBytes32, toBytes32 } from '../../standard/registry/client/src/field.ts'
+import { fromBytes32, toBytes32 } from '@foundationforest/note'
+import { base58 } from '@foundationforest/records'
+
+import type { Check } from './didit.ts'
 
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {
   return createHash('sha256').update(sessionId, 'utf8').digest()
 }
 
-/** The tables of the lists this issuer once published (and of the batches that filled them). */
-const LIST_TABLES = ['used_sessions', 'queue', 'list', 'snapshots', 'roots', 'id_used_sessions', 'id_queue', 'id_list', 'id_snapshots']
-
-export type Remembered = 'ok' | 'session_used' | 'duplicate_face' | 'duplicate_document'
+export type Remembered = 'ok' | 'session_used' | 'duplicate_document'
 
 export class Store {
   readonly #db: DatabaseSync
@@ -57,64 +50,44 @@ export class Store {
       PRAGMA secure_delete = ON;
       PRAGMA temp_store = MEMORY;
       PRAGMA journal_mode = DELETE;
-    `)
-    const tables = new Set(this.#db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((t) => t.name as string))
-    const old = LIST_TABLES.filter((t) => tables.has(t))
-    for (const table of old) this.#db.exec(`DROP TABLE ${table}`)
-    if (old.length) this.#db.exec('VACUUM')
-    this.#db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY, buys BLOB) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
     `)
-    // A file from before payments kept their reference and gifts their buys: the column added, empty.
-    const has = (table: string, column: string) => this.#db.prepare(`SELECT 1 FROM pragma_table_info('${table}') WHERE name = ?`).get(column) !== undefined
-    if (!has('id_payments', 'reference')) this.#db.exec('ALTER TABLE id_payments ADD COLUMN reference TEXT')
-    if (!has('gifts', 'buys')) this.#db.exec('ALTER TABLE gifts ADD COLUMN buys BLOB')
     this.#session = this.#db.prepare('SELECT note_number FROM sessions WHERE hash = ?')
     this.#fingerprint = this.#db.prepare('SELECT note_number FROM fingerprints WHERE fingerprint = ?')
-    this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, note_number) VALUES (?, ?)')
+    this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, note_number, kind) VALUES (?, ?, ?)')
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, note_number) VALUES (?, ?)')
     this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature, reference) VALUES (?, ?)')
     this.#paidFor = this.#db.prepare('SELECT reference FROM id_payments WHERE signature = ?')
-    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number, buys) VALUES (?, ?)')
-    this.#given = this.#db.prepare('SELECT buys FROM gifts WHERE note_number = ?')
-  }
-
-  /** The note number this session gave, if it gave one. */
-  noteNumberOf(sessionId: string): bigint | undefined {
-    const row = this.#session.get(sessionHash(sessionId))
-    return row ? fromBytes32(row.note_number as Uint8Array) : undefined
+    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (note_number, buy) VALUES (?, ?)')
+    this.#given = this.#db.prepare('SELECT buy FROM gifts WHERE note_number = ?')
   }
 
   /**
    * Whether a note for `noteNumber` may be signed from this session: the session gave no other note
-   * number; no earlier session with the same face (`earlier`, Didit's face search) gave another; and
-   * the document's fingerprint, if there is one, was signed for no other.
+   * number, and the person's fingerprint, if there is one, was signed for no other.
    */
-  check(input: { sessionId: string; noteNumber: bigint; earlier?: string[]; fingerprint?: Uint8Array }): Remembered {
-    const other = (row: Record<string, unknown> | undefined) => row !== undefined && fromBytes32(row.note_number as Uint8Array) !== input.noteNumber
+  check(input: { sessionId: string; noteNumber: bigint; fingerprint?: Uint8Array }): Remembered {
+    const other = (kept: Record<string, unknown> | undefined) => kept !== undefined && fromBytes32(kept.note_number as Uint8Array) !== input.noteNumber
     if (other(this.#session.get(sessionHash(input.sessionId)))) return 'session_used'
-    if ((input.earlier ?? []).some((id) => other(this.#session.get(sessionHash(id))))) return 'duplicate_face'
     if (input.fingerprint && other(this.#fingerprint.get(input.fingerprint))) return 'duplicate_document'
     return 'ok'
   }
 
   /**
-   * `check`, and when it passes, the session, the earlier sessions of the same face and the
-   * fingerprint kept with the note number, all in one transaction. Two requests can both pass every
-   * check before this while each waits for Didit; only the first to get here keeps anything, and the
-   * second is checked against it. The earlier sessions are kept too, so an earlier session of this
-   * face sent late, whose own search could not see this one, is refused for another note number.
+   * `check`, and when it passes, the session and the fingerprint kept with the note number, in one
+   * transaction. Two requests can both pass every check before this while each waits for Didit; only
+   * the first to get here keeps anything, and the second is checked against it.
    */
-  remember(input: { sessionId: string; noteNumber: bigint; earlier?: string[]; fingerprint?: Uint8Array }): Remembered {
+  remember(input: { sessionId: string; noteNumber: bigint; kind: Check; fingerprint?: Uint8Array }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       const outcome = this.check(input)
       if (outcome === 'ok') {
         const number = toBytes32(input.noteNumber)
-        for (const id of [input.sessionId, ...(input.earlier ?? [])]) this.#addSession.run(sessionHash(id), number)
+        this.#addSession.run(sessionHash(input.sessionId), number, input.kind)
         if (input.fingerprint) this.#addFingerprint.run(input.fingerprint, number)
       }
       this.#db.exec(outcome === 'ok' ? 'COMMIT' : 'ROLLBACK')
@@ -126,10 +99,9 @@ export class Store {
     }
   }
 
-  /** Whom this payment, by its transaction's signature (base58), opened a check for: its reference; null for one kept before references were; undefined if unused. */
-  paymentFor(signature: string): string | null | undefined {
-    const row = this.#paidFor.get(base58.decode(signature))
-    return row === undefined ? undefined : ((row.reference as string | null) ?? null)
+  /** Whom this payment, by its transaction's signature (base58), opened a check for: its reference; undefined if unused. */
+  paymentFor(signature: string): string | undefined {
+    return this.#paidFor.get(base58.decode(signature))?.reference as string | undefined
   }
 
   /** Marks a payment used for `reference`: true if it was free, or already used for that reference. It is never given back. */
@@ -138,11 +110,11 @@ export class Store {
     return this.paymentFor(signature) === reference
   }
 
-  /** Marks this note number's gift given for these buys: `given` the first time, `again` for the same buys, `other` for others. */
-  giveGift(noteNumber: bigint, buys: Uint8Array): 'given' | 'again' | 'other' {
-    if (Number(this.#give.run(toBytes32(noteNumber), buys).changes) === 1) return 'given'
-    const kept = this.#given.get(toBytes32(noteNumber))?.buys as Uint8Array | null | undefined
-    return kept && Buffer.from(kept).equals(Buffer.from(buys)) ? 'again' : 'other'
+  /** Marks this note number's gift given for this buy: `given` the first time, `again` for the same buy, `other` for another. */
+  giveGift(noteNumber: bigint, buy: Uint8Array): 'given' | 'again' | 'other' {
+    if (Number(this.#give.run(toBytes32(noteNumber), buy).changes) === 1) return 'given'
+    const kept = this.#given.get(toBytes32(noteNumber))?.buy as Uint8Array | undefined
+    return kept && Buffer.from(kept).equals(Buffer.from(buy)) ? 'again' : 'other'
   }
 
   close(): void {

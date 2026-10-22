@@ -1,6 +1,7 @@
 // The issuer end to end, in one process: a stand-in Didit, an embedder that knows people by name, a
-// real SQLite file, real HTTP, and every note checked the way the standard checks one. One test runs the
-// stand-in Didit the e2e loop runs (test/fake-didit.ts) itself, with the stand-in embedding.
+// real SQLite file, real HTTP, and notes checked the way the standard checks them, a note proof made
+// and checked against the key `GET /` publishes. One test runs the stand-in Didit the e2e loop runs
+// (test/fake-didit.ts) itself, with the stand-in embedding.
 //
 //   npm test
 
@@ -10,45 +11,42 @@ import { generateKeyPairSync, randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { issuerSecret } from '../../standard/keys/src/issuer.ts'
-import { base58 } from '../../standard/records/src/bytes.ts'
-import { hkdf } from '../../standard/keys/src/hkdf.ts'
-import { canonical, parseCanonical } from '../../standard/records/src/canonical.ts'
-import { toBytes32 } from '../../standard/registry/client/src/field.ts'
-import { issuerKeyOf, noteSigned, provePerson, signNote, verifyPerson } from '../../standard/registry/client/src/person.ts'
+import { hkdf, issuerSecret, seedScalar } from '@foundationforest/keys'
+import { issuerKeyOf, noteFromJson, noteSigned, proveNote, verifyNote } from '@foundationforest/note'
+import { b64u, canonical, parseCanonical } from '@foundationforest/records'
 
 import { buy, finish, serviceOf } from '../../e2e/credits/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
-import * as payerCredits from '../../fee-payer/registry/credits/seller.ts'
 
-import { parseKeypair } from '../src/key.ts'
+import { DiditClient } from '../src/didit.ts'
 import { RateLimit, addressGroup } from '../src/limit.ts'
-import { issuerHex, noteFromJson, noteToJson } from '../src/notes.ts'
-import { KEY_FILE, NOTE_KEY_INFO, SPONSOR_KEY_LABEL, readConfig, startIssuer, type Issuer } from '../src/service.ts'
+import { RECIPES, faceAttributes, idAttributes } from '../src/notes.ts'
+import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
+import { readConfig, startIssuer, type Issuer } from '../src/service.ts'
 import {
+  FACE_WORKFLOW,
   FakeFaceCheck,
   FakePayments,
   ID_WORKFLOW,
   ISSUER_NAME,
-  WORKFLOW,
   assertKept,
   doc,
-  keypairJson,
+  faceOf,
   namedFaces,
   noteNumber,
-  noteNumberBytes,
   passed,
   passedId,
   randomSignature,
+  seedJson,
 } from './fakes.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const standard = join(here, '../../standard')
-const ARTIFACTS = { wasm: join(standard, 'registry/circuit/devnet/person.wasm'), zkey: join(standard, 'registry/circuit/devnet/person.zkey') }
+/** The note circuit's setup files, committed in the standard. */
+const setup = join(here, '../../standard/proofs/note/circuit/setup')
+const ARTIFACTS = { wasm: join(setup, 'note.wasm'), zkey: join(setup, 'note.zkey') }
 
 const dirs: string[] = []
 after(() => {
@@ -61,43 +59,53 @@ function tempDir(): string {
   return dir
 }
 
+/** A price for the ID check, in a test dollar, paid to an address of its own: the ID check is offered. */
+const PRICED = {
+  ID_PRICE: '2500000',
+  ID_MINT: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa',
+  ID_PAY_TO: '3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH',
+  RPC_URL: 'http://127.0.0.1:1',
+}
+
 type Harness = {
   issuer: Issuer
   faces: FakeFaceCheck
-  /** The document check's Didit. */
+  /** The ID check's Didit. */
   ids: FakeFaceCheck
-  embedder: ReturnType<typeof namedFaces>
   payments: FakePayments
   dbPath: string
   logs: string[]
   post(path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>
   /** A new face session whose check came to `decision`; returns its id. */
   session(decision: ReturnType<typeof passed>): Promise<string>
-  /** The same for the document check, while it is free. */
+  /** A new ID session whose check came to `decision`, as if opened once paid; returns its id. */
   idSession(decision: ReturnType<typeof passed>): Promise<string>
 }
 
-/** The issuer, with `key` in its key file beside the database when given; with none there, it makes one. */
-async function start(options: { env?: Record<string, string>; key?: string; dbPath?: string } = {}): Promise<Harness> {
+/**
+ * The issuer, with `seed` in its seed file beside the database when given; with none there, it
+ * makes one. The ID check is offered (PRICED) unless `env` says otherwise.
+ */
+async function start(options: { env?: Record<string, string | undefined>; seed?: string; dbPath?: string } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'issuer.sqlite')
-  if (options.key) writeFileSync(join(dirname(dbPath), KEY_FILE), options.key, { mode: 0o600 })
+  if (options.seed) writeFileSync(join(dirname(dbPath), SEED_FILE), options.seed, { mode: 0o600 })
   const config = readConfig({
     ISSUER_NAME,
     DIDIT_API_KEY: 'not-used',
-    DIDIT_WORKFLOW_ID: WORKFLOW,
+    DIDIT_FACE_WORKFLOW_ID: FACE_WORKFLOW,
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     DATABASE_PATH: dbPath,
     // Every request here comes from one address; the limit has its own test.
     SESSION_LIMIT_PER_HOUR: '100000',
     PORT: '0',
+    ...PRICED,
     ...options.env,
   })
   const faces = new FakeFaceCheck()
   const ids = new FakeFaceCheck()
   const payments = new FakePayments()
-  const embedder = namedFaces()
   const logs: string[] = []
-  const issuer = await startIssuer(config, { faceCheck: faces, idCheck: ids, payments, embedder, log: (line) => logs.push(line) })
+  const issuer = await startIssuer(config, { faceCheck: faces, idCheck: ids, payments, embedder: namedFaces(), log: (line) => logs.push(line) })
   const post = async (path: string, body: unknown = {}, headers: Record<string, string> = {}) => {
     const res = await fetch(issuer.url + path, {
       method: 'POST',
@@ -107,114 +115,147 @@ async function start(options: { env?: Record<string, string>; key?: string; dbPa
     return { status: res.status, body: await res.json() }
   }
   const session = async (decision: ReturnType<typeof passed>) => {
-    const { status, body } = await post('/session')
+    const { status, body } = await post('/face/session')
     assert.equal(status, 201)
     faces.set(body.sessionId, decision)
     return body.sessionId as string
   }
   const idSession = async (decision: ReturnType<typeof passed>) => {
-    const { status, body } = await post('/id/session')
-    assert.equal(status, 201)
-    ids.set(body.sessionId, decision)
-    return body.sessionId as string
+    const { sessionId } = await ids.createSession()
+    ids.set(sessionId, decision)
+    return sessionId
   }
-  return { issuer, faces, ids, embedder, payments, dbPath, logs, post, session, idSession }
+  return { issuer, faces, ids, payments, dbPath, logs, post, session, idSession }
 }
 
-const faceNote = (h: Harness, sessionId: string, n: bigint) => h.post('/note', { sessionId, noteNumber: n.toString() })
-const idNote = (h: Harness, sessionId: string, note: unknown) => h.post('/id/note', { sessionId, note })
+const faceNote = (h: Harness, sessionId: string, n: bigint) => h.post('/face/note', { sessionId, noteNumber: n.toString() })
+const idNote = (h: Harness, sessionId: string, n: bigint) => h.post('/id/note', { sessionId, noteNumber: n.toString() })
+const about = async (h: Harness) => (await fetch(h.issuer.url + '/')).json()
 
-/** A tier 1 note for `person`, as an app gets one. */
-async function tier1(h: Harness, person: string, n: bigint) {
+/** A face note for `person`, as an app gets one. */
+async function face(h: Harness, person: string, n: bigint) {
   const sessionId = await h.session(passed(person))
   const res = await faceNote(h, sessionId, n)
   assert.equal(res.status, 200, JSON.stringify(res.body))
   return { sessionId, note: res.body.note }
 }
 
-/** A price for the document check, in the test dollar, paid to an address of its own. */
-const PRICED = {
-  ID_TIER_PRICE: '2500000',
-  ID_TIER_MINT: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa',
-  ID_TIER_PAY_TO: '3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH',
-  RPC_URL: 'http://127.0.0.1:1',
-}
-
-test("GET /issuer.json: the issuer's name and its note key, mixed from its seed under issuer/notes", async () => {
-  const key = keypairJson()
-  const h = await start({ key: key.json })
+test('GET /: the name, and for each check the key that signs its notes, as an address, and its attributes recipe', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
   try {
-    const res = await fetch(h.issuer.url + '/issuer.json')
+    const res = await fetch(h.issuer.url + '/')
     assert.equal(res.status, 200)
     assert.equal(res.headers.get('access-control-allow-origin'), '*')
     const text = await res.text()
     assert.equal(canonical(parseCanonical(text)), text, 'canonical JSON')
-    const noteKey = issuerKeyOf(await hkdf(key.secret, NOTE_KEY_INFO))
-    assert.deepEqual(JSON.parse(text), { key: issuerHex(noteKey), name: ISSUER_NAME, v: 1 })
-    assert.deepEqual(h.issuer.noteKey, noteKey)
-    assert.equal((await fetch(h.issuer.url + '/issuer.json', { method: 'POST' })).status, 405)
+    const keys = { face: issuerKeyOf(await hkdf(seed.bytes, 'issuer/face')), id: issuerKeyOf(await hkdf(seed.bytes, 'issuer/id')) }
+    assert.deepEqual(JSON.parse(text), {
+      name: ISSUER_NAME,
+      face: { key: keys.face, attributes: 'Poseidon([h(model), h(embedding)])' },
+      id: { key: keys.id, attributes: 'Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])' },
+      h: RECIPES.h,
+    })
+    assert.deepEqual(h.issuer.keys, keys)
+    assert.notEqual(keys.face, keys.id, 'two keys, one for each check')
+    assert.equal((await fetch(h.issuer.url + '/', { method: 'POST' })).status, 405)
   } finally {
     await h.issuer.close()
   }
 })
 
-test('stage 1: a passed face check gives a tier 1 note for the note number sent, and a person proves with it', async () => {
+test('a face note: signed by the face key, its attributes the face recipe, and a note proof from it holds for that key only', async () => {
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
-    const { secret, noteNumber: n } = await issuerSecret(seed, ISSUER_NAME)
-    const { note: json } = await tier1(h, 'alice', n)
-    assert.deepEqual(Object.keys(json).sort(), ['embedding', 'issuer', 'model', 'noteNumber', 'signature', 'tier'])
-    const note = noteFromJson(json)!
+    const { noteNumber: n } = await issuerSecret(seed, ISSUER_NAME)
+    const { note: json } = await face(h, 'alice', n)
+    assert.deepEqual(Object.keys(json).sort(), ['attributes', 'embedding', 'issuer', 'model', 'noteNumber', 'signature'])
+    const published = await about(h)
+    const note = noteFromJson(json)
     assert.equal(note.noteNumber, n)
-    assert.equal(note.tier, 1n)
-    assert.equal(note.model, 'test-model')
-    assert.deepEqual(note.embedding, await namedFaces().embed(new TextEncoder().encode('alice')), "alice's face")
-    assert.deepEqual(note.issuer, h.issuer.noteKey)
+    assert.equal(note.issuer, published.face.key, 'the face key GET / publishes')
     assert.ok(noteSigned(note), "the standard's check: the issuer signed it")
-    assert.deepEqual(noteToJson(note), json)
+    assert.deepEqual(b64u.decode(json.embedding), faceOf('alice'), "alice's face, beside the note")
+    assert.equal(json.model, 'test-model')
+    assert.equal(note.attributes, faceAttributes('test-model', faceOf('alice')), 'Poseidon([h(model), h(embedding)])')
 
-    // The note does what it is for: a person proof, made with the standard's own code, that the program checks.
-    const profile = new Uint8Array(randomBytes(32))
-    const proof = await provePerson({ secret, note, label: 'tutoring/seller', profile, artifacts: ARTIFACTS })
-    assert.equal(proof.tier, 1n)
-    assert.ok(await verifyPerson({ proof: proof.proof, issuer: h.issuer.noteKey, label: 'tutoring/seller', profile, stamp: proof.stamp, tier: 1n }))
+    // The note does what it is for: a note proof, made with the standard's own code, that its verifier takes.
+    const label = 'tutoring/seller'
+    const proof = await proveNote({ seedScalar: await seedScalar(seed), issuerName: ISSUER_NAME, note, label, artifacts: ARTIFACTS })
+    const check = (issuer: string) => verifyNote({ proof: proof.proof, issuer, issuerName: ISSUER_NAME, label, profile: proof.address, stamp: proof.stamp })
+    assert.equal(await check(published.face.key), true)
+    assert.equal(await check(published.id.key), false, 'a face note is no ID note')
     assert.deepEqual(h.logs, [], 'nothing is logged')
   } finally {
     await h.issuer.close()
   }
 })
 
-test('a face seen before is signed again for the note number it was signed for, and refused for another', async () => {
+test('an ID note: signed by the ID key, its attributes the ID recipe, the fields beside it, and a note proof for that key only', async () => {
+  const h = await start()
+  try {
+    const seed = new Uint8Array(randomBytes(32))
+    const { noteNumber: n } = await issuerSecret(seed, ISSUER_NAME)
+    const res = await idNote(h, await h.idSession(passedId('ada', doc('Lovelace', { firstName: ' ADA ', lastName: 'LoveLace' }))), n)
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    const json = res.body.note
+    assert.deepEqual(Object.keys(json).sort(), ['attributes', 'birth', 'country', 'embedding', 'issuer', 'model', 'name', 'noteNumber', 'signature'])
+    assert.deepEqual([json.name, json.birth, json.country], ['ada lovelace', '1990-04-01', 826], 'the name written one way, the birth date, the country as its ISO numeric code')
+    const published = await about(h)
+    const note = noteFromJson(json)
+    assert.equal(note.issuer, published.id.key, 'the ID key GET / publishes')
+    assert.ok(noteSigned(note))
+    assert.equal(note.attributes, idAttributes('test-model', faceOf('ada'), { name: 'ada lovelace', birth: '1990-04-01', country: 826 }))
+
+    const label = 'tutoring/buyer'
+    const proof = await proveNote({ seedScalar: await seedScalar(seed), issuerName: ISSUER_NAME, note, label, artifacts: ARTIFACTS })
+    const check = (issuer: string) => verifyNote({ proof: proof.proof, issuer, issuerName: ISSUER_NAME, label, profile: proof.address, stamp: proof.stamp })
+    assert.equal(await check(published.id.key), true)
+    assert.equal(await check(published.face.key), false, 'an ID note is no face note')
+
+    // A country with no ISO numeric code enters as 0: the person is not turned away.
+    const kosovo = await idNote(h, await h.idSession(passedId('besa', doc('Krasniqi', { country: 'XKX' }))), await noteNumber())
+    assert.equal(kosovo.status, 200, JSON.stringify(kosovo.body))
+    assert.equal(kosovo.body.note.country, 0)
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('one name and birth date, one note number: refused for another, signed again for the same', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await noteNumber(), await noteNumber()]
-    const first = await tier1(h, 'alice', n1)
+    const first = await h.idSession(passedId('ada', doc('Lovelace')))
+    assert.equal((await idNote(h, first, n1)).status, 200)
 
-    // The same session, sent again: the same note number gives the note again (a lost answer); another is refused.
-    assert.equal((await faceNote(h, first.sessionId, n1)).status, 200)
-    assert.deepEqual(await faceNote(h, first.sessionId, n2), { status: 409, body: { error: 'session_used' } })
+    // The same name and birth date, written another way, from another country's document, for another note number: refused.
+    const same = doc('lovelace ', { firstName: '  ADA', country: 'IRL' })
+    assert.deepEqual(await idNote(h, await h.idSession(passedId('ada', same)), n2), { status: 403, body: { error: 'duplicate_document' } })
+    // For the same note number, from a new session: signed again.
+    const again = await idNote(h, await h.idSession(passedId('ada', same)), n1)
+    assert.equal(again.status, 200, JSON.stringify(again.body))
+    assert.equal(again.body.note.noteNumber, n1.toString())
+    // The first session, sent again with its note number: the same note.
+    assert.equal((await idNote(h, first, n1)).status, 200)
+    // Ada Lovelace born another day is someone else.
+    assert.equal((await idNote(h, await h.idSession(passedId('ada2', doc('Lovelace', { birth: '1815-12-10' }))), n2)).status, 200)
+  } finally {
+    await h.issuer.close()
+  }
+})
 
-    // A new session whose face Didit's search found in the first.
-    const again = await h.session(passed('alice', { matches: [first.sessionId] }))
-    assert.deepEqual(await faceNote(h, again, n2), { status: 403, body: { error: 'duplicate_face' } })
-    const resigned = await faceNote(h, again, n1)
-    assert.equal(resigned.status, 200, 'signed again: same note number, the face from this session')
-    assert.equal(resigned.body.note.noteNumber, n1.toString())
-
-    // A face found only in a session that gave no note is new.
-    const unsent = await h.session(passed('carol'))
-    const carol = await h.session(passed('carol', { matches: [unsent] }))
-    assert.equal((await faceNote(h, carol, n2)).status, 200)
-
-    // Sent late: an earlier session of a face, whose own search could not see the later one, is held
-    // to the note number the later one was signed for.
-    const dan1 = await h.session(passed('dan'))
-    const danLater = await h.session(passed('dan', { matches: [dan1] }))
-    const n3 = await noteNumber()
-    assert.equal((await faceNote(h, danLater, n3)).status, 200)
-    assert.deepEqual(await faceNote(h, dan1, await noteNumber()), { status: 409, body: { error: 'session_used' } })
-    assert.equal((await faceNote(h, dan1, n3)).status, 200)
+test('a session gives notes to one note number: sent with another, refused, on either check', async () => {
+  const h = await start()
+  try {
+    const [n1, n2] = [await noteNumber(), await noteNumber()]
+    const { sessionId } = await face(h, 'alice', n1)
+    assert.equal((await faceNote(h, sessionId, n1)).status, 200, 'the same note number gives the note again: a lost answer')
+    assert.deepEqual(await faceNote(h, sessionId, n2), { status: 409, body: { error: 'session_used' } })
+    const id = await h.idSession(passedId('bob', doc('Byron')))
+    assert.equal((await idNote(h, id, n1)).status, 200)
+    assert.deepEqual(await idNote(h, id, n2), { status: 409, body: { error: 'session_used' } })
   } finally {
     await h.issuer.close()
   }
@@ -235,20 +276,34 @@ test('two requests for one session at once, with two note numbers: one note, the
   }
 })
 
-test('stage 1 refusals, malformed requests, and Didit not answering', async () => {
+test('In Review is waiting: 202, nothing kept, and once a person approves it in Didit, the same session gives the note', async () => {
   const h = await start()
   try {
     const n = await noteNumber()
-    // A failed liveness check uses nothing up: approved later, the same session gives the note.
-    const later = await h.session(passed('frank', { liveness: [{ status: 'Declined' }], status: 'Declined' }))
-    assert.deepEqual(await faceNote(h, later, n), { status: 403, body: { error: 'liveness_not_passed' } })
-    h.faces.set(later, passed('frank'))
-    assert.equal((await faceNote(h, later, n)).status, 200)
+    const review = { status: 'In Review', liveness: [{ status: 'In Review' }] }
+    const sessionId = await h.session(passed('known', review))
+    assert.deepEqual(await faceNote(h, sessionId, n), { status: 202, body: { waiting: 'review' } })
+    assert.deepEqual(await faceNote(h, sessionId, await noteNumber()), { status: 202, body: { waiting: 'review' } }, 'nothing kept while waiting')
+    h.faces.set(sessionId, passed('known'))
+    assert.equal((await faceNote(h, sessionId, n)).status, 200)
+    assert.deepEqual(await faceNote(h, await h.session(passed('known', { status: 'Declined' })), n), { status: 403, body: { error: 'not_approved' } }, 'declined: refused')
 
+    const id = await h.idSession(passedId('ida', doc('Pfeiffer'), { status: 'IN_REVIEW' }))
+    assert.deepEqual(await idNote(h, id, n), { status: 202, body: { waiting: 'review' } }, 'the ID check too')
+  } finally {
+    await h.issuer.close()
+  }
+})
+
+test('refusals, malformed requests, and Didit not answering', async () => {
+  const h = await start()
+  try {
+    const n = await noteNumber()
     const refused: [ReturnType<typeof passed>, string][] = [
       [passed('g', { workflowId: ID_WORKFLOW }), 'wrong_workflow'],
+      [passed('g', { status: 'Not Started' }), 'not_approved'],
       [passed('g', { liveness: [] }), 'no_liveness'],
-      [passed('g', { status: 'In Review' }), 'not_approved'],
+      [passed('g', { liveness: [{ status: 'Declined' }] }), 'liveness_not_passed'],
       [passed('g', { faceImage: null }), 'no_face'],
       [passed('none'), 'no_face'],
     ]
@@ -256,6 +311,26 @@ test('stage 1 refusals, malformed requests, and Didit not answering', async () =
       assert.deepEqual(await faceNote(h, await h.session(decision), await noteNumber()), { status: 403, body: { error } }, error)
     }
     assert.deepEqual(await faceNote(h, '4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a', n), { status: 403, body: { error: 'unknown_session' } })
+
+    const idRefused: [Partial<ReturnType<typeof passed>>, string][] = [
+      [{ workflowId: FACE_WORKFLOW }, 'wrong_workflow'],
+      [{ documents: [] }, 'no_document'],
+      [{ documents: [{ status: 'Declined' }] }, 'document_not_passed'],
+      [{ faceMatches: [] }, 'no_face_match'],
+      [{ faceMatches: [{ status: 'In Review' }] }, 'face_match_not_passed'],
+      [{ document: null }, 'no_document_data'],
+      [{ document: doc('x', { birth: '01/04/1990' }) }, 'no_document_data'],
+      [{ document: doc('x', { birth: '1990-02-30' }) }, 'no_document_data'],
+      [{ document: doc('', { firstName: '', fullName: ' ' }) }, 'no_document_data'],
+      [{ faceImage: null }, 'no_face'],
+    ]
+    for (const [over, error] of idRefused) {
+      const person = `p-${randomBytes(4).toString('hex')}`
+      assert.deepEqual(await idNote(h, await h.idSession(passedId(person, doc(person), over)), await noteNumber()), { status: 403, body: { error } }, error)
+    }
+    // A face session is not an ID session, and the other way round.
+    assert.deepEqual(await idNote(h, await h.session(passed('alice')), n), { status: 403, body: { error: 'unknown_session' } })
+    assert.deepEqual(await faceNote(h, await h.idSession(passedId('alice')), n), { status: 403, body: { error: 'unknown_session' } })
 
     const sessionId = await h.session(passed('gina'))
     h.faces.down = true
@@ -277,170 +352,59 @@ test('stage 1 refusals, malformed requests, and Didit not answering', async () =
       [{ sessionId, noteNumber: (2n ** 254n).toString() }, 400, 'bad_note_number'],
       [{ sessionId, noteNumber: 'x'.repeat(5000) }, 413, 'too_large'],
     ]
-    for (const [body, status, error] of bad) assert.deepEqual(await h.post('/note', body), { status, body: { error } }, error)
-    assert.deepEqual(await h.post('/session', { x: 1 }), { status: 400, body: { error: 'expected_empty_body' } })
+    for (const [body, status, error] of bad) {
+      assert.deepEqual(await h.post('/face/note', body), { status, body: { error } }, error)
+      assert.deepEqual(await h.post('/id/note', body), { status, body: { error } }, error)
+    }
+    assert.deepEqual(await h.post('/face/session', { x: 1 }), { status: 400, body: { error: 'expected_empty_body' } })
     assert.deepEqual(await h.post('/nowhere'), { status: 404, body: { error: 'not_found' } })
-    assert.equal((await fetch(h.issuer.url + '/note')).status, 405)
+    assert.deepEqual(await h.post('/issuer.json'), { status: 404, body: { error: 'not_found' } })
+    assert.equal((await fetch(h.issuer.url + '/face/note')).status, 405)
     h.faces.down = true
-    assert.deepEqual(await h.post('/session'), { status: 502, body: { error: 'face_check_unavailable' } })
+    assert.deepEqual(await h.post('/face/session'), { status: 502, body: { error: 'face_check_unavailable' } })
   } finally {
     await h.issuer.close()
   }
 })
 
-test('stage 2: the note shown, a document check that passed and the same live face give the same note at tier 2', async () => {
-  const h = await start()
+test('with no price, the ID check is not offered', async () => {
+  const h = await start({ env: { ID_PRICE: undefined, ID_MINT: undefined, ID_PAY_TO: undefined, RPC_URL: undefined } })
   try {
-    const n = await noteNumber()
-    const { note } = await tier1(h, 'alice', n)
-    const sessionId = await h.idSession(passedId('alice', doc('Lovelace')))
-    const res = await idNote(h, sessionId, note)
-    assert.equal(res.status, 200, JSON.stringify(res.body))
-    const t2 = noteFromJson(res.body.note)!
-    assert.ok(noteSigned(t2))
-    assert.equal(t2.tier, 2n)
-    assert.equal(t2.noteNumber, n)
-    assert.deepEqual(t2.embedding, noteFromJson(note)!.embedding, "the tier 1 note's embedding")
-    assert.equal(t2.model, 'test-model')
-
-    // A lost tier 2 note: the same document, the same note number, signed again; the tier 2 note shown works too.
-    assert.equal((await idNote(h, await h.idSession(passedId('alice', doc('Lovelace'))), note)).status, 200)
-    assert.equal((await idNote(h, await h.idSession(passedId('alice', doc('Lovelace'))), res.body.note)).status, 200)
-    // The same name, birth date and country, written another way, for another note number: refused.
-    const other = await tier1(h, 'alice2', await noteNumber())
-    const same = doc('Lovelace', { firstName: '  ADA', lastName: 'lovelace ', country: 'gbr' })
-    assert.deepEqual(await idNote(h, await h.idSession(passedId('alice2', same)), other.note), { status: 403, body: { error: 'duplicate_document' } })
-    // Another person: fine.
-    assert.equal((await idNote(h, await h.idSession(passedId('alice2', doc('Byron'))), other.note)).status, 200)
-    // Ada Lovelace with another birth date, or from another country, is someone else.
-    const third = await tier1(h, 'alice3', await noteNumber())
-    assert.equal((await idNote(h, await h.idSession(passedId('alice3', doc('Lovelace', { country: 'IRL' }))), third.note)).status, 200)
+    assert.deepEqual(await h.post('/id/session'), { status: 404, body: { error: 'not_offered' } })
+    assert.deepEqual(await idNote(h, await h.idSession(passedId('ada')), await noteNumber()), { status: 404, body: { error: 'not_offered' } })
+    assert.equal(h.ids.created, 1, 'only the session this test opened itself')
+    assert.ok((await about(h)).id.key, 'its key is still published')
+    assert.equal((await face(h, 'alice', await noteNumber())).note.model, 'test-model', 'the face check is')
   } finally {
     await h.issuer.close()
   }
 })
 
-test('stage 2 refusals', async () => {
-  const h = await start()
-  try {
-    const { note } = await tier1(h, 'alice', await noteNumber())
-    const id = (person: string, over: Parameters<typeof passedId>[2] = {}, document = doc(`${person}-${randomBytes(4).toString('hex')}`)) => h.idSession(passedId(person, document, over))
-
-    assert.deepEqual(await idNote(h, await id('bob'), note), { status: 403, body: { error: 'not_the_same_face' } }, "another person's live face")
-    for (const [over, error] of [
-      [{ workflowId: WORKFLOW }, 'wrong_workflow'],
-      [{ documents: [] }, 'no_document'],
-      [{ documents: [{ status: 'Declined' }] }, 'document_not_passed'],
-      [{ faceMatches: [] }, 'no_face_match'],
-      [{ faceMatches: [{ status: 'In Review' }] }, 'face_match_not_passed'],
-      [{ status: 'In Review' }, 'not_approved'],
-      [{ document: null }, 'no_document_data'],
-      [{ document: doc('x', { birth: '01/04/1990' }) }, 'no_document_data'],
-      [{ faceImage: null }, 'no_face'],
-    ] as const) {
-      assert.deepEqual(await idNote(h, await id('alice', over as never), note), { status: 403, body: { error } }, error)
-    }
-
-    // Notes the issuer did not sign, or signed for another model.
-    const stranger = signNote(new Uint8Array(randomBytes(32)), { ...noteFromJson(note)!, tier: 1n })
-    const tampered = { ...note, tier: '2' }
-    const { noteNumber: n, embedding } = noteFromJson(note)!
-    const otherModel = noteToJson(signNote(new Uint8Array(randomBytes(32)), { noteNumber: n, embedding, model: 'another', tier: 1n }))
-    assert.deepEqual(await idNote(h, await id('alice'), noteToJson(stranger)), { status: 403, body: { error: 'not_our_note' } })
-    assert.deepEqual(await idNote(h, await id('alice'), tampered), { status: 403, body: { error: 'not_our_note' } })
-    assert.deepEqual(await idNote(h, await id('alice'), otherModel), { status: 403, body: { error: 'not_our_note' } })
-    const key = keypairJson()
-    const h2 = await start({ key: key.json })
-    try {
-      const own = noteToJson(signNote(await hkdf(key.secret, NOTE_KEY_INFO), { noteNumber: n, embedding, model: 'another', tier: 1n }))
-      assert.deepEqual(await idNote(h2, await h2.idSession(passedId('alice')), own), { status: 403, body: { error: 'other_model' } })
-    } finally {
-      await h2.issuer.close()
-    }
-
-    // Malformed notes.
-    const sessionId = await id('alice')
-    for (const bad of [
-      { ...note, extra: 1 },
-      { ...note, noteNumber: '01' },
-      { ...note, issuer: note.issuer.toUpperCase() },
-      { ...note, embedding: 'not base64url!' },
-      { ...note, signature: { r8: ['1'], s: '1' } },
-      // The note as the issuer wrote it before the registry client's form.
-      { ...note, signature: { R8: note.signature.r8, S: note.signature.s } },
-      { ...note, model: '' },
-    ]) {
-      assert.deepEqual(await idNote(h, sessionId, bad), { status: 400, body: { error: 'bad_note' } })
-    }
-    assert.deepEqual(await h.post('/id/note', { sessionId, note: 'x' }), { status: 400, body: { error: 'expected_exactly_sessionId_and_note' } })
-    assert.deepEqual(await h.post('/id/note', { sessionId }), { status: 400, body: { error: 'expected_exactly_sessionId_and_note' } })
-
-    // A face session is not a document session, and the other way round.
-    const faceSession = await h.session(passed('alice'))
-    assert.deepEqual(await idNote(h, faceSession, note), { status: 403, body: { error: 'unknown_session' } })
-    assert.deepEqual(await faceNote(h, await id('alice'), noteFromJson(note)!.noteNumber), { status: 403, body: { error: 'unknown_session' } })
-  } finally {
-    await h.issuer.close()
-  }
-})
-
-test('the file keeps which session gave which note number, and each document as a fingerprint next to it: nothing else', async () => {
+test('the file keeps which session gave which note number and which check it was, and each person as a fingerprint: nothing else', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await noteNumber(), await noteNumber()]
-    const a = await tier1(h, 'alice', n1)
-    const again = await h.session(passed('alice', { matches: [a.sessionId] }))
-    assert.equal((await faceNote(h, again, n1)).status, 200)
-    const b = await tier1(h, 'bob', n2)
+    const a = await face(h, 'alice', n1)
+    const b = await face(h, 'bob', n2)
     const id = await h.idSession(passedId('alice', doc('Lovelace')))
-    assert.equal((await idNote(h, id, a.note)).status, 200)
-    const embedding = Buffer.from(noteFromJson(a.note)!.embedding)
+    const res = await idNote(h, id, n1)
+    assert.equal(res.status, 200)
     await h.issuer.close()
 
     assertKept(h.dbPath, {
-      sessions: [[a.sessionId, n1], [again, n1], [b.sessionId, n2], [id, n1]],
+      sessions: [[a.sessionId, n1, 'face'], [b.sessionId, n2, 'face'], [id, n1, 'id']],
       fingerprints: [[1, n1]],
-      never: ['Lovelace', 'lovelace', '1990-04-01', a.note.embedding, a.note.signature.s],
+      never: ['Lovelace', 'lovelace', '1990-04-01', a.note.embedding, res.body.note.embedding, a.note.signature.s, a.note.attributes],
     })
-    const file = readFileSync(h.dbPath)
-    assert.equal(file.includes(embedding), false, 'no embedding')
-    assert.ok(file.includes(noteNumberBytes(n1)), 'the note numbers are there')
+    assert.equal(readFileSync(h.dbPath).includes(Buffer.from(faceOf('alice'))), false, 'no embedding')
   } finally {
     await h.issuer.close().catch(() => {})
   }
 })
 
-test('a file from when the issuer kept lists: their tables dropped at start, and their bytes gone', async () => {
-  const dbPath = join(tempDir(), 'issuer.sqlite')
-  const old = new DatabaseSync(dbPath)
-  const stamp = Buffer.from(toBytes32(BigInt('0x' + randomBytes(31).toString('hex'))))
-  old.exec(`
-    CREATE TABLE used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
-    CREATE TABLE queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID;
-    CREATE TABLE list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL);
-    CREATE TABLE snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL);
-    CREATE TABLE id_used_sessions (hash BLOB PRIMARY KEY) WITHOUT ROWID;
-    CREATE TABLE id_queue (stamp BLOB PRIMARY KEY) WITHOUT ROWID;
-    CREATE TABLE id_list (position INTEGER PRIMARY KEY, stamp BLOB NOT NULL);
-    CREATE TABLE id_snapshots (size INTEGER PRIMARY KEY, root BLOB NOT NULL, time INTEGER NOT NULL);
-    CREATE TABLE id_payments (signature BLOB PRIMARY KEY) WITHOUT ROWID;
-  `)
-  old.prepare('INSERT INTO list (position, stamp) VALUES (0, ?)').run(stamp)
-  old.prepare('INSERT INTO id_list (position, stamp) VALUES (0, ?)').run(stamp)
-  const paid = randomSignature()
-  old.prepare('INSERT INTO id_payments (signature) VALUES (?)').run(base58.decode(paid))
-  old.close()
-  assert.ok(readFileSync(dbPath).includes(stamp))
-
-  const h = await start({ dbPath })
-  await h.issuer.close()
-  assertKept(dbPath, { sessions: [], fingerprints: [], payments: [paid], never: [] })
-  assert.equal(readFileSync(dbPath).includes(stamp), false, 'no listed stamp is left in the file')
-})
-
-test('with a price, a document check opens once a payment naming its reference has landed, and each payment opens one', async () => {
-  const key = keypairJson()
-  const h = await start({ key: key.json, env: PRICED })
+test('the ID check opens once a payment naming its reference has landed, and each payment opens one', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
   try {
     const asked = await h.post('/id/session')
     assert.equal(asked.status, 402)
@@ -448,13 +412,12 @@ test('with a price, a document check opens once a payment naming its reference h
     const { payment } = asked.body
     assert.deepEqual(Object.keys(payment).sort(), ['amount', 'id', 'mint', 'reference', 'to'])
     assert.match(payment.id, /^[0-9a-f]{32}$/)
-    assert.deepEqual([payment.to, payment.mint, payment.amount], [PRICED.ID_TIER_PAY_TO, PRICED.ID_TIER_MINT, PRICED.ID_TIER_PRICE])
-    const seed = parseKeypair(key.json, 'test')
-    assert.equal(payment.reference, (await seed.derive(`reference/${payment.id}`)).address, "the reference: a key mixed from the issuer's seed")
+    assert.deepEqual([payment.to, payment.mint, payment.amount], [PRICED.ID_PAY_TO, PRICED.ID_MINT, PRICED.ID_PRICE])
+    assert.equal(payment.reference, (await seedFrom(seed.bytes).ed25519(INFO.reference(payment.id))).address, "the reference: a key mixed from the issuer's seed")
     const other = (await h.post('/id/session')).body.payment
     assert.notEqual(other.reference, payment.reference, 'one reference per payment')
     assert.equal(h.ids.created, 0, 'no session yet')
-    assert.equal((await h.post('/session')).status, 201, 'the face check stays free')
+    assert.equal((await h.post('/face/session')).status, 201, 'the face check stays free')
 
     assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 402, body: { error: 'not_paid' } })
     h.payments.down = true
@@ -496,10 +459,9 @@ test('with a price, a document check opens once a payment naming its reference h
     const [a, b] = await Promise.all([h.post('/id/session', { payment: fourth.id }), h.post('/id/session', { payment: fourth.id })])
     assert.deepEqual([a, h.ids.created], [b, created], 'two asks at once: one answer, no session opened')
 
-    // The session it opened is a document session like any other.
-    const { note } = await tier1(h, 'alice', await noteNumber())
+    // The session it opened is an ID session like any other.
     h.ids.set(opened.body.sessionId, passedId('alice'))
-    assert.equal((await idNote(h, opened.body.sessionId, note)).status, 200)
+    assert.equal((await idNote(h, opened.body.sessionId, await noteNumber())).status, 200)
 
     for (const [body, status, error] of [
       [{ payment: 'ABC' }, 400, 'bad_payment'],
@@ -514,16 +476,18 @@ test('with a price, a document check opens once a payment naming its reference h
 })
 
 test('the configuration names what is missing', () => {
-  assert.throws(() => readConfig({}), /missing environment variables: ISSUER_NAME, DIDIT_API_KEY, DIDIT_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID$/)
-  const base = { ISSUER_NAME, DIDIT_API_KEY: 'k', DIDIT_WORKFLOW_ID: 'w', DIDIT_ID_WORKFLOW_ID: 'i' }
+  assert.throws(() => readConfig({}), /missing environment variables: DIDIT_API_KEY, DIDIT_FACE_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID$/)
+  const base = { DIDIT_API_KEY: 'k', DIDIT_FACE_WORKFLOW_ID: 'f', DIDIT_ID_WORKFLOW_ID: 'i' }
   const config = readConfig(base)
-  assert.equal(config.issuerName, ISSUER_NAME)
+  assert.equal(config.issuerName, 'issuer.forest.foundation', 'the name, unless told otherwise')
+  assert.equal(readConfig({ ...base, ISSUER_NAME }).issuerName, ISSUER_NAME)
   assert.equal(config.diditBaseUrl, 'https://verification.didit.me')
   assert.equal(config.faceModel, 'sface')
   assert.equal(config.sessionLimitPerHour, 5)
   assert.equal(config.clientAddressHeader, undefined)
   assert.equal(readConfig({ ...base, CLIENT_ADDRESS_HEADER: 'X-Real-IP' }).clientAddressHeader, 'x-real-ip')
-  assert.equal(config.idTierPrice, 0n, 'the document check is free unless a price is set')
+  assert.equal(config.idPrice, undefined, 'the ID check is not offered unless a price is set')
+  assert.equal(config.rpcUrl, undefined)
 
   // The stand-in embedding is for a stand-in Didit on this machine, and nowhere else.
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'stand-in' }), /FACE_MODEL=stand-in is for a stand-in Didit on this machine only/)
@@ -531,19 +495,22 @@ test('the configuration names what is missing', () => {
   assert.equal(readConfig({ ...base, FACE_MODEL: 'stand-in', DIDIT_BASE_URL: 'http://127.0.0.1:8090' }).faceModel, 'stand-in')
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'other' }), /FACE_MODEL is sface or stand-in/)
 
-  assert.throws(() => readConfig({ ...base, ID_TIER_PRICE: '2500000' }), /missing environment variables: ID_TIER_MINT, ID_TIER_PAY_TO, RPC_URL/)
-  for (const price of ['2.5', '-1', '01', 'free']) assert.throws(() => readConfig({ ...base, ID_TIER_PRICE: price }), /ID_TIER_PRICE must be a whole number/)
-  assert.throws(() => readConfig({ ...base, ...PRICED, ID_TIER_PAY_TO: 'not-an-address' }), /ID_TIER_PAY_TO is not an address/)
-  assert.equal(readConfig({ ...base, ...PRICED }).idTierPrice, 2_500_000n)
+  // The ID check's four settings: all, or none.
+  assert.throws(() => readConfig({ ...base, ID_PRICE: '2500000' }), /missing environment variables: ID_PAY_TO, ID_MINT, RPC_URL$/)
+  assert.throws(() => readConfig({ ...base, ID_PAY_TO: PRICED.ID_PAY_TO }), /missing environment variables: ID_PRICE, ID_MINT, RPC_URL$/)
+  assert.throws(() => readConfig({ ...base, RPC_URL: 'http://rpc.example' }), /missing environment variables: ID_PRICE, ID_PAY_TO, ID_MINT$/)
+  for (const price of ['0', '2.5', '-1', '01', 'free']) assert.throws(() => readConfig({ ...base, ...PRICED, ID_PRICE: price }), /ID_PRICE must be a whole number above 0/)
+  assert.throws(() => readConfig({ ...base, ...PRICED, ID_PAY_TO: 'not-an-address' }), /ID_PAY_TO is not an address/)
+  assert.throws(() => readConfig({ ...base, ...PRICED, ID_MINT: 'not-an-address' }), /ID_MINT is not an address/)
+  assert.deepEqual(readConfig({ ...base, ...PRICED }).idPrice, { amount: 2_500_000n, payTo: PRICED.ID_PAY_TO, mint: PRICED.ID_MINT })
 
-  // The welcome gift: none unless a service is named; ten registrations and ten cents unless set.
-  assert.deepEqual(config.gift, {})
-  const gifted = { ...base, REGISTRY_PAYER_URL: 'https://registry-payer.example', HOST_URL: 'https://host.example' }
-  assert.deepEqual(readConfig(gifted).gift, { registryPayer: { origin: 'https://registry-payer.example', credits: 10 }, host: { origin: 'https://host.example', credits: 10 } })
-  assert.deepEqual(readConfig({ ...gifted, REGISTRY_CREDITS: '0', HOST_CREDITS: '20' }).gift, { host: { origin: 'https://host.example', credits: 20 } }, 'none of a service at 0')
-  assert.equal(readConfig(gifted).rpcUrl, undefined, 'a gift needs no RPC: the issuer pays nothing')
-  assert.throws(() => readConfig({ ...gifted, HOST_URL: 'https://host.example/' }), /HOST_URL is an origin/)
-  assert.throws(() => readConfig({ ...gifted, HOST_CREDITS: '-1' }), /HOST_CREDITS/)
+  // The welcome gift: none unless the host is named; ten credits unless set; none at 0.
+  assert.equal(config.gift, undefined)
+  assert.deepEqual(readConfig({ ...base, HOST_URL: 'https://host.example' }).gift, { origin: 'https://host.example', credits: 10 })
+  assert.deepEqual(readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '20' }).gift, { origin: 'https://host.example', credits: 20 })
+  assert.equal(readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '0' }).gift, undefined)
+  assert.throws(() => readConfig({ ...base, HOST_URL: 'https://host.example/' }), /HOST_URL is an origin/)
+  assert.throws(() => readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '-1' }), /HOST_CREDITS/)
 
   // The apps a person may be sent back to: none unless named, each an origin.
   assert.deepEqual(config.appOrigins, [])
@@ -552,100 +519,87 @@ test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'app.example' }), /APP_ORIGINS is an origin/)
 })
 
-/** The two services' own sellers, each taking the issuer's sponsor key: the registry payer's and the host's. */
-function giftServices(sponsor: string) {
-  const pkcs8 = () => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
-  const credit = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', price: '0.5' }
-  const at = async (origin: string, sells: typeof hostCredits | typeof payerCredits) => {
-    const s = sells.seller({ origin, key: await sells.keyFrom(pkcs8()), requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
-    return { seller: s, service: serviceOf(origin, s.directory()) }
-  }
-  return Promise.all([at('https://registry-payer.example', payerCredits), at('https://host.example', hostCredits)])
+test("the ID check's price is never paid to the issuer's own sponsor key", async () => {
+  const seed = seedJson()
+  const own = (await seedFrom(seed.bytes).ed25519(INFO.sponsor)).address
+  await assert.rejects(start({ seed: seed.json, env: { ID_PAY_TO: own } }), /ID_PAY_TO is the issuer's own sponsor key/)
+})
+
+/** The host's own seller, taking the issuer's sponsor key. */
+async function hostSeller(sponsor: string) {
+  const pkcs8 = new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))
+  const credit = { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa', price: '0.01' }
+  const origin = 'https://host.example'
+  const seller = hostCredits.seller({ origin, key: await hostCredits.keyFrom(pkcs8), requestUri: '/credits/buy', credit, maxBuy: 1000, sponsors: [sponsor], rpc: null, path: ':memory:' })
+  return { seller, service: serviceOf(origin, seller.directory()) }
 }
 
-test('the welcome gift: at a first note, a sponsor’s ticket for each of the app’s buys, once a note number; the issuer pays nothing', async () => {
-  const key = keypairJson()
-  const sponsor = (await parseKeypair(key.json, 'test').derive(SPONSOR_KEY_LABEL)).address
-  const [registry, host] = await giftServices(sponsor)
-  const h = await start({ key: key.json, env: { REGISTRY_PAYER_URL: 'https://registry-payer.example', REGISTRY_CREDITS: '3', HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
+test('the welcome gift: at a note number’s first face note, a sponsor’s ticket for the app’s host buy, which the host collects; the issuer pays nothing', async () => {
+  const seed = seedJson()
+  const sponsor = (await seedFrom(seed.bytes).ed25519(INFO.sponsor)).address
+  const host = await hostSeller(sponsor)
+  const h = await start({ seed: seed.json, env: { HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
   try {
-    // issuer.json says what the gift holds, so the app knows what to buy.
-    const about = await (await fetch(h.issuer.url + '/issuer.json')).json()
-    assert.deepEqual(about.gift, { host: { credits: 5, origin: 'https://host.example' }, registryPayer: { credits: 3, origin: 'https://registry-payer.example' } })
-    assert.equal(about.sponsor, sponsor, 'and the sponsor key, which each service lists')
-    const buys = async (r = 3, w = 5) => ({ registry: await buy(registry.service, r), host: await buy(host.service, w) })
-    const refs = (b: Awaited<ReturnType<typeof buys>>) => ({ registryPayer: b.registry.reference, host: b.host.reference })
-    const note = (sessionId: string, n: bigint, gift: unknown) => h.post('/note', { sessionId, noteNumber: n.toString(), gift })
+    // GET / says what the gift holds, so the app knows what to buy.
+    assert.deepEqual((await about(h)).gift, { host: 'https://host.example', credits: 5, sponsor })
+    const note = (sessionId: string, n: bigint, gift: unknown) => h.post('/face/note', { sessionId, noteNumber: n.toString(), gift })
 
     const n = await noteNumber()
     const sessionId = await h.session(passed('alice'))
-    const mine = await buys()
-    const first = await note(sessionId, n, refs(mine))
+    const mine = await buy(host.service, 5)
+    const first = await note(sessionId, n, mine.reference)
     assert.equal(first.status, 200)
-    assert.ok(noteSigned(noteFromJson(first.body.note)!))
-    assert.deepEqual(Object.keys(first.body.gift).sort(), ['host', 'registryPayer'])
+    assert.ok(noteSigned(noteFromJson(first.body.note)))
+    const { ticket } = first.body.gift
+    assert.equal(ticket.split('.')[0], sponsor, 'it names the sponsor')
 
-    // Each service takes its ticket, from the sponsor it lists, and the app finishes the credits.
-    const collect = async (at: typeof registry, b: Awaited<ReturnType<typeof buy>>, ticket: string) => {
-      const answered = await at.seller.collect(b.buy, `ticket ${ticket}`)
-      assert.equal(answered.status, 200, JSON.stringify(answered.body))
-      return finish(b.pending, answered.body as Uint8Array)
-    }
-    assert.equal((await collect(registry, mine.registry, first.body.gift.registryPayer)).length, 3)
-    assert.equal((await collect(host, mine.host, first.body.gift.host)).length, 5)
-    assert.deepEqual([registry.seller.bill(), host.seller.bill()], [{ [sponsor]: 3 }, { [sponsor]: 5 }], 'each service bills the sponsor')
-    assert.equal((await host.seller.collect(mine.registry.buy, `ticket ${first.body.gift.registryPayer}`)).status, 402, 'a ticket pays at its own service only')
+    // The host takes the ticket, from the sponsor it lists, and the app finishes the credits.
+    const answered = await host.seller.collect(mine.buy, `ticket ${ticket}`)
+    assert.equal(answered.status, 200, JSON.stringify(answered.body))
+    assert.equal((await finish(mine.pending, answered.body as Uint8Array)).length, 5)
+    assert.deepEqual(host.seller.bill(), { [sponsor]: 5 }, 'the host bills the sponsor')
 
-    // Once a note number: the same buys again, the same tickets; other buys, none.
-    const again = await note(sessionId, n, refs(mine))
-    assert.deepEqual([again.status, again.body.gift], [200, first.body.gift], 'a retry: the same tickets')
-    assert.equal(again.body.note.noteNumber, first.body.note.noteNumber)
-    assert.deepEqual((await note(sessionId, n, refs(await buys()))).body.gift, { error: 'given' })
+    // Once a note number: the same buy again, the same ticket; another buy, none.
+    const again = await note(sessionId, n, mine.reference)
+    assert.deepEqual([again.status, again.body.gift], [200, first.body.gift], 'a retry: the same ticket')
+    assert.deepEqual((await note(sessionId, n, (await buy(host.service, 5)).reference)).body.gift, { error: 'given' })
 
-    // Buys the gift does not name, or more credits than it gives.
+    // Anything but a buy's reference; a buy of more credits than the gift gives is not paid.
     const m = await noteNumber()
     const bob = await h.session(passed('bob'))
-    const b = await buys()
-    const refused = async (gift: unknown) => (await note(bob, m, gift)).body.gift
-    assert.deepEqual(await refused({ registryPayer: b.registry.reference }), { error: 'bad_gift' }, 'one service missing')
-    assert.deepEqual(await refused({ ...refs(b), other: b.host.reference }), { error: 'bad_gift' }, 'one service too many')
-    assert.deepEqual(await refused({ ...refs(b), host: 'nope' }), { error: 'bad_gift' }, 'not a reference')
-    const four = await buys(4)
-    const tickets = (await note(bob, m, refs(four))).body.gift
-    assert.equal((await registry.seller.collect(four.registry.buy, `ticket ${tickets.registryPayer}`)).status, 402, 'a buy of more credits than the ticket gives is not paid')
+    assert.deepEqual((await note(bob, m, 'nope')).body.gift, { error: 'bad_gift' })
+    assert.deepEqual((await note(bob, m, { host: mine.reference })).body.gift, { error: 'bad_gift' })
+    const six = await buy(host.service, 6)
+    const tickets = (await note(bob, m, six.reference)).body.gift
+    assert.equal((await host.seller.collect(six.buy, `ticket ${tickets.ticket}`)).status, 402, 'a buy of more credits than the ticket gives is not paid')
 
-    // The note is never held back by the gift; a gift that is not an object is refused before anything.
-    assert.equal((await note(bob, m, 'refs')).status, 400)
-    assert.equal((await h.post('/note', { sessionId: bob, noteNumber: m.toString() })).body.gift, undefined, 'no gift asked, none answered')
+    // The note is never held back by the gift; none asked, none answered; the ID check gives none.
+    assert.equal((await h.post('/face/note', { sessionId: bob, noteNumber: m.toString() })).body.gift, undefined)
+    const id = await h.idSession(passedId('bob', doc('Byron')))
+    assert.deepEqual(await h.post('/id/note', { sessionId: id, noteNumber: m.toString(), gift: six.reference }), { status: 400, body: { error: 'expected_exactly_sessionId_and_noteNumber' } })
     await h.issuer.close()
-    assertKept(h.dbPath, { sessions: [[sessionId, n], [bob, m]], fingerprints: [], gifts: [n, m], never: [mine.registry.reference, mine.host.reference, four.registry.reference] })
+    assertKept(h.dbPath, { sessions: [[sessionId, n, 'face'], [bob, m, 'face']], fingerprints: [], gifts: [n, m], never: [mine.reference, six.reference, ticket] })
   } finally {
     await h.issuer.close().catch(() => {})
   }
 })
 
-test('with no gift, a note asked for with one is refused as before', async () => {
+test('with no gift, a note asked for with one is refused', async () => {
   const h = await start()
   try {
     const sessionId = await h.session(passed('alice'))
-    const res = await h.post('/note', { sessionId, noteNumber: (await noteNumber()).toString(), gift: {} })
+    const res = await h.post('/face/note', { sessionId, noteNumber: (await noteNumber()).toString(), gift: 'x' })
     assert.deepEqual([res.status, res.body], [400, { error: 'expected_exactly_sessionId_and_noteNumber' }])
-    assert.equal((await (await fetch(h.issuer.url + '/issuer.json')).json()).gift, undefined)
+    assert.equal((await about(h)).gift, undefined)
   } finally {
     await h.issuer.close()
   }
 })
 
-test("the document check's price is never paid to the issuer's own key", async () => {
-  const key = keypairJson()
-  const own = parseKeypair(key.json, 'test').address
-  await assert.rejects(start({ key: key.json, env: { ...PRICED, ID_TIER_PAY_TO: own } }), /ID_TIER_PAY_TO is the issuer's own key/)
-})
-
 test('opening sessions is limited per address, and a refusal says only "try later"', async () => {
   const h = await start({ env: { SESSION_LIMIT_PER_HOUR: '3', CLIENT_ADDRESS_HEADER: 'x-real-ip' } })
   try {
-    const from = (address: string) => h.post('/session', {}, { 'x-real-ip': address })
+    const from = (address: string) => h.post('/face/session', {}, { 'x-real-ip': address })
     for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.7')).status, 201)
     assert.deepEqual(await from('203.0.113.7'), { status: 429, body: { error: 'try_later' } })
     assert.equal(h.faces.created, 3, 'a refused request never reaches Didit')
@@ -653,13 +607,13 @@ test('opening sessions is limited per address, and a refusal says only "try late
     for (const a of ['2001:db8:1:2::a', '2001:db8:1:2:ffff::b', '2001:0db8:0001:0002:0:0:0:c']) assert.equal((await from(a)).status, 201)
     assert.equal((await from('2001:db8:1:2:9::d')).status, 429, 'an IPv6 address counts with the rest of its /64')
     assert.equal((await from('2001:db8:1:3::a')).status, 201, 'the next /64 is someone else')
-    assert.equal((await h.post('/session', { x: 1 }, { 'x-real-ip': '203.0.113.9' })).status, 400)
+    assert.equal((await h.post('/face/session', { x: 1 }, { 'x-real-ip': '203.0.113.9' })).status, 400)
     for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.9')).status, 201, 'a malformed request is not counted')
 
     // Notes are not limited, and the address is never written: not in the log, not in the file.
     const sessionId = (await from('203.0.113.10')).body.sessionId
     h.faces.set(sessionId, passed('alice'))
-    assert.equal((await h.post('/note', { sessionId, noteNumber: (await noteNumber()).toString() }, { 'x-real-ip': '203.0.113.7' })).status, 200)
+    assert.equal((await h.post('/face/note', { sessionId, noteNumber: (await noteNumber()).toString() }, { 'x-real-ip': '203.0.113.7' })).status, 200)
     await h.issuer.close()
     assert.deepEqual(h.logs, [])
     const file = readFileSync(h.dbPath)
@@ -670,9 +624,9 @@ test('opening sessions is limited per address, and a refusal says only "try late
 
   const direct = await start({ env: { SESSION_LIMIT_PER_HOUR: '2' } })
   try {
-    assert.equal((await direct.post('/session', {}, { 'x-real-ip': '198.51.100.1' })).status, 201)
-    assert.equal((await direct.post('/session', {}, { 'x-real-ip': '198.51.100.2' })).status, 201)
-    assert.equal((await direct.post('/session', {}, { 'x-real-ip': '198.51.100.3' })).status, 429, 'a header nobody named is ignored')
+    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.1' })).status, 201)
+    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.2' })).status, 201)
+    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.3' })).status, 429, 'a header nobody named is ignored')
   } finally {
     await direct.issuer.close()
   }
@@ -702,41 +656,41 @@ test('the limit: a fresh share each hour, and nothing kept past it', () => {
   assert.equal(addressGroup('not an address'), 'not an address')
 })
 
-test('the key: made on the first start beside the database, kept there, the same on every start after', async () => {
+test('the seed: made on the first start beside the database, kept there, the same on every start after', async () => {
   const dir = tempDir()
   const dbPath = join(dir, 'issuer.sqlite')
-  const keyFile = join(dir, KEY_FILE)
+  const seedFile = join(dir, SEED_FILE)
   const first = await start({ dbPath })
-  let about: string
+  let published: string
   try {
-    assert.equal(first.issuer.madeKey, true, 'no key beside the database: one is made')
-    about = await (await fetch(first.issuer.url + '/issuer.json')).text()
+    assert.equal(first.issuer.madeSeed, true, 'no seed beside the database: one is made')
+    published = await (await fetch(first.issuer.url + '/')).text()
   } finally {
     await first.issuer.close()
   }
-  assert.equal(statSync(keyFile).mode & 0o777, 0o600, 'readable by this user only')
-  const contents = readFileSync(keyFile, 'utf8')
-  const key = parseKeypair(contents, 'the key file')
-  assert.equal(JSON.parse(about).key, issuerHex(issuerKeyOf(await key.mix(NOTE_KEY_INFO))), '/issuer.json names the note key mixed from it')
-  assert.deepEqual(first.logs, [], 'and the key is never logged')
+  assert.equal(statSync(seedFile).mode & 0o777, 0o600, 'readable by this user only')
+  const contents = readFileSync(seedFile, 'utf8')
+  assert.match(contents, /^\{"seed":"[0-9a-f]{64}"\}$/)
+  const seed = parseSeed(contents, 'the seed file')
+  assert.equal(JSON.parse(published).face.key, issuerKeyOf(await seed.mix('issuer/face')), 'GET / names the face key mixed from it')
+  assert.equal(JSON.parse(published).id.key, issuerKeyOf(await seed.mix('issuer/id')), 'and the ID key')
+  assert.deepEqual(first.logs, [], 'and the seed is never logged')
 
-  // The next start reads it, and the old ISSUER_KEYPAIR variable is not read at all.
-  const second = await start({ dbPath, env: { ISSUER_KEYPAIR: keypairJson().json } })
+  const second = await start({ dbPath })
   try {
-    assert.equal(second.issuer.madeKey, false)
-    assert.equal(await (await fetch(second.issuer.url + '/issuer.json')).text(), about, 'the same issuer')
+    assert.equal(second.issuer.madeSeed, false)
+    assert.equal(await (await fetch(second.issuer.url + '/')).text(), published, 'the same issuer')
   } finally {
     await second.issuer.close()
   }
-  assert.equal(readFileSync(keyFile, 'utf8'), contents, 'the file is never written again')
+  assert.equal(readFileSync(seedFile, 'utf8'), contents, 'the file is never written again')
 
-  // A key file that is no keypair stops the issuer, with a message that quotes none of it.
-  const numbers = JSON.parse(contents) as number[]
-  const broken = [contents.slice(0, 40), JSON.stringify(numbers.slice(0, 32)), JSON.stringify([...numbers.slice(0, 32), ...JSON.parse(keypairJson().json).slice(32)])]
-  for (const text of broken) {
+  // A seed file that is no seed stops the issuer, with a message that quotes none of it.
+  const hexText = JSON.parse(contents).seed as string
+  for (const text of [contents.slice(0, 40), JSON.stringify({ seed: hexText.slice(0, 62) }), JSON.stringify({ seed: hexText, more: 1 }), JSON.stringify({ seed: hexText.toUpperCase() })]) {
     await assert.rejects(
-      () => start({ key: text }),
-      (error: Error) => /^the key file .* is not a Solana keypair/.test(error.message) && !error.message.includes(text.slice(1, 12)),
+      () => start({ seed: text }),
+      (error: Error) => /^the seed file .* is not the issuer's seed/.test(error.message) && !error.message.includes(hexText.slice(4, 20)),
     )
   }
 })
@@ -744,64 +698,81 @@ test('the key: made on the first start beside the database, kept there, the same
 test('a face check sends the person back only to an app the issuer names in APP_ORIGINS', async () => {
   const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
   try {
-    const opened = await h.post('/session', { returnUrl: 'https://app.example/checked?from=face' })
+    const opened = await h.post('/face/session', { returnUrl: 'https://app.example/checked?from=face' })
     assert.equal(opened.status, 201)
     assert.equal(h.faces.callbacks.get(opened.body.sessionId), 'https://app.example/checked?from=face', 'Didit is told where to send the person back')
-    assert.equal(h.faces.callbacks.get((await h.post('/session')).body.sessionId), undefined, 'none asked, none sent')
+    assert.equal(h.faces.callbacks.get((await h.post('/face/session')).body.sessionId), undefined, 'none asked, none sent')
     for (const returnUrl of ['https://other.example/', 'http://app.example/', 'https://app.example.evil/', 'not a url']) {
-      assert.deepEqual(await h.post('/session', { returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
+      assert.deepEqual(await h.post('/face/session', { returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
     }
-    assert.deepEqual(await h.post('/session', { returnUrl: 3 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
-    assert.deepEqual(await h.post('/session', { returnUrl: 'https://app.example/', x: 1 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
+    assert.deepEqual(await h.post('/face/session', { returnUrl: 3 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
+    assert.deepEqual(await h.post('/face/session', { returnUrl: 'https://app.example/', x: 1 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
     assert.equal(h.faces.created, 2, 'a refused request never reaches Didit')
   } finally {
     await h.issuer.close()
   }
   const none = await start()
   try {
-    assert.deepEqual(await none.post('/session', { returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'with no APP_ORIGINS, no return URL is taken')
+    assert.deepEqual(await none.post('/face/session', { returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'with no APP_ORIGINS, no return URL is taken')
   } finally {
     await none.issuer.close()
   }
 })
 
-test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, both stages, for two people', async () => {
+test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, both checks for two people, and review', async () => {
   const port = 20000 + Math.floor(Math.random() * 20000)
   const fake = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', join(here, 'fake-didit.ts')], {
-    env: { ...process.env, FAKE_DIDIT_PORT: String(port), FAKE_DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW },
+    env: { ...process.env, FAKE_DIDIT_PORT: String(port), FAKE_DIDIT_FACE_WORKFLOW_ID: FACE_WORKFLOW, FAKE_DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   await new Promise<void>((resolve) => fake.stdout!.once('data', () => resolve()))
+  const baseUrl = `http://127.0.0.1:${port}`
   const config = readConfig({
     ISSUER_NAME,
     DIDIT_API_KEY: 'fake-didit',
-    DIDIT_WORKFLOW_ID: WORKFLOW,
+    DIDIT_FACE_WORKFLOW_ID: FACE_WORKFLOW,
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
-    DIDIT_BASE_URL: `http://127.0.0.1:${port}`,
+    DIDIT_BASE_URL: baseUrl,
     FACE_MODEL: 'stand-in',
     DATABASE_PATH: join(tempDir(), 'issuer.sqlite'),
     PORT: '0',
+    ...PRICED,
   })
-  const issuer = await startIssuer(config, { log: () => {} })
+  // Each payment counts as landed, under its own reference: the stand-in has no chain.
+  const payments = { landed: async (reference: string) => [reference] }
+  const issuer = await startIssuer(config, { payments, log: () => {} })
+  const reviewed = await startIssuer(
+    { ...config, databasePath: join(tempDir(), 'issuer.sqlite') },
+    { faceCheck: new DiditClient({ apiKey: 'fake-didit', workflowId: FACE_WORKFLOW, check: 'face', baseUrl, scenario: 'review_duplicated_face' }), log: () => {} },
+  )
   try {
-    const post = async (path: string, body: unknown = {}) => {
-      const res = await fetch(issuer.url + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const post = async (at: Issuer, path: string, body: unknown = {}) => {
+      const res = await fetch(at.url + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       return { status: res.status, body: await res.json() }
     }
     for (let person = 0; person < 2; person++) {
       const n = await noteNumber()
-      const face = await post('/session')
-      const t1 = await post('/note', { sessionId: face.body.sessionId, noteNumber: n.toString() })
-      assert.equal(t1.status, 200, JSON.stringify(t1.body))
-      assert.equal(t1.body.note.model, 'stand-in')
-      assert.ok(noteSigned(noteFromJson(t1.body.note)!))
-      const id = await post('/id/session')
-      const t2 = await post('/id/note', { sessionId: id.body.sessionId, note: t1.body.note })
-      assert.equal(t2.status, 200, JSON.stringify(t2.body))
-      assert.equal(t2.body.note.tier, '2')
+      const face = await post(issuer, '/face/session')
+      const faceNote = await post(issuer, '/face/note', { sessionId: face.body.sessionId, noteNumber: n.toString() })
+      assert.equal(faceNote.status, 200, JSON.stringify(faceNote.body))
+      assert.equal(faceNote.body.note.model, 'stand-in')
+      assert.equal(faceNote.body.note.issuer, issuer.keys.face)
+      assert.ok(noteSigned(noteFromJson(faceNote.body.note)))
+      const { payment } = (await post(issuer, '/id/session')).body
+      const id = await post(issuer, '/id/session', { payment: payment.id })
+      assert.equal(id.status, 201, JSON.stringify(id.body))
+      const idNote = await post(issuer, '/id/note', { sessionId: id.body.sessionId, noteNumber: n.toString() })
+      assert.equal(idNote.status, 200, JSON.stringify(idNote.body))
+      assert.equal(idNote.body.note.issuer, issuer.keys.id)
+      assert.deepEqual([idNote.body.note.birth, idNote.body.note.country], ['1990-01-01', 826])
+      assert.ok(noteSigned(noteFromJson(idNote.body.note)))
     }
+    // A session opened with a review scenario: Didit holds it In Review, and the issuer says it is waiting.
+    const held = await post(reviewed, '/face/session')
+    assert.deepEqual(await post(reviewed, '/face/note', { sessionId: held.body.sessionId, noteNumber: (await noteNumber()).toString() }), { status: 202, body: { waiting: 'review' } })
   } finally {
     await issuer.close()
+    await reviewed.close()
     fake.kill()
   }
 })

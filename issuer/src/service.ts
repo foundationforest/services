@@ -5,48 +5,39 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 
-import { base58 } from '../../standard/records/src/bytes.ts'
-import { canonical } from '../../standard/records/src/canonical.ts'
-import { type IssuerKey as NoteKey, issuerKeyOf } from '../../standard/registry/client/src/person.ts'
+import { issuerKeyOf } from '@foundationforest/note'
+import { base58, canonical } from '@foundationforest/records'
+
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
-import { loadOrMakeKey } from './key.ts'
 import { RateLimit } from './limit.ts'
-import { issuerHex } from './notes.ts'
-import { RpcPayments, type Payments } from './payment.ts'
+import { RECIPES } from './notes.ts'
+import { RpcPayments, type Payments, type Price } from './payment.ts'
+import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
 import { handler, type PaymentDeps } from './server.ts'
 import { Store } from './store.ts'
-
-/** The hkdf labels the note key and the fingerprint key are mixed under, from the issuer's seed. */
-export const NOTE_KEY_INFO = 'issuer/notes'
-export const FINGERPRINT_KEY_INFO = 'issuer/fingerprint'
-/** The label the key that signs the welcome gift's tickets is mixed under, from the issuer's seed (the standard's `mainKey`). */
-export const SPONSOR_KEY_LABEL = 'sponsor'
 
 export type Config = {
   /** The issuer's name: what a person's secret for it is mixed from (the standard's `issuerSecret`). */
   issuerName: string
   diditApiKey: string
-  diditWorkflowId: string
-  /** The document check's workflow: document, liveness and face match. */
+  /** The face check's workflow: liveness, with Didit's face search. */
+  diditFaceWorkflowId: string
+  /** The ID check's workflow: document, liveness and face match. */
   diditIdWorkflowId: string
   diditBaseUrl: string
   /** `sface`, or `stand-in`: one fixed embedding, only with a stand-in Didit on this machine. */
   faceModel: 'sface' | 'stand-in'
-  /** The document check's price in the dollar's smallest unit; 0 is free. */
-  idTierPrice: bigint
-  /** The dollar it is paid in, by its mint's address. Required when the price is above 0. */
-  idTierMint?: string
-  /** The address that receives it; never the issuer's own. Required when the price is above 0. */
-  idTierPayTo?: string
-  /** The Solana RPC a payment is looked for through. Required when the price is above 0. */
+  /** The ID check's price, its dollar and where it is paid. Unset: the ID check is not offered. */
+  idPrice?: Price
+  /** The Solana RPC a payment is looked for through. Set with the price, and only then. */
   rpcUrl?: string
-  /** The welcome gift: for each service, its origin and how many of its credits; empty for none. */
-  gift: Gift
-  /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
+  /** The welcome gift: the host's origin and how many of its credits. Unset: none. */
+  gift?: Gift
+  /** The origins an app may ask the person to come back to after a face check (`returnUrl`); empty for none. */
   appOrigins: string[]
-  /** The one file; the issuer's key file sits beside it (`KEY_FILE`). */
+  /** The one file; the issuer's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
   /** How many sessions one address may open in an hour. */
   sessionLimitPerHour: number
@@ -54,6 +45,9 @@ export type Config = {
   clientAddressHeader?: string
   port: number
 }
+
+/** The name this issuer has unless told otherwise: every person's note number and stamps hang off it. */
+export const ISSUER_NAME = 'issuer.forest.foundation'
 
 /** A Solana address in its one spelling: 32 bytes in base58. */
 function isAddress(text: string): boolean {
@@ -88,32 +82,35 @@ function origin(name: string, value: string): string {
 
 function whole(name: string, value: string, min: number): number {
   const n = Number(value)
-  if (!Number.isSafeInteger(n) || n < min) throw new Error(`${name} must be a whole number of at least ${min}`)
+  if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(n) || n < min) throw new Error(`${name} must be a whole number of at least ${min}`)
   return n
 }
 
+/** The ID check's four settings: all of them, or none, and then it is not offered. */
+const ID_SETTINGS = ['ID_PRICE', 'ID_PAY_TO', 'ID_MINT', 'RPC_URL']
+
 /**
  * Reads the variables `README.md` lists. Fails naming every required one that is missing. The seed is
- * no variable: it is the key file beside the database (`KEY_FILE`).
+ * no variable: it is the seed file beside the database (`SEED_FILE`).
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const required = ['ISSUER_NAME', 'DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID']
-  const missing = required.filter((name) => !env[name])
-  const price = env.ID_TIER_PRICE || '0'
-  if (!/^(0|[1-9][0-9]{0,19})$/.test(price)) throw new Error('ID_TIER_PRICE must be a whole number: the price in the dollar’s smallest unit')
-  if (BigInt(price) > 0n) missing.push(...['ID_TIER_MINT', 'ID_TIER_PAY_TO', 'RPC_URL'].filter((name) => !env[name]))
-  const gift: Gift = {}
-  for (const [role, url, count, fallback] of [['registryPayer', 'REGISTRY_PAYER_URL', 'REGISTRY_CREDITS', '10'], ['host', 'HOST_URL', 'HOST_CREDITS', '10']] as const) {
-    if (!env[url]) continue
-    const at = origin(url, env[url]!)
-    const credits = whole(count, env[count] || fallback, 0)
-    if (credits > 0) gift[role] = { origin: at, credits }
+  const missing = ['DIDIT_API_KEY', 'DIDIT_FACE_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID'].filter((name) => !env[name])
+  const priced = ID_SETTINGS.some((name) => env[name])
+  if (priced) missing.push(...ID_SETTINGS.filter((name) => !env[name]))
+  if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
+
+  let idPrice: Price | undefined
+  if (priced) {
+    if (!/^[1-9][0-9]{0,19}$/.test(env.ID_PRICE!)) throw new Error('ID_PRICE must be a whole number above 0: the price in the dollar’s smallest unit')
+    for (const name of ['ID_PAY_TO', 'ID_MINT']) if (!isAddress(env[name]!)) throw new Error(`${name} is not an address`)
+    idPrice = { amount: BigInt(env.ID_PRICE!), payTo: env.ID_PAY_TO!, mint: env.ID_MINT! }
+  }
+  let gift: Gift | undefined
+  if (env.HOST_URL) {
+    const credits = whole('HOST_CREDITS', env.HOST_CREDITS || '10', 0)
+    if (credits > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
   }
   const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
-  if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
-  for (const name of ['ID_TIER_MINT', 'ID_TIER_PAY_TO']) {
-    if (env[name] && !isAddress(env[name])) throw new Error(`${name} is not an address`)
-  }
   const faceModel = env.FACE_MODEL || 'sface'
   if (faceModel !== 'sface' && faceModel !== 'stand-in') throw new Error('FACE_MODEL is sface or stand-in')
   const diditBaseUrl = env.DIDIT_BASE_URL || 'https://verification.didit.me'
@@ -121,16 +118,14 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     throw new Error('FACE_MODEL=stand-in is for a stand-in Didit on this machine only: DIDIT_BASE_URL is not on loopback')
   }
   return {
-    issuerName: env.ISSUER_NAME!,
+    issuerName: env.ISSUER_NAME || ISSUER_NAME,
     diditApiKey: env.DIDIT_API_KEY!,
-    diditWorkflowId: env.DIDIT_WORKFLOW_ID!,
+    diditFaceWorkflowId: env.DIDIT_FACE_WORKFLOW_ID!,
     diditIdWorkflowId: env.DIDIT_ID_WORKFLOW_ID!,
     diditBaseUrl,
     faceModel,
-    idTierPrice: BigInt(price),
-    idTierMint: env.ID_TIER_MINT || undefined,
-    idTierPayTo: env.ID_TIER_PAY_TO || undefined,
-    rpcUrl: env.RPC_URL || undefined,
+    idPrice,
+    rpcUrl: priced ? env.RPC_URL : undefined,
     gift,
     appOrigins,
     databasePath: env.DATABASE_PATH || './data/issuer.sqlite',
@@ -144,20 +139,20 @@ export type Issuer = {
   url: string
   server: Server
   store: Store
-  /** The note key's public half: what a row names, and what readers trust. */
-  noteKey: NoteKey
-  /** Whether this start made the issuer's key, finding none beside the database. */
-  madeKey: boolean
+  /** The two note keys, as addresses: what readers trust. */
+  keys: { face: string; id: string }
+  /** The sponsor key's address, with a gift. */
+  sponsor?: string
+  /** Whether this start made the issuer's seed, finding none beside the database. */
+  madeSeed: boolean
   /** Stops taking requests, and closes the file. */
   close(): Promise<void>
 }
 
-/** The issuer's key file's name, in the database's directory. */
-export const KEY_FILE = 'issuer-keypair.json'
-
 /**
- * Starts the service. Tests pass their own checks, payments and embedder; otherwise it talks to Didit
- * and to the RPC, and loads the face models (or, with `FACE_MODEL=stand-in`, the stand-in).
+ * Starts the service. Tests and the sandbox run pass their own checks, payments and embedder;
+ * otherwise it talks to Didit and to the RPC, and loads the face models (or, with
+ * `FACE_MODEL=stand-in`, the stand-in).
  */
 export async function startIssuer(
   config: Config,
@@ -170,42 +165,50 @@ export async function startIssuer(
   } = {},
 ): Promise<Issuer> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
-  const { key: seed, made: madeKey } = loadOrMakeKey(join(dirname(config.databasePath), KEY_FILE))
-  if (config.idTierPayTo === seed.address) {
-    throw new Error("ID_TIER_PAY_TO is the issuer's own key; payments go to an address of their own")
+  const { seed, made: madeSeed } = loadOrMakeSeed(join(dirname(config.databasePath), SEED_FILE))
+  const noteKeys = { face: await seed.mix(INFO.face), id: await seed.mix(INFO.id) }
+  const keys = { face: issuerKeyOf(noteKeys.face), id: issuerKeyOf(noteKeys.id) }
+  const fingerprintKey = await seed.mix(INFO.fingerprint)
+  const sponsor = await seed.ed25519(INFO.sponsor)
+  if (config.idPrice?.payTo === sponsor.address) {
+    throw new Error("ID_PAY_TO is the issuer's own sponsor key; payments go to an address of their own")
   }
-  const notePrivate = await seed.mix(NOTE_KEY_INFO)
-  const noteKey = issuerKeyOf(notePrivate)
-  const fingerprintKey = await seed.mix(FINGERPRINT_KEY_INFO)
   const didit = { apiKey: config.diditApiKey, baseUrl: config.diditBaseUrl }
-  const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditWorkflowId, tier: 'face' })
-  const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, tier: 'id' })
+  const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditFaceWorkflowId, check: 'face' })
+  const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, check: 'id' })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
 
   const store = new Store(config.databasePath)
 
   let payment: PaymentDeps | undefined
-  if (config.idTierPrice > 0n) {
-    const price = { amount: config.idTierPrice, mint: config.idTierMint!, payTo: config.idTierPayTo! }
+  if (config.idPrice) {
+    const price = config.idPrice
     payment = {
       price,
       payments: overrides.payments ?? new RpcPayments({ rpcUrl: config.rpcUrl!, price }),
-      reference: async (paymentId) => (await seed.derive(`reference/${paymentId}`)).address,
+      reference: async (paymentId) => (await seed.ed25519(INFO.reference(paymentId))).address,
     }
   }
 
-  const gift = Object.keys(config.gift).length ? { gift: config.gift, sponsor: await seed.derive(SPONSOR_KEY_LABEL) } : undefined
+  const gift = config.gift && { gift: config.gift, sponsor }
+  const about = canonical({
+    name: config.issuerName,
+    face: { key: keys.face, attributes: RECIPES.face },
+    id: { key: keys.id, attributes: RECIPES.id },
+    h: RECIPES.h,
+    ...(gift && { gift: { host: gift.gift.origin, credits: gift.gift.credits, sponsor: sponsor.address } }),
+  })
 
   const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(
     handler({
-      face: { tier: 'face', check: faceCheck, workflowId: config.diditWorkflowId },
-      id: { tier: 'id', check: idCheck, workflowId: config.diditIdWorkflowId },
+      face: { kind: 'face', check: faceCheck, workflowId: config.diditFaceWorkflowId },
+      id: { kind: 'id', check: idCheck, workflowId: config.diditIdWorkflowId },
       store,
       embedder,
-      noteKey: { privateKey: notePrivate, key: noteKey },
+      noteKeys,
       fingerprintKey,
-      about: canonical({ v: 1, name: config.issuerName, key: issuerHex(noteKey), ...(gift && { gift: config.gift, sponsor: gift.sponsor.address }) }),
+      about,
       payment,
       gift,
       appOrigins: config.appOrigins,
@@ -224,8 +227,9 @@ export async function startIssuer(
     url: `http://127.0.0.1:${port}`,
     server,
     store,
-    noteKey,
-    madeKey,
+    keys,
+    sponsor: gift ? sponsor.address : undefined,
+    madeSeed,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())

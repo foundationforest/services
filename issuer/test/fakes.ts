@@ -2,34 +2,34 @@
 // fresh issuer seed, a person's note number, and the check that the file keeps nothing it shouldn't.
 
 import assert from 'node:assert/strict'
-import { createHash, generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { issuerSecret } from '../../standard/keys/src/issuer.ts'
-import { base58 } from '../../standard/records/src/bytes.ts'
-import { fromBytes32, toBytes32 } from '../../standard/registry/client/src/field.ts'
-import type { Decision, Document, FaceCheck } from '../src/didit.ts'
+import { issuerSecret } from '@foundationforest/keys'
+import { fromBytes32 } from '@foundationforest/note'
+import { base58, hex } from '@foundationforest/records'
+
+import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
 import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
-export const WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
+export const FACE_WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
 export const ID_WORKFLOW = '0b6e2f1a-3c4d-4e5f-8a9b-1c2d3e4f5a6b'
 export const ISSUER_NAME = 'issuer.test.forest.example'
 
 /** The selfie of `person`, as the stand-in Didit names it: the test embedder reads the name back. */
 export const selfie = (person: string) => `https://didit.example/photo/${person}`
 
-/** What a face check that passed looks like: one liveness step, approved, the person's selfie, no face seen before. */
+/** What a face check that passed looks like: approved, one liveness step approved, the person's selfie. */
 export const passed = (person: string, over: Partial<Decision> = {}): Decision => ({
-  workflowId: WORKFLOW,
+  workflowId: FACE_WORKFLOW,
   status: 'Approved',
   liveness: [{ status: 'Approved' }],
   documents: [],
   faceMatches: [],
   faceImage: selfie(person),
-  matches: [],
   document: null,
   ...over,
 })
@@ -44,7 +44,7 @@ export const doc = (lastName: string, over: Partial<Document> = {}): Document =>
   ...over,
 })
 
-/** What a document check that passed looks like: the document, the liveness step and the face match, each approved. */
+/** What an ID check that passed looks like: the document, the liveness step and the face match, each approved. */
 export const passedId = (person: string, document: Document = doc(person), over: Partial<Decision> = {}): Decision =>
   passed(person, { workflowId: ID_WORKFLOW, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }], document, ...over })
 
@@ -60,15 +60,20 @@ export function namedFaces(): Embedder & { embedded: number } {
       const name = new TextDecoder().decode(photo)
       if (name === 'none') throw new FaceError('no_face')
       faces.embedded++
-      const values = Float32Array.from({ length: EMBEDDING_BYTES / 4 }, (_, i) => createHash('sha256').update(`${name}/${i}`).digest().readInt32LE(0) / 2 ** 31)
-      const out = new Uint8Array(EMBEDDING_BYTES)
-      const view = new DataView(out.buffer)
-      const length = Math.hypot(...values)
-      values.forEach((v, i) => view.setFloat32(i * 4, v / length, true))
-      return out
+      return faceOf(name)
     },
   }
   return faces
+}
+
+/** The embedding `namedFaces` gives `name`. */
+export function faceOf(name: string): Uint8Array {
+  const values = Float32Array.from({ length: EMBEDDING_BYTES / 4 }, (_, i) => createHash('sha256').update(`${name}/${i}`).digest().readInt32LE(0) / 2 ** 31)
+  const out = new Uint8Array(EMBEDDING_BYTES)
+  const view = new DataView(out.buffer)
+  const length = Math.hypot(...values)
+  values.forEach((v, i) => view.setFloat32(i * 4, v / length, true))
+  return out
 }
 
 /** The RPC, as far as the issuer sees it: the paying transactions each reference has, set by the test. */
@@ -160,12 +165,10 @@ export class FakeFaceCheck implements FaceCheck {
   }
 }
 
-/** A fresh Ed25519 key as `solana-keygen` writes one: 64 numbers, the secret then the public key. */
-export function keypairJson(): { json: string; secret: Uint8Array; publicKey: Uint8Array } {
-  const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
-  const secret = Buffer.from(jwk.d!, 'base64url')
-  const publicKey = Buffer.from(jwk.x!, 'base64url')
-  return { json: JSON.stringify([...secret, ...publicKey]), secret: new Uint8Array(secret), publicKey: new Uint8Array(publicKey) }
+/** A fresh issuer seed as its file holds it, and its 32 bytes. */
+export function seedJson(): { json: string; bytes: Uint8Array } {
+  const bytes = new Uint8Array(randomBytes(32))
+  return { json: JSON.stringify({ seed: hex.encode(bytes) }), bytes }
 }
 
 /** Every file SQLite may have written next to the database. */
@@ -173,20 +176,20 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buys BLOB) WITHOUT ROWID',
-  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT) WITHOUT ROWID',
-  'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave notes, with their note numbers; how many documents; the payments used; the note numbers given a gift (and a hash of its buys). */
-export type Expected = { sessions: [string, bigint][]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
+/** What the file should hold: the sessions that gave notes, with their note numbers and checks; how many fingerprints for each note number; the payments used; the note numbers given a gift. */
+export type Expected = { sessions: [string, bigint, Check][]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
  * The file holds four tables and nothing else: each session that gave a note as the hash of its id,
- * next to its note number; each document's fingerprint next to its note number; the payments used,
- * each with its reference; the note numbers given a gift, each with a hash of its buys.
- * None of `never` (names, birth dates, embeddings, session ids) is anywhere in its bytes, and no
- * journal is left beside it.
+ * next to its note number and its check; each fingerprint next to its note number; the payments used,
+ * each with its reference; the note numbers given a gift, each with a hash of its buy. None of `never`
+ * (names, birth dates, embeddings, references) is anywhere in its bytes, no session id is in the
+ * clear, and no journal is left beside it.
  */
 export function assertKept(path: string, expected: Expected): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
@@ -199,22 +202,22 @@ export function assertKept(path: string, expected: Expected): void {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
     assert.deepEqual(schema.map((t) => t.sql), TABLES, 'four tables, and no index or other table beside them')
     const sessions = db
-      .prepare('SELECT hash, note_number FROM sessions')
+      .prepare('SELECT hash, note_number, kind FROM sessions')
       .all()
-      .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${fromBytes32(r.note_number as Uint8Array)}`)
+      .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${fromBytes32(r.note_number as Uint8Array)} ${r.kind}`)
       .sort()
-    const want = expected.sessions.map(([id, n]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n}`).sort()
-    assert.deepEqual(sessions, want, 'each session that gave a note, hashed, next to its note number')
+    const want = expected.sessions.map(([id, n, kind]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n} ${kind}`).sort()
+    assert.deepEqual(sessions, want, 'each session that gave a note, hashed, next to its note number and its check')
     const prints = db
       .prepare('SELECT note_number FROM fingerprints')
       .all()
       .map((r) => fromBytes32(r.note_number as Uint8Array))
       .sort()
-    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each document, as a fingerprint next to its note number')
+    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their note number')
     const payments = db
       .prepare('SELECT signature FROM id_payments')
       .all()
-      .map((row) => base58.encode(row.signature as Uint8Array))
+      .map((r) => base58.encode(r.signature as Uint8Array))
       .sort()
     assert.deepEqual(payments, [...(expected.payments ?? [])].sort(), 'the payments used, and nothing beside them')
     const gifts = db
@@ -222,11 +225,8 @@ export function assertKept(path: string, expected: Expected): void {
       .all()
       .map((r) => fromBytes32(r.note_number as Uint8Array))
       .sort()
-    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and of the gift only a hash of its buys')
+    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and of the gift only a hash of its buy')
   } finally {
     db.close()
   }
 }
-
-/** A note number as the file stores it, for tests that look at raw bytes. */
-export const noteNumberBytes = (n: bigint) => Buffer.from(toBytes32(n))

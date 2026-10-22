@@ -2,25 +2,27 @@
 // sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
 // client's address).
 //
-//   GET  /issuer.json   {"key":"<128 hex>","name":"<the issuer's name>","v":1}   who this issuer is,
-//                       and, with a welcome gift, {"gift":{"<role>":{"credits":n,"origin":"<url>"}},
-//                       "sponsor":"<the sponsor key's address>"}
-//   POST /session       {} or {returnUrl}        -> 201 {sessionId, url}   a face check (stage 1); Didit
-//                                                   sends the person back to returnUrl, an app's own
-//                                                   page, when its origin is in APP_ORIGINS
-//   POST /note          {sessionId, noteNumber}  -> 200 {note}             a tier 1 note
-//                       with a gift, also {gift: {"<role>": "<buy's reference>"}}
-//                                                -> 200 {note, gift: {"<role>": "<ticket>"} or {error}}
-//   POST /id/session    {} or {payment}          -> 201 {sessionId, url}   a document check (stage 2),
-//                                                   or 402 with a payment to make first
-//   POST /id/note       {sessionId, note}        -> 200 {note}             the same note at tier 2
+//   GET  /              who this issuer is, as canonical JSON: its name; for each check, the key that
+//                       signs its notes, as an address, and its attributes recipe; what h is; and, with
+//                       a welcome gift, {"gift":{"host":"<origin>","credits":n,"sponsor":"<address>"}}
+//   POST /face/session  {} or {returnUrl}        -> 201 {sessionId, url}   a face check; Didit sends the
+//                                                   person back to returnUrl, an app's own page, when
+//                                                   its origin is in APP_ORIGINS
+//   POST /face/note     {sessionId, noteNumber}  -> 200 {note}             a note from the face key
+//                       with a gift, also {gift: "<the host buy's reference>"}
+//                                                -> 200 {note, gift: {ticket} or {error}}
+//   POST /id/session    {} or {payment}          -> 201 {sessionId, url}   an ID check, or 402 with a
+//                                                   payment to make first
+//   POST /id/note       {sessionId, noteNumber}  -> 200 {note}             a note from the ID key
 //
-// Errors are `{error: <code>}`: 400 a malformed body, 402 a payment still to make or still to land,
-// 403 a check that does not count (the code says why), 409 a session or payment already used for
-// something else, 413 a body over 4 KB, 429 `try_later` for an address that has opened its share of
-// sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses nothing
-// up: the same session can be sent again, for instance once a review in Didit approves it; sent again
-// with the same note number once it has given a note, it gives the note again.
+// A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
+// in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
+// 402 a payment still to make or still to land, 403 a check that does not count (the code says why),
+// 404 `not_offered` for the ID check when it has no price, 409 a session or payment already used for
+// another note number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
+// share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
+// nothing up: the same session can be sent again; sent again with the same note number once it has
+// given a note, it gives the note again.
 //
 // No request is logged. The client's address is read for one thing only, counting the sessions it
 // opens against the limit (`limit.ts`), and is never written anywhere.
@@ -28,14 +30,16 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { type IssuerKey, type SignedNote, noteSigned, signNote } from '../../standard/registry/client/src/person.ts'
-import { type FaceCheck, type Tier, judge } from './didit.ts'
-import { type Embedder, FACE_MATCH, FaceError, similarity } from './face.ts'
+import { type Note, noteToJson, signNote } from '@foundationforest/note'
+import { b64u } from '@foundationforest/records'
+
+import { type Check, type FaceCheck, judge } from './didit.ts'
+import { type Embedder, FaceError } from './face.ts'
+import { type Gift, buyOf, ticketFor } from './gift.ts'
 import type { RateLimit } from './limit.ts'
-import { TIER, decimal, fingerprint, issuerHex, noteFromJson, noteToJson } from './notes.ts'
-import { type Gift, buysOf, ticketsFor } from './gift.ts'
-import type { IssuerKey as Key } from './key.ts'
+import { decimal, faceAttributes, fingerprint, idAttributes, person } from './notes.ts'
 import type { Payments, Price } from './payment.ts'
+import type { Ed25519Key } from './seed.ts'
 import type { Store } from './store.ts'
 
 const MAX_BODY = 4096
@@ -50,6 +54,9 @@ class HttpError extends Error {
     this.status = status
   }
 }
+
+/** Didit holds the session In Review: answered 202, not as an error. */
+class Waiting extends Error {}
 
 /** The kind of error, never its message: a message can carry a URL, a key or a session. */
 export const errorKind = (error: unknown) => (error instanceof Error ? error.constructor.name : typeof error)
@@ -73,20 +80,19 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
   return body as Record<string, unknown>
 }
 
-/** Exactly these fields, each of its type: the service takes nothing it doesn't need. */
-function fields(body: Record<string, unknown>, shape: Record<string, 'string' | 'object'> = {}): Record<string, unknown> {
-  const names = Object.keys(shape)
+/** Exactly these fields, each a string: the service takes nothing it doesn't need. */
+function fields(body: Record<string, unknown>, names: string[] = []): Record<string, string> {
   const keys = Object.keys(body)
-  if (keys.length !== names.length || !names.every((n) => typeof body[n] === shape[n] && body[n] !== null)) {
+  if (keys.length !== names.length || !names.every((n) => typeof body[n] === 'string')) {
     throw new HttpError(400, names.length ? `expected_exactly_${names.join('_and_')}` : 'expected_empty_body')
   }
-  return body
+  return body as Record<string, string>
 }
 
 /** Where Didit sends the person when the check is done: a page on one of the apps' origins, and nowhere else. */
-function returnUrlIn(origins: string[], value: unknown): string {
+function returnUrlIn(origins: string[], value: string): string {
   try {
-    const url = new URL(value as string)
+    const url = new URL(value)
     if (origins.includes(url.origin)) return url.href
   } catch {
     // Refused below.
@@ -94,9 +100,12 @@ function returnUrlIn(origins: string[], value: unknown): string {
   throw new HttpError(400, 'bad_return_url')
 }
 
-function sessionIdFrom(value: unknown): string {
-  if (typeof value !== 'string' || !UUID.test(value)) throw new HttpError(400, 'bad_session_id')
-  return value
+/** A request for a note: a Didit session id, and the person's note number at this issuer. */
+function noteRequest(input: Record<string, string>): { sessionId: string; noteNumber: bigint } {
+  if (!UUID.test(input.sessionId!)) throw new HttpError(400, 'bad_session_id')
+  const noteNumber = decimal(input.noteNumber)
+  if (noteNumber === null) throw new HttpError(400, 'bad_note_number')
+  return { sessionId: input.sessionId!, noteNumber }
 }
 
 const CORS = {
@@ -114,21 +123,15 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
   res.end(body === undefined ? undefined : JSON.stringify(body))
 }
 
-/** One check: its tier, its Didit workflow, and Didit. */
+/** One check: which it is, its Didit workflow, and Didit. */
 export type CheckDeps = {
-  tier: Tier
+  kind: Check
   check: FaceCheck
   /** The workflow its sessions are opened on; a session on any other is refused. */
   workflowId: string
 }
 
-/** The welcome gift, when there is one: its services, and the sponsor key its tickets are signed with. */
-export type GiftDeps = {
-  gift: Gift
-  sponsor: Key
-}
-
-/** The document check's price, when it has one, and how a payment is found. */
+/** The ID check's price, and how a payment is found. Unset: the ID check is not offered. */
 export type PaymentDeps = {
   price: Price
   payments: Payments
@@ -141,16 +144,15 @@ export type IssuerDeps = {
   id: CheckDeps
   store: Store
   embedder: Embedder
-  /** The note key: its 32 private bytes, and its public key. */
-  noteKey: { privateKey: Uint8Array; key: IssuerKey }
-  /** The key the document fingerprints are made under. */
+  /** The two note keys' 32 private bytes: the face key's and the ID key's. */
+  noteKeys: { face: Uint8Array; id: Uint8Array }
+  /** The key the ID check's fingerprints are made under. */
   fingerprintKey: Uint8Array
-  /** `GET /issuer.json`, canonical text. */
+  /** `GET /`, canonical text. */
   about: string
-  /** Unset: the document check is free. */
   payment?: PaymentDeps
   /** Unset: no welcome gift. */
-  gift?: GiftDeps
+  gift?: { gift: Gift; sponsor: Ed25519Key }
   /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
   appOrigins?: string[]
   /** How often one address may open a session, on either check. */
@@ -170,7 +172,6 @@ function clientAddress(req: IncomingMessage, header: string | undefined): string
 export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const { face, id, store, embedder, payment, limit } = deps
   const log = deps.log ?? ((line) => console.log(line))
-  const returnUrl = (value: unknown) => returnUrlIn(deps.appOrigins ?? [], value)
 
   type Route = (body: Record<string, unknown>, req: IncomingMessage) => Promise<[number, unknown]>
 
@@ -184,7 +185,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     }
   }
 
-  /** What Didit decided for this session, with Didit's part of the rule applied. */
+  /** What Didit decided for this session, if it passed: otherwise waiting, or the refusal. */
   async function decided(c: CheckDeps, sessionId: string) {
     let decision
     try {
@@ -192,7 +193,8 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     } catch {
       throw new HttpError(502, 'face_check_unavailable')
     }
-    const refusal = judge(decision, c.workflowId, c.tier)
+    const refusal = judge(decision, c.workflowId, c.kind)
+    if (refusal === 'in_review') throw new Waiting()
     if (refusal) throw new HttpError(403, refusal)
     return decision!
   }
@@ -220,91 +222,77 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     if (outcome !== 'ok') throw new HttpError(403, outcome)
   }
 
-  const sign = (note: Omit<SignedNote, 'issuer' | 'signature'>) => [200, { note: noteToJson(signNote(deps.noteKey.privateKey, note)) }] as [number, Record<string, unknown>]
+  /** A note signed with this key, in the standard's JSON form, with the fields its attributes were made from beside it. */
+  const signed = (key: Uint8Array, note: Note & { [field: string]: unknown }): Record<string, unknown> => ({ note: noteToJson(signNote(key, note)) })
 
   /**
-   * The welcome gift for this note number, once: a ticket for each of the app's buys, and the buys
-   * kept, hashed, next to the note number. The same buys asked for again get the same tickets; other
-   * buys get `given`. It rides with the note: the tickets by service, or `{error}`: `bad_gift` or
-   * `given`.
+   * The welcome gift for this note number, once: a ticket for the app's host buy, and the buy kept,
+   * hashed, next to the note number. The same buy asked for again gets the same ticket; another buy
+   * gets `given`. It rides with the note, and never holds it back.
    */
-  function giveGift(noteNumber: bigint, references: Record<string, unknown>): Record<string, string> {
-    const tickets = ticketsFor(deps.gift!.gift, references, deps.gift!.sponsor)
-    if (typeof tickets === 'string') return { error: tickets }
-    if (store.giveGift(noteNumber, buysOf(references)) === 'other') return { error: 'given' }
-    return tickets
+  function giveGift(noteNumber: bigint, reference: unknown): Record<string, string> {
+    const ticket = ticketFor(deps.gift!.gift, reference, deps.gift!.sponsor)
+    if (ticket === 'bad_gift') return { error: ticket }
+    if (store.giveGift(noteNumber, buyOf(reference as string)) === 'other') return { error: 'given' }
+    return { ticket }
   }
 
-  /**
-   * Stage 1: a tier 1 note for this note number, from a face check that passed. A face Didit's
-   * search found in an earlier session is signed again only for the note number that session gave.
-   */
+  /** A note from the face key, for this note number, from a face check Didit approved. */
   async function faceNote(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const { gift: links, ...rest } = body
-    const asked = deps.gift && 'gift' in body
-    if (asked && (typeof links !== 'object' || links === null || Array.isArray(links))) throw new HttpError(400, 'bad_gift')
-    const input = fields(asked ? rest : body, { sessionId: 'string', noteNumber: 'string' })
-    const sessionId = sessionIdFrom(input.sessionId)
-    const noteNumber = decimal(input.noteNumber)
-    if (!noteNumber) throw new HttpError(400, 'bad_note_number')
+    const { gift: reference, ...rest } = body
+    const asked = deps.gift !== undefined && 'gift' in body
+    const { sessionId, noteNumber } = noteRequest(fields(asked ? rest : body, ['sessionId', 'noteNumber']))
     kept(store.check({ sessionId, noteNumber }))
 
     const decision = await decided(face, sessionId)
-    const earlier = decision.matches.filter((s) => s !== sessionId)
-    kept(store.check({ sessionId, noteNumber, earlier }))
     const embedded = await embedding(face, decision.faceImage)
-    // Checked again, for good, inside one transaction: another session with this face may have given
-    // a note while this one waited for Didit.
-    kept(store.remember({ sessionId, noteNumber, earlier }))
-    const signed = sign({ noteNumber, embedding: embedded, model: embedder.model, tier: TIER.face })
-    if (asked) signed[1].gift = giveGift(noteNumber, links as Record<string, unknown>)
-    return signed
+    // Checked again, for good, inside one transaction: the session may have given a note for another
+    // note number while this request waited for Didit.
+    kept(store.remember({ sessionId, noteNumber, kind: 'face' }))
+    const model = embedder.model
+    const answer = signed(deps.noteKeys.face, { noteNumber, attributes: faceAttributes(model, embedded), model, embedding: b64u.encode(embedded) })
+    if (asked) answer.gift = giveGift(noteNumber, reference)
+    return [200, answer]
   }
 
   /**
-   * Stage 2: the note the person shows, at tier 2, from a document check that passed, when the live
-   * face matches the note's, and the document's person was signed for no other note number.
+   * A note from the ID key, for this note number, from an ID check Didit approved, when the person's
+   * fingerprint was signed for no other note number.
    */
   async function idNote(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const input = fields(body, { sessionId: 'string', note: 'object' })
-    const sessionId = sessionIdFrom(input.sessionId)
-    const note = noteFromJson(input.note)
-    if (!note) throw new HttpError(400, 'bad_note')
-    if (issuerHex(note.issuer) !== issuerHex(deps.noteKey.key) || !noteSigned(note)) throw new HttpError(403, 'not_our_note')
-    if (note.model !== embedder.model) throw new HttpError(403, 'other_model')
-    const { noteNumber } = note
+    if (!payment) throw new HttpError(404, 'not_offered')
+    const { sessionId, noteNumber } = noteRequest(fields(body, ['sessionId', 'noteNumber']))
     kept(store.check({ sessionId, noteNumber }))
 
     const decision = await decided(id, sessionId)
-    const print = fingerprint(deps.fingerprintKey, decision.document)
-    if (!print) throw new HttpError(403, 'no_document_data')
+    const who = person(decision.document)
+    if (!who) throw new HttpError(403, 'no_document_data')
+    const print = fingerprint(deps.fingerprintKey, who)
     kept(store.check({ sessionId, noteNumber, fingerprint: print }))
-    const live = await embedding(id, decision.faceImage)
-    if (similarity(live, note.embedding) < FACE_MATCH) throw new HttpError(403, 'not_the_same_face')
-    kept(store.remember({ sessionId, noteNumber, fingerprint: print }))
-    return sign({ noteNumber, embedding: note.embedding, model: note.model, tier: TIER.id })
+    const embedded = await embedding(id, decision.faceImage)
+    kept(store.remember({ sessionId, noteNumber, kind: 'id', fingerprint: print }))
+    const model = embedder.model
+    const attributes = idAttributes(model, embedded, who)
+    return [200, signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
   }
 
   /**
-   * The document check's session. Free, it opens like the face check's. With a price, `{}` answers
-   * 402 with a new payment: its id, the reference the transfer must name, where to pay, in which
-   * dollar, how much. `{payment}` then opens a session once a payment naming that reference has
-   * landed; until then it answers 402 `not_paid`, and the app asks again. A payment is never given
-   * back. Each session a payment id opens carries its tag in Didit, so a lost answer is found again,
-   * and a session whose opening Didit never answered is found, or opened, on the next ask.
+   * The ID check's session, once paid. `{}` answers 402 with a new payment: its id, the reference
+   * the transfer must name, where to pay, in which dollar, how much. `{payment}` then opens a session
+   * once a payment naming that reference has landed; until then it answers 402 `not_paid`, and the
+   * app asks again. A payment is never given back. Each session a payment id opens carries its tag in
+   * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
+   * found, or opened, on the next ask.
    */
   async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
-    if (!payment) {
-      fields(body)
-      return open(id, req)
-    }
+    if (!payment) throw new HttpError(404, 'not_offered')
     if (Object.keys(body).length === 0) {
       const paymentId = randomBytes(16).toString('hex')
       const { amount, mint, payTo } = payment.price
       const reference = await payment.reference(paymentId)
       return [402, { error: 'payment_required', payment: { id: paymentId, reference, to: payTo, mint, amount: amount.toString() } }]
     }
-    const paymentId = fields(body, { payment: 'string' }).payment as string
+    const paymentId = fields(body, ['payment']).payment!
     if (!PAYMENT_ID.test(paymentId)) throw new HttpError(400, 'bad_payment')
     // Two asks with one payment id at once share one answer, so they never open two sessions.
     const running = opening.get(paymentId)
@@ -356,14 +344,14 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
   }
 
   const routes: Record<string, Route> = {
-    async '/session'(body, req) {
+    async '/face/session'(body, req) {
       if (!('returnUrl' in body)) {
         fields(body)
         return open(face, req)
       }
-      return open(face, req, returnUrl(fields(body, { returnUrl: 'string' }).returnUrl))
+      return open(face, req, returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!))
     },
-    '/note': faceNote,
+    '/face/note': faceNote,
     '/id/session': openId,
     '/id/note': idNote,
   }
@@ -373,17 +361,18 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       try {
         if (req.method === 'OPTIONS') return send(res, 204)
         const path = req.url ?? ''
-        if (path === '/issuer.json') {
+        if (path === '/') {
           if (req.method !== 'GET') throw new HttpError(405, 'get_only')
           res.writeHead(200, { ...CORS, 'cache-control': 'no-cache', 'content-type': 'application/json' })
           return void res.end(deps.about)
         }
         if (!Object.hasOwn(routes, path)) throw new HttpError(404, 'not_found')
-        const route = routes[path]
+        const route = routes[path]!
         if (req.method !== 'POST') throw new HttpError(405, 'post_only')
         const [status, body] = await route(await readBody(req), req)
         send(res, status, body)
       } catch (error) {
+        if (error instanceof Waiting) return send(res, 202, { waiting: 'review' })
         if (error instanceof HttpError) return send(res, error.status, { error: error.message })
         log(`issuer: request failed (${errorKind(error)})`)
         send(res, 500, { error: 'internal' })

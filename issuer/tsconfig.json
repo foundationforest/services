@@ -23,7 +23,6 @@
     "src",
     "test",
     "deploy",
-    "scripts",
-    "../standard/registry/client/types"
+    "scripts"
   ]
 }
