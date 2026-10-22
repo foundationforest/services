@@ -1,0 +1,23 @@
+{
+  "name": "@forest/fee-payer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The fee payer: Kora, configured, with no code of ours inside it. It co-signs a person's transaction as its fee payer and charges what it costs, the network fee and every deposit it puts down, in the token they pay in.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "./build.sh",
+    "start": "./run.sh",
+    "test:local": "node --test --test-force-exit test/fee-payer.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@foundationforest/escrow-client": "file:../standard/escrows/solana/client"
+  },
+  "devDependencies": {
+    "@solana/spl-token": "0.4.9",
+    "@solana/web3.js": "1.99.0",
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}

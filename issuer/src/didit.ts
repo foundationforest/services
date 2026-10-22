@@ -1,30 +1,42 @@
-// The two checks: Didit's API, and the rules the issuer applies to what it says.
+// The two checks: Didit's API, and what the issuer requires of what it says.
 //
-// Didit runs each check and holds the face, and for the document check the document. The issuer asks
-// it three things: to open a session on a check's workflow, later what that session decided, and the
-// selfie the session took, to compute the face's embedding (face.ts). From a decision it reads the
-// session's workflow, its status, the status of each step (liveness; for the document check also the
-// document and the face match), the selfie's address, the earlier sessions Didit's face search found
-// the same face in, and, from the document step, the name, the birth date and the document's country.
-// Everything else Didit returns is dropped the moment the answer is parsed. Nothing Didit says is
-// stored as it is (store.ts keeps hashes only).
+// Didit runs each check on its own page and holds the face, and for the ID check the document. The
+// issuer asks it four things: to open a session on a check's workflow, later what that session
+// decided, the selfie the session took, to compute the face's embedding (face.ts), and, an hour
+// after the session's note is signed, to delete it. From a
+// decision it reads the session's workflow, its status, the status of each step (liveness; for the ID
+// check also the document and the face match), the selfie's address, and, from the document step, the
+// name, the birth date and the document's country. Everything else Didit returns is dropped the
+// moment the answer is parsed. Nothing Didit says is stored as it is (store.ts keeps hashes only).
 //
-// Didit's API as read in October 2026 (docs.didit.me, "Retrieve Session", "Create Session",
-// "Liveness report", "ID verification report"): version 3, `x-api-key` header, `POST /v3/session/`
-// (with `callback`, the page Didit sends the person to when the check is done) and
-// `GET /v3/session/{id}/decision/`. A liveness step's `reference_image` is a signed URL to the
-// selfie, valid for hours; its `matches` are the earlier sessions with the same face, each with its
-// `session_id`. A document step reads `first_name`, `last_name`, `full_name`, `date_of_birth`
-// (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3).
+// Whether a face was seen before is Didit's to say: the face workflow searches every face it has
+// seen and sends a known one to review, where a person at the foundation decides in Didit's console.
+// While a session is In Review the issuer answers that it is waiting, and the app asks again.
 //
-// Each session's `vendor_data` is its check's tag and a fresh random id, `face-<uuid>` or
-// `id-<uuid>`: it names nobody, and Didit's face search compares a face against faces verified under
+// An hour after a session's note is first signed, the issuer's sweep deletes it (`deleteSession`,
+// server.ts's `sweep`), so Didit no longer holds
+// its selfie, its liveness video, its document's images, what it read or its decision. Each deletion
+// asks Didit to keep one image-free face template, anchored to the session's own `vendor_data`, for
+// FACE_RETENTION_DAYS: its face search goes on seeing the face, so a face that comes back still goes
+// to review. Didit drops the template with the session unless asked, and gives every kept template
+// an end. Only a session whose note is signed is deleted, so never one In Review.
+//
+// Didit's API as read in October 2026 (docs.didit.me: creating and retrieving a session, and the
+// liveness and document reports): version 3, `x-api-key` header, `POST /v3/session/`
+// (with `callback`, the page Didit sends the person to when the check is done),
+// `GET /v3/session/{id}/decision/` and `DELETE /v3/session/{id}/delete/` (200 with
+// `face_retention_outcome`, 404 for a session already gone). A liveness step's `reference_image` is a signed URL to the
+// selfie, valid for hours. A document step reads `first_name`, `last_name`, `full_name`,
+// `date_of_birth` (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3).
+//
+// Each session's `vendor_data` is its check's name and a fresh random id, `face-<uuid>` or
+// `id-<uuid>`: it names nobody, and Didit's face search compares a face against faces checked under
 // another `vendor_data`.
 
 import { randomUUID } from 'node:crypto'
 
-/** The two checks: stage 1, by face; stage 2, by face and a government document. */
-export type Tier = 'face' | 'id'
+/** The two checks: by face, and by a government document with a live face. */
+export type Check = 'face' | 'id'
 
 /** What a document step read, as Didit gives it. */
 export type Document = { firstName: string; lastName: string; fullName: string; birth: string; country: string }
@@ -42,8 +54,6 @@ export type Decision = {
   faceMatches: { status: string }[]
   /** The first liveness step's selfie: a signed URL. Null when there is none. */
   faceImage: string | null
-  /** The `session_id` of every earlier session Didit's face search found this face in. */
-  matches: string[]
   /** What the first document step read. Null with no document step. */
   document: Document | null
 }
@@ -60,49 +70,55 @@ export interface FaceCheck {
   decision(sessionId: string): Promise<Decision | null>
   /** The bytes of a photo a decision named (`faceImage`). Throws if they can't be had. */
   photo(url: string): Promise<Uint8Array>
+  /**
+   * Delete the session, keeping its face template: what Didit did with the face
+   * (`retained_with_user` when it kept the template), or `gone` for a session Didit no longer has.
+   * Throws if Didit can't answer, and the session is then still there.
+   */
+  deleteSession(sessionId: string): Promise<string>
 }
+
+/** How many days Didit keeps a deleted session's face template: 3650, the longest it allows. */
+export const FACE_RETENTION_DAYS = 3650
 
 export type Refusal =
   | 'unknown_session'
   | 'wrong_workflow'
+  | 'not_approved'
   | 'no_liveness'
   | 'liveness_not_passed'
   | 'no_document'
   | 'document_not_passed'
   | 'no_face_match'
   | 'face_match_not_passed'
-  | 'not_approved'
 
-/** A session's `vendor_data`: its check's tag, then a random id, or the tag it is to be found by. */
-export const vendorData = (tier: Tier, tag?: string) => `${tier}-${tag ?? randomUUID()}`
+/** A session's `vendor_data`: its check's name, then a random id, or the tag it is to be found by. */
+export const vendorData = (check: Check, tag?: string) => `${check}-${tag ?? randomUUID()}`
 
-// Didit's own documents write a status both as `Approved` and as `APPROVED`.
-const approved = (status: string) => status.toLowerCase() === 'approved'
+// Didit's own documents write a status both as `Approved` and as `APPROVED`, and `In Review` as `IN_REVIEW`.
+const is = (status: string, want: string) => status.toLowerCase().replace(/[\s_]+/g, ' ') === want
 
 /** Each step of this kind ran, and each passed; else the refusal for none, or for one that did not pass. */
 function steps(list: { status: string }[], none: Refusal, failed: Refusal): Refusal | null {
   if (list.length === 0) return none
-  return list.every((step) => approved(step.status)) ? null : failed
+  return list.every((step) => is(step.status, 'approved')) ? null : failed
 }
 
 /**
- * Didit's part of the issuer's rule: a session on the check's own workflow, every liveness step
- * passed; for the document check, every document step and every face match passed too; and the
- * session approved as a whole. Null means Didit passed it. Whether the face was seen before, and
- * with which note number, is the store's to say (store.ts).
+ * What Didit's decision means to the issuer: a session on the check's own workflow; In Review, a
+ * person at the foundation still to decide; anything else but approved, a refusal; and approved, every
+ * liveness step passed and, for the ID check, every document step and every face match too. Null
+ * means Didit passed it.
  */
-export function judge(decision: Decision | null, workflowId: string, tier: Tier = 'face'): Refusal | null {
+export function judge(decision: Decision | null, workflowId: string, check: Check = 'face'): Refusal | 'in_review' | null {
   if (!decision) return 'unknown_session'
   if (decision.workflowId !== workflowId) return 'wrong_workflow'
-  const refusal =
+  if (is(decision.status, 'in review')) return 'in_review'
+  if (!is(decision.status, 'approved')) return 'not_approved'
+  return (
     steps(decision.liveness, 'no_liveness', 'liveness_not_passed') ??
-    (tier === 'id'
-      ? (steps(decision.documents, 'no_document', 'document_not_passed') ??
-        steps(decision.faceMatches, 'no_face_match', 'face_match_not_passed'))
-      : null)
-  if (refusal) return refusal
-  if (!approved(decision.status)) return 'not_approved'
-  return null
+    (check === 'id' ? (steps(decision.documents, 'no_document', 'document_not_passed') ?? steps(decision.faceMatches, 'no_face_match', 'face_match_not_passed')) : null)
+  )
 }
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
@@ -123,7 +139,6 @@ export function parseDecision(body: unknown): Decision {
     documents: documents.map(status),
     faceMatches: reports(json.face_matches).map(status),
     faceImage: text(liveness[0]?.reference_image) || null,
-    matches: liveness.flatMap((step) => reports(step.matches).map((match) => text(match.session_id))).filter(Boolean),
     document: first
       ? {
           firstName: text(first.first_name),
@@ -150,7 +165,7 @@ async function body(res: Response): Promise<unknown> {
   }
 }
 
-/** An https address, or http on this machine (the devnet stand-in). */
+/** An https address, or http on this machine (the stand-in Didit, for tests). */
 function photoAddress(url: string): URL {
   let parsed: URL
   try {
@@ -166,19 +181,25 @@ function photoAddress(url: string): URL {
 export class DiditClient implements FaceCheck {
   readonly #apiKey: string
   readonly #workflowId: string
-  readonly #tier: Tier
+  readonly #check: Check
   readonly #baseUrl: string
+  readonly #scenario: string | undefined
 
-  constructor(options: { apiKey: string; workflowId: string; tier: Tier; baseUrl?: string }) {
+  /**
+   * `scenario` is Didit's `sandbox_scenario`, the outcome a sandbox application's session comes to
+   * (`approve`, `review_…`, `decline_…`). Only `npm run sandbox` sets it; a live application ignores it.
+   */
+  constructor(options: { apiKey: string; workflowId: string; check: Check; baseUrl?: string; scenario?: string }) {
     this.#apiKey = options.apiKey
     this.#workflowId = options.workflowId
-    this.#tier = options.tier
+    this.#check = options.check
     this.#baseUrl = (options.baseUrl ?? 'https://verification.didit.me').replace(/\/+$/, '')
+    this.#scenario = options.scenario
   }
 
   /**
-   * Each session gets its own `vendor_data`: its check's tag and a fresh random id, which names
-   * nobody. Didit's duplicate check compares a face against faces verified under a different
+   * Each session gets its own `vendor_data`: its check's name and a fresh random id, which names
+   * nobody. Didit's duplicate check compares a face against faces checked under a different
    * `vendor_data`; its documents don't say what it does when there is none, so every session carries
    * one that no other session shares, but the sessions one payment opens, which share its tag.
    */
@@ -186,7 +207,12 @@ export class DiditClient implements FaceCheck {
     const res = await this.#fetch('/v3/session/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workflow_id: this.#workflowId, vendor_data: vendorData(this.#tier, tag), ...(callback && { callback }) }),
+      body: JSON.stringify({
+        workflow_id: this.#workflowId,
+        vendor_data: vendorData(this.#check, tag),
+        ...(callback && { callback }),
+        ...(this.#scenario && { sandbox_scenario: this.#scenario }),
+      }),
     })
     if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a new session`)
     const json = (await body(res)) as Record<string, unknown> | null
@@ -198,13 +224,26 @@ export class DiditClient implements FaceCheck {
 
   /** Didit's list of sessions, by exact `vendor_data` on this workflow, newest first: the first. */
   async tagged(tag: string): Promise<{ sessionId: string; url: string } | null> {
-    const query = new URLSearchParams({ vendor_data: vendorData(this.#tier, tag), workflow_id: this.#workflowId, limit: '1' })
+    const query = new URLSearchParams({ vendor_data: vendorData(this.#check, tag), workflow_id: this.#workflowId, limit: '1' })
     const res = await this.#fetch(`/v3/sessions/?${query}`, { method: 'GET' })
     if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a list of sessions`)
     const first = ((await body(res)) as { results?: { session_id?: unknown; session_url?: unknown }[] } | null)?.results?.[0]
     if (!first) return null
     if (typeof first.session_id !== 'string' || typeof first.session_url !== 'string') throw new DiditUnavailable('Didit listed a session without an id or a page')
     return { sessionId: first.session_id, url: first.session_url }
+  }
+
+  /** Keeps the face template on every deletion, whatever the application's own setting says. */
+  async deleteSession(sessionId: string): Promise<string> {
+    const res = await this.#fetch(`/v3/session/${encodeURIComponent(sessionId)}/delete/`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ retain_face_embeddings: true, face_retention_days: FACE_RETENTION_DAYS }),
+    })
+    if (res.status === 404) return 'gone'
+    if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a deletion`)
+    const outcome = ((await body(res)) as { face_retention_outcome?: unknown } | null)?.face_retention_outcome
+    return typeof outcome === 'string' ? outcome : ''
   }
 
   async decision(sessionId: string): Promise<Decision | null> {

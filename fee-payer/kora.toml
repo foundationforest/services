@@ -1,0 +1,107 @@
+# The fee payer: Kora 2.0.5 (the version in KORA), configured. Nothing custom inside it, and nothing
+# of ours in front of it: every request to the fee payer's address reaches it.
+#
+# It co-signs a person's transaction as its payer and charges, in the token they pay in, what that
+# transaction costs it: the network fee plus every deposit (rent) it puts down, including the ones a
+# program makes inside the transaction. It refuses anything that calls a program not listed here,
+# and anything that would move its own SOL or tokens; its key may only make a new account it is
+# paid for.
+#
+# The escrow is at the address the standard records for it (standard/escrows/solana/devnet/devnet.json).
+# The tokens it is paid in and its price source are for real dollars; deploy/devnet-config.sh swaps
+# them for the test dollars and Kora's mock price, for the chain the escrow runs on today. The local
+# run (test/fee-payer.test.ts) copies this file and changes two lines: `price_source`, to "Mock",
+# and the escrow's address, to the id in its source. Every key Kora 2.0.5 requires in a table is
+# written out, so nothing here is a default someone has to look up.
+
+[kora]
+# Requests per second, across all callers (Kora's own global limiter). Kora's example value.
+rate_limit = 100
+# Payments go to token accounts the fee payer's own key owns (`payment_address` unset).
+
+[validation]
+# The most SOL one transaction may take from the fee payer beyond its network fee: deposits. 0.01
+# SOL. At 5,080 lamports a byte (standard/escrows/solana/README.md, Rent), opening an escrow puts
+# down at most 3,794,760 lamports: its account, 312 bytes (2,235,200), and its deposit address, 179
+# bytes for Open USD's extensions (1,559,560; 165 bytes for a classic dollar). A one tap that also
+# makes the recipient's standard account adds one more of those: 5,354,320 in all. At 6,960 lamports
+# a byte, what a local validator charges, the same comes to 7,335,840.
+max_allowed_lamports = 10000000
+# The fee payer, and the payer and the recipient when both sign a split (`agree`), the way out of a
+# stop with no arbiter.
+max_signatures = 3
+# Kora checks these against every program a transaction calls, the ones called from inside other
+# programs included. No compute budget program: every escrow transaction fits the default compute
+# limit (the largest the escrow's README measures, a one tap with a hook, takes 97,205 units), and
+# the fee payer never pays a priority fee it did not agree to.
+allowed_programs = [
+  "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8", # the Forest escrow
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the fee payer's key may do nothing in it (below)
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
+  "11111111111111111111111111111111",            # System
+]
+# The tokens people pay in, in this order, each its maker's own mint:
+#   USDC      EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  Circle; SPL Token
+#   USDT      Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB  Tether; SPL Token
+#   Open USD  ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB   Bridge; Token-2022, no transfer fee
+#   EURC      HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr  Circle; SPL Token, a euro
+# All six decimals. Jupiter prices each against SOL, so the charge is the same SOL cost in whichever
+# is paid, EURC at the euro's rate. Each dollar's maker can freeze the fee payer's account in its
+# token, and Open USD's also holds a permanent delegate that can take back what the fee payer
+# collected in it; both are accepted (README.md, How we run it). In 2.0.5 `allowed_tokens` gates only
+# Kora's own transferTransaction helper; an escrow in another token still passes.
+allowed_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
+allowed_spl_paid_tokens = ["EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "ousd2mJsPEckLHcSCDxyKD7NDGARZcfLbDZkKiatYHB", "HzwqbKZw8HxMN6bF2yFZNrht3c2iXXzpKcFu7uBEDKtr"]
+disallowed_accounts = []
+# Jupiter needs JUPITER_API_KEY in the environment.
+price_source = "Jupiter"
+
+# The charge is the cost and nothing more: nothing inside Forest charges anything.
+[validation.price]
+type = "margin"
+margin = 0.0
+
+# What the fee payer's own key may do inside a transaction. Only one thing: pay for a new account
+# (an escrow's account and its deposit address, a token account), which Kora then counts in the
+# charge. It may not send its SOL or its tokens anywhere, assign or allocate its own account, or act
+# as the owner or authority of any token account or mint.
+[validation.fee_payer_policy.system]
+allow_transfer = false
+allow_assign = false
+allow_create_account = true
+allow_allocate = false
+
+[validation.fee_payer_policy.system.nonce]
+allow_initialize = false
+allow_advance = false
+allow_withdraw = false
+allow_authorize = false
+
+[validation.fee_payer_policy.spl_token]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false
+
+[validation.fee_payer_policy.token_2022]
+allow_transfer = false
+allow_burn = false
+allow_close_account = false
+allow_approve = false
+allow_revoke = false
+allow_set_authority = false
+allow_mint_to = false
+allow_initialize_mint = false
+allow_initialize_account = false
+allow_initialize_multisig = false
+allow_freeze_account = false
+allow_thaw_account = false

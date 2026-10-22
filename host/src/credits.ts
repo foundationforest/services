@@ -1,33 +1,32 @@
-// The host's credits: it sells them (credits/, one cent of writes each), and a credit spent here
-// goes into a folder's balance, which pays for that folder's writes.
+// The host's credits: it sells them (credits/), and a credit spent here goes into a folder's
+// balance, which pays for that folder's writes.
 //
 //   GET  /.well-known/private-token-issuer-directory   its credit key and price, and what a write costs
 //   POST /credits/buy                                   a paid buy's blind signatures
 //   POST /credits/spend     { folder, credits }         up to 100 credits, together, into the folder's balance
 //   GET  /credits/balance/<folder>                      { folder, credits }
 //
-// A write costs a floor (WRITE_PRICE) plus its bytes at a price a kilobyte (KILOBYTE_PRICE), both in
-// credits, rounded up to a millionth of a credit: the unit a balance is kept in, so the fractions of a
-// cent each write costs add up. A record or message is paid from its own folder's balance (a
-// message's, the sender's); bytes from the balance of a folder whose current records name them.
-// The standard's host never asks about a hosts or permissions record, so those are free.
+// A write costs a floor (WRITE_FLOOR) plus what it stores at a price a kilobyte (PER_KB), both in
+// credits, rounded up to a millionth of a credit: the unit a balance is kept in, so the fractions of
+// a cent each write costs add up. A delete costs the floor. The standard's host never asks about a
+// hosts or permissions record, so those are free; messages are free too (src/host.ts).
 //
-// A write costs exactly its price or nothing. A record or message is claimed once, by its id, in
-// the same transaction that takes its price: a second copy in flight, or the same write sent again
-// after a stop, costs nothing. Bytes are stored first and charged after: their price is reserved
-// from the balance before the standard's host stores them, taken once they are stored, released if they are not.
+// A record is claimed once, by its id, in the same transaction that takes its price: a second copy
+// in flight, or the same record sent again, costs nothing. Bytes are stored first and charged after:
+// their price is reserved from the balance before the standard's host stores them, taken once they
+// are stored, released if they are not; a blob delete's floor the same way.
 //
 // One SQLite file, its seller's: the spent list, the proofs, the bill, each folder's balance in
-// millionths of a credit and each write id it took a price for. A spend holds the credits, spends
-// them and adds them to the balance in one transaction. Nothing ties a credit to a folder. It logs
-// nothing.
+// millionths of a credit and each record id it took a price for. A spend marks its credits spent and
+// adds them to the balance in one transaction. Nothing ties a credit to a folder. It logs nothing.
 
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { base58 } from '../../standard/records/src/index.ts'
-import { checkCredits } from '../credits/credit.ts'
-import { type CreditKey, type Rpc, type Seller, DIRECTORY_PATH, type SpentList, UNIT, seller } from '../credits/seller.ts'
+import { base58 } from '@scure/base'
+
+import { amountOf, checkCredits } from '../credits/credit.ts'
+import { type CreditKey, DIRECTORY_PATH, type Payment, type Seller, type SpentList, UNIT, seller } from '../credits/seller.ts'
 
 export { DIRECTORY_PATH, UNIT }
 
@@ -59,14 +58,16 @@ export type CreditConfig = {
   /** Its public origin, `https://host`: the name its credits' challenge carries. */
   origin: string
   creditKey: CreditKey
-  /** Where a credit is paid, in what, and one credit's price in whole units. */
-  credit: { address: string; mint: string; price: string }
+  /** One credit's price, in US cents: at face value, `cents / 100` of a dollar. */
+  priceCents: number
+  /** Where a credit is paid on Solana; null: only tickets buy. */
+  payment: Payment | null
   /** The most credits one buy may ask for. */
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
   sponsors: string[]
-  /** What a write costs, in credits as decimal text: `write` each, and `kilobyte` for each 1,000 bytes of it. */
-  cost: { write: string; kilobyte: string }
+  /** What a write costs, in credits as decimal text: `floor` each, and `perKb` for each 1,000 bytes it stores. */
+  cost: { floor: string; perKb: string }
 }
 
 export type Answer = { status: number; body: unknown; type?: string }
@@ -87,61 +88,42 @@ export class Credits {
   readonly seller: Seller
   readonly spent: SpentList
   readonly #config: CreditConfig
-  /** What a write costs, in millionths: each, and for each kilobyte. */
-  readonly #cost: { write: number; kilobyte: number }
-  /** Millionths reserved for bytes being stored now, by folder; and each blob's reservation, by its name. */
+  /** What a write costs, in millionths: the floor, and each kilobyte. */
+  readonly #cost: { floor: number; perKb: number }
+  /** Millionths reserved for bytes being stored or deleted now, by folder; and each reservation, by the bytes' name. */
   readonly #reserved = new Map<string, number>()
   readonly #pending = new Map<string, { folder: string; price: number }>()
 
-  /** In `dir`, credits.sqlite, its seller's one file; or in memory when null. With no RPC, no Solana payment is checked. */
-  constructor(dir: string | null, config: CreditConfig, rpc: Rpc | null) {
-    if (dir) mkdirSync(dir, { recursive: true })
-    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, rpc, path: dir ? join(dir, 'credits.sqlite') : ':memory:' })
+  /** In `dir`, credits.sqlite, its seller's one file. */
+  constructor(dir: string, config: CreditConfig) {
+    mkdirSync(dir, { recursive: true })
+    const price = amountOf('0.01', config.priceCents)
+    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, price, payment: config.payment, maxBuy: config.maxBuy, sponsors: config.sponsors, path: join(dir, 'credits.sqlite') })
     this.spent = this.seller.spent
     const db = this.seller.db
     db.exec('CREATE TABLE IF NOT EXISTS balances (folder TEXT PRIMARY KEY, millionths INTEGER NOT NULL) WITHOUT ROWID')
     db.exec('CREATE TABLE IF NOT EXISTS paid (id BLOB PRIMARY KEY) WITHOUT ROWID')
     this.#config = config
-    this.#cost = { write: millionthsOf('WRITE_PRICE', config.cost.write), kilobyte: millionthsOf('KILOBYTE_PRICE', config.cost.kilobyte) }
-    // Balances a host kept in whole credits, before writes cost fractions of one: counted in
-    // millionths, once, in one transaction.
-    if (db.prepare("SELECT 1 FROM pragma_table_info('balances') WHERE name = 'credits'").get()) {
-      this.seller.together(() => {
-        db.exec('ALTER TABLE balances RENAME COLUMN credits TO millionths')
-        db.exec(`UPDATE balances SET millionths = millionths * ${MILLIONTHS}`)
-      })
-    }
-    // The balances a host kept in a file of their own, before it kept one file: moved in, once. A
-    // credit still held then was in a spend that stopped between its two files: spent if its mark is
-    // there, free again if not.
-    const old = dir && join(dir, 'balances.sqlite')
-    if (old && existsSync(old)) {
-      db.prepare('ATTACH DATABASE ? AS old').run(old)
-      this.seller.together(() => {
-        db.exec(`INSERT INTO balances (folder, millionths) SELECT folder, credits * ${MILLIONTHS} FROM old.balances WHERE true ON CONFLICT (folder) DO UPDATE SET millionths = millionths + excluded.millionths`)
-        db.exec('DELETE FROM old.balances')
-        for (const { id } of this.spent.holds()) {
-          if (db.prepare('SELECT 1 FROM old.landing WHERE id = ?').get(id)) this.spent.land(id)
-          else this.spent.free(id)
-        }
-      })
-      db.exec('DETACH DATABASE old')
-      for (const f of [old, `${old}-journal`, `${old}-wal`, `${old}-shm`]) rmSync(f, { force: true })
-    }
+    this.#cost = { floor: millionthsOf('WRITE_FLOOR', config.cost.floor), perKb: millionthsOf('PER_KB', config.cost.perKb) }
   }
 
   /** Its directory: its seller's, with what a write costs here in its `forest-credit` entry. */
   directory(): Record<string, unknown> {
     const directory = this.seller.directory() as { 'forest-credit': Record<string, unknown> }
-    return { ...directory, 'forest-credit': { ...directory['forest-credit'], write: creditsText(this.#cost.write), kilobyte: creditsText(this.#cost.kilobyte) } }
+    return { ...directory, 'forest-credit': { ...directory['forest-credit'], write: creditsText(this.#cost.floor), kilobyte: creditsText(this.#cost.perKb) } }
   }
 
-  /** What a write of `bytes` costs, in millionths: the floor, and the bytes at the price a kilobyte, rounded up. */
+  /** What a delete costs, in millionths: the floor. */
+  get floor(): number {
+    return this.#cost.floor
+  }
+
+  /** What a write that stores `bytes` costs, in millionths: the floor, and the bytes at the price a kilobyte, rounded up. */
   priceOf(bytes: number): number {
-    return this.#cost.write + Math.ceil((bytes * this.#cost.kilobyte) / KILOBYTE)
+    return this.#cost.floor + Math.ceil((bytes * this.#cost.perKb) / KILOBYTE)
   }
 
-  /** Credits, as `{ folder, credits }` lists them (the credits client's `creditList`, e2e/credits/), into that folder's balance: all of them, or none. */
+  /** Credits, as `{ folder, credits }` lists them, each base64url, into that folder's balance: all of them, or none. */
   async spend(body: unknown): Promise<Answer> {
     const shown = typeof body === 'object' && body !== null && !Array.isArray(body) && Object.keys(body).sort().join() === 'credits,folder' ? (body as { folder: unknown; credits: unknown }) : undefined
     if (!shown || !isFolder(shown.folder)) return refuse('bad_request')
@@ -154,16 +136,13 @@ export class Credits {
       // Forest's own words for what does not hold: no credit's bytes are in them.
       return refuse('credit', 402, (error as Error).message)
     }
-    // Held, spent and in the balance in one transaction: all of it, or none.
-    const held = this.seller.together(() => {
-      const outcome = this.spent.hold(ids)
-      if (outcome !== 'held') return outcome
-      this.spent.land(ids)
+    // Spent and in the balance in one transaction: all of it, or none.
+    const landed = this.seller.together(() => {
+      if (!this.spent.spend(ids)) return false
       this.seller.db.prepare('INSERT INTO balances (folder, millionths) VALUES (?, ?) ON CONFLICT (folder) DO UPDATE SET millionths = millionths + excluded.millionths').run(folder, ids.length * MILLIONTHS)
-      return outcome
+      return true
     })
-    if (held === 'spent') return refuse('spent', 409)
-    if (held === 'busy') return refuse('held', 409)
+    if (!landed) return refuse('spent', 409)
     return { status: 200, body: { folder, credits: this.balance(folder) } }
   }
 
@@ -176,7 +155,7 @@ export class Credits {
     return (this.seller.db.prepare('SELECT millionths FROM balances WHERE folder = ?').get(folder) as { millionths: number } | undefined)?.millionths ?? 0
   }
 
-  /** What the folder holds that no bytes being stored have reserved, in millionths. */
+  /** What the folder holds that nothing in flight has reserved, in millionths. */
   #free(folder: string): number {
     return this.#millionths(folder) - (this.#reserved.get(folder) ?? 0)
   }
@@ -186,8 +165,8 @@ export class Credits {
   }
 
   /**
-   * A record's or message's price, in millionths, from the folder's balance, claimed by the write's
-   * id (lowercase hex) in the same transaction: null if it was paid, now or before, else what to tell
+   * A record's price, in millionths, from the folder's balance, claimed by the record's id
+   * (lowercase hex) in the same transaction: null if it was paid, now or before, else what to tell
    * the writer.
    */
   charge(folder: string, price: number, id: string): string | null {
@@ -202,24 +181,23 @@ export class Credits {
     })
   }
 
-  /** Reserves bytes' price, in millionths, on the first of `folders` that holds it, before they are stored: null if one did, else what to tell the writer. */
-  reserve(name: string, folders: string[], price: number): string | null {
-    const folder = folders.find((f) => this.#free(f) >= price)
-    if (folder === undefined) return folders.length === 1 ? this.#short(folders[0]!, price) : `these bytes cost ${creditsText(price)} credits, and no folder whose records name them holds that much here`
+  /** Reserves `price`, in millionths, on `folder` for the bytes named `name`, before they are stored or deleted: null if the folder holds it, else what to tell the writer. */
+  reserve(name: string, folder: string, price: number): string | null {
+    if (this.#free(folder) < price) return this.#short(folder, price)
     this.#reserved.set(folder, (this.#reserved.get(folder) ?? 0) + price)
     this.#pending.set(name, { folder, price })
     return null
   }
 
-  /** The bytes named `name` were stored, or were not: their reserved price is taken, or released. Nothing if none was reserved. */
-  stored(name: string, ok: boolean): void {
+  /** The bytes named `name` were stored or deleted, or were not: their reserved price is taken, or released. Nothing if none was reserved. */
+  settle(name: string, done: boolean): void {
     const held = this.#pending.get(name)
     if (!held) return
     this.#pending.delete(name)
     const left = (this.#reserved.get(held.folder) ?? 0) - held.price
     if (left > 0) this.#reserved.set(held.folder, left)
     else this.#reserved.delete(held.folder)
-    if (ok) this.seller.db.prepare('UPDATE balances SET millionths = millionths - ? WHERE folder = ? AND millionths >= ?').run(held.price, held.folder, held.price)
+    if (done) this.seller.db.prepare('UPDATE balances SET millionths = millionths - ? WHERE folder = ? AND millionths >= ?').run(held.price, held.folder, held.price)
   }
 
   /** The answer to a balance request: `{ folder, credits }`. */

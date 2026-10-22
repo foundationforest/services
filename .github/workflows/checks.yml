@@ -1,28 +1,28 @@
-# Every service's checks from a clean install, on every pull request and every push to main. Each job
-# first fetches standard at the commit in STANDARD (standard.sh) and installs the standard packages it uses.
+# Every service's checks, and the loop's, from a clean install, on every pull request and every push
+# to main. Each job first fetches the standard and the markets at their pins and builds the standard
+# (standard.sh), then installs what it uses.
 #
-#   issuer       its type-check (the stand-in Didit for tests included) and its tests, the face
-#                embedding's on the real models and portraits its `npm run fetch` checks by SHA-256,
-#                and its welcome gift's tickets taken by the host's and the registry payer's own sellers
-#   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
-#                (real reputation proofs: the reputation circuit's proving files; a real person proof: the
-#                standard's example card's)
-#   fee-payer    the local run's type-check (at-cost/), the devnet kora.toml its Dockerfile makes from
-#                at-cost/, and the registry payer: its type-check and tests (registry/; real credits,
-#                bought with the credits client in e2e/credits/, collected and spent, against a
-#                stand-in RPC)
-#   host         the foundation's host: its type-check and its tests, its credits bought with the
-#                credits client in e2e/credits/
-#   e2e          the devnet run's type-check, with mcp's actions it runs and the index's signing key
-#                it reads, and the credits client's tests against a stand-in service made of
-#                Cloudflare's own issuer
-#   mcp          mcp's type-check and tests: every action on records' reference host, both doors,
-#                the hosted copy's smoke test, and the image's own command through the MCP SDK's client
+#   issuer       its type-check (the stand-in Didit for tests included) and its tests: note proofs made
+#                from its notes and checked against its published keys, the attributes vectors, the
+#                face embedding's on the real models and portraits its `npm run fetch` checks by
+#                SHA-256, and its welcome gift's ticket taken by the host's own seller, bought with
+#                e2e's credits client
+#   index        its type-check and its tests, on loopback: the standard's reference host, real note
+#                proofs from the note circuit's committed proving files, a real reputation proof (the
+#                reputation circuit's proving files, fetched), a stand-in RPC, and the index end to end
+#   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
+#                its Dockerfile makes with deploy/devnet-config.sh
+#   host         its type-check and its credits' tests, through the standard's reference host
+#   e2e          the loop's type-check, which reads the host's, issuer's, index's and mcp's code it
+#                starts, and its tests: the credits client against the host's own code selling for
+#                tickets and for a dollar, the funding and minting it does, and a run's record
+#   mcp          its type-check and tests: every tool on the standard's reference host and a stand-in
+#                index, with the markets at MARKETS; both doors; and the image's own command through
+#                the MCP SDK's client
 #
-# Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
-# run against the deployed mcp. The first two need the standard's programs, its proving files, a local
-# validator and (for the fee payer) Kora built; the last two need the deployed services, and the e2e
-# run the devnet phrase.
+# Not here, and in each directory's README: the fee payer's local run, which needs a local validator
+# and Kora built; the loop itself, which needs the phrase and the chain; and mcp's smoke test against
+# the deployed copy.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -39,7 +39,6 @@ permissions:
 
 env:
   NODE_VERSION: '22'
-  DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
 
 defaults:
   run:
@@ -56,10 +55,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client records keys
+          ./standard.sh
           (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
-          (cd fee-payer/registry && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer
@@ -73,13 +71,6 @@ jobs:
   index:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: mirror.gcr.io/library/postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports: ['5432:5432']
-        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -87,16 +78,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client
-          (cd standard/reputation/circuit && npm run fetch)
+          ./standard.sh
+          (cd standard/proofs/reputation/circuit && npm run fetch)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
         run: npm run check
-      - name: Test (everything but the end-to-end test)
+      - name: Test
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts | tee "$RUNNER_TEMP/tap"
+          npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   fee-payer:
@@ -109,23 +100,13 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client escrow/client records
-          (cd e2e && npm ci --no-audit --no-fund)
-          (cd fee-payer/at-cost && npm ci --no-audit --no-fund)
-          (cd fee-payer/registry && npm ci --no-audit --no-fund)
+          ./standard.sh
+          (cd fee-payer && npm ci --no-audit --no-fund)
       - name: The local run's type-check
-        working-directory: fee-payer/at-cost
+        working-directory: fee-payer
         run: npm run check
-      - name: The devnet kora.toml
-        run: bash fee-payer/deploy/devnet-config.sh fee-payer/at-cost/kora.toml > /dev/null
-      - name: The registry payer's type-check
-        working-directory: fee-payer/registry
-        run: npm run check
-      - name: The registry payer's tests
-        working-directory: fee-payer/registry
-        run: |
-          npm test | tee "$RUNNER_TEMP/tap"
-          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+      - name: The image's kora.toml
+        run: bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
 
   host:
     runs-on: ubuntu-latest
@@ -137,8 +118,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client
-          (cd e2e && npm ci --no-audit --no-fund)
+          ./standard.sh
           (cd host && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: host
@@ -159,14 +139,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client
-          (cd mcp && npm ci --no-audit --no-fund)
+          ./standard.sh
+          (cd host && npm ci --no-audit --no-fund)
+          (cd issuer && npm ci --no-audit --no-fund)
           (cd index && npm ci --no-audit --no-fund)
+          (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: e2e
         run: npm run check
-      - name: Test (the credits client)
+      - name: Test
         working-directory: e2e
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
@@ -182,7 +164,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records
+          ./standard.sh
           (cd mcp && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: mcp

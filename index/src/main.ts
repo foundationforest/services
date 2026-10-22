@@ -1,189 +1,45 @@
-// The index runs as two processes that share one database (README.md, "Two processes"):
+// The index, from its settings (README.md, Settings):
 //
-//   node src/main.ts readers   always on: migrations, both readers, the recompute; the only one
-//                              that holds the signing seed and writes. No port.
-//   node src/main.ts web       the pages and their twins: reads the database, never writes, holds
-//                              no seed; as many copies as needed.
-//   node src/main.ts           both in one process, for running locally (`npm start`).
-//
-// `startIndex` runs both in one process; the tests start it with their own settings.
+//   node src/main.ts            reads every READ_SECONDS and serves the pages
+//   node src/main.ts rebuild    drops everything but when each proof was first seen and the signed
+//                               roots (store.ts), reads the hosts and the chain again, ranks, and
+//                               exits; the next start serves what it read
 
-import type { Server } from 'node:http'
-import { fileURLToPath } from 'node:url'
+import { mkdirSync } from 'node:fs'
 
-import { Connection } from '@solana/web3.js'
+import { startIndex } from './index.ts'
+import { openStore } from './store.ts'
 
-import { ChainReader } from './chain/poll.ts'
-import { type Config, loadConfig } from './config.ts'
-import { type Db, createPool, migrate } from './db.ts'
-import { Directory } from './markets.ts'
-import { HostReader } from './records/hosts.ts'
-import { Scorer, recompute } from './scores/run.ts'
-import { indexKeys, publicKeys } from './scores/sign.ts'
-import { type Web, createWeb } from './web/routes.ts'
-import { serve } from './web/server.ts'
-
-type Opts = {
-  onError?: (err: unknown) => void
+const env = process.env
+function setting(name: string, fallback?: string): string {
+  const value = env[name] ?? fallback
+  if (value === undefined || value === '') throw new Error(`${name} is not set`)
+  return value
+}
+function seconds(name: string, fallback: string): number {
+  const value = Number(setting(name, fallback))
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} is a whole number of seconds from 1`)
+  return value
 }
 
-/** How often the markets directory is read again, after the read at start. */
-const MARKETS_MS = 60 * 60 * 1000
+const dataDir = setting('DATA_DIR')
+const publicUrl = setting('PUBLIC_URL', 'https://index.forest.foundation')
+const rpcUrl = setting('RPC_URL', 'https://api.devnet.solana.com')
+if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an origin, such as https://index.forest.foundation')
 
-function reportRefused(directory: Directory, onError: (err: unknown) => void): void {
-  for (const r of directory.refused) onError(new Error(`market ${r.market} refused: ${r.errors.join('; ')}`))
-}
-
-async function loadDirectory(config: Config, onError: (err: unknown) => void): Promise<Directory> {
-  const directory = await Directory.fetch(config.markets)
-  reportRefused(directory, onError)
-  return directory
-}
-
-/**
- * Reads the directory again every hour, so a market counts once it appears there. A read that fails
- * leaves the markets as they were and is tried again at the next one. `onChange`, when given, runs when
- * the markets changed. The timer does not keep the process alive.
- */
-function refreshEvery(directory: Directory, onError: (err: unknown) => void, onChange?: () => void): () => void {
-  const timer = setInterval(() => {
-    directory.refresh().then(
-      (changed) => {
-        reportRefused(directory, onError)
-        if (changed) onChange?.()
-      },
-      onError,
-    )
-  }, MARKETS_MS)
-  timer.unref()
-  return () => clearInterval(timer)
-}
-
-export type Readers = {
-  directory: Directory
-  scorer: Scorer
-  chain: ChainReader | null
-  records: HostReader | null
-  stop: () => Promise<void>
-}
-
-/** Migrations, the public key for the pages, the two readers (hosts, chain) and the recompute, on `db`. */
-export async function startReaders(db: Db, config: Config, opts: Opts = {}): Promise<Readers> {
-  const onError = opts.onError ?? ((err: unknown) => console.error(err))
-  if (!config.signingSeed) throw new Error('the readers sign scores: INDEX_SIGNING_SEED is required')
-  await migrate(db)
-  const directory = await loadDirectory(config, onError)
-  const keys = indexKeys(config.signingSeed)
-  await db.query(
-    `insert into index_meta (key, value) values ('publicKeys', $1)
-     on conflict (key) do update set value = excluded.value, updated_at = now()`,
-    [JSON.stringify(publicKeys(keys))],
-  )
-
-  const scorer = new Scorer(() => recompute(db, { directory, config, keys }))
-  scorer.onError = onError
-  await scorer.now()
-  // Which rows count depends on the markets, so a change in them is scored again.
-  const stopMarkets = refreshEvery(directory, onError, () => scorer.schedule())
-
-  let records: HostReader | null = null
-  if (config.hosts.length) {
-    // The person proofs on cards are checked against the registry's rows, over the chain reader's RPC.
-    const registry = config.rpcUrl
-      ? { connection: new Connection(config.rpcUrl, config.chainCommitment), programId: config.registryProgramId, commitment: config.chainCommitment }
-      : null
-    records = new HostReader({ db, hosts: config.hosts, issuers: config.issuers, indexes: Object.keys(config.indexes), registry, onChange: () => scorer.schedule(), onError })
-    await records.start(config.pollMs)
-  }
-
-  let chain: ChainReader | null = null
-  if (config.rpcUrl) {
-    chain = new ChainReader({
-      db,
-      rpcUrl: config.rpcUrl,
-      registry: config.registryProgramId,
-      escrow: config.escrowProgramId,
-      issuers: Object.keys(config.issuers),
-      // A profile with a new row: what its hosts already gave this index is stored now.
-      onChange: (profiles) => {
-        if (profiles.length && records) void records.merge(profiles).catch(onError)
-        scorer.schedule()
-      },
-      commitment: config.chainCommitment,
-      onError,
-    })
-    chain.start(config.pollMs)
-  }
-
-  return {
-    directory,
-    scorer,
-    chain,
-    records,
-    stop: async () => {
-      stopMarkets()
-      chain?.stop()
-      records?.stop()
-      scorer.stop()
-    },
-  }
-}
-
-/** The pages on `db`, served on `config.port` unless `listen` is false. Reads only. */
-export async function startWeb(
-  db: Db,
-  config: Config,
-  opts: Opts & { listen?: boolean } = {},
-): Promise<{ web: Web; server: Server | null; stopMarkets: () => void }> {
-  const onError = opts.onError ?? ((err: unknown) => console.error(err))
-  const directory = await loadDirectory(config, onError)
-  const web = createWeb({ db, directory, config })
-  // This process reads the markets for itself: the pages hold their own copy, apart from the readers'.
-  const stopMarkets = refreshEvery(directory, onError)
-  const server = opts.listen === false ? null : await serve(web, config.port)
-  return { web, server, stopMarkets }
-}
-
-export type RunningIndex = Readers & { db: Db; web: Web; server: Server | null }
-
-/** Both in one process, sharing one pool. */
-export async function startIndex(config: Config, opts: Opts & { listen?: boolean } = {}): Promise<RunningIndex> {
-  const db = createPool(config.databaseUrl)
-  const readers = await startReaders(db, config, opts)
-  const { web, server, stopMarkets } = await startWeb(db, config, opts)
-  return {
-    ...readers,
-    db,
-    web,
-    server,
-    stop: async () => {
-      stopMarkets()
-      await readers.stop()
-      await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()))
-      await db.end()
-    },
-  }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const role = process.argv[2] ?? 'all'
-  if (!['all', 'readers', 'web'].includes(role)) throw new Error(`usage: node src/main.ts [readers|web]; got ${role}`)
-  const config = loadConfig(process.env, { seed: role !== 'web' })
-  const db = createPool(config.databaseUrl)
-  const stops: (() => Promise<void>)[] = []
-  if (role !== 'web') stops.push((await startReaders(db, config)).stop)
-  if (role !== 'readers') {
-    const { server, stopMarkets } = await startWeb(db, config)
-    stops.push(async () => stopMarkets())
-    stops.push(() => new Promise<void>((resolve) => server!.close(() => resolve())))
-    console.log(`pages on :${config.port}, published as ${config.publicUrl}`)
-  }
-  if (role === 'readers') console.log('readers running')
-  const shutdown = async () => {
-    for (const stop of stops) await stop()
-    await db.end()
-    process.exit(0)
-  }
-  process.on('SIGINT', shutdown)
-  process.on('SIGTERM', shutdown)
+if (process.argv[2] === 'rebuild') {
+  mkdirSync(dataDir, { recursive: true })
+  const store = openStore(dataDir)
+  store.drop()
+  store.close()
+  const index = await startIndex({ dataDir, publicUrl, rpcUrl, readSeconds: 0, port: null })
+  await index.pass()
+  await index.close()
+  console.log('rebuilt: read the hosts and the chain again, and ranked')
+} else {
+  const port = Number(setting('PORT', '8080'))
+  if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('PORT is a port number')
+  const index = await startIndex({ dataDir, publicUrl, rpcUrl, readSeconds: seconds('READ_SECONDS', '30'), port })
+  console.log(`index ${index.address}, listening on ${port}`)
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => void index.close().then(() => process.exit(0)))
 }

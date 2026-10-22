@@ -1,28 +1,32 @@
 #!/usr/bin/env bash
 # Fetches foundationforest/standard at the commit in STANDARD into standard/ (not committed), then
-# runs `npm ci` in each standard package named on the command line. The services use standard's
-# pieces from there, unchanged, by relative path: standard/keys, standard/records,
-# standard/registry/client and standard/escrow/client in code; standard's programs and proving files
-# in the slow tests. Moving the pin is a one-line change to STANDARD. Needs git and the network.
-#
-#   ./standard.sh                                        standard at the pinned commit
-#   ./standard.sh registry/client records                and `npm ci` in those packages
+# installs and builds it at its root: the standard is one npm workspace, and `npm run build` there
+# builds each of its packages to its dist/. A service depends on a standard package by the name in
+# that package's package.json, through a file: link into standard/. Then, when MARKETS is beside
+# it, fetches foundationforest/markets at that commit into markets/ (not committed), the same way:
+# a service reads directory.json and market files from there, never over the network at run time.
+# An image that copies no MARKETS reads no markets, so it skips them. Moving a pin is a one-line
+# change to STANDARD or MARKETS. Needs git and the network.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-STANDARD_REPO="${STANDARD_REPO:-https://github.com/foundationforest/standard}"
-STANDARD_COMMIT="$(tr -d '[:space:]' < STANDARD)"
+# The repo at a commit into a directory: fetched once, moved when the commit changes.
+pinned() {
+  local dir="$1" repo="$2" commit="$3"
+  if [ ! -d "$dir/.git" ]; then
+    git init -q "$dir"
+    git -C "$dir" remote add origin "$repo"
+  fi
+  if [ "$(git -C "$dir" rev-parse -q --verify HEAD || true)" != "$commit" ]; then
+    git -C "$dir" fetch -q --depth 1 origin "$commit"
+    git -C "$dir" checkout -q --detach "$commit"
+  fi
+  echo "$dir at $commit"
+}
 
-if [ ! -d standard/.git ]; then
-  git init -q standard
-  git -C standard remote add origin "$STANDARD_REPO"
-fi
-if [ "$(git -C standard rev-parse -q --verify HEAD || true)" != "$STANDARD_COMMIT" ]; then
-  git -C standard fetch -q --depth 1 origin "$STANDARD_COMMIT"
-  git -C standard checkout -q --detach "$STANDARD_COMMIT"
-fi
-echo "standard at $STANDARD_COMMIT"
+pinned standard "${STANDARD_REPO:-https://github.com/foundationforest/standard}" "$(tr -d '[:space:]' < STANDARD)"
+(cd standard && npm ci --no-audit --no-fund && npm run build)
 
-for dir in "$@"; do
-  (cd "standard/$dir" && npm ci --no-audit --no-fund)
-done
+if [ -f MARKETS ]; then
+  pinned markets "${MARKETS_REPO:-https://github.com/foundationforest/markets}" "$(tr -d '[:space:]' < MARKETS)"
+fi

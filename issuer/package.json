@@ -2,7 +2,7 @@
   "name": "@forest/issuer",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's issuer: it signs notes. A passed Didit face check gives a person a tier 1 note for their note number, with their face embedding from an open model (SFace); a passed document check, with the live face matching the note's, the same note at tier 2. It keeps which check session gave which note number, and a keyed fingerprint of each document next to it. With a welcome gift, at a person's first note it signs a sponsor's ticket for the credits their app buys at the registry payer and the host.",
+  "description": "The Forest Foundation's issuer: it checks with Didit that a person is one real person and signs the standard's notes. A face check, free, gives a note from its face key; an ID check, offered only with a price, a note from its ID key, once per name and birth date. Each note's attributes are a fixed Poseidon recipe of what the check saw, kept beside it for the person. It keeps which check session gave which note number and, for the ID check, a keyed hash of the name and birth date. At a note number's first face note it signs a sponsor's ticket for the host credits the person's app buys.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,14 +10,20 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "sandbox": "node --disable-warning=ExperimentalWarning scripts/sandbox.ts",
     "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/issuer.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts test/gift.test.ts test/fetch.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/issuer.test.ts test/attributes.test.ts test/didit.test.ts test/payment.test.ts test/face.test.ts test/gift.test.ts test/fetch.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@foundationforest/keys": "file:../standard/keys",
+    "@foundationforest/note": "file:../standard/proofs/note/client",
+    "@foundationforest/records": "file:../standard/records",
+    "i18n-iso-countries": "7.14.0",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.30.0",
-    "pngjs": "7.0.0"
+    "pngjs": "7.0.0",
+    "poseidon-lite": "0.3.0"
   },
   "devDependencies": {
     "@types/node": "22.20.2",

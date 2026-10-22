@@ -1,16 +1,16 @@
 // The host's credits, its seller: its credit key, its directory, a buy collected once a proof pays
 // for it, the blind signatures it answers with, the proofs it took, its sponsors' bill, and its
-// spent list, in one SQLite file that also holds the host's balances (src/credits.ts). A copy of
-// the service's side of Forest's credits, trimmed to what this host uses: its unit is a cent of
-// writes, and a spend takes a list of credits together. See README.md, "Credits".
+// spent list, in one SQLite file that also holds the host's balances (src/credits.ts). A spend takes
+// a list of credits together. See README.md, "Credits".
 //
-// Node only: the file is SQLite (node:sqlite). It talks to no network of its own: a Solana payment
-// is checked through the RPC the host passes it, one call. privacypass-ts reads the buy and writes
-// the answer, unchanged; each signature is Node's own RSA (OpenSSL), a raw `m^d mod n`, since
-// privacypass-ts's issuer signs with JavaScript big integers, hundreds of milliseconds a credit.
-// Nothing here logs what it is sent.
+// Node only: the file is SQLite (node:sqlite), and the key a file the seller makes on the volume at
+// its first start. It talks to no network of its own: a Solana payment is checked through the RPC
+// the host passes it, one call. privacypass-ts reads the buy and writes the answer, unchanged; each
+// signature is Node's own RSA (OpenSSL), a raw `m^d mod n`, since privacypass-ts's issuer signs with
+// JavaScript big integers, hundreds of milliseconds a credit. Nothing here logs what it is sent.
 
-import { constants, createPrivateKey, createPublicKey, privateDecrypt, publicEncrypt, verify, type KeyObject } from 'node:crypto'
+import { constants, createPrivateKey, createPublicKey, generateKeyPairSync, privateDecrypt, publicEncrypt, verify, type KeyObject } from 'node:crypto'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
@@ -21,7 +21,7 @@ import { CREDIT_TYPE, DIRECTORY_PATH, amountOf, referenceOf, ticketMessage } fro
 const { getPublicKeyBytes } = publicVerif
 
 /** What one credit buys here, as the directory says it. */
-export const UNIT = 'one cent of writes'
+export const UNIT = 'writes at this host'
 
 /** Bytes in an array of their own: privacypass-ts reads a view's whole underlying buffer from its start. */
 const own = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes)
@@ -30,11 +30,7 @@ const sha256 = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.d
 /** A service's credit key: its RSA halves, and the bytes its directory publishes (SubjectPublicKeyInfo, RSASSA-PSS). */
 export type CreditKey = { privateKey: KeyObject; publicKey: KeyObject; published: Uint8Array }
 
-/**
- * The service's credit key from its private key, RSA-2048 in PKCS #8 (DER), as `openssl genpkey
- * -algorithm RSA -pkeyopt rsa_keygen_bits:2048 | openssl pkcs8 -topk8 -nocrypt -outform DER` writes
- * one (genpkey's own DER is PKCS #1, which this refuses). Throws on any other size.
- */
+/** The credit key from its private key, RSA-2048 in PKCS #8 (DER). Throws on any other kind or size. */
 export async function keyFrom(pkcs8: Uint8Array): Promise<CreditKey> {
   const privateKey = createPrivateKey({ key: Buffer.from(pkcs8), format: 'der', type: 'pkcs8' })
   if (privateKey.asymmetricKeyType !== 'rsa' || privateKey.asymmetricKeyDetails?.modulusLength !== 2048) throw new Error('a credit key is RSA-2048')
@@ -43,9 +39,26 @@ export async function keyFrom(pkcs8: Uint8Array): Promise<CreditKey> {
   return { privateKey, publicKey, published: await getPublicKeyBytes(spki) }
 }
 
-/** The directory the host serves at DIRECTORY_PATH (RFC 9578 §4), with its `forest-credit` entry. */
-function directoryOf(requestUri: string, key: Uint8Array, credit: { address: string; mint: string; price: string }): Record<string, unknown> {
-  return { 'issuer-request-uri': requestUri, 'token-keys': [{ 'token-type': CREDIT_TYPE, 'token-key': base64urlnopad.encode(key) }], 'forest-credit': { unit: UNIT, ...credit } }
+/**
+ * The credit key in the file at `path`: made there at the first start, RSA-2048 in PKCS #8 (DER),
+ * and read on every start after. The file is the only place it is kept: `wx`, so a key already
+ * there is never written over, and 0600, so only the host's own user reads it.
+ */
+export async function keyAt(path: string): Promise<CreditKey> {
+  if (!existsSync(path)) {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+    writeFileSync(path, privateKey.export({ format: 'der', type: 'pkcs8' }), { flag: 'wx', mode: 0o600 })
+  }
+  return keyFrom(new Uint8Array(readFileSync(path)))
+}
+
+/** Where a credit is paid on Solana, in which dollar, and the RPC the payment is checked through. */
+export type Payment = { address: string; mint: string; rpc: Rpc }
+
+/** The directory the host serves at DIRECTORY_PATH (RFC 9578 §4), with its `forest-credit` entry: where a credit is paid only when it can be. */
+function directoryOf(requestUri: string, key: Uint8Array, price: string, payment: Payment | null): Record<string, unknown> {
+  const forest = { unit: UNIT, price, ...(payment && { address: payment.address, mint: payment.mint }) }
+  return { 'issuer-request-uri': requestUri, 'token-keys': [{ 'token-type': CREDIT_TYPE, 'token-key': base64urlnopad.encode(key) }], 'forest-credit': forest }
 }
 
 /** How many credits a buy asks for: its requests, each one credit. Throws on bytes that are not a batch of requests. */
@@ -90,7 +103,7 @@ export type Rpc = (method: string, params: unknown[]) => Promise<unknown>
 
 type TokenBalance = { accountIndex: number; mint: string; owner?: string; uiTokenAmount: { amount: string; decimals: number } }
 type Transaction = {
-  meta: { err: unknown; preBalances?: number[]; postBalances?: number[]; preTokenBalances?: TokenBalance[]; postTokenBalances?: TokenBalance[]; loadedAddresses?: { writable?: string[]; readonly?: string[] } } | null
+  meta: { err: unknown; preTokenBalances?: TokenBalance[]; postTokenBalances?: TokenBalance[]; loadedAddresses?: { writable?: string[]; readonly?: string[] } } | null
   transaction: { message: { accountKeys: (string | { pubkey: string })[] } }
 }
 
@@ -107,14 +120,9 @@ function keysOf(tx: Transaction): string[] {
   return [...tx.transaction.message.accountKeys.map((k) => (typeof k === 'string' ? k : k.pubkey)), ...(loaded?.writable ?? []), ...(loaded?.readonly ?? [])]
 }
 
-/** What `address` gained in `mint` (or SOL) in this transaction, in base units, and the decimals they are in. */
+/** What `address` gained in `mint` in this transaction, in base units, and the decimals they are in. */
 function received(tx: Transaction, address: string, mint: string): { units: bigint; decimals: number } {
   const meta = tx.meta!
-  if (mint === 'SOL') {
-    const i = keysOf(tx).indexOf(address)
-    if (i < 0) return { units: 0n, decimals: 9 }
-    return { units: BigInt(meta.postBalances?.[i] ?? 0) - BigInt(meta.preBalances?.[i] ?? 0), decimals: 9 }
-  }
   const mine = (balances: TokenBalance[] | undefined) => (balances ?? []).filter((b) => b.owner === address && b.mint === mint)
   const after = mine(meta.postTokenBalances)
   const sum = (balances: TokenBalance[]) => balances.reduce((total, b) => total + BigInt(b.uiTokenAmount.amount), 0n)
@@ -124,7 +132,7 @@ function received(tx: Transaction, address: string, mint: string): { units: bigi
 /**
  * A Solana payment: does the transaction with this signature pay for the buy? Finalized, with no
  * error, naming the buy's reference among its accounts, and paying `address` at least `amount`
- * (decimal text, whole units) of `mint` (or SOL). One call through `rpc`; throws when it does.
+ * (decimal text, whole dollars) of `mint`, at face value. One call through `rpc`; throws when it does.
  */
 async function paysFor(rpc: Rpc, signature: string, owed: { reference: string; address: string; mint: string; amount: string }): Promise<boolean> {
   const tx = (await rpc('getTransaction', [signature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 0 }])) as Transaction | null
@@ -174,57 +182,26 @@ function together<T>(db: DatabaseSync, work: () => T): T {
   }
 }
 
-/** What a request showing a credit is told: the credit is held for it now, or it was spent, or another request holds it. */
-export type Hold = 'held' | 'spent' | 'busy'
-
 /**
- * The spent list, in the seller's file: every credit id the host took. A spend holds its credits and
- * spends them, together, in the transaction that adds them to a folder's balance; a hold left from
- * a spend an older host cut short is spent or freed once, at the start (src/credits.ts). Ids only,
- * and, for a hold, a note and when.
+ * The spent list, in the seller's file: every credit id the host took, and nothing else. A spend
+ * marks its credits spent in the transaction that adds them to a folder's balance (src/credits.ts).
  */
 export class SpentList {
   readonly #db: DatabaseSync
 
   constructor(db: DatabaseSync) {
     this.#db = db
-    this.#db.exec('CREATE TABLE IF NOT EXISTS credits (id TEXT PRIMARY KEY, spent INTEGER NOT NULL, note TEXT, at INTEGER) WITHOUT ROWID')
+    this.#db.exec('CREATE TABLE IF NOT EXISTS spent (id TEXT PRIMARY KEY) WITHOUT ROWID')
   }
 
-  /**
-   * Hold `id` for a request now, or several ids together, all or none: `held` if each was free,
-   * `spent` if one was spent, `busy` if another request holds one.
-   */
-  hold(id: string | string[], note: string | null = null, at: number = Date.now()): Hold {
-    const ids = typeof id === 'string' ? [id] : id
-    if (!ids.length || new Set(ids).size !== ids.length) throw new Error('hold one id or more, each once')
+  /** Marks each of `ids` spent, all or none: false, and none marked, if one was spent already. */
+  spend(ids: string[]): boolean {
+    if (!ids.length || new Set(ids).size !== ids.length) throw new Error('spend one id or more, each once')
     return together(this.#db, () => {
-      const rows = ids.map((i) => this.#db.prepare('SELECT spent FROM credits WHERE id = ?').get(i) as { spent: number } | undefined)
-      if (rows.some((r) => r?.spent)) return 'spent'
-      if (rows.some((r) => r)) return 'busy'
-      for (const i of ids) this.#db.prepare('INSERT INTO credits (id, spent, note, at) VALUES (?, 0, ?, ?)').run(i, note, at)
-      return 'held'
+      if (ids.some((id) => this.#db.prepare('SELECT 1 FROM spent WHERE id = ?').get(id))) return false
+      for (const id of ids) this.#db.prepare('INSERT INTO spent (id) VALUES (?)').run(id)
+      return true
     })
-  }
-
-  /** The action landed: `id`, or each of several, is spent, for good. */
-  land(id: string | string[]): void {
-    together(this.#db, () => {
-      for (const i of typeof id === 'string' ? [id] : id) this.#db.prepare('UPDATE credits SET spent = 1, note = NULL, at = NULL WHERE id = ?').run(i)
-    })
-  }
-
-  /** The action failed, or can no longer land: `id`, or each of several, is free to be shown again. A spent id stays spent. */
-  free(id: string | string[]): void {
-    together(this.#db, () => {
-      for (const i of typeof id === 'string' ? [id] : id) this.#db.prepare('DELETE FROM credits WHERE id = ? AND spent = 0').run(i)
-    })
-  }
-
-  /** Every id held now, with its note and when: what a service settles. */
-  holds(): { id: string; note: string | null; at: number }[] {
-    const rows = this.#db.prepare('SELECT id, note, at FROM credits WHERE spent = 0 ORDER BY at').all() as { id: string; note: string | null; at: number }[]
-    return rows.map(({ id, note, at }) => ({ id, note, at }))
   }
 }
 
@@ -235,14 +212,14 @@ export type SellerConfig = {
   key: CreditKey
   /** Where a buy is collected, as its directory names it. */
   requestUri: string
-  /** Where a credit is paid, in what, and one credit's price in whole units. */
-  credit: { address: string; mint: string; price: string }
+  /** One credit's price, in whole dollars as decimal text. */
+  price: string
+  /** Where a credit is paid on Solana; null: only tickets buy. */
+  payment: Payment | null
   /** The most credits one buy may ask for. */
   maxBuy: number
   /** The sponsors whose tickets it takes, by address. */
   sponsors: string[]
-  /** The Solana RPC a payment is checked through; null: none is checked. */
-  rpc: Rpc | null
   /** Its one SQLite file, or ':memory:'. */
   path: string
 }
@@ -257,7 +234,7 @@ export type Seller = {
   /** The directory to serve at DIRECTORY_PATH. */
   directory(): Record<string, unknown>
   /** A buy collected, with the payment header that came with it: its blind signatures, or a refusal. */
-  collect(buy: Uint8Array, payment: string | undefined): Promise<Answer>
+  collect(buy: Uint8Array, header: string | undefined): Promise<Answer>
   /** How many credits each sponsor's tickets paid for. */
   bill(): Record<string, number>
   close(): void
@@ -276,9 +253,9 @@ export function seller(config: SellerConfig): Seller {
   db.exec('CREATE TABLE IF NOT EXISTS proofs (proof TEXT PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID')
   db.exec('CREATE TABLE IF NOT EXISTS bill (sponsor TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID')
   const spent = new SpentList(db)
-  const { origin, key, credit, maxBuy, rpc } = config
+  const { origin, key, price, payment, maxBuy } = config
 
-  async function collect(buy: Uint8Array, payment: string | undefined): Promise<Answer> {
+  async function collect(buy: Uint8Array, header: string | undefined): Promise<Answer> {
     let count: number
     try {
       count = countOf(buy)
@@ -287,17 +264,18 @@ export function seller(config: SellerConfig): Seller {
     }
     if (count > maxBuy) return refuse('too_many', 400, `at most ${maxBuy} credits a buy`)
     const reference = await referenceOf(buy)
-    const amount = amountOf(credit.price, count)
-    const owed = `${amount} to ${credit.address} in ${credit.mint}, the transaction naming the buy's reference ${reference}, finalized; or a ticket from a sponsor this service takes`
-    if (!payment?.trim()) return refuse('not_paid', 402, owed)
-    const [kind, value = '', ...rest] = payment.trim().split(' ')
+    const amount = amountOf(price, count)
+    const ticket = 'a ticket from a sponsor this host takes'
+    const owed = payment ? `${amount} to ${payment.address} in ${payment.mint}, the transaction naming the buy's reference ${reference}, finalized; or ${ticket}` : ticket
+    if (!header?.trim()) return refuse('not_paid', 402, owed)
+    const [kind, value = '', ...rest] = header.trim().split(' ')
     let proof: string
     let sponsor: string | null = null
     if (kind === 'solana' && !rest.length && bytesOf(value, 'base58', 64)) {
-      if (!rpc) return refuse('payment_check_unavailable', 503)
+      if (!payment) return refuse('payment_check_unavailable', 503, 'this host takes no payment on Solana, only tickets')
       let paid: boolean
       try {
-        paid = await paysFor(rpc, value, { reference, address: credit.address, mint: credit.mint, amount })
+        paid = await paysFor(payment.rpc, value, { reference, address: payment.address, mint: payment.mint, amount })
       } catch {
         return refuse('payment_check_unavailable', 503)
       }
@@ -315,8 +293,8 @@ export function seller(config: SellerConfig): Seller {
     // A proof pays for one buy: taken by another, it is refused; for this one again, the same answer,
     // and the bill counts it once.
     const usedElsewhere = together(db, () => {
-      const row = db.prepare('SELECT reference FROM proofs WHERE proof = ?').get(proof) as { reference: string } | undefined
-      if (row) return row.reference !== reference
+      const taken = db.prepare('SELECT reference FROM proofs WHERE proof = ?').get(proof) as { reference: string } | undefined
+      if (taken) return taken.reference !== reference
       db.prepare('INSERT INTO proofs (proof, reference) VALUES (?, ?)').run(proof, reference)
       if (sponsor) db.prepare('INSERT INTO bill (sponsor, credits) VALUES (?, ?) ON CONFLICT (sponsor) DO UPDATE SET credits = credits + excluded.credits').run(sponsor, count)
       return false
@@ -329,7 +307,7 @@ export function seller(config: SellerConfig): Seller {
     db,
     spent,
     together: (work) => together(db, work),
-    directory: () => directoryOf(config.requestUri, key.published, credit),
+    directory: () => directoryOf(config.requestUri, key.published, price, payment),
     collect,
     bill: () => Object.fromEntries((db.prepare('SELECT sponsor, credits FROM bill').all() as { sponsor: string; credits: number }[]).map((r) => [r.sponsor, r.credits])),
     close: () => db.close(),

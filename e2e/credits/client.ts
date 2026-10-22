@@ -1,25 +1,18 @@
-// Forest credits, the buyer's side: what an app does to buy a service's credits and spend them. A
-// credit is a prepaid unit for one service, a Privacy Pass credit of type 2 (RFC 9578): an RSA
-// signature the service made blind, over a nonce only the buyer's app knows, so when it comes back
-// to be spent the service sees a good signature and nothing that ties it to the buy. See the host's
-// README.md, "Credits", and the registry payer's.
+// Forest credits, the buyer's side: what an app does to buy a host's credits and spend them. A
+// credit is a prepaid unit of one host's writes, a Privacy Pass credit of type 2 (RFC 9578): an RSA
+// signature the host made blind, over a nonce only the buyer's app knows, so when it comes back to
+// be spent the host sees a good signature and nothing that ties it to the buy. See the host's
+// README.md, "Credits".
 //
-// The service, from its directory; the buy and its pay link; finishing the credits from the
-// service's answer; showing one or several. It talks to no network of its own. The blinding and the
-// signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
+// The service, from its directory, which takes a payment on Solana or sells only for sponsors'
+// tickets; the buy, and its pay link when there is a payment to make; finishing the credits from the
+// service's answer; listing them for a spend. It talks to no network of its own. The blinding and
+// the signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
 // memory only, so the buy here keeps it as bytes, to finish later, on any device, from the vault.
-// The host (host/credits/) and the registry payer (fee-payer/registry/credits/) each check and sell
-// credits with their own copy of the service's side, on the same wire format. The e2e run buys with
-// it, and so do the services' and the issuer's tests.
+// The host checks and sells credits with its own code (host/credits/), on the same wire format. The
+// e2e loop buys with this, and so do the issuer's tests.
 
-import {
-  AuthenticatorInput,
-  AuthorizationHeader,
-  Token,
-  TokenChallenge,
-  genericBatched,
-  publicVerif,
-} from '@cloudflare/privacypass-ts'
+import { AuthenticatorInput, Token, TokenChallenge, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad } from '@scure/base'
 
 const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicVerif
@@ -45,11 +38,11 @@ export type Service = {
   requestUri: string
   /** What one credit buys, in the service's own words: its unit is its own. */
   unit: string
-  /** The Solana address a buy is paid to. */
-  address: string
-  /** What it is paid in: a dollar's mint address, or SOL. */
-  mint: string
-  /** The price of one credit, in whole units of the mint, decimal text. */
+  /** The Solana address a buy is paid to; absent when only sponsors' tickets buy. */
+  address?: string
+  /** What it is paid in: a dollar's mint address, or SOL; absent with the address. */
+  mint?: string
+  /** The price of one credit, in whole dollars, decimal text. */
   price: string
 }
 
@@ -92,7 +85,8 @@ function originOf(origin: string): { origin: string; host: string } {
 /**
  * The service, from its Privacy Pass issuer directory (RFC 9578 §4) read at `origin`: the type 2
  * key that counts at `now` (the latest whose not-before has passed), where a buy goes, and the
- * directory's `forest-credit` entry: what one credit buys, where it is paid and how much.
+ * directory's `forest-credit` entry: what one credit buys and its price, and, when it takes a
+ * payment on Solana, where it is paid and in which dollar. Without them, only tickets buy.
  */
 export function serviceOf(origin: string, directory: unknown, now: number = Date.now()): Service {
   originOf(origin)
@@ -108,16 +102,18 @@ export function serviceOf(origin: string, directory: unknown, now: number = Date
   const forest = directory['forest-credit']
   if (!isObject(forest)) throw new Error('the directory has no forest-credit entry')
   if (typeof forest.unit !== 'string' || !forest.unit) throw new Error('a service says what one credit buys')
-  addressBytes(forest.address, 'address')
-  if (forest.mint !== 'SOL') addressBytes(forest.mint, 'mint')
+  if ((forest.address === undefined) !== (forest.mint === undefined)) throw new Error('a payment names its address and its mint, or neither')
+  if (forest.address !== undefined) {
+    addressBytes(forest.address, 'address')
+    if (forest.mint !== 'SOL') addressBytes(forest.mint, 'mint')
+  }
   if (typeof forest.price !== 'string' || !DECIMAL.test(forest.price) || !/[1-9]/.test(forest.price)) throw new Error('price is decimal text above 0')
   return {
     origin,
     key: b64u.decode((current['token-key'] as string).replace(/=+$/, '')),
     requestUri: new URL(uri, origin).href,
     unit: forest.unit,
-    address: forest.address as string,
-    mint: forest.mint as string,
+    ...(forest.address !== undefined && { address: forest.address as string, mint: forest.mint as string }),
     price: forest.price,
   }
 }
@@ -150,11 +146,11 @@ export function amountOf(price: string, count: number): string {
 
 /**
  * A buy of `count` credits: the requests, blinded so the service never sees what it signs; the
- * reference a payment carries to name this buy; the pay link anyone pays it with; and what the app
- * keeps to finish the credits, in the vault. Whoever holds the buy can collect it, once paid; only
- * the app holding `pending` can finish the credits.
+ * reference a payment or a sponsor's ticket names this buy by; when the service takes a payment, the
+ * pay link anyone pays it with; and what the app keeps to finish the credits, in the vault. Whoever
+ * holds the buy can collect it, once paid; only the app holding `pending` can finish the credits.
  */
-export async function buy(service: Service, count: number): Promise<{ buy: Uint8Array; reference: string; payLink: string; pending: Pending }> {
+export async function buy(service: Service, count: number): Promise<{ buy: Uint8Array; reference: string; payLink?: string; pending: Pending }> {
   if (!Number.isSafeInteger(count) || count < 1) throw new RangeError('a buy is of one credit or more')
   const key = await importKey(service.key)
   const keyId = await sha256(service.key)
@@ -168,12 +164,13 @@ export async function buy(service: Service, count: number): Promise<{ buy: Uint8
   }
   const bytes = new genericBatched.BatchedTokenRequest(requests).serialize()
   const reference = await referenceOf(bytes)
-  const amount = amountOf(service.price, count)
+  const pending = { service: service.origin, key: b64u.encode(service.key), buy: b64u.encode(bytes), blinds }
+  if (service.address === undefined) return { buy: bytes, reference, pending }
   const payLink =
-    `solana:${service.address}?amount=${amount}` +
+    `solana:${service.address}?amount=${amountOf(service.price, count)}` +
     (service.mint === 'SOL' ? '' : `&spl-token=${service.mint}`) +
     `&reference=${reference}&label=${encodeURIComponent(originOf(service.origin).host)}`
-  return { buy: bytes, reference, payLink, pending: { service: service.origin, key: b64u.encode(service.key), buy: b64u.encode(bytes), blinds } }
+  return { buy: bytes, reference, payLink, pending }
 }
 
 /** A pending buy's shape, as the vault keeps it. Throws on any other. */
@@ -234,14 +231,9 @@ function bytesOf(credit: Credit | Uint8Array | string): Uint8Array {
   return bytes
 }
 
-/** The Authorization header that shows one credit with a request (RFC 9577 §2.2). */
-export function authorization(credit: Credit | Uint8Array | string): string {
-  return new AuthorizationHeader(Token.deserialize(BLIND_RSA, bytesOf(credit))).toString(true)
-}
-
 /**
- * Several credits shown with one request, as its body lists them: each credit's bytes, base64url, in
- * order. A service takes as many in one request as it chooses, and all of them or none.
+ * Credits spent with one request, as its body lists them: each credit's bytes, base64url, in order.
+ * The host takes up to 100 in one spend into a folder's balance, and all of them or none.
  */
 export function creditList(credits: (Credit | Uint8Array | string)[]): string[] {
   return credits.map((credit) => b64u.encode(bytesOf(credit)))

@@ -1,219 +1,79 @@
-// Reading the markets this index uses from the markets repo: its `directory.md` and each listed
-// market's file. No aliases: a market is its one name. No network: the repo is a map of paths to
-// texts.
+// The markets: read from the pinned checkout; a post that does not fit its market is kept, not
+// listed, and says why; the escrow this index reads is the one the pinned standard records.
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { test } from 'node:test'
+import { after, before, test } from 'node:test'
 
-import { Directory, parseDirectory } from '../src/markets.ts'
-import { MARKETS_FOLDER, serveMarkets } from './markets-repo.ts'
+import { ESCROW_PROGRAM } from '../src/chain.ts'
+import { loadMarkets } from '../src/markets.ts'
+import type { MarketPage } from '../src/pages/market.ts'
+import type { ProfilePage } from '../src/pages/profile.ts'
+import { at, index, issuer, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
 
-const BASE = 'https://markets.test/main'
-const list = { directory: BASE }
-const tutors = readFileSync(join(MARKETS_FOLDER, 'freelance-work/online-tutors.json'), 'utf8')
-const exchange = readFileSync(join(MARKETS_FOLDER, 'learning/language-exchange.json'), 'utf8')
-const plumbing = JSON.stringify({ ...JSON.parse(tutors), name: 'plumbing', folder: 'home-services', offerFields: {}, roleNames: undefined })
-
-// The markets repo's own layout: a line per market under its folder, and other sections whose
-// bullets link nothing.
-const md = (lines: string) => `# Directory
-
-## home-services
-
-- [\`plumbing\`](home-services/plumbing.json): Pipes, taps, drains.
-
-## freelance-work
-
-${lines}
-
-## Scopes
-
-- The roles come from the market's sides.
-`
-
-function repo(files: Record<string, string>): typeof fetch {
-  return (async (url: string) => {
-    const path = url.slice(BASE.length + 1)
-    return path in files ? new Response(files[path]) : new Response('404: Not Found', { status: 404 })
-  }) as typeof fetch
-}
-
-test('every market the directory lists, each read through its line in the directory, and nothing else', async () => {
-  const text = md('- [`online-tutors`](freelance-work/online-tutors.json): Lessons online.')
-  assert.deepEqual(parseDirectory(text), [
-    { name: 'plumbing', path: 'home-services/plumbing.json' },
-    { name: 'online-tutors', path: 'freelance-work/online-tutors.json' },
-  ])
-  const files = repo({ 'directory.md': text, 'home-services/plumbing.json': plumbing, 'freelance-work/online-tutors.json': tutors })
-  const d = await Directory.fetch(list, files)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors'])
-  assert.deepEqual(d.refused, [])
-  assert.deepEqual([...d.folders()], [['freelance-work', ['online-tutors']], ['home-services', ['plumbing']]])
-  assert.equal(d.labelOf('plumber/seller'), null, 'no aliases: another spelling is another name, not a market here')
-  assert.deepEqual(d.labelOf('plumbing/seller'), { market: 'plumbing', role: 'seller' })
-  assert.equal(d.labelOf('plumbing'), null, 'a plain market counts for nothing')
-
-  // No other list: a market the directory does not list is no market here.
-  assert.equal(d.labelOf('stays/seller'), null)
-  assert.equal(d.markets.has('stays'), false)
+test('the escrow this index reads is the program the pinned standard records', () => {
+  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { escrow: { programId: string } }
+  assert.equal(ESCROW_PROGRAM, record.escrow.programId)
 })
 
-test('a market counts once the directory lists it, at the next read, and stops when it is gone', async () => {
-  const files: Record<string, string> = {
-    'directory.md': md('- [`online-tutors`](freelance-work/online-tutors.json): Lessons online.'),
-    'home-services/plumbing.json': plumbing,
-    'freelance-work/online-tutors.json': tutors,
-  }
-  const d = await Directory.fetch(list, repo(files))
-  const same = d.markets
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors'])
-  assert.equal(d.labelOf('language-exchange/peer'), null)
-  assert.equal(await d.refresh(), false, 'nothing new: nothing changed')
-
-  files['directory.md'] = md(
-    '- [`online-tutors`](freelance-work/online-tutors.json): Lessons online.\n- [`language-exchange`](learning/language-exchange.json): Two people teach each other.',
-  )
-  files['learning/language-exchange.json'] = exchange
-  assert.equal(await d.refresh(), true)
-  assert.equal(d.markets, same, 'the same object, so what holds it sees the change')
-  assert.deepEqual(d.labelOf('language-exchange/peer'), { market: 'language-exchange', role: 'peer' })
-
-  files['directory.md'] = md('- [`language-exchange`](learning/language-exchange.json): Two people teach each other.')
-  assert.equal(await d.refresh(), true)
-  assert.equal(d.labelOf('online-tutors/seller'), null)
-  assert.deepEqual(d.labelOf('language-exchange/peer'), { market: 'language-exchange', role: 'peer' })
-})
-
-test('a read in which the directory does not answer keeps the markets as they were', async () => {
-  const files: Record<string, string> = {
-    'directory.md': md('- [`online-tutors`](freelance-work/online-tutors.json): Lessons online.'),
-    'home-services/plumbing.json': plumbing,
-    'freelance-work/online-tutors.json': tutors,
-  }
-  const d = await Directory.fetch(list, repo(files))
-  delete files['directory.md']
-  await assert.rejects(d.refresh(), /directory\.md answered 404/)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors'])
-  // The directory answers again: the next read takes what it says.
-  files['directory.md'] = md('- [`language-exchange`](learning/language-exchange.json): Two people teach each other.')
-  files['learning/language-exchange.json'] = exchange
-  assert.equal(await d.refresh(), true)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'language-exchange'])
-  // A directory built from files has nowhere to read again.
-  await assert.rejects(new Directory([]).refresh(), /not read from a markets directory/)
-})
-
-test('roles come from sides; role names are words for pages', async () => {
-  const d = new Directory([
-    { file: 'freelance-work/online-tutors.json', market: JSON.parse(tutors) },
-    { file: 'learning/language-exchange.json', market: JSON.parse(exchange) },
-  ])
-  assert.deepEqual(d.markets.get('online-tutors')!.roles, ['seller', 'buyer'])
-  assert.deepEqual(d.markets.get('language-exchange')!.roles, ['peer'])
-  assert.deepEqual(d.labelOf('language-exchange/peer'), { market: 'language-exchange', role: 'peer' })
-  assert.equal(d.labelOf('language-exchange/seller'), null, 'a one-sided market has no seller')
-  assert.equal(d.labelOf('online-tutors/peer'), null, 'a two-sided market has no peer')
-  assert.equal(d.labelOf('online-tutors/tutor'), null, 'a role name is not a role')
-  assert.deepEqual([d.sideWord('online-tutors', 'seller'), d.sideWord('online-tutors', 'buyer')], ['tutor', 'student'])
-  assert.deepEqual([d.sideWord('language-exchange', 'buyer'), d.sideWord(null, 'seller'), d.sideWord('nowhere', 'buyer')], ['buyer', 'seller', 'buyer'])
-})
-
-test('a file listed under another name, at another path, or not a market file is refused; the rest count', async () => {
-  const d = await Directory.fetch(
-    list,
-    repo({
-      'directory.md': md(
-        [
-          '- [`online-tutoring`](freelance-work/online-tutors.json): Wrong name.',
-          '- [`broken`](freelance-work/broken.json): Not JSON.',
-          '- [`bare`](freelance-work/bare.json): Not a market file.',
-          '- [`old`](freelance-work/old.json): The old keys.',
-          '- [`language-exchange`](freelance-work/language-exchange.json): In another folder than its file says.',
-        ].join('\n'),
-      ),
-      'home-services/plumbing.json': plumbing,
-      'freelance-work/online-tutors.json': tutors,
-      'freelance-work/broken.json': '{',
-      'freelance-work/bare.json': JSON.stringify({ name: 'bare', folder: 'freelance-work' }),
-      'freelance-work/old.json': JSON.stringify({ name: 'old', folder: 'freelance-work', category: 'freelance-work', fields: {}, evidenceTypes: [], credentialIssuers: [] }),
-      'freelance-work/language-exchange.json': exchange,
-    }),
-  )
-  assert.deepEqual([...d.markets.keys()], ['plumbing'])
-  assert.deepEqual(d.refused.map((r) => r.market).sort(), ['bare', 'broken', 'language-exchange', 'old', 'online-tutoring'])
-})
-
-test('a market file that cannot be fetched, is not JSON, or is JSON null is refused; every other market counts, and one read before keeps its last good copy', async () => {
-  const files: Record<string, string> = {
-    'directory.md': md(
-      [
-        '- [`online-tutors`](freelance-work/online-tutors.json): Missing.',
-        '- [`broken`](freelance-work/broken.json): Not JSON.',
-        '- [`nothing`](freelance-work/nothing.json): JSON null.',
-        '- [`down`](freelance-work/down.json): The request itself fails.',
-        '- [`language-exchange`](learning/language-exchange.json): Fine.',
-      ].join('\n'),
-    ),
-    'home-services/plumbing.json': plumbing,
-    'freelance-work/broken.json': '{',
-    'freelance-work/nothing.json': 'null',
-    'learning/language-exchange.json': exchange,
-  }
-  const get = repo(files)
-  const fetchOrFail = (async (url: string, init?: RequestInit) => {
-    if (url.endsWith('freelance-work/down.json')) throw new TypeError('fetch failed')
-    return get(url, init)
-  }) as typeof fetch
-  const d = await Directory.fetch(list, fetchOrFail)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'language-exchange'])
+test("each market's check reads its file: fields, choices, lists, roles", () => {
+  const m = loadMarkets(MARKETS)
   assert.deepEqual(
-    d.refused.map((r) => r.market).sort(),
-    ['broken', 'down', 'nothing', 'online-tutors'],
+    m.list.map((x) => x.name),
+    (JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string }> }).markets.map((x) => x.name),
   )
-  assert.match(d.refused.find((r) => r.market === 'online-tutors')!.errors[0]!, /could not be fetched: .*answered 404/)
-  assert.match(d.refused.find((r) => r.market === 'down')!.errors[0]!, /could not be fetched: fetch failed/)
-  assert.deepEqual(d.refused.find((r) => r.market === 'nothing')!.errors, ['not a market file: the JSON is not an object'])
-  assert.deepEqual(d.refused.find((r) => r.market === 'broken')!.errors, ['not JSON'])
-
-  // On a later read the same holds, and a file that lands is taken.
-  files['freelance-work/online-tutors.json'] = tutors
-  assert.equal(await d.refresh(), true)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors', 'language-exchange'])
-  assert.deepEqual(d.refused.map((r) => r.market).sort(), ['broken', 'down', 'nothing'])
-
-  // A market that was read keeps its last good copy while its file fails, whichever way: it is
-  // still refused and logged, and nothing changed. One never read successfully stays out.
-  const good = d.markets.get('online-tutors')
-  for (const bad of [undefined, '{', 'null']) {
-    if (bad === undefined) delete files['freelance-work/online-tutors.json']
-    else files['freelance-work/online-tutors.json'] = bad
-    assert.equal(await d.refresh(), false, String(bad))
-    assert.deepEqual([...d.markets.keys()], ['plumbing', 'online-tutors', 'language-exchange'], String(bad))
-    assert.equal(d.markets.get('online-tutors'), good)
-    assert.ok(d.refused.some((r) => r.market === 'online-tutors'), String(bad))
-    assert.ok(!d.markets.has('nothing') && !d.markets.has('broken') && !d.markets.has('down'))
-  }
-  // A read of it succeeds: the new copy is taken. Then the directory stops listing it: it goes.
-  files['freelance-work/online-tutors.json'] = JSON.stringify({ ...JSON.parse(tutors), description: 'Lessons, changed.' })
-  assert.equal(await d.refresh(), true)
-  assert.equal(d.markets.get('online-tutors')!.description, 'Lessons, changed.')
-  files['directory.md'] = md('- [`language-exchange`](learning/language-exchange.json): Fine.')
-  assert.equal(await d.refresh(), true)
-  assert.deepEqual([...d.markets.keys()], ['plumbing', 'language-exchange'])
-
-  // The directory itself must answer.
-  await assert.rejects(Directory.fetch(list, repo({})), /directory\.md answered 404/)
+  const place = { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' }
+  assert.equal(m.checkPost('tutoring', 'tutor', { description: 'Maths', price: { amount: '30', currency: 'USD', per: 'hour' }, subjects: ['maths'], place }), null)
+  assert.match(m.checkPost('tutoring', 'tutor', { description: 'Maths', colour: 'red' })!, /does not name: colour/)
+  assert.match(m.checkPost('tutoring', 'tutor', { subjects: ['knitting'] })!, /its subjects is not a list of choice/)
+  assert.match(m.checkPost('tutoring', 'tutor', { subjects: ['maths', 'maths'] })!, /its subjects is not a list of choice/)
+  assert.match(m.checkPost('tutoring', 'tutor', { price: { amount: 30, currency: 'USD' } })!, /its price is not a money/)
+  assert.match(m.checkPost('electronics', 'buyer', { photos: [] })!, /photos is a field for seller/)
+  assert.equal(m.checkPost('electronics', 'seller', { photos: [] }), null)
+  assert.match(m.checkPost('tutoring', 'seller', {})!, /seller is not a role in the tutoring market/)
+  assert.match(m.checkPost('knitting', 'maker', {})!, /knitting is not a market/)
+  assert.equal(m.checkReview('tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)
+  assert.match(m.checkReview('tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', evidence: 'x' })!, /reviews hold no evidence/)
+  assert.match(m.checkReview('tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '11' })!, /score is not "1" to "10"/)
+  assert.match(m.checkReview('tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', offer: 'maths' })!, /offer is not a post's address/)
 })
 
-test("the tests' own markets repo, over HTTP", async () => {
-  const served = await serveMarkets()
-  try {
-    const d = await Directory.fetch({ directory: served.url })
-    assert.deepEqual([...d.markets.keys()], ['online-tutors', 'language-exchange'])
-    assert.deepEqual(d.refused, [])
-  } finally {
-    await served.close()
-  }
+const by = issuer()
+let host: Awaited<ReturnType<typeof startHost>>
+let rpc: Awaited<ReturnType<typeof startRpc>>
+before(async () => {
+  host = await startHost()
+  rpc = await startRpc()
+})
+after(async () => {
+  await host.close()
+  await rpc.close()
+})
+
+test('a post that does not fit its market is kept, not listed, and its profile page says why', async () => {
+  const tutor = await profile('tutoring/tutor', [by])
+  const student = await profile('tutoring/student', [by])
+  for (const p of [tutor, student]) await publishProfile(host.url, p)
+  await post(host.url, [
+    at(tutor, 'offer/good', { description: 'Maths, any level.', subjects: ['maths'] }),
+    at(tutor, 'offer/odd', { description: 'Maths.', colour: 'red' }),
+    at(student, 'offer/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
+  ])
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  await i.pass()
+
+  const m = (await twin<MarketPage>(i, '/markets/tutoring.json')).body
+  assert.deepEqual(Object.keys(m.posts), ['tutor', 'student'])
+  assert.deepEqual(m.posts.tutor!.map((r) => r.post.address), [`${tutor.key.address}/offer/good`])
+  assert.deepEqual(m.posts.student!.map((r) => r.post.address), [`${student.key.address}/offer/physics`])
+
+  const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
+  const odd = t.posts.find((p) => p.address.endsWith('/offer/odd'))!
+  assert.equal(odd.listed, false)
+  assert.equal(odd.why, 'it has a field the tutoring market does not name: colour')
+  assert.deepEqual(odd.body, { description: 'Maths.', colour: 'red' })
+  assert.equal(t.posts.find((p) => p.address.endsWith('/offer/good'))!.listed, true)
+  assert.equal('why' in t.posts.find((p) => p.address.endsWith('/offer/good'))!, false)
+  await i.close()
 })
