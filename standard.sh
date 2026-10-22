@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
 # Fetches foundationforest/standard at the commit in STANDARD into standard/ (not committed), then
-# runs `npm ci` in each standard package named on the command line. The services use standard's
-# pieces from there, unchanged, by relative path: standard/keys, standard/records,
-# standard/registry/client and standard/escrow/client in code; standard's programs and proving files
-# in the slow tests. Moving the pin is a one-line change to STANDARD. Needs git and the network.
-#
-#   ./standard.sh                                        standard at the pinned commit
-#   ./standard.sh registry/client records                and `npm ci` in those packages
+# installs and builds it at its root: the standard is one npm workspace, and `npm run build` there
+# builds each of its packages to its dist/. A service depends on a standard package by the name in
+# that package's package.json, through a file: link into standard/. Moving the pin is a one-line
+# change to STANDARD. Needs git and the network.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -23,6 +20,4 @@ if [ "$(git -C standard rev-parse -q --verify HEAD || true)" != "$STANDARD_COMMI
 fi
 echo "standard at $STANDARD_COMMIT"
 
-for dir in "$@"; do
-  (cd "standard/$dir" && npm ci --no-audit --no-fund)
-done
+(cd standard && npm ci --no-audit --no-fund && npm run build)
