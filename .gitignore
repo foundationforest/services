@@ -1,10 +1,13 @@
-# standard at the commit in STANDARD, and markets at the commit in MARKETS, fetched by standard.sh
+# The standard at the commit in STANDARD, and the markets at the commit in MARKETS, fetched by standard.sh
 standard/
 markets/
 
 node_modules/
-*.tsbuildinfo
-*.log
+
+# What the host keeps when run by hand (DATA_DIR=./data). The issuer's, the index's and Kora's are in
+# their directories' own .gitignore.
+host/data/
+
+# Settings that may hold a key never enter the repo
 .env
 .env.*
-!.env.example

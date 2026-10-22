@@ -12,8 +12,8 @@ key of theirs, it signs only as the transaction's payer, and the money in an esc
 the escrow allows
 ([the standard's escrow](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md)).
 
-**Where it stands:** the escrow runs on Solana's devnet today, so this fee payer runs there, paid in
-two test dollars, at https://fee-payer.devnet.forest.foundation.
+**Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
+there, paid in two test dollars, at https://fee-payer.forest.foundation.
 
 ## How it works
 
