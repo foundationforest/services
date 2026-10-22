@@ -1,131 +1,170 @@
-// What both tests act on: records' reference host on loopback, taking messages a message key signed
-// (it reads the sender's records from the sender's host), a stand-in index serving its own JSON, and
-// a stand-in for the public list of hosts. Two people:
+// What the tests act on: the standard's reference host on loopback, taking messages a write key
+// signed (it reads the sender's records from the sender's host), behind a front that counts every
+// request, so a test can show a refused call never wrote to it; and a stand-in index serving the
+// four answers this tool reads, in the contract's fields. The hosts records name the front, so
+// every request passes it. Four profiles:
 //
-// - The buyer, whose app gave this tool access keys: a write key on offer and review, a write key
-//   on review alone, two message keys (one the owner later makes past), and a read key, listed in
-//   its permissions record and as its inbox's reader. Its folder holds an offer its main key wrote, and a private record encrypted to the
-//   read key and to its own inbox key.
-// - The seller, with an offer and an inbox open to anyone.
-// - A quiet profile, whose card declares no inbox.
+// - The tutor, whose app gave this tool access keys: a write key for offer, review and inbox, a
+//   write key for review alone, and a read key for inbox, named among its inbox's readers. Its
+//   folder holds an offer its main key wrote.
+// - The student, with an offer and an inbox open to anyone.
+// - A clothing buyer, with a write key for offer and review: a role the market keeps some fields from.
+// - A quiet tutor, whose profile record declares no inbox.
 
 import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { generateHybridIdentity, identityToRecipient } from 'age-encryption'
-import { mainKey, newSeed, inboxKey } from '../../standard/keys/src/index.ts'
-import { type AccessKey, type Body, b64u, hostsRecord, keyFromPrivate, ownerRecord, permissionsRecord, publish, readAll } from '../../standard/records/src/index.ts'
-import { Host } from '../../standard/records/src/host.ts'
-import { makePrivate } from '../../standard/records/src/private.ts'
+import { accessKey, inboxKey, mainKey, newSeed, readKey } from '@foundationforest/keys'
+import { type AccessKey, type Body, b64u, hostsRecord, ownerRecord, permissionsRecord, publish, readAll } from '@foundationforest/records'
+import { Host } from '@foundationforest/records/host'
 import type { Context } from '../src/forest.ts'
 
-export const buyer = await mainKey(newSeed(), 'tutoring/buyer')
-export const seller = await mainKey(newSeed(), 'tutoring/seller')
-export const quiet = await mainKey(newSeed(), 'tutoring/seller')
-export const buyerInbox = await inboxKey(buyer.privateKey)
-export const sellerInbox = await inboxKey(seller.privateKey)
+export const tutor = await mainKey(newSeed(), 'tutoring/tutor')
+export const student = await mainKey(newSeed(), 'tutoring/student')
+export const buyer = await mainKey(newSeed(), 'clothing/buyer')
+export const quiet = await mainKey(newSeed(), 'tutoring/tutor')
+export const tutorInbox = await inboxKey(tutor.secret)
+export const studentInbox = await inboxKey(student.secret)
 
-export const writeKey = keyFromPrivate(randomBytes(32))
-export const reviewKey = keyFromPrivate(randomBytes(32))
-export const messageKey = keyFromPrivate(randomBytes(32))
-export const laterPastKey = keyFromPrivate(randomBytes(32))
-export const strayKey = keyFromPrivate(randomBytes(32))
-export const readIdentity = await generateHybridIdentity()
-export const readRecipient = await identityToRecipient(readIdentity)
+export const writer = accessKey(randomBytes(32))
+export const reviewer = accessKey(randomBytes(32))
+export const reader = await readKey(randomBytes(32))
+export const buyerWriter = accessKey(randomBytes(32))
+/** A read key no permissions record lists. */
+export const stray = await readKey(randomBytes(32))
 
-/** Each key as a grant writes it. */
+/** Each key as the person's app gives it: its 32 bytes in base64url. */
 export const KEYS = {
-  write: b64u.encode(writeKey.privateKey),
-  review: b64u.encode(reviewKey.privateKey),
-  message: b64u.encode(messageKey.privateKey),
-  laterPast: b64u.encode(laterPastKey.privateKey),
-  stray: b64u.encode(strayKey.privateKey),
-  main: b64u.encode(buyer.privateKey),
-  read: readIdentity,
-  inbox: buyerInbox.identity,
+  write: b64u.encode(writer.secret),
+  review: b64u.encode(reviewer.secret),
+  read: b64u.encode(reader.secret),
+  buyer: b64u.encode(buyerWriter.secret),
+  stray: b64u.encode(stray.secret),
 }
 
-export const offer = (description: string): Body => ({ direction: 'request', description, price: { amount: '30', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', per: 'hour' } })
-export const MARKET = { about: 'the stand-in index', market: 'tutoring', profiles: [seller.address] }
-/** The stand-in index's page for the seller, in the foundation's index's shape: its card's copy, its scores, and what the hosts give too. */
-export const SCORES = {
-  address: seller.address,
-  profile: { name: 'a seller', inboxKey: sellerInbox.recipient, inbox: { senders: 'anyone', readers: ['age1pq1reader'] } },
-  scores: { rating: { value: 7 } },
-  offers: [{ uri: `${seller.address}/offer/maths` }],
-  requests: [],
-  reviews: { received: [{ reviewer: 'someone' }], given: [{ subject: 'someone' }] },
-}
-/** The stand-in index's home, in the foundation's index's shape: its folders, their markets and each one's role words. */
-export const HOME = {
-  folders: [
-    { folder: 'education', markets: [{ name: 'tutoring', roleWords: { seller: 'teacher', buyer: 'student' } }] },
-    { folder: 'home', markets: [{ name: 'plumbing', roleWords: { seller: 'seller', buyer: 'buyer' } }] },
-    { folder: 'sports', markets: [{ name: 'tennis', roleWords: { peer: 'peer' } }] },
-  ],
-}
+/** The tutor's permissions record. */
+export const ACCESS: AccessKey[] = [
+  { key: writer.address, scope: 'write', paths: ['offer', 'review', 'inbox'] },
+  { key: reviewer.address, scope: 'write', paths: ['review'] },
+  { key: reader.address, sealTo: reader.sealTo, scope: 'read', paths: ['inbox'] },
+]
 
-const card = (role: string, inboxKey: string, readers?: string[]): Body => ({
-  market: 'tutoring',
-  role,
-  name: `a ${role}`,
-  inboxKey,
-  inbox: { senders: 'anyone', ...(readers && { readers }) },
-  createdAt: '2026-10-07T12:00:00Z',
+/** A post that fits tutoring's fields. */
+export const lesson = (description: string): Body => ({
+  description,
+  price: { amount: '30', currency: 'EUR', per: 'hour' },
+  payment: ['direct', 'session'],
+  subjects: ['maths', 'physics'],
+  levels: ['secondary'],
+  place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid', online: true },
+  hours: { zone: 'Europe/Madrid', slots: [{ days: ['tuesday', 'thursday'], from: '18:00', to: '20:00' }] },
 })
 
-/** A JSON server: each path to its body, 404 for the rest. */
-async function serveJson(files: { [path: string]: unknown }): Promise<{ url: string; server: Server }> {
+export const TUTORING = JSON.parse(readFileSync(new URL('../../markets/markets/tutoring.json', import.meta.url), 'utf8'))
+export const DIRECTORY = JSON.parse(readFileSync(new URL('../../markets/directory.json', import.meta.url), 'utf8'))
+
+/** The stand-in index's own address. */
+export const INDEX_ADDRESS = accessKey(randomBytes(32)).address
+/** One search result, in the contract's fields. */
+export const RESULT = {
+  profile: student.address,
+  market: 'tutoring',
+  role: 'student',
+  post: { address: `${student.address}/offer/maths`, body: { description: 'Maths for the exam in June.' } },
+  rating: { value: 9.2, reviews: 14, withPayment: 11 },
+  checks: [{ issuer: 'issuer.forest.foundation', key: INDEX_ADDRESS, label: 'one real person' }],
+}
+export const ANSWERS = {
+  index: { index: INDEX_ADDRESS, markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }, { name: 'clothing', description: 'Clothes.', roles: ['seller', 'buyer'] }] },
+  market: { index: INDEX_ADDRESS, market: TUTORING, posts: { tutor: [], student: [RESULT] } },
+  search: { index: INDEX_ADDRESS, total: 1, results: [RESULT] },
+  profile: {
+    index: INDEX_ADDRESS,
+    address: student.address,
+    profile: { market: 'tutoring', role: 'student' },
+    checks: RESULT.checks,
+    rating: RESULT.rating,
+    posts: [{ address: `${student.address}/offer/maths`, body: { description: 'Maths for the exam in June.' }, listed: true }],
+    reviews: { received: [{ reviewer: tutor.address, address: `${tutor.address}/review/1`, body: { subject: student.address, score: '9' }, counted: true, evidence: 'without', weight: 1 }], given: [] },
+  },
+}
+
+const inboxOpen = (inboxKey: string, readers?: string[]) => ({ inboxKey, inbox: { senders: 'anyone', ...(readers && { readers }) } })
+
+async function listen(server: Server): Promise<string> {
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`
+}
+
+/** A front that passes every request to `to`, as it came, and counts each by its method and path. */
+async function front(to: () => string): Promise<{ url: string; server: Server; counts: Map<string, number> }> {
+  const counts = new Map<string, number>()
+  const server = createServer(async (req, res) => {
+    const what = `${req.method} ${new URL(req.url ?? '/', 'http://x').pathname}`
+    counts.set(what, (counts.get(what) ?? 0) + 1)
+    const chunks: Buffer[] = []
+    for await (const chunk of req) chunks.push(chunk as Buffer)
+    const headers = Object.fromEntries(['content-type', 'forest-blob'].filter((h) => req.headers[h]).map((h) => [h, String(req.headers[h])]))
+    const answer = await fetch(`${to()}${req.url}`, { method: req.method, headers, ...(chunks.length && { body: Buffer.concat(chunks) }) })
+    const back = Object.fromEntries(['content-type', 'forest-cursor'].filter((h) => answer.headers.has(h)).map((h) => [h, answer.headers.get(h)!]))
+    res.writeHead(answer.status, back).end(Buffer.from(await answer.arrayBuffer()))
+  })
+  return { url: await listen(server), server, counts }
+}
+
+/** The stand-in index: the contract's four answers, and the last search's filters. */
+async function standIn(): Promise<{ url: string; server: Server; searched: () => URLSearchParams | undefined }> {
+  let searched: URLSearchParams | undefined
+  const files: { [path: string]: unknown } = {
+    '/index.json': ANSWERS.index,
+    '/markets/tutoring.json': ANSWERS.market,
+    '/search.json': ANSWERS.search,
+    [`/profiles/${student.address}.json`]: ANSWERS.profile,
+  }
   const server = createServer((req, res) => {
-    const body = files[req.url ?? '']
+    const url = new URL(req.url ?? '/', 'http://x')
+    if (url.pathname === '/search.json') searched = url.searchParams
+    const body = files[url.pathname]
     if (body === undefined) res.writeHead(404).end()
     else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body))
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, server }
+  return { url: await listen(server), server, searched: () => searched }
 }
 
-/** The buyer's permissions record, as the setup writes it. */
-export const ACCESS: AccessKey[] = [
-  { key: writeKey.address, scope: 'write', paths: ['offer', 'review'] },
-  { key: reviewKey.address, scope: 'write', paths: ['review'] },
-  { key: messageKey.address, scope: 'message' },
-  { key: laterPastKey.address, scope: 'message' },
-  { key: readRecipient, scope: 'read' },
-]
-
-export type World = { host: Host; index: string; hostsList: string; ctx: (keys?: Context['keys'], profile?: string) => Context; close: () => Promise<void> }
+export type World = { host: string; counts: Map<string, number>; index: string; searched: () => URLSearchParams | undefined; ctx: Context; close: () => Promise<void> }
 
 export async function world(): Promise<World> {
   const host = new Host({ readSender: async (url, profile) => (await readAll(url, { profile })).records })
   await host.listen()
+  const door = await front(() => host.url)
+  const index = await standIn()
   const now = Date.now()
-  await publish(
-    [host.url],
-    [
-      hostsRecord(buyer, [host.url], now),
-      permissionsRecord(buyer, ACCESS, now),
-      ownerRecord(buyer, 'profile', card('buyer', buyerInbox.recipient, [readRecipient]), now),
-      ownerRecord(buyer, 'offer/owned', offer('Maths, written by the main key.'), now),
-      ownerRecord(buyer, 'notes/1', await makePrivate({ text: 'Tuesdays suit me.' }, [readRecipient, buyerInbox.recipient]), now),
-      ownerRecord(buyer, 'notes/2', await makePrivate({ text: 'For my eyes only.' }, [buyerInbox.recipient]), now),
-      hostsRecord(seller, [host.url], now),
-      ownerRecord(seller, 'profile', card('seller', sellerInbox.recipient), now),
-      ownerRecord(seller, 'offer/maths', { direction: 'offer', description: 'One hour of maths, online.', createdAt: '2026-10-07T12:00:00Z' }, now),
-      hostsRecord(quiet, [host.url], now),
-      ownerRecord(quiet, 'profile', { market: 'tutoring', role: 'seller', name: 'quiet', createdAt: '2026-10-07T12:00:00Z' }, now),
-    ],
-  )
-  const index = await serveJson({ '/index.json': HOME, '/markets/tutoring.json': MARKET, [`/profiles/${seller.address}.json`]: SCORES })
-  const list = await serveJson({ '/index/lists/hosts.json': { about: 'the stand-in list', hosts: [host.url] } })
+  const at = [door.url]
+  await publish(at, [
+    hostsRecord(tutor, at, now),
+    permissionsRecord(tutor, ACCESS, now),
+    ownerRecord(tutor, 'profile', { market: 'tutoring', role: 'tutor', ...inboxOpen(tutorInbox.sealTo, [reader.sealTo]) }, now),
+    ownerRecord(tutor, 'offer/owned', lesson('Maths, posted by the main key.'), now),
+    hostsRecord(student, at, now),
+    ownerRecord(student, 'profile', { market: 'tutoring', role: 'student', ...inboxOpen(studentInbox.sealTo) }, now),
+    ownerRecord(student, 'offer/maths', { description: 'Maths for the exam in June.' }, now),
+    hostsRecord(buyer, at, now),
+    permissionsRecord(buyer, [{ key: buyerWriter.address, scope: 'write', paths: ['offer', 'review'] }], now),
+    ownerRecord(buyer, 'profile', { market: 'clothing', role: 'buyer' }, now),
+    hostsRecord(quiet, at, now),
+    permissionsRecord(quiet, ACCESS, now),
+    ownerRecord(quiet, 'profile', { market: 'tutoring', role: 'tutor' }, now),
+  ])
   return {
-    host,
+    host: door.url,
+    counts: door.counts,
     index: index.url,
-    hostsList: `${list.url}/index/lists/hosts.json`,
-    ctx: (keys = {}, profile = buyer.address) => ({ hosts: [host.url], index: index.url, profile, keys }),
+    searched: index.searched,
+    ctx: { hosts: [door.url], index: index.url },
     close: async () => {
+      for (const server of [door.server, index.server]) await new Promise((resolve) => server.close(resolve))
       await host.close()
-      for (const { server } of [index, list]) await new Promise((resolve) => server.close(resolve))
     },
   }
 }

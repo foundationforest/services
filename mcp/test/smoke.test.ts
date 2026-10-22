@@ -1,11 +1,11 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
 // in this directory, on loopback, with Railway's PORT set to 0 (any free port).
-//   1. the MCP SDK's client finds the CLI's MCP door there (../smoke.ts): its instructions and icon,
-//      the hosted copy's tools, no session, refusals in the CLI's words, the same tools at /mcp, and
-//      the icon's two files; a request whose URL is no path (`//`) gets 400, and it goes on answering;
+//   1. the MCP SDK's client finds forest's MCP door there (../smoke.ts): its instructions and icon,
+//      every tool, no session, refusals in forest's words, the same tools at /mcp, and the icon's two
+//      files; a request whose URL is no path (`//`) gets 400, and it goes on answering;
 //   2. with a key in its environment, the same command refuses to start.
 //
-//   ../standard.sh keys records && npm ci && npm test
+//   ../standard.sh && npm ci && npm test
 
 import assert from 'node:assert/strict'
 import { type ChildProcess, spawn } from 'node:child_process'
@@ -19,7 +19,8 @@ import { smoke } from '../smoke.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CLI = join(here, '..')
-const RECORDS = join(here, '../../standard/records')
+const STANDARD = join(here, '../../standard/records/dist')
+const MARKETS = join(here, '../../markets/directory.json')
 
 /** The image's command and working directory, as deploy/Dockerfile says them. */
 function image(): { cmd: string[]; cwd: string } {
@@ -58,15 +59,15 @@ function raw(port: number, request: string): Promise<number | null> {
 }
 
 test('the hosted copy, as its image runs it', async (t) => {
-  if (!existsSync(join(CLI, 'node_modules')) || !existsSync(join(RECORDS, 'node_modules'))) return t.skip('not installed: ../standard.sh records, then npm ci')
+  if (!existsSync(join(CLI, 'node_modules')) || !existsSync(STANDARD) || !existsSync(MARKETS)) return t.skip('not installed: ../standard.sh, then npm ci')
 
-  await t.test('1. the MCP SDK’s client finds forest’s door at the root, with the hosted copy’s tools and no session', async () => {
+  await t.test('1. the MCP SDK’s client finds forest’s door at the root, with every tool and no session', async () => {
     const { child, started } = run({ PORT: '0' })
     try {
       const got = await started
       assert.ok('port' in got, `it started: ${JSON.stringify(got)}`)
       const seen = await smoke(`http://127.0.0.1:${got.port}`)
-      assert.deepEqual(seen.tools, ['markets', 'market', 'profile', 'offer', 'review', 'inbox', 'send', 'ask'])
+      assert.deepEqual(seen.tools, ['ask', 'inbox', 'market', 'markets', 'post', 'profile', 'review', 'search', 'send'])
       assert.equal(await raw(got.port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')
       assert.deepEqual((await smoke(`http://127.0.0.1:${got.port}`)).tools, seen.tools, 'and it goes on answering')
     } finally {

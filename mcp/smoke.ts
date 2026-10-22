@@ -4,12 +4,11 @@
 // market and, if given, a profile through it, as a chat would.
 //
 // What it checks: forest's text on how Forest works comes first, as the server's instructions, with
-// the mark as the server's icon; there is no session; every action a hosted copy serves is a tool,
-// its description starting with the key it needs; a call refused before it reads anything (a
-// profile's address that is not one, a write with no key) says why in forest's words; the same tools
-// answer at /mcp, for connectors added before; and the icon is at /favicon.ico and /icon.svg.
-// Through a deployed copy also: a market as the foundation's index says it, and a profile's card,
-// read from its hosts.
+// the mark as the server's icon; there is no session; every tool is listed, its description starting
+// with the key it needs; a call refused before it reads anything (an address that is not one, a write
+// with no key) says why in forest's words; the same tools answer at /mcp, for connectors added
+// before; and the icon is at /favicon.ico and /icon.svg. Through a deployed copy also: a market, and
+// a profile's profile record, read from its hosts.
 
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -17,9 +16,8 @@ import { fileURLToPath } from 'node:url'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
-import { HOSTED, HOW, keyNeeded } from './src/actions.ts'
-import { NO_KEY } from './src/forest.ts'
 import { ICO, ICON, SVG } from './src/icon.ts'
+import { HOW, TOOLS, keyNeeded } from './src/tools.ts'
 
 type Result = { isError?: boolean; content: Array<{ type: string; text?: string }> }
 const text = (r: unknown) => (r as Result).content[0]?.text ?? ''
@@ -39,13 +37,13 @@ export async function smoke(url: string, read: { market?: string; profile?: stri
     assert.equal(client.getInstructions(), HOW, 'forest’s text on how Forest works comes first')
     assert.deepEqual(client.getServerVersion()?.icons, [ICON], 'the mark on paper is the server’s icon')
     assert.equal(transport.sessionId, undefined, 'no session: each request gets a fresh server')
-    assert.deepEqual(tools.map((t) => t.name), HOSTED.map((a) => a.name), 'every action a hosted copy serves is a tool')
-    for (const a of HOSTED) assert.ok(tools.find((t) => t.name === a.name)!.description!.startsWith(`${keyNeeded(a)}. `), `${a.name} starts with the key it needs`)
+    assert.deepEqual(tools.map((t) => t.name), TOOLS.map((t) => t.name), 'every tool is listed')
+    for (const t of TOOLS) assert.ok(tools.find((l) => l.name === t.name)!.description!.startsWith(`${keyNeeded(t)} `), `${t.name} starts with the key it needs`)
 
     const bad = (await client.callTool({ name: 'profile', arguments: { address: 'not-an-address' } })) as Result
     assert.deepEqual([bad.isError, text(bad)], [true, "not-an-address is not a profile's address"])
-    const keyless = (await client.callTool({ name: 'offer', arguments: { action: 'remove', id: 'smoke' } })) as Result
-    assert.deepEqual([keyless.isError, text(keyless)], [true, NO_KEY], 'a write with no key in the call')
+    const keyless = (await client.callTool({ name: 'post', arguments: { action: 'remove', id: 'smoke' } })) as Result
+    assert.deepEqual([keyless.isError, text(keyless)], [true, "this needs the write key (writeKey), as the person's app gives it"], 'a write with no key in the call')
 
     const before = await connected(new URL('/mcp', url))
     await before.client.close()
@@ -61,15 +59,15 @@ export async function smoke(url: string, read: { market?: string; profile?: stri
       const got = (await client.callTool({ name: 'market', arguments: { market: read.market } })) as Result
       assert.notEqual(got.isError, true, `the market, through the copy: ${text(got)}`)
       const out = JSON.parse(text(got))
-      assert.equal(out.market, read.market)
-      seen.market = { index: out.index, market: out.market }
+      assert.equal(out.market.name, read.market)
+      seen.market = { name: out.market.name, index: out.index }
     }
     if (read.profile) {
       const got = (await client.callTool({ name: 'profile', arguments: { address: read.profile } })) as Result
       assert.notEqual(got.isError, true, `the profile, through the copy: ${text(got)}`)
       const out = JSON.parse(text(got))
-      assert.ok(out.card, 'its card, read from its hosts')
-      seen.profile = { address: out.address, hosts: out.hosts, name: out.card.body.name, offers: out.offers.length }
+      assert.ok(out.profile, 'its profile record, read from its hosts')
+      seen.profile = { address: out.address, hosts: out.hosts, market: out.profile.market, role: out.profile.role, posts: out.posts.length }
     }
     return seen
   } finally {
