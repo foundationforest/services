@@ -1,9 +1,8 @@
 // A sponsor's ticket: what the issuer signs to pay for a person's buy at a service that lists its
 // sponsor key. The issuer is a client of credits here, not a seller: it never sees a credit, only
-// the buy's reference. The wire format is the one the host (host/credits/) and the registry payer
-// (fee-payer/registry/credits/) check.
+// the buy's reference. The wire format is the one the host checks (host/credits/).
 
-import { base58, b64u } from '../../standard/records/src/bytes.ts'
+import { b64u, base58 } from '@foundationforest/records'
 
 function addressBytes(text: unknown, what: string): Uint8Array {
   try {

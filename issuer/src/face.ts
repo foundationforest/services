@@ -1,6 +1,6 @@
-// The face embedding: the numbers a face model gives for a face, which a note carries
-// (standard/registry/README.md, "The note and the person proof"). Two photos of one person give
-// two embeddings close to each other; two people, two far apart.
+// The face embedding: the numbers a face model gives for a face, which a note's attributes are made
+// from (notes.ts). Two photos of one person give two embeddings close to each other; two people, two
+// far apart.
 //
 // Two open models from OpenCV's model zoo, used unchanged, run with onnxruntime-web (WASM, in Node):
 //
@@ -274,8 +274,8 @@ export async function sface(dir: string = MODELS_DIR): Promise<Embedder> {
 }
 
 /**
- * The stand-in, for the devnet stand-in Didit only, which shows no face: the same embedding for
- * everyone, forest's own devnet stand-in vector (cos i), under the model `stand-in`.
+ * The stand-in, for the stand-in Didit on this machine only (test/fake-didit.ts), which shows no face:
+ * the same embedding for everyone, the vector cos i, under the model `stand-in`.
  */
 export function standIn(): Embedder {
   const fixed = toBytes(Float32Array.from({ length: DIMENSIONS }, (_, i) => Math.cos(i)))

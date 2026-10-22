@@ -1,9 +1,9 @@
-# The queue and the used session ids (DATABASE_PATH defaults to ./data/issuer.sqlite)
+# The file and the seed beside it (DATABASE_PATH defaults to ./data/issuer.sqlite; the sandbox's is ./data/sandbox/)
 data/
 *.sqlite
 *.sqlite-journal
-# The issuer key never enters the repo
-*keypair*.json
+# The issuer's seed never enters the repo
+issuer-seed.json
 
 # The face models and the test portraits (npm run fetch)
 models/

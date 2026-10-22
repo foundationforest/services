@@ -1,9 +1,10 @@
 # Every service's checks from a clean install, on every pull request and every push to main. Each job
 # first fetches standard at the commit in STANDARD (standard.sh) and installs the standard packages it uses.
 #
-#   issuer       its type-check (the stand-in Didit for tests included) and its tests, the face
-#                embedding's on the real models and portraits its `npm run fetch` checks by SHA-256,
-#                and its welcome gift's tickets taken by the host's and the registry payer's own sellers
+#   issuer       its type-check (the stand-in Didit for tests included) and its tests: note proofs made
+#                from its notes and checked against its published keys, the attributes vectors, the
+#                face embedding's on the real models and portraits its `npm run fetch` checks by
+#                SHA-256, and its welcome gift's ticket taken by the host's own seller
 #   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
 #                (real reputation proofs: the reputation circuit's proving files; a real person proof: the
 #                standard's example card's)
@@ -54,10 +55,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh registry/client records keys
+          ./standard.sh
           (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
-          (cd fee-payer/registry && npm ci --no-audit --no-fund)
           (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
         working-directory: issuer

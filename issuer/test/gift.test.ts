@@ -1,55 +1,53 @@
-// The welcome gift's tickets, as the registry payer's seller checks them: one for each service
-// in the gift and no other, each for that service, that buy and the count the gift gives there,
-// signed by the issuer's sponsor key; the same references give the same tickets; and what the file
-// keeps of the buys, a hash.
+// The welcome gift's ticket, as the host's seller checks it: for the host, that buy and the count the
+// gift gives, signed by the issuer's sponsor key; the same reference gives the same ticket; anything
+// but a buy's reference is refused; and what the file keeps of the buy, a hash.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync } from 'node:crypto'
 import { test } from 'node:test'
 
 import { buy, finish, serviceOf } from '../../e2e/credits/client.ts'
-import { keyFrom, seller } from '../../fee-payer/registry/credits/seller.ts'
+import { keyFrom, seller } from '../../host/credits/seller.ts'
 
-import { buysOf, ticketsFor } from '../src/gift.ts'
-import { parseKeypair } from '../src/key.ts'
-import { keypairJson } from './fakes.ts'
+import { buyOf, ticketFor } from '../src/gift.ts'
+import { INFO, seedFrom } from '../src/seed.ts'
+import { seedJson } from './fakes.ts'
 
-const sponsor = await parseKeypair(keypairJson().json, 'test').derive('sponsor')
-const gift = { registryPayer: { origin: 'https://registry-payer.example', credits: 2 } }
+const sponsor = await seedFrom(seedJson().bytes).ed25519(INFO.sponsor)
+const gift = { origin: 'https://host.example', credits: 2 }
 const s = seller({
-  origin: gift.registryPayer.origin,
+  origin: gift.origin,
   key: await keyFrom(new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))),
   requestUri: '/credits/buy',
-  credit: { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'SOL', price: '0.01' },
+  price: '0.01',
+  // Tickets buy here; the RPC a Solana payment would be checked through is never asked.
+  payment: { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'SOL', rpc: async () => Promise.reject(new Error('no chain here')) },
   maxBuy: 10,
   sponsors: [sponsor.address],
-  rpc: null,
   path: ':memory:',
 })
-const service = serviceOf(gift.registryPayer.origin, s.directory())
+const service = serviceOf(gift.origin, s.directory())
 
-test('a ticket for each service in the gift, which that service takes from the sponsor it lists', async () => {
+test('a ticket for the buy, which the host takes from the sponsor it lists', async () => {
   const b = await buy(service, 2)
-  const tickets = ticketsFor(gift, { registryPayer: b.reference }, sponsor)
-  assert.notEqual(tickets, 'bad_gift')
-  const { registryPayer } = tickets as Record<string, string>
-  assert.equal(registryPayer!.split('.')[0], sponsor.address, 'it names the sponsor')
-  const answered = await s.collect(b.buy, `ticket ${registryPayer}`)
+  const ticket = ticketFor(gift, b.reference, sponsor)
+  assert.notEqual(ticket, 'bad_gift')
+  assert.equal(ticket.split('.')[0], sponsor.address, 'it names the sponsor')
+  const answered = await s.collect(b.buy, `ticket ${ticket}`)
   assert.equal(answered.status, 200, JSON.stringify(answered.body))
   assert.equal((await finish(b.pending, answered.body as Uint8Array)).length, 2)
-  assert.deepEqual(ticketsFor(gift, { registryPayer: b.reference }, sponsor), tickets, 'the same reference, the same ticket')
+  assert.equal(ticketFor(gift, b.reference, sponsor), ticket, 'the same reference, the same ticket')
 })
 
-test('anything but one reference for each service in the gift is bad_gift', () => {
-  const reference = '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA'
-  for (const refs of [{}, { registryPayer: reference, host: reference }, { host: reference }, { registryPayer: 'nope' }, { registryPayer: 7 }]) {
-    assert.equal(ticketsFor(gift, refs, sponsor), 'bad_gift', JSON.stringify(refs))
+test('anything but a buy’s reference is bad_gift', () => {
+  for (const reference of ['nope', 7, null, {}, '1'.repeat(31)]) {
+    assert.equal(ticketFor(gift, reference, sponsor), 'bad_gift', JSON.stringify(reference))
   }
 })
 
-test('what the file keeps of the buys: a hash, the same for the same references in any order', () => {
+test('what the file keeps of the buy: a hash of its reference', () => {
   const [a, b] = ['7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', '2JuNCurwpbDj4YDaMEPQprnGod5cAJFZrAdqHVQogyr9']
-  assert.deepEqual(buysOf({ registryPayer: a, host: b }), buysOf({ host: b, registryPayer: a }))
-  assert.notDeepEqual(buysOf({ registryPayer: a, host: b }), buysOf({ registryPayer: b, host: a }))
-  assert.equal(buysOf({ registryPayer: a }).length, 32)
+  assert.deepEqual(buyOf(a), buyOf(a))
+  assert.notDeepEqual(buyOf(a), buyOf(b))
+  assert.equal(buyOf(a).length, 32)
 })
