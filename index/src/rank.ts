@@ -12,10 +12,12 @@
 // With every evidence weight at most 1, a group of profiles reviewing only each other never ends
 // with more points among them than they started with.
 //
-// A review's weight is its writer's points times its evidence weight. A profile's rating is the
-// mean of the scores it received, each weighted so; its shrunk rating, which search sorts by, is
-// (sum of weight * score + m * the market's mean rating) / (sum of weight + m), where the market's
-// mean rating is the mean of the ratings of its rated profiles and m is `shrink`.
+// A review's weight is the share it passes in the flow, x(writer) / n(writer) times its evidence
+// weight: one writer weighs at most their own points in anyone's rating, however many posts they
+// review. A profile's rating is the mean of the scores it received, each weighted so; its shrunk
+// rating, which search sorts by, is (sum of weight * score + m * the market's mean rating) / (sum of
+// weight + m), where the market's mean rating is the mean of the ratings of its rated profiles and
+// m is `shrink`.
 
 export type RankProfile = { address: string; market: string; points: number }
 export type RankReview = { writer: string; subject: string; score: number; evidence: number }
@@ -53,7 +55,7 @@ export function rank(profiles: RankProfile[], reviews: RankReview[], numbers: Nu
   const sums = new Map(profiles.map((p) => [p.address, { weight: 0, scored: 0, reviews: 0 }]))
   const weights = reviews.map((r) => {
     if (!counts.has(r)) return 0
-    const weight = x.get(r.writer)! * r.evidence
+    const weight = (x.get(r.writer)! / written.get(r.writer)!) * r.evidence
     const s = sums.get(r.subject)!
     s.weight += weight
     s.scored += weight * r.score

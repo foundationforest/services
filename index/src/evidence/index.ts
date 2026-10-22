@@ -9,14 +9,14 @@ import type { Store } from '../store.ts'
 import * as escrow from './escrow.ts'
 import * as payment from './payment.ts'
 
-/** The two profiles' `pay` addresses, the reviewer's first. */
-export type Between = { a: string; b: string }
-export type Context = { store: Store; rpc: Rpc; mints: Map<string, Currency> }
+/** The two profiles' `pay` addresses, the reviewer's first, and when the review's record was written (ms). */
+export type Between = { a: string; b: string; written: number }
+export type Context = { store: Store; rpc: Rpc; mints: Map<string, Currency>; now: number }
 
 export type Kind = {
   name: string
   recognizes(value: string): boolean
-  /** Whether the value backs a deal between the two; it throws when it cannot tell now (the RPC failed). */
+  /** Whether the value backs a deal between the two; it throws when it cannot tell yet (the RPC failed, or the chain has no answer yet). */
   check(value: string, between: Between, ctx: Context): Promise<boolean>
 }
 
@@ -26,7 +26,7 @@ export const KINDS: Kind[] = [escrow, payment]
 export type Evidence = { status: 'with' | 'without' | 'invalid'; kind: string | null }
 
 /**
- * A review's evidence. When a check cannot tell now, the review counts as without, and the check
+ * A review's evidence. When a check cannot tell yet, the review counts as without, and the check
  * runs again on the next pass.
  */
 export async function evidenceOf(value: unknown, between: Between | null, ctx: Context): Promise<Evidence> {

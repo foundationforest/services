@@ -1,12 +1,13 @@
 // Evidence, against a stand-in RPC: escrow receipts read from the program's own events, and direct
-// payments read from one getTransaction each, asked once.
+// payments read from one getTransaction each, kept once the chain has an answer, and asked again
+// while it has none until the review is a day old.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { after, before, test } from 'node:test'
 
 import { discriminator } from '@foundationforest/escrow-client'
-import { base58 } from '@foundationforest/records'
+import { base58, ownerRecord } from '@foundationforest/records'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
 import type { DealPage } from '../src/pages/deal.ts'
@@ -80,7 +81,11 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     others: { signature: signature(), meta: moved(S, other, DOLLAR) },
     failed: { signature: signature(), meta: { ...moved(S, T, DOLLAR), err: { InstructionError: [0, 'Custom'] } } },
     missing: { signature: signature(), meta: null },
+    late: { signature: signature(), meta: moved(S, T, DOLLAR) },
+    old: { signature: signature(), meta: null },
   }
+  // The late payment is on chain, final, only from the second pass.
+  let final = false
   const asked: string[] = []
   const rpc = await startRpc((method, params) => {
     if (method === 'getSignaturesForAddress') {
@@ -93,6 +98,7 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     const h = history.find((x) => x.signature === sig)
     if (h) return { blockTime: 1_790_000_200, meta: { err: null, logMessages: h.logs } }
     const p = Object.values(payments).find((x) => x.signature === sig)
+    if (p === payments.late && !final) return null
     return p?.meta ? { blockTime: 1_790_000_200, meta: p.meta } : null
   })
 
@@ -110,7 +116,8 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     ['payment-other-mint', payments.otherMint!.signature, 'invalid'],
     ['payment-others', payments.others!.signature, 'invalid'],
     ['payment-failed', payments.failed!.signature, 'invalid'],
-    ['payment-missing', payments.missing!.signature, 'invalid'],
+    ['payment-missing', payments.missing!.signature, 'without'],
+    ['payment-late', payments.late!.signature, 'with'],
     ['not-evidence', 'a receipt, I promise', 'invalid'],
     ['none', undefined, 'without'],
   ]
@@ -118,9 +125,17 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     host.url,
     reviews.map(([id, evidence]) => at(student, `review/${id}`, { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/${id}`, ...(evidence && { evidence }) })),
   )
+  // A review written two days ago, naming a payment the chain still does not hold.
+  const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000
+  await post(host.url, [ownerRecord(student.key, 'review/payment-old', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/old`, evidence: payments.old!.signature }, twoDaysAgo)])
+  reviews.push(['payment-old', payments.old!.signature, 'invalid'])
 
   const i = await index({ hosts: [host.url], keys: [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }] }, rpc.url)
   await i.pass()
+  const early = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
+  const status = (id: string) => early.reviews.received.find((x) => x.address.endsWith(`/review/${id}`))!.evidence
+  assert.deepEqual([status('payment-late'), status('payment-missing'), status('payment-old')], ['without', 'without', 'invalid'])
+  final = true
   await i.pass()
   const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
   for (const [id, , want] of reviews) {
@@ -128,11 +143,13 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     assert.equal(r.counted, true, id)
     assert.equal(r.evidence, want, id)
   }
-  assert.equal(t.rating.withPayment, 4)
+  assert.equal(t.rating.withPayment, 5)
   assert.equal(t.rating.reviews, reviews.length)
 
-  // Each payment was asked for once, over two passes; each escrow transaction once.
-  for (const p of Object.values(payments)) assert.equal(asked.filter((s) => s === p.signature).length, 1)
+  // Over two passes: a payment the chain answered for, and one past its day, asked once; one not on
+  // chain yet, on each pass. Each escrow transaction once.
+  const asks = (p: { signature: string }) => asked.filter((s) => s === p.signature).length
+  for (const [name, p] of Object.entries(payments)) assert.equal(asks(p), name === 'missing' || name === 'late' ? 2 : 1, name)
   for (const h of history) assert.equal(asked.filter((s) => s === h.signature).length, 1)
 
   // The deal's page: its receipt and its moves.

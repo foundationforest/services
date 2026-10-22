@@ -3,6 +3,6 @@
   "damping": 0.85,
   "tolerance": 1e-9,
   "maxRounds": 100,
-  "shrink": 3,
+  "shrink": 0.5,
   "evidence": { "escrow": 1, "payment": 1, "none": 1 }
 }

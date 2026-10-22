@@ -121,7 +121,7 @@ export function listsDir(l: Lists): string {
   writeFileSync(join(dir, 'lists/indexes.json'), JSON.stringify({ about, roots: l.roots ?? 10, indexes: l.indexes ?? [{ index: 'self', name: 'Test index' }] }))
   writeFileSync(
     join(dir, 'config/scoring.json'),
-    JSON.stringify({ about, damping: 0.85, tolerance: 1e-9, maxRounds: 100, shrink: 3, evidence: { escrow: 1, payment: 1, none: 1 }, ...l.scoring }),
+    JSON.stringify({ about, damping: 0.85, tolerance: 1e-9, maxRounds: 100, shrink: 0.5, evidence: { escrow: 1, payment: 1, none: 1 }, ...l.scoring }),
   )
   writeFileSync(
     join(dir, 'config/currencies.json'),

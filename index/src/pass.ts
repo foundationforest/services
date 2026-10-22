@@ -68,7 +68,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     if (!judged.get(r.address)!.counted) continue
     const a = filtered.get(r.reviewer)?.pay
     const b = filtered.get(r.body.subject as string)?.pay
-    evidence.set(r.address, await evidenceOf(r.body.evidence, a && b ? { a, b } : null, { store, rpc, mints: lists.currencies }))
+    evidence.set(r.address, await evidenceOf(r.body.evidence, a && b ? { a, b, written: r.time } : null, { store, rpc, mints: lists.currencies, now }))
   }
 
   // Rank.

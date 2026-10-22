@@ -123,15 +123,18 @@ file in `src/evidence/`, with its name, how it recognizes a value, and its check
 - **`escrow`**, an address of 32 bytes: the escrow's receipt, from what this index read on chain. It
   counts when the receipt's payer and recipient are the two profiles' `pay` addresses, in either
   order, its mint is one `config/currencies.json` lists, and it ended with money to the recipient.
-- **`payment`**, a transaction's signature of 64 bytes: one `getTransaction` at `finalized`, asked
-  once, its answer kept. It counts when the transaction succeeded and, in a mint
+- **`payment`**, a transaction's signature of 64 bytes: one `getTransaction` at `finalized`, its
+  answer kept once the chain has one. It counts when the transaction succeeded and, in a mint
   `config/currencies.json` lists, one of the two `pay` addresses lost and the other gained, in either
-  direction: a buyer reviewing the seller they paid, or the seller reviewing them.
+  direction: a buyer reviewing the seller they paid, or the seller reviewing them. An app writes the
+  review seconds after paying, before the chain holds the payment as final, so a signature the RPC
+  holds no transaction for is asked again on each pass until the review's record is a day old; only
+  then is it kept as invalid.
 
 A review is shown `with` a payment, `without` (it names none), or `invalid` (it names one that does
 not count, or a value no kind recognizes, or one of the two profiles has no `pay` address). When the
-RPC does not answer, the review counts as without for that pass and is checked again on the next. A
-review that does not count is not checked, and shows without.
+RPC does not answer, or does not hold the payment yet, the review counts as without for that pass
+and is checked again on the next. A review that does not count is not checked, and shows without.
 
 ### How it scores
 
@@ -152,7 +155,9 @@ only each other never end with more points among them than they started with: a 
 of 1 point each ends with at most 10. A profile no counted review points to keeps `1 − d` of its
 starting points: 0.15 of a point, for a face check, at today's numbers.
 
-**A review's weight** is its writer's points times its evidence weight.
+**A review's weight** is the share it passes in the flow: its writer's points over how many counted
+reviews the writer wrote, times its evidence weight, `x(writer) / n(writer) · e`. So one writer weighs
+at most their own points in anyone's rating, however many posts of that profile they review.
 
 **The rating** is the mean of the scores a profile received, each weighted by its review's weight:
 `Σ weight · score / Σ weight`. It is shown to one decimal, with how many counted reviews it comes
@@ -165,8 +170,10 @@ market's mean rating, more so the less weight is behind it:
     (Σ weight · score + m · the market's mean rating) / (Σ weight + m)
 
 with `m` = `shrink`, and the market's mean rating the mean of the ratings of its rated profiles. A
-profile with no rating sorts at its market's mean. Since a review from a profile nobody reviewed
-weighs 0.15 at today's numbers, `m` = 3 weighs as much as twenty such reviews.
+profile with no rating sorts at its market's mean. `m` is about the weight of three brand-new
+reviewers: a face-checked profile nobody has reviewed has 0.15 of a point, and passes all of it with
+its only review, so after three such reviews a rating sits about halfway between its own value and
+its market's mean.
 
 ### The signed rating
 
@@ -287,13 +294,15 @@ from a stand-in RPC:
   wrong name, a label other than the profile's market and role, a market not in the directory, a role
   not the market's, and a proof first seen after its key's `until` do not;
 - **rank,** on fixtures: a ring of ten ends with at most ten points; a writer of a hundred reviews
-  passes a hundredth with each; the rating is weighted by points times evidence; the shrunk rating;
-  the rounds stop;
+  passes a hundredth with each; the rating is weighted by the share each review passes, so ten
+  reviews by one writer weigh as one; the shrunk rating; the rounds stop;
 - **reviews:** one from a profile that does not count, with no score, of itself, about a profile that
   does not count, or with a field its market does not name is skipped and says why; the latest per
   writer, subject and post counts; a deleted post keeps its body;
 - **evidence:** escrows and payments in either direction count, and the wrong parties, a refund, an
-  open escrow, another mint, a failed or missing transaction do not; each payment is asked once;
+  open escrow, another mint, a failed transaction do not; a payment the chain answers for is asked
+  once, one not on chain yet is asked again on the next pass and counts once it is, and one still
+  missing a day after its review is invalid for good;
 - **markets:** the checks of fields, choices, lists and roles; a post that does not fit is kept and
   not listed; the escrow program is the one the pinned standard records;
 - **tree:** the served leaves rebuild the served root, whose signature checks; a reputation proof made
@@ -321,8 +330,12 @@ Another index holds its own.
   profile counts here.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **How it weighs** (`config/scoring.json`): `damping` 0.85, `tolerance` 10⁻⁹, `maxRounds` 100,
-  `shrink` (m) 3, and the evidence weights `escrow` 1, `payment` 1 and `none` 1: today a payment
-  changes nothing but what a review shows; the weights are there for when money moves.
+  `shrink` (m) 0.5, about the weight of three brand-new reviewers, and the evidence weights `escrow`
+  1, `payment` 1 and `none` 1: today a payment changes nothing but what a review shows; the weights
+  are there for when money moves.
+- **How long a payment may take to be final:** a day from its review's record (`WAIT_MS` in
+  `src/evidence/payment.ts`); until then a payment the RPC does not hold is asked for again on each
+  pass.
 - **Which money counts** (`config/currencies.json`): USDC, USDT, Open USD and EURC, the dollars the
   fee payer takes, and two test dollars whose maker mints them at will, each with its code and six
   decimals.
@@ -362,11 +375,11 @@ Another index holds its own.
 - **No profile counts yet:** `lists/issuers.json` lists no key until the issuer has made its keys.
 - **The public RPC answers a few requests at a time.** The first read of the escrow's history takes
   many passes there; a keyed RPC in `RPC_URL` reads it at once.
-- **A payment asked for before it is final counts for nothing, for good:** a signature the RPC holds
-  no transaction for is kept as such.
-- **A writer counts once per post.** One counted review counts per writer, subject and post, so a
-  writer who names many posts of one profile, their own requests among them, counts many times in its
-  rating, though the points it passes stay split across all its reviews.
+- **A payment not final within a day of its review counts for nothing, for good.** The day runs from
+  the review's record time, which its writer signs.
+- **A writer's reviews each count in the review count.** One review counts per writer, subject and
+  post, so a writer who names many posts of one profile adds to "from N reviews" with each, though
+  together they weigh no more than the writer's points.
 - **Two of one person's profiles can review each other,** and with small payments between them, each
   backed. Nothing here links them, so nothing here can tell.
 - **Only its own roots.** A reputation proof against another index's tree shows nothing here.
