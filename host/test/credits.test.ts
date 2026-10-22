@@ -1,288 +1,234 @@
-// The host's credits (credits/): its key from PKCS #8, its seller's directory as mcp's client reads
-// it, a buy answered with Node's own RSA, byte for byte privacypass-ts's answer, and finished by the
-// client and taken by the host; nothing logged. Then each way a buy is paid: a Solana payment
-// checked in one call, and a sponsor's ticket as the issuer signs it (issuer/src/ticket.ts); every
-// refusal; a proof that pays one buy only, the same answer again, and the bill counted once. The
-// check a spend makes: a list of credits, all or none, and every credit that must not hold. And the
-// spent list's hold, land and free, of one id or several together, kept across a restart, and
-// inside the transaction that fills a folder's balance.
+// The host's credits, through the real reference host on loopback: what a 1 kB record, a 200 kB blob
+// and a delete cost; a write refused with no balance, and taking down never blocked by it; a ticket
+// collected; a payment checked against a stand-in RPC; the credit key made at the first start; and
+// one end to end, a folder, a record and a blob, read back. The reference host's own tests are the
+// standard's.
 
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, sign } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
-import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
-import { base58, base64urlnopad as b64u } from '@scure/base'
+import { after, test } from 'node:test'
 
-import { type Credit, buy, creditList, finish, serviceOf } from '../../e2e/credits/client.ts'
-import { ticket, ticketMessage } from '../../issuer/src/ticket.ts'
-import { challengeOf, checkCredit, checkCredits, creditId } from '../credits/credit.ts'
-import { type Rpc, type SellerConfig, UNIT, answer, keyFrom, seller } from '../credits/seller.ts'
+import { mainKey, newSeed } from '@foundationforest/keys'
+import { type BlobName, type SignedBlobRequest, type SignedRecord, base58, blobNameOf, blobRequest, deleteBlob, encodeRecord, getBlob, hostsRecord, ownerRecord, publish, putBlob, readProfile } from '@foundationforest/records'
 
-const ORIGIN = 'https://host.example'
-const MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-const ADDRESS = base58.encode(new Uint8Array(32).fill(3))
-const pkcs8 = (bits: number) => new Uint8Array(generateKeyPairSync('rsa', { modulusLength: bits }).privateKey.export({ type: 'pkcs8', format: 'der' }))
+import type { Rpc } from '../credits/seller.ts'
+import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
+import { type RunningHost, readConfig, startHost } from '../src/host.ts'
+import { buy, collect, keyOf, spend, sponsor } from './buyer.ts'
 
-const der = pkcs8(2048)
-const key = await keyFrom(der)
-const config: SellerConfig = { origin: ORIGIN, key, requestUri: '/credits/buy', credit: { address: ADDRESS, mint: MINT, price: '0.5' }, maxBuy: 10, sponsors: [], rpc: null, path: ':memory:' }
-const service = serviceOf(ORIGIN, seller(config).directory())
-
-/** privacypass-ts's own issuer, from the host's private key. */
-async function cloudflareIssuer() {
-  const algorithm = { name: 'RSA-PSS', hash: 'SHA-384' }
-  const privateKey = await crypto.subtle.importKey('pkcs8', der as Uint8Array<ArrayBuffer>, algorithm, true, ['sign'])
-  const jwk = await crypto.subtle.exportKey('jwk', privateKey)
-  const publicKey = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e }, algorithm, true, ['verify'])
-  return new publicVerif.Issuer(publicVerif.BlindRSAMode.PSS, 'host.example', privateKey, publicKey)
-}
-
-/** A sponsor: an Ed25519 key, its address, and the ticket it signs for a buy, as the issuer signs one. */
-function sponsor() {
-  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-  const address = base58.encode(new Uint8Array(publicKey.export({ format: 'der', type: 'spki' }).subarray(-32)))
-  const signs = (origin: string, reference: string, credits: number) => ticket(address, credits, new Uint8Array(sign(null, ticketMessage(origin, reference, credits), privateKey)))
-  return { address, signs }
-}
-
-test('its key, from PKCS #8, and its directory, as the client reads it', async () => {
-  assert.deepEqual(service.key, key.published)
-  assert.deepEqual([service.requestUri, service.unit, service.address, service.mint, service.price], [`${ORIGIN}/credits/buy`, UNIT, ADDRESS, MINT, '0.5'])
-  await assert.rejects(keyFrom(pkcs8(1024)), /RSA-2048/)
-  await assert.rejects(keyFrom(new Uint8Array(32)))
-  assert.throws(() => seller({ ...config, sponsors: ['not-an-address'] }), /sponsor/)
+const ORIGIN = 'http://127.0.0.1'
+const gift = sponsor()
+const dirs: string[] = []
+after(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
 })
 
-test('a buy answered with Node’s RSA: byte for byte privacypass-ts’s answer; the client finishes it and the host takes each credit', async () => {
-  const b = await buy(service, 3)
-  const answered = await answer(b.buy, key)
-  assert.deepEqual(await answer(b.buy, key), answered, 'the same buy gets the same answer')
-  // privacypass-ts's own issuer, from the same private key, answers the same bytes: RSA signing is deterministic.
-  const theirs = await new genericBatched.Issuer(await cloudflareIssuer()).issue(genericBatched.BatchedTokenRequest.deserialize(b.buy))
-  assert.deepEqual(answered, theirs.serialize())
-  const credits = await finish(b.pending, answered)
-  assert.equal(credits.length, 3)
-  for (const [i, c] of credits.entries()) {
-    const id = await checkCredit(c.credit, { origin: ORIGIN, keys: [key.published] })
-    assert.equal(id, creditId(c.credit))
-    assert.equal(id, Buffer.from(b64u.decode(b.pending.blinds[i]!.nonce)).toString('hex'), 'its id is its nonce')
-  }
-})
+/** A host on loopback with a new data directory, or `dir`, taking `gift`'s tickets, and these settings. */
+async function start(env: Record<string, string> = {}, stand: { rpc?: Rpc } = {}, dir?: string): Promise<RunningHost> {
+  if (!dir) dirs.push((dir = mkdtempSync(join(tmpdir(), 'host-'))))
+  return startHost(readConfig({ DATA_DIR: dir, PUBLIC_ORIGIN: ORIGIN, PORT: '0', SPONSORS: gift.address, ...env }), stand)
+}
 
-test('a request under another key gets an empty slot, and nothing is logged', async () => {
-  const other = await keyFrom(pkcs8(2048))
-  const theirs = await buy(serviceOf(ORIGIN, seller({ ...config, key: other }).directory()), 1)
-  const logged: unknown[] = []
-  const log = console.log
-  console.log = (...args: unknown[]) => void logged.push(args)
-  let answered: Uint8Array
+/** `count` credits bought with a ticket from `gift`, and spent into `folder`. */
+async function fund(running: RunningHost, folder: string, count: number): Promise<void> {
+  const b = await buy(ORIGIN, await keyOf(running.url), count)
+  const got = await collect(running.url, b.bytes, `ticket ${gift.ticket(ORIGIN, b.reference, count)}`)
+  assert.equal(got.status, 200)
+  assert.equal((await spend(running.url, folder, await b.finish(got.body))).status, 200)
+}
+
+const folder = async () => mainKey(newSeed(), 'tutoring/seller')
+type Folder = Awaited<ReturnType<typeof folder>>
+const put = (url: string, me: Folder, name: BlobName, bytes: Uint8Array) => putBlob([url], blobRequest(me, { action: 'put', ...name }, Date.now()) as SignedBlobRequest & { action: 'put' }, bytes)
+const remove = (url: string, me: Folder, sha256: string) => deleteBlob([url], blobRequest(me, { action: 'delete', sha256 }, Date.now()) as SignedBlobRequest & { action: 'delete' })
+const balance = (running: RunningHost, folder: string) => running.credits.balance(folder)
+const results = async (running: RunningHost, records: SignedRecord[]) => (await publish([running.url], records))[0]!.results
+
+/** An offer whose canonical text is exactly `bytes` long. */
+function offerOf(me: Folder, bytes: number, time: number): SignedRecord {
+  const empty = Buffer.byteLength(encodeRecord(ownerRecord(me, 'offer/maths', { text: '' }, time)))
+  const record = ownerRecord(me, 'offer/maths', { text: 'a'.repeat(bytes - empty) }, time)
+  assert.equal(Buffer.byteLength(encodeRecord(record)), bytes)
+  return record
+}
+
+test('the price of a 1 kB record, of a 200 kB blob, and of a delete', async () => {
+  const running = await start()
   try {
-    answered = await answer(theirs.buy, key)
+    const me = await folder()
+    await fund(running, me.address, 5)
+    const now = Date.now()
+    // A hosts record is free: the standard's host never asks about it.
+    assert.ok((await results(running, [hostsRecord(me, [running.url], now)]))[0]!.ok)
+    assert.equal(balance(running, me.address), 5)
+
+    const offer = offerOf(me, 1000, now)
+    assert.ok((await results(running, [offer]))[0]!.ok)
+    assert.equal(balance(running, me.address), 4.98, 'a 1 kB record: 0.01, and 0.01 for its kilobyte')
+    assert.equal((await results(running, [offer]))[0]!.message, 'already here')
+    assert.equal(balance(running, me.address), 4.98, 'the same record again costs nothing')
+
+    const photo = new Uint8Array(200_000).fill(7)
+    const name = blobNameOf(photo, 'image/png')
+    assert.ok((await put(running.url, me, name, photo))[0]!.ok)
+    assert.equal(balance(running, me.address), 2.97, 'a 200 kB blob: 0.01, and 0.01 for each of its 200 kilobytes')
+    assert.equal((await put(running.url, me, name, photo))[0]!.message, 'already here')
+    assert.equal(balance(running, me.address), 2.97, 'the same bytes again cost nothing')
+
+    assert.ok((await results(running, [ownerRecord(me, 'offer/maths', null, now + 1)]))[0]!.ok)
+    assert.equal(balance(running, me.address), 2.96, 'taking a record down: the floor')
+    assert.ok((await remove(running.url, me, name.sha256))[0]!.ok)
+    assert.equal(balance(running, me.address), 2.95, 'taking a blob down: the floor')
+    assert.equal((await remove(running.url, me, name.sha256))[0]!.message, 'not here')
+    assert.equal(balance(running, me.address), 2.95, 'a delete of bytes the folder does not hold costs nothing')
   } finally {
-    console.log = log
+    await running.close()
   }
-  assert.deepEqual(logged, [], 'nothing of what it was sent is logged')
-  assert.equal([...genericBatched.GenericBatchTokenResponse.deserialize(answered)][0]!.tokenResponse, null)
-  await assert.rejects(finish(theirs.pending, answered), /holds no credit/)
-  await assert.rejects(answer(new Uint8Array([0, 2, 9]), key), 'bytes that are not a buy get no answer')
 })
 
-/** A stand-in RPC: each transaction by its signature, and every call asked. */
-function rpcOf(txs: Record<string, unknown>): Rpc & { asked: string[] } {
-  const asked: string[] = []
-  const call = async (method: string, params: unknown[]) => {
-    asked.push(`${method} ${String(params[0])} ${(params[1] as { commitment?: string })?.commitment}`)
-    if (method !== 'getTransaction') throw new Error(`no ${method}`)
-    return txs[params[0] as string] ?? null
-  }
-  return Object.assign(call, { asked })
-}
-const sig = (n: number) => base58.encode(new Uint8Array(64).fill(n))
-/** A finalized transaction naming `names` among its accounts, paying ADDRESS `units` of `mint`. */
-const paying = (names: string[], units: string, mint = MINT, err: unknown = null) => ({
-  meta: {
-    err,
-    preTokenBalances: [{ accountIndex: 1, mint, owner: ADDRESS, uiTokenAmount: { amount: '1000', decimals: 6 } }],
-    postTokenBalances: [{ accountIndex: 1, mint, owner: ADDRESS, uiTokenAmount: { amount: String(1000n + BigInt(units)), decimals: 6 } }],
-  },
-  transaction: { message: { accountKeys: ['Payer', ADDRESS, ...names] } },
-})
-
-test('a Solana payment: the one transaction, finalized, naming the buy and paying enough, checked in one call', async () => {
-  const b = await buy(service, 3)
-  const other = await buy(service, 1)
-  const rpc = rpcOf({
-    [sig(1)]: paying([b.reference], '1500000'),
-    [sig(2)]: paying([b.reference], '1499999'),
-    [sig(3)]: paying([b.reference], '1500000', ADDRESS),
-    [sig(4)]: paying([b.reference], '1500000', MINT, { InstructionError: [0, 'x'] }),
-    [sig(5)]: paying([], '1500000'),
-    [sig(6)]: paying([b.reference, other.reference], '1500000'),
-  })
-  const s = seller({ ...config, rpc })
-  const status = async (bytes: Uint8Array, header?: string) => (await s.collect(bytes, header)).status
-  assert.equal(await status(b.buy, `solana ${sig(1)}`), 200)
-  assert.deepEqual(rpc.asked, [`getTransaction ${sig(1)} finalized`], 'one call, at finalized')
-  const again = await s.collect(b.buy, `solana ${sig(1)}`)
-  assert.deepEqual(again.body, await answer(b.buy, key), 'collected again with the same proof: the same answer')
-  assert.equal(again.type, 'application/private-token-generic-batch-response')
-  assert.equal(await status(b.buy, `solana ${sig(2)}`), 402, 'short by one unit')
-  assert.equal(await status(b.buy, `solana ${sig(3)}`), 402, 'another mint')
-  assert.equal(await status(b.buy, `solana ${sig(4)}`), 402, 'a failed transaction')
-  assert.equal(await status(b.buy, `solana ${sig(5)}`), 402, 'a payment that does not name this buy')
-  assert.equal(await status(b.buy, `solana ${sig(7)}`), 402, 'no such transaction, or not finalized yet')
-  // One transaction naming two buys and paying for one: it pays for the first buy collected with it, never the second.
-  assert.equal(await status(other.buy, `solana ${sig(6)}`), 200)
-  assert.deepEqual((await s.collect(b.buy, `solana ${sig(6)}`)).body, { error: 'proof_used' })
-
-  const sol = seller({ ...config, credit: { ...config.credit, mint: 'SOL', price: '0.001' }, rpc: rpcOf({ [sig(8)]: { meta: { err: null, preBalances: [5, 0, 0], postBalances: [3, 3_000_000, 0] }, transaction: { message: { accountKeys: ['Payer', ADDRESS, b.reference] } } } }) })
-  assert.equal((await sol.collect(b.buy, `solana ${sig(8)}`)).status, 200, 'SOL, in lamports')
-  const loaded = seller({ ...config, rpc: rpcOf({ [sig(9)]: { ...paying([], '1500000'), meta: { ...paying([], '1500000').meta, loadedAddresses: { writable: [], readonly: [b.reference] } } } }) })
-  assert.equal((await loaded.collect(b.buy, `solana ${sig(9)}`)).status, 200, 'the reference loaded from a lookup table')
-
-  assert.equal((await seller(config).collect(b.buy, `solana ${sig(1)}`)).status, 503, 'no RPC: no payment can be checked')
-  const down = seller({ ...config, rpc: async () => Promise.reject(new Error('down')) })
-  assert.deepEqual((await down.collect(b.buy, `solana ${sig(1)}`)).body, { error: 'payment_check_unavailable' })
-})
-
-test('a sponsor’s ticket: for this service, this buy and its count, from a sponsor it takes; billed once', async () => {
-  const foundation = sponsor()
-  const stranger = sponsor()
-  const s = seller({ ...config, sponsors: [foundation.address] })
-  const b = await buy(service, 3)
-  const status = async (header: string, bytes = b.buy) => (await s.collect(bytes, header)).status
-  assert.equal(await status(`ticket ${stranger.signs(ORIGIN, b.reference, 3)}`), 402, 'a sponsor it does not take')
-  assert.equal(await status(`ticket ${foundation.signs(ORIGIN, b.reference, 2)}`), 402, 'a ticket for another count')
-  assert.equal(await status(`ticket ${foundation.signs('https://registry-payer.example', b.reference, 3)}`), 402, 'a ticket for another service')
-  const good = foundation.signs(ORIGIN, b.reference, 3)
-  const [address, count, signature] = good.split('.') as [string, string, string]
-  const flipped = signature.slice(0, -2) + (signature.at(-2) === 'A' ? 'B' : 'A') + signature.at(-1)
-  assert.equal(await status(`ticket ${address}.${count}.${flipped}`), 402, 'a signature that does not hold')
-  assert.deepEqual(s.bill(), {}, 'nothing billed yet')
-  assert.equal(await status(`ticket ${good}`), 200)
-  assert.equal(await status(`ticket ${good}`), 200, 'collected again: the same answer')
-  assert.deepEqual(s.bill(), { [foundation.address]: 3 }, 'billed once, for the credits it paid')
-  const other = await buy(service, 3)
-  assert.equal(await status(`ticket ${good}`, other.buy), 402, 'a ticket names its buy')
-})
-
-test('what a buy is refused for', async () => {
-  const s = seller(config)
-  const b = await buy(service, 3)
-  const none = await s.collect(b.buy, undefined)
-  assert.equal(none.status, 402)
-  assert.match((none.body as { detail: string }).detail, new RegExp(`^1.5 to ${ADDRESS} in ${MINT}, the transaction naming the buy's reference ${b.reference}`), 'what to pay, and where')
-  for (const header of ['card x', 'solana', 'solana not-a-signature', `solana ${sig(1)} more`, 'ticket a.b.c']) assert.equal((await s.collect(b.buy, header)).status, 400, header)
-  assert.equal((await s.collect(new Uint8Array([1, 2, 3]), `solana ${sig(1)}`)).status, 400, 'not a buy')
-  assert.deepEqual((await s.collect((await buy(service, 11)).buy, undefined)).body, { error: 'too_many', detail: 'at most 10 credits a buy' })
-})
-
-test('the spent list: hold, land and free, of one or several together, kept across a restart', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'forest-host-credits-'))
+test('a write is refused with no balance; taking your own things down never is', async () => {
+  // A write costs exactly one credit here, so two credits pay for one record and one blob.
+  const running = await start({ WRITE_FLOOR: '1', PER_KB: '0' })
   try {
-    const path = join(dir, 'credits.sqlite')
-    let s = seller({ ...config, path })
-    let list = s.spent
-    assert.equal(list.hold('a', 'sig-a', 1), 'held')
-    assert.equal(list.hold('a'), 'busy', 'held by another request in flight')
-    assert.equal(list.hold('b', 'sig-b', 2), 'held')
-    list.land('a')
-    assert.equal(list.hold('a'), 'spent')
-    list.free('a')
-    assert.equal(list.hold('a'), 'spent', 'a spent credit stays spent')
-    list.free('b')
-    assert.equal(list.hold('b', 'sig-b2', 3), 'held', 'a freed credit can be shown again')
-    s.close()
-    s = seller({ ...config, path })
-    list = s.spent
-    assert.deepEqual(list.holds(), [{ id: 'b', note: 'sig-b2', at: 3 }], 'what is held, after a restart')
-    assert.equal(list.hold('a'), 'spent')
+    const me = await folder()
+    const now = Date.now()
+    assert.ok((await results(running, [hostsRecord(me, [running.url], now)]))[0]!.ok, 'a hosts record needs no balance')
+    const refused = (await results(running, [ownerRecord(me, 'offer/maths', { text: 'maths' }, now)]))[0]!
+    assert.equal(refused.ok, false)
+    assert.equal(refused.error, 'refused')
+    assert.match(refused.message!, /costs 1 credit, and the folder holds 0 here/)
+    const photo = new Uint8Array(1000).fill(1)
+    const name = blobNameOf(photo, 'image/jpeg')
+    const short = await put(running.url, me, name, photo)
+    assert.deepEqual([short[0]!.ok, short[0]!.error], [false, 'refused'], 'bytes too')
 
-    // Several together: all held, or none.
-    assert.equal(list.hold(['c', 'd', 'a'], null, 4), 'spent', 'one of them spent')
-    assert.equal(list.hold(['c', 'd', 'b'], null, 4), 'busy', 'one of them held by another request')
-    assert.deepEqual(list.holds().map((h) => h.id), ['b'], 'and neither took c or d')
-    assert.throws(() => list.hold(['c', 'c']), /each once/)
-    assert.throws(() => list.hold([]), /one id or more/)
-    assert.equal(list.hold(['c', 'd', 'e'], 'n', 5), 'held')
-    list.land(['c', 'd'])
-    list.free(['e', 'c'])
-    assert.deepEqual([list.hold('c'), list.hold('d'), list.hold('e')], ['spent', 'spent', 'held'], 'landed together, freed together; a spent one stays spent')
-    s.close()
+    await fund(running, me.address, 2)
+    assert.ok((await results(running, [ownerRecord(me, 'offer/maths', { text: 'maths' }, now)]))[0]!.ok)
+    assert.ok((await put(running.url, me, name, photo))[0]!.ok)
+    assert.equal(balance(running, me.address), 0)
+
+    assert.ok((await results(running, [ownerRecord(me, 'offer/maths', null, now + 1)]))[0]!.ok, 'a live record taken down, free')
+    assert.ok((await remove(running.url, me, name.sha256))[0]!.ok, 'a blob taken down, free')
+    assert.equal(await getBlob([running.url], name.sha256), null)
+    assert.equal(balance(running, me.address), 0)
+    const nothing = (await results(running, [ownerRecord(me, 'offer/physics', null, now)]))[0]!
+    assert.deepEqual([nothing.ok, nothing.error], [false, 'refused'], 'a null body where nothing stands is a write like any other')
   } finally {
-    rmSync(dir, { recursive: true, force: true })
+    await running.close()
   }
 })
 
-test('the spent list in the seller’s file: held and spent inside the host’s own transaction, or not at all', () => {
-  const s = seller(config)
-  s.db.exec('CREATE TABLE balances (folder TEXT PRIMARY KEY, credits INTEGER NOT NULL)')
-  s.together(() => {
-    assert.equal(s.spent.hold(['x', 'y']), 'held')
-    s.spent.land(['x', 'y'])
-    s.db.prepare('INSERT INTO balances VALUES (?, ?)').run('f', 2)
-  })
-  assert.equal(s.spent.hold('x'), 'spent')
-  assert.throws(() =>
-    s.together(() => {
-      s.spent.hold('z')
-      s.spent.land('z')
-      throw new Error('the balance could not take it')
-    }),
-  )
-  assert.equal(s.spent.hold('z'), 'held', 'rolled back with the host’s transaction')
-  assert.deepEqual({ ...s.db.prepare('SELECT credits FROM balances').get() }, { credits: 2 })
-  s.close()
-})
+test('a ticket is collected, once, and only from a sponsor this host lists', async () => {
+  const running = await start()
+  try {
+    const key = await keyOf(running.url)
+    const b = await buy(ORIGIN, key, 3)
+    const ticket = `ticket ${gift.ticket(ORIGIN, b.reference, 3)}`
+    assert.equal((await collect(running.url, b.bytes)).status, 402, 'nothing paid')
+    assert.equal((await collect(running.url, b.bytes, `ticket ${sponsor().ticket(ORIGIN, b.reference, 3)}`)).status, 402, 'a sponsor it does not list')
+    assert.equal((await collect(running.url, b.bytes, `ticket ${gift.ticket(ORIGIN, b.reference, 2)}`)).status, 402, 'a ticket for another count')
+    const first = await collect(running.url, b.bytes, ticket)
+    assert.equal(first.status, 200)
+    assert.deepEqual((await collect(running.url, b.bytes, ticket)).body, first.body, 'collected again: the same answer')
+    assert.deepEqual(running.credits.seller.bill(), { [gift.address]: 3 }, 'billed once')
+    const other = await buy(ORIGIN, key, 3)
+    assert.equal((await collect(running.url, other.bytes, ticket)).status, 402, 'a ticket pays for its own buy only')
 
-/** `n` credits from a seller, bought with mcp's client and answered as a paid buy is. */
-async function creditsFrom(origin: string, k: typeof key, n: number): Promise<Credit[]> {
-  const b = await buy(serviceOf(origin, seller({ ...config, origin, key: k }).directory()), n)
-  return finish(b.pending, await answer(b.buy, k))
-}
-
-test('several shown with one spend, as its body lists them: checked together, all or none', async () => {
-  const credits = await creditsFrom(ORIGIN, key, 4)
-  const host = { origin: ORIGIN, keys: [key.published] }
-  const list = creditList(credits)
-  assert.deepEqual(await checkCredits(list, host, 4), credits.map((c) => creditId(c.credit)), 'their ids, in order')
-  await assert.rejects(checkCredits(list, host, 3), /from 1 to 3 credits/, 'more than the host takes at once')
-  await assert.rejects(checkCredits([], host, 4), /from 1 to 4/)
-  await assert.rejects(checkCredits(list[0], host, 4), /from 1 to 4/, 'a list, not one credit')
-  await assert.rejects(checkCredits([list[0], list[1], list[0]], host, 4), /the same credit twice/)
-  await assert.rejects(checkCredits([list[0], 7], host, 4), /not a credit/)
-  // One that does not hold refuses them all: another service's among them.
-  const [theirs] = await creditsFrom('https://registry-payer.example', await keyFrom(pkcs8(2048)), 1)
-  await assert.rejects(checkCredits([...list.slice(0, 2), theirs!.credit], host, 4), /not this service's credit/)
-})
-
-test('a token Cloudflare’s own client made for the same challenge is a credit too', async () => {
-  const client = new publicVerif.Client(publicVerif.BlindRSAMode.PSS)
-  const request = await client.createTokenRequest(challengeOf(ORIGIN), key.published)
-  const token = await client.finalize(await (await cloudflareIssuer()).issue(request))
-  assert.ok(await checkCredit(token.serialize(), { origin: ORIGIN, keys: [key.published] }))
-})
-
-test('refused by the host: another service’s credit, a key it does not count, a changed byte, not a credit', async () => {
-  const [credit] = await creditsFrom(ORIGIN, key, 1)
-  const bytes = b64u.decode(credit!.credit)
-  const other = await keyFrom(pkcs8(2048))
-  await assert.rejects(checkCredit(bytes, { origin: 'https://registry-payer.example', keys: [key.published] }), /not this service's credit/)
-  await assert.rejects(checkCredit(bytes, { origin: ORIGIN, keys: [other.published] }), /not under a key/)
-  for (const at of [2, 40, 100, bytes.length - 1]) {
-    const changed = bytes.slice()
-    changed[at]! ^= 1
-    await assert.rejects(checkCredit(changed, { origin: ORIGIN, keys: [key.published] }), Error, `byte ${at}`)
+    const me = await folder()
+    const credits = await b.finish(first.body)
+    assert.equal(credits.length, 3)
+    assert.deepEqual(await spend(running.url, me.address, credits), { status: 200, body: { folder: me.address, credits: 3 } })
+    assert.equal((await spend(running.url, me.address, credits)).status, 409, 'a credit is spent once')
+  } finally {
+    await running.close()
   }
-  await assert.rejects(checkCredit(new Uint8Array(354), { origin: ORIGIN, keys: [key.published] }))
-  // A short view into a good credit's buffer: privacypass-ts alone would read the whole buffer.
-  await assert.rejects(checkCredit(bytes.subarray(0, 300), { origin: ORIGIN, keys: [key.published] }), /not a credit/)
-  await assert.rejects(checkCredit(new Uint8Array([...bytes, 0]), { origin: ORIGIN, keys: [key.published] }), /not a credit/)
-  // And a good credit inside a larger buffer, as a Node Buffer from the pool often is, still holds.
-  const inside = new Uint8Array(1000)
-  inside.set(bytes, 123)
-  assert.equal(await checkCredit(inside.subarray(123, 123 + bytes.length), { origin: ORIGIN, keys: [key.published] }), creditId(bytes))
+})
+
+test('a payment on Solana is checked against the RPC', async () => {
+  const MINT = base58.encode(new Uint8Array(32).fill(1))
+  const PAY_TO = base58.encode(new Uint8Array(32).fill(2))
+  const paid = new Map<string, unknown>()
+  const rpc: Rpc = async (method, params) => {
+    assert.equal(method, 'getTransaction')
+    return paid.get(params[0] as string) ?? null
+  }
+  /** A transaction naming `reference`, in which `owner` gains `units` millionths of a dollar of `mint`. */
+  const pay = (reference: string, units: number, mint = MINT, owner = PAY_TO) => {
+    const signature = base58.encode(crypto.getRandomValues(new Uint8Array(64)))
+    const balance = (amount: number) => [{ accountIndex: 1, mint, owner, uiTokenAmount: { amount: String(amount), decimals: 6 } }]
+    paid.set(signature, { meta: { err: null, preTokenBalances: balance(0), postTokenBalances: balance(units) }, transaction: { message: { accountKeys: ['payer', 'account', reference] } } })
+    return `solana ${signature}`
+  }
+
+  const tickets = await start()
+  try {
+    const forest = ((await (await fetch(`${tickets.url}${DIRECTORY_PATH}`)).json()) as { 'forest-credit': Record<string, unknown> })['forest-credit']
+    assert.deepEqual(forest, { unit: 'writes at this host', price: '0.01', write: '0.01', kilobyte: '0.01' }, 'with no payment set, the directory names no address')
+    const b = await buy(ORIGIN, await keyOf(tickets.url), 1)
+    assert.equal((await collect(tickets.url, b.bytes, pay(b.reference, 10_000))).status, 503, 'only tickets buy')
+  } finally {
+    await tickets.close()
+  }
+
+  const running = await start({ CREDIT_MINT: MINT, CREDIT_PAY_TO: PAY_TO, RPC_URL: 'http://127.0.0.1:9' }, { rpc })
+  try {
+    const forest = ((await (await fetch(`${running.url}${DIRECTORY_PATH}`)).json()) as { 'forest-credit': Record<string, unknown> })['forest-credit']
+    assert.deepEqual([forest.address, forest.mint, forest.price], [PAY_TO, MINT, '0.01'])
+    const b = await buy(ORIGIN, await keyOf(running.url), 2)
+    assert.equal((await collect(running.url, b.bytes, pay(b.reference, 19_999))).status, 402, 'short by one unit')
+    assert.equal((await collect(running.url, b.bytes, pay(b.reference, 20_000, base58.encode(new Uint8Array(32).fill(3))))).status, 402, 'another mint')
+    assert.equal((await collect(running.url, b.bytes, pay(base58.encode(new Uint8Array(32).fill(4)), 20_000))).status, 402, 'another buy')
+    const proof = pay(b.reference, 20_000)
+    const got = await collect(running.url, b.bytes, proof)
+    assert.equal(got.status, 200, 'two credits at a cent each, at face value')
+    const me = await folder()
+    assert.equal((await spend(running.url, me.address, await b.finish(got.body))).body.credits, 2)
+  } finally {
+    await running.close()
+  }
+})
+
+test('the credit key is made on the volume at the first start, and kept', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'host-'))
+  dirs.push(dir)
+  const first = await start({}, {}, dir)
+  const key = await keyOf(first.url)
+  await first.close()
+  assert.equal(statSync(join(dir, 'credits', 'key.der')).mode & 0o777, 0o600)
+  const again = await start({}, {}, dir)
+  try {
+    assert.deepEqual(await keyOf(again.url), key)
+  } finally {
+    await again.close()
+  }
+})
+
+test('end to end: a folder, a record and a blob, through the reference host with credits on', async () => {
+  const running = await start()
+  try {
+    const me = await folder()
+    await fund(running, me.address, 10)
+    const now = Date.now()
+    const profile = ownerRecord(me, 'profile', { market: 'tutoring', role: 'seller' }, now)
+    const offer = ownerRecord(me, 'offer/maths', { text: 'Maths, an hour on Tuesdays.' }, now)
+    const outcome = await publish([running.url], [hostsRecord(me, [running.url], now), profile, offer])
+    assert.deepEqual(outcome[0]!.results.map((r) => [r.ok, r.error]), [[true, undefined], [true, undefined], [true, undefined]])
+    const photo = crypto.getRandomValues(new Uint8Array(30_000))
+    const name = blobNameOf(photo, 'image/jpeg')
+    assert.ok((await put(running.url, me, name, photo))[0]!.ok)
+
+    const view = await readProfile([running.url], me.address, Date.now(), { post: true })
+    assert.deepEqual(view.hosts, [running.url])
+    assert.deepEqual(view.current.get('offer/maths')?.record.body, offer.body)
+    assert.deepEqual(view.current.get('profile')?.record.body, profile.body)
+    assert.deepEqual((await getBlob(view.hosts, name.sha256))?.bytes, photo)
+
+    const price = (bytes: number) => running.credits.priceOf(bytes)
+    const spent = price(Buffer.byteLength(encodeRecord(profile))) + price(Buffer.byteLength(encodeRecord(offer))) + price(photo.length)
+    assert.equal(balance(running, me.address), (10 * MILLIONTHS - spent) / MILLIONTHS, 'each write at its price, the hosts record free')
+  } finally {
+    await running.close()
+  }
 })

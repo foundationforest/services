@@ -1,64 +1,57 @@
-// The foundation's host: standard/records' reference host (standard/records/src/host.ts), unchanged, run
-// with this service's choices. It takes anyone's records, delivers messages to inboxes, and keeps
-// blobs, as the standard's host does; every number it uses is in `choice` below, and README.md says each in
-// words.
+// The foundation's host: the standard's reference host (@foundationforest/records/host), unchanged,
+// run with this service's choices. It takes anyone's records, delivers messages to inboxes, and
+// keeps blobs, as the standard's host does; every number it uses is in `choice` below or a setting,
+// and README.md says each in words.
 //
-// Around the standard's host, one thing only: a front that answers `GET /` with one line saying what this
-// is, sells and takes credits (credits.ts), and passes every other request, untouched, to the host on
-// loopback.
+// Around the standard's host, one thing only: a front that answers `GET /` with one line saying what
+// this is, sells and takes credits (credits.ts), and passes every other request, untouched, to the
+// host on loopback.
 //
-// Every write is paid for in credits, from a folder's balance here, and costs exactly its price or
-// nothing: the standard's host asks this host's choices (`recordChoice`, `messageChoice`, `blobChoice`). A
-// record or message is claimed by its id as its price is taken, so two copies pay once. Bytes are
-// stored first: their price is reserved, then taken once the standard's host answers that it kept them, or
-// released; the front sends on one put of the same bytes at a time. The standard's host asks nothing
-// about a hosts or permissions record, so those are free. Reads are free.
+// Every write is paid for in credits, from its folder's balance here: the standard's host asks this
+// host's choices (`recordChoice`, `blobChoice`). A record is claimed by its id as its price is taken,
+// so two copies pay once. Bytes are stored first: their price is reserved, then taken once the
+// standard's host answers that it kept them, or released; the front sends on one request for the
+// same bytes at a time. The standard's host asks nothing about a hosts or permissions record, so
+// those are free, and nothing about a message here, so messages are free. Reads are free.
+//
+// Taking your own things down is never blocked by money: a null body over a live record, and a blob
+// delete the standard's host carries out, cost the floor when the balance holds it, and go through
+// free when it does not. A null body where nothing stands is a write like any other.
 //
 // Where it keeps things is the standard's storage: a data directory (DATA_DIR) with a SQLite file per
-// folder, and the blobs on disk there, or in an S3-compatible bucket when the S3_ variables are set.
-// Before it starts, two moves, each done once: the single SQLite file this host kept before
-// (IMPORT_FROM) goes into the data directory with the standard's import script, and, with a bucket, bytes
-// left on disk go to the bucket.
+// folder, and the blobs on disk there or in an S3-compatible bucket (BLOBS=s3). The credits keep
+// their own file and their key in DATA_DIR/credits.
 //
-// An inbox can take messages only from keys holding a registry row from one issuer, named by its key
-// as a row holds it (128 hex). The standard's host asks `rowLookup` whether a sender holds one; this host
-// answers from the registry, over the RPC in SOLANA_RPC_URL, with the standard's registry client. Without
-// an RPC there is no lookup, and the standard's host refuses messages to such inboxes (`rule_unsupported`).
-//
-// A message a message key signed is taken only if the sender's own host lists that key: the standard's
-// host asks `readSender` for the sender's records, and this host reads them with the standard's client,
-// within SENDER_READ_MS, and keeps what it read for SENDER_CACHE_SECONDS. It reads them only from a
-// public address, and follows no redirect (the standard's `publicFetch`, records/src/public.ts).
-//
-import { existsSync, renameSync, rmSync } from 'node:fs'
+// A message a write key signed, or one to an inbox that takes messages only from an issuer's note
+// holders, needs the sender's records: the standard's host asks `readSender`, and this host reads
+// them with the standard's client, within SENDER_READ_MS, from a public address only and with no
+// redirect (the standard's `publicFetch`), and keeps what it read for SENDER_CACHE_SECONDS. The note
+// proof on the sender's profile record is checked by the note client's `verifyNote`.
+
+import { mkdirSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { Connection, PublicKey } from '@solana/web3.js'
+import { verifyNote } from '@foundationforest/note'
+import { type Checked, checkBlobRequest, encodeRecord, readPage, recordId, unsignedOf } from '@foundationforest/records'
+import { type BlobChoice, type BlobDriver, Host, type HostOptions, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
+import { publicFetch } from '@foundationforest/records/public'
+import { base58 } from '@scure/base'
 
-import { readPage } from '../../standard/records/src/client.ts'
-import { publicFetch } from '../../standard/records/src/public.ts'
-import { type BlobChoice, type BlobDriver, Host, type HostOptions, defaultBlobChoice } from '../../standard/records/src/host.ts'
-import { encodeMessage, messageId, unsignedMessageOf } from '../../standard/records/src/message.ts'
-import { type Checked, encodeRecord, recordId, unsignedOf } from '../../standard/records/src/record.ts'
-import { type BlobStore, blobStore } from '../../standard/records/src/storage.ts'
-import { PAYMENT_HEADER } from '../credits/credit.ts'
-import { type Rpc, keyFrom } from '../credits/seller.ts'
-import { importSingleFile } from '../../standard/records/scripts/import-single-file.ts'
-import { fromBytes32 } from '../../standard/registry/client/src/field.ts'
-import { fetchRows } from '../../standard/registry/client/src/rows.ts'
+import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
+import { type Rpc, keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
-  'A Forest host, run by the Forest Foundation on devnet: the standard’s reference host with the choices in ' +
-  'foundationforest/services, host/README.md. Anyone may write here, paying in credits, and on devnet it may be wiped at any time.\n'
+  'A Forest host, run by the Forest Foundation: the standard’s reference host with the choices in ' +
+  'foundationforest/services, host/README.md. Anyone can write here, paying in credits.\n'
 
 /** This host's choices: each number the standard's host takes as an option. */
 export const choice = {
-  /** Days a replaced record, a message, or bytes no current record names are kept. */
+  /** Days a replaced record or a message is kept. */
   keepDays: 30,
   /** Records or messages one request may carry. */
   maxBatch: 100,
@@ -73,102 +66,96 @@ export const choice = {
 /** Milliseconds a sender's host may take to serve all of the sender's records. */
 export const SENDER_READ_MS = 5_000
 
-/** The devnet registry (standard/registry/devnet/devnet.json), as the index reads it. */
-export const DEVNET_REGISTRY = 'J4ES52YohsZhknYbsgmZwHpyNw14EjrrGZxHpcmcBmq4'
-
 export type Config = {
-  /** The data directory; a temporary one, removed on close, when null. */
-  dir: string | null
-  /** The single SQLite file this host kept before, moved into `dir` on the start that finds no host there. */
-  importFrom: string | null
+  /** The data directory: the standard's storage, and the credits' file and key in `credits/`. */
+  dir: string
   /** Where blob bytes go: disk in `dir`, or a bucket. */
   blobs: BlobDriver
   port: number
-  /** The Solana RPC for the registry lookup; no lookup when null. */
-  rpcUrl: string | null
-  registryProgramId: string
   /** Milliseconds what a sender's host served is kept; 0 reads it again for every request. */
   senderCacheMs: number
-  /** Its public origin, `https://host`: the name its credits carry. */
+  /** Its public origin, `https://host`: the name its credits carry, and that a ticket names. */
   origin: string
-  /** Its credit key, RSA-2048 in PKCS #8, from CREDIT_KEY. */
-  creditKey: Uint8Array
-  /** Where a credit is paid, in what, and one credit's price in whole units. */
-  credit: { address: string; mint: string; price: string }
+  /** One credit's price, in US cents. */
+  priceCents: number
+  /** Where a credit is paid on Solana, in which dollar, and the RPC that checks it; null: only tickets buy. */
+  payment: { address: string; mint: string; rpcUrl: string } | null
   /** The most credits one buy may ask for. */
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
   sponsors: string[]
-  /** What a write costs, in credits as decimal text: `write` each, and `kilobyte` for each 1,000 bytes. */
-  cost: { write: string; kilobyte: string }
+  /** What a write costs, in credits as decimal text: `floor` each, and `perKb` for each 1,000 bytes it stores. */
+  cost: { floor: string; perKb: string }
 }
 
-/** What a write costs unless set, in credits: a hundredth of a cent each, and a thousandth of a cent a kilobyte. */
-export const WRITE_PRICE = '0.01'
-export const KILOBYTE_PRICE = '0.001'
-
-/** The bucket's variables; the first four are needed once any of them is set. */
-const S3_NEEDED = ['S3_ENDPOINT', 'S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY']
-const S3_OPTIONAL = ['S3_REGION', 'S3_STYLE']
+/** The bucket's settings, with BLOBS=s3; the first four are needed. */
+const BUCKET_NEEDED = ['BLOBS_ENDPOINT', 'BLOBS_BUCKET', 'BLOBS_ACCESS_KEY_ID', 'BLOBS_SECRET_ACCESS_KEY']
+/** A payment on Solana takes all three, or none: then only tickets buy. */
+const PAYMENT = ['CREDIT_MINT', 'CREDIT_PAY_TO', 'RPC_URL']
 
 function blobDriver(env: Record<string, string | undefined>): BlobDriver {
-  if (![...S3_NEEDED, ...S3_OPTIONAL].some((name) => env[name])) return { kind: 'disk' }
-  const missing = S3_NEEDED.filter((name) => !env[name])
-  if (missing.length) throw new Error(`a bucket needs ${S3_NEEDED.join(', ')}; missing: ${missing.join(', ')}`)
-  new URL(env.S3_ENDPOINT!)
-  const style = env.S3_STYLE || undefined
-  if (style !== undefined && style !== 'path' && style !== 'virtual') throw new Error('S3_STYLE is path or virtual')
+  const kind = env.BLOBS || 'disk'
+  if (kind === 'disk') return { kind: 'disk' }
+  if (kind !== 's3') throw new Error('BLOBS is disk or s3')
+  const missing = BUCKET_NEEDED.filter((name) => !env[name])
+  if (missing.length) throw new Error(`BLOBS=s3 needs ${BUCKET_NEEDED.join(', ')}; missing: ${missing.join(', ')}`)
+  new URL(env.BLOBS_ENDPOINT!)
+  const style = env.BLOBS_STYLE || undefined
+  if (style !== undefined && style !== 'path' && style !== 'virtual') throw new Error('BLOBS_STYLE is path or virtual')
   return {
     kind: 's3',
-    endpoint: env.S3_ENDPOINT!,
-    bucket: env.S3_BUCKET!,
-    accessKeyId: env.S3_ACCESS_KEY_ID!,
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY!,
-    // Forest signs with whatever region it is given, `auto` included; us-east-1 when none.
-    ...(env.S3_REGION && { region: env.S3_REGION }),
+    endpoint: env.BLOBS_ENDPOINT!,
+    bucket: env.BLOBS_BUCKET!,
+    accessKeyId: env.BLOBS_ACCESS_KEY_ID!,
+    secretAccessKey: env.BLOBS_SECRET_ACCESS_KEY!,
+    // The standard signs with whatever region it is given, `auto` included; us-east-1 when none.
+    ...(env.BLOBS_REGION && { region: env.BLOBS_REGION }),
     ...(style && { style }),
   }
 }
 
-function whole(name: string, value: string): number {
+function whole(name: string, value: string, least = 0): number {
   const n = Number(value)
-  if (!Number.isSafeInteger(n) || n < 0) throw new Error(`${name} must be a whole number`)
+  if (!Number.isSafeInteger(n) || n < least) throw new Error(`${name} must be a whole number of at least ${least}`)
   return n
 }
 
-/** The credit variables, every one needed: without them the host could take no write. */
-const CREDIT_NEEDED = ['PUBLIC_ORIGIN', 'CREDIT_KEY', 'CREDIT_ADDRESS', 'CREDIT_MINT', 'CREDIT_PRICE']
+function solanaAddress(name: string, value: string): string {
+  try {
+    if (base58.decode(value).length === 32 && base58.encode(base58.decode(value)) === value) return value
+  } catch {
+    // Refused below.
+  }
+  throw new Error(`${name} is a Solana address`)
+}
 
-/** Reads the variables README.md lists. CREDIT_KEY leaves the environment once read. */
+/** Reads the settings README.md lists. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const registryProgramId = env.REGISTRY_PROGRAM_ID || DEVNET_REGISTRY
-  new PublicKey(registryProgramId)
-  const missing = CREDIT_NEEDED.filter((name) => !env[name]?.trim())
-  if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
-  const origin = env.PUBLIC_ORIGIN!.trim()
-  if (new URL(origin).origin !== origin) throw new Error('PUBLIC_ORIGIN is an origin: https://host')
-  const price = env.CREDIT_PRICE!.trim()
-  if (!/^(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(price) || !/[1-9]/.test(price)) throw new Error('CREDIT_PRICE is decimal text above 0')
-  const mint = env.CREDIT_MINT!.trim()
-  const creditKey = new Uint8Array(Buffer.from(env.CREDIT_KEY!.trim(), 'base64'))
-  delete env.CREDIT_KEY
-  const maxBuy = whole('CREDITS_PER_BUY', env.CREDITS_PER_BUY || '1000')
-  if (maxBuy < 1) throw new Error('CREDITS_PER_BUY must be a whole number of at least 1')
-  const cost = { write: (env.WRITE_PRICE || WRITE_PRICE).trim(), kilobyte: (env.KILOBYTE_PRICE || KILOBYTE_PRICE).trim() }
-  millionthsOf('WRITE_PRICE', cost.write)
-  millionthsOf('KILOBYTE_PRICE', cost.kilobyte)
+  const dir = env.DATA_DIR?.trim()
+  if (!dir) throw new Error('DATA_DIR is needed: where the folders, the credits and their key are kept')
+  const origin = env.PUBLIC_ORIGIN?.trim() ?? ''
+  if (!URL.canParse(origin) || new URL(origin).origin !== origin) throw new Error('PUBLIC_ORIGIN is needed, an origin: https://host')
+  try {
+    challengeOf(origin)
+  } catch {
+    throw new Error('PUBLIC_ORIGIN is https, or http only on loopback')
+  }
+  const paid = PAYMENT.filter((name) => env[name]?.trim())
+  if (paid.length && paid.length < PAYMENT.length) throw new Error(`a payment on Solana needs ${PAYMENT.join(', ')}, or none of them`)
+  const rpcUrl = env.RPC_URL?.trim()
+  if (rpcUrl) new URL(rpcUrl)
+  const cost = { floor: (env.WRITE_FLOOR || '0.01').trim(), perKb: (env.PER_KB || '0.01').trim() }
+  millionthsOf('WRITE_FLOOR', cost.floor)
+  millionthsOf('PER_KB', cost.perKb)
   return {
-    dir: env.DATA_DIR || null,
-    importFrom: env.IMPORT_FROM || null,
+    dir,
     blobs: blobDriver(env),
     port: whole('PORT', env.PORT || '8080'),
-    rpcUrl: env.SOLANA_RPC_URL || null,
-    registryProgramId,
     senderCacheMs: whole('SENDER_CACHE_SECONDS', env.SENDER_CACHE_SECONDS || '60') * 1000,
     origin,
-    creditKey,
-    credit: { address: new PublicKey(env.CREDIT_ADDRESS!.trim()).toBase58(), mint: mint === 'SOL' ? 'SOL' : new PublicKey(mint).toBase58(), price },
-    maxBuy,
+    priceCents: whole('CREDIT_PRICE_CENTS', env.CREDIT_PRICE_CENTS || '1', 1),
+    payment: rpcUrl ? { address: solanaAddress('CREDIT_PAY_TO', env.CREDIT_PAY_TO!.trim()), mint: solanaAddress('CREDIT_MINT', env.CREDIT_MINT!.trim()), rpcUrl } : null,
+    maxBuy: whole('MAX_BUY', env.MAX_BUY || '1000', 1),
     sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     cost,
   }
@@ -190,33 +177,24 @@ function rpcAt(url: string): Rpc {
 }
 
 /**
- * Whether `from` holds a registry row from `issuer`, under any label. `issuer` is the issuer's key as
- * a row holds it, 128 hex characters, x then y. A row names its issuer only after the program checked
- * the person proof against that key, so any such row counts.
+ * A record's price, from its own folder's balance: the floor and its canonical bytes by the kilobyte.
+ * A null body over a live record takes it down: it costs the floor, and goes through free when the
+ * folder cannot pay. `host` is the standard's host the record is going into, for what stands there.
  */
-export function rowLookup(connection: Pick<Connection, 'getProgramAccounts'>, programId: string): NonNullable<HostOptions['rowLookup']> {
-  const program = new PublicKey(programId)
-  return async (from, issuer) => {
-    if (!/^[0-9a-f]{128}$/.test(issuer)) return false
-    const key = Buffer.from(issuer, 'hex')
-    // The registry client has its own copy of web3.js, whose key check is `instanceof` its own
-    // PublicKey, so the profile goes in as its bytes.
-    const rows = await fetchRows(connection as never, {
-      profile: new PublicKey(from).toBytes() as never,
-      issuer: [fromBytes32(key.subarray(0, 32)), fromBytes32(key.subarray(32))],
-      programId: program as never,
-    })
-    return rows.length > 0
+export function paidRecords(credits: Credits, host: () => Host): RecordChoice {
+  return (record) => {
+    const id = recordId(unsignedOf(record))
+    if (record.body === null && host().view(record.profile).current.get(record.path)?.record.body) {
+      credits.charge(record.profile, credits.floor, id)
+      return null
+    }
+    return credits.charge(record.profile, credits.priceOf(Buffer.byteLength(encodeRecord(record))), id)
   }
 }
 
-/**
- * Bytes, paid for once stored: the standard's own types (png, jpeg and mp4), then their price, reserved on
- * the first folder whose current records name them that holds it. The front takes it once the standard's host has
- * kept them, or releases it (`Credits.stored`).
- */
+/** Bytes, paid for once stored: the standard's own types, then their price, reserved on the folder that puts them. The front takes it once they are kept, or releases it. */
 export function paidBlobs(credits: Credits): BlobChoice {
-  return async (blob) => (await defaultBlobChoice(blob)) ?? credits.reserve(blob.sha256, blob.folders, credits.priceOf(blob.size))
+  return async (blob, stored) => (await defaultBlobChoice(blob, stored)) ?? credits.reserve(blob.sha256, blob.profile, credits.priceOf(blob.size))
 }
 
 /**
@@ -237,11 +215,11 @@ async function readRecords(host: string, profile: string, get: typeof fetch): Pr
 }
 
 /**
- * Forest's `readSender`: a sender's records from the host a message names, kept for `cacheMs` per
- * sender and host. Two messages at once share one read; a read that fails is not kept, so the standard's
- * host answers `lookup` and the sender's next try reads again. So a message key its owner made past
- * is still taken until what was read before expires. A host at no public address, or one that
- * redirects, is a read that fails.
+ * The standard's `readSender`: a sender's records from the host a message names, kept for `cacheMs`
+ * per sender and host. Two messages at once share one read; a read that fails is not kept, so the
+ * standard's host answers `lookup` and the sender's next try reads again. So a write key its owner
+ * made past is still taken until what was read before expires. A host at no public address, or one
+ * that redirects, is a read that fails.
  */
 export function senderReader(cacheMs: number, now: () => number = Date.now, get: typeof fetch = publicFetch): NonNullable<HostOptions['readSender']> {
   const kept = new Map<string, { at: number; records: Promise<Checked[]> }>()
@@ -262,37 +240,6 @@ export function senderReader(cacheMs: number, now: () => number = Date.now, get:
   }
 }
 
-/** Every blob in `from`, into `to` under the same name and type, then out of `from`. Returns how many. */
-export async function moveBlobs(from: BlobStore, to: BlobStore): Promise<number> {
-  let moved = 0
-  for await (const { sha256 } of from.list()) {
-    const blob = await from.get(sha256)
-    if (!blob) continue
-    await to.put(sha256, blob.type, blob.bytes)
-    await from.delete(sha256)
-    moved++
-  }
-  return moved
-}
-
-export type Imported = Awaited<ReturnType<typeof importSingleFile>>
-
-/**
- * Forest's import of the single file this host kept before, when there is one and `dir` holds no
- * host yet. It runs into a directory beside `dir`, renamed onto it only when whole, so a start that
- * stops halfway leaves nothing half-made. A `dir` that holds folders but no host.sqlite is never
- * replaced: the rename fails, and so does the start.
- */
-async function importOnce(config: Config): Promise<Imported | null> {
-  const dir = config.dir!
-  if (!config.importFrom || !existsSync(config.importFrom) || existsSync(join(dir, 'host.sqlite'))) return null
-  const part = `${dir}.import`
-  rmSync(part, { recursive: true, force: true })
-  const counts = await importSingleFile(config.importFrom, { dir: part, blobs: config.blobs })
-  renameSync(part, dir)
-  return counts
-}
-
 const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding']
 const passed = (headers: IncomingHttpHeaders) => {
   const out = { ...headers }
@@ -305,38 +252,58 @@ export type RunningHost = {
   host: Host
   credits: Credits
   server: Server
-  /** What the start moved: the old file's import, and, with a bucket, the blobs that were on disk. Null when there was nothing to move. */
-  moved: { imported: Imported | null; toBucket: number | null }
   close(): Promise<void>
 }
 
-const BLOB_PUT = /^\/v1\/blobs\/([0-9a-f]{64})$/
+const BLOB = /^\/v1\/blobs\/([0-9a-f]{64})$/
 
 /**
- * A request sent on to the standard's host, untouched, and its answer back. `answered` hears, once, whether
- * the standard's host took it (200) or not, before the answer goes back.
+ * A request sent on to the standard's host, untouched, and its answer back. With `heard`, the
+ * answer (a blob request's, a little JSON) is read whole first, and `heard` learns, once, whether the
+ * standard's host carried the request out (`{ "ok": true }` and no message: bytes stored, or deleted)
+ * before the answer goes back; anything else, or no answer, is false.
  */
-function forward(inner: URL, req: IncomingMessage, res: ServerResponse, answered: (ok: boolean) => void = () => {}): void {
-  let heard = false
-  const hear = (ok: boolean) => {
-    if (!heard) answered(ok)
-    heard = true
+function forward(inner: URL, req: IncomingMessage, res: ServerResponse, heard?: (done: boolean) => void): void {
+  let told = false
+  const tell = (done: boolean) => {
+    if (!told) heard?.(done)
+    told = true
   }
   let upstream
   try {
     upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
-      hear(answer.statusCode === 200)
-      res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
-      answer.pipe(res)
+      if (!heard) {
+        res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
+        return void answer.pipe(res)
+      }
+      const chunks: Buffer[] = []
+      answer.on('data', (chunk: Buffer) => chunks.push(chunk))
+      answer.on('end', () => {
+        const body = Buffer.concat(chunks)
+        let said: { ok?: unknown; message?: unknown } | undefined
+        try {
+          said = JSON.parse(body.toString('utf8')) ?? undefined
+        } catch {
+          // Not the standard's JSON: nothing was carried out.
+        }
+        tell(answer.statusCode === 200 && said?.ok === true && said.message === undefined)
+        res.writeHead(answer.statusCode ?? 502, passed(answer.headers)).end(body)
+      })
+      answer.on('close', () => {
+        if (told) return
+        tell(false)
+        if (!res.headersSent) res.writeHead(502)
+        res.end()
+      })
     })
   } catch {
     // A request node:http will not send on, as it is.
-    hear(false)
+    tell(false)
     req.resume()
     return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
   }
   upstream.on('error', () => {
-    hear(false)
+    tell(false)
     if (!res.headersSent) res.writeHead(502)
     res.end()
   })
@@ -406,37 +373,35 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   return true
 }
 
-/**
- * In tests, `connection` stands in for the RPC the registry lookup reads and `rpc` for the one the
- * payment check asks, otherwise both made from `config.rpcUrl`; `fetch` stands in for `publicFetch`,
- * so a sender's host on loopback can be read.
- */
-export async function startHost(config: Config, stand: { connection?: Pick<Connection, 'getProgramAccounts'>; fetch?: typeof fetch; rpc?: Rpc } = {}): Promise<RunningHost> {
-  let creditKey
+/** The folder a blob delete is for, when the header holds a signed delete of the bytes `name`; null for anything else, which the standard's host refuses itself. */
+function deleteFrom(header: string | string[] | undefined, name: string): string | null {
+  if (typeof header !== 'string') return null
   try {
-    creditKey = await keyFrom(config.creditKey)
+    const ask = checkBlobRequest(header, Date.now())
+    return ask.action === 'delete' && ask.sha256 === name ? ask.profile : null
   } catch {
-    // The setting is a private key: nothing of it goes in the message.
-    throw new Error('CREDIT_KEY is not an RSA-2048 private key in PKCS #8, base64')
+    return null
   }
-  const imported = config.dir ? await importOnce(config) : null
-  const disk = config.dir && join(config.dir, 'blobs')
-  const toBucket = disk && config.blobs.kind === 's3' && existsSync(disk) ? await moveBlobs(blobStore(config.dir!, { kind: 'disk' }), blobStore(config.dir!, config.blobs)) : null
+}
 
-  const rpc = stand.connection ?? (config.rpcUrl ? new Connection(config.rpcUrl, 'confirmed') : null)
-  const lookup = rpc && rowLookup(rpc, config.registryProgramId)
-  const credits = new Credits(config.dir && join(config.dir, 'credits'), { origin: config.origin, creditKey, credit: config.credit, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost }, stand.rpc ?? (config.rpcUrl ? rpcAt(config.rpcUrl) : null))
-  // A record's or message's price is taken, and the write claimed by its id, before the standard's host
-  // keeps it; bytes' price is reserved, and taken once they are kept.
+/**
+ * In tests, `rpc` stands in for the RPC the payment check asks, otherwise made from the payment's
+ * `rpcUrl`; `fetch` stands in for `publicFetch`, so a sender's host on loopback can be read.
+ */
+export async function startHost(config: Config, stand: { fetch?: typeof fetch; rpc?: Rpc } = {}): Promise<RunningHost> {
+  const creditsDir = join(config.dir, 'credits')
+  mkdirSync(creditsDir, { recursive: true })
+  const creditKey = await keyAt(join(creditsDir, 'key.der'))
+  const payment = config.payment && { address: config.payment.address, mint: config.payment.mint, rpc: stand.rpc ?? rpcAt(config.payment.rpcUrl) }
+  const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, payment, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost })
   const host: Host = new Host({
-    ...(config.dir && { dir: config.dir }),
+    dir: config.dir,
     blobs: config.blobs,
     ...choice,
-    recordChoice: (record) => credits.charge(record.profile, credits.priceOf(Buffer.byteLength(encodeRecord(record))), recordId(unsignedOf(record))),
-    messageChoice: (message) => credits.charge(message.from, credits.priceOf(Buffer.byteLength(encodeMessage(message))), messageId(unsignedMessageOf(message))),
+    recordChoice: paidRecords(credits, () => host),
     blobChoice: paidBlobs(credits),
-    ...(lookup && { rowLookup: lookup }),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
+    verifyNote,
   })
   const inner = new URL(await host.listen(0))
   const blobQueue = new Map<string, Promise<void>>()
@@ -444,28 +409,33 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
   const server = createServer((req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
     // the process.
-    let path: string
-    try {
-      path = new URL(req.url ?? '/', 'http://host.invalid').pathname
-    } catch {
+    const path = URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname
+    if (path === undefined) {
       req.resume()
-      return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
+      return void res.writeHead(400, CORS).end()
     }
     if (path === '/' && (req.method === 'GET' || req.method === 'HEAD')) {
       req.resume()
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
+      res.writeHead(200, { ...CORS, 'content-type': 'text/plain; charset=utf-8' })
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
     if (creditRoute(credits, path, req, res)) return
-    const name = req.method === 'PUT' ? BLOB_PUT.exec(path)?.[1] : undefined
+    const name = req.method === 'PUT' || req.method === 'DELETE' ? BLOB.exec(path)?.[1] : undefined
     if (!name) return forward(inner, req, res)
-    // One put of the same bytes at a time: a second finds them kept, and pays nothing. Their reserved
-    // price is taken before the answer goes back, once the standard's host answers that it kept them.
+    // One put or delete of the same bytes at a time: a second put finds them kept, and pays nothing.
+    // A put's price was reserved by the standard's host (paidBlobs); a delete's floor is reserved here,
+    // when the folder holds it, and the delete goes on either way. Each is taken once the standard's
+    // host answers that it carried the request out, before the answer goes back, or released.
     const turn = (blobQueue.get(name) ?? Promise.resolve()).then(
-      () => new Promise<void>((done) => forward(inner, req, res, (kept) => {
-        credits.stored(name, kept)
-        done()
-      })),
+      () =>
+        new Promise<void>((done) => {
+          const folder = req.method === 'DELETE' ? deleteFrom(req.headers['forest-blob'], name) : null
+          if (folder) credits.reserve(name, folder, credits.floor)
+          forward(inner, req, res, (carried) => {
+            credits.settle(name, carried)
+            done()
+          })
+        }),
     )
     blobQueue.set(name, turn)
     void turn.then(() => {
@@ -482,7 +452,6 @@ export async function startHost(config: Config, stand: { connection?: Pick<Conne
     host,
     credits,
     server,
-    moved: { imported, toBucket },
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
