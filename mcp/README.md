@@ -2,138 +2,167 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-`forest`, one small program that does Forest actions for a profile, given its address and an
-access key, as typed commands and as MCP tools; and the Open Forest Foundation's hosted copy of its
-MCP door (a door is one way in: typed commands, or MCP tools), for AI chats that cannot run a
-program on the person's device.
+`forest` is the AI's door to Forest: one small program that reads markets, searches, reads a
+profile, and acts for a person with the access keys their app made.
 
-The foundation runs the hosted copy, on devnet. Anyone can run another, from this Dockerfile or
-from this directory alone, or run `forest` on their own device instead.
-
+Its job is two things: acting for a person with the keys their app made for it, and reading what
+indexes say. It does both as typed commands and as MCP tools. The foundation runs one copy, hosted
+at https://mcp.forest.foundation, for AI chats that cannot run a program on the person's device.
+Anyone can run another; the main way is this directory on their own device, or its image. It keeps
+nothing of the person's: no key, no record, no message.
 
 ## How it works
 
-`forest` is for people, scripts and AI chats. It reads folders from hosts with the standard's
-records library, and checks every signature itself. It reads markets and scores from an index. It writes
-and sends only with access keys
-([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
-never a main key. With only a message key you can send messages as the profile and ask for anything
-else; you can write no record and move no money. It stores nothing: every call carries the key it
-needs, or the copy was started with it.
+`forest` reads folders from hosts with the standard's records library, and checks every signature
+itself. It reads markets from the markets directory at one commit, and posts, search results, checks
+and ratings from an index. It writes and sends only with access keys
+([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#access-keys)),
+never a main key, and only where the profile's permissions record lists them.
 
 ### Two doors
 
-Both doors read one file, `src/actions.ts`: a short text on how Forest works, and each action's
-words, key and parameters.
+Both doors read one list: every file in `src/tools/`, each exporting its name, its description
+(the key it needs, first), its parameters and its work. A new tool is one more file.
 
 - **Typed commands,** for people, scripts and agents that run commands:
-  `forest <action> [<argument>] [--name value …]`. Objects are given as JSON. Every answer is
-  JSON; a refusal is one line, with exit status 1. `forest help` shows how Forest works, then
-  every action and the key it needs.
-- **MCP tools,** for AI chats. Every action is also a tool, whose description starts with the key
-  it needs (`No key.`, `Writing key.` or `Inbox key.`), then says what it does; the AI first gets
-  the text on how Forest works, as the server's instructions, and the mark on paper is the server's
-  icon ([The hosted copy](#the-hosted-copy)).
+  `forest <tool> [<argument>] [--name value …]`. Objects are given as JSON. Every answer is JSON; a
+  refusal is one line, with exit status 1. `forest help` shows how Forest works, then every tool.
+- **MCP tools,** for AI chats. The AI first gets `HOW` (`src/tools.ts`), a short text on how Forest
+  works, as the server's instructions; the mark on paper is the server's icon
+  ([How we run it](#how-we-run-it)).
   - `forest mcp` serves the tools over stdio, for an AI app on the same device.
   - `forest mcp --http [hostname:]port` serves them over Streamable HTTP at its root, and at `/mcp`
-    for connectors added before, for a hosted copy; it leaves out `private`. It listens on
+    for connectors added before, with no session: each request gets a fresh server. It listens on
     127.0.0.1 unless told otherwise; TLS is the operator's.
 
-### The actions and their keys
+### The tools
 
-| Action | Key | What it does |
+| Tool | Key | What it does |
 |---|---|---|
-| `markets` | none | The markets an index uses, one line each, with each role's plain word: `tutoring: teacher (seller), student (buyer)`, `plumbing: seller, buyer`, `tennis: peer` |
-| `market <market>` | none | What an index says of a market |
-| `profile <address>` | none | A profile's card, its offers and the reviews it wrote, from its hosts, every signature checked; and, if an index is set, that index's summary of it, such as its scores, less what the hosts gave ([Hosts and the index](#hosts-and-the-index)). The card's inbox key and its inbox's readers, long public keys a message is sealed to, are left out unless `publicKeys` is true |
-| `offer <action> [<id>]` | writing | `post`, `update` or `remove` an offer at `offer/<id>`. An offer from a buyer-side profile is a request: direction `request` |
-| `review` | writing | A review at `review/<id>` |
-| `inbox` | inbox | The messages to the profile, from each of its hosts; each one opened if the inbox key's read key is one of the inbox's readers, and marked `unopened` if not |
-| `send <to>` | inbox | A message to another profile's inbox; and, when it is text, a copy, `{ text, to }`, in the profile's own inbox, where the person's app shows it. The copy costs the sender's folder one write, as any message does |
-| `ask <kind>` | inbox | Ask the person, through the profile's own inbox, for one of the standard's request kinds ([Requests](#requests)) |
-| `private` | inbox (its read key) | The profile's private records the read key opens. Typed and over stdio only: a hosted copy leaves it out |
+| `markets` | none | Every market in the directory this copy reads: its name, what the dealing is, its roles and what each posts (offers, requests, or just posts); and the names of the markets the index lists |
+| `market <name>` | none | The market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it: roles, the fields of a post and of a review, payment schedules, how deals go; and its posts by role, from the index |
+| `search` | none | The index's search, with its filters: `q`, `market`, `role`, `near` (`lat,lon`), `km`, `minRating`, `minReviews`, `limit`, `offset` |
+| `profile <address>` | none | The profile record, its posts and the reviews it wrote, read from its hosts, each with its full address; and the index's checks (which issuers' notes it shows) and rating for it. The profile record's inbox key and its inbox's readers, long public keys `send` finds itself, are left out |
+| `post <post\|update\|remove> [<id>]` | write | A post at `offer/<id>` in the profile's folder, on each of its hosts; a fresh id, 16 hex digits, when none is given to post |
+| `review <post\|update\|remove> [<id>]` | write | A review at `review/<id>`, so a person can correct or withdraw one |
+| `send <to>` | write | A message to another profile's inbox: the body, any JSON object the two apps agree on, sealed to that profile's inbox key and its inbox's readers, and signed with the write key for the profile |
+| `inbox` | read | The messages to the profile, pulled from each of its hosts with the read key and opened with it; one not sealed to it shows who sent it and when, unopened. `after` takes the cursors a pull returned |
+| `ask <kind>` | write | A request in the profile's own inbox, for the person to act on ([Requests](#requests)) |
+
+Each description starts with the key it needs: `No key.`, `Write key.` or `Read key.`
 
 ### The keys
 
-The person's app gives two access keys for one profile
-([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
-each as a grant writes it (a grant is the message that hands an access key to someone)
-([grants](https://github.com/foundationforest/standard/blob/main/records/README.md#grants)):
+The person's app makes access keys for one profile, lists them in its permissions record, and gives
+them with the profile's address
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)):
 
-- **The writing key** (`writingKey`): a write key, which posts, updates and removes offers, and
-  posts reviews.
-- **The inbox key** (`inboxKey`): a message key and a read key joined by a dot,
-  `<message key>.<read key>`, which `forest` splits on the dot. The message key pulls the inbox,
-  sends messages as the profile, and asks; the read key opens the messages. It is not the
-  profile's own inbox key, which the app keeps with the main key.
+- **The write key** (`writeKey`), scope `write`: posts, updates and removes posts and reviews where
+  its paths cover them, and sends messages and asks when its paths cover `inbox`.
+- **The read key** (`readKey`), scope `read`: pulls the inbox when its paths cover `inbox`, and
+  opens what is sealed to it. Senders seal to it when the profile record names it among its inbox's
+  readers.
 
-The older names, `writeKey`, `messageKey` and `readKey`, are still taken, for chats and setups made
-before; when a call gives both, the app's name wins. Before it signs anything, `forest` checks each
-key against the profile's permissions record, and refuses in plain words:
+Each is its 32 bytes in base64url, 43 characters ([FAQ](#faq)). Every tool that needs one takes it
+in the call, with `profile`, the address it acts for. A copy on the person's own device may start
+with them instead, in `FOREST_PROFILE`, `FOREST_WRITE_KEY` and `FOREST_READ_KEY`, and uses them when
+a call carries none, so the AI never sees them. They come from the environment only, because a flag
+shows in the process list and in the shell's history. A hosted copy takes keys only in the call,
+and refuses to start with one in its environment: otherwise every caller would act as that person.
 
-- No key: `no key for this; use ask`.
-- A key that is not listed, is listed with another scope or as past, or whose paths don't cover
-  the path.
-- The profile's main key, or its own inbox key: only access keys are taken
-  ([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#rules-for-apps-that-hold-keys)).
-- A path the owner wrote. The owner wins, so only the owner's app can change it.
-- An offer or a review that does not fit its shape
-  ([the standard's schemas](https://github.com/foundationforest/standard/tree/main/records/schemas)).
-  `createdAt` is set if it is missing.
+**Checked before anything is signed.** Before a write, a message or a pull, `forest` reads the
+profile's folder, finds the key in its permissions record with the right scope, its paths covering
+the path (`offer/<id>`, `review/<id>`, or `inbox`), and otherwise refuses with
+`this key is not listed for <path>`, so a mistake is caught before a host sees it. The same words
+say every way a key is not listed: not there, removed, listed with the other scope, or for other
+paths. It also refuses, in plain words:
+
+- a call with no key: `this needs the write key (writeKey), as the person's app gives it`, or the
+  read key;
+- a key not spelled as 32 bytes in base64url;
+- a path the person's main key wrote: the main key wins, so only their app changes it;
+- `post` where something is already there, `update` or `remove` where nothing is.
+
+### Market checks
+
+A post's and a review's body is checked against the market the profile's own profile record names
+(`market`, `role`), before anything is signed. Each field is checked against a JSON Schema made
+from the market file and the nine types in the directory's `build/types.json`: a field the market
+names, for this role, of its type, and a choice among its values. A body that fails is refused
+naming the field: `subjects takes a list, each different, each one of maths, physics, …`,
+`a post in tutoring has no field colour`, `photos is for posts by seller`.
+
+A review's shared fields are checked by what the manual says they mean: `subject` an address,
+`score` `"1"` to `"10"` as decimal text with at most one decimal, `offer` a post's address
+(`<profile address>/offer/<id>`), `text` and `evidence` text. A review names its `subject`. A
+field the market keeps for reviews of some roles reads the subject's profile record for its role.
+A field the market marks `required` is not asked for here: the manual says an app asks for it, and
+nothing enforces it.
 
 ### Requests
 
-The one way to have something done that no key here allows. `ask` names one of the standard's
-request kinds, with that kind's parameters, and sends them to the profile's own inbox as a request
-body
-([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
-Requests). The kinds are the standard's, by its names, since the person's app reads the body
-whatever asked: `post-offer`, `update-offer` and `remove-offer` (what `offer` does), `post-review`
-(what `review` does), `send`, `inbox`, `private`, and `pay`. Typed:
-`forest ask post-offer --params '{"offer": {…}}'`. Over MCP: `action` and `params`. The parameters
-are checked against that kind's own, the ones the standard lists, so a request never carries a
-key. For `pay` they are `offer`, the offer's address (`<profile address>/offer/<id>`), and if
-wanted `units`, a whole number of hours or days, and `note`. The person's app shows it, and does it
-with the main key, or not.
+`ask` is the one way to have something done that no key here allows. It sends
+`{ "request": <kind>, …its fields }` to the profile's own inbox, signed by the write key; the
+person's app shows it, and does it with the main key, or not. The kinds and their fields are this
+tool's own, not the standard's: the standard leaves a message's body to the two apps
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)).
 
-`inbox` marks a message `"request": <kind>` only when the profile sent it to itself, by its main
-key or by a message key its permissions record lists, and its parameters fit that kind. Any other
-`request` body, such as a stranger's, shows as a plain message.
+| Kind | Fields |
+|---|---|
+| `post-offer` | `body`, the post's fields; `id` if wanted |
+| `update-offer` | `id`; `body` |
+| `remove-offer` | `id` |
+| `post-review` | `body`, the review's fields; `id` if wanted |
+| `pay` | `offer`, the post's address, `<profile address>/offer/<id>`; `units`, a whole number from 1, and `note`, if wanted |
+
+A body is checked against the market as `post` and `review` check it, and a request never carries a
+key. Typed: `forest ask pay --params '{"offer": "<profile address>/offer/<id>", "units": 2}'`.
+
+`inbox` marks a message `"request": <kind>` only when the profile sent it to itself, by its main key
+or a write key its permissions record lists, and its fields fit that kind. Any other body that says
+`request`, such as a stranger's, shows as a plain message.
 
 ### Settings
 
 | Flag | Variable | What it sets |
 |---|---|---|
-| `--host <origin>` | `FOREST_HOSTS`, comma separated | The hosts to start from. Without one: the hosts the foundation's index reads, from its public list ([`index/lists/hosts.json`](../index/lists/hosts.json) on this repo's `main`), read once per run |
-| `--index <url>` | `FOREST_INDEX` | The index for markets and scores. No default; the foundation's devnet index is https://index.devnet.forest.foundation |
-| `--profile <address>` | `FOREST_PROFILE` | The profile acted for |
-| | `FOREST_WRITING_KEY`, `FOREST_INBOX_KEY` | The keys, as the app gives them; the older `FOREST_WRITE_KEY`, `FOREST_MESSAGE_KEY` and `FOREST_READ_KEY` are still taken. They come from the environment only, because a flag shows in the process list and in the shell's history |
+| `--host <origin>` | `FOREST_HOSTS`, comma separated | Where a profile's hosts record is looked for first. https://host.forest.foundation, the foundation's host, if none |
+| `--index <url>` | `FOREST_INDEX` | The index read for posts, search, checks and ratings. https://index.forest.foundation, the foundation's index, if none |
+| `--profile <address>` | `FOREST_PROFILE` | The profile acted for, when a call gives none |
+| | `FOREST_WRITE_KEY`, `FOREST_READ_KEY` | The keys, as the person's app gives them, when a call gives none |
 
-Over MCP, each tool also takes `profile` and its key in the call (`writingKey` or `inboxKey`). A
-key in the call wins over one from the start.
-
-### Hosts and the index
+### Hosts, markets and the index
 
 A folder is always read from hosts, never from an index:
 
 - `forest` reads the profile on each start host, then on every host its hosts record names, by
-  POST so the address is in no URL; the standard's records library (`readProfile`) checks every record.
-- Writes and messages go to the hosts that the hosts record names.
-- A profile with no records on any start host is out of reach until one of its hosts is added with
-  `--host`.
-- A host other than the start hosts is reached only at a public address, through the standard's public
-  fetch (`publicFetch`, records/src/public.ts): one in any range IANA marks as not globally
-  reachable, written or looked up, is refused before anything is sent. No request follows a
-  redirect, and a folder read, or an inbox pull, stops after 100 pages.
+  POST so the address is in no URL, with the records library's `readProfile`, which checks every
+  record.
+- Writes and messages go to every host the hosts record names. A host that charges for writes, as
+  the foundation's does in credits ([host](../host/README.md#credits)), refuses a write the folder's
+  balance cannot pay, and `forest` passes its answer on.
+- A host other than the start hosts is reached only at a public address, through the standard's
+  `publicFetch`. No request follows a redirect, and a folder read, or an inbox pull, stops after
+  100 pages.
 
-An index is read for three things only: `GET <index>/index.json`, for its markets and each one's
-role words (`roleWords`); `GET <index>/markets/<market>.json`; and
-`GET <index>/profiles/<address>.json`. All are passed on as that index's word. This JSON is the
-foundation's index's own format ([`index/`](../index/README.md)), not part of the standard: the
-market's carries no signatures, a profile's carries its scores signed, and other indexes may
-differ. `forest` checks none of it. Of a profile's, `profile` passes on what the hosts did not
-give: it leaves out the offers and requests, and the reviews the profile wrote, which it read
-signed from the hosts; and, unless `publicKeys` is true, the card's keys, as on the card.
+The markets come from `../markets`, the markets directory at the commit in `MARKETS`, which
+`standard.sh` fetches beside the standard: `directory.json`, each market's file, and
+`build/types.json`. Nothing about markets is read over the network while it runs.
+
+An index is read for four answers, each passed on as that index's word, unchecked; a `url` beside
+each says where it was read:
+
+| Request | The fields it reads |
+|---|---|
+| `GET <index>/index.json` | `index`, its address; `markets`, each with `name`, `description` and `roles` |
+| `GET <index>/markets/<name>.json` | `index`; `market`, the market file; `posts`, by role, a list of results |
+| `GET <index>/search.json?q&market&role&near&km&minRating&minReviews&limit&offset` | `index`; `total`; `results` |
+| `GET <index>/profiles/<address>.json` | `index`; `checks`, each `{ issuer, key, label }`; `rating`, `{ value, reviews, withPayment }` |
+
+A result is `{ profile, market, role, post: { address, body }, rating, checks }`. `market` passes
+on only `posts`, and `profile` only `checks` and `rating`: the rest is read from the markets
+directory and the hosts. An index that does not answer never hides what the directory or the hosts
+gave: `markets`, `market` and `profile` say why it gave nothing, beside the rest.
 
 ### Three setups
 
@@ -145,42 +174,73 @@ Who sees the keys, and what they open, depends on where `forest` and the AI run:
 | Hybrid | on your device, `forest mcp` started with keys | in a company's cloud | your device only | the AI's maker: every answer goes to the AI |
 | Local | on your device, started with keys | on your device | your device only | your device only |
 
-- **Started with keys** in its environment, `forest` uses them whenever a call carries none, so
-  the AI never sees them. They stay in memory while it runs, and are never written.
-- **A hosted copy** takes keys only in the call, and refuses to start with one in its
-  environment: otherwise every caller would act as that person. Each request gets a fresh server,
-  with no session, and nothing is written.
-- In the cloud and hybrid setups, what the AI's maker sees is kept or not by that company's
-  promises.
+Started with keys, `forest` keeps them in memory while it runs, and never writes them. In the cloud
+and hybrid setups, what the AI's maker keeps is that company's choice.
 
-### The hosted copy
+### Run it
 
-`deploy/Dockerfile` builds one image: Node 22.22.2, the standard's records library at the commit in
-`STANDARD` (`standard.sh records`), and this directory, started as
+```sh
+./standard.sh                      # from the repo root: the standard, built, and the markets
+cd mcp && npm ci                   # the standard's packages by name, linked into standard/
+npm run check                      # type-check
+npm test                           # every tool on the standard's reference host; both doors; the image's own command
+node src/main.ts help
+npm run smoke -- https://mcp.forest.foundation [<profile address>]
+```
 
-    forest mcp --http 0.0.0.0:$PORT --index https://index.devnet.forest.foundation
+Node 22.18 or later. Built from existing pieces, used unchanged: the standard's keys and records
+packages (`@foundationforest/keys`, `@foundationforest/records`, through file: links into
+`standard/`); `@modelcontextprotocol/sdk`, for the MCP door; `ajv` and `ajv-formats`, for the
+market checks, the versions the markets directory's own check uses.
 
-- **The tools.** Eight, over Streamable HTTP at the copy's root, and at `/mcp` for connectors added
-  before: `markets`, `market` and `profile`; `offer` and `review`; `inbox`, `send` and `ask`. Each
-  description starts with the key it needs. `private` is left out ([FAQ](#faq)). A chat first gets
-  the text on how Forest works.
-- **No session.** Each request gets a fresh server, gone when the answer is sent. Nothing is
-  written.
-- **Keys only in the call.** A tool that needs a key takes it in the call (`writingKey` or
-  `inboxKey`, or an older name), with the `profile` it acts for. The image sets none, and `forest`
-  refuses to start a hosted copy with one.
+`test/tools.test.ts` runs every tool against the standard's reference host on loopback, behind a
+front that counts each request, and a stand-in index serving the four answers. It shows: each of
+the nine tools, what they write read back with the records library; a write with a key not listed
+for its path refused with no record reaching the host; a post failing its market's fields refused
+naming the field; a review with a score out of range refused; `send` sealed so that only the
+recipient's inbox key opens it; `inbox` pulling with the read key and opening; and `ask` landing in
+the person's own inbox with its kind. `test/doors.test.ts` runs the typed door, the MCP door over
+stdio with keys from the start, and over HTTP with keys in the call. `test/smoke.test.ts` reads the
+command and working directory from `deploy/Dockerfile`, runs them here with `PORT=0`, and connects
+with the MCP SDK's own client (`smoke.ts`): `HOW` first, as the server's instructions, the mark as
+its icon, no session, every tool with the key it needs, a call refused before it reads anything in
+`forest`'s words, the same tools at `/mcp`, the icon at `/favicon.ico` and `/icon.svg`, and `//`
+answered 400 while it goes on answering. With a key in its environment, the same command refuses to
+start. `npm run smoke` runs the same client against a deployed copy, and reads the market `tutoring`
+and, if given, a profile through it.
+
+## How we run it
+
+The foundation's hosted copy, at https://mcp.forest.foundation:
+
+- **The image.** `deploy/Dockerfile`: Node 22.22.2, the standard at `STANDARD` and the markets at
+  `MARKETS` (`standard.sh`), and this directory, started as
+  `forest mcp --http 0.0.0.0:$PORT --index https://index.forest.foundation`.
+- **The tools.** All nine, over Streamable HTTP at its root and at `/mcp`. A chat first gets `HOW`.
+- **Free:** no price and no sign-in.
+- **Keeps nothing:** no key, record, message or call is written; each request gets a fresh server,
+  gone when the answer is sent.
+- **Keys only in the call.** The image sets none, and `forest` refuses to start a hosted copy with
+  one.
+- **Logs no call:** `forest` writes one line when it starts, and nothing for a request.
+- **What it reads:** profiles from the foundation's host first, then the hosts each profile's hosts
+  record names; markets from the directory at `MARKETS`; posts, search, checks and ratings from the
+  foundation's index.
+- **Its numbers:** at most 100 pages for one folder read or one pull; at most 4,194,304 bytes of an
+  index's answer; the records library's 60 seconds for a read.
+- **No rate limit.**
 - **The icon.** The mark on paper: ink `#121A15` on paper `#EDEAE0`, three chevrons
   (`8,12 20,3 32,12`, `8,22 20,13 32,22` and `8,32 20,23 32,32`) and a trunk (`20,24` to
-  `20,38`), stroke 4, in a 56-unit square with 8 of margin. The server's info declares it as an
-  SVG; the copy serves it at `/icon.svg`, and at `/favicon.ico` as an ICO of 16, 32, 48 and 64
-  pixels. `src/icon.ts` draws both from the mark's strokes.
-- **What it reads.** Folders from its start hosts, the hosts on the foundation's index's public
-  list, read once per start, and from every host a profile's hosts record names, every signature
-  checked; markets and summaries from the foundation's devnet index, passed on as that index's
-  word.
+  `20,38`), stroke 4, in a 56-unit square with 8 of margin. The server's info declares it as an SVG;
+  the copy serves it at `/icon.svg`, and at `/favicon.ico` as an ICO of 16, 32, 48 and 64 pixels.
+  `src/icon.ts` draws both from the mark's strokes.
+- **Where it runs:** Railway, service `mcp`: this repo, `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`,
+  one replica, a public domain to the port in `PORT`, no volume, and no health check (the root and
+  `/mcp` answer only what an MCP client sends; a plain `GET` gets 406). Its only variable is
+  `PORT=8080`, and no key.
 
-This copy is the cloud setup (Three setups). Hosts and indexes see this copy's network address,
-not the person's.
+Hosts and indexes see this copy's network address, not the person's. This copy is the cloud setup
+(Three setups).
 
 ### Connect a chat
 
@@ -196,87 +256,19 @@ The address is `https://mcp.forest.foundation`. It asks for no sign-in. A connec
   mode on, then add an MCP app with that address and no authentication. OpenAI moves these menus;
   its help article "Developer mode and MCP apps in ChatGPT" says where they are now.
 
-On connecting, a chat gets a short text on how Forest works (`HOW` in `src/actions.ts`):
-
-- one profile per market and role, and nothing public links a person's profiles: keep it so;
-- reading needs no key: `markets`, a `market`, any `profile`;
-- what each key allows: the writing key (`writingKey`) posts, updates and removes offers, and
-  posts reviews; the inbox key (`inboxKey`) pulls and opens the inbox, sends messages as the
-  profile, and asks the person;
-- the keys come in each call that needs one, and the tool keeps none;
-- an offer from a buyer-side profile, such as `tutoring/buyer`, is a request: direction `request`;
-- for money, or what a key it doesn't hold would do, it uses `ask` and tells the person to open
-  their app and approve it with their face; for a new profile or a removed key, which are not
-  requests, it tells the person to do it in their app.
-
-To act for a profile, the person pastes into the chat the block their app gives: `profile` (the
-profile's address) and the two keys the app made for it, as `writingKey` and `inboxKey`, the
-tools' own names.
-
-### Run it
-
-```sh
-./standard.sh keys records         # the CLI runs on records' library; the tests take their keys from keys/
-cd mcp && npm ci
-npm run check                      # type-check
-npm test                           # every action on records' reference host on loopback; both doors; the image's own command
-node src/main.ts help
-npm run smoke -- https://mcp.forest.foundation [<profile address>]
-```
-
-Node 22.18 or later. Built from existing pieces, used unchanged:
-
-- the standard's records library, and its public fetch, to reach a host only at a public address;
-- `@modelcontextprotocol/sdk`, for the MCP door;
-- `ajv` and `ajv-formats`, for the record shapes;
-- `age-encryption`, to work out a read key's public half.
-
-`test/actions.test.ts` and `test/doors.test.ts` run every action, through both doors, against
-records' reference host on loopback, with the keys by the app's names and by the older ones.
-`test/smoke.test.ts` reads the command and working directory from `deploy/Dockerfile`, runs them
-here with `PORT=0`, and connects at its root with the MCP SDK's own client (`smoke.ts`). It checks
-that the text on how Forest works comes first, as the server's instructions, with the mark as the
-server's icon; that there is no session; that the hosted copy's eight tools are there, each
-description starting with the key it needs; that a call refused before it reads anything (an
-address that is not one, a write with no key) says why in the CLI's words; that `/mcp` lists the
-same tools; that `/favicon.ico` and `/icon.svg` serve the mark; and that a request for `//` gets
-400 and it goes on answering. It also checks that the same command, with a key in its environment,
-refuses to start. `npm run smoke` runs the
-same client against a deployed copy, and reads the market `tutoring` and, if given, a profile
-through it.
-
-### On devnet
-
-The foundation's devnet copy runs that image on Railway, service `mcp`, at
-https://mcp.forest.foundation, the tools at its root and at `/mcp`:
-
-- **Source:** this repo, branch `main`; `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`.
-- **One replica,** a public domain to the port in `PORT`, no volume.
-- **No health check:** the root and `/mcp` answer only what an MCP client sends (a plain `GET`
-  gets 406), `/favicon.ico` and `/icon.svg` the icon, and every other path 404.
-- **Variables:** `PORT=8080`. Nothing else, and no key.
-
-## How we run it
-
-The hosted copy's:
-
-- **Free:** no price and no sign-in.
-- **Keeps nothing:** no key, record, message or call is written; each request gets a fresh server.
-- **Logs no call:** `forest` writes one line when it starts, and nothing for a request.
-- **Its index** is the foundation's devnet index; **its start hosts,** that index's public list.
-- **No rate limit.**
-- **Where it runs:** Railway, one replica.
+To act for a profile, the person pastes into the chat what their app gives: `profile`, the
+profile's address, and the keys it made for it, as `writeKey` and `readKey`, the tools' own names.
 
 ## Promises
 
 - **It keeps nothing.** No key, record or message is written anywhere, and each call reads again
-  what it needs. The only thing it holds between calls is the public list of hosts to start from.
-- **Never a main key.** It refuses a profile's main key and its own inbox key. It acts only with
-  access keys, within the scopes and paths the permissions record lists.
-- **It checks what it reads from hosts.** The standard's records library checks every record and message
-  from a host, signature included. What an index says is passed on as the index's word, and
+  what it needs.
+- **Never a main key.** It acts only with access keys, and only where the profile's permissions
+  record lists them.
+- **It checks what it reads from hosts.** The standard's records library checks every record and
+  message from a host, signature included. What an index says is passed on as the index's word, and
   labelled so.
-- **It moves no money.** There is no pay action. Paying is a request, answered by the person's own
+- **It moves no money.** There is no pay tool. Paying is a request, answered by the person's own
   app.
 - **No key in the hosted copy's environment.**
 - **No accounts.**
@@ -288,22 +280,24 @@ The hosted copy's:
 - **A hosted copy sees each key while it acts.** It keeps none, but you trust its operator, the
   foundation for this one, while it acts. The AI's maker also sees every key the AI writes into a
   call (Three setups).
-- **Profiles off the start hosts are out of reach.** A profile that no start host holds can't be
-  read, written to or sent to until its host is added; for the hosted copy, until it is added to
-  the foundation's index's list.
-- **An AI reading strangers' text can be steered** by what they wrote. With only a message key, it
-  can send messages as the profile and ask, and nothing else.
-- **What an index says goes unchecked.** The market list carries no signatures; the scores on a
-  profile's page are signed, and `forest` passes them on as the index gave them, without checking
-  the signatures. It can't tell whether an index is honest; it only passes on what the index says.
+- **A profile its start hosts do not hold is out of reach** until one of its hosts is given; for
+  the hosted copy, any profile the foundation's host does not hold.
+- **An AI reading strangers' text can be steered** by what they wrote. It can do no more than its
+  keys' scopes and paths allow.
+- **What an index says goes unchecked.** `forest` passes on what it says without checking any
+  signature on it; it cannot tell whether an index is honest.
+- **The markets are the directory's at one commit.** A market added since is unknown here until
+  `MARKETS` moves, and an index may list markets this copy cannot check posts for.
 - **Not here:**
   - paying;
-  - blobs (photos and videos);
-  - handing out keys: a message carrying a grant is refused;
-  - reviews others wrote about a profile, except through an index's summary: they sit in their
-    writers' folders, and only an index gathers them.
-- **Slow.** On every call it reads the whole folder from every start host, and checks signatures
-  in JavaScript
+  - putting or deleting blobs (photos and videos): a post can name a blob the folder already
+    holds;
+  - buying credits for a host that charges;
+  - handing out keys, making a profile, or anything else only the main key does;
+  - the reviews others wrote about a profile: they sit in their writers' folders, and the index
+    counts them into its rating.
+- **Slow.** On every call it reads the whole folder from every host, and checks signatures in
+  JavaScript
   ([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#limits)).
 - **No rate limit.** Anyone can keep the hosted copy busy, and every call reads whole folders from
   hosts.
@@ -311,44 +305,36 @@ The hosted copy's:
 
 ## Who decides what
 
-- **The standard:** only the request body, its kinds and each one's parameters, which
-  [the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox)
-  holds.
-- **The foundation, in this directory:** the actions, what each says and which key it needs; and,
-  as it runs the hosted copy, the index it reads, where it runs, and that it is free.
+- **The standard:** keys, records, the permissions record and its scopes, messages and their
+  envelopes.
+- **The markets directory, at the commit in `MARKETS`:** each market's roles and fields.
+- **The foundation, in this directory:** the tools, what each says and which key it needs, the
+  request kinds and their fields; and, as it runs the hosted copy, the host and index it reads,
+  where it runs, and that it is free.
 - **Whoever runs a copy:** the hosts it starts from, the index it reads, and, for a copy run at
   home, the keys it starts with.
 - **The person, through their app:** which access keys to hand out, with which scopes and paths,
-  when to make one past, and what to do with each request.
-- **An index, by its own choice:** what its markets and scores say.
+  when to remove one, and what to do with each request.
+- **An index, by its own choice:** what its posts, checks and ratings say.
 - **The AI's maker:** what it keeps of a conversation, keys included.
 
 ## FAQ
 
-**Why is there no pay action?**
-A seller's invoice is an escrow anyone can pay into with a plain transfer, so a person's own setup
-could let an AI pay one; this copy offers no tool that moves money.
+**Why is there no pay tool?**
+Moving money takes a payment key, which only the person's app holds; anyone can pay with their own
+setup, and the main way here is a `pay` request their app answers. This copy offers no tool that
+moves money.
 
-**Why can't a request ask for a new profile or a removed key?**
-A request names one of the standard's request kinds: the actions here that need a key, and `pay`
-([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#inbox),
-Requests). A new profile and a removed key are neither, so the chat tells the person to do them in
-their app.
+**Why are keys spelled in base64url?**
+The standard gives an access key as 32 random bytes and names no way to write them down. Base64url
+without padding is how the standard's records write bytes, so it adds no spelling of its own.
 
-**Why does it refuse the profile's own inbox key?**
-The profile's own inbox key opens every message and grant sent to the profile, and grants hold
-keys. It is mixed from the main key, and stays on the device with it. The inbox key the app gives
-(`inboxKey`) is two access keys instead: a message key, and a read key, which opens only what is
-encrypted to it.
-
-**Why does the hosted copy leave out `private`?**
-So that a chat given the inbox key reads the inbox through it, and nothing else of the folder: the
-inbox key's read key would also open the private records encrypted to it. Where `forest` runs on
-the person's own device, typed or over stdio, `private` is there.
+**Why are markets read from a checkout, and not from the network?**
+So every answer comes from the commit in `MARKETS`, the one the tests ran against, and a market
+file changing upstream changes nothing here until the pin moves.
 
 **Why is the index in the Dockerfile, and not a Railway variable?**
-So the image says what it reads, as the index's lists in this repo do. Another copy changes that
-line.
+So the image says what it reads. Another copy changes that line.
 
 **Why is the deployed copy not checked in CI?**
 CI checks only what this repo holds, and a check that cannot reach what it needs would skip, which

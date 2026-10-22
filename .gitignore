@@ -1,5 +1,6 @@
-# standard at the commit in STANDARD, fetched by standard.sh
+# standard at the commit in STANDARD, and markets at the commit in MARKETS, fetched by standard.sh
 standard/
+markets/
 
 node_modules/
 *.tsbuildinfo

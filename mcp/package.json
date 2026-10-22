@@ -2,7 +2,7 @@
   "name": "@forest/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "forest: Forest actions given a profile's address and an access key, as typed commands and as MCP tools, and the foundation's hosted copy of its MCP door (deploy/Dockerfile). It stores nothing. smoke.ts checks a copy through the MCP SDK's own client.",
+  "description": "forest, the AI's door to Forest: read markets, search, read a profile, and act for a person with the access keys their app made, as typed commands and as MCP tools; and the foundation's hosted copy of its MCP door (deploy/Dockerfile). It stores nothing. smoke.ts checks a copy through the MCP SDK's own client.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -17,8 +17,9 @@
     "smoke": "node smoke.ts"
   },
   "dependencies": {
+    "@foundationforest/keys": "file:../standard/keys",
+    "@foundationforest/records": "file:../standard/records",
     "@modelcontextprotocol/sdk": "1.32.1",
-    "age-encryption": "0.3.1",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
   },

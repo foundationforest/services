@@ -15,8 +15,9 @@
 #   e2e          the devnet run's type-check, with mcp's actions it runs and the index's signing key
 #                it reads, and the credits client's tests against a stand-in service made of
 #                Cloudflare's own issuer
-#   mcp          mcp's type-check and tests: every action on records' reference host, both doors,
-#                the hosted copy's smoke test, and the image's own command through the MCP SDK's client
+#   mcp          mcp's type-check and tests: every tool on the standard's reference host and a
+#                stand-in index, with the markets standard.sh fetches at MARKETS; both doors; and the
+#                image's own command through the MCP SDK's client
 #
 # Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
 # run against the deployed mcp. The first two need the standard's programs, its proving files, a local
@@ -169,7 +170,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records
+          ./standard.sh
           (cd mcp && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: mcp
