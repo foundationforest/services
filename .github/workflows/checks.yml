@@ -5,9 +5,9 @@
 #                from its notes and checked against its published keys, the attributes vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its welcome gift's ticket taken by the host's own seller
-#   index        its type-check, and its unit, page, reputation and tier tests on a Postgres service
-#                (real reputation proofs: the reputation circuit's proving files; a real person proof: the
-#                standard's example card's)
+#   index        its type-check and its tests, on loopback: the standard's reference host, real note
+#                proofs from the note circuit's committed proving files, a real reputation proof (the
+#                reputation circuit's proving files, fetched), a stand-in RPC, and the index end to end
 #   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
 #                its Dockerfile makes with deploy/devnet-config.sh
 #   host         the foundation's host: its type-check and its credits' tests, through the standard's
@@ -19,10 +19,9 @@
 #                stand-in index, with the markets standard.sh fetches at MARKETS; both doors; and the
 #                image's own command through the MCP SDK's client
 #
-# Not here: the fee payer's local run, the index's end-to-end test, the e2e run itself and the smoke
-# run against the deployed mcp. The first two need the standard's programs, its proving files, a local
-# validator and (for the fee payer) Kora built; the last two need the deployed services, and the e2e
-# run the devnet phrase.
+# Not here: the fee payer's local run, the e2e run itself and the smoke run against the deployed mcp.
+# The first needs the standard's programs, a local validator and Kora built; the last two need the
+# deployed services, and the e2e run the devnet phrase.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -72,13 +71,6 @@ jobs:
   index:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    services:
-      postgres:
-        image: mirror.gcr.io/library/postgres:16
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports: ['5432:5432']
-        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -86,16 +78,16 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - name: Install
         run: |
-          ./standard.sh keys records registry/client escrow/client reputation/client
-          (cd standard/reputation/circuit && npm run fetch)
+          ./standard.sh
+          (cd standard/proofs/reputation/circuit && npm run fetch)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index
         run: npm run check
-      - name: Test (everything but the end-to-end test)
+      - name: Test
         working-directory: index
         run: |
-          node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts | tee "$RUNNER_TEMP/tap"
+          npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   fee-payer:

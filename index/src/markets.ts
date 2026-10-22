@@ -1,204 +1,122 @@
-// The markets this index uses: every market the markets directory lists, read over HTTPS, never
-// copied; the markets repo's directory is the only list of them. Its `directory.md` names
-// each market with a link to its file, `<folder>/<name>.json`. A market is its one name, byte for
-// byte. The directory is read at start and again every hour (`refresh`), so a market counts as soon
-// as it appears there.
+// The markets, from the markets checkout standard.sh fetches at the commit in MARKETS (../markets
+// from this directory): directory.json, each market's file, and build/types.json. Nothing is read
+// over the network at run time.
 //
-// A file is checked here for what this index reads from it, and nothing more (`checkMarket`).
-//
-// `labelOf(label)` says whether a row's label can count: `market/role` only, the market one this
-// index uses and the role one its sides allow (seller and buyer when two, peer when one). An offer
-// names no market: it is in its author profile's.
+// A market's check, for a post and for a review, reads its file as the markets manual says
+// (build/README.md there), and as the mcp checks a body before it signs one: each field is one the
+// market names, for the role, of its type in types.json; a choice takes only its values; `many`
+// holds a list of the type, each different. `required` is for apps to ask for, and nothing enforces
+// it, so neither does this.
 
-import type { MarketsList } from './config.ts'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
-/** A block of extra fields, as a market file writes it: flat fields in lexicon syntax. */
-export type FieldBlock = { properties?: Record<string, { type: string; description?: string }>; required?: string[] }
+import { PATH, publicKeyFromAddress } from '@foundationforest/records'
+import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
+import formats from 'ajv-formats'
 
-export type MarketFile = {
+export type Field = { type: string; description?: string; values?: string[]; many?: true; required?: true; roles?: string[] }
+export type Role = { role: string; posts: 'offers' | 'requests' | 'posts' }
+export type Market = {
   name: string
-  folder: string
   description: string
-  sides: 'two' | 'one'
-  /** The plain words pages use for the two sides of a two-sided market. */
-  roleNames?: { seller: string; buyer: string }
-  evidenceTypes: string[]
-  offerFields: FieldBlock
-  reviewFields?: FieldBlock
-  ratings: string[]
+  roles: Role[]
+  offer: { [name: string]: Field }
+  review: { shared: string[]; fields?: { [name: string]: Field } }
+  payment: { [name: string]: unknown }
   howDealsGo: string
-  /** Derived, not in the file: seller and buyer when two sides, peer when one. */
-  roles: string[]
 }
 
-export class Directory {
-  readonly markets = new Map<string, MarketFile>()
-  /** Markets the directory lists that could not be used, with why. They count for nothing. */
-  readonly refused: { market: string; errors: string[] }[] = []
-  /** The names the directory listed at the last read, in its order, whether or not their files were usable. */
-  private listed: string[] = []
-  /** Where `fetch` read this from, for `refresh`. Unset for a directory built from files. */
-  private source: { list: MarketsList; get: typeof fetch } | null = null
-
-  constructor(files: { file: string; market: unknown }[]) {
-    for (const { file, market } of files) {
-      const errors = checkMarket(market)
-      if (errors.length) {
-        this.refused.push({ market: file, errors })
-        continue
-      }
-      const m = market as MarketFile
-      this.markets.set(m.name, { ...m, roles: rolesOf(m) })
-    }
-  }
-
-  /**
-   * Every market the directory lists: `directory.md`, then each listed market's file. `directory.md`
-   * that can't be fetched stops the load. A market's own file that can't be fetched, is not JSON,
-   * is JSON `null` or another thing that is not a market file, or is not at its own path, is
-   * refused: left out of `markets`, listed in `refused`, and every other market still loads.
-   */
-  static async fetch(list: MarketsList, get: typeof fetch = fetch): Promise<Directory> {
-    const read = async (path: string): Promise<string> => {
-      const res = await get(`${list.directory}/${path}`)
-      if (!res.ok) throw new Error(`the market directory: ${list.directory}/${path} answered ${res.status}`)
-      return res.text()
-    }
-    const links = new Map(parseDirectory(await read('directory.md')).map((l) => [l.name, l.path]))
-    const files: { file: string; market: unknown }[] = []
-    const refused: { market: string; errors: string[] }[] = []
-    for (const [name, path] of links) {
-      let text: string
-      try {
-        text = await read(path)
-      } catch (err) {
-        refused.push({ market: name, errors: [`could not be fetched: ${err instanceof Error ? err.message : String(err)}`] })
-        continue
-      }
-      let market: unknown
-      try {
-        market = JSON.parse(text)
-      } catch {
-        refused.push({ market: name, errors: ['not JSON'] })
-        continue
-      }
-      if (typeof market !== 'object' || market === null) {
-        refused.push({ market: name, errors: ['not a market file: the JSON is not an object'] })
-        continue
-      }
-      const m = market as { name?: unknown; folder?: unknown }
-      if (m.name !== name || path !== `${m.folder}/${m.name}.json`) {
-        refused.push({ market: name, errors: [`listed at ${path}, but the file names ${String(m.name)} in ${String(m.folder)}`] })
-        continue
-      }
-      files.push({ file: name, market })
-    }
-    const directory = new Directory(files)
-    directory.refused.push(...refused)
-    directory.listed = [...links.keys()]
-    directory.source = { list, get }
-    return directory
-  }
-
-  /**
-   * Reads the directory again and takes what it says now. True when the markets changed. The swap
-   * has no `await` in it, so a request never sees half a list. A read in which `directory.md` does
-   * not answer throws and leaves the markets as they were, to be tried again at the next read. A
-   * market whose own file can't be used is listed in `refused`, but one this directory held before
-   * keeps its last good copy until a read of it succeeds; only a market never read successfully is
-   * left out. Every other market is read as usual, and one the directory no longer lists is dropped.
-   */
-  async refresh(): Promise<boolean> {
-    if (!this.source) throw new Error('this directory was not read from a markets directory')
-    const next = await Directory.fetch(this.source.list, this.source.get)
-    const now = new Map<string, MarketFile>()
-    for (const name of next.listed) {
-      const market = next.markets.get(name) ?? this.markets.get(name)
-      if (market) now.set(name, market)
-    }
-    const same = JSON.stringify([...this.markets]) === JSON.stringify([...now])
-    this.markets.clear()
-    for (const [name, market] of now) this.markets.set(name, market)
-    this.refused.splice(0, this.refused.length, ...next.refused)
-    return !same
-  }
-
-  /**
-   * Whether a row's label counts here: `market/role`, its market one this index uses, byte for
-   * byte, and its role one of that market's roles. A label with no role counts for nothing.
-   */
-  labelOf(label: string): { market: string; role: string } | null {
-    const { market, role } = splitLabel(label)
-    const file = this.markets.get(market)
-    if (!file || role === null || !file.roles.includes(role)) return null
-    return { market, role }
-  }
-
-  /** The plain word for a side in a market: its role name when the file has one, else the role itself. */
-  sideWord(market: string | null, side: 'seller' | 'buyer'): string {
-    const names = market ? this.markets.get(market)?.roleNames : undefined
-    return names?.[side] ?? side
-  }
-
-  folders(): Map<string, string[]> {
-    const out = new Map<string, string[]>()
-    for (const m of this.markets.values()) {
-      out.set(m.folder, [...(out.get(m.folder) ?? []), m.name].sort())
-    }
-    return new Map([...out].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
-  }
+export type Markets = {
+  /** Every market, in the directory's order. */
+  list: Market[]
+  get(name: string): Market | undefined
+  /** The market's file, as the checkout holds it. */
+  file(name: string): unknown
+  /** Why a post by `role` in `market` does not fit its market, or null when it does. */
+  checkPost(market: string, role: string, body: unknown): string | null
+  /** Why a review in `market` does not fit, or null when it does; `subjectRole`, when known, is the role a field's `roles` is read against. */
+  checkReview(market: string, subjectRole: string | null, body: unknown): string | null
 }
 
-/** The roles a market's sides allow: seller and buyer when two, peer when one. */
-export function rolesOf(market: Pick<MarketFile, 'sides'>): string[] {
-  return market.sides === 'two' ? ['seller', 'buyer'] : ['peer']
+/** A post's full address, `<profile address>/offer/<id>`: its profile and its path, or null. */
+export function postAddress(text: unknown): { profile: string; path: string } | null {
+  if (typeof text !== 'string') return null
+  const [profile, ...rest] = text.split('/')
+  const path = rest.join('/')
+  if (!publicKeyFromAddress(profile) || rest.length !== 2 || rest[0] !== 'offer' || !PATH.test(path)) return null
+  return { profile: profile!, path }
 }
 
-const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
+const isObject = (v: unknown): v is { [key: string]: unknown } => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-/**
- * What this index reads from a market file, each with the type it needs; every way the file falls
- * short. Keys it does not read are left alone.
- */
-export function checkMarket(market: unknown): string[] {
-  if (!isObject(market)) return ['a market file is a JSON object']
-  const errors: string[] = []
-  for (const key of ['name', 'folder', 'description', 'howDealsGo']) {
-    if (typeof market[key] !== 'string' || market[key] === '') errors.push(`${key} must be text`)
-  }
-  if (market.sides !== 'two' && market.sides !== 'one') errors.push('sides must be "two" or "one"')
-  if (market.roleNames !== undefined) {
-    const names = market.roleNames
-    if (market.sides !== 'two' || !isObject(names) || typeof names.seller !== 'string' || typeof names.buyer !== 'string') {
-      errors.push('roleNames must be { "seller": …, "buyer": … }, in a two-sided market')
+/** The review fields every market shares, each by its meaning (build/README.md, Shared names). */
+const SHARED: { [name: string]: (value: unknown) => string | null } = {
+  subject: (v) => (publicKeyFromAddress(v) ? null : 'its subject is not an address'),
+  score: (v) => (typeof v === 'string' && /^(10(\.0)?|[1-9](\.[0-9])?)$/.test(v) ? null : 'its score is not "1" to "10" with at most one decimal'),
+  text: (v) => (typeof v === 'string' ? null : 'its text is not text'),
+  offer: (v) => (postAddress(v) ? null : "its offer is not a post's address, <profile address>/offer/<id>"),
+  evidence: (v) => (typeof v === 'string' ? null : 'its evidence is not text'),
+}
+
+/** The markets in the checkout at `dir`. */
+export function loadMarkets(dir: string): Markets {
+  const json = (path: string) => JSON.parse(readFileSync(join(dir, path), 'utf8'))
+  const directory = json('directory.json') as { markets: Array<{ name: string }> }
+  const types = json('build/types.json') as { $id: string }
+  const files = new Map<string, unknown>()
+  for (const { name } of directory.markets) files.set(name, json(`markets/${name}.json`))
+  const markets = new Map([...files].map(([name, file]) => [name, file as Market]))
+
+  const ajv = new Ajv2020({ strict: false })
+  formats.default(ajv)
+  ajv.addSchema(types)
+  const compiled = new Map<string, ValidateFunction>()
+  const validator = (field: Field) => {
+    const key = JSON.stringify([field.type, field.values, field.many])
+    let v = compiled.get(key)
+    if (!v) {
+      const one = field.type === 'choice' ? { type: 'string', enum: field.values } : { $ref: `${types.$id}#/$defs/${field.type}` }
+      compiled.set(key, (v = ajv.compile(field.many ? { type: 'array', uniqueItems: true, items: one } : one)))
     }
+    return v
   }
-  if (!isStrings(market.evidenceTypes)) errors.push('evidenceTypes must be a list of names')
-  if (!isStrings(market.ratings) || !market.ratings.includes('overall')) errors.push('ratings must be a list of names, "overall" among them')
-  for (const key of ['offerFields', 'reviewFields']) {
-    const block = market[key]
-    if (block === undefined && key === 'reviewFields') continue
-    if (!isObject(block) || (block.properties !== undefined && !isObject(block.properties))) errors.push(`${key} must be a block of fields`)
+
+  /** Why `body` does not fit `fields` for `role` (null: any role), or null. */
+  const fit = (body: unknown, fields: { [name: string]: Field }, role: string | null, market: string): string | null => {
+    if (!isObject(body)) return 'it is not an object'
+    for (const [name, value] of Object.entries(body)) {
+      const field = fields[name]
+      if (!field) return `it has a field the ${market} market does not name: ${name}`
+      if (field.roles && role !== null && !field.roles.includes(role)) return `${name} is a field for ${field.roles.join(' or ')} in the ${market} market`
+      if (!validator(field)(value)) return `its ${name} is not a ${field.many ? `list of ${field.type}` : field.type} as the ${market} market takes it`
+    }
+    return null
   }
-  return errors
-}
 
-/**
- * A label is a market, or a market and a role after the first slash: `tutoring` or
- * `tutoring/seller`. Only the slash: market names and roles are slugs, so a label written with any
- * other separator is not a market here and counts for nothing. Accepting two separators would make
- * two labels, so two rows, for one human in one market.
- */
-export function splitLabel(label: string): { market: string; role: string | null } {
-  const at = label.indexOf('/')
-  return at === -1 ? { market: label, role: null } : { market: label.slice(0, at), role: label.slice(at + 1) }
-}
-
-/**
- * What the index takes from the markets repo's `directory.md`: each market's line,
- * ``- [`name`](folder/name.json): …``. Nothing else in the page is read.
- */
-export function parseDirectory(md: string): { name: string; path: string }[] {
-  return [...md.matchAll(/^- \[`([^`]+)`\]\(([^)\s]+\.json)\)/gm)].map(([, name, path]) => ({ name: name!, path: path! }))
+  return {
+    list: [...markets.values()],
+    get: (name) => markets.get(name),
+    file: (name) => files.get(name),
+    checkPost(name, role, body) {
+      const market = markets.get(name)
+      if (!market) return `${name} is not a market in the directory`
+      if (!market.roles.some((r) => r.role === role)) return `${role} is not a role in the ${name} market`
+      return fit(body, market.offer, role, name)
+    },
+    checkReview(name, subjectRole, body) {
+      const market = markets.get(name)
+      if (!market) return `${name} is not a market in the directory`
+      if (!isObject(body)) return 'it is not an object'
+      const { subject: _, score: __, text: ___, offer: ____, evidence: _____, ...added } = body
+      for (const shared of Object.keys(SHARED)) {
+        if (!(shared in body)) continue
+        if (!market.review.shared.includes(shared)) return `the ${name} market's reviews hold no ${shared}`
+        const wrong = SHARED[shared]!(body[shared])
+        if (wrong) return wrong
+      }
+      if (!('subject' in body)) return 'it names no subject'
+      return fit(added, market.review.fields ?? {}, subjectRole, name)
+    },
+  }
 }
