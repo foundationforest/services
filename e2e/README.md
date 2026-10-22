@@ -171,8 +171,37 @@ The tests, which CI runs:
 
 ### The latest run
 
-No run of this loop yet. The first one's record goes in `runs/`, and this section says what it
-showed.
+2026-10-22, 23:14 to 23:15 UTC, with this repo at `1e1231c` (standard at `a125137`, markets at
+`4a8d7bc`), every service the loop's own on loopback and the chain Solana's devnet through
+`RPC_URL`: **passed** in 36 seconds. Its record is
+[`runs/2026-10-22T23-14-30-086Z.json`](runs/2026-10-22T23-14-30-086Z.json).
+
+- **The loop:** its issuer `issuer.e2e-loop.invalid`, face key `85kPhShT…`; its index `5UxyrCuT…`;
+  its fee payer `7LpLaetM…`, a new key.
+- **The test dollar:** `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`.
+- **People:** tutor `J61NgnWi…`, student `6BorhrGL…`, and the tutor's coach profile `GKG4n4Lw…`.
+- **Funding:** 10 test dollars to the student's pay address; 1 test dollar and 0.01 SOL to each
+  wallet; 0.05 SOL to the fee payer.
+- **Notes:** one each from the loop issuer's face check, model `stand-in`.
+- **Credits:** each wallet paid the host 0.10 test dollars for 10 credits.
+- **Profiles:** each refused (`refused`) while its folder held no credits, then taken; the tutor
+  spent 6 credits into its folder, the student 10.
+- **mcp:** the offer `offer/maths`, signed by the write key `EVb1XMUh…`; the student's message,
+  taken and opened by the tutor's assistant.
+- **The deal:** the direct payment of 2 test dollars, charged 0.01 test dollars; the escrow
+  `iAQPCyp9…`, opened and paid in, charged 3.73364, then paid out early, charged 0.01, its outcome
+  `pay`.
+- **The index:** the tutor rated 10 and the student 9, each from one review with its payment, each
+  statement signed; the deal paid, 2 test dollars, with its review.
+- **The rating, carried:** the tutor's leaf found by its stamp among 2 leaves, 100 tenths, proven
+  onto the coach profile with the tutor's last 4 credits; the index shows it.
+- **Balances:** the tutor's folder 5.91079 credits, the student's 9.92588, the coach's 3.97474.
+
+The loop's own services stopped with the run, so their pages are gone; what it did on chain is on
+devnet: [the escrow][e] and [the direct payment][p], on Solana's explorer.
+
+[e]: https://explorer.solana.com/address/iAQPCyp9RQVNThHDJm7YQWBaDptLBv64xpBxH5rsppK?cluster=devnet
+[p]: https://explorer.solana.com/tx/5w8Su1Qf8gWStJAUXNjaP5Jt74HfKLMcKhu4464PvisVg5xXAbqBn6WSCBPC5ofRusv417HFdE38u2Fsq78wT5vc?cluster=devnet
 
 ## Promises
 
