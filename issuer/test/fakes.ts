@@ -191,28 +191,33 @@ const TABLES = [
   'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave notes, with their note numbers and checks; how many fingerprints for each note number; the payments used; the note numbers given a gift. */
-export type Expected = { sessions: [string, bigint, Check][]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
+/** What the file should hold: the sessions that gave notes, with their note numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each note number; the payments used; the note numbers given a gift. */
+export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
- * The file holds four tables and nothing else: each session that gave a note as the hash of its id,
- * next to its note number and its check; each fingerprint next to its note number; the payments used,
- * each with its reference; the note numbers given a gift, each with a hash of its buy. None of `never`
- * (names, birth dates, embeddings, references) is anywhere in its bytes, no session id is in the
- * clear, and no journal is left beside it.
+ * The file holds five tables and nothing else: each session that gave a note as the hash of its id,
+ * next to its note number and its check; the sessions not yet deleted in Didit, by id; each
+ * fingerprint next to its note number; the payments used, each with its reference; the note numbers
+ * given a gift, each with a hash of its buy. None of `never` (names, birth dates, embeddings,
+ * references) is anywhere in its bytes, no other session id is in the clear, and no journal is left
+ * beside it.
  */
 export function assertKept(path: string, expected: Expected): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
   const file = readFileSync(path)
   for (const text of expected.never) assert.equal(file.includes(Buffer.from(text)), false, `${text.slice(0, 24)} is not in the file`)
-  for (const [sessionId] of expected.sessions) assert.equal(file.includes(Buffer.from(sessionId)), false, 'no session id is in the clear')
+  const toDelete = expected.toDelete ?? []
+  for (const [sessionId] of expected.sessions) {
+    if (!toDelete.includes(sessionId)) assert.equal(file.includes(Buffer.from(sessionId)), false, 'no deleted session id is in the clear')
+  }
 
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'four tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'five tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, note_number, kind FROM sessions')
       .all()
@@ -220,6 +225,12 @@ export function assertKept(path: string, expected: Expected): void {
       .sort()
     const want = expected.sessions.map(([id, n, kind]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n} ${kind}`).sort()
     assert.deepEqual(sessions, want, 'each session that gave a note, hashed, next to its note number and its check')
+    const pending = db
+      .prepare('SELECT session_id FROM to_delete')
+      .all()
+      .map((r) => r.session_id as string)
+      .sort()
+    assert.deepEqual(pending, [...toDelete].sort(), 'by id, only the sessions not yet deleted in Didit')
     const prints = db
       .prepare('SELECT note_number FROM fingerprints')
       .all()

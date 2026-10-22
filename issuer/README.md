@@ -17,8 +17,8 @@ ID check a keyed hash of your name and birthday. Your face stays with the check 
 A note is one signature over two numbers at once:
 
 - **your note number,** made on your device from your seed and our name, the same every time;
-- **attributes,** a fingerprint of a few facts about you: one number made from them, which any
-  change to them changes.
+- **attributes,** a hash of a few facts about you: one number made from them, which any change to
+  them changes.
 
 Signing the two together is what ties you to the facts: the signature says these facts were checked
 for whoever holds the seed behind that note number.
@@ -37,9 +37,10 @@ anyone, would not take a new photo and work the attributes out again: you would 
 beside your note, anyone could see that it gives the note's attributes, and then compare it with your
 live face, using the same model. Nothing here runs such a check yet.
 
-We see your selfie, and what Didit reads on your document, only while a check runs. We hand the facts back to you, beside
-the note, for your vault, and keep none of them in clear. Once the note is signed we delete the
-check at Didit, which keeps only a template of your face ([Once a note is signed](#once-a-note-is-signed)).
+We see your selfie, and what Didit reads on your document, only while a check runs. We hand the
+facts back to you, beside the note, for your vault, and keep none of them in clear. An hour after the
+note is signed we delete the check at Didit, which keeps only a template of your face
+([Once a note is signed](#once-a-note-is-signed)).
 
 The note is the standard's
 ([proofs/note](https://github.com/foundationforest/standard/blob/main/proofs/note/README.md#the-note-and-the-note-proof)).
@@ -92,9 +93,9 @@ Free, for anyone.
 3. **The app sends the session and its note number** to `POST /face/note`.
 4. **The issuer asks Didit what the session came to:**
    - **Approved:** the issuer fetches the selfie, computes its embedding
-     ([The face model](#the-face-model)), keeps the session next to the note number, signs a note
-     from the face key, deletes the session in Didit ([Once a note is signed](#once-a-note-is-signed)),
-     and answers the note.
+     ([The face model](#the-face-model)), keeps the session next to the note number, and answers a
+     note from the face key. An hour later it deletes the session in Didit
+     ([Once a note is signed](#once-a-note-is-signed)).
    - **In Review:** Didit has seen the face before ([How we run it](#how-we-run-it)). The issuer
      answers `202 {"waiting":"review"}`, keeps nothing, and the app asks again later. A person at
      the foundation decides in Didit's console.
@@ -119,7 +120,8 @@ Offered only with a price (`ID_PRICE`, [Payment](#payment)). Otherwise its route
    - already kept next to another note number: refused (`duplicate_document`);
    - next to the same one: signed again, so a lost ID note comes back.
 6. **The note.** It computes the selfie's embedding, keeps the session and the fingerprint next to
-   the note number, signs a note from the ID key, deletes the session in Didit, and answers the note.
+   the note number, and answers a note from the ID key. An hour later it deletes the session in
+   Didit.
 
 The name is the one Didit reads, first and last, else the full name: Unicode NFKC, lower case, one
 space between words. The birth date is `YYYY-MM-DD`. The country is left out of the fingerprint on
@@ -130,8 +132,15 @@ A refused or failed request uses nothing up: the same session can be sent again.
 
 ### Once a note is signed
 
-The issuer deletes the session in Didit (`DELETE /v3/session/{id}/delete/`), then answers the note.
+The issuer answers the note at once, and keeps the session's id and when it was first signed
+(`to_delete`, [What it keeps](#what-it-keeps)).
 
+- **Within the hour,** the same session sent again with its note number gives the same note: Didit
+  still has its decision and its selfie. Once the hour since its first signing is over, it is refused
+  (`session_used`), with no question to Didit. A retry gives it no more time.
+- **The sweep:** every minute, the issuer deletes in Didit each session first signed an hour ago or
+  more (`DELETE /v3/session/{id}/delete/`), and forgets its id and time once Didit has deleted it. A
+  deletion Didit does not answer is tried again at the next sweep.
 - **What goes:** Didit deletes the session's selfie, its liveness video, the document's images, what
   it read and its decision.
 - **What stays:** each deletion asks Didit to keep one template of the face
@@ -141,11 +150,8 @@ The issuer deletes the session in Didit (`DELETE /v3/session/{id}/delete/`), the
   allows.
 - **Only a session whose note is signed:** never one In Review, declined or unfinished. Those stay in
   Didit for as long as its retention lets them.
-- **A session gives one note.** Sent again once it is deleted, it is refused (`session_used`). If
-  Didit did not answer the deletion, the note still goes out and the session stays: sent again with
-  its note number, it gives the same note, and the deletion is tried again. The issuer logs only that
-  a deletion failed, or what Didit says it did with the face when it kept no template; never the
-  session.
+- **What it logs:** how many deletions Didit did not answer at a sweep, and what Didit says it did
+  with a face when it kept no template; never the session.
 
 ### The note
 
@@ -181,18 +187,20 @@ again and see it is the note's. Nothing in the standard reads them, and the note
 
 ### What it keeps
 
-One SQLite file, four tables:
+One SQLite file, five tables:
 
 | Table | What | Why |
 |---|---|---|
-| `sessions` | The SHA-256 of each session id that gave a note, next to the note number and which check it was (`face` or `id`) | So a session gives one note, and is known as used once Didit has deleted it |
+| `sessions` | The SHA-256 of each session id that gave a note, next to the note number and which check it was (`face` or `id`) | So a session gives its note to one note number, and again only within its hour |
+| `to_delete` | The id of each session that gave a note and is not yet deleted in Didit, which check it was, and when it was first signed | So it is signed again only within its hour, and the sweep can delete it in Didit then. It goes once Didit has deleted it |
 | `fingerprints` | Each fingerprint the ID check signed for, next to the note number | So one name and birth date gives one note number its ID note, and gives it again |
-| `id_payments` | The transaction signature of each payment used, with the reference it named (public in that transaction), and whether Didit answered that it opened its session | So one payment opens one session, for its own payment id only, and a session deleted with its note is not opened again |
+| `id_payments` | The transaction signature of each payment used, with the reference it named (public in that transaction), and whether Didit answered that it opened its session | So one payment opens one session, for its own payment id only, and a session deleted after its note is not opened again |
 | `gifts` | Each note number given its welcome gift, with a hash of the buy | So a person gets one, and the same buy asked for again gets the same ticket |
 
-Nothing else: no face, no embedding, no name, no birth date, no document, no time, no address. A
-session id is kept only as its hash, so the file names no Didit session. Deleted bytes are
-overwritten (`secure_delete`). The note number links the tables: a fingerprint sits next to the same
+Nothing else: no face, no embedding, no name, no birth date, no document, no address. A session id
+is kept as its hash; in clear, and with a time, only in `to_delete`, for the hour or so until Didit
+has deleted the session. After that the file names no Didit session and holds no time. Deleted bytes
+are overwritten (`secure_delete`). The note number links the tables: a fingerprint sits next to the same
 note number as the sessions signed for it, so whoever also holds Didit's records of those sessions
 can tell which face went with which name.
 
@@ -244,7 +252,7 @@ without the others stops the issuer from starting.
    the SHA-256 of the payment id, so Didit never holds the id. Asked again with a payment id whose
    payments are all used, the issuer looks the session up by its tag (Didit's list of sessions) and
    answers it again; if Didit never answered that it opened one, it opens one now. A payment whose
-   session Didit answered it opened, and no longer lists, gave its note and was deleted with it:
+   session Didit answered it opened, and no longer lists, gave its note and was deleted since:
    `409 payment_used`. A payment is never given back. A second payment naming the same reference
    opens a second session.
 
@@ -297,7 +305,7 @@ Errors are `{"error": "<code>"}`:
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `not_approved`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `no_face`, `no_document_data` (no name, or no real birth date), `duplicate_document` |
 | `404` | `not_found`, `not_offered` (the ID check, with no price) |
-| `409` | `session_used` (this session already gave its note), `payment_used` |
+| `409` | `session_used` (this session gave its note to another note number, or its hour is over), `payment_used` |
 | `429` | `try_later`: this address opened its share of sessions this hour |
 | other | `405 post_only`, `405 get_only`, `413 too_large` (bodies over 4 KB), `502 face_check_unavailable`, `502 payment_check_unavailable`, `500 internal` |
 
@@ -340,7 +348,7 @@ npm run check                     # type-check
 npm test                          # a stand-in Didit and RPC, a real SQLite file, real HTTP; note proofs
                                   # made from both notes and checked against the published keys; the
                                   # attributes vectors (test/vectors.json); the seed made, kept and read
-                                  # again; each session deleted in Didit once its note is signed, never
+                                  # again; each session deleted in Didit an hour after its note is signed, never
                                   # one in review; the face models on the portraits; the stand-in Didit
                                   # the e2e loop runs, both checks and review; the gift's ticket, taken by the
                                   # host's own seller; the fetch's tries and its second source
@@ -441,16 +449,16 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   > Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its
   > provider, to make sure each person is checked once. Didit keeps photos of your ID and what it
   > reads on it (your name, date of birth and document number), your selfie and a short video while
-  > it checks. Once your note is signed, Forest deletes them at Didit, which keeps only a template of
-  > your face, for up to ten years, so it can tell if the same face comes back. Forest keeps none of
+  > it checks. An hour after your note is signed, Forest deletes them at Didit, which keeps only a
+  > template of your face, for up to ten years, so it can tell if the same face comes back. Forest keeps none of
   > this: only a one-way fingerprint of your name and date of birth next to your note number, so the
   > same person is not checked twice. It gives you a note, with your name, date of birth and country
   > beside it for your own vault; a profile that shows it says only that you were checked. The check
   > costs {price}, paid before it starts, whatever it decides.
 
 - **Retention.** The issuer keeps what [What it keeps](#what-it-keeps) lists for as long as it runs.
-  It deletes every session in Didit once its note is signed, and asks Didit to keep the face
-  template for 3650 days. Didit gives every kept template an end, and 3650 days is the longest it
+  It deletes every session in Didit an hour after its note is first signed, and asks Didit to keep
+  the face template for 3650 days. Didit gives every kept template an end, and 3650 days is the longest it
   allows, so a template is never kept without a limit. The live application's own retention window,
   how long Didit keeps a session nobody deletes, is unlimited, so a session that gave no note (in
   review, declined, unfinished) stays until someone deletes it in Didit's console.
@@ -461,16 +469,19 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 ## Promises
 
 - **It keeps which check session gave which note number, and nothing else of a check.** Its one
-  SQLite file has four tables:
+  SQLite file has five tables:
   - the SHA-256 of each session id, next to the note number it was signed for and which check it was;
+  - the id of each session not yet deleted in Didit, which check it was, and when it was first
+    signed, until Didit has deleted it;
   - a keyed one-way fingerprint of each name and birth date the ID check signed for, next to the note
     number;
   - the transaction signature of each payment used, with the reference it named and whether its
     session opened;
   - each note number given its welcome gift, with a hash of the buy.
 
-  No face, no embedding, no name, no birth date, no document, no time. Deleted bytes are overwritten
-  (`secure_delete`). A test reads the raw file and checks this.
+  No face, no embedding, no name, no birth date, no document, and no time or session id in clear
+  once a session is deleted in Didit. Deleted bytes are overwritten (`secure_delete`). A test reads
+  the raw file and checks this.
 - **It never logs a request, an address, a session, a note number or a note.** It logs an error's
   kind, never its message.
 - **It never writes down an address.** It reads the client's address only to count sessions against
@@ -485,7 +496,8 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   tickets, nothing else.
 - **A key's recipe never changes.** What a key's notes' `attributes` are made from is fixed for good;
   a new recipe is a new key.
-- **It deletes every session in Didit once its note is signed, and no other.** Never one In Review.
+- **It deletes every session in Didit an hour after its note is first signed, and no other.** Never
+  one In Review.
   Each deletion asks Didit to keep only a template of the face, so its search still sees a face that
   comes back.
 - **It never puts a note on chain.** A note stays with the person; a profile record carries only the
@@ -506,12 +518,14 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   sees the face, and a face that comes back is new to it.
 - **Didit's face search covers both checks,** which share one application: a person who takes the ID
   check before the face check goes to review at the face check.
-- **A lost answer costs a new check.** A session is deleted once its note is signed, so a note the app
-  never received cannot be asked for again with that session: the person checks again, and a face
-  Didit has seen goes to review.
+- **A lost answer costs a new check after the hour.** Within the hour since its note was first
+  signed, a session gives the same note again; after it, the person checks again, and a face Didit
+  has seen goes to review.
+- **For that hour, the file names the session.** Its id and when it was signed sit in `to_delete`, in
+  clear, until Didit has deleted it: whoever reads the file then can ask Didit about that session.
 - **A deletion Didit does not answer leaves the session in Didit,** selfie and document images
-  included, until the same session is sent again or someone deletes it in Didit's console. The issuer
-  logs that it happened, without the session.
+  included, and its id and time in the file, until a later sweep gets an answer. The issuer logs that
+  it happened, without the session.
 - **It trusts Didit's decision,** for a session on the check's own workflow: the status, each step's
   status, the selfie, and what the document step read. It reads those and drops everything else
   Didit returns. It cannot see how the workflows are set up in Didit, and relies on what How we run
@@ -573,9 +587,9 @@ your seed and their labels. Nothing we hold connects the two: only your seed doe
 leaves your device. A note proof on a profile shows that we signed a note to the seed behind it,
 never which note number.
 
-**My face changes with light and age. Does the fingerprint still work?**
-Yes. The attributes pin the one list of numbers we computed from your selfie at check time, and that
-list never changes, so the note stays good. A new photo would give a slightly different list; telling
+**My face changes with light and age. Does the hash still work?**
+Yes. The hash pins the one list of numbers we computed from your selfie at check time, and that list
+never changes, so the note stays good. A new photo would give a slightly different list; telling
 whether two lists are the same face is a comparison, made with the model, and that is where the
 fuzziness lives, not in the note.
 

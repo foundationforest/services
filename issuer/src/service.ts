@@ -15,7 +15,7 @@ import { RateLimit } from './limit.ts'
 import { RECIPES } from './notes.ts'
 import { RpcPayments, type Payments, type Price } from './payment.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
-import { handler, type PaymentDeps } from './server.ts'
+import { SWEEP_EVERY_MS, errorKind, handler, sweep, type PaymentDeps } from './server.ts'
 import { Store } from './store.ts'
 
 export type Config = {
@@ -145,6 +145,8 @@ export type Issuer = {
   sponsor?: string
   /** Whether this start made the issuer's seed, finding none beside the database. */
   madeSeed: boolean
+  /** Deletes in Didit the sessions signed an hour ago or more, as the sweep does every minute. */
+  sweep(): Promise<void>
   /** Stops taking requests, and closes the file. */
   close(): Promise<void>
 }
@@ -162,6 +164,7 @@ export async function startIssuer(
     payments?: Payments
     embedder?: Embedder
     log?: (line: string) => void
+    now?: () => number
   } = {},
 ): Promise<Issuer> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
@@ -215,8 +218,18 @@ export async function startIssuer(
       limit,
       clientAddressHeader: config.clientAddressHeader,
       log: overrides.log,
+      now: overrides.now,
     }),
   )
+  // One sweep at a time: a slow Didit never has two deleting the same sessions.
+  let sweeping: Promise<void> | undefined
+  const sweepNow = () =>
+    (sweeping ??= sweep({ store, checks: { face: faceCheck, id: idCheck }, now: overrides.now, log: overrides.log }).finally(() => {
+      sweeping = undefined
+    }))
+  const log = overrides.log ?? ((line: string) => console.log(line))
+  const sweeper = setInterval(() => void sweepNow().catch((error) => log(`issuer: the sweep failed (${errorKind(error)})`)), SWEEP_EVERY_MS)
+  sweeper.unref()
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, resolve)
@@ -230,7 +243,10 @@ export async function startIssuer(
     keys,
     sponsor: gift ? sponsor.address : undefined,
     madeSeed,
+    sweep: sweepNow,
     async close() {
+      clearInterval(sweeper)
+      await sweeping
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
         server.closeAllConnections()

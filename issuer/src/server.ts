@@ -23,10 +23,10 @@
 // share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
 // nothing up: the same session can be sent again.
 //
-// A session gives one note. Once the note is signed the issuer deletes the session in Didit, keeping
-// only its face template (didit.ts), and then answers; sent again, the session is refused,
-// `session_used`. If Didit did not answer the deletion, the session is still there: sent again with
-// its note number, it gives the same note, and the deletion is tried again.
+// A session gives its note to one note number. Sent again with it within the hour after it was first
+// signed, it gives the same note: Didit still has the decision. After that hour it is refused,
+// `session_used`, and the sweep (`sweep`) deletes it in Didit, keeping only its face template
+// (didit.ts).
 //
 // No request is logged. The client's address is read for one thing only, counting the sessions it
 // opens against the limit (`limit.ts`), and is never written anywhere.
@@ -164,6 +164,39 @@ export type IssuerDeps = {
   /** The header a proxy puts the client's address in; unset, the connection's own address. */
   clientAddressHeader?: string
   log?: (line: string) => void
+  /** The clock, in ms; unset, the system's. */
+  now?: () => number
+}
+
+/** How long after a session is first signed it may be sent again, and when the sweep deletes it in Didit. */
+export const SIGNED_FOR_MS = 3_600_000
+
+/** How often the sweep looks for sessions to delete. */
+export const SWEEP_EVERY_MS = 60_000
+
+/**
+ * Deletes in Didit each session whose note was first signed an hour ago or more, keeping its face
+ * template, and forgets its id and time once Didit has deleted it. A deletion Didit does not answer
+ * stays, for the next sweep. Logs without the session: how many deletions failed, and what Didit said
+ * it did with a face when it kept no template.
+ */
+export async function sweep(deps: { store: Store; checks: Record<Check, FaceCheck>; now?: () => number; log?: (line: string) => void }): Promise<void> {
+  const log = deps.log ?? ((line) => console.log(line))
+  let failed = 0
+  let kind = ''
+  for (const { sessionId, kind: check } of deps.store.due((deps.now ?? Date.now)() - SIGNED_FOR_MS)) {
+    let outcome: string
+    try {
+      outcome = await deps.checks[check].deleteSession(sessionId)
+    } catch (error) {
+      failed++
+      kind = errorKind(error)
+      continue
+    }
+    deps.store.deleted(sessionId)
+    if (outcome !== 'retained_with_user' && outcome !== 'gone') log(`issuer: Didit kept no face template for a deleted session (${outcome || 'no outcome'})`)
+  }
+  if (failed) log(`issuer: ${failed} signed session${failed === 1 ? '' : 's'} could not be deleted in Didit, kept for the next sweep (${kind})`)
 }
 
 /** The address a request came from: the proxy's header when one is named, else the connection's. */
@@ -176,6 +209,9 @@ function clientAddress(req: IncomingMessage, header: string | undefined): string
 export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const { face, id, store, embedder, payment, limit } = deps
   const log = deps.log ?? ((line) => console.log(line))
+  const now = deps.now ?? Date.now
+  /** The earliest first signing a session may have to be signed again now. */
+  const since = () => now() - SIGNED_FOR_MS
 
   type Route = (body: Record<string, unknown>, req: IncomingMessage) => Promise<[number, unknown]>
 
@@ -198,7 +234,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       throw new HttpError(502, 'face_check_unavailable')
     }
     const refusal = judge(decision, c.workflowId, c.kind)
-    // A session that gave a note and is gone from Didit was deleted once its note was signed.
+    // A session that gave a note and is gone from Didit was deleted: by the sweep, or by hand.
     if (refusal === 'unknown_session' && store.holds(sessionId)) throw new HttpError(409, 'session_used')
     if (refusal === 'in_review') throw new Waiting()
     if (refusal) throw new HttpError(403, refusal)
@@ -220,20 +256,6 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       if (error instanceof FaceError) throw new HttpError(403, 'no_face')
       throw error
     }
-  }
-
-  /**
-   * Deletes a session whose note is signed, keeping its face template. The note is answered either
-   * way: a session Didit did not delete is deleted when it is sent again. Logged without the session.
-   */
-  async function forget(c: CheckDeps, sessionId: string): Promise<void> {
-    let outcome: string
-    try {
-      outcome = await c.check.deleteSession(sessionId)
-    } catch (error) {
-      return log(`issuer: a session whose note is signed could not be deleted in Didit (${errorKind(error)})`)
-    }
-    if (outcome !== 'retained_with_user' && outcome !== 'gone') log(`issuer: Didit kept no face template for a deleted session (${outcome || 'no outcome'})`)
   }
 
   /** The store's answer, as the refusal it is. */
@@ -262,17 +284,16 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     const { gift: reference, ...rest } = body
     const asked = deps.gift !== undefined && 'gift' in body
     const { sessionId, noteNumber } = noteRequest(fields(asked ? rest : body, ['sessionId', 'noteNumber']))
-    kept(store.check({ sessionId, noteNumber }))
+    kept(store.check({ sessionId, noteNumber, since: since() }))
 
     const decision = await decided(face, sessionId)
     const embedded = await embedding(face, decision.faceImage)
     // Checked again, for good, inside one transaction: the session may have given a note for another
     // note number while this request waited for Didit.
-    kept(store.remember({ sessionId, noteNumber, kind: 'face' }))
+    kept(store.remember({ sessionId, noteNumber, kind: 'face', since: since(), signedAt: now() }))
     const model = embedder.model
     const answer = signed(deps.noteKeys.face, { noteNumber, attributes: faceAttributes(model, embedded), model, embedding: b64u.encode(embedded) })
     if (asked) answer.gift = giveGift(noteNumber, reference)
-    await forget(face, sessionId)
     return [200, answer]
   }
 
@@ -283,20 +304,18 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
   async function idNote(body: Record<string, unknown>): Promise<[number, unknown]> {
     if (!payment) throw new HttpError(404, 'not_offered')
     const { sessionId, noteNumber } = noteRequest(fields(body, ['sessionId', 'noteNumber']))
-    kept(store.check({ sessionId, noteNumber }))
+    kept(store.check({ sessionId, noteNumber, since: since() }))
 
     const decision = await decided(id, sessionId)
     const who = person(decision.document)
     if (!who) throw new HttpError(403, 'no_document_data')
     const print = fingerprint(deps.fingerprintKey, who)
-    kept(store.check({ sessionId, noteNumber, fingerprint: print }))
+    kept(store.check({ sessionId, noteNumber, since: since(), fingerprint: print }))
     const embedded = await embedding(id, decision.faceImage)
-    kept(store.remember({ sessionId, noteNumber, kind: 'id', fingerprint: print }))
+    kept(store.remember({ sessionId, noteNumber, kind: 'id', since: since(), signedAt: now(), fingerprint: print }))
     const model = embedder.model
     const attributes = idAttributes(model, embedded, who)
-    const answer = signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
-    await forget(id, sessionId)
-    return [200, answer]
+    return [200, signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
   }
 
   /**
@@ -306,7 +325,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
    * app asks again. A payment is never given back. Each session a payment id opens carries its tag in
    * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
    * found, or opened, on the next ask. A payment whose session Didit answered it opened, and no longer
-   * lists, gave its note and was deleted with it: it is used.
+   * lists, gave its note and was deleted since: it is used.
    */
   async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
     if (!payment) throw new HttpError(404, 'not_offered')

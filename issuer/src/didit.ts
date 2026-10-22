@@ -2,8 +2,8 @@
 //
 // Didit runs each check on its own page and holds the face, and for the ID check the document. The
 // issuer asks it four things: to open a session on a check's workflow, later what that session
-// decided, the selfie the session took, to compute the face's embedding (face.ts), and, once the
-// session's note is signed, to delete it. From a
+// decided, the selfie the session took, to compute the face's embedding (face.ts), and, an hour
+// after the session's note is signed, to delete it. From a
 // decision it reads the session's workflow, its status, the status of each step (liveness; for the ID
 // check also the document and the face match), the selfie's address, and, from the document step, the
 // name, the birth date and the document's country. Everything else Didit returns is dropped the
@@ -13,7 +13,8 @@
 // seen and sends a known one to review, where a person at the foundation decides in Didit's console.
 // While a session is In Review the issuer answers that it is waiting, and the app asks again.
 //
-// Once a session's note is signed, the issuer deletes it (`deleteSession`), so Didit no longer holds
+// An hour after a session's note is first signed, the issuer's sweep deletes it (`deleteSession`,
+// server.ts's `sweep`), so Didit no longer holds
 // its selfie, its liveness video, its document's images, what it read or its decision. Each deletion
 // asks Didit to keep one image-free face template, anchored to the session's own `vendor_data`, for
 // FACE_RETENTION_DAYS: its face search goes on seeing the face, so a face that comes back still goes
