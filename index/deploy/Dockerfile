@@ -1,24 +1,16 @@
-# The index (index/): its readers and its pages. The build context is the repo root, because the
-# index imports forest's records, registry client, escrow client and reputation client (its
-# verification key module; no proving file) by relative path; standard.sh fetches them into
-# standard/ at the commit in STANDARD, and needs git. What it reads is its lists in
-# index/lists/ and the markets directory, which it reads over the network, and its opinions are
-# index/config/: the lists and the config are in the image.
+# The index (index/), started by `npm start` as its README says. The build context is the repo root:
+# the index depends on the standard's packages through file: links into standard/, and reads the
+# markets from markets/; standard.sh fetches both at the commits in STANDARD and MARKETS, installs and
+# builds the standard, and needs git. The lists and the config are in the image; its seed and its
+# one file are on the volume at DATA_DIR. One replica: the file is SQLite.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
 FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /services
-COPY STANDARD standard.sh ./
-RUN ./standard.sh records registry/client escrow/client reputation/client
+COPY STANDARD MARKETS standard.sh ./
+RUN ./standard.sh
 COPY index/ index/
 RUN cd index && npm ci --no-audit --no-fund
-# Supabase's pooler presents a certificate from Supabase's own root CA, which Node does not carry.
-# node-postgres verifies the server fully under sslmode=require, so the root is added here: the
-# public "Supabase Root 2021 CA" (supabase-root-2021.crt, as Supabase publishes it; sha256
-# 80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA).
-ENV NODE_EXTRA_CA_CERTS=/services/index/deploy/supabase-root-2021.crt
 WORKDIR /services/index
-# Readers and pages in one process. Split, the readers run `node src/main.ts readers` and the
-# pages `node src/main.ts web`.
-CMD ["node", "src/main.ts"]
+CMD ["npm", "start"]

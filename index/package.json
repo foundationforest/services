@@ -2,33 +2,30 @@
   "name": "@forest/index",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest index: reads signed records from the hosts it lists, the registry's rows of the issuers it trusts, and the escrow's own events, scores every profile (uniqueness, standing and rating, never blended, each signed), publishes its ratings as a signed reputation tree and shows the reputation proofs profiles carry, and serves the same data as pages for people and for machines: HTML, JSON-LD, a JSON twin of every page, a sitemap, llms.txt and the read skill.",
+  "description": "The Forest Foundation's index: reads the hosts it lists, keeps the profiles whose note proof checks for a key it lists, ranks them by one ranking, and serves what it finds as JSON and as pages, each page drawn from its JSON. One process over one SQLite file.",
   "license": "Apache-2.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
-    "start": "node src/main.ts",
-    "start:readers": "node src/main.ts readers",
-    "start:web": "node src/main.ts web",
-    "migrate": "node src/migrate.ts",
-    "test": "node --test --test-force-exit test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts test/pages.test.ts test/reputation.test.ts test/tiers.test.ts test/e2e.test.ts",
-    "test:unit": "node --test test/markets.test.ts test/scoring.test.ts test/sign.test.ts test/server.test.ts",
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "rebuild": "node --disable-warning=ExperimentalWarning src/main.ts rebuild",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit --test-concurrency=1 test/*.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@noble/curves": "2.4.0",
-    "@noble/hashes": "2.4.0",
+    "@foundationforest/escrow-client": "file:../standard/escrows/solana/client",
+    "@foundationforest/keys": "file:../standard/keys",
+    "@foundationforest/note": "file:../standard/proofs/note/client",
+    "@foundationforest/records": "file:../standard/records",
+    "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
     "@solana/web3.js": "1.99.0",
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
-    "pg": "8.23.0"
+    "ajv-formats": "3.0.1"
   },
   "devDependencies": {
-    "@solana/spl-token": "0.4.9",
     "@types/node": "22.20.2",
-    "@types/pg": "8.23.1",
     "typescript": "5.9.3"
-  },
-  "engines": {
-    "node": ">=22.18"
   }
 }
