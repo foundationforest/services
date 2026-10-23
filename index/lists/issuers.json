@@ -1,4 +1,7 @@
 {
-  "about": "The issuer keys this index counts, each by its address, with the issuer name its note proofs must carry, what the key's check is called on the pages, the points a profile it checked starts the ranking with, and, for a key that leaked, until: proofs this index first saw after that time do not count. A profile counts only with a note proof for a key listed here. This is this index's opinion: another index counts other keys. Empty until the issuer issuer.forest.foundation has made its keys: its face key (face check, 1 point) and its ID key (ID check, 2 points) go here then.",
-  "keys": []
+  "about": "The issuer keys this index counts, each by its address, with the issuer name its note proofs must carry, what the key's check is called on the pages, the points a profile it checked starts the ranking with, and, for a key that leaked, until: proofs this index first saw after that time do not count. A profile counts only with a note proof for a key listed here. This is this index's opinion: another index counts other keys. These are the two keys the issuer issuer.forest.foundation publishes at its GET /: its face key (face check, 1 point) and its ID key (ID check, 2 points).",
+  "keys": [
+    { "key": "MC8L1NFDmyXGHno4QFJ6qB83qnVbAPnRt4MYeVeppmE", "issuer": "issuer.forest.foundation", "label": "face check", "points": 1 },
+    { "key": "HfYyeaezVFP5APn7tr192pupoTMe5Q3P4mpBr3A3d9xC", "issuer": "issuer.forest.foundation", "label": "ID check", "points": 2 }
+  ]
 }
