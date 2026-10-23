@@ -8,21 +8,31 @@ choices are its own, in its README's How we run it.
 
 ## How it works
 
-### Four things
+### Four pieces
 
-A stranger trusts you on four things: who you are, that you are real, what you have done, and your
-money. In Forest a person holds all four, and anyone checks each one by math, with no one in the
-middle. Each service here helps with one, and holds none of it for the person:
+How [Forest](https://github.com/foundationforest) works starts with four pieces. A service here
+helps with each, and holds none of it for the person:
 
-| What | What the person holds | How anyone checks it | The service that helps |
-|---|---|---|---|
-| Who you are | A profile: a main key from their seed, one per label, and its signed records | Each record's signature, against the profile's address | The **host** keeps the records and serves them to anyone |
-| That you are real | A note an issuer signed to their seed, shown on a profile record as a note proof | The proof, against the issuer's key | The **issuer** checks one real person and signs them a note |
-| What you have done | Reviews naming their evidence, a payment or an escrow's receipt; and a reputation proof that carries a rating to another of their profiles | Each review's evidence, on chain; each rating and tree root, against the index's key; the proof, against the root | The **index** reads it all, rates each profile, and signs what it says |
-| Your money | Dollars at each profile's pay address; an escrow, on chain | The chain | The **fee payer** pays the chain's fees for a person who holds dollars and no SOL |
+1. **Own.** A person's seed gives them one profile per label, a market and a role such as
+   `tutoring/tutor`: a main key made from the seed, and the records it signs. The app keeps the
+   seed; a **host** keeps each profile's records and serves them to anyone, who checks each
+   signature against the profile's address.
+2. **Accountable.** Once, an **issuer** checks that one real person is behind the seed and signs a
+   note to it. Every profile from that seed can show a note proof on its profile record: that a
+   real person stands behind it, without saying who. Anyone checks the proof against the issuer's
+   key.
+3. **Publish.** A profile writes its offers and its reviews in the format its market sets, and a
+   **host** keeps them, open for anyone to read. A review names its evidence: a payment or an
+   escrow's receipt, on chain.
+4. **Be found.** An **index** reads the hosts it lists and the escrow's receipts, keeps the profiles
+   whose note proof checks, ranks them by the checks behind each and the reviews each has earned,
+   weighed by their evidence, and signs what it says.
 
-**mcp** is the AI's door to all four: it reads what hosts and indexes say, and acts for a person
-with the access keys their app made, never a main key.
+The **fee payer** is money without holding SOL: it pays the chain's fees for a person's payment or
+escrow, and charges them that cost in the dollar they pay with.
+
+**mcp** is the AI's door: it reads what hosts and indexes say, and acts for a person with the access
+keys their app made, never a main key.
 
 The escrow, and every payment here, runs on the chain the escrow runs on today, Solana's devnet,
 with test dollars.
