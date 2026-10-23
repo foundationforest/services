@@ -171,37 +171,40 @@ The tests, which CI runs:
 
 ### The latest run
 
-2026-10-22, 23:14 to 23:15 UTC, with this repo at `1e1231c` (standard at `a125137`, markets at
-`4a8d7bc`), every service the loop's own on loopback and the chain Solana's devnet through
-`RPC_URL`: **passed** in 36 seconds. Its record is
-[`runs/2026-10-22T23-14-30-086Z.json`](runs/2026-10-22T23-14-30-086Z.json).
+2026-10-23, 00:21 to 00:22 UTC, with this repo at `597899e` (standard at `a125137`, markets at
+`4a8d7bc`), against the deployed host, fee payer and mcp, with the loop's own issuer and index on
+loopback and the chain through `RPC_URL`: **passed** in 49 seconds. Its record is
+[`runs/2026-10-23T00-21-00-405Z.json`](runs/2026-10-23T00-21-00-405Z.json).
 
-- **The loop:** its issuer `issuer.e2e-loop.invalid`, face key `85kPhShT…`; its index `5UxyrCuT…`;
-  its fee payer `7LpLaetM…`, a new key.
+- **The services:** `https://host.forest.foundation`, `https://fee-payer.forest.foundation` (its
+  key `F3Jjh7KG…`) and `https://mcp.forest.foundation`; the loop's issuer
+  `issuer.e2e-loop.invalid`, face key `BjdTYysD…`, and its index `9V4SCFRY…`.
 - **The test dollar:** `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`.
-- **People:** tutor `J61NgnWi…`, student `6BorhrGL…`, and the tutor's coach profile `GKG4n4Lw…`.
+- **People:** tutor `34C6wh2p…`, student `HBnjepLv…`, and the tutor's coach profile `7gqiyifh…`.
 - **Funding:** 10 test dollars to the student's pay address; 1 test dollar and 0.01 SOL to each
-  wallet; 0.05 SOL to the fee payer.
+  wallet. Before the run, outside the loop, the deploy key made the deployed fee payer's
+  test-dollar account and sent it 0.05 SOL.
 - **Notes:** one each from the loop issuer's face check, model `stand-in`.
-- **Credits:** each wallet paid the host 0.10 test dollars for 10 credits.
+- **Credits:** each wallet paid the deployed host 0.10 test dollars for 10 credits.
 - **Profiles:** each refused (`refused`) while its folder held no credits, then taken; the tutor
   spent 6 credits into its folder, the student 10.
-- **mcp:** the offer `offer/maths`, signed by the write key `EVb1XMUh…`; the student's message,
-  taken and opened by the tutor's assistant.
+- **mcp:** the offer `offer/maths`, signed by the write key `57scpmDn…`; the student's message,
+  taken by the host and opened by the tutor's assistant.
 - **The deal:** the direct payment of 2 test dollars, charged 0.01 test dollars; the escrow
-  `iAQPCyp9…`, opened and paid in, charged 3.73364, then paid out early, charged 0.01, its outcome
-  `pay`.
+  `5G8c8E3A…`, opened and paid in, charged 3.73364, then paid out early, charged 0.01, its outcome
+  `pay`, its rent back to the fee payer.
 - **The index:** the tutor rated 10 and the student 9, each from one review with its payment, each
   statement signed; the deal paid, 2 test dollars, with its review.
 - **The rating, carried:** the tutor's leaf found by its stamp among 2 leaves, 100 tenths, proven
   onto the coach profile with the tutor's last 4 credits; the index shows it.
-- **Balances:** the tutor's folder 5.91079 credits, the student's 9.92588, the coach's 3.97474.
+- **Balances:** the tutor's folder 5.91081 credits, the student's 9.92587, the coach's 3.97474.
 
-The loop's own services stopped with the run, so their pages are gone; what it did on chain is on
-devnet: [the escrow][e] and [the direct payment][p], on Solana's explorer.
+The loop's own issuer and index stopped with the run, so their pages are gone. The three profiles'
+records stay on the deployed host, and what the run did on chain is on Solana's explorer:
+[the escrow][e] and [the direct payment][p].
 
-[e]: https://explorer.solana.com/address/iAQPCyp9RQVNThHDJm7YQWBaDptLBv64xpBxH5rsppK?cluster=devnet
-[p]: https://explorer.solana.com/tx/5w8Su1Qf8gWStJAUXNjaP5Jt74HfKLMcKhu4464PvisVg5xXAbqBn6WSCBPC5ofRusv417HFdE38u2Fsq78wT5vc?cluster=devnet
+[e]: https://explorer.solana.com/address/5G8c8E3AoqqwptL7KVVa74og4FGmW6oqyQ4Ut1uXdygK?cluster=devnet
+[p]: https://explorer.solana.com/tx/4md4NpZNSaPZsp5uMThZH8fyxL26pfHaBtaPinD94iR3KWA77URKS6D5W2E61UZSNsoS6GmCFKHF2bhfRpamNEft?cluster=devnet
 
 ## Promises
 

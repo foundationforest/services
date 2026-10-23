@@ -1,0 +1,188 @@
+{
+  "started": "2026-10-23T00:21:00.405Z",
+  "ended": "2026-10-23T00:21:49.065Z",
+  "passed": true,
+  "commits": {
+    "services": "597899e28af884f6d7dd63049a381a2fd1a9196e",
+    "standard": "a1251372af91c2d9f7a15b8187a5cf4208732089",
+    "markets": "4a8d7bcc0b6eb2e58103fc1992efa1e04d827e1f"
+  },
+  "services": {
+    "host": "https://host.forest.foundation",
+    "issuer": "loopback",
+    "feePayer": "https://fee-payer.forest.foundation",
+    "index": "loopback",
+    "mcp": "https://mcp.forest.foundation"
+  },
+  "chain": {
+    "rpc": "RPC_URL",
+    "escrow": "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8",
+    "testDollar": "537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt",
+    "market": "tutoring"
+  },
+  "steps": {
+    "keys": {
+      "tutor": {
+        "label": "tutoring/tutor",
+        "profile": "34C6wh2pNTeajn5jSSxYSphJzdPhnvvvrH1e1kTmrAa2",
+        "pay": "G1VQg5KkHdGRoqBrg5koCzpgUaoX7b9rE2EzT3rBvY7n"
+      },
+      "student": {
+        "label": "tutoring/student",
+        "profile": "HBnjepLvQE86hdFdfKUQxgsfwziJDw9KPhqfJwANFC96",
+        "pay": "6kZwzrbVcgQEXAbhbyT8r5xDMeQEGbZEEBYHF4De4d6G"
+      },
+      "coach": {
+        "label": "sports-coaching/coach",
+        "profile": "7gqiyifhM4wo32Ps1n2ZfSVvmqPESBvsemRQdPUP6ML",
+        "pay": "86ovJTSMWXGmGUFxmN8RUzYVdfpR3AbE1w52xYtmGxTW"
+      }
+    },
+    "funding": {
+      "accounts": "4X2PHcjMXTuk3JAkojk8JfdWqb4BwcVWaruHkbppeP2yrESKFZU6GTSoQguEScQUxwowh1WurUiCLHfH3BKDZDHx",
+      "money": "5qVjfRAqMJZVc5KJyCVPL6mSsrd2azg286xCTibF2vHZ1BzjR3siWjiUesrE7p6imU8eY2khLk8Skfr7264GmFxp",
+      "wallets": {
+        "tutor": "CXydXMd5hqvxVjUqp6QkUeJ9xejwnd6vrAVdNcWo8PKz",
+        "student": "6XDy94cL54H7JnwdHoE9AxbwX6JKwEz3LtL3DRN9hgmn"
+      },
+      "feePayer": null
+    },
+    "notes": {
+      "tutor": {
+        "issuer": "BjdTYysD9gLfsfWZEL2aEFVsamZxBzajXksRQfsYUGC9",
+        "model": "stand-in"
+      },
+      "student": {
+        "issuer": "BjdTYysD9gLfsfWZEL2aEFVsamZxBzajXksRQfsYUGC9",
+        "model": "stand-in"
+      }
+    },
+    "credits": {
+      "tutor": {
+        "signature": "34gcZ4MxLtPnJZSnEw4u6BLqpXovndDkaW1SkVaW2hKAXa6d7U12ckuGXwLwVqxA33BLVeQphnCABsLTwFeL81YP",
+        "amount": "0.1",
+        "credits": 10,
+        "reference": "XTSfxvR23JTTZdX6iM19eYQLNZRnfYkwET7B3cX5FEx"
+      },
+      "student": {
+        "signature": "2CXLrzKzdA8fKz7Y4stKzmzacmcFk4gSCNhm7MaZj9gfkggaUjX9gRzhFERGU89HSQi7c4NUHgEZRPfJwmPzp9rZ",
+        "amount": "0.1",
+        "credits": 10,
+        "reference": "GjGzNkWq1Pz9Eayan1UpJx3wnVXeJduuqmyH3T5YTsNw"
+      }
+    },
+    "profiles": {
+      "tutor": {
+        "unpaid": "refused",
+        "spent": 6,
+        "stamp": "1074e68e8951c751351917a2c907fbc612b6177d0653377321ac5e8c40b0a4c6",
+        "writeKey": "57scpmDnAjtptMCHgK6LCZKuteWLp4mZqRnwnBJZAX8",
+        "readKey": "AK28nEwbHFzxT6gjAnWuRbPbjQqYAqMEDr6rJp2KjEpQ"
+      },
+      "student": {
+        "unpaid": "refused",
+        "spent": 10,
+        "stamp": "1a5dcd7ca13fc27fc1d6eaef707dbbaa498263b7acb7db20a7956267f596555a",
+        "writeKey": "8pZ633VzNi1qMBx5wmFxwwgeQ18Xm9MsrHtQYcgYda2G",
+        "readKey": "9UF5YR4sVTHoafot3CgP6oE7jLRXAcb5JWqJqyLdWWgP"
+      }
+    },
+    "mcp": {
+      "offer": "34C6wh2pNTeajn5jSSxYSphJzdPhnvvvrH1e1kTmrAa2/offer/maths",
+      "offerBy": "57scpmDnAjtptMCHgK6LCZKuteWLp4mZqRnwnBJZAX8",
+      "message": {
+        "id": "7f415f10d49e841caf3bff671dac21a84198d4368300e4c7eccfd8a9dbed22e8",
+        "from": "HBnjepLvQE86hdFdfKUQxgsfwziJDw9KPhqfJwANFC96",
+        "hosts": [
+          "https://host.forest.foundation"
+        ],
+        "copy": [
+          "https://host.forest.foundation"
+        ]
+      },
+      "opened": true
+    },
+    "deal": {
+      "payment": {
+        "signature": "4md4NpZNSaPZsp5uMThZH8fyxL26pfHaBtaPinD94iR3KWA77URKS6D5W2E61UZSNsoS6GmCFKHF2bhfRpamNEft",
+        "charge": "10000",
+        "bytes": 426
+      },
+      "escrow": {
+        "address": "5G8c8E3AoqqwptL7KVVa74og4FGmW6oqyQ4Ut1uXdygK",
+        "open": {
+          "signature": "5BdRQSoCo6vp8MpHHdic5dVqyujHBcKJ1T3CXKQmLN2i2VimkYcYvvApBEnkWyWHEGZndgR1GGNmPYjrsSD5k8wX",
+          "charge": "3733640",
+          "bytes": 693
+        },
+        "pay": {
+          "signature": "sTvuvnqfYA3xERHhTqPDPa2rn4siG4kYwLKTc8Ty3AZPRP41Xz7Z8UyxDr9CwECNY2mH6GDaogzWFstga7bqfsw",
+          "charge": "10000",
+          "bytes": 523
+        },
+        "outcome": "pay",
+        "sponsor": "F3Jjh7KG8huhjEG7hRknqjEoTgWgHYuqrVzBBric59RD",
+        "schedule": {
+          "until": 1793319684,
+          "payerShare": 0,
+          "end": "pay"
+        }
+      }
+    },
+    "reviews": {
+      "student": {
+        "address": "HBnjepLvQE86hdFdfKUQxgsfwziJDw9KPhqfJwANFC96/review/1696761b3c237425",
+        "evidence": "5G8c8E3AoqqwptL7KVVa74og4FGmW6oqyQ4Ut1uXdygK"
+      },
+      "tutor": {
+        "address": "34C6wh2pNTeajn5jSSxYSphJzdPhnvvvrH1e1kTmrAa2/review/fd707e5297a8b643",
+        "evidence": "4md4NpZNSaPZsp5uMThZH8fyxL26pfHaBtaPinD94iR3KWA77URKS6D5W2E61UZSNsoS6GmCFKHF2bhfRpamNEft"
+      }
+    },
+    "index": {
+      "tutor": {
+        "url": "http://127.0.0.1:42871/profiles/34C6wh2pNTeajn5jSSxYSphJzdPhnvvvrH1e1kTmrAa2",
+        "rating": 10,
+        "reviews": 1,
+        "withPayment": 1,
+        "statement": "{\"index\":\"9V4SCFRYXio6Aa43htPkDCUePWZ6NqmAQHCfa8eMFtYc\",\"profile\":\"34C6wh2pNTeajn5jSSxYSphJzdPhnvvvrH1e1kTmrAa2\",\"rating\":\"10.0\",\"reviews\":1,\"time\":1792714894270,\"withPayment\":1}"
+      },
+      "student": {
+        "url": "http://127.0.0.1:42871/profiles/HBnjepLvQE86hdFdfKUQxgsfwziJDw9KPhqfJwANFC96",
+        "rating": 9,
+        "reviews": 1,
+        "withPayment": 1,
+        "statement": "{\"index\":\"9V4SCFRYXio6Aa43htPkDCUePWZ6NqmAQHCfa8eMFtYc\",\"profile\":\"HBnjepLvQE86hdFdfKUQxgsfwziJDw9KPhqfJwANFC96\",\"rating\":\"9.0\",\"reviews\":1,\"time\":1792714894270,\"withPayment\":1}"
+      },
+      "deal": {
+        "url": "http://127.0.0.1:42871/deals/5G8c8E3AoqqwptL7KVVa74og4FGmW6oqyQ4Ut1uXdygK",
+        "outcome": "pay",
+        "amount": "2000000",
+        "reviews": 1
+      }
+    },
+    "reputation": {
+      "profile": "7gqiyifhM4wo32Ps1n2ZfSVvmqPESBvsemRQdPUP6ML",
+      "url": "http://127.0.0.1:42871/profiles/7gqiyifhM4wo32Ps1n2ZfSVvmqPESBvsemRQdPUP6ML",
+      "stamp": "1074e68e8951c751351917a2c907fbc612b6177d0653377321ac5e8c40b0a4c6",
+      "root": "09a274610bc3fc3dd3ae4a4cf43841b8129056d2df33845b8268fdd862e96a32",
+      "time": 1792714894270,
+      "leaves": 2,
+      "score": 100,
+      "result": "shown"
+    },
+    "balances": {
+      "tutor": 5.91081,
+      "student": 9.92587,
+      "coach": 3.97474
+    }
+  },
+  "loop": {
+    "issuer": {
+      "name": "issuer.e2e-loop.invalid",
+      "face": "BjdTYysD9gLfsfWZEL2aEFVsamZxBzajXksRQfsYUGC9",
+      "id": "CFVp62GkF4eyMkf1uRiwcD9iiyxgELStcRhtPQRNcTnr"
+    },
+    "index": "9V4SCFRYXio6Aa43htPkDCUePWZ6NqmAQHCfa8eMFtYc"
+  }
+}
