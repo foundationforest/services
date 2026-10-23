@@ -325,9 +325,9 @@ Another index holds its own.
   other host, follows no profile's hosts record, and takes no hosts record sent to it.
 - **Which issuer keys count, and how much** (`lists/issuers.json`): each key by its address, with the
   issuer name its proofs must carry, the name of its check, its points, and an optional `until`.
-  Today it lists none: the issuer `issuer.forest.foundation` makes its face key and its ID key at its
-  first start, and they go here then, the face check at 1 point and the ID check at 2. Until then, no
-  profile counts here.
+  Today it lists the two keys the issuer `issuer.forest.foundation` publishes at its `GET /`, neither
+  with an `until`: its face key `MC8L1NFD…`, the face check at 1 point, and its ID key `HfYyeaez…`,
+  the ID check at 2.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **How it weighs** (`config/scoring.json`): `damping` 0.85, `tolerance` 10⁻⁹, `maxRounds` 100,
   `shrink` (m) 0.5, about the weight of three brand-new reviewers, and the evidence weights `escrow`
@@ -373,7 +373,6 @@ Another index holds its own.
 
 - **It trusts the issuers it lists** to sign notes only for the people they say. It cannot tell.
 - **It trusts its RPC** for receipts and payments; no second source checks it.
-- **No profile counts yet:** `lists/issuers.json` lists no key until the issuer has made its keys.
 - **The public RPC answers a few requests at a time.** The first read of the escrow's history takes
   many passes there; a keyed RPC in `RPC_URL` reads it at once.
 - **A payment not final within a day of its review counts for nothing, for good.** The day runs from
