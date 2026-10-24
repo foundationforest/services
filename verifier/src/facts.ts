@@ -1,8 +1,8 @@
-// What a note's attributes are made from, and the ID check's fingerprint.
+// What a stamp's facts are made from, and the ID check's fingerprint.
 //
-// A note is the standard's (proofs/note/README.md, "The note and the note proof"): the person's note
-// number and one field element, `attributes`, signed with the standard's `signNote`. This issuer
-// makes attributes by a recipe fixed for each of its two keys, for good (a new recipe is a new key):
+// A stamp is the standard's (proofs/stamp/README.md, "The stamp and the stamp proof"): the person's stamp
+// number and one field element, `facts`, signed with the standard's `signStamp`. This verifier
+// makes facts by a recipe fixed for each of its two keys, for good (a new recipe is a new key):
 //
 //   face key   Poseidon([h(model), h(embedding)])
 //   ID key     Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])
@@ -20,11 +20,11 @@
 //                    3166-1 numeric code; 0 when it has none (Kosovo) or none was read, so a gap in
 //                    the table never turns a person away
 //
-// The note carries these fields beside attributes (server.ts), so the person keeps what it was made
+// The stamp carries these fields beside facts (server.ts), so the person keeps what it was made
 // from and anyone can make it again.
 //
-// The fingerprint is how the issuer knows a person came to the ID check before without keeping who
-// they are: HMAC-SHA256, under a key mixed from the issuer's seed, of the standard's canonical JSON of
+// The fingerprint is how the verifier knows a person came to the ID check before without keeping who
+// they are: HMAC-SHA256, under a key mixed from the verifier's seed, of the standard's canonical JSON of
 // `{birth, name}`, written as above. A reader of the file without the key cannot test a guessed name
 // against it. The country is left out on purpose: a renewed document, or another country's, is the
 // same person.
@@ -46,7 +46,7 @@ export const RECIPES = {
   h: 'SHA-256 of the bytes, read as a big-endian integer, mod the BN254 scalar order',
 } as const
 
-/** What the ID check reads of a person, written one way: what its attributes and fingerprint are made from. */
+/** What the ID check reads of a person, written one way: what its facts and fingerprint are made from. */
 export type Person = { name: string; birth: string; country: number }
 
 /** h(x): SHA-256 of x's bytes (text as UTF-8), read as a big-endian integer, reduced into the field. */
@@ -54,8 +54,8 @@ export function h(x: Uint8Array | string): bigint {
   return BigInt('0x' + createHash('sha256').update(x).digest('hex')) % BN254_R
 }
 
-/** The face key's attributes: Poseidon([h(model), h(embedding)]). */
-export function faceAttributes(model: string, embedding: Uint8Array): bigint {
+/** The face key's facts: Poseidon([h(model), h(embedding)]). */
+export function faceFacts(model: string, embedding: Uint8Array): bigint {
   return poseidon2([h(model), h(embedding)])
 }
 
@@ -68,8 +68,8 @@ export function daysOf(birth: string): number | null {
   return new Date(ms).toISOString().slice(0, 10) === birth ? ms / 86_400_000 : null
 }
 
-/** The ID key's attributes: Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric]). */
-export function idAttributes(model: string, embedding: Uint8Array, person: Person): bigint {
+/** The ID key's facts: Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric]). */
+export function idFacts(model: string, embedding: Uint8Array, person: Person): bigint {
   const days = BigInt(daysOf(person.birth)!)
   return poseidon5([h(model), h(embedding), h(person.name), ((days % BN254_R) + BN254_R) % BN254_R, BigInt(person.country)])
 }
@@ -98,10 +98,10 @@ export function fingerprint(key: Uint8Array, person: Person): Uint8Array {
   return new Uint8Array(createHmac('sha256', key).update(canonical({ birth: person.birth, name: person.name })).digest())
 }
 
-/** A field element as decimal text, as the apps write a note number: no sign, no leading zero. */
+/** A field element as decimal text, as the apps write a stamp number: no sign, no leading zero. */
 const DECIMAL = /^(0|[1-9][0-9]{0,76})$/
 
-/** A note number from its decimal text, or null. */
+/** A stamp number from its decimal text, or null. */
 export function decimal(value: unknown): bigint | null {
   if (typeof value !== 'string' || !DECIMAL.test(value)) return null
   const n = BigInt(value)

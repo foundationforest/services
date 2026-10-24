@@ -68,7 +68,7 @@ export async function get(file: Entry, waits = WAITS): Promise<{ bytes: Uint8Arr
   for (const url of file.urls) {
     for (let i = 0; ; i++) {
       try {
-        const res = await fetch(url, { headers: { 'user-agent': 'foundationforest/services issuer fetch' }, signal: AbortSignal.timeout(300_000) })
+        const res = await fetch(url, { headers: { 'user-agent': 'foundationforest/services verifier fetch' }, signal: AbortSignal.timeout(300_000) })
         if (!res.ok) throw new Error(`answered ${res.status}`)
         const bytes = new Uint8Array(await res.arrayBuffer())
         const got = sha256(bytes)

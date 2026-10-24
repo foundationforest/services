@@ -1,6 +1,6 @@
-// A stand-in for Didit, for tests on this machine only: the issuer's own test of both checks, and the
-// e2e loop's issuer (e2e/), since a script has no face. It answers the calls the issuer's Didit client
-// makes (issuer/src/didit.ts), in Didit's API v3 shape, for two workflows: the face check's and the ID
+// A stand-in for Didit, for tests on this machine only: the verifier's own test of both checks, and the
+// e2e loop's verifier (e2e/), since a script has no face. It answers the calls the verifier's Didit client
+// makes (verifier/src/didit.ts), in Didit's API v3 shape, for two workflows: the face check's and the ID
 // check's, the foundation's live ones unless FAKE_DIDIT_FACE_WORKFLOW_ID and FAKE_DIDIT_ID_WORKFLOW_ID
 // name others.
 //
@@ -19,13 +19,13 @@
 //                                       gone; 200 {session_id, face_retention_outcome}, `retained_with_user`
 //                                       when the body asks to retain the face (`retain_face_embeddings`),
 //                                       else `deleted`; 404 for a session it does not have
-//   GET  /photo/{id}                    the selfie: a few bytes that are no photo. The issuer runs with
+//   GET  /photo/{id}                    the selfie: a few bytes that are no photo. The verifier runs with
 //                                       FACE_MODEL=stand-in beside it, one embedding for everyone, so
 //                                       nothing reads them as a face.
 //
 // So every check passes unless a scenario says otherwise, each ID check for a person no one has seen.
-// It listens on 127.0.0.1 only, and the issuer takes the stand-in embedding only with a Didit on
-// loopback; nothing in the issuer's image starts it. It keeps in memory the sessions it opened, their
+// It listens on 127.0.0.1 only, and the verifier takes the stand-in embedding only with a Didit on
+// loopback; nothing in the verifier's image starts it. It keeps in memory the sessions it opened, their
 // workflows, vendor_data and scenarios and, for an ID session, the name it made up, nothing else, and
 // forgets them when it stops. It logs nothing per request.
 

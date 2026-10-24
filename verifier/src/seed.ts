@@ -1,23 +1,26 @@
-// The issuer's seed: 32 random bytes that every key the issuer uses is mixed from. The seed itself
+// The verifier's seed: 32 random bytes that every key the verifier uses is mixed from. The seed itself
 // signs nothing.
 //
-// It is made on the issuer's own machine, the first time the issuer starts without one (the
-// standard's `newSeed`), and kept in one file beside its database (`issuer-seed.json` in
+// It is made on the verifier's own machine, the first time the verifier starts without one (the
+// standard's `newSeed`), and kept in one file beside its database (`verifier-seed.json` in
 // DATABASE_PATH's directory), on the same volume: the seed and the record of which checks it signed
-// for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the issuer's own
+// for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the verifier's own
 // user only. Nothing prints or logs it.
 //
 // What is mixed from it, with the standard's `hkdf`, the same every time:
 //
-//   issuer/face             the face key: the 32 private bytes the standard's `signNote` takes, which
-//                           sign every face note
-//   issuer/id               the ID key, which signs every ID note
-//   issuer/fingerprint      the key of the ID check's fingerprints (notes.ts)
+//   issuer/face             the face key: a service key (the standard's `serviceKey`) from these 32
+//                           bytes, which `signStamp` takes, and which sign every face stamp
+//   issuer/id               the ID key, a service key the same way, which signs every ID stamp
+//   issuer/fingerprint      the key of the ID check's fingerprints (facts.ts)
 //   issuer/sponsor          the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
 //   issuer/reference/<id>   an Ed25519 key whose address a payment for one ID check names (payment.ts)
 //
-// Each note key's attributes recipe is fixed for good (notes.ts): a new recipe is a new key, under a
+// Each stamp key's facts recipe is fixed for good (facts.ts): a new recipe is a new key, under a
 // new text here. None of these keys holds money.
+//
+// The texts keep the word issuer, the verifier's old name: a text a recipe mixes under keeps its
+// bytes, as the standard's own do (`forest/v1/issuer`), since a new text would give new keys.
 
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -26,7 +29,7 @@ import { hkdf, newSeed } from '@foundationforest/keys'
 import { base58, hex } from '@foundationforest/records'
 
 /** The seed file's name, in the database's directory. */
-export const SEED_FILE = 'issuer-seed.json'
+export const SEED_FILE = 'verifier-seed.json'
 
 /** The texts each key is mixed under. */
 export const INFO = {
@@ -81,7 +84,7 @@ export function parseSeed(text: string, source: string): Seed {
   }
   const seed = (value as { seed?: unknown } | undefined)?.seed
   const valid = typeof value === 'object' && value !== null && Object.keys(value).join() === 'seed' && typeof seed === 'string' && /^[0-9a-f]{64}$/.test(seed)
-  if (!valid) throw new Error(`${source} is not the issuer's seed: {"seed":"<64 lowercase hex>"}`)
+  if (!valid) throw new Error(`${source} is not the verifier's seed: {"seed":"<64 lowercase hex>"}`)
   return seedFrom(hex.decode(seed as string))
 }
 

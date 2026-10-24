@@ -4,24 +4,25 @@ Part of Forest's services: [the top README](../README.md).
 
 The foundation's host keeps people's signed records, messages and photos, and serves them to anyone, with each write paid in credits.
 
-Forest does four jobs: who you are, that you are real, what you have done, and your money. A host
-does the first: it keeps the records that say who a profile is, and serves them to anyone. The
-other three it only carries:
+Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+rank. A host serves two of these: it keeps the folder of each profile a seed gives, and serves the
+offers and reviews in it to anyone. The rest it only carries:
 
-- the note proofs on a profile record, which an issuer made possible and readers check (this host
-  checks one only for an inbox that asks for it);
-- the offers and reviews an index reads;
+- the stamp proofs on a profile record, which a verifier's stamp made possible and readers check
+  (this host checks one only for an inbox that asks for it);
+- the records an index reads to rank profiles;
 - no money but its own credits.
 
-This is one copy, run by the Forest Foundation. Anyone can run another; the main way is this code,
-or the standard's reference host alone, or one of their own that answers the same requests
+This is one copy, run by the Open Forest Foundation. Anyone can run another; the main way is this
+code, or the standard's reference host alone, or one of their own that answers the same requests
 ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)).
 
-It owns nothing of the person's. A host holds files the person can copy out. Anyone can copy a
-folder out of it; the main way is the person's app reading every record
-(`GET /v1/records?profile=<address>`) and every blob (`GET /v1/blobs/<sha256>`), and posting them to
-another host. The only thing here that is not a copy of what the person's keys signed is their
-folder's balance of credits.
+Of the person's, it keeps copies: the records each of their profiles' main keys signed, a private
+one encrypted; the messages to each inbox, encrypted; the blobs each folder put; and their vault,
+encrypted, when their app keeps it here. Anyone can copy a folder out of it; the main way is the
+person's app reading every record (`GET /v1/records?profile=<address>`) and every blob
+(`GET /v1/blobs/<sha256>`), and posting them to another host. The only thing here that is not a copy
+of what the person's main keys signed is each folder's balance of credits.
 
 ## How it works
 
@@ -40,18 +41,18 @@ record, message and blob, as the standard says, before it keeps anything.
 hooks that charge for writes, and two of the standard's pieces:
 
 - **`recordChoice`** charges a record to its own folder's balance, or refuses it (`refused`, with
-  what it costs and what the folder holds). The reference host never asks about a hosts or
-  permissions record, so those are free.
+  what it costs and what the folder holds). The reference host never asks about a hosts record,
+  so it is free.
 - **`blobChoice`** takes the standard's blob types, then reserves the bytes' price on the folder
   that puts them. The front takes the price once the reference host answers that it kept them, or
   releases it.
-- **`readSender`** reads a sender's records, for a message a write key signed or one to an inbox
-  that takes messages only from an issuer's note holders. It uses the standard's client
+- **`readSender`** reads a sender's records, for a message to an inbox that takes messages only
+  from a verifier's stamp holders. It uses the standard's client
   (`readPage`, every page) through the standard's `publicFetch`, so it reaches only public
   addresses and follows no redirect. It keeps what it read for a while, per sender and host. A
   read that fails is not kept: the reference host answers `lookup`, and the sender tries again.
-- **`verifyNote`**, the note client's (`@foundationforest/note`), checks the note proof on that
-  sender's profile record, as the standard's `noteCheck` gives it. Its key is in the note client,
+- **`checkStamp`**, the stamp client's (`@foundationforest/stamp`), checks the stamp proof on that
+  sender's profile record, as the standard's `stampCheck` gives it. Its key is in the stamp client,
   so the check reads no file and asks no network.
 
 A message costs nothing, so the reference host is given no message hook.
@@ -93,12 +94,12 @@ signs it blind, over a number only the buyer's app knows, so when the credit com
 the host sees a good signature and nothing that ties it to the buy.
 
 - Every credit of this host answers one challenge: credit type 2, the host's name (from
-  `PUBLIC_ORIGIN`) as the issuer's name, no redemption context and no origin info. With no
+  `PUBLIC_ORIGIN`) as its `issuer_name`, no redemption context and no origin info. With no
   context, credits can be bought ahead and kept.
 - A credit is these bytes: its type (2 bytes), a nonce (32), the challenge's SHA-256 (32), the
   key's id, SHA-256 of the key (32), and the signature (256). 354 bytes, written in base64url.
 - The signature is RSABSSA-SHA384-PSS-Deterministic (RFC 9474) over the first 98 bytes. Each
-  signature is Node's own RSA (OpenSSL); privacypass-ts's issuer signs with JavaScript big
+  signature is Node's own RSA (OpenSSL); privacypass-ts's `Issuer` signs with JavaScript big
   integers, hundreds of times slower.
 - A credit's id, on the spent list, is its nonce in hex.
 
@@ -106,7 +107,7 @@ the host sees a good signature and nothing that ties it to the buy.
 volume (PKCS #8, only its own user may read it), and reads it on every start after. It is in no
 setting and no variable.
 
-**Its directory,** `GET /.well-known/private-token-issuer-directory`, is Privacy Pass's issuer
+**Its directory,** `GET /.well-known/private-token-issuer-directory`, is Privacy Pass's
 directory as RFC 9578 writes it, with one more field:
 
 ```
@@ -144,7 +145,7 @@ directory as RFC 9578 writes it, with one more field:
 Anyone can buy credits for any folder; the main way is a sponsor's ticket.
 
 - **A sponsor's ticket,** `Forest-Payment: ticket <ticket>`.
-  - A sponsor is an Ed25519 key listed in `SPONSORS`: the issuer's sponsor address, whose tickets
+  - A sponsor is an Ed25519 key listed in `SPONSORS`: the verifier's sponsor address, whose tickets
     are the welcome gift.
   - The app sends the sponsor the buy's reference. The sponsor signs
     `forest credit ticket\n<origin>\n<reference>\n<n>` in UTF-8, so the ticket pays for that buy at
@@ -202,7 +203,7 @@ message, and the blob types.
   **it stores** (`PER_KB`), rounded up to a millionth of a credit.
   - A 1 kB record costs 0.02 credit, a 200 kB photo 2.01, and a 50 MB video 500.01: five dollars.
   - A delete costs the floor, 0.01, and goes through free when the folder cannot pay.
-  - A hosts or permissions record is free. A message is free. Reads are free.
+  - A hosts record is free. A message is free. Reads are free.
   - Both prices are in the directory, where an app reads them.
 - **Why these prices:** ten years of keeping at Railway's prices today, plus reads, plus 40%. The
   numbers move when Railway's prices do.
@@ -214,7 +215,7 @@ message, and the blob types.
     a GB out.
   - The floor is the price of one kilobyte: a small write is checked and logged like a large one.
 - **Buying:** at most **1,000** credits a buy (`MAX_BUY`), and **100** a spend (`SPEND_MAX`).
-  Tickets from the sponsors in `SPONSORS`; we list the issuer's sponsor address, whose tickets are
+  Tickets from the sponsors in `SPONSORS`; we list the verifier's sponsor address, whose tickets are
   a person's first credits. A payment on Solana counts once it is finalized, and only when
   `CREDIT_MINT`, `CREDIT_PAY_TO` and `RPC_URL` are set.
 - **Sizes:** records and messages up to **65,536 bytes** each (the standard's default); **100** of
@@ -223,14 +224,13 @@ message, and the blob types.
   their folder deletes them.
 - **Keeps** a replaced record and a message for **30 days**, by its own clock. A current record stays.
 - **Inboxes:** it takes a message for any profile whose profile record here declares an inbox. It
-  follows each of the standard's `senders` kinds: anyone, or the holders of a note from one issuer,
-  checked by the note proof on the sender's profile record. It also follows one message per sender
+  follows each of the standard's `senders` kinds: anyone, or the holders of a stamp from one
+  verifier, checked by the stamp proof on the sender's profile record. It also follows one message per sender
   (`once`) and a largest size (`maxBytes`).
-- **Senders' records:** to take a message a write key signed, or one for an issuer's note holders,
-  it reads the sender's records from the host the message names. The read takes at most **5
-  seconds**, goes only to a public address, and follows no redirect. What it read is kept for **60
-  seconds** (`SENDER_CACHE_SECONDS`): at most one read a sender a minute, and a past key stops
-  within it.
+- **Senders' records:** to take a message for a verifier's stamp holders, it reads the sender's
+  records from the host the message names. The read takes at most **5 seconds**, goes only to a
+  public address, and follows no redirect. What it read is kept for **60 seconds**
+  (`SENDER_CACHE_SECONDS`): at most one read a sender a minute.
 - **Who may write:** anyone can, who pays; the main way is the person's app, posting each record to
   every host its hosts record names. It refuses no write by its own choice but its price, and has
   no rate limit.
@@ -304,10 +304,9 @@ What every host must do, and its tests, are the standard's.
   price of each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live record, or of a
   blob the folder holds, goes through when the balance cannot pay its floor.
-- **A person can always move and always remove a key.** Hosts and permissions records are free:
-  the reference host never asks about them.
+- **A person can always move.** A hosts record is free: the reference host never asks about it.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
-  record's signature is its only proof, and a pull's is the profile's main key's or a read key's.
+  record's signature is its only proof, and a pull's is the profile's main key's.
 - **No address logs.** Neither the reference host nor the front logs a request or keeps an
   address. On Railway, Railway's own request logs exist.
 - **It cannot tell which buy a credit came from.** It signed the credit blind and never saw its
@@ -323,12 +322,12 @@ What every host must do, and its tests, are the standard's.
 - **Anyone who pays can write here** anything the reference host accepts.
 - **Messages are free, so an inbox open to anyone can be flooded.** Each message takes up to 64 KB
   of this host's volume for 30 days, and there is no rate limit. The inbox's own fields (an
-  issuer's note holders only, one message each, a largest size) are what limit it.
+  verifier's stamp holders only, one message each, a largest size) are what limit it.
 - **A folder's balance is public.** Anyone who knows its address can ask for it.
 - **A balance is never refunded,** and never moves to another folder.
-- **A network address can tie a buy to a folder.** The foundation runs this host and the issuer
+- **A network address can tie a buy to a folder.** The foundation runs this host and the verifier
   whose tickets pay for a person's first credits. A buy collected and spent into a folder from one
-  network address can be matched, and the issuer knows whose buy it paid. An app that spends over
+  network address can be matched, and the verifier knows whose buy it paid. An app that spends over
   a VPN makes that harder.
 - **A credit names nobody, so it is a bearer credit.** That is what makes it unlinkable. Nothing
   stops a person from handing its bytes to someone else, and whoever holds them can spend it.
@@ -354,10 +353,7 @@ What every host must do, and its tests, are the standard's.
   memory, in this one process.
 - **It trusts its RPC** for payments. A payment check that fails refuses the buy (503), and the app
   collects it again.
-- **A past write key can still send here for up to 60 seconds:** until what this host read of the
-  sender's records expires. Its pulls stop at once.
-- **Taking a write key's message, or one for an issuer's note holders, tells the sender's host
-  something:** this host asks it for the sender's records, so it sees that this host asked, and
+- **Taking a message for a verifier's stamp holders tells the sender's host something:** this host asks it for the sender's records, so it sees that this host asked, and
   when.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
   change to the standard's storage first.
@@ -367,7 +363,7 @@ What every host must do, and its tests, are the standard's.
 ## Who decides what
 
 - **The standard:** the eight requests, what makes a record, a message and a blob valid, an inbox's
-  fields, and the note proof.
+  fields, and the stamp proof.
 - **This host, by its own choice:**
   - the numbers above: its prices, what one credit costs, and what is free;
   - which sponsors it takes, and which dollar and RPC a payment is checked in;
@@ -377,8 +373,8 @@ What every host must do, and its tests, are the standard's.
     buy and its reference, the pay link, the ticket, the headers.
 - **Anyone holding a credit:** which folder it goes into.
 - **A buyer or a sponsor:** whom it pays for.
-- **The person, through their app:** which hosts their hosts record names, who may send to their
-  inbox, and which access keys act for them.
+- **The person, through their app:** which hosts their hosts record names, and who may send to
+  their inbox.
 
 ## FAQ
 

@@ -5,12 +5,13 @@ Part of Forest's services: [the top README](../README.md).
 The fee payer pays the chain's fees for a person's transaction, so the person needs no coin, and
 charges them what that cost in the dollar they pay with.
 
-Of Forest's four jobs it serves one, your money: it lets a person who holds dollars and no SOL
-open an escrow, pay into it and settle it. This is one copy, which the foundation runs; anyone can
-run another, and an app can use any fee payer or none. It owns nothing of the person's: it holds no
-key of theirs, it signs only as the transaction's payer, and the money in an escrow moves only as
-the escrow allows
-([the standard's escrow](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md)).
+Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+rank; the deals behind them are paid directly, between people. The fee payer serves the paying: it
+lets a person who holds dollars and no SOL open an escrow, pay into it and settle it. This is one
+copy, which the Open Forest Foundation runs; anyone can run another, and an app can use any fee
+payer or none. It keeps nothing of the person's: it holds no key of theirs, it signs only as the
+transaction's payer, and the money in an escrow moves only as the escrow allows
+([the standard's escrow](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md)).
 
 **Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
 there, paid in two test dollars, at https://fee-payer.forest.foundation.
@@ -102,7 +103,7 @@ anywhere (`… 'SPL Token Transfer'`); a payment one unit short of the price (`I
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. The
 fee payer fronts an escrow's two deposits, charges the person for them when the escrow opens, and
 the escrow records it as the key that fronted the rent and sends every rent back to it
-([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md#rent)):
+([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md#rent)):
 
 - **The escrow's account,** 312 bytes (2,235,200 lamports at 5,080 a byte), stays as the receipt
   for good and keeps its rent; it comes back whole only if the escrow closes unfunded.

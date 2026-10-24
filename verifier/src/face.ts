@@ -1,5 +1,5 @@
-// The face embedding: the numbers a face model gives for a face, which a note's attributes are made
-// from (notes.ts). Two photos of one person give two embeddings close to each other; two people, two
+// The face embedding: the numbers a face model gives for a face, which a stamp's facts are made
+// from (facts.ts). Two photos of one person give two embeddings close to each other; two people, two
 // far apart.
 //
 // Two open models from OpenCV's model zoo, used unchanged, run with onnxruntime-web (WASM, in Node):
@@ -38,7 +38,7 @@ export const MODELS_DIR = join(here, '../models')
 export const DETECTOR_FILE = 'face_detection_yunet_2023mar.onnx'
 export const RECOGNIZER_FILE = 'face_recognition_sface_2021dec.onnx'
 
-/** The model a note names for an embedding SFace made. */
+/** The model a stamp names for an embedding SFace made. */
 export const SFACE_MODEL = 'opencv-sface-2021dec'
 
 /**
@@ -74,7 +74,7 @@ export class FaceError extends Error {
 }
 
 export interface Embedder {
-  /** The model's name, as a note carries it. */
+  /** The model's name, as a stamp carries it. */
   readonly model: string
   /** The embedding of the face in this photo: 512 bytes. Throws FaceError. */
   embed(photo: Uint8Array): Promise<Uint8Array>

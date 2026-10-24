@@ -2,8 +2,8 @@
 # to main. Each job first fetches the standard and the markets at their pins and builds the standard
 # (standard.sh), then installs what it uses.
 #
-#   issuer       its type-check (the stand-in Didit for tests included) and its tests: note proofs made
-#                from its notes and checked against its published keys, the attributes vectors, the
+#   verifier     its type-check (the stand-in Didit for tests included) and its tests: stamp proofs made
+#                from its stamps and checked against its published keys, the facts vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its welcome gift's ticket taken by the host's own seller, bought with
 #                e2e's credits client
@@ -45,7 +45,7 @@ defaults:
     shell: bash
 
 jobs:
-  issuer:
+  verifier:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,12 +58,12 @@ jobs:
           ./standard.sh
           (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
-          (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
+          (cd verifier && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
-        working-directory: issuer
+        working-directory: verifier
         run: npm run check
       - name: Test
-        working-directory: issuer
+        working-directory: verifier
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"

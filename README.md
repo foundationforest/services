@@ -17,7 +17,7 @@ middle. Each service here helps with one, and holds none of it for the person:
 | What | What the person holds | How anyone checks it | The service that helps |
 |---|---|---|---|
 | Who you are | A profile: a main key from their seed, one per label, and its signed records | Each record's signature, against the profile's address | The **host** keeps the records and serves them to anyone |
-| That you are real | A note an issuer signed to their seed, shown on a profile record as a note proof | The proof, against the issuer's key | The **issuer** checks one real person and signs them a note |
+| That you are real | A stamp a verifier signed to their seed, shown on a profile record as a stamp proof | The proof, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
 | What you have done | Reviews naming their evidence, a payment or an escrow's receipt; and a reputation proof that carries a rating to another of their profiles | Each review's evidence, on chain; each rating and tree root, against the index's key; the proof, against the root | The **index** reads it all, rates each profile, and signs what it says |
 | Your money | Dollars at each profile's pay address; an escrow, on chain | The chain | The **fee payer** pays the chain's fees for a person who holds dollars and no SOL |
 
@@ -30,7 +30,7 @@ with test dollars.
 ### The sort
 
 - **[standard](https://github.com/foundationforest/standard):** what two strangers' programs must
-  agree on. That means formats, recipes and checks: keys, the note and reputation proofs, records,
+  agree on. That means formats, recipes and checks: keys, the stamp and reputation proofs, records,
   and the escrow. Every service here uses its pieces unchanged.
 - **[markets](https://github.com/foundationforest/markets):** what a post and a review hold, one
   market at a time.
@@ -42,7 +42,7 @@ with test dollars.
 
 | Folder | What it is | The foundation's copy |
 |---|---|---|
-| [`issuer`](issuer/README.md) | Checks that you are one real person, by face, through Didit, and signs you a note with its face key; its ID check, once it has a price, signs with its ID key | https://issuer.forest.foundation |
+| [`verifier`](verifier/README.md) | Checks that you are one real person, by face, through Didit, and signs you a stamp with its face key; its ID check, once it has a price, signs with its ID key | https://issuer.forest.foundation |
 | [`host`](host/README.md) | Keeps profiles' signed records, messages and photos, serves them to anyone, and takes each write's price in its credits | https://host.forest.foundation |
 | [`index`](index/README.md) | Reads the hosts it lists and the escrow's receipts, rates each profile whose note proof checks, and serves it all as pages and JSON | https://index.forest.foundation |
 | [`fee-payer`](fee-payer/README.md) | Pays the chain's fees for a person's transaction, and charges them what that cost in the dollar they pay with | https://fee-payer.forest.foundation |
@@ -57,7 +57,7 @@ and where, and How we run it. On a machine of your own, Node 22.18 or later:
 
 ```sh
 ./standard.sh                      # the standard and the markets, at their pins
-cd host && npm ci && npm start     # or issuer, index, mcp; each README lists its settings
+cd host && npm ci && npm start     # or verifier, index, mcp; each README lists its settings
 fee-payer/build.sh && fee-payer/run.sh   # the fee payer: Kora, built, then run
 ```
 
@@ -68,7 +68,7 @@ on `main`, from a clean install, six jobs:
 ./standard.sh
 (cd standard/proofs/reputation/circuit && npm run fetch)   # for the index's tests
 
-(cd issuer && npm ci && npm run fetch && npm run check && npm test)   # needs e2e and host installed
+(cd verifier && npm ci && npm run fetch && npm run check && npm test)   # needs e2e and host installed
 (cd index && npm ci && npm run check && npm test)
 (cd fee-payer && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
 (cd host && npm ci && npm run check && npm test)
@@ -99,7 +99,7 @@ A test that cannot find what it needs skips, and CI fails on any skip: each summ
 - **The markets directory, at `MARKETS`:** each market's roles, posts and reviews.
 - **Each service, as it is run:** what its README's How we run it says. Whoever runs a copy chooses
   its own.
-- **An app, with the person:** which issuer, host, fee payer, index and mcp to use.
+- **An app, with the person:** which verifier, host, fee payer, index and mcp to use.
 - **The person:** their seed and profiles, which access keys to hand out, and which proofs to show.
 
 ## FAQ
@@ -109,25 +109,25 @@ Everything but its secrets and what it keeps private for people:
 
 - **Public:**
   - this code and every setting these READMEs list;
-  - the issuer's name and its two keys;
+  - the verifier's name and its two keys;
   - every record on the host (a private record as an envelope only its readers open);
   - every payment and escrow receipt, on chain;
   - the index's pages, JSON and reputation tree;
   - each run of the loop's record.
 - **Secret:**
-  - the seeds and keys each service makes for itself: the issuer's seed, the index's seed, the fee
+  - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the fee
     payer's key, and the host's credit key;
   - the phrase that funds the loop;
   - the API keys and keyed URLs (web addresses with a key inside): Didit's, and the RPC's;
   - the keys to the host's bucket.
 - **Private by design:**
-  - what the issuer keeps ([issuer](issuer/README.md#what-it-keeps));
-  - the messages in an inbox, which only the profile's main key or a read key it lists pulls, and
-    only its inbox key and the read keys its inbox names open.
+  - what the verifier keeps ([verifier](verifier/README.md#what-it-keeps));
+  - the messages in an inbox, which only the profile's main key pulls, and only its inbox key
+    opens.
 - **Kept, not published:**
   - the host's spent list, the proofs it took, its sponsors' bill, each folder's balance, and the id
     of each record it took a price for;
-  - the issuer's list of note numbers given a gift;
+  - the verifier's list of stamp numbers given a gift;
   - the hosting provider's own request logs.
 
 **Why is the standard pinned by `standard.sh`, and not a submodule or a copy?**

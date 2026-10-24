@@ -1,11 +1,11 @@
-// The welcome gift: at a note number's first face note, the issuer gives the host credits the
+// The welcome gift: at a stamp number's first face stamp, the verifier gives the host credits the
 // person's app buys, as their sponsor.
 //
 // The app makes one buy at the host, of exactly the credits the gift gives, and keeps what finishes
-// it; it sends the issuer the buy's reference. The issuer's sponsor key signs a ticket for it
+// it; it sends the verifier the buy's reference. The verifier's sponsor key signs a ticket for it
 // (ticket.ts): that host, that buy, that many credits. The app collects the buy at the host with the
-// ticket. The issuer sees the buy's reference, never the credits: the host signs them blind. It pays
-// nothing and holds no money: the host lists the issuer's sponsor key and counts what its tickets
+// ticket. The verifier sees the buy's reference, never the credits: the host signs them blind. It pays
+// nothing and holds no money: the host lists the verifier's sponsor key and counts what its tickets
 // paid for.
 
 import { createHash } from 'node:crypto'

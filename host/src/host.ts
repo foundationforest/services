@@ -11,8 +11,8 @@
 // host's choices (`recordChoice`, `blobChoice`). A record is claimed by its id as its price is taken,
 // so two copies pay once. Bytes are stored first: their price is reserved, then taken once the
 // standard's host answers that it kept them, or released; the front sends on one request for the
-// same bytes at a time. The standard's host asks nothing about a hosts or permissions record, so
-// those are free, and nothing about a message here, so messages are free. Reads are free.
+// same bytes at a time. The standard's host asks nothing about a hosts record, so it is free, and
+// nothing about a message here, so messages are free. Reads are free.
 //
 // Taking your own things down is never blocked by money: a null body over a live record, and a blob
 // delete the standard's host carries out, cost the floor when the balance holds it, and go through
@@ -22,21 +22,21 @@
 // folder, and the blobs on disk there or in an S3-compatible bucket (BLOBS=s3). The credits keep
 // their own file and their key in DATA_DIR/credits.
 //
-// A message a write key signed, or one to an inbox that takes messages only from an issuer's note
-// holders, needs the sender's records: the standard's host asks `readSender`, and this host reads
-// them with the standard's client, within SENDER_READ_MS, from a public address only and with no
-// redirect (the standard's `publicFetch`), and keeps what it read for SENDER_CACHE_SECONDS. The note
-// proof on the sender's profile record is checked by the note client's `verifyNote`.
+// A message to an inbox that takes messages only from a verifier's stamp holders needs the sender's
+// records: the standard's host asks `readSender`, and this host reads them with the standard's
+// client, within SENDER_READ_MS, from a public address only and with no redirect (the standard's
+// `publicFetch`), and keeps what it read for SENDER_CACHE_SECONDS. The stamp proof on the sender's
+// profile record is checked by the stamp client's `checkStamp`.
 
 import { mkdirSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { verifyNote } from '@foundationforest/note'
 import { type Checked, checkBlobRequest, encodeRecord, readPage, recordId, unsignedOf } from '@foundationforest/records'
 import { type BlobChoice, type BlobDriver, Host, type HostOptions, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
 import { publicFetch } from '@foundationforest/records/public'
+import { checkStamp } from '@foundationforest/stamp'
 import { base58 } from '@scure/base'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
@@ -217,9 +217,8 @@ async function readRecords(host: string, profile: string, get: typeof fetch): Pr
 /**
  * The standard's `readSender`: a sender's records from the host a message names, kept for `cacheMs`
  * per sender and host. Two messages at once share one read; a read that fails is not kept, so the
- * standard's host answers `lookup` and the sender's next try reads again. So a write key its owner
- * made past is still taken until what was read before expires. A host at no public address, or one
- * that redirects, is a read that fails.
+ * standard's host answers `lookup` and the sender's next try reads again. A host at no public
+ * address, or one that redirects, is a read that fails.
  */
 export function senderReader(cacheMs: number, now: () => number = Date.now, get: typeof fetch = publicFetch): NonNullable<HostOptions['readSender']> {
   const kept = new Map<string, { at: number; records: Promise<Checked[]> }>()
@@ -401,7 +400,7 @@ export async function startHost(config: Config, stand: { fetch?: typeof fetch; r
     recordChoice: paidRecords(credits, () => host),
     blobChoice: paidBlobs(credits),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
-    verifyNote,
+    checkStamp,
   })
   const inner = new URL(await host.listen(0))
   const blobQueue = new Map<string, Promise<void>>()

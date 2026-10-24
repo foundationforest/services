@@ -7,7 +7,7 @@ markets/
 e2e/
 host/data
 index/data
-issuer/data
-issuer/models
-issuer/test/faces
+verifier/data
+verifier/models
+verifier/test/faces
 fee-payer/.kora

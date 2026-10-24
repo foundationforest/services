@@ -1,5 +1,5 @@
 // The welcome gift's ticket, as the host's seller checks it: for the host, that buy and the count the
-// gift gives, signed by the issuer's sponsor key; the same reference gives the same ticket; anything
+// gift gives, signed by the verifier's sponsor key; the same reference gives the same ticket; anything
 // but a buy's reference is refused; and what the file keeps of the buy, a hash.
 
 import assert from 'node:assert/strict'

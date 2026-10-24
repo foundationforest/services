@@ -1,5 +1,5 @@
-# The issuer (issuer/), started by `npm start` as its README says. The build context is the repo
-# root, because the issuer depends on the standard's packages through file: links into standard/;
+# The verifier (verifier/), started by `npm start` as its README says. The build context is the repo
+# root, because the verifier depends on the standard's packages through file: links into standard/;
 # standard.sh fetches the standard at the commit in STANDARD, installs it and builds it, and needs
 # git. `npm run fetch -- models` puts the face models in the image, each checked by SHA-256. It runs
 # the real checks only: Didit and the face model, with the variables its README lists, and refuses
@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /services
 COPY STANDARD standard.sh ./
 RUN ./standard.sh
-COPY issuer/ issuer/
-RUN cd issuer && npm ci --no-audit --no-fund && npm run fetch -- models
-WORKDIR /services/issuer
+COPY verifier/ verifier/
+RUN cd verifier && npm ci --no-audit --no-fund && npm run fetch -- models
+WORKDIR /services/verifier
 CMD ["npm", "start"]

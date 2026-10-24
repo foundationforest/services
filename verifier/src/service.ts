@@ -5,22 +5,22 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 
-import { issuerKeyOf } from '@foundationforest/note'
+import { serviceKey } from '@foundationforest/keys'
 import { base58, canonical } from '@foundationforest/records'
 
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
 import { RateLimit } from './limit.ts'
-import { RECIPES } from './notes.ts'
+import { RECIPES } from './facts.ts'
 import { RpcPayments, type Payments, type Price } from './payment.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
 import { SWEEP_EVERY_MS, errorKind, handler, sweep, type PaymentDeps } from './server.ts'
 import { Store } from './store.ts'
 
 export type Config = {
-  /** The issuer's name: what a person's secret for it is mixed from (the standard's `issuerSecret`). */
-  issuerName: string
+  /** The verifier's name: what a person's secret for it is mixed from (the standard's `verifierSecret`). */
+  verifierName: string
   diditApiKey: string
   /** The face check's workflow: liveness, with Didit's face search. */
   diditFaceWorkflowId: string
@@ -37,7 +37,7 @@ export type Config = {
   gift?: Gift
   /** The origins an app may ask the person to come back to after a face check (`returnUrl`); empty for none. */
   appOrigins: string[]
-  /** The one file; the issuer's seed file sits beside it (`SEED_FILE`). */
+  /** The one file; the verifier's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
   /** How many sessions one address may open in an hour. */
   sessionLimitPerHour: number
@@ -46,8 +46,8 @@ export type Config = {
   port: number
 }
 
-/** The name this issuer has unless told otherwise: every person's note number and stamps hang off it. */
-export const ISSUER_NAME = 'issuer.forest.foundation'
+/** The name this verifier has unless told otherwise: every person's stamp number and tags hang off it. */
+export const VERIFIER_NAME = 'verifier.forest.foundation'
 
 /** A Solana address in its one spelling: 32 bytes in base58. */
 function isAddress(text: string): boolean {
@@ -118,7 +118,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     throw new Error('FACE_MODEL=stand-in is for a stand-in Didit on this machine only: DIDIT_BASE_URL is not on loopback')
   }
   return {
-    issuerName: env.ISSUER_NAME || ISSUER_NAME,
+    verifierName: env.VERIFIER_NAME || VERIFIER_NAME,
     diditApiKey: env.DIDIT_API_KEY!,
     diditFaceWorkflowId: env.DIDIT_FACE_WORKFLOW_ID!,
     diditIdWorkflowId: env.DIDIT_ID_WORKFLOW_ID!,
@@ -128,22 +128,22 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     rpcUrl: priced ? env.RPC_URL : undefined,
     gift,
     appOrigins,
-    databasePath: env.DATABASE_PATH || './data/issuer.sqlite',
+    databasePath: env.DATABASE_PATH || './data/verifier.sqlite',
     sessionLimitPerHour: whole('SESSION_LIMIT_PER_HOUR', env.SESSION_LIMIT_PER_HOUR || '5', 1),
     clientAddressHeader: env.CLIENT_ADDRESS_HEADER?.toLowerCase() || undefined,
     port: whole('PORT', env.PORT || '8080', 0),
   }
 }
 
-export type Issuer = {
+export type Verifier = {
   url: string
   server: Server
   store: Store
-  /** The two note keys, as addresses: what readers trust. */
+  /** The two stamp keys, as addresses: what readers trust. */
   keys: { face: string; id: string }
   /** The sponsor key's address, with a gift. */
   sponsor?: string
-  /** Whether this start made the issuer's seed, finding none beside the database. */
+  /** Whether this start made the verifier's seed, finding none beside the database. */
   madeSeed: boolean
   /** Deletes in Didit the sessions signed an hour ago or more, as the sweep does every minute. */
   sweep(): Promise<void>
@@ -156,7 +156,7 @@ export type Issuer = {
  * otherwise it talks to Didit and to the RPC, and loads the face models (or, with
  * `FACE_MODEL=stand-in`, the stand-in).
  */
-export async function startIssuer(
+export async function startVerifier(
   config: Config,
   overrides: {
     faceCheck?: FaceCheck
@@ -166,15 +166,15 @@ export async function startIssuer(
     log?: (line: string) => void
     now?: () => number
   } = {},
-): Promise<Issuer> {
+): Promise<Verifier> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
   const { seed, made: madeSeed } = loadOrMakeSeed(join(dirname(config.databasePath), SEED_FILE))
-  const noteKeys = { face: await seed.mix(INFO.face), id: await seed.mix(INFO.id) }
-  const keys = { face: issuerKeyOf(noteKeys.face), id: issuerKeyOf(noteKeys.id) }
+  const stampKeys = { face: serviceKey(await seed.mix(INFO.face)), id: serviceKey(await seed.mix(INFO.id)) }
+  const keys = { face: stampKeys.face.address, id: stampKeys.id.address }
   const fingerprintKey = await seed.mix(INFO.fingerprint)
   const sponsor = await seed.ed25519(INFO.sponsor)
   if (config.idPrice?.payTo === sponsor.address) {
-    throw new Error("ID_PAY_TO is the issuer's own sponsor key; payments go to an address of their own")
+    throw new Error("ID_PAY_TO is the verifier's own sponsor key; payments go to an address of their own")
   }
   const didit = { apiKey: config.diditApiKey, baseUrl: config.diditBaseUrl }
   const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditFaceWorkflowId, check: 'face' })
@@ -195,9 +195,9 @@ export async function startIssuer(
 
   const gift = config.gift && { gift: config.gift, sponsor }
   const about = canonical({
-    name: config.issuerName,
-    face: { key: keys.face, attributes: RECIPES.face },
-    id: { key: keys.id, attributes: RECIPES.id },
+    name: config.verifierName,
+    face: { key: keys.face, facts: RECIPES.face },
+    id: { key: keys.id, facts: RECIPES.id },
     h: RECIPES.h,
     ...(gift && { gift: { host: gift.gift.origin, credits: gift.gift.credits, sponsor: sponsor.address } }),
   })
@@ -209,7 +209,7 @@ export async function startIssuer(
       id: { kind: 'id', check: idCheck, workflowId: config.diditIdWorkflowId },
       store,
       embedder,
-      noteKeys,
+      stampKeys,
       fingerprintKey,
       about,
       payment,
@@ -228,7 +228,7 @@ export async function startIssuer(
       sweeping = undefined
     }))
   const log = overrides.log ?? ((line: string) => console.log(line))
-  const sweeper = setInterval(() => void sweepNow().catch((error) => log(`issuer: the sweep failed (${errorKind(error)})`)), SWEEP_EVERY_MS)
+  const sweeper = setInterval(() => void sweepNow().catch((error) => log(`verifier: the sweep failed (${errorKind(error)})`)), SWEEP_EVERY_MS)
   sweeper.unref()
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)

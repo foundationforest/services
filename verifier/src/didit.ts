@@ -1,9 +1,9 @@
-// The two checks: Didit's API, and what the issuer requires of what it says.
+// The two checks: Didit's API, and what the verifier requires of what it says.
 //
 // Didit runs each check on its own page and holds the face, and for the ID check the document. The
-// issuer asks it four things: to open a session on a check's workflow, later what that session
+// verifier asks it four things: to open a session on a check's workflow, later what that session
 // decided, the selfie the session took, to compute the face's embedding (face.ts), and, an hour
-// after the session's note is signed, to delete it. From a
+// after the session's stamp is signed, to delete it. From a
 // decision it reads the session's workflow, its status, the status of each step (liveness; for the ID
 // check also the document and the face match), the selfie's address, and, from the document step, the
 // name, the birth date and the document's country. Everything else Didit returns is dropped the
@@ -11,15 +11,15 @@
 //
 // Whether a face was seen before is Didit's to say: the face workflow searches every face it has
 // seen and sends a known one to review, where a person at the foundation decides in Didit's console.
-// While a session is In Review the issuer answers that it is waiting, and the app asks again.
+// While a session is In Review the verifier answers that it is waiting, and the app asks again.
 //
-// An hour after a session's note is first signed, the issuer's sweep deletes it (`deleteSession`,
+// An hour after a session's stamp is first signed, the verifier's sweep deletes it (`deleteSession`,
 // server.ts's `sweep`), so Didit no longer holds
 // its selfie, its liveness video, its document's images, what it read or its decision. Each deletion
 // asks Didit to keep one image-free face template, anchored to the session's own `vendor_data`, for
 // FACE_RETENTION_DAYS: its face search goes on seeing the face, so a face that comes back still goes
 // to review. Didit drops the template with the session unless asked, and gives every kept template
-// an end. Only a session whose note is signed is deleted, so never one In Review.
+// an end. Only a session whose stamp is signed is deleted, so never one In Review.
 //
 // Didit's API as read in October 2026 (docs.didit.me: creating and retrieving a session, and the
 // liveness and document reports): version 3, `x-api-key` header, `POST /v3/session/`
@@ -41,7 +41,7 @@ export type Check = 'face' | 'id'
 /** What a document step read, as Didit gives it. */
 export type Document = { firstName: string; lastName: string; fullName: string; birth: string; country: string }
 
-/** What the issuer reads from a session's decision. */
+/** What the verifier reads from a session's decision. */
 export type Decision = {
   workflowId: string
   /** The session's overall status: `Approved`, `Declined`, `In Review`, and so on. */
@@ -105,7 +105,7 @@ function steps(list: { status: string }[], none: Refusal, failed: Refusal): Refu
 }
 
 /**
- * What Didit's decision means to the issuer: a session on the check's own workflow; In Review, a
+ * What Didit's decision means to the verifier: a session on the check's own workflow; In Review, a
  * person at the foundation still to decide; anything else but approved, a refusal; and approved, every
  * liveness step passed and, for the ID check, every document step and every face match too. Null
  * means Didit passed it.
@@ -125,7 +125,7 @@ const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const reports = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.filter((r) => typeof r === 'object' && r !== null) : []
 
-/** A decision as Didit returns it, cut down to what the issuer reads. */
+/** A decision as Didit returns it, cut down to what the verifier reads. */
 export function parseDecision(body: unknown): Decision {
   const json = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {}
   const liveness = reports(json.liveness_checks)
@@ -154,7 +154,7 @@ export function parseDecision(body: unknown): Decision {
 /** Didit could not be asked, or answered something other than a session. Its message names no session. */
 export class DiditUnavailable extends Error {}
 
-/** The largest photo the issuer takes from Didit. */
+/** The largest photo the verifier takes from Didit. */
 export const MAX_PHOTO_BYTES = 10_000_000
 
 async function body(res: Response): Promise<unknown> {
@@ -264,7 +264,7 @@ export class DiditClient implements FaceCheck {
     }
     if (!res.ok) throw new DiditUnavailable(`the photo's address answered ${res.status}`)
     const bytes = new Uint8Array(await res.arrayBuffer())
-    if (bytes.length > MAX_PHOTO_BYTES) throw new DiditUnavailable('the photo is larger than the issuer takes')
+    if (bytes.length > MAX_PHOTO_BYTES) throw new DiditUnavailable('the photo is larger than the verifier takes')
     return bytes
   }
 

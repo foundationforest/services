@@ -1,5 +1,5 @@
-// A sponsor's ticket: what the issuer signs to pay for a person's buy at a service that lists its
-// sponsor key. The issuer is a client of credits here, not a seller: it never sees a credit, only
+// A sponsor's ticket: what the verifier signs to pay for a person's buy at a service that lists its
+// sponsor key. The verifier is a client of credits here, not a seller: it never sees a credit, only
 // the buy's reference. The wire format is the one the host checks (host/credits/).
 
 import { b64u, base58 } from '@foundationforest/records'
