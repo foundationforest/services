@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end: two people from two seeds, each with a note from the loop's issuer and a profile record carrying a real note proof on a host; an offer and a message through mcp with access keys their app listed; a deal paid directly and through an escrow with a schedule, both through the fee payer; two reviews naming their evidence; the loop's index counting it all and serving both ratings; and the tutor carrying its rating to a second profile with a reputation proof. Every service on loopback from this repo by default, or the deployed ones a services.json names; the chain is remote.",
+  "description": "Forest end to end: two people from two seeds, each with a stamp from the loop's verifier kept in their vault, a profile record carrying a real stamp proof and pay { solana, evm }, credits bought for the test dollar, and the reference signer acting by their permissions; each person's AI logging in through the connect page and posting, messaging, reading and paying through the mcp, one request waiting for the person's yes; a deal paid directly and through an escrow on the market's schedule, both through the fee payer; two reviews naming their evidence; the loop's index counting it all and serving both ratings signed; and the tutor carrying its rating to a second profile with a reputation proof. The loop's own verifier, index and mcp, with the host and fee payer on loopback from this repo by default, or the deployed ones a services.json names; the chain is remote.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -17,10 +17,9 @@
     "@cloudflare/privacypass-ts": "0.9.0",
     "@foundationforest/escrow-client": "file:../standard/escrows/solana/client",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/note": "file:../standard/proofs/note/client",
     "@foundationforest/records": "file:../standard/records",
     "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
     "@scure/base": "2.4.0",
     "@solana/spl-token": "0.4.9",
     "@solana/web3.js": "1.99.0"
