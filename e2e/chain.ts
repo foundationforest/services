@@ -1,13 +1,14 @@
 // The loop's money on the chain: the two keys it takes from the phrase, what it funds and mints
-// before two people can act, a plain transfer from a wallet app, and a transaction sent through the
-// fee payer at cost, as a person's app sends one. Nothing a profile does goes through the phrase's
-// keys: they fund and mint only.
+// before two people can act, a plain transfer from a wallet app, a direct payment naming its post,
+// a market's schedule as the escrow takes it, and a transaction sent through the fee payer at cost,
+// as a person's app sends one. Nothing a profile does goes through the phrase's keys: they fund and
+// mint only.
 
 import { pbkdf2Sync } from 'node:crypto'
 
 import * as escrow from '@foundationforest/escrow-client'
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
-import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
+import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 /**
  * A key from the phrase, by the recipe in the standard's `escrows/solana/devnet/deploy.sh`: the
@@ -21,6 +22,48 @@ export function keyFromPhrase(phrase: string, label: string): Keypair {
 
 /** One whole test dollar, in base units: it has six decimals. */
 export const DOLLAR = 1_000_000n
+
+/** Decimal text in whole units, such as "2" or "0.1", in base units of a token with `decimals`; more places than that are refused. */
+export function unitsOf(amount: string, decimals: number): bigint {
+  const m = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/.exec(amount)
+  if (!m || (m[2] ?? '').length > decimals) throw new Error(`${amount} is not an amount of a token with ${decimals} decimals`)
+  return BigInt(m[1]! + (m[2] ?? '').padEnd(decimals, '0'))
+}
+
+/** Solana's Memo program: it moves nothing, and writes its data to the transaction's log. */
+export const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
+
+/**
+ * A direct payment, as the markets manual's Direct paragraph has it: a plain transfer of `units`
+ * from `from`'s token account to `to`'s, with a memo naming the post. The memo names no signer,
+ * so it adds no signature to pay for.
+ */
+export function directPaymentIxs(p: { from: PublicKey; to: PublicKey; units: bigint; memo: string; token: escrow.Token }): TransactionInstruction[] {
+  const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, p.token.mint, p.token.program)
+  return [
+    escrow.transferIx({ from: ata(p.from), to: ata(p.to), owner: p.from, mint: p.token.mint, amount: p.units, decimals: p.token.decimals, tokenProgram: p.token.program }),
+    new TransactionInstruction({ programId: MEMO_PROGRAM, keys: [], data: Buffer.from(p.memo, 'utf8') }),
+  ]
+}
+
+/** A market's schedule, as its file writes it (the markets manual, Payment): windows relative to the deal. */
+export type Template = { windows: { from: string; offset: string; payerShare: number }[]; end: 'pay' | 'refund'; arbiter: boolean }
+
+/**
+ * A market's schedule as the escrow takes it, for money that goes in at `paidAt` (unix seconds):
+ * each window's `until`, its `offset` in hours or days after or before the payment. The loop's deal
+ * names no start or end of its own, so a window from `dealStart` or `dealEnd` is refused, and so is
+ * a schedule with an arbiter: the loop names none.
+ */
+export function scheduleOf(template: Template, paidAt: number): { windows: { until: number; payerShare: number }[]; end: 'pay' | 'refund' } {
+  if (template.arbiter) throw new Error('this schedule names an arbiter, and the loop names none')
+  const windows = template.windows.map((w) => {
+    const m = /^([+-])([0-9]+)([hd])$/.exec(w.offset)
+    if (w.from !== 'payment' || !m) throw new Error(`a window from ${w.from} at ${w.offset}: the loop takes only windows from payment, offset in hours or days`)
+    return { until: paidAt + (m[1] === '-' ? -1 : 1) * Number(m[2]) * (m[3] === 'h' ? 3600 : 86_400), payerShare: w.payerShare }
+  })
+  return { windows, end: template.end }
+}
 
 /** What the loop gives before anyone acts. */
 export const FUNDING = {
