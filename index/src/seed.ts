@@ -7,14 +7,14 @@
 //
 // What is mixed from it, with the standard's `hkdf`:
 //
-//   index/key   the index's key: those 32 bytes made into a Baby Jubjub key the way the standard's
-//               keys make one from random bytes (`accessKey`). It signs the tree's roots and each
-//               profile's rating statement, and its address is the index's name.
+//   index/key   the index's key: those 32 bytes made into a service key, the standard's keys'
+//               `serviceKey`, a Baby Jubjub key of 32 random bytes. It signs the tree's roots and
+//               each profile's rating statement, and its address is the index's name.
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { accessKey, hkdf, newSeed } from '@foundationforest/keys'
+import { hkdf, newSeed, serviceKey } from '@foundationforest/keys'
 import { hex, type Key } from '@foundationforest/records'
 
 export const SEED_FILE = 'index-seed.json'
@@ -35,6 +35,6 @@ export async function loadOrMakeKey(dir: string): Promise<{ key: Key; made: bool
     seed = undefined
   }
   if (typeof seed !== 'string' || !/^[0-9a-f]{64}$/.test(seed)) throw new Error(`${path} is not the index's seed: {"seed":"<64 lowercase hex>"}`)
-  const { scalar, publicKey, address } = accessKey(await hkdf(hex.decode(seed), KEY_INFO))
+  const { scalar, publicKey, address } = serviceKey(await hkdf(hex.decode(seed), KEY_INFO))
   return { key: { scalar, publicKey, address }, made }
 }

@@ -5,8 +5,8 @@
 import { b64u, canonical, type Key, proofsOf } from '@foundationforest/records'
 import { packSignature, signBytes } from '@foundationforest/keys'
 
-import { readChain } from './chain.ts'
-import { evidenceOf, type Evidence } from './evidence/index.ts'
+import { ESCROW_CHAIN, readChain } from './chain.ts'
+import { evidenceOf, type Evidence, type Reader } from './evidence/index.ts'
 import { type Filtered, filter } from './filter.ts'
 import type { Lists } from './lists.ts'
 import type { Markets } from './markets.ts'
@@ -17,7 +17,8 @@ import type { Rpc } from './rpc.ts'
 import { parse, type Store } from './store.ts'
 import { leavesOf, reputationProofs, updateTree } from './tree.ts'
 
-export type Context = { store: Store; lists: Lists; markets: Markets; key: Key; rpc: Rpc; log: (line: string) => void }
+/** `chains`: each chain config/chains.json lists, by CAIP-2 id, with its reader and its RPC. */
+export type Context = { store: Store; lists: Lists; markets: Markets; key: Key; chains: Map<string, { reader: Reader; rpc: Rpc }>; log: (line: string) => void }
 
 /** A rating as the pages show it and the statement signs it: one decimal. */
 export const tenth = (v: number | null) => (v === null ? null : Math.round(v * 10) / 10)
@@ -38,27 +39,28 @@ export function signStatement(key: Key, statement: string): string {
 
 /** One pass. `before` is the previous pass's clock, or null for the first since start. */
 export async function runPass(ctx: Context, before: number | null, now: number): Promise<void> {
-  const { store, lists, markets, key, rpc, log } = ctx
+  const { store, lists, markets, key, chains, log } = ctx
   const { db } = store
 
   const touched = await readHosts(store, lists.hosts, log)
   for (const p of before === null ? allProfiles(store) : comingDue(store, before, now)) touched.add(p)
   viewAgain(store, touched, now)
+  const escrowChain = chains.get(ESCROW_CHAIN)
   try {
-    await readChain(store, rpc)
+    if (escrowChain) await readChain(store, escrowChain.rpc)
   } catch (err) {
     log(`chain: ${(err as Error).message}`)
   }
 
   // Filter.
-  const held = db.prepare('select address, body, market, role, pay from profiles').all() as Array<{ address: string; body: string; market: string | null; role: string | null; pay: string | null }>
-  const filtered = new Map<string, Filtered & { market: string | null; role: string | null; pay: string | null; body: { [key: string]: unknown } }>()
+  const held = db.prepare('select address, body, market, role from profiles').all() as Array<{ address: string; body: string; market: string | null; role: string | null }>
+  const filtered = new Map<string, Filtered & { market: string | null; role: string | null; body: { [key: string]: unknown } }>()
   for (const r of held) {
     const body = parse<{ [key: string]: unknown }>(r.body)
-    filtered.set(r.address, { ...(await filter(store, { address: r.address, body, market: r.market, role: r.role }, lists.keys, markets, now)), market: r.market, role: r.role, pay: r.pay, body })
+    filtered.set(r.address, { ...(await filter(store, { address: r.address, body, market: r.market, role: r.role }, lists.keys, markets, now)), market: r.market, role: r.role, body })
   }
 
-  // Reviews, and the evidence of each that counts.
+  // Reviews, and the evidence of each that counts, between the two profiles' `pay`.
   const reviews = (db.prepare('select address, reviewer, body, time from reviews').all() as Array<{ address: string; reviewer: string; body: string; time: number }>).map(
     (r): Review => ({ ...r, body: parse(r.body) }),
   )
@@ -66,9 +68,8 @@ export async function runPass(ctx: Context, before: number | null, now: number):
   const evidence = new Map<string, Evidence>()
   for (const r of reviews) {
     if (!judged.get(r.address)!.counted) continue
-    const a = filtered.get(r.reviewer)?.pay
-    const b = filtered.get(r.body.subject as string)?.pay
-    evidence.set(r.address, await evidenceOf(r.body.evidence, a && b ? { a, b, written: r.time } : null, { store, rpc, mints: lists.currencies, now }))
+    const pays = { a: filtered.get(r.reviewer)?.body.pay, b: filtered.get(r.body.subject as string)?.body.pay, written: r.time }
+    evidence.set(r.address, await evidenceOf(r.body.evidence, pays, { store, chains, mints: lists.currencies, now }))
   }
 
   // Rank.
@@ -87,8 +88,8 @@ export async function runPass(ctx: Context, before: number | null, now: number):
   // Write what this pass found, signing each rating whose value moved.
   const heldRating = db.prepare('select value, reviews, with_payment, statement, signature from ratings where profile = ?')
   store.tx(() => {
-    const setProfile = db.prepare('update profiles set counted = ?, points = ?, checks = ?, stamps = ? where address = ?')
-    for (const [address, f] of filtered) setProfile.run(f.counted ? 1 : 0, ranked.points.get(address) ?? 0, JSON.stringify(f.checks), JSON.stringify(f.stamps), address)
+    const setProfile = db.prepare('update profiles set counted = ?, points = ?, checks = ?, tags = ? where address = ?')
+    for (const [address, f] of filtered) setProfile.run(f.counted ? 1 : 0, ranked.points.get(address) ?? 0, JSON.stringify(f.checks), JSON.stringify(f.tags), address)
 
     const posts = db.prepare('select address, profile, body, deleted from posts').all() as Array<{ address: string; profile: string; body: string; deleted: number }>
     const setPost = db.prepare('update posts set listed = ?, why = ? where address = ?')
@@ -127,12 +128,12 @@ export async function runPass(ctx: Context, before: number | null, now: number):
 
   // The tree, then the proofs each profile record shows, against the roots as they are now.
   const ratings = new Map((db.prepare('select profile, value, reviews from ratings').all() as Array<{ profile: string; value: number | null; reviews: number }>).map((r) => [r.profile, r]))
-  updateTree(store, key, leavesOf(counted.map(([address, f]) => ({ stamps: f.stamps, value: ratings.get(address)?.value ?? null, reviews: ratings.get(address)?.reviews ?? 0 }))), now)
+  updateTree(store, key, leavesOf(counted.map(([address, f]) => ({ tags: f.tags, value: ratings.get(address)?.value ?? null, reviews: ratings.get(address)?.reviews ?? 0 }))), now)
   const setProofs = db.prepare('update profiles set proofs = ? where address = ?')
   for (const [address, f] of filtered) {
     const shown = await reputationProofs(store, address, f.body, lists.indexes, key.address, lists.roots)
     // By each proof's place among proofsOf's, as filter.ts and tree.ts number them.
-    const results = proofsOf(f.body as never).map((p, i) => f.notes.get(i) ?? shown.get(i) ?? { circuit: p.circuit, result: 'this index does not read this kind of proof' })
+    const results = proofsOf(f.body as never).map((p, i) => f.stampProofs.get(i) ?? shown.get(i) ?? { circuit: p.circuit, result: 'this index does not read this kind of proof' })
     setProofs.run(JSON.stringify(results), address)
   }
 }

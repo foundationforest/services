@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
 import { discriminator } from '@foundationforest/escrow-client'
-import { unpackSignature, verifyBytes } from '@foundationforest/keys'
+import { checkBytes, unpackSignature } from '@foundationforest/keys'
 import { b64u, base58 } from '@foundationforest/records'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
@@ -20,11 +20,11 @@ import { profile as profilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
 import { draw, type Page } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
-import { at, DOLLAR, index, issuer, MARKETS, page, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
+import { at, CHAIN, DOLLAR, index, verifier, MARKETS, page, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
 
 const BASE = 'https://index.test.example'
-const by = issuer()
-const keys = [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }]
+const by = verifier()
+const keys = [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }]
 let host: Awaited<ReturnType<typeof startHost>>
 let rpc: Awaited<ReturnType<typeof startRpc>>
 let i: Awaited<ReturnType<typeof index>>
@@ -52,7 +52,7 @@ before(async () => {
     at(c!, 'offer/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
     at(s1!, 'offer/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
     at(uncounted!, 'offer/u', { description: 'Maths, uncounted.' }),
-    at(s1!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a`, text: 'Very clear.', evidence: escrow }),
+    at(s1!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a`, text: 'Very clear.', evidence: `${CHAIN}:${escrow}` }),
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a` }),
     at(s2!, 'review/b', { subject: b!.key.address, score: '4', offer: `${b!.key.address}/offer/b` }),
     at(uncounted!, 'review/a', { subject: a!.key.address, score: '1' }),
@@ -60,7 +60,7 @@ before(async () => {
   const signature = base58.encode(randomBytes(64))
   const key = (x: string) => base58.decode(x)
   const empty = bytes(Uint8Array.of(0), ...Array.from({ length: 4 }, () => new Uint8Array(10)), Uint8Array.of(0))
-  const created = bytes(discriminator('event', 'Created'), key(escrow), Uint8Array.of(3), u64(1n), key(s1!.pay), key(a!.pay), Uint8Array.of(0), new Uint8Array(32), key(DOLLAR), randomBytes(32), randomBytes(32), u64(30_000_000n), empty, u64(1_790_000_000n))
+  const created = bytes(discriminator('event', 'Created'), key(escrow), Uint8Array.of(3), u64(1n), key(s1!.pay.solana), key(a!.pay.solana), Uint8Array.of(0), new Uint8Array(32), key(DOLLAR), randomBytes(32), randomBytes(32), u64(30_000_000n), empty, u64(1_790_000_000n))
   const ended = bytes(discriminator('event', 'Ended'), key(escrow), Uint8Array.of(0), u64(30_000_000n), u64(30_000_000n), u64(0n), u64(30_000_000n), u64(1_790_000_100n), randomBytes(32), u64(0n), u64(1_790_000_050n))
   const logs = [`Program ${ESCROW_PROGRAM} invoke [1]`, ...[created, ended].map((e) => `Program data: ${Buffer.from(e).toString('base64')}`), `Program ${ESCROW_PROGRAM} success`]
   rpc = await startRpc((method, params) =>
@@ -88,13 +88,17 @@ test('the four answers the mcp reads, in their shapes', async () => {
 
   const m = (await twin<{ index: string; market: unknown; posts: { [role: string]: Array<{ [k: string]: unknown }> } }>(i, '/markets/tutoring.json')).body
   assert.deepEqual(keysOf(m), ['index', 'market', 'posts'])
-  assert.deepEqual(m.market, JSON.parse(readFileSync(join(MARKETS, 'markets/tutoring.json'), 'utf8')))
+  // The market's file verbatim, its preview among the rest.
+  const file = JSON.parse(readFileSync(join(MARKETS, 'markets/tutoring.json'), 'utf8')) as { preview?: string[] }
+  assert.deepEqual(m.market, file)
+  assert.ok(file.preview?.length)
+  assert.deepEqual((m.market as { preview: string[] }).preview, file.preview)
   assert.deepEqual(Object.keys(m.posts), ['tutor', 'student'])
   for (const r of Object.values(m.posts).flat()) {
     assert.deepEqual(keysOf(r), RESULT)
     assert.deepEqual(keysOf(r.post as object), ['address', 'body'])
     assert.deepEqual(keysOf(r.rating as object), RATING)
-    for (const c of r.checks as object[]) assert.deepEqual(keysOf(c), ['issuer', 'key', 'label'])
+    for (const c of r.checks as object[]) assert.deepEqual(keysOf(c), ['key', 'label', 'verifier'])
   }
 
   const s = (await twin<{ index: string; total: number; results: Array<{ [k: string]: unknown }> }>(i, '/search.json?q=maths')).body
@@ -113,7 +117,7 @@ test('the four answers the mcp reads, in their shapes', async () => {
   // The rating's statement, signed by the index's key.
   const rating = p.rating as unknown as { statement: string; signature: string }
   assert.deepEqual(JSON.parse(rating.statement), { ...JSON.parse(rating.statement), index: i.address, profile: people.a!.key.address, rating: '9.0', reviews: 2, withPayment: 1 })
-  assert.ok(verifyBytes(i.address, new TextEncoder().encode(rating.statement), unpackSignature(b64u.decode(rating.signature))!))
+  assert.ok(checkBytes(i.address, new TextEncoder().encode(rating.statement), unpackSignature(b64u.decode(rating.signature))!))
 
   // A profile that does not count has a page, and no rating.
   const u = (await twin<{ rating: unknown; checks: unknown[] }>(i, `/profiles/${people.uncounted!.key.address}.json`)).body

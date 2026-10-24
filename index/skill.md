@@ -2,14 +2,14 @@
 
 Forest is open software for people to offer, pay and review each other through profiles they own. A
 profile is one person's identity in one market and role, its label, such as `tutoring/tutor`; its
-address is its name. This index reads the hosts it lists, keeps the profiles whose profile record
-carries a note proof that checks for an issuer key it lists (an issuer checked that a real person
-holds the seed behind the profile), ranks them, and serves what it finds. A profile that does not
-count here still has a page, saying why.
+address is its name. This index ranks what is public: it reads the hosts it lists, keeps the
+profiles whose profile record carries a stamp proof that checks for a verifier key it lists (a
+verifier checked that a real person holds the seed behind the profile), ranks them, and serves what
+it finds. A profile that does not count here still has a page, saying why.
 
 ## How to read
 
-- Everything is a plain GET. No key, no account, no cookies.
+- Everything is a plain GET. No key, no sign-up, no cookies.
 - Every page has a JSON twin at the same address with `.json` on its path; the home page's is
   `/index.json`. The twin is the object the page is drawn from.
 - Answers may be up to 30 seconds old.
@@ -21,14 +21,14 @@ count here still has a page, saying why.
     GET https://index.forest.foundation/index.json
 
 `{ "index", "markets": [{ "name", "description", "roles" }], "lists" }`: this index's address, every
-market in the markets directory it reads, with its roles, and the lists it reads by (hosts, issuer
+market in the markets directory it reads, with its roles, and the lists it reads by (hosts, verifier
 keys, indexes).
 
     GET https://index.forest.foundation/markets/tutoring.json
 
 `{ "index", "market", "posts": { "<role>": [<result>] } }`: the market's file as the directory holds
-it (its fields, its review fields, its payment schedules, how deals go), and its listed posts by
-role, best rated first.
+it (its fields, the fields a post's preview shows first, its review fields, its payment schedules,
+how deals go), and its listed posts by role, best rated first.
 
 ## Search
 
@@ -50,19 +50,23 @@ market's mean (How it scores, in the README), then the newest post.
 
     GET https://index.forest.foundation/profiles/<address>.json
 
-- `profile`: its profile record, as the hosts serve it: `market`, `role`, `pay` (its payment
-  address), `inboxKey` and `inbox` (how to message it), `proofs`.
-- `checks`: each issuer key it counts for here, `{ "issuer", "key", "label" }`, such as a face check.
+- `profile`: its profile record, as the hosts serve it: `market`, `role`, `pay` (its pay addresses,
+  `{ "solana", "evm" }`), `inboxKey` and `inbox` (how to message it), `proofs`.
+- `checks`: each verifier key it counts for here, `{ "verifier", "key", "label" }`, such as a face
+  check.
 - `rating`: `{ "value", "reviews", "withPayment", "statement", "signature" }`, such as 9.2 from 14
   reviews, 11 with a payment. `value` is null with no counted review. `statement` is what this index
   signed, canonical JSON; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
-  bytes, by the key whose address is `index`, which the standard's keys check (`verifyBytes`).
+  bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
 - `posts`: each post, `{ "address", "body", "listed" }`, with `why` when it is not listed (it does
   not fit its market, its profile does not count, or it was deleted: a deleted post keeps its last
   body here, so a review that names it still finds it).
 - `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "counted", "why",
-  "evidence", "weight" }`. `evidence` is `with` (a payment between the two backs it), `without`, or
-  `invalid` (it names one that does not count). `why` is there only when it does not count.
+  "evidence", "evidenceWhy", "weight" }`. A review's evidence is written `<chain>:<id>`, such as
+  `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:<signature>`. `evidence` is `with` (a payment between the
+  two backs it), `without`, `unchecked` (it names a chain this index does not read; `evidenceWhy`
+  says which), or `invalid` (it names one that does not count, or no chain). `why` is there only
+  when it does not count.
 - `proofs`: each proof on the profile record, with what this index made of it.
 
 ## A deal
@@ -71,7 +75,7 @@ market's mean (How it scores, in the README), then the newest post.
 
 The escrow's receipt as the chain holds it (payer, recipient, mint, amount in base units, schedule,
 how and when it ended, what each side got), every move with who made it and when, the profiles
-whose `pay` address is either side, and the reviews that name it.
+whose `solana` pay address is either side, and the reviews that name it.
 
 ## The tree
 
@@ -83,5 +87,6 @@ format: a person proves a rating from their own profiles on their device, naming
 
 ## To act
 
-This index only reads. To post, review, message or pay, a person's app or an AI holding their
-access keys writes to the person's hosts.
+This index only reads. To post, review, message or pay, the person's signer, a device that holds
+their seed, signs with the profile's main key and writes to the profile's hosts; an AI asks one of
+the person's signers to act for them.

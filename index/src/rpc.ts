@@ -1,5 +1,5 @@
-// Solana's JSON-RPC, by POST to RPC_URL: the only chain this index reads. Two methods are asked,
-// getSignaturesForAddress and getTransaction, always at `finalized`.
+// Solana's JSON-RPC, by POST to the URL in the setting config/chains.json names for a chain. Two
+// methods are asked, getSignaturesForAddress and getTransaction, always at `finalized`.
 
 export type Rpc = (method: string, params: unknown[]) => Promise<unknown>
 

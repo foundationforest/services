@@ -7,7 +7,7 @@ export type Home = {
   markets: Array<{ name: string; description: string; roles: string[] }>
   lists: {
     hosts: string[]
-    keys: Array<{ key: string; issuer: string; label: string; points: number; until?: string }>
+    keys: Array<{ key: string; verifier: string; label: string; points: number; until?: string }>
     indexes: Array<{ index: string; name: string }>
     roots: number
   }
@@ -20,7 +20,7 @@ export const home: Page<Home> = {
       markets: markets.list.map((m) => ({ name: m.name, description: m.description, roles: m.roles.map((r) => r.role) })),
       lists: {
         hosts: lists.hosts,
-        keys: lists.keys.map((k) => ({ key: k.key, issuer: k.issuer, label: k.label, points: k.points, ...(k.until !== undefined && { until: new Date(k.until).toISOString() }) })),
+        keys: lists.keys.map((k) => ({ key: k.key, verifier: k.verifier, label: k.label, points: k.points, ...(k.until !== undefined && { until: new Date(k.until).toISOString() }) })),
         indexes: lists.indexes.map((i) => ({ index: i.index === 'self' ? self : i.index, name: i.name })),
         roots: lists.roots,
       },
@@ -32,7 +32,7 @@ export const home: Page<Home> = {
 ${o.markets.map((m) => html`<section><h2><a href="${urls(base).market(m.name)}">${m.name}</a></h2><p>${m.description}</p><p class="muted">Roles: ${m.roles.join(', ')}</p></section>`)}
 <h2>What this index reads</h2>
 <p>Hosts, each read in full: ${o.lists.hosts.join(', ') || 'none'}.</p>
-<p>Issuer keys it counts: ${o.lists.keys.length ? o.lists.keys.map((k) => html`<br><code>${k.key}</code>, the ${k.label} of ${k.issuer}, ${k.points} points${k.until ? `, until ${k.until}` : ''}`) : 'none yet, so no profile counts here yet.'}</p>
+<p>Verifier keys it counts: ${o.lists.keys.length ? o.lists.keys.map((k) => html`<br><code>${k.key}</code>, the ${k.label} of ${k.verifier}, ${k.points} points${k.until ? `, until ${k.until}` : ''}`) : 'none yet, so no profile counts here yet.'}</p>
 <p>Reputation proofs it shows: ${o.lists.indexes.map((i) => html`${i.name} (<code>${i.index}</code>)`)}, against one of an index's newest ${o.lists.roots} roots.</p>`
   },
   ld(o, base, url) {

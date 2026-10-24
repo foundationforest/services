@@ -2,7 +2,7 @@
 // FTS5 for the text of posts. A fresh schema, made when the file is new; no migrations. Everything
 // in it comes back from the hosts and the chain but two tables, which `rebuild` keeps:
 //
-//   seen    when this index first saw each note proof, for a key's `until`: no host can give that
+//   seen    when this index first saw each stamp proof, for a key's `until`: no host can give that
 //           back, since a proof carries no date and a record's time is its signer's word
 //   roots   every root this index signed, with its time and signature: the reputation proofs people
 //           show are made against them
@@ -19,7 +19,7 @@ const KEPT = `
 create table if not exists seen (
   profile text not null,
   key text not null,
-  stamp text not null,
+  tag text not null,
   first integer not null,
   primary key (profile, key)
 );
@@ -46,13 +46,12 @@ create table if not exists profiles (
   body text not null,
   market text,
   role text,
-  pay text,
   time integer not null,
   counted integer not null default 0,
   points real not null default 0,
   checks text not null default '[]',
   proofs text not null default '[]',
-  stamps text not null default '[]'
+  tags text not null default '[]'
 );
 -- Every post this index has read; a deleted one keeps its last body.
 create table if not exists posts (
@@ -101,14 +100,14 @@ create table if not exists ratings (
   signature text not null
 );
 -- The newest tree's leaves, in order.
-create table if not exists leaves (n integer primary key, stamp text not null, scope text not null, score integer not null, count integer not null);
+create table if not exists leaves (n integer primary key, tag text not null, scope text not null, score integer not null, count integer not null);
 `
 
 export type Store = {
   db: DatabaseSync
   /** Runs `fn` in one transaction. */
   tx<T>(fn: () => T): T
-  /** Drops every table but `seen` and `roots`, and makes them again, empty. */
+  /** Drops every table but `seen` and `roots`, and makes them again, empty; `seen` takes its column's new name. */
   drop(): void
   close(): void
 }
@@ -134,6 +133,9 @@ export function openStore(dir: string): Store {
     drop() {
       tx(() => {
         for (const t of DROPPED) db.exec(`drop table if exists ${t}`)
+        // A file from before the standard called a tag a tag holds it in seen's column stamp; the
+        // kept table is never made again, so its column is renamed here, once.
+        if (db.prepare("select 1 from pragma_table_info('seen') where name = 'stamp'").get()) db.exec('alter table seen rename column stamp to tag')
       })
       db.exec(SCHEMA)
     },

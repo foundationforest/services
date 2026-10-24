@@ -51,7 +51,7 @@ export function ratingText(r: Rating): string {
 }
 
 export function checksText(checks: Check[]): string {
-  return checks.length ? checks.map((c) => `${c.label} by ${c.issuer}`).join(', ') : 'No check this index counts'
+  return checks.length ? checks.map((c) => `${c.label} by ${c.verifier}`).join(', ') : 'No check this index counts'
 }
 
 /** A field's value as words on a page: each of the markets' nine types, read by its shape. */

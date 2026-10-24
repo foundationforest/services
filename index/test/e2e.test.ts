@@ -1,18 +1,21 @@
 // End to end, on loopback, over real HTTP: the standard's reference host; two profiles with real
-// note proofs from a stand-in issuer key the index lists; an offer and a review; the index reading
+// stamp proofs from a stand-in verifier key the index lists; an offer and a review; the index reading
 // the host on its own schedule, counting the review, and serving the rating. Then `rebuild`: every
-// table dropped but when each proof was first seen and the signed roots, read again, the same.
+// table dropped but when each proof was first seen and the signed roots, read again, the same; and
+// on a file from before tags were called tags, the kept table's column renamed, its rows kept.
 
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 
-import { openStore } from '../src/store.ts'
-import { at, index, issuer, post, profile, publishProfile, startHost, startRpc } from './world.ts'
+import { FILE, openStore } from '../src/store.ts'
+import { at, cleanup, index, verifier, post, profile, publishProfile, startHost, startRpc, tmp } from './world.ts'
 
 test('a review between two checked profiles, read from a host, counted, and served', async () => {
   const host = await startHost()
   const rpc = await startRpc()
-  const by = issuer()
+  const by = verifier()
   const tutor = await profile('tutoring/tutor', [by])
   const student = await profile('tutoring/student', [by])
   await publishProfile(host.url, tutor)
@@ -21,7 +24,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await post(host.url, [at(tutor, 'offer/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], place: { online: true }, price: { amount: '25', currency: 'USD', per: 'hour' } })])
   await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', offer })])
 
-  const keys = [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }]
+  const keys = [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }]
   // On its own schedule, a pass every second, as main.ts runs one every READ_SECONDS.
   const i = await index({ hosts: [host.url], keys }, rpc.url, { port: 0, readSeconds: 1 })
   const get = async <T>(path: string) => {
@@ -38,7 +41,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
     }
   }
   assert.ok(p, 'the index served the rating within a minute')
-  assert.deepEqual(p.checks, [{ issuer: by.name, key: by.key, label: 'face check' }])
+  assert.deepEqual(p.checks, [{ verifier: by.name, key: by.key, label: 'face check' }])
   assert.deepEqual({ value: p.rating.value, reviews: p.rating.reviews, withPayment: p.rating.withPayment }, { value: 8.5, reviews: 1, withPayment: 0 })
   assert.equal(p.posts[0]!.listed, true)
   const found = (await get<{ total: number; results: Array<{ post: { address: string }; rating: { value: number } }> }>('/search.json?q=maths&market=tutoring&role=tutor')).body
@@ -66,4 +69,22 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await again.close()
   await host.close()
   await rpc.close()
+})
+
+test('rebuild, on a file from before tags were called tags: seen keeps its rows under tag, the rest made fresh', () => {
+  const dir = tmp('old')
+  const old = new DatabaseSync(join(dir, FILE))
+  old.exec(`create table seen (profile text not null, key text not null, stamp text not null, first integer not null, primary key (profile, key));
+    insert into seen values ('a profile', 'a key', 'ab', 1);
+    create table leaves (n integer primary key, stamp text not null, scope text not null, score integer not null, count integer not null);
+    create table profiles (address text primary key, body text not null, market text, role text, pay text, time integer not null, stamps text not null default '[]')`)
+  old.close()
+  const store = openStore(dir)
+  store.drop()
+  assert.deepEqual({ ...store.db.prepare('select profile, key, tag, first from seen').get() }, { profile: 'a profile', key: 'a key', tag: 'ab', first: 1 })
+  const columns = (table: string) => store.db.prepare(`select name from pragma_table_info('${table}')`).all().map((c) => c.name)
+  assert.ok(columns('leaves').includes('tag') && !columns('leaves').includes('stamp'))
+  assert.ok(columns('profiles').includes('tags') && !columns('profiles').includes('pay'))
+  store.close()
+  cleanup(dir)
 })
