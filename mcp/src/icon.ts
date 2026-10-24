@@ -25,7 +25,7 @@ const line = ([[x1, y1], [x2, y2]]: Point[]) => `<line x1="${x1}" y1="${y1}" x2=
 
 export const SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BOX} ${BOX}"><rect width="${BOX}" height="${BOX}" fill="${PAPER}"/><g transform="translate(${MARGIN} ${MARGIN})" fill="none" stroke="${INK}" stroke-width="${STROKE}">${STROKES.map((s) => (s.length === 2 ? line(s) : `<polyline points="${points(s)}"/>`)).join('')}</g></svg>\n`
 
-/** The SVG as the server's info gives it, so a copy over stdio carries it too. */
+/** The SVG as the server's info gives it, so a client shows it without fetching anything. */
 export const ICON = { src: `data:image/svg+xml;base64,${Buffer.from(SVG).toString('base64')}`, mimeType: 'image/svg+xml', sizes: ['any'] }
 
 /**

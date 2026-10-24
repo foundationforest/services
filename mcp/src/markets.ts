@@ -1,31 +1,35 @@
 // The markets, from the checkout of foundationforest/markets at the commit in MARKETS that
 // standard.sh makes beside this directory (../markets), never over the network: the directory,
-// each market file, and the nine types fields are (build/types.json). A post's or a review's body
-// is checked against its market's fields before anything is signed, each field against a JSON
-// Schema made from its type in types.json and the market file, so a mistake is refused naming the
-// field, before a host sees it.
+// each market file, the nine types fields are (build/types.json), and the market file's format
+// (build/market.schema.json). A body is checked against its market before it goes to the person's
+// signer, each field against a JSON Schema made from its type in types.json and the market file, so
+// a mistake is refused naming the field, before the person's device sees it.
+//
+// The kinds of record a market defines are read from the format, not written here: a kind is a
+// top-level property of a market file that is fields (`offer`) or holds fields beside shared names
+// (`review`). A record of a kind sits at `<kind>/<id>`. So a market that adds a kind needs only
+// MARKETS to move, and no kind is ever `profile`, `hosts` or the vault.
 //
 // A field the market marks `required` is not asked for here: the markets manual says an app asks
 // for it and nothing enforces it.
 
 import { readFileSync } from 'node:fs'
-import type { Body, View } from '@foundationforest/records'
+import type { Body } from '@foundationforest/records'
 import { PATH, publicKeyFromAddress } from '@foundationforest/records'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
-import { type Context, folder, profileOf, refuse } from './forest.ts'
+import { type Context, folder, isObject, profileOf, refuse } from './forest.ts'
 
 const ROOT = new URL('../../markets/', import.meta.url)
 
 export type Field = { type: string; description: string; values?: string[]; many?: true; required?: true; roles?: string[] }
+type Fields = { [name: string]: Field }
 export type Market = {
   name: string
   description: string
   roles: Array<{ role: string; posts: 'offers' | 'requests' | 'posts' }>
-  offer: { [name: string]: Field }
-  review: { shared: string[]; fields?: { [name: string]: Field } }
-  payment: Body
-  howDealsGo: string
+  preview?: string[]
+  [key: string]: unknown
 }
 type Listed = Pick<Market, 'name' | 'description' | 'roles'>
 
@@ -47,6 +51,54 @@ export function directory(): Listed[] {
 export function marketFile(name: string): Market {
   if (!directory().some((m) => m.name === name)) refuse(`${name} is not a market in the directory; markets lists them`)
   return read(`markets/${name}.json`) as Market
+}
+
+/** The fields a post's preview shows first: the file's `preview`, else description, price, then the first place field, of those it has. */
+export function previewOf(market: Market): string[] {
+  if (market.preview) return market.preview
+  const offer = (market.offer ?? {}) as Fields
+  const place = Object.keys(offer).find((name) => offer[name]!.type === 'place')
+  return ['description', 'price', place].filter((name): name is string => name !== undefined && name in offer)
+}
+
+/** The market's role, or a refusal naming its roles. */
+export function checkRole(market: Market, role: string): void {
+  if (!market.roles.some((r) => r.role === role)) refuse(`${role} is not a role in ${market.name}: its roles are ${market.roles.map((r) => r.role).join(', ')}`)
+}
+
+// ---------------------------------------------------------------------------------------------
+// Kinds, from the market file's format
+
+/** A kind: a field map (its fields' roles are the writer's), or fields beside shared names (its fields' roles are the subject's). */
+type Kind = { name: string; shared: boolean }
+
+const FIELDS_REF = '#/$defs/fields'
+let formatKinds: Kind[] | undefined
+/** Every kind the market file's format defines: each top-level property that is fields, or holds them. */
+export function kinds(): Kind[] {
+  if (formatKinds) return formatKinds
+  const format = read('build/market.schema.json') as { properties: { [key: string]: { $ref?: string; properties?: { fields?: { $ref?: string } } } } }
+  formatKinds = Object.entries(format.properties).flatMap(([name, p]): Kind[] =>
+    p.$ref === FIELDS_REF ? [{ name, shared: false }] : p.properties?.fields?.$ref === FIELDS_REF ? [{ name, shared: true }] : [],
+  )
+  return formatKinds
+}
+
+/** The kinds this market's file defines, by name. */
+export function kindsOf(market: Market): string[] {
+  return kinds().filter((k) => isObject(market[k.name])).map((k) => k.name)
+}
+
+/** One of the market's kinds, or a refusal naming them. */
+export function checkKind(market: Market, kind: string): Kind {
+  const found = kinds().find((k) => k.name === kind)
+  if (!found || !kindsOf(market).includes(kind)) refuse(`${market.name} has no kind ${kind}: its kinds are ${kindsOf(market).join(', ')}`)
+  return found
+}
+
+/** An id, the one segment after a kind in its path. */
+export function checkId(kind: string, id: unknown): void {
+  if (typeof id === 'string' && (id.includes('/') || !PATH.test(`${kind}/${id}`))) refuse('an id is lowercase letters, digits, dots, underscores and dashes, up to 64, starting with a letter or digit')
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -88,7 +140,7 @@ const takes = (field: Field) => {
 }
 
 /** Each field of `body` checked against `fields`: one the market names, for this role, of its type. */
-async function checkFields(body: Body, fields: { [name: string]: Field }, where: string, forRoles: string, role: string | (() => Promise<string | undefined>)) {
+async function checkFields(body: Body, fields: Fields, where: string, forRoles: string, role: string | (() => Promise<string | undefined>)) {
   for (const [name, value] of Object.entries(body)) {
     const field = fields[name] ?? refuse(`${where} has no field ${name}`)
     if (field.roles) {
@@ -99,24 +151,6 @@ async function checkFields(body: Body, fields: { [name: string]: Field }, where:
   }
 }
 
-/** The market and role the profile's own profile record names. */
-function marketOf(view: View): { market: Market; role: string } {
-  const body = profileOf(view)
-  if (typeof body?.market !== 'string' || typeof body.role !== 'string') refuse(`${view.profile} has no profile record naming its market and role, so its posts and reviews cannot be checked`)
-  return { market: marketFile(body.market), role: body.role }
-}
-
-const isObject = (value: unknown): value is Body => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-/** A post's body, checked against the fields of the profile's market, for its role. */
-export async function checkPost(view: View, body: unknown): Promise<Body> {
-  if (!isObject(body)) refuse('the body is an object')
-  const { market, role } = marketOf(view)
-  if (!market.roles.some((r) => r.role === role)) refuse(`${role} is not a role in ${market.name}: its roles are ${market.roles.map((r) => r.role).join(', ')}`)
-  await checkFields(body, market.offer, `a post in ${market.name}`, 'posts by', role)
-  return body
-}
-
 /** A post's full address, `<profile address>/offer/<id>`, or a refusal naming `name`. */
 export function checkPostAddress(text: unknown, name: string): string {
   const [address, ...rest] = typeof text === 'string' ? text.split('/') : []
@@ -125,34 +159,41 @@ export function checkPostAddress(text: unknown, name: string): string {
   return text as string
 }
 
-/** The shared review fields, by name: each one's meaning, as the markets manual gives it. */
+/** The shared names, by name: each one's meaning, as the markets manual gives it. A shared name with no meaning here passes as given. */
 const SHARED: { [name: string]: (value: unknown) => void } = {
-  subject: (v) => publicKeyFromAddress(v) || refuse("subject is the address of the profile the review is about"),
+  subject: (v) => publicKeyFromAddress(v) || refuse('subject is the address of the profile the review is about'),
   score: (v) => (typeof v === 'string' && /^(10(\.0)?|[1-9](\.[0-9])?)$/.test(v)) || refuse('score is "1" to "10" as decimal text, at most one decimal, such as "8.5"'),
   text: (v) => typeof v === 'string' || refuse('text takes text'),
   offer: (v) => checkPostAddress(v, 'offer'),
-  evidence: (v) => typeof v === 'string' || refuse('evidence takes text: a receipt address or a payment signature'),
+  evidence: (v) => typeof v === 'string' || refuse('evidence takes text: <chain>:<id>, a payment\'s or an escrow\'s'),
 }
 
 /**
- * A review's body, checked against the profile's market: the shared fields it lists, by their
- * meaning, then the fields it adds. A field for reviews of some roles reads the subject's profile
- * record for its role, only when the body holds one.
+ * A body of `kind`, checked against the market, written as `role`. A field-map kind (`offer`): each
+ * field one the market names, for the writer's role. A kind with shared names (`review`): `subject`
+ * named, each shared name by its meaning, then the fields the market adds, a field kept for some
+ * roles checked against the subject's role, read from its hosts only when the body holds one.
  */
-export async function checkReview(ctx: Context, view: View, body: unknown): Promise<Body> {
+export async function checkBody(ctx: Context, market: Market, role: string, kind: string, body: unknown): Promise<Body> {
   if (!isObject(body)) refuse('the body is an object')
-  const { market } = marketOf(view)
-  const where = `a review in ${market.name}`
-  if (body.subject === undefined) refuse('a review names its subject: the address of the profile it is about')
+  const { shared } = checkKind(market, kind)
+  const a = /^[aeiou]/.test(kind) ? 'an' : 'a'
+  const where = `${a} ${kind} in ${market.name}`
+  if (!shared) {
+    await checkFields(body, market[kind] as Fields, where, `${kind}s by`, role)
+    return body
+  }
+  const spec = market[kind] as { shared: string[]; fields?: Fields }
+  if (spec.shared.includes('subject') && body.subject === undefined) refuse(`${a} ${kind} names its subject: the address of the profile it is about`)
   const rest: Body = {}
   for (const [name, value] of Object.entries(body)) {
-    if (market.review.shared.includes(name)) SHARED[name]!(value)
+    if (spec.shared.includes(name)) SHARED[name]?.(value)
     else rest[name] = value
   }
   const subjectRole = async () => {
-    const role = profileOf(await folder(ctx, body.subject as string))?.role
-    return typeof role === 'string' ? role : undefined
+    const is = profileOf(await folder(ctx, body.subject as string))?.role
+    return typeof is === 'string' ? is : undefined
   }
-  await checkFields(rest, market.review.fields ?? {}, where, 'reviews of', subjectRole)
+  await checkFields(rest, spec.fields ?? {}, where, `${kind}s of`, subjectRole)
   return body
 }

@@ -16,9 +16,9 @@
 #   e2e          the loop's type-check, which reads the host's, issuer's, index's and mcp's code it
 #                starts, and its tests: the credits client against the host's own code selling for
 #                tickets and for a dollar, the funding and minting it does, and a run's record
-#   mcp          its type-check and tests: every tool on the standard's reference host and a stand-in
-#                index, with the markets at MARKETS; both doors; and the image's own command through
-#                the MCP SDK's client
+#   mcp          its type-check and tests, on loopback: the standard's reference host, a stand-in
+#                index and connect page, and its reference signer; the login end to end through the
+#                MCP SDK's client, every tool, the relay, and the image's own command
 #
 # Not here, and in each directory's README: the fee payer's local run, which needs a local validator
 # and Kora built; the loop itself, which needs the phrase and the chain; and mcp's smoke test against

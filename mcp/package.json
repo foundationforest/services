@@ -2,16 +2,14 @@
   "name": "@forest/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "forest, the AI's door to Forest: read markets, search, read a profile, and act for a person with the access keys their app made, as typed commands and as MCP tools; and the foundation's hosted copy of its MCP door (deploy/Dockerfile). It stores nothing. smoke.ts checks a copy through the MCP SDK's own client.",
+  "description": "The mcp, the AI's door to Forest: reads markets, search and profiles, and relays what an AI app asks to the person's signer, after a login by the MCP specification's authorization flow; and the foundation's hosted copy (deploy/Dockerfile). It keeps nothing but live sockets. test/signer.ts is a reference signer; smoke.ts checks a copy through the MCP SDK's own client.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
-  "bin": {
-    "forest": "./src/main.ts"
-  },
   "scripts": {
+    "start": "node src/main.ts",
     "check": "tsc --noEmit",
     "test": "node --test --test-concurrency=1 test/*.test.ts",
     "smoke": "node smoke.ts"
@@ -21,10 +19,12 @@
     "@foundationforest/records": "file:../standard/records",
     "@modelcontextprotocol/sdk": "1.32.1",
     "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "ajv-formats": "3.0.1",
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "@types/node": "22.20.2",
+    "@types/ws": "8.18.1",
     "typescript": "5.9.3"
   }
 }

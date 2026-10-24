@@ -1,18 +1,17 @@
-// The profile's inbox, pulled and opened with the read key.
+// The messages to one of the person's profiles, opened by their signer, each with a number to
+// reply by.
 
-import { type Context, pullAs } from '../forest.ts'
-import { type Args, PROFILE, type Param, READ_KEY } from '../params.ts'
-import { requestOf } from './ask.ts'
+import { checkRole, marketFile } from '../markets.ts'
+import { type Args, type Ctx, MARKET, type Param, ROLE } from '../params.ts'
 
 export const name = 'inbox'
 export const description =
-  "Read key. The messages to the profile, pulled from each of its hosts with the read key, each opened when it is sealed to it; one that is not shows who sent it and when, unopened. A copy of a message sent with send shows as sent, with whom it went to; a request the profile sent itself with ask is marked with its kind; any other is just a message. Give after, the cursors a pull returned, for newer messages only."
-export const params: Param[] = [
-  { name: 'after', type: 'object', description: 'The cursors a pull returned, by host: { "<host>": <cursor> }. Left out: every message.' },
-  PROFILE,
-  READ_KEY,
-]
+  "The messages to the person's profile in a market and role, as their signer opens them: each with a number to reply by, who it is from (another profile's address), when, and what it says. Answers done, needs approval with a link for the person, or refused. Needs the person's login."
+export const params: Param[] = [MARKET, ROLE]
+export const relayed = true
 
-export async function run(args: Args, ctx: Context) {
-  return pullAs(args, ctx, (args.after as { [host: string]: number } | undefined) ?? {}, requestOf)
+export async function run(args: Args, ctx: Ctx) {
+  const market = marketFile(args.market as string)
+  checkRole(market, args.role as string)
+  return ctx.ask(name, { market: market.name, role: args.role })
 }
