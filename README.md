@@ -3,26 +3,27 @@
 Part of [Forest](https://github.com/foundationforest). What the Open Forest Foundation runs: one
 copy of each service Forest's standard needs, and the loop that tests them together. Anyone can run
 another of each; the main way is this code (Apache 2.0), and their own is as good. None of them
-owns anything of the person's: no seed, no main key, no money, no account. Each one's prices and
-choices are its own, in its README's How we run it.
+owns anything of the person's: no seed, no main key, no permission, no money, and no sign-up. Each
+one's prices and choices are its own, in its README's How we run it.
 
 ## How it works
 
-### Four things
+### What Forest is, and what each service does for it
 
-A stranger trusts you on four things: who you are, that you are real, what you have done, and your
-money. In Forest a person holds all four, and anyone checks each one by math, with no one in the
-middle. Each service here helps with one, and holds none of it for the person:
+Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+rank. The person holds the seed on their own devices, their signers, and everything that acts for
+them asks a signer, which acts by the person's permissions; no key is ever handed out. Each service
+here helps with one part, and holds none of it for the person:
 
-| What | What the person holds | How anyone checks it | The service that helps |
+| The part | What the person holds | How anyone checks it | The service that helps |
 |---|---|---|---|
-| Who you are | A profile: a main key from their seed, one per label, and its signed records | Each record's signature, against the profile's address | The **host** keeps the records and serves them to anyone |
-| That you are real | A stamp a verifier signed to their seed, shown on a profile record as a stamp proof | The proof, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
-| What you have done | Reviews naming their evidence, a payment or an escrow's receipt; and a reputation proof that carries a rating to another of their profiles | Each review's evidence, on chain; each rating and tree root, against the index's key; the proof, against the root | The **index** reads it all, rates each profile, and signs what it says |
-| Your money | Dollars at each profile's pay address; an escrow, on chain | The chain | The **fee payer** pays the chain's fees for a person who holds dollars and no SOL |
+| One seed and its profiles | A main key from the seed for each label, the records it signs, and a vault of their own: which profiles exist, their stamps and their permissions, encrypted | Each record's signature, against the profile's address | The **host** keeps each profile's folder and inbox, and the vault, and serves the records to anyone |
+| Verified once | A stamp a verifier signed to their seed, which any of their profiles shows as a stamp proof | The proof, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
+| Offers and reviews in public | The offers and reviews each profile signs, each review naming its evidence: a payment or an escrow's receipt | Each record's signature; each review's evidence, on chain | The **host** keeps them; the **fee payer** pays the chain's fees for the payment a review names, for a person who holds dollars and no SOL |
+| Indexes rank them | A rating, and a reputation proof that carries it to another of their profiles without linking them | Each rating and tree root, against the index's key; the proof, against the root | The **index** reads the hosts and the chain, rates each profile, and signs what it says |
 
-**mcp** is the AI's door to all four: it reads what hosts and indexes say, and passes what an AI app
-asks to the person's signer, Forest on one of their own devices, which acts by their permissions.
+**The mcp** is the AI's door to all of it: it reads what hosts and indexes say, and carries what an
+AI app asks to the person's signer, and the answer back.
 
 The escrow, and every payment here, runs on the chain the escrow runs on today, Solana's devnet,
 with test dollars.
@@ -31,23 +32,23 @@ with test dollars.
 
 - **[standard](https://github.com/foundationforest/standard):** what two strangers' programs must
   agree on. That means formats, recipes and checks: keys, the stamp and reputation proofs, records,
-  and the escrow. Every service here uses its pieces unchanged.
+  the vault and its permissions, and the escrow. Every service here uses its pieces unchanged.
 - **[markets](https://github.com/foundationforest/markets):** what a post and a review hold, one
   market at a time.
 - **services, this repo:** the foundation's copy of each service, and the loop.
-- **[app](https://github.com/foundationforest/app):** the Forest app, which holds the person's seed
-  and uses any copy of any service.
+- **[app](https://github.com/foundationforest/app):** the Forest app, a signer: it holds the
+  person's seed and uses any copy of any service.
 
 ### The services
 
 | Folder | What it is | The foundation's copy |
 |---|---|---|
-| [`verifier`](verifier/README.md) | Checks that you are one real person, by face, through Didit, and signs you a stamp with its face key; its ID check, once it has a price, signs with its ID key | https://issuer.forest.foundation |
-| [`host`](host/README.md) | Keeps profiles' signed records, messages and photos, serves them to anyone, and takes each write's price in its credits | https://host.forest.foundation |
-| [`index`](index/README.md) | Reads the hosts it lists and the escrow's receipts, rates each profile whose note proof checks, and serves it all as pages and JSON | https://index.forest.foundation |
+| [`verifier`](verifier/README.md) | Checks that you are one real person, by face, through Didit, and signs you a stamp with its face key; its ID check, once it has a price, signs with its ID key | https://verifier.forest.foundation |
+| [`host`](host/README.md) | Keeps profiles' signed records, their inboxes and photos, and the person's vault, serves the records to anyone, and takes each write's price in its credits | https://host.forest.foundation |
+| [`index`](index/README.md) | Reads the hosts it lists and the chains it lists, rates each profile whose stamp proof checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
 | [`fee-payer`](fee-payer/README.md) | Pays the chain's fees for a person's transaction, and charges them what that cost in the dollar they pay with | https://fee-payer.forest.foundation |
 | [`mcp`](mcp/README.md) | The AI's door: reads markets, profiles and indexes, and passes what an AI app asks to the person's signer, and the answer back | https://mcp.forest.foundation |
-| [`e2e`](e2e/README.md) | The loop: two people through all five, end to end. Not a service | |
+| [`e2e`](e2e/README.md) | The loop: two people through all five, each with a signer and an AI, end to end. Not a service | |
 
 ## Run a copy
 
@@ -72,7 +73,7 @@ on `main`, from a clean install, six jobs:
 (cd index && npm ci && npm run check && npm test)
 (cd fee-payer && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
 (cd host && npm ci && npm run check && npm test)
-(cd e2e && npm ci && npm run check && npm test)        # needs host, issuer, index and mcp installed
+(cd e2e && npm ci && npm run check && npm test)        # needs verifier, host, index and mcp installed
 (cd mcp && npm ci && npm run check && npm test)
 ```
 
@@ -100,7 +101,8 @@ A test that cannot find what it needs skips, and CI fails on any skip: each summ
 - **Each service, as it is run:** what its README's How we run it says. Whoever runs a copy chooses
   its own.
 - **An app, with the person:** which verifier, host, fee payer, index and mcp to use.
-- **The person:** their seed and profiles, which access keys to hand out, and which proofs to show.
+- **The person:** their seed and profiles; which AI apps and which people may ask their signers to
+  act, for what, on which profiles and within which limits; and which proofs to show.
 
 ## FAQ
 
@@ -110,20 +112,23 @@ Everything but its secrets and what it keeps private for people:
 - **Public:**
   - this code and every setting these READMEs list;
   - the verifier's name and its two keys;
-  - every record on the host (a private record as an envelope only its readers open);
+  - every record on the host (a private record, the vault among them, as an envelope only its
+    readers open);
   - every payment and escrow receipt, on chain;
-  - the index's pages, JSON and reputation tree;
+  - the index's pages, JSON, signed ratings and reputation tree;
   - each run of the loop's record.
 - **Secret:**
   - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the fee
-    payer's key, and the host's credit key;
+    payer's key, the host's credit key, and the mcp's key, which signs its logins;
   - the phrase that funds the loop;
   - the API keys and keyed URLs (web addresses with a key inside): Didit's, and the RPC's;
   - the keys to the host's bucket.
 - **Private by design:**
   - what the verifier keeps ([verifier](verifier/README.md#what-it-keeps));
   - the messages in an inbox, which only the profile's main key pulls, and only its inbox key
-    opens.
+    opens;
+  - the vault, which only the person's seed opens;
+  - what an AI asks through the mcp, which it carries and never writes down.
 - **Kept, not published:**
   - the host's spent list, the proofs it took, its sponsors' bill, each folder's balance, and the id
     of each record it took a price for;
