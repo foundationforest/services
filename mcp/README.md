@@ -310,6 +310,8 @@ acts.
   person's own profiles' addresses, keys or folders.
 - **It acts only through the person's signer,** which acts by the person's permissions and asks them
   about the rest. It signs nothing for anyone.
+- **It never moves money itself, and holds nothing that could.** A payment is made by the person's
+  signer, inside the limits their permissions set, or with their yes.
 - **It keeps nothing between calls but live sockets,** in memory. No login, call or answer is written.
 - **It checks what it reads from hosts.** The standard's records library checks every record,
   signature included. What an index says is passed on as the index's word, and labelled so.
