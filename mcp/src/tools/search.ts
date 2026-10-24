@@ -5,7 +5,7 @@ import type { Args, Param } from '../params.ts'
 
 export const name = 'search'
 export const description =
-  "No key. The index's search: posts matching the words and filters given, each with its profile's address, market, role, the post's address and body, and the profile's rating and checks, as the index's word. Every filter may be left out."
+  "The index's search: posts matching the words and filters given, each with its profile's address, market, role, the post's address and body, and the profile's rating and the verifiers whose stamps it shows, as the index's word. Every filter may be left out. No login."
 export const params: Param[] = [
   { name: 'q', type: 'string', description: 'Words to look for.' },
   { name: 'market', type: 'string', description: 'Only this market, such as tutoring.' },
@@ -17,6 +17,7 @@ export const params: Param[] = [
   { name: 'limit', type: 'integer', minimum: 1, description: 'How many results at most.' },
   { name: 'offset', type: 'integer', description: 'How many results to skip, for the next page.' },
 ]
+export const relayed = false
 
 export async function run(args: Args, ctx: Context) {
   const query = new URLSearchParams(params.filter((p) => args[p.name] !== undefined).map((p) => [p.name, String(args[p.name])]))

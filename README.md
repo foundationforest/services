@@ -21,8 +21,8 @@ middle. Each service here helps with one, and holds none of it for the person:
 | What you have done | Reviews naming their evidence, a payment or an escrow's receipt; and a reputation proof that carries a rating to another of their profiles | Each review's evidence, on chain; each rating and tree root, against the index's key; the proof, against the root | The **index** reads it all, rates each profile, and signs what it says |
 | Your money | Dollars at each profile's pay address; an escrow, on chain | The chain | The **fee payer** pays the chain's fees for a person who holds dollars and no SOL |
 
-**mcp** is the AI's door to all four: it reads what hosts and indexes say, and acts for a person
-with the access keys their app made, never a main key.
+**mcp** is the AI's door to all four: it reads what hosts and indexes say, and passes what an AI app
+asks to the person's signer, Forest on one of their own devices, which acts by their permissions.
 
 The escrow, and every payment here, runs on the chain the escrow runs on today, Solana's devnet,
 with test dollars.
@@ -46,7 +46,7 @@ with test dollars.
 | [`host`](host/README.md) | Keeps profiles' signed records, messages and photos, serves them to anyone, and takes each write's price in its credits | https://host.forest.foundation |
 | [`index`](index/README.md) | Reads the hosts it lists and the escrow's receipts, rates each profile whose note proof checks, and serves it all as pages and JSON | https://index.forest.foundation |
 | [`fee-payer`](fee-payer/README.md) | Pays the chain's fees for a person's transaction, and charges them what that cost in the dollar they pay with | https://fee-payer.forest.foundation |
-| [`mcp`](mcp/README.md) | The AI's door: reads markets, profiles and indexes, and acts for a person with the access keys their app made | https://mcp.forest.foundation |
+| [`mcp`](mcp/README.md) | The AI's door: reads markets, profiles and indexes, and passes what an AI app asks to the person's signer, and the answer back | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all five, end to end. Not a service | |
 
 ## Run a copy
