@@ -1,7 +1,8 @@
 // `/deals/<escrow>`: an escrow's receipt as chain.ts reads it, every move with who made it and when,
-// the profiles whose `pay` address is the payer or the recipient, and the reviews that name it.
+// the profiles whose solana pay address is the payer or the recipient, and the reviews that name it,
+// as `<the escrow's chain>:<escrow>`.
 
-import type { Move, Receipt } from '../chain.ts'
+import { ESCROW_CHAIN, type Move, type Receipt } from '../chain.ts'
 import type { Currency } from '../lists.ts'
 import { parse } from '../store.ts'
 import { personOf } from './common.ts'
@@ -33,10 +34,11 @@ export const deal: Page<DealPage> = {
     const moves = (store.db.prepare('select move from moves where escrow = ? order by rowid').all(escrow ?? '') as Array<{ move: string }>).map((m) => parse<Move>(m.move))
     if (!held && !moves.length) return null
     const receipt = held ? parse<Receipt>(held.receipt) : null
-    const payTo = (pay: string | undefined) => (pay ? (store.db.prepare('select address from profiles where pay = ? order by address').all(pay) as Array<{ address: string }>).map((p) => p.address) : [])
+    const payTo = (pay: string | undefined) =>
+      pay ? (store.db.prepare("select address from profiles where json_extract(body, '$.pay.solana') = ? order by address").all(pay) as Array<{ address: string }>).map((p) => p.address) : []
     const reviews = store.db
       .prepare("select address, reviewer, subject, counted from reviews where json_extract(body, '$.evidence') = ? order by time desc, address")
-      .all(escrow!) as Array<{ address: string; reviewer: string; subject: string | null; counted: number }>
+      .all(`${ESCROW_CHAIN}:${escrow}`) as Array<{ address: string; reviewer: string; subject: string | null; counted: number }>
     return {
       index: self,
       escrow: escrow!,

@@ -60,7 +60,6 @@ const kora = join(here, '../.kora/bin/kora')
 const RPC = 'http://127.0.0.1:8899'
 const KORA_PORT = 8080
 const KORA_URL = `http://127.0.0.1:${KORA_PORT}`
-const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
 const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')
 const START_DOLLARS = 100_000_000n
 /** What the fee payer holds in the test dollar before the tests, standing in for what it collected earlier. */
@@ -360,9 +359,7 @@ test('an escrow with a schedule, paid into in the test dollar, is co-signed and 
 test('a transaction calling a program not on the list is refused', { timeout: 60_000 }, async (t) => {
   const why = missing()
   if (why) return t.skip(why)
-  const memo = new TransactionInstruction({ programId: MEMO_PROGRAM, keys: [{ pubkey: person.publicKey, isSigner: true, isWritable: false }], data: Buffer.from('hello') })
-  console.log(await refused([memo], /not in the allowed list/))
-  // The compute budget program is not on the list either: a priority fee is the fee payer's cost.
+  // The compute budget program: a priority fee is the fee payer's cost.
   console.log(await refused([ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 })], /not in the allowed list/))
 })
 

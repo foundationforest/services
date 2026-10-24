@@ -15,8 +15,8 @@
   },
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",
-    "@foundationforest/note": "file:../standard/proofs/note/client",
     "@foundationforest/records": "file:../standard/records",
+    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
     "@scure/base": "2.4.0"
   },
   "devDependencies": {

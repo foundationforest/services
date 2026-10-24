@@ -5,16 +5,16 @@
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 
-import { seedScalar, unpackSignature, verifyBytes } from '@foundationforest/keys'
-import { toBytes32 } from '@foundationforest/note'
+import { checkBytes, seedScalar, unpackSignature } from '@foundationforest/keys'
 import { b64u, hex } from '@foundationforest/records'
 import { buildTree, proofBytes, proveReputation, signedBytes } from '@foundationforest/reputation'
+import { toBytes32 } from '@foundationforest/stamp'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { at, index, issuer, post, profile, publishProfile, REPUTATION_FILES, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, post, profile, publishProfile, REPUTATION_FILES, startHost, startRpc, twin } from './world.ts'
 
-const first = issuer('first.test.example')
-const second = issuer('second.test.example')
+const first = verifier('first.test.example')
+const second = verifier('second.test.example')
 let host: Awaited<ReturnType<typeof startHost>>
 let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
@@ -27,7 +27,7 @@ after(async () => {
 })
 
 type Served = { index: string; root: string; time: number; signature: string; leaves: number }
-type Leaves = { root: string; leaves: Array<{ stamp: string; scope: string; score: number; count: number }> }
+type Leaves = { root: string; leaves: Array<{ tag: string; scope: string; score: number; count: number }> }
 
 test('the tree, its signed root, and a reputation proof on a profile', async () => {
   const tutor = await profile('tutoring/tutor', [first, second])
@@ -36,7 +36,7 @@ test('the tree, its signed root, and a reputation proof on a profile', async () 
   for (const p of [tutor, student, later]) await publishProfile(host.url, p)
   await post(host.url, [at(student, 'review/one', { subject: tutor.key.address, score: '9' })])
 
-  const keys = [first, second].map((i) => ({ key: i.key, issuer: i.name, label: 'face check', points: 1 }))
+  const keys = [first, second].map((v) => ({ key: v.key, verifier: v.name, label: 'face check', points: 1 }))
   const i = await index({ hosts: [host.url], keys, roots: 1 }, rpc.url)
   assert.equal((await twin(i, '/v1/reputation')).status, 404)
   await i.pass()
@@ -44,13 +44,13 @@ test('the tree, its signed root, and a reputation proof on a profile', async () 
   const served = (await twin<Served>(i, '/v1/reputation')).body
   const { leaves } = (await twin<Leaves>(i, '/v1/reputation/leaves')).body
   assert.equal(served.index, i.address)
-  // One leaf per stamp: the tutor's two, one for each issuer; the student has no rating.
-  assert.deepEqual(leaves.map((l) => l.stamp).sort(), tutor.proofs.map((p) => p.stamp).sort())
+  // One leaf per tag: the tutor's two, one for each verifier; the student has no rating.
+  assert.deepEqual(leaves.map((l) => l.tag).sort(), tutor.proofs.map((p) => p.tag).sort())
   assert.deepEqual(leaves.map((l) => [l.score, l.count]), [[90, 1], [90, 1]])
-  const asLeaves = leaves.map((l) => ({ stamp: BigInt('0x' + l.stamp), scope: BigInt('0x' + l.scope), score: BigInt(l.score), count: BigInt(l.count) }))
+  const asLeaves = leaves.map((l) => ({ tag: BigInt('0x' + l.tag), scope: BigInt('0x' + l.scope), score: BigInt(l.score), count: BigInt(l.count) }))
   const root = buildTree(asLeaves).root
   assert.equal(hex.encode(toBytes32(root)), served.root)
-  assert.ok(verifyBytes(i.address, signedBytes(root, served.time), unpackSignature(b64u.decode(served.signature))!))
+  assert.ok(checkBytes(i.address, signedBytes(root, served.time), unpackSignature(b64u.decode(served.signature))!))
 
   // A pass with nothing new keeps the root.
   await i.pass()
@@ -59,7 +59,7 @@ test('the tree, its signed root, and a reputation proof on a profile', async () 
   // The tutor proves its rating from the tree, on its own profile, and shows it; the student shows a copy.
   const r = await proveReputation({
     seedScalar: await seedScalar(tutor.seed),
-    sources: [{ label: 'tutoring/tutor', issuerName: first.name }],
+    sources: [{ label: 'tutoring/tutor', verifierName: first.name }],
     leaves: asLeaves,
     profileLabel: 'tutoring/tutor',
     show: true,

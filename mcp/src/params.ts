@@ -1,10 +1,8 @@
-// What a tool is, for both doors: a file in src/tools/ exporting its name, its description (the key
-// it needs, first), its parameters and its work. The profile it acts for and the key it needs are
-// parameters like any other, by three names the doors know: a call that carries none of them uses
-// the ones the copy started with.
+// What a tool is: a file in src/tools/ exporting its name, its description, its parameters, whether
+// it goes to the person's signer, and its work. A tool that goes to the signer needs a login; one
+// that reads what is public does not.
 
-import type { Context } from './forest.ts'
-import { refuse } from './forest.ts'
+import { type Context, refuse } from './forest.ts'
 
 export type Param = {
   name: string
@@ -15,32 +13,29 @@ export type Param = {
   values?: string[]
   /** The least an integer takes; 0 when omitted. */
   minimum?: number
-  /** Given first, without its flag, at the typed door. */
-  positional?: boolean
 }
 
 export type Args = { [name: string]: unknown }
 
-export type Tool = {
-  name: string
-  /** What it does, in plain words, starting with the key it needs: `No key.`, `Write key.` or `Read key.` */
-  description: string
-  params: Param[]
-  run: (args: Args, ctx: Context) => Promise<unknown>
+/** What a tool works with: the hosts and index it reads, and, for a call with a login, the person's signer. */
+export type Ctx = Context & {
+  /** Passes `args` to the signer of the call's connection, and gives back what it may pass on. */
+  ask: (tool: string, args: Args) => Promise<unknown>
 }
 
-export const PROFILE: Param = { name: 'profile', type: 'string', description: "The address of the profile acted for, as the person's app gives it." }
-export const WRITE_KEY: Param = { name: 'writeKey', type: 'string', description: "The write key, as the person's app gives it: its 32 bytes in base64url." }
-export const READ_KEY: Param = { name: 'readKey', type: 'string', description: "The read key, as the person's app gives it: its 32 bytes in base64url." }
+export type Tool = {
+  name: string
+  /** What it does, in plain words. */
+  description: string
+  params: Param[]
+  /** Whether it goes to the person's signer, and so needs a login. */
+  relayed: boolean
+  run: (args: Args, ctx: Ctx) => Promise<unknown>
+}
 
-/** The parameters a call may leave out when the copy started with them. */
-export const FROM_START = [PROFILE.name, WRITE_KEY.name, READ_KEY.name] as const
-export type Start = { [name in (typeof FROM_START)[number]]?: string }
-
-/** A post's or a review's id: `<prefix>/<id>` in the profile's folder. */
-export const id = (prefix: string): Param => ({ name: 'id', type: 'string', positional: true, description: `The id in ${prefix}/<id>: needed to update or remove; a fresh one when left out to post.` })
-/** What a write does at its path. */
-export const ACTION: Param = { name: 'action', type: 'string', required: true, positional: true, values: ['post', 'update', 'remove'], description: 'post a new one, update one, or remove one.' }
+/** The market and role of the person's profile a relayed tool acts as. */
+export const MARKET: Param = { name: 'market', type: 'string', required: true, description: 'The market of the person\'s profile it acts as, such as tutoring.' }
+export const ROLE: Param = { name: 'role', type: 'string', required: true, description: 'The role of the person\'s profile it acts as, such as tutor.' }
 
 const KINDS: { [type in Param['type']]: string } = { string: 'text', object: 'an object', integer: 'a whole number', number: 'a number', boolean: 'true or false' }
 

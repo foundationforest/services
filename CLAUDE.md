@@ -5,32 +5,42 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 ## Words
 
-Use these words: seed, main key, profile, profile record, address, label, stamp, issuer, note,
-note number, attributes, note proof, reputation proof, record, folder, host, access key, write key,
-read key, permissions, private, envelope, sealed (an envelope), inbox key, inbox, blob, pay address,
-escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, ticket, check,
-review, evidence, index, fee payer, app, market, role, ramp. Plain words, no em-dashes.
+Use these words: seed, seed scalar, main key, profile, profile record, address, label, scope, tag,
+verifier, verified, stamp, stamp number, facts, stamp proof, reputation proof, check, record,
+folder, host, service key, signer, connection, connector, permissions, private, envelope, encrypted
+(an envelope), message, inbox key, inbox, pull, vault, blob, pay address, pay key, escrow, schedule,
+window, stop, payer, recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, fee
+payer, app, market, role, ramp. Plain words, no em-dashes.
 
-- A stamp is the number an index's tree knows one profile by, at one issuer: the standard's
-  `keys/`, Stamps.
-- The issuer has two keys: its face key, which signs the face check's notes, and its ID key, which
-  signs the ID check's.
-- A profile record is the record at `profile`, never a card. A write key and a read key are the two
-  access keys, never a message key or a writer key. A pay address is a profile's Solana address,
-  from its pay key.
-- issuer, never keeper; fee payer, never relayer; main key, never profile key; checked, never
-  verified; address, never wallet, for a key ("a wallet app" is fine). Never registry, row, tier,
-  standing, rules or policy.
-- sealed is only for an envelope: what is sealed to an inbox key or a read key.
+- A verifier is anyone who signs stamps; a person it signed a stamp to is verified. A stamp is what
+  a verifier signs to a person's seed: their stamp number and its facts. A tag is the number an
+  index's tree knows one profile by, at one verifier: the standard's `keys/`, Tags.
+- The verifier has two keys: its face key, which signs the face check's stamps, and its ID key,
+  which signs the ID check's.
+- A signer is a device the person owns that holds their seed. An AI app reaches it through its
+  connection, carried by a connector such as mcp; a person or a business, by a message to the
+  person's inbox. The signer acts by the person's permissions, kept in their vault, and asks the
+  person about the rest. No key is ever handed out.
+- A profile record is the record at `profile`, never a card. A pay address is one of a profile's
+  `pay` addresses, `{ solana, evm }`, each from its pay key.
+- Check, never verify: a reader checks a proof or a signature. Fee payer, never relayer; main key,
+  never profile key; address, never wallet, for a key ("a wallet app" is fine).
+- Never: issuer, note, attributes, sealed, access key, write key, read key, account for a person,
+  card, registry, row, tier, standing, rules, policy. A string baked into a recipe, a circuit or a
+  key's text keeps its bytes even when its words are old (`forest/v1/issuer`, `forest/v1/note`,
+  the circuits' signal names and files, the verifier's `issuer/...` texts): rename the code around
+  it, never the string, and say why in a comment beside it. Another standard's own names stay too
+  (Privacy Pass's `issuer_name`, snarkjs's verifier).
+- encrypted is for an envelope: what is encrypted to an inbox key.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent. The fee
   payer pays the chain's fees, at cost: Kora, configured.
-- A token's issuer is "the dollar's maker".
+- Whoever makes a token is "the dollar's maker", never its issuer.
 - A folder is what one main key signs on a host; this repo's folders are directories.
 - The foundation runs every service here, never Soil; the app is the Forest app.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
 - devnet and mainnet appear in no README, but in one line in each README where it matters, naming
-  the chain the escrow runs on today. A name we do not own (`FOREST_DEVNET_SEED`, a path in the
+  the chain things run on today. A name we do not own (`FOREST_DEVNET_SEED`, a path in the
   standard) is a name.
 - Never "replace every app".
 

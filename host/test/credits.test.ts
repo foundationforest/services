@@ -1,5 +1,6 @@
 // The host's credits, through the real reference host on loopback: what a 1 kB record, a 200 kB blob
-// and a delete cost; a write refused with no balance, and taking down never blocked by it; a ticket
+// and a delete cost; a write refused with no balance, and taking down never blocked by it, nor a vault
+// write; a ticket
 // collected; a payment checked against a stand-in RPC; the credit key made at the first start; and
 // one end to end, a folder, a record and a blob, read back. The reference host's own tests are the
 // standard's.
@@ -10,8 +11,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { mainKey, newSeed } from '@foundationforest/keys'
+import { inboxKey, mainKey, newSeed, vaultKey } from '@foundationforest/keys'
 import { type BlobName, type SignedBlobRequest, type SignedRecord, base58, blobNameOf, blobRequest, deleteBlob, encodeRecord, getBlob, hostsRecord, ownerRecord, publish, putBlob, readProfile } from '@foundationforest/records'
+import { vaultRecord } from '@foundationforest/records/private'
 
 import type { Rpc } from '../credits/seller.ts'
 import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
@@ -115,6 +117,17 @@ test('a write is refused with no balance; taking your own things down never is',
     assert.equal(balance(running, me.address), 0)
     const nothing = (await results(running, [ownerRecord(me, 'offer/physics', null, now)]))[0]!
     assert.deepEqual([nothing.ok, nothing.error], [false, 'refused'], 'a null body where nothing stands is a write like any other')
+
+    // The vault is free: changing the person's permissions never fails for lack of credits.
+    const vault = await vaultKey(newSeed())
+    const { encryptTo } = await inboxKey(vault.secret)
+    const permissions = [{ who: { profile: me.address }, profiles: 'all' as const, can: ['post'] }]
+    assert.ok((await results(running, [hostsRecord(vault, [running.url], now)]))[0]!.ok)
+    assert.ok((await results(running, [await vaultRecord(vault, encryptTo, { permissions }, now)]))[0]!.ok, 'a vault write needs no balance')
+    assert.ok((await results(running, [await vaultRecord(vault, encryptTo, { permissions: [] }, now + 1)]))[0]!.ok, 'nor a change to it')
+    assert.equal(balance(running, vault.address), 0)
+    const open = (await results(running, [ownerRecord(vault, 'vault', { text: 'not encrypted' }, now + 2)]))[0]!
+    assert.deepEqual([open.ok, open.error], [false, 'refused'], 'a record at vault that is not encrypted is no vault: a write like any other')
   } finally {
     await running.close()
   }

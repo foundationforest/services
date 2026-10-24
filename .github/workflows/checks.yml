@@ -2,23 +2,25 @@
 # to main. Each job first fetches the standard and the markets at their pins and builds the standard
 # (standard.sh), then installs what it uses.
 #
-#   issuer       its type-check (the stand-in Didit for tests included) and its tests: note proofs made
-#                from its notes and checked against its published keys, the attributes vectors, the
+#   verifier     its type-check (the stand-in Didit for tests included) and its tests: stamp proofs made
+#                from its stamps and checked against its published keys, the facts vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its welcome gift's ticket taken by the host's own seller, bought with
 #                e2e's credits client
-#   index        its type-check and its tests, on loopback: the standard's reference host, real note
-#                proofs from the note circuit's committed proving files, a real reputation proof (the
+#   index        its type-check and its tests, on loopback: the standard's reference host, real stamp
+#                proofs from the stamp circuit's committed proving files, a real reputation proof (the
 #                reputation circuit's proving files, fetched), a stand-in RPC, and the index end to end
 #   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
 #                its Dockerfile makes with deploy/devnet-config.sh
 #   host         its type-check and its credits' tests, through the standard's reference host
-#   e2e          the loop's type-check, which reads the host's, issuer's, index's and mcp's code it
-#                starts, and its tests: the credits client against the host's own code selling for
-#                tickets and for a dollar, the funding and minting it does, and a run's record
-#   mcp          its type-check and tests: every tool on the standard's reference host and a stand-in
-#                index, with the markets at MARKETS; both doors; and the image's own command through
-#                the MCP SDK's client
+#   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
+#                starts, and mcp's reference signer and test client it acts through; and its tests:
+#                the credits client against the host's own code selling for tickets and for a dollar,
+#                the funding and minting it does, a direct payment and its memo, the market's
+#                schedule as the escrow takes it, and a run's record
+#   mcp          its type-check and tests, on loopback: the standard's reference host, a stand-in
+#                index and connect page, and its reference signer; the login end to end through the
+#                MCP SDK's client, every tool, the relay, and the image's own command
 #
 # Not here, and in each directory's README: the fee payer's local run, which needs a local validator
 # and Kora built; the loop itself, which needs the phrase and the chain; and mcp's smoke test against
@@ -45,7 +47,7 @@ defaults:
     shell: bash
 
 jobs:
-  issuer:
+  verifier:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -58,12 +60,12 @@ jobs:
           ./standard.sh
           (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
-          (cd issuer && npm ci --no-audit --no-fund && npm run fetch)
+          (cd verifier && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check
-        working-directory: issuer
+        working-directory: verifier
         run: npm run check
       - name: Test
-        working-directory: issuer
+        working-directory: verifier
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
@@ -140,8 +142,8 @@ jobs:
       - name: Install
         run: |
           ./standard.sh
+          (cd verifier && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
-          (cd issuer && npm ci --no-audit --no-fund)
           (cd index && npm ci --no-audit --no-fund)
           (cd mcp && npm ci --no-audit --no-fund)
           (cd e2e && npm ci --no-audit --no-fund)

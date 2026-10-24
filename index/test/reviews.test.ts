@@ -6,9 +6,9 @@ import { after, before, test } from 'node:test'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { WHY } from '../src/reviews.ts'
-import { at, index, issuer, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
 
-const by = issuer()
+const by = verifier()
 let host: Awaited<ReturnType<typeof startHost>>
 let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
@@ -44,7 +44,7 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   // The tutor takes the post down; it stays here with its last body.
   await post(host.url, [at(tutor, 'offer/maths', null)])
 
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
   await i.pass()
   const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
   const received = new Map(t.reviews.received.map((r) => [r.address, r]))

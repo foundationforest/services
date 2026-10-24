@@ -5,12 +5,13 @@ Part of Forest's services: [the top README](../README.md).
 The fee payer pays the chain's fees for a person's transaction, so the person needs no coin, and
 charges them what that cost in the dollar they pay with.
 
-Of Forest's four jobs it serves one, your money: it lets a person who holds dollars and no SOL
-open an escrow, pay into it and settle it. This is one copy, which the foundation runs; anyone can
-run another, and an app can use any fee payer or none. It owns nothing of the person's: it holds no
-key of theirs, it signs only as the transaction's payer, and the money in an escrow moves only as
-the escrow allows
-([the standard's escrow](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md)).
+Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+rank; the deals behind them are paid directly, between people. The fee payer serves the paying: it
+lets a person who holds dollars and no SOL open an escrow, pay into it and settle it. This is one
+copy, which the Open Forest Foundation runs; anyone can run another, and an app can use any fee
+payer or none. It keeps nothing of the person's: it holds no key of theirs, it signs only as the
+transaction's payer, and the money in an escrow moves only as the escrow allows
+([the standard's escrow](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md)).
 
 **Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
 there, paid in two test dollars, at https://fee-payer.forest.foundation.
@@ -59,7 +60,7 @@ finds it made.
 
 | Setting | Value | Why |
 |---|---|---|
-| `allowed_programs` | the escrow, SPL Token, Token-2022, Associated Token Account, System | Kora checks every program a transaction calls, inner calls included |
+| `allowed_programs` | the escrow, SPL Token, Token-2022, Associated Token Account, System, Memo | Kora checks every program a transaction calls, inner calls included. Memo moves no money: it is how a direct payment names its post |
 | No compute budget program | | So no priority fee: the fee payer never pays one it did not agree to |
 | `max_allowed_lamports` | 0.01 SOL | The most deposits one transaction may take; the largest, a one tap that also makes the recipient's token account, takes 5,354,320 lamports at 5,080 a byte |
 | `max_signatures` | 3 | The fee payer, and the payer and the recipient when both sign a split (`agree`), the way out of a stop with no arbiter |
@@ -93,7 +94,7 @@ the four) and `price_source = "Mock"`. Kora's mock values a test dollar at 0.001
 dollar: one base unit buys one lamport.
 
 Refused, each checked by the local run ([Run it](#run-it)), with nothing landing: a program not on
-the list (`… is not in the allowed list`), the compute budget program among them; the fee payer's
+the list (`… is not in the allowed list`): the compute budget program; the fee payer's
 SOL sent anywhere (`Fee payer cannot be used for 'System Transfer'`); the dollars it collected sent
 anywhere (`… 'SPL Token Transfer'`); a payment one unit short of the price (`Insufficient …`).
 
@@ -102,7 +103,7 @@ anywhere (`… 'SPL Token Transfer'`); a payment one unit short of the price (`I
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. The
 fee payer fronts an escrow's two deposits, charges the person for them when the escrow opens, and
 the escrow records it as the key that fronted the rent and sends every rent back to it
-([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/a1251372af91c2d9f7a15b8187a5cf4208732089/escrows/solana/README.md#rent)):
+([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md#rent)):
 
 - **The escrow's account,** 312 bytes (2,235,200 lamports at 5,080 a byte), stays as the receipt
   for good and keeps its rent; it comes back whole only if the escrow closes unfunded.
@@ -174,8 +175,9 @@ address, and charged 5,111,680 test-dollar units.
   digest, and the image build checks its version against `KORA`.
 - **At cost:** the charge is the network fee and every deposit it puts down, at margin 0. It pays
   for no one: a transaction that pays less is refused.
-- **The programs it pays for:** the escrow, SPL Token, Token-2022, Associated Token Account and
-  System, and no others. No compute budget program, so no priority fee.
+- **The programs it pays for:** the escrow, SPL Token, Token-2022, Associated Token Account,
+  System and Memo, and no others. Memo moves no money: a direct payment's memo names its post. No
+  compute budget program, so no priority fee.
 - **At most 0.01 SOL of deposits** in one transaction, and **at most three signatures.**
 - **Paid in four dollars by `kora.toml`:** USDC, USDT, Open USD and EURC, each its maker's own
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a
