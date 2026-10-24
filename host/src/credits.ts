@@ -9,7 +9,7 @@
 // A write costs a floor (WRITE_FLOOR) plus what it stores at a price a kilobyte (PER_KB), both in
 // credits, rounded up to a millionth of a credit: the unit a balance is kept in, so the fractions of
 // a cent each write costs add up. A delete costs the floor. The standard's host never asks about a
-// hosts record, so it is free; messages are free too (src/host.ts).
+// hosts record, so it is free; a vault write and messages are free too (src/host.ts).
 //
 // A record is claimed once, by its id, in the same transaction that takes its price: a second copy
 // in flight, or the same record sent again, costs nothing. Bytes are stored first and charged after:

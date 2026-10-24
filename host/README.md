@@ -42,7 +42,8 @@ hooks that charge for writes, and two of the standard's pieces:
 
 - **`recordChoice`** charges a record to its own folder's balance, or refuses it (`refused`, with
   what it costs and what the folder holds). The reference host never asks about a hosts record,
-  so it is free.
+  so it is free. A vault write, an encrypted record at `vault` (the person's vault, which holds their
+  permissions), it takes free too.
 - **`blobChoice`** takes the standard's blob types, then reserves the bytes' price on the folder
   that puts them. The front takes the price once the reference host answers that it kept them, or
   releases it.
@@ -203,7 +204,9 @@ message, and the blob types.
   **it stores** (`PER_KB`), rounded up to a millionth of a credit.
   - A 1 kB record costs 0.02 credit, a 200 kB photo 2.01, and a 50 MB video 500.01: five dollars.
   - A delete costs the floor, 0.01, and goes through free when the folder cannot pay.
-  - A hosts record is free. A message is free. Reads are free.
+  - A hosts record is free. A vault write is free: the vault is one small record, and changing the
+    person's permissions in it must never fail for lack of credits. A message is free. Reads are
+    free.
   - Both prices are in the directory, where an app reads them.
 - **Why these prices:** ten years of keeping at Railway's prices today, plus reads, plus 40%. The
   numbers move when Railway's prices do.
@@ -286,7 +289,8 @@ and buy with `test/buyer.ts`, which blinds with privacypass-ts as an app does:
   record or bytes again for nothing; a blob delete that finds nothing, for nothing;
 - a write refused with no balance, bytes too, and a hosts record taken with none. With no balance,
   a live record and a blob are still taken down, for nothing, and a null body where nothing stands
-  is refused;
+  is refused. A vault, written and changed with the standard's `vaultRecord`, is taken with none, and
+  a record at `vault` that is not encrypted is refused;
 - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
   not listed, for another count, or for another buy, and a credit is spent once;
 - a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or naming
@@ -304,7 +308,8 @@ What every host must do, and its tests, are the standard's.
   price of each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live record, or of a
   blob the folder holds, goes through when the balance cannot pay its floor.
-- **A person can always move.** A hosts record is free: the reference host never asks about it.
+- **A person can always move, and always change their permissions.** A hosts record is free: the
+  reference host never asks about it. A vault write is free: this host's price skips it.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
   record's signature is its only proof, and a pull's is the profile's main key's.
 - **No address logs.** Neither the reference host nor the front logs a request or keeps an
@@ -321,8 +326,11 @@ What every host must do, and its tests, are the standard's.
 
 - **Anyone who pays can write here** anything the reference host accepts.
 - **Messages are free, so an inbox open to anyone can be flooded.** Each message takes up to 64 KB
-  of this host's volume for 30 days, and there is no rate limit. The inbox's own fields (an
+  of this host's volume for 30 days, and there is no rate limit. The inbox's own fields (a
   verifier's stamp holders only, one message each, a largest size) are what limit it.
+- **Vault writes are free, so they can keep bytes here for free.** This host cannot open an
+  encrypted record, so it takes any one at `vault` as a vault: up to 64 KB, as often as a folder
+  writes it, each replaced one kept for 30 days, in any number of folders, with no rate limit.
 - **A folder's balance is public.** Anyone who knows its address can ask for it.
 - **A balance is never refunded,** and never moves to another folder.
 - **A network address can tie a buy to a folder.** The foundation runs this host and the verifier

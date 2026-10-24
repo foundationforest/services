@@ -12,7 +12,9 @@
 // so two copies pay once. Bytes are stored first: their price is reserved, then taken once the
 // standard's host answers that it kept them, or released; the front sends on one request for the
 // same bytes at a time. The standard's host asks nothing about a hosts record, so it is free, and
-// nothing about a message here, so messages are free. Reads are free.
+// nothing about a message here, so messages are free. A vault write, an encrypted record at
+// `vault`, is free too: the vault is one small record, and changing the person's permissions in it
+// never fails for lack of credits. Reads are free.
 //
 // Taking your own things down is never blocked by money: a null body over a live record, and a blob
 // delete the standard's host carries out, cost the floor when the balance holds it, and go through
@@ -35,6 +37,7 @@ import { join } from 'node:path'
 
 import { type Checked, checkBlobRequest, encodeRecord, readPage, recordId, unsignedOf } from '@foundationforest/records'
 import { type BlobChoice, type BlobDriver, Host, type HostOptions, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
+import { VAULT_PATH, isPrivate } from '@foundationforest/records/private'
 import { publicFetch } from '@foundationforest/records/public'
 import { checkStamp } from '@foundationforest/stamp'
 import { base58 } from '@scure/base'
@@ -178,11 +181,13 @@ function rpcAt(url: string): Rpc {
 
 /**
  * A record's price, from its own folder's balance: the floor and its canonical bytes by the kilobyte.
- * A null body over a live record takes it down: it costs the floor, and goes through free when the
- * folder cannot pay. `host` is the standard's host the record is going into, for what stands there.
+ * A vault write, an encrypted record at `vault`, is free. A null body over a live record takes it
+ * down: it costs the floor, and goes through free when the folder cannot pay. `host` is the
+ * standard's host the record is going into, for what stands there.
  */
 export function paidRecords(credits: Credits, host: () => Host): RecordChoice {
   return (record) => {
+    if (record.path === VAULT_PATH && isPrivate(record.body)) return null
     const id = recordId(unsignedOf(record))
     if (record.body === null && host().view(record.profile).current.get(record.path)?.record.body) {
       credits.charge(record.profile, credits.floor, id)
