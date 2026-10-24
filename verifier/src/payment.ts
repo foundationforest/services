@@ -1,10 +1,10 @@
 // The ID check's price, when it has one: paid in a dollar to one address, and found on chain.
 //
-// The issuer never holds the money and never reads who paid. It hands the app a payment id and the
-// address that payment must name, its reference: a key mixed from the issuer's seed under
+// The verifier never holds the money and never reads who paid. It hands the app a payment id and the
+// address that payment must name, its reference: a key mixed from the verifier's seed under
 // `issuer/reference/<id>` (seed.ts), so only whoever holds the id can claim a payment that names it,
 // and the id never goes on chain. The person's transfer pays `ID_PAY_TO` and lists the reference as one
-// more account, as Solana Pay does. To see whether it landed, the issuer asks its RPC for the
+// more account, as Solana Pay does. To see whether it landed, the verifier asks its RPC for the
 // finalized transactions that name the reference (`getSignaturesForAddress`), and reads each one
 // (`getTransaction`): what the receiving address's token accounts in the dollar held after it, less
 // what they held before, must be at least the price. Two JSON-RPC calls; nothing else.

@@ -1,13 +1,13 @@
 // A stand-in for Didit, an embedder that knows people by name, the RPC payments are found through, a
-// fresh issuer seed, a person's note number, and the check that the file keeps nothing it shouldn't.
+// fresh verifier seed, a person's stamp number, and the check that the file keeps nothing it shouldn't.
 
 import assert from 'node:assert/strict'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { issuerSecret } from '@foundationforest/keys'
-import { fromBytes32 } from '@foundationforest/note'
+import { verifierSecret } from '@foundationforest/keys'
+import { fromBytes32 } from '@foundationforest/stamp'
 import { base58, hex } from '@foundationforest/records'
 
 import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
@@ -17,7 +17,7 @@ import { sessionHash } from '../src/store.ts'
 
 export const FACE_WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
 export const ID_WORKFLOW = '0b6e2f1a-3c4d-4e5f-8a9b-1c2d3e4f5a6b'
-export const ISSUER_NAME = 'issuer.test.forest.example'
+export const VERIFIER_NAME = 'verifier.test.forest.example'
 
 /** The selfie of `person`, as the stand-in Didit names it: the test embedder reads the name back. */
 export const selfie = (person: string) => `https://didit.example/photo/${person}`
@@ -76,7 +76,7 @@ export function faceOf(name: string): Uint8Array {
   return out
 }
 
-/** The RPC, as far as the issuer sees it: the paying transactions each reference has, set by the test. */
+/** The RPC, as far as the verifier sees it: the paying transactions each reference has, set by the test. */
 export class FakePayments implements Payments {
   readonly paid = new Map<string, string[]>()
   down = false
@@ -93,11 +93,11 @@ export class FakePayments implements Payments {
 /** A transaction signature's shape: 64 random bytes in base58. */
 export const randomSignature = () => base58.encode(randomBytes(64))
 
-/** A person's note number for the test issuer, as their app mixes it: from a fresh seed and the issuer's name. */
-export const noteNumber = async () => (await issuerSecret(new Uint8Array(randomBytes(32)), ISSUER_NAME)).noteNumber
+/** A person's stamp number for the test verifier, as their app mixes it: from a fresh seed and the verifier's name. */
+export const stampNumber = async () => (await verifierSecret(new Uint8Array(randomBytes(32)), VERIFIER_NAME)).stampNumber
 
 /**
- * Didit, as far as the issuer sees it. A test says what each session came to with `set`. With
+ * Didit, as far as the verifier sees it. A test says what each session came to with `set`. With
  * `hold`, decisions wait until the test lets them go, so two requests can both be waiting at once.
  * A photo is its selfie address's last part, the person's name.
  */
@@ -177,7 +177,7 @@ export class FakeFaceCheck implements FaceCheck {
   }
 }
 
-/** A fresh issuer seed as its file holds it, and its 32 bytes. */
+/** A fresh verifier seed as its file holds it, and its 32 bytes. */
 export function seedJson(): { json: string; bytes: Uint8Array } {
   const bytes = new Uint8Array(randomBytes(32))
   return { json: JSON.stringify({ seed: hex.encode(bytes) }), bytes }
@@ -187,20 +187,20 @@ export function seedJson(): { json: string; bytes: Uint8Array } {
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
 const TABLES = [
-  'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, note_number BLOB NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE gifts (note_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID',
-  'CREATE TABLE sessions (hash BLOB PRIMARY KEY, note_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
   'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave notes, with their note numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each note number; the payments used; the note numbers given a gift. */
+/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the payments used; the stamp numbers given a gift. */
 export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
- * The file holds five tables and nothing else: each session that gave a note as the hash of its id,
- * next to its note number and its check; the sessions not yet deleted in Didit, by id; each
- * fingerprint next to its note number; the payments used, each with its reference; the note numbers
+ * The file holds five tables and nothing else: each session that gave a stamp as the hash of its id,
+ * next to its stamp number and its check; the sessions not yet deleted in Didit, by id; each
+ * fingerprint next to its stamp number; the payments used, each with its reference; the stamp numbers
  * given a gift, each with a hash of its buy. None of `never` (names, birth dates, embeddings,
  * references) is anywhere in its bytes, no other session id is in the clear, and no journal is left
  * beside it.
@@ -219,12 +219,12 @@ export function assertKept(path: string, expected: Expected): void {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
     assert.deepEqual(schema.map((t) => t.sql), TABLES, 'five tables, and no index or other table beside them')
     const sessions = db
-      .prepare('SELECT hash, note_number, kind FROM sessions')
+      .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
-      .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${fromBytes32(r.note_number as Uint8Array)} ${r.kind}`)
+      .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${fromBytes32(r.stamp_number as Uint8Array)} ${r.kind}`)
       .sort()
     const want = expected.sessions.map(([id, n, kind]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n} ${kind}`).sort()
-    assert.deepEqual(sessions, want, 'each session that gave a note, hashed, next to its note number and its check')
+    assert.deepEqual(sessions, want, 'each session that gave a stamp, hashed, next to its stamp number and its check')
     const pending = db
       .prepare('SELECT session_id FROM to_delete')
       .all()
@@ -232,11 +232,11 @@ export function assertKept(path: string, expected: Expected): void {
       .sort()
     assert.deepEqual(pending, [...toDelete].sort(), 'by id, only the sessions not yet deleted in Didit')
     const prints = db
-      .prepare('SELECT note_number FROM fingerprints')
+      .prepare('SELECT stamp_number FROM fingerprints')
       .all()
-      .map((r) => fromBytes32(r.note_number as Uint8Array))
+      .map((r) => fromBytes32(r.stamp_number as Uint8Array))
       .sort()
-    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their note number')
+    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their stamp number')
     const payments = db
       .prepare('SELECT signature FROM id_payments')
       .all()
@@ -244,11 +244,11 @@ export function assertKept(path: string, expected: Expected): void {
       .sort()
     assert.deepEqual(payments, [...(expected.payments ?? [])].sort(), 'the payments used, and nothing beside them')
     const gifts = db
-      .prepare('SELECT note_number FROM gifts')
+      .prepare('SELECT stamp_number FROM gifts')
       .all()
-      .map((r) => fromBytes32(r.note_number as Uint8Array))
+      .map((r) => fromBytes32(r.stamp_number as Uint8Array))
       .sort()
-    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the note numbers given a gift, and of the gift only a hash of its buy')
+    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the stamp numbers given a gift, and of the gift only a hash of its buy')
   } finally {
     db.close()
   }

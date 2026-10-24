@@ -235,7 +235,7 @@ test('a session Didit does not know is no decision; anything else unexpected thr
   })
 })
 
-test("what Didit's decision means to the issuer, in order", () => {
+test("what Didit's decision means to the verifier, in order", () => {
   const ok = parseDecision(decisionBody())
   assert.equal(judge(null, WORKFLOW), 'unknown_session')
   assert.equal(judge(ok, 'another'), 'wrong_workflow')

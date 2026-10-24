@@ -1,30 +1,30 @@
-// The issuer's routes. The ones a person's app calls are POST with a JSON body, so nothing a person
+// The verifier's routes. The ones a person's app calls are POST with a JSON body, so nothing a person
 // sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
 // client's address).
 //
-//   GET  /              who this issuer is, as canonical JSON: its name; for each check, the key that
-//                       signs its notes, as an address, and its attributes recipe; what h is; and, with
+//   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
+//                       signs its stamps, as an address, and its facts recipe; what h is; and, with
 //                       a welcome gift, {"gift":{"host":"<origin>","credits":n,"sponsor":"<address>"}}
-//   POST /face/session  {} or {returnUrl}        -> 201 {sessionId, url}   a face check; Didit sends the
-//                                                   person back to returnUrl, an app's own page, when
-//                                                   its origin is in APP_ORIGINS
-//   POST /face/note     {sessionId, noteNumber}  -> 200 {note}             a note from the face key
+//   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
+//                                                    person back to returnUrl, an app's own page, when
+//                                                    its origin is in APP_ORIGINS
+//   POST /face/stamp    {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the face key
 //                       with a gift, also {gift: "<the host buy's reference>"}
-//                                                -> 200 {note, gift: {ticket} or {error}}
-//   POST /id/session    {} or {payment}          -> 201 {sessionId, url}   an ID check, or 402 with a
-//                                                   payment to make first
-//   POST /id/note       {sessionId, noteNumber}  -> 200 {note}             a note from the ID key
+//                                                 -> 200 {stamp, gift: {ticket} or {error}}
+//   POST /id/session    {} or {payment}           -> 201 {sessionId, url}   an ID check, or 402 with a
+//                                                    payment to make first
+//   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key
 //
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
 // in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
 // 402 a payment still to make or still to land, 403 a check that does not count (the code says why),
 // 404 `not_offered` for the ID check when it has no price, 409 a session or payment already used for
-// another note number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
+// another stamp number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
 // share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
 // nothing up: the same session can be sent again.
 //
-// A session gives its note to one note number. Sent again with it within the hour after it was first
-// signed, it gives the same note: Didit still has the decision. After that hour it is refused,
+// A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
+// signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
 // `session_used`, and the sweep (`sweep`) deletes it in Didit, keeping only its face template
 // (didit.ts).
 //
@@ -34,21 +34,22 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { type Note, noteToJson, signNote } from '@foundationforest/note'
+import { type Stamp, signStamp, stampToJson } from '@foundationforest/stamp'
+import type { ServiceKey } from '@foundationforest/keys'
 import { b64u } from '@foundationforest/records'
 
 import { type Check, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import type { RateLimit } from './limit.ts'
-import { decimal, faceAttributes, fingerprint, idAttributes, person } from './notes.ts'
+import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
 import type { Payments, Price } from './payment.ts'
 import type { Ed25519Key } from './seed.ts'
 import type { Store } from './store.ts'
 
 const MAX_BODY = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** A payment's id, as the issuer hands it out: 16 random bytes in hex. */
+/** A payment's id, as the verifier hands it out: 16 random bytes in hex. */
 const PAYMENT_ID = /^[0-9a-f]{32}$/
 
 class HttpError extends Error {
@@ -104,12 +105,12 @@ function returnUrlIn(origins: string[], value: string): string {
   throw new HttpError(400, 'bad_return_url')
 }
 
-/** A request for a note: a Didit session id, and the person's note number at this issuer. */
-function noteRequest(input: Record<string, string>): { sessionId: string; noteNumber: bigint } {
+/** A request for a stamp: a Didit session id, and the person's stamp number at this verifier. */
+function stampRequest(input: Record<string, string>): { sessionId: string; stampNumber: bigint } {
   if (!UUID.test(input.sessionId!)) throw new HttpError(400, 'bad_session_id')
-  const noteNumber = decimal(input.noteNumber)
-  if (noteNumber === null) throw new HttpError(400, 'bad_note_number')
-  return { sessionId: input.sessionId!, noteNumber }
+  const stampNumber = decimal(input.stampNumber)
+  if (stampNumber === null) throw new HttpError(400, 'bad_stamp_number')
+  return { sessionId: input.sessionId!, stampNumber }
 }
 
 const CORS = {
@@ -139,17 +140,17 @@ export type CheckDeps = {
 export type PaymentDeps = {
   price: Price
   payments: Payments
-  /** The address a payment with this id must name: a key mixed from the issuer's seed. */
+  /** The address a payment with this id must name: a key mixed from the verifier's seed. */
   reference(id: string): Promise<string>
 }
 
-export type IssuerDeps = {
+export type VerifierDeps = {
   face: CheckDeps
   id: CheckDeps
   store: Store
   embedder: Embedder
-  /** The two note keys' 32 private bytes: the face key's and the ID key's. */
-  noteKeys: { face: Uint8Array; id: Uint8Array }
+  /** The two stamp keys, service keys: the face key and the ID key. */
+  stampKeys: { face: ServiceKey; id: ServiceKey }
   /** The key the ID check's fingerprints are made under. */
   fingerprintKey: Uint8Array
   /** `GET /`, canonical text. */
@@ -175,7 +176,7 @@ export const SIGNED_FOR_MS = 3_600_000
 export const SWEEP_EVERY_MS = 60_000
 
 /**
- * Deletes in Didit each session whose note was first signed an hour ago or more, keeping its face
+ * Deletes in Didit each session whose stamp was first signed an hour ago or more, keeping its face
  * template, and forgets its id and time once Didit has deleted it. A deletion Didit does not answer
  * stays, for the next sweep. Logs without the session: how many deletions failed, and what Didit said
  * it did with a face when it kept no template.
@@ -194,9 +195,9 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
       continue
     }
     deps.store.deleted(sessionId)
-    if (outcome !== 'retained_with_user' && outcome !== 'gone') log(`issuer: Didit kept no face template for a deleted session (${outcome || 'no outcome'})`)
+    if (outcome !== 'retained_with_user' && outcome !== 'gone') log(`verifier: Didit kept no face template for a deleted session (${outcome || 'no outcome'})`)
   }
-  if (failed) log(`issuer: ${failed} signed session${failed === 1 ? '' : 's'} could not be deleted in Didit, kept for the next sweep (${kind})`)
+  if (failed) log(`verifier: ${failed} signed session${failed === 1 ? '' : 's'} could not be deleted in Didit, kept for the next sweep (${kind})`)
 }
 
 /** The address a request came from: the proxy's header when one is named, else the connection's. */
@@ -206,7 +207,7 @@ function clientAddress(req: IncomingMessage, header: string | undefined): string
   return first || req.socket.remoteAddress || ''
 }
 
-export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerResponse) => void {
+export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const { face, id, store, embedder, payment, limit } = deps
   const log = deps.log ?? ((line) => console.log(line))
   const now = deps.now ?? Date.now
@@ -234,7 +235,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       throw new HttpError(502, 'face_check_unavailable')
     }
     const refusal = judge(decision, c.workflowId, c.kind)
-    // A session that gave a note and is gone from Didit was deleted: by the sweep, or by hand.
+    // A session that gave a stamp and is gone from Didit was deleted: by the sweep, or by hand.
     if (refusal === 'unknown_session' && store.holds(sessionId)) throw new HttpError(409, 'session_used')
     if (refusal === 'in_review') throw new Waiting()
     if (refusal) throw new HttpError(403, refusal)
@@ -264,58 +265,58 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
     if (outcome !== 'ok') throw new HttpError(403, outcome)
   }
 
-  /** A note signed with this key, in the standard's JSON form, with the fields its attributes were made from beside it. */
-  const signed = (key: Uint8Array, note: Note & { [field: string]: unknown }): Record<string, unknown> => ({ note: noteToJson(signNote(key, note)) })
+  /** A stamp signed with this key, in the standard's JSON form, with the fields its facts were made from beside it. */
+  const signed = (key: ServiceKey, stamp: Stamp & { [field: string]: unknown }): Record<string, unknown> => ({ stamp: stampToJson(signStamp(key.secret, stamp)) })
 
   /**
-   * The welcome gift for this note number, once: a ticket for the app's host buy, and the buy kept,
-   * hashed, next to the note number. The same buy asked for again gets the same ticket; another buy
-   * gets `given`. It rides with the note, and never holds it back.
+   * The welcome gift for this stamp number, once: a ticket for the app's host buy, and the buy kept,
+   * hashed, next to the stamp number. The same buy asked for again gets the same ticket; another buy
+   * gets `given`. It rides with the stamp, and never holds it back.
    */
-  function giveGift(noteNumber: bigint, reference: unknown): Record<string, string> {
+  function giveGift(stampNumber: bigint, reference: unknown): Record<string, string> {
     const ticket = ticketFor(deps.gift!.gift, reference, deps.gift!.sponsor)
     if (ticket === 'bad_gift') return { error: ticket }
-    if (store.giveGift(noteNumber, buyOf(reference as string)) === 'other') return { error: 'given' }
+    if (store.giveGift(stampNumber, buyOf(reference as string)) === 'other') return { error: 'given' }
     return { ticket }
   }
 
-  /** A note from the face key, for this note number, from a face check Didit approved. */
-  async function faceNote(body: Record<string, unknown>): Promise<[number, unknown]> {
+  /** A stamp from the face key, for this stamp number, from a face check Didit approved. */
+  async function faceStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     const { gift: reference, ...rest } = body
     const asked = deps.gift !== undefined && 'gift' in body
-    const { sessionId, noteNumber } = noteRequest(fields(asked ? rest : body, ['sessionId', 'noteNumber']))
-    kept(store.check({ sessionId, noteNumber, since: since() }))
+    const { sessionId, stampNumber } = stampRequest(fields(asked ? rest : body, ['sessionId', 'stampNumber']))
+    kept(store.check({ sessionId, stampNumber, since: since() }))
 
     const decision = await decided(face, sessionId)
     const embedded = await embedding(face, decision.faceImage)
-    // Checked again, for good, inside one transaction: the session may have given a note for another
-    // note number while this request waited for Didit.
-    kept(store.remember({ sessionId, noteNumber, kind: 'face', since: since(), signedAt: now() }))
+    // Checked again, for good, inside one transaction: the session may have given a stamp for another
+    // stamp number while this request waited for Didit.
+    kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now() }))
     const model = embedder.model
-    const answer = signed(deps.noteKeys.face, { noteNumber, attributes: faceAttributes(model, embedded), model, embedding: b64u.encode(embedded) })
-    if (asked) answer.gift = giveGift(noteNumber, reference)
+    const answer = signed(deps.stampKeys.face, { stampNumber, facts: faceFacts(model, embedded), model, embedding: b64u.encode(embedded) })
+    if (asked) answer.gift = giveGift(stampNumber, reference)
     return [200, answer]
   }
 
   /**
-   * A note from the ID key, for this note number, from an ID check Didit approved, when the person's
-   * fingerprint was signed for no other note number.
+   * A stamp from the ID key, for this stamp number, from an ID check Didit approved, when the person's
+   * fingerprint was signed for no other stamp number.
    */
-  async function idNote(body: Record<string, unknown>): Promise<[number, unknown]> {
+  async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     if (!payment) throw new HttpError(404, 'not_offered')
-    const { sessionId, noteNumber } = noteRequest(fields(body, ['sessionId', 'noteNumber']))
-    kept(store.check({ sessionId, noteNumber, since: since() }))
+    const { sessionId, stampNumber } = stampRequest(fields(body, ['sessionId', 'stampNumber']))
+    kept(store.check({ sessionId, stampNumber, since: since() }))
 
     const decision = await decided(id, sessionId)
     const who = person(decision.document)
     if (!who) throw new HttpError(403, 'no_document_data')
     const print = fingerprint(deps.fingerprintKey, who)
-    kept(store.check({ sessionId, noteNumber, since: since(), fingerprint: print }))
+    kept(store.check({ sessionId, stampNumber, since: since(), fingerprint: print }))
     const embedded = await embedding(id, decision.faceImage)
-    kept(store.remember({ sessionId, noteNumber, kind: 'id', since: since(), signedAt: now(), fingerprint: print }))
+    kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), fingerprint: print }))
     const model = embedder.model
-    const attributes = idAttributes(model, embedded, who)
-    return [200, signed(deps.noteKeys.id, { noteNumber, attributes, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
+    const facts = idFacts(model, embedded, who)
+    return [200, signed(deps.stampKeys.id, { stampNumber, facts, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
   }
 
   /**
@@ -325,7 +326,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
    * app asks again. A payment is never given back. Each session a payment id opens carries its tag in
    * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
    * found, or opened, on the next ask. A payment whose session Didit answered it opened, and no longer
-   * lists, gave its note and was deleted since: it is used.
+   * lists, gave its stamp and was deleted since: it is used.
    */
   async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
     if (!payment) throw new HttpError(404, 'not_offered')
@@ -401,9 +402,9 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       }
       return open(face, req, returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!))
     },
-    '/face/note': faceNote,
+    '/face/stamp': faceStamp,
     '/id/session': openId,
-    '/id/note': idNote,
+    '/id/stamp': idStamp,
   }
 
   return (req, res) => {
@@ -424,7 +425,7 @@ export function handler(deps: IssuerDeps): (req: IncomingMessage, res: ServerRes
       } catch (error) {
         if (error instanceof Waiting) return send(res, 202, { waiting: 'review' })
         if (error instanceof HttpError) return send(res, error.status, { error: error.message })
-        log(`issuer: request failed (${errorKind(error)})`)
+        log(`verifier: request failed (${errorKind(error)})`)
         send(res, 500, { error: 'internal' })
       }
     })()

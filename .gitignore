@@ -4,7 +4,7 @@ markets/
 
 node_modules/
 
-# What the host keeps when run by hand (DATA_DIR=./data). The issuer's, the index's and Kora's are in
+# What the host keeps when run by hand (DATA_DIR=./data). The verifier's, the index's and Kora's are in
 # their directories' own .gitignore.
 host/data/
 

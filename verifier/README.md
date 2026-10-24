@@ -1,29 +1,30 @@
-# issuer
+# verifier
 
 Part of Forest's services: [the top README](../README.md).
 
-The issuer checks that you are one real person and signs this standard's notes.
+The verifier checks that you are one real person and signs you a stamp.
 
-Of the four jobs (who you are, that you are real, what you have done, your money), it does one:
-that you are real. It holds none of your money. This is one copy, run by the Open Forest Foundation,
-and anyone can run another: anyone can sign notes; the main way is an issuer like this one, and each
-reader decides which issuers count. It keeps your note number and which check gave it, and for the
-ID check a keyed hash of your name and birthday. Your face stays with the check provider, Didit.
+Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+rank. The verifier serves one of these: verified once. Once it signs you a stamp you are verified,
+and any of your profiles can prove it without saying who you are or which of your other profiles it
+goes with. This is one copy, run by the Open Forest Foundation. Anyone can run another: anyone can
+sign stamps; the main way is a verifier like this one, and each reader decides which verifiers
+count. It keeps your stamp number and which check gave it, and for the ID check a keyed hash of your
+name and birthday. Your face stays with the check provider, Didit, and it holds none of your money.
 
 ## How it works
 
-### What a note says
+### What a stamp says
 
-A note is one signature over two numbers at once:
+A stamp is one signature over two numbers at once:
 
-- **your note number,** made on your device from your seed and our name, the same every time;
-- **attributes,** a hash of a few facts about you: one number made from them, which any change to
-  them changes.
+- **your stamp number,** made on your device from your seed and our name, the same every time;
+- **its facts,** one number made from what the check saw of you, which any change to that changes.
 
-Signing the two together is what ties you to the facts: the signature says these facts were checked
-for whoever holds the seed behind that note number.
+Signing the two together is what ties you to what the check saw: the signature says it was checked
+for whoever holds the seed behind that stamp number.
 
-Which facts each key signs:
+What each key's facts are made from:
 
 - **the face key:** the face model's name, and the numbers it gave for your face;
 - **the ID key:** the same, and your name, your birth date and your document's country.
@@ -31,47 +32,47 @@ Which facts each key signs:
 The model's name is in it because the face's numbers mean nothing without the program that made
 them: with the name, anyone can run the same model and get numbers that compare with yours.
 
-Attributes are exact; a face comparison is fuzzy. The same list of numbers always gives the same
-attributes, but two photos of one face never give the same list. So a later check, by us or by
-anyone, would not take a new photo and work the attributes out again: you would show the list kept
-beside your note, anyone could see that it gives the note's attributes, and then compare it with your
+Facts are exact; a face comparison is fuzzy. The same list of numbers always gives the same
+facts, but two photos of one face never give the same list. So a later check, by us or by
+anyone, would not take a new photo and work the facts out again: you would show the list kept
+beside your stamp, anyone could see that it gives the stamp's facts, and then compare it with your
 live face, using the same model. Nothing here runs such a check yet.
 
-We see your selfie, and what Didit reads on your document, only while a check runs. We hand the
-facts back to you, beside the note, for your vault, and keep none of them in clear. An hour after the
-note is signed we delete the check at Didit, which keeps only a template of your face
-([Once a note is signed](#once-a-note-is-signed)).
+We see your selfie, and what Didit reads on your document, only while a check runs. We hand what the
+facts are made from back to you, beside the stamp, for your vault, and keep none of it in clear. An hour after the
+stamp is signed we delete the check at Didit, which keeps only a template of your face
+([Once a stamp is signed](#once-a-stamp-is-signed)).
 
-The note is the standard's
-([proofs/note](https://github.com/foundationforest/standard/blob/main/proofs/note/README.md#the-note-and-the-note-proof)).
-From it, your device makes a note proof for any of your profiles, which shows that we signed you a
-note without showing the note, your seed or who you are.
+The stamp is the standard's
+([proofs/stamp](https://github.com/foundationforest/standard/blob/main/proofs/stamp/README.md#the-stamp-and-the-stamp-proof)).
+From it, your device makes a stamp proof for any of your profiles, which shows that we signed you a
+stamp without showing the stamp, your seed or who you are.
 
 ### Who it is
 
 `GET /` gives its name and its two keys, as addresses, with the check each one signs for and its
-attributes recipe:
+facts recipe:
 
 ```
-{"face":{"attributes":"Poseidon([h(model), h(embedding)])","key":"<address>"},
+{"face":{"facts":"Poseidon([h(model), h(embedding)])","key":"<address>"},
  "h":"SHA-256 of the bytes, read as a big-endian integer, mod the BN254 scalar order",
- "id":{"attributes":"Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])","key":"<address>"},
- "name":"issuer.forest.foundation"}
+ "id":{"facts":"Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])","key":"<address>"},
+ "name":"verifier.forest.foundation"}
 ```
 
 With a welcome gift it adds `"gift":{"host":"<origin>","credits":<n>,"sponsor":"<address>"}`. It is
 canonical JSON.
 
-- **The name** is `ISSUER_NAME`, `issuer.forest.foundation` unless set. Everyone's note number and
-  stamps at this issuer are mixed from it
-  ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-issuer-secret)),
+- **The name** is `VERIFIER_NAME`, `verifier.forest.foundation` unless set. Everyone's stamp number and
+  tags at this verifier are mixed from it
+  ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-verifier-secret)),
   so it never changes.
-- **Two keys, one for each check.** The face key signs face notes and the ID key signs ID notes, so
+- **Two keys, one for each check.** The face key signs face stamps and the ID key signs ID stamps, so
   a reader that trusts one and not the other, or weighs them differently, can tell them apart from
   the key alone.
-- **Its seed.** Every key the issuer holds is mixed from one seed: 32 random bytes, made on its own
+- **Its seed.** Every key the verifier holds is mixed from one seed: 32 random bytes, made on its own
   machine the first time it starts and finds none (the standard's `newSeed`), and kept in one file,
-  `issuer-seed.json`, beside its database, readable by its own user only. So the seed and the record
+  `verifier-seed.json`, beside its database, readable by its own user only. So the seed and the record
   of what it signed are kept, or lost, together. No variable holds it, and nothing prints or logs it.
 - **What is mixed from the seed,** with the standard's `hkdf`:
   - under `issuer/face`, the face key;
@@ -80,7 +81,8 @@ canonical JSON.
   - under `issuer/sponsor`, the sponsor key, an Ed25519 key that signs the gift's tickets;
   - under `issuer/reference/<id>`, the address a payment for one ID check names.
 
-  None of them holds money.
+  None of them holds money. The texts never change, since a new text would mix a new key, so they
+  keep the words they were first written with.
 
 ### The face check
 
@@ -90,18 +92,18 @@ Free, for anyone.
    answers the page the person does the check on.
 2. **The person does it.** Didit checks that a live person is in front of the camera and compares
    the face with every face it has seen.
-3. **The app sends the session and its note number** to `POST /face/note`.
-4. **The issuer asks Didit what the session came to:**
-   - **Approved:** the issuer fetches the selfie, computes its embedding
-     ([The face model](#the-face-model)), keeps the session next to the note number, and answers a
-     note from the face key. An hour later it deletes the session in Didit
-     ([Once a note is signed](#once-a-note-is-signed)).
-   - **In Review:** Didit has seen the face before ([How we run it](#how-we-run-it)). The issuer
+3. **The app sends the session and its stamp number** to `POST /face/stamp`.
+4. **The verifier asks Didit what the session came to:**
+   - **Approved:** the verifier fetches the selfie, computes its embedding
+     ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a
+     stamp from the face key. An hour later it deletes the session in Didit
+     ([Once a stamp is signed](#once-a-stamp-is-signed)).
+   - **In Review:** Didit has seen the face before ([How we run it](#how-we-run-it)). The verifier
      answers `202 {"waiting":"review"}`, keeps nothing, and the app asks again later. A person at
      the foundation decides in Didit's console.
    - **Anything else** (declined, not finished): refused.
 
-A face Didit has already seen goes to review, so whether a face gets a second note number is
+A face Didit has already seen goes to review, so whether a face gets a second stamp number is
 decided there, by a person, not by this code.
 
 ### The ID check
@@ -112,15 +114,15 @@ Offered only with a price (`ID_PRICE`, [Payment](#payment)). Otherwise its route
 1. **The app pays and opens a check:** `POST /id/session` ([Payment](#payment)).
 2. **The person does it.** Didit reads a government document, checks that a live person is in front
    of the camera, and matches the live face to the document's photo.
-3. **The app sends the session and its note number** to `POST /id/note`.
-4. **The issuer asks Didit what the session came to.** In Review and refusals are as for the face
+3. **The app sends the session and its stamp number** to `POST /id/stamp`.
+4. **The verifier asks Didit what the session came to.** In Review and refusals are as for the face
    check. Approved means every document step, liveness step and face match passed too.
-5. **The person's fingerprint.** The issuer computes it from the name and birth date Didit read
+5. **The person's fingerprint.** The verifier computes it from the name and birth date Didit read
    (HMAC-SHA256, under the fingerprint key, of the standard's canonical JSON of `{birth, name}`):
-   - already kept next to another note number: refused (`duplicate_document`);
-   - next to the same one: signed again, so a lost ID note comes back.
-6. **The note.** It computes the selfie's embedding, keeps the session and the fingerprint next to
-   the note number, and answers a note from the ID key. An hour later it deletes the session in
+   - already kept next to another stamp number: refused (`duplicate_document`);
+   - next to the same one: signed again, so a lost ID stamp comes back.
+6. **The stamp.** It computes the selfie's embedding, keeps the session and the fingerprint next to
+   the stamp number, and answers a stamp from the ID key. An hour later it deletes the session in
    Didit.
 
 The name is the one Didit reads, first and last, else the full name: Unicode NFKC, lower case, one
@@ -130,15 +132,15 @@ name and birthday cannot be tested against the file.
 
 A refused or failed request uses nothing up: the same session can be sent again.
 
-### Once a note is signed
+### Once a stamp is signed
 
-The issuer answers the note at once, and keeps the session's id and when it was first signed
+The verifier answers the stamp at once, and keeps the session's id and when it was first signed
 (`to_delete`, [What it keeps](#what-it-keeps)).
 
-- **Within the hour,** the same session sent again with its note number gives the same note: Didit
+- **Within the hour,** the same session sent again with its stamp number gives the same stamp: Didit
   still has its decision and its selfie. Once the hour since its first signing is over, it is refused
   (`session_used`), with no question to Didit. A retry gives it no more time.
-- **The sweep:** every minute, the issuer deletes in Didit each session first signed an hour ago or
+- **The sweep:** every minute, the verifier deletes in Didit each session first signed an hour ago or
   more (`DELETE /v3/session/{id}/delete/`), and forgets its id and time once Didit has deleted it. A
   deletion Didit does not answer is tried again at the next sweep.
 - **What goes:** Didit deletes the session's selfie, its liveness video, the document's images, what
@@ -146,20 +148,20 @@ The issuer answers the note at once, and keeps the session's id and when it was 
 - **What stays:** each deletion asks Didit to keep one template of the face
   (`retain_face_embeddings`), whatever the application's own setting says: numbers, no image, no
   name, used only for this application's face search. So a face that comes back still goes to
-  review. Didit gives every kept template an end; the issuer asks for 3650 days, the longest it
+  review. Didit gives every kept template an end; the verifier asks for 3650 days, the longest it
   allows.
-- **Only a session whose note is signed:** never one In Review, declined or unfinished. Those stay in
+- **Only a session whose stamp is signed:** never one In Review, declined or unfinished. Those stay in
   Didit for as long as its retention lets them.
 - **What it logs:** how many deletions Didit did not answer at a sweep, and what Didit says it did
   with a face when it kept no template; never the session.
 
-### The note
+### The stamp
 
-The issuer signs `{noteNumber, attributes}` with the standard's `signNote`, and answers the note in
-the standard's JSON form, with the fields `attributes` was made from beside it:
+The verifier signs `{stampNumber, facts}` with the standard's `signStamp`, and answers the stamp in
+the standard's JSON form, with the fields its facts were made from beside it:
 
 ```
-face:  {"noteNumber":"<decimal>","attributes":"<decimal>","issuer":"<face key>","signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},
+face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},
         "model":"opencv-sface-2021dec","embedding":"<base64url>"}
 ID:    the same, from the ID key, and "name":"ada lovelace","birth":"1815-12-10","country":826
 ```
@@ -174,16 +176,16 @@ x's bytes, read as a big-endian integer, reduced mod BN254's scalar order:
 | ID key | `Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])` |
 
 - `model`: the face model's name, as UTF-8.
-- `embedding`: the 512 bytes the model gives for the check's selfie, in the note as base64url.
+- `embedding`: the 512 bytes the model gives for the check's selfie, in the stamp as base64url.
 - `name`: written as the fingerprint writes it, as UTF-8.
 - `birthDays`: the days from 1970-01-01 to the birth date, negative before it, reduced into the
   field as h is.
 - `countryNumeric`: the document's country (Didit's `issuing_state`, ISO 3166-1 alpha-3) as its
   ISO 3166-1 numeric code, or 0 when it has none, as for Kosovo, or when Didit read none.
 
-The fields beside the note are for the person: anyone they show them to can make `attributes`
-again and see it is the note's. Nothing in the standard reads them, and the note proof keeps
-`attributes` private.
+The fields beside the stamp are for the person: anyone they show them to can make the facts again
+and see they are the stamp's. Nothing in the standard reads them, and the stamp proof keeps the facts
+private.
 
 ### What it keeps
 
@@ -191,17 +193,17 @@ One SQLite file, five tables:
 
 | Table | What | Why |
 |---|---|---|
-| `sessions` | The SHA-256 of each session id that gave a note, next to the note number and which check it was (`face` or `id`) | So a session gives its note to one note number, and again only within its hour |
-| `to_delete` | The id of each session that gave a note and is not yet deleted in Didit, which check it was, and when it was first signed | So it is signed again only within its hour, and the sweep can delete it in Didit then. It goes once Didit has deleted it |
-| `fingerprints` | Each fingerprint the ID check signed for, next to the note number | So one name and birth date gives one note number its ID note, and gives it again |
-| `id_payments` | The transaction signature of each payment used, with the reference it named (public in that transaction), and whether Didit answered that it opened its session | So one payment opens one session, for its own payment id only, and a session deleted after its note is not opened again |
-| `gifts` | Each note number given its welcome gift, with a hash of the buy | So a person gets one, and the same buy asked for again gets the same ticket |
+| `sessions` | The SHA-256 of each session id that gave a stamp, next to the stamp number and which check it was (`face` or `id`) | So a session gives its stamp to one stamp number, and again only within its hour |
+| `to_delete` | The id of each session that gave a stamp and is not yet deleted in Didit, which check it was, and when it was first signed | So it is signed again only within its hour, and the sweep can delete it in Didit then. It goes once Didit has deleted it |
+| `fingerprints` | Each fingerprint the ID check signed for, next to the stamp number | So one name and birth date gives one stamp number its ID stamp, and gives it again |
+| `id_payments` | The transaction signature of each payment used, with the reference it named (public in that transaction), and whether Didit answered that it opened its session | So one payment opens one session, for its own payment id only, and a session deleted after its stamp is not opened again |
+| `gifts` | Each stamp number given its welcome gift, with a hash of the buy | So a person gets one, and the same buy asked for again gets the same ticket |
 
 Nothing else: no face, no embedding, no name, no birth date, no document, no address. A session id
 is kept as its hash; in clear, and with a time, only in `to_delete`, for the hour or so until Didit
 has deleted the session. After that the file names no Didit session and holds no time. Deleted bytes
-are overwritten (`secure_delete`). The note number links the tables: a fingerprint sits next to the same
-note number as the sessions signed for it, so whoever also holds Didit's records of those sessions
+are overwritten (`secure_delete`). The stamp number links the tables: a fingerprint sits next to the same
+stamp number as the sessions signed for it, so whoever also holds Didit's records of those sessions
 can tell which face went with which name.
 
 ### The face model
@@ -209,7 +211,7 @@ can tell which face went with which name.
 `src/face.ts` turns a photo of a face into its embedding: 128 numbers, written as 512 bytes, that two
 photos of one person give close together and two people far apart. Didit gives no embedding, and
 the recipe names the model, so anyone can make the same numbers: an open model, published with its
-weights, is one any other issuer can run too.
+weights, is one any other verifier can run too.
 
 | Piece | What it does | Licence |
 |---|---|---|
@@ -220,7 +222,7 @@ weights, is one any other issuer can run too.
 
 - **Used unchanged.** The steps are OpenCV's own (`FaceDetectorYN`, `FaceRecognizerSF`), written out
   in the file, so no native library is needed.
-- **Its name in a note:** `opencv-sface-2021dec`.
+- **Its name in a stamp:** `opencv-sface-2021dec`.
 - **The files:** `npm run fetch` puts the models in `models/` from OpenCV's own Hugging Face pages,
   and when those fail, from this repo's release `face-models`, which holds the same two files, each
   with its licence. Each source is tried four times, 2, 4 and 8 seconds apart; the fetch fails only
@@ -236,7 +238,7 @@ weights, is one any other issuer can run too.
 ### Payment
 
 The ID check is offered only with all four of `ID_PRICE`, `ID_PAY_TO`, `ID_MINT` and `RPC_URL`; one
-without the others stops the issuer from starting.
+without the others stops the verifier from starting.
 
 1. **The app asks:** `POST /id/session` with `{}` answers `402` with a payment to make:
    `{"error":"payment_required","payment":{"id","reference","to","mint","amount"}}`.
@@ -245,41 +247,42 @@ without the others stops the issuer from starting.
    ([How we run it](#how-we-run-it)).
 3. **The app comes back** with `POST /id/session` `{"payment": "<id>"}`. Until a finalized
    transaction naming `reference` has paid `to` at least `amount` in `mint`, the answer is
-   `402 not_paid`, and the app asks again. Then the issuer marks the payment used, for good, and
+   `402 not_paid`, and the app asks again. Then the verifier marks the payment used, for good, and
    opens the session: `201`. One payment opens one session, for its own payment id: a transaction
    another payment id already used is `409 payment_used`.
-4. **A lost answer, or Didit not answering.** Each session a payment id opens carries a tag in Didit,
-   the SHA-256 of the payment id, so Didit never holds the id. Asked again with a payment id whose
-   payments are all used, the issuer looks the session up by its tag (Didit's list of sessions) and
-   answers it again; if Didit never answered that it opened one, it opens one now. A payment whose
-   session Didit answered it opened, and no longer lists, gave its note and was deleted since:
+4. **A lost answer, or Didit not answering.** Each session a payment id opens carries, as its
+   `vendor_data` in Didit, the SHA-256 of the payment id, so Didit never holds the id. Asked again
+   with a payment id whose payments are all used, the verifier looks the session up by it (Didit's
+   list of sessions) and answers it again; if Didit never answered that it opened one, it opens one
+   now. A payment whose session Didit answered it opened, and no longer lists, gave its stamp and was
+   deleted since:
    `409 payment_used`. A payment is never given back. A second payment naming the same reference
    opens a second session.
 
-The reference is the address of a key mixed from the issuer's seed, so only whoever holds the id can
-claim a payment that names it, and the id never goes on chain. To find a payment, the issuer asks
+The reference is the address of a key mixed from the verifier's seed, so only whoever holds the id can
+claim a payment that names it, and the id never goes on chain. To find a payment, the verifier asks
 its RPC for the 20 newest finalized transactions that name the reference
 (`getSignaturesForAddress`), and reads each (`getTransaction`): what `to`'s token accounts in the
 dollar gained in it must be at least the price. It reads nothing about who paid.
 
 ### The welcome gift
 
-With `HOST_URL`, a note number's first face note comes with `HOST_CREDITS` of the host's credits
-(prepaid units, [host](../host/README.md#credits)). The app buys them, the issuer signs a sponsor's
-ticket for the buy, and the host signs them blind, so the issuer never sees them. It pays nothing:
-the host lists the issuer's sponsor key and counts what its tickets paid for.
+With `HOST_URL`, a stamp number's first face stamp comes with `HOST_CREDITS` of the host's credits
+(prepaid units, [host](../host/README.md#credits)). The app buys them, the verifier signs a sponsor's
+ticket for the buy, and the host signs them blind, so the verifier never sees them. It pays nothing:
+the host lists the verifier's sponsor key and counts what its tickets paid for.
 
 1. **The app reads the gift** in `GET /`: the host, how many credits, and the sponsor key.
 2. **The app makes one buy at the host** for exactly those credits (as the buyer's credits client
    in `e2e/credits/` does, `buy`), and keeps what it needs to finish the buy later.
-3. **It sends the buy's reference with the note request:** `POST /face/note` with
+3. **It sends the buy's reference with the stamp request:** `POST /face/stamp` with
    `"gift": "<reference>"`.
-4. **Once a note number,** the issuer keeps a hash of the buy next to it, and signs a ticket with its
+4. **Once a stamp number,** the verifier keeps a hash of the buy next to it, and signs a ticket with its
    sponsor key (`ticketMessage` in `src/ticket.ts`): that host, that buy, that many credits.
-5. **The answer** is the note, with `"gift": {"ticket": "<ticket>"}`, or `"gift": {"error": …}`:
-   `bad_gift` for anything but a buy's reference, or `given` for another buy than the one the note
-   number was given its gift for. The same buy asked for again, with a new check for the same note
-   number, gets the same ticket. The note is never held back by the gift.
+5. **The answer** is the stamp, with `"gift": {"ticket": "<ticket>"}`, or `"gift": {"error": …}`:
+   `bad_gift` for anything but a buy's reference, or `given` for another buy than the one the stamp
+   number was given its gift for. The same buy asked for again, with a new check for the same stamp
+   number, gets the same ticket. The stamp is never held back by the gift.
 6. **The app collects** the buy at the host with its ticket, and finishes the credits.
 
 ### The API
@@ -288,12 +291,12 @@ the host lists the issuer's sponsor key and counts what its tickets paid for.
 |---|---|---|
 | `GET /` | | `200`, who it is ([Who it is](#who-it-is)) |
 | `POST /face/session` | `{}` or none; or `{"returnUrl": "<url>"}`, a page on one of the origins in `APP_ORIGINS`, where Didit sends the person when the check is done | `201 {"sessionId": "…", "url": "…"}` |
-| `POST /face/note` | `{"sessionId": "<uuid>", "noteNumber": "<decimal>"}`; with a gift, may add `"gift": "<buy's reference>"` | `200 {"note": <note>}`; with `gift` asked, also `"gift"` |
+| `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`; with a gift, may add `"gift": "<buy's reference>"` | `200 {"stamp": <stamp>}`; with `gift` asked, also `"gift"` |
 | `POST /id/session` | `{}` or none; then `{"payment": "<id>"}` once paid | `201 {"sessionId": "…", "url": "…"}`, the same session for the same payment asked again, or `402` with a payment to make |
-| `POST /id/note` | `{"sessionId": "<uuid>", "noteNumber": "<decimal>"}` | `200 {"note": <note>}` |
+| `POST /id/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}` | `200 {"stamp": <stamp>}` |
 
-A session Didit holds In Review answers `202 {"waiting": "review"}`. A note number is decimal text,
-as the standard's `issuerSecret` gives it: no sign, no leading zero, below BN254's scalar order. A
+A session Didit holds In Review answers `202 {"waiting": "review"}`. A stamp number is decimal text,
+as the standard's `verifierSecret` gives it: no sign, no leading zero, below BN254's scalar order. A
 payment's id is 32 lowercase hex characters. A body with any other field is refused. CORS is open
 to any origin.
 
@@ -301,11 +304,11 @@ Errors are `{"error": "<code>"}`:
 
 | Status | Codes |
 |---|---|
-| `400` | `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`, `expected_exactly_sessionId_and_noteNumber`, `expected_exactly_payment`, `bad_session_id`, `bad_note_number`, `bad_payment`, `bad_return_url` (not a URL on an origin in `APP_ORIGINS`) |
+| `400` | `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`, `expected_exactly_sessionId_and_stampNumber`, `expected_exactly_payment`, `bad_session_id`, `bad_stamp_number`, `bad_payment`, `bad_return_url` (not a URL on an origin in `APP_ORIGINS`) |
 | `402` | `payment_required` (with the `payment` to make), `not_paid` |
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `not_approved`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `no_face`, `no_document_data` (no name, or no real birth date), `duplicate_document` |
 | `404` | `not_found`, `not_offered` (the ID check, with no price) |
-| `409` | `session_used` (this session gave its note to another note number, or its hour is over), `payment_used` |
+| `409` | `session_used` (this session gave its stamp to another stamp number, or its hour is over), `payment_used` |
 | `429` | `try_later`: this address opened its share of sessions this hour |
 | other | `405 post_only`, `405 get_only`, `413 too_large` (bodies over 4 KB), `502 face_check_unavailable`, `502 payment_check_unavailable`, `500 internal` |
 
@@ -313,10 +316,10 @@ Errors are `{"error": "<code>"}`:
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `ISSUER_NAME` | no | `issuer.forest.foundation` | The issuer's name, as `GET /` gives it. Everyone's note number and stamps at this issuer are mixed from it: it never changes |
-| `DIDIT_API_KEY` | yes | | The issuer's Didit API key, from the application that owns both workflows. A secret |
-| `DIDIT_FACE_WORKFLOW_ID` | yes | | The face check's workflow; a session on any other is refused for a face note |
-| `DIDIT_ID_WORKFLOW_ID` | yes | | The ID check's workflow (document, liveness, face match); a session on any other is refused for an ID note |
+| `VERIFIER_NAME` | no | `verifier.forest.foundation` | The verifier's name, as `GET /` gives it. Everyone's stamp number and tags at this verifier are mixed from it: it never changes |
+| `DIDIT_API_KEY` | yes | | The verifier's Didit API key, from the application that owns both workflows. A secret |
+| `DIDIT_FACE_WORKFLOW_ID` | yes | | The face check's workflow; a session on any other is refused for a face stamp |
+| `DIDIT_ID_WORKFLOW_ID` | yes | | The ID check's workflow (document, liveness, face match); a session on any other is refused for an ID stamp |
 | `DIDIT_BASE_URL` | no | `https://verification.didit.me` | For a stand-in Didit |
 | `FACE_MODEL` | no | `sface` | `sface`, or `stand-in`, for tests, with a Didit on this machine (`DIDIT_BASE_URL` on loopback) |
 | `APP_ORIGINS` | no | none: no `returnUrl` taken | The apps a person may be sent back to after a face check, by origin, comma-separated |
@@ -326,7 +329,7 @@ Errors are `{"error": "<code>"}`:
 | `RPC_URL` | with the ID check | | The Solana RPC it looks for payments through, at `finalized` |
 | `HOST_URL` | no | none: no gift | The host's origin, `https://<host>`, whose credits the gift's ticket pays for |
 | `HOST_CREDITS` | no | `10` | How many of the host's credits; 0 for none |
-| `DATABASE_PATH` | no | `./data/issuer.sqlite` | The one file. The seed file, `issuer-seed.json`, is in the same directory, made there at the first start |
+| `DATABASE_PATH` | no | `./data/verifier.sqlite` | The one file. The seed file, `verifier-seed.json`, is in the same directory, made there at the first start |
 | `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour, both checks together |
 | `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy puts the client's address in (`x-real-ip` on Railway) |
 | `PORT` | no | `8080` | |
@@ -342,22 +345,22 @@ Node 22.18 or later. From the repo root:
 ```
 ./standard.sh                     # the standard at the pinned commit, installed and built
 (cd e2e && npm ci) && (cd host && npm ci)   # the buyer's credits client and the host's seller, for the gift's tests
-cd issuer && npm ci               # the standard's packages, linked by name from ../standard/
+cd verifier && npm ci             # the standard's packages, linked by name from ../standard/
 npm run fetch                     # the face models, and the three test portraits, each checked by SHA-256
 npm run check                     # type-check
-npm test                          # a stand-in Didit and RPC, a real SQLite file, real HTTP; note proofs
-                                  # made from both notes and checked against the published keys; the
-                                  # attributes vectors (test/vectors.json); the seed made, kept and read
-                                  # again; each session deleted in Didit an hour after its note is signed, never
+npm test                          # a stand-in Didit and RPC, a real SQLite file, real HTTP; stamp proofs
+                                  # made from both stamps and checked against the published keys; the
+                                  # facts vectors (test/vectors.json); the seed made, kept and read
+                                  # again; each session deleted in Didit an hour after its stamp is signed, never
                                   # one in review; the face models on the portraits; the stand-in Didit
                                   # the e2e loop runs, both checks and review; the gift's ticket, taken by the
                                   # host's own seller; the fetch's tries and its second source
 npm start                         # the service, with the variables above
 ```
 
-The issuer depends on the standard's packages by name (`@foundationforest/keys`, `/note`,
+The verifier depends on the standard's packages by name (`@foundationforest/keys`, `/stamp`,
 `/records`) through `file:` links into `standard/`; moving `STANDARD` can change what they depend on,
-so `npm install` in `issuer/` writes the lockfile again. Run by hand, it makes its seed in `data/`,
+so `npm install` in `verifier/` writes the lockfile again. Run by hand, it makes its seed in `data/`,
 beside its file; `.gitignore` covers both.
 
 **By hand, against Didit's sandbox** (an application that mocks every provider and never bills):
@@ -372,20 +375,20 @@ A Didit key belongs to one application, so the sandbox takes its own variable; t
 reads `DIDIT_API_KEY`, and refuses to start when the two are the same. It runs both checks on the
 sandbox's two workflows, with its own seed and file in `data/sandbox/`, and the ID check at a price
 of 1 with a stand-in payment check that counts every payment as landed. `POST /face/session`, open
-the page it answers and walk through Didit's flow, then `POST /face/note`.
+the page it answers and walk through Didit's flow, then `POST /face/stamp`.
 
 ### The image
 
 Any platform that runs Node 22.18 with a persistent disk. **One replica, never more:** the sessions
 and fingerprints are one SQLite file. **A volume** for `DATABASE_PATH` and the seed beside it, or a
-deploy loses which session and which person were signed for which note number, and the seed with
+deploy loses which session and which person were signed for which stamp number, and the seed with
 them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22.22.2 and git,
 `standard.sh`, `npm ci`, the face models by `npm run fetch -- models`) and runs `npm start` in
-`issuer/`.
+`verifier/`.
 
 ## How we run it
 
-- **Its name:** `issuer.forest.foundation`.
+- **Its name:** `verifier.forest.foundation`.
 - **Its seed is made on its machine** at its first start, and kept on its volume beside its file. No
   person, phrase or variable holds it.
 - **Its provider is Didit,** for both checks, in the foundation's Didit application. The foundation
@@ -405,37 +408,37 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 - **The recipes:**
   - the face key's is `Poseidon([h(model), h(embedding)])`;
   - the ID key's is `Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])`;
-  - both are fixed for good ([The note](#the-note)).
+  - both are fixed for good ([The stamp](#the-stamp)).
 - **The face model:** SFace, `opencv-sface-2021dec` ([The face model](#the-face-model)).
-- **The ID check is not offered yet:** no price is set, so `/id/session` and `/id/note` answer
+- **The ID check is not offered yet:** no price is set, so `/id/session` and `/id/stamp` answer
   `not_offered`. Once a price is set, it is paid before the session opens, and pays for the check
   whatever Didit decides. Nothing is refunded.
-- **Where it would be paid:** `ID_PAY_TO`, an address of its own, never one the issuer's seed gives.
+- **Where it would be paid:** `ID_PAY_TO`, an address of its own, never one the verifier's seed gives.
 - **Never from a profile's address.** A payment is public on chain for good. Paid from a profile's
-  address, it would tell everyone that this profile took the ID check, and tell the issuer, which
+  address, it would tell everyone that this profile took the ID check, and tell the verifier, which
   sees when each payment lands and opens a session for it, which Didit session, and so which face
-  and which document, goes with that profile. A note exists so that a profile shows its holder was
-  checked and nothing more. The app pays from an address that holds no profile; the issuer cannot
+  and which document, goes with that profile. A stamp exists so that a profile shows its holder was
+  checked and nothing more. The app pays from an address that holds no profile; the verifier cannot
   tell, and does not check.
-- **The welcome gift:** at a note number's first face note, 10 of the host's credits
+- **The welcome gift:** at a stamp number's first face stamp, 10 of the host's credits
   (`HOST_CREDITS`, a cent of writes each) at the foundation's host (`HOST_URL`), as a sponsor's
-  ticket. Once a note number.
-- **No money:** the issuer holds no key that holds money. The ID check's price would go straight to
+  ticket. Once a stamp number.
+- **No money:** the verifier holds no key that holds money. The ID check's price would go straight to
   `ID_PAY_TO`; the gift is a ticket, which the host counts.
 - **Session limits per address:** `SESSION_LIMIT_PER_HOUR` sessions an hour from one network
   address, both checks together, paid or not: 5 unless set. A cost guard: each check is paid to
   Didit, and the limit keeps a flood of them from one place from running up the bill. Counted in
-  memory as keyed hashes, an IPv6 address by its /64. The note requests and a payment's polling have
+  memory as keyed hashes, an IPv6 address by its /64. The stamp requests and a payment's polling have
   no limit.
 - **Where Didit sends the person back:** a page of an app in `APP_ORIGINS`, when the app asks: the
   Forest app, at https://app.forest.foundation.
 - **One replica, a volume,** the seed and the file in a directory of their own on it.
-- **What Didit holds,** until the session's note is signed. For the face check: the selfie, the
+- **What Didit holds,** until the session's stamp is signed. For the face check: the selfie, the
   liveness video, a template of the face for its face search, and its decision. For the ID check,
   also: the document's images, what Didit reads on it (name, date of birth, document number,
-  nationality, dates), and the match between the selfie and the document's photo. Once the note is
+  nationality, dates), and the match between the selfie and the document's photo. Once the stamp is
   signed, only the face template, for 3650 days.
-- **What the issuer reads.** From each decision:
+- **What the verifier reads.** From each decision:
   - the workflow, the status, and whether each step passed;
   - the selfie's address;
   - for the ID check, the name, the birth date and the document's country.
@@ -443,24 +446,24 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   From the selfie, its embedding. From a payment, what `ID_PAY_TO` gained, in which dollar. From a
   gift, the buy's reference. It keeps none of it but what [What it keeps](#what-it-keeps) lists, and
   answers the embedding, and for the ID check the name, birth date and country, to the person in
-  the note's fields.
+  the stamp's fields.
 - **The consent screen.** Before the ID check the app shows this, word for word:
 
   > Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its
   > provider, to make sure each person is checked once. Didit keeps photos of your ID and what it
   > reads on it (your name, date of birth and document number), your selfie and a short video while
-  > it checks. An hour after your note is signed, Forest deletes them at Didit, which keeps only a
+  > it checks. An hour after your stamp is signed, Forest deletes them at Didit, which keeps only a
   > template of your face, for up to ten years, so it can tell if the same face comes back. Forest keeps none of
-  > this: only a one-way fingerprint of your name and date of birth next to your note number, so the
-  > same person is not checked twice. It gives you a note, with your name, date of birth and country
+  > this: only a one-way fingerprint of your name and date of birth next to your stamp number, so the
+  > same person is not checked twice. It gives you a stamp, with your name, date of birth and country
   > beside it for your own vault; a profile that shows it says only that you were checked. The check
   > costs {price}, paid before it starts, whatever it decides.
 
-- **Retention.** The issuer keeps what [What it keeps](#what-it-keeps) lists for as long as it runs.
-  It deletes every session in Didit an hour after its note is first signed, and asks Didit to keep
+- **Retention.** The verifier keeps what [What it keeps](#what-it-keeps) lists for as long as it runs.
+  It deletes every session in Didit an hour after its stamp is first signed, and asks Didit to keep
   the face template for 3650 days. Didit gives every kept template an end, and 3650 days is the longest it
   allows, so a template is never kept without a limit. The live application's own retention window,
-  how long Didit keeps a session nobody deletes, is unlimited, so a session that gave no note (in
+  how long Didit keeps a session nobody deletes, is unlimited, so a session that gave no stamp (in
   review, declined, unfinished) stays until someone deletes it in Didit's console.
 - **Data law:** the Open Forest Foundation is the responsible party for both checks, so three things
   sit outside this code: a processing agreement with Didit, the consent screen above, and Didit's
@@ -468,40 +471,40 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 
 ## Promises
 
-- **It keeps which check session gave which note number, and nothing else of a check.** Its one
+- **It keeps which check session gave which stamp number, and nothing else of a check.** Its one
   SQLite file has five tables:
-  - the SHA-256 of each session id, next to the note number it was signed for and which check it was;
+  - the SHA-256 of each session id, next to the stamp number it was signed for and which check it was;
   - the id of each session not yet deleted in Didit, which check it was, and when it was first
     signed, until Didit has deleted it;
-  - a keyed one-way fingerprint of each name and birth date the ID check signed for, next to the note
+  - a keyed one-way fingerprint of each name and birth date the ID check signed for, next to the stamp
     number;
   - the transaction signature of each payment used, with the reference it named and whether its
     session opened;
-  - each note number given its welcome gift, with a hash of the buy.
+  - each stamp number given its welcome gift, with a hash of the buy.
 
   No face, no embedding, no name, no birth date, no document, and no time or session id in clear
   once a session is deleted in Didit. Deleted bytes are overwritten (`secure_delete`). A test reads
   the raw file and checks this.
-- **It never logs a request, an address, a session, a note number or a note.** It logs an error's
+- **It never logs a request, an address, a session, a stamp number or a stamp.** It logs an error's
   kind, never its message.
 - **It never writes down an address.** It reads the client's address only to count sessions against
   the limit, in memory, as a keyed hash under a key made at start.
 - **It never puts what a person sends in a URL.** The routes an app calls are POST with a JSON body,
   since hosting platforms log paths.
-- **It takes no key of the person's.** An app sends it a session and a note number, never a key.
-- **No accounts.**
-- **Nothing it keeps ties a person to a profile.** No request names a profile: the note proof that
-  ties a note to a profile is made on the person's device.
-- **It never signs for anyone.** Its face key and its ID key sign notes, and its sponsor key signs
+- **It takes no key of the person's.** An app sends it a session and a stamp number, never a key.
+- **No sign-ups.**
+- **Nothing it keeps ties a person to a profile.** No request names a profile: the stamp proof that
+  ties a stamp to a profile is made on the person's device.
+- **It never signs for anyone.** Its face key and its ID key sign stamps, and its sponsor key signs
   tickets, nothing else.
-- **A key's recipe never changes.** What a key's notes' `attributes` are made from is fixed for good;
+- **A key's recipe never changes.** What a key's stamps' `facts` are made from is fixed for good;
   a new recipe is a new key.
-- **It deletes every session in Didit an hour after its note is first signed, and no other.** Never
+- **It deletes every session in Didit an hour after its stamp is first signed, and no other.** Never
   one In Review.
   Each deletion asks Didit to keep only a template of the face, so its search still sees a face that
   comes back.
-- **It never puts a note on chain.** A note stays with the person; a profile record carries only the
-  note proof.
+- **It never puts a stamp on chain.** A stamp stays with the person; a profile record carries only the
+  stamp proof.
 
 ## Limits
 
@@ -509,38 +512,38 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   (`duplicate_document`). Didit takes no action on duplicates in the ID check and the fingerprint
   decides, so there is no review of it here.
 - **One person with two countries' documents that spell the name differently can hold two ID
-  notes.** A name read two ways (a middle name, another script) is two fingerprints. The fingerprint
+  stamps.** A name read two ways (a middle name, another script) is two fingerprints. The fingerprint
   is as exact as Didit's reading.
-- **One person per issuer rests on Didit's face search.** The issuer keeps no face; a face Didit's
-  search misses is a new person to it, and a face sent to review is signed for whatever note number
+- **One person per verifier rests on Didit's face search.** The verifier keeps no face; a face Didit's
+  search misses is a new person to it, and a face sent to review is signed for whatever stamp number
   the person brings once a person at the foundation approves it.
 - **A kept face template ends.** Didit keeps it 3650 days at most; after that its search no longer
   sees the face, and a face that comes back is new to it.
 - **Didit's face search covers both checks,** which share one application: a person who takes the ID
   check before the face check goes to review at the face check.
-- **A lost answer costs a new check after the hour.** Within the hour since its note was first
-  signed, a session gives the same note again; after it, the person checks again, and a face Didit
+- **A lost answer costs a new check after the hour.** Within the hour since its stamp was first
+  signed, a session gives the same stamp again; after it, the person checks again, and a face Didit
   has seen goes to review.
 - **For that hour, the file names the session.** Its id and when it was signed sit in `to_delete`, in
   clear, until Didit has deleted it: whoever reads the file then can ask Didit about that session.
 - **A deletion Didit does not answer leaves the session in Didit,** selfie and document images
-  included, and its id and time in the file, until a later sweep gets an answer. The issuer logs that
+  included, and its id and time in the file, until a later sweep gets an answer. The verifier logs that
   it happened, without the session.
 - **It trusts Didit's decision,** for a session on the check's own workflow: the status, each step's
   status, the selfie, and what the document step read. It reads those and drops everything else
   Didit returns. It cannot see how the workflows are set up in Didit, and relies on what How we run
   it lists: face search on, a face seen before sent to review, and an API key from the application
   that owns both workflows, allowed to delete its sessions.
-- **A note carries what it was made from.** A face note carries the face's embedding; an ID note,
+- **A stamp carries what it was made from.** A face stamp carries the face's embedding; an ID stamp,
   also the name, birth date and country. The person keeps it, and an app should keep it as it keeps
   a key: whoever has it holds numbers made from that face, and who the person is.
-- **A country with no ISO numeric code enters as 0,** so an ID note's attributes do not tell such a
+- **A country with no ISO numeric code enters as 0,** so an ID stamp's facts do not tell such a
   country from a document whose country Didit did not read.
 - **The ID check is not offered** until a price is set.
 - **Payment is untried on chain.** The payment path runs in this code's tests only, against a
   stand-in RPC, and a transfer that lists one more account is not among what the fee payer's tests
   sent through Kora.
-- **A payment's session is found again through Didit's list of sessions,** by its tag; the API key
+- **A payment's session is found again through Didit's list of sessions,** by its `vendor_data`; the API key
   must be allowed to read sessions. A session Didit opened whose answer was lost, if Didit's list
   misses it, is opened again on the next ask, and the foundation pays Didit for both.
 - **It trusts its RPC** to say which finalized transactions name a reference and what each moved. It
@@ -556,42 +559,42 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   counts live in memory and reset on restart.
 - **Losing the volume means new keys and new checks.** The seed and the file live only there: a start
   without them makes a new seed, whose keys readers must trust anew, with no signed handover, and
-  which session and which person were signed for which note number is gone too, so a person could
-  get a second note number's ID note. The name stays, so a person's stamps do not change.
+  which session and which person were signed for which stamp number is gone too, so a person could
+  get a second stamp number's ID stamp. The name stays, so a person's tags do not change.
 - **The face model's training data is not ours to vouch for.** SFace's weights are Apache 2.0, but
   its paper trains it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, whose own terms are for research. No
   widely used face model is trained on data with cleaner terms.
 - **The face test is three portraits.** Two of one person and one of another, official NASA photos
   (public domain, `npm run fetch` takes them from NASA's image library): enough to show the model
   tells those two people apart, not to measure how often it errs.
-- **Address logs.** The issuer keeps no network address. A hosting provider's own request logs are
+- **Address logs.** The verifier keeps no network address. A hosting provider's own request logs are
   the operator's choice; on Railway they exist, with each request's client address and path.
 
 ## Who decides what
 
-- **The standard:** the note, the issuer secret and the note number, the stamp, and the note proof.
-- **This issuer, by its own choice:** whom it signs notes for (a face Didit approves, by its search
-  and its reviews; one note number for each name and birth date), its two keys and their recipes,
+- **The standard:** the stamp, the verifier secret and the stamp number, the tag, and the stamp proof.
+- **This verifier, by its own choice:** whom it signs stamps for (a face Didit approves, by its search
+  and its reviews; one stamp number for each name and birth date), its two keys and their recipes,
   the face model, the ID check's price and where it is paid, the welcome gift, its limits, and its
   name.
-- **Readers, by their own choice:** whether to trust this issuer's face key, its ID key or both, and
+- **Readers, by their own choice:** whether to trust this verifier's face key, its ID key or both, and
   how much each weighs.
-- **The person, through their app:** whether to be checked, by which check and which issuers, which
-  address to pay from, and where to keep the note.
+- **The person, through their app:** whether to be checked, by which check and which verifiers, which
+  address to pay from, and where to keep the stamp.
 
 ## FAQ
 
 **Can you tell which profile is mine?**
-No. We hold your note number, made from your seed and our name. Your profiles' keys are made from
+No. We hold your stamp number, made from your seed and our name. Your profiles' keys are made from
 your seed and their labels. Nothing we hold connects the two: only your seed does, and it never
-leaves your device. A note proof on a profile shows that we signed a note to the seed behind it,
-never which note number.
+leaves your device. A stamp proof on a profile shows that we signed a stamp to the seed behind it,
+never which stamp number.
 
 **My face changes with light and age. Does the hash still work?**
 Yes. The hash pins the one list of numbers we computed from your selfie at check time, and that list
-never changes, so the note stays good. A new photo would give a slightly different list; telling
+never changes, so the stamp stays good. A new photo would give a slightly different list; telling
 whether two lists are the same face is a comparison, made with the model, and that is where the
-fuzziness lives, not in the note.
+fuzziness lives, not in the stamp.
 
 **Why a fresh `vendor_data` on every Didit session?**
 Didit's face search compares a face with faces checked under another `vendor_data`. The random id
@@ -599,16 +602,16 @@ names nobody, and its prefix says only which check the session was for.
 
 **Why does the price go to one address, with a reference per payment, and not to an address per
 payment?**
-So the issuer holds none of the money an ID check is paid with, nor a key that moves it: it goes
+So the verifier holds none of the money an ID check is paid with, nor a key that moves it: it goes
 straight to the address that receives it, and that address is a setting, which can change without a
-change here. The reference lets the issuer find each payment and count it once.
+change here. The reference lets the verifier find each payment and count it once.
 
 **Why does it refuse to start without Didit?**
-Every note it signs counts with every reader that trusts its keys. Started with a stand-in that
-passes everyone, those keys would sign notes for anyone. The stand-in is for tests on this machine,
+Every stamp it signs counts with every reader that trusts its keys. Started with a stand-in that
+passes everyone, those keys would sign stamps for anyone. The stand-in is for tests on this machine,
 with keys made for them.
 
-**Could someone rebuild this issuer from public data?**
+**Could someone rebuild this verifier from public data?**
 Its name and keys are public, and its code is here. What it keeps, which session and which person
-were signed for which note number, is not public, so a new issuer starts its own; its people come to
+were signed for which stamp number, is not public, so a new verifier starts its own; its people come to
 it through their own checks.

@@ -1,0 +1,10 @@
+# The file and the seed beside it (DATABASE_PATH defaults to ./data/verifier.sqlite; the sandbox's is ./data/sandbox/)
+data/
+*.sqlite
+*.sqlite-journal
+# The verifier's seed never enters the repo
+verifier-seed.json
+
+# The face models and the test portraits (npm run fetch)
+models/
+test/faces/
