@@ -28,8 +28,8 @@
 //    7. mcp: the tutor's AI posts an offer; the student's finds it and messages; the tutor's reads the
 //       inbox and replies by number; the student's reads its inbox, outside its permissions, so it
 //       needs the person's yes, which the loop gives;
-//    8. the deal, paid twice by the signers through the fee payer at cost: a direct payment, asked for
-//       by the student's AI, naming the post; and an escrow on the market's session schedule, paid
+//    8. the deal, paid twice by the signers through the fee payer at cost: a direct payment, a plain
+//       transfer asked for by the student's AI; and an escrow on the market's session schedule, paid
 //       out early;
 //    9. reviews, through mcp, each naming its evidence as <CAIP-2 chain>:<id>;
 //   10. the loop index counts it all: both profiles, the offer, both reviews with their payments, both
@@ -376,12 +376,12 @@ async function main() {
   record.loop = { verifier: { name: s.verifier.name, face: s.verifier.keys.face, id: s.verifier.keys.id }, index: s.index.address }
   say(`verifier ${s.verifier.url}, host ${s.host}, fee payer ${s.feePayer}, index ${s.index.url} (${s.index.address}), mcp ${s.mcp}`)
 
-  // A payment the signer makes when the person's AI asks it to pay: a direct payment from the
-  // profile's pay key through the fee payer at cost, its memo naming the post.
+  // A payment the signer makes when the person's AI asks it to pay: a direct payment, a plain
+  // transfer from the profile's pay key, through the fee payer at cost.
   const payments: Paid[] = []
-  const payWith: PayWith = async ({ from, to, amount, memo }) => {
+  const payWith: PayWith = async ({ from, to, amount }) => {
     const signer = Keypair.fromSeed(from.privateKey)
-    const paid = await throughFeePayer(connection, s.feePayer, signer, directPaymentIxs({ from: signer.publicKey, to: new PublicKey(to), units: unitsOf(amount, token.decimals), memo, token }), token)
+    const paid = await throughFeePayer(connection, s.feePayer, signer, directPaymentIxs({ from: signer.publicKey, to: new PublicKey(to), units: unitsOf(amount, token.decimals), token }), token)
     payments.push(paid)
     return `${chain}:${paid.signature}`
   }
@@ -484,8 +484,6 @@ async function main() {
   const direct = payments.at(-1)!
   assert.equal(pay.evidence, `${chain}:${direct.signature}`, 'its evidence: the chain and the transaction')
   assert.equal(await balance(tutorPay), before + PRICE, 'the tutor got the direct payment')
-  const tx = await connection.getTransaction(direct.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 })
-  assert.ok(tx?.meta?.logMessages?.some((l) => l.includes(offerAddress)), 'its memo names the post')
   say(`deal: the student's AI paid ${PRICE / DOLLAR} test dollars directly, within its limit, ${direct.signature}, charged ${direct.charge} base units`)
 
   const sponsor = new PublicKey((await kora<{ signer_address: string }>(s.feePayer, 'getPayerSigner')).signer_address)

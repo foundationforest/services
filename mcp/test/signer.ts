@@ -9,7 +9,7 @@
 // - `post` never covers a profile's profile record or its hosts record (and the vault is no
 //   label's, so no ask reaches it): those it always asks the person about;
 // - `pay` only within every limit that holds, counting what this who asked for over any day, week
-//   or month;
+//   or month; an entry with no limit sets no money cap;
 // - anything no entry covers waits for the person's yes: here a link to open, and approve().
 //
 // Whatever it does, it signs with the profile's main key and publishes straight to the profile's
@@ -28,8 +28,8 @@ import { PERIODS, type Permission, type Vault, knowsPermission, message, openMes
 import { LOGIN, REGISTER } from '../src/connection.ts'
 
 export type Answer = { status: 'done'; result: Body } | { status: 'approval'; link: string; why: string } | { status: 'refused'; why: string }
-/** A payment: from a pay key, to a Solana address, so many dollars, naming the post. Gives back its evidence, `<chain>:<id>`. */
-export type PayWith = (payment: { from: PayKey; to: string; amount: string; memo: string }) => Promise<string>
+/** A payment: from a pay key, to a Solana address, so many dollars. Gives back its evidence, `<chain>:<id>`. */
+export type PayWith = (payment: { from: PayKey; to: string; amount: string }) => Promise<string>
 /** What the person chose on the connect page: a permission without its who, or no. */
 export type Choice = Omit<Permission, 'who'> | 'no'
 
@@ -229,7 +229,7 @@ export class Signer {
     })
   }
 
-  /** Whether paying `amount` keeps `who` within every limit of `entry` that holds on `label`. */
+  /** Whether paying `amount` keeps `who` within every limit of `entry` that holds on `label`: always, for an entry with none. */
   private withinLimits(entry: Permission, who: string, label: string, amount: string): boolean {
     const now = Date.now()
     for (const limit of entry.limits ?? []) {
@@ -343,7 +343,7 @@ export class Signer {
     const theirs = await readProfile(this.hosts, offer.split('/')[0]!, Date.now())
     const to = (theirs.current.get('profile')?.record.body?.pay as { solana?: unknown } | undefined)?.solana
     if (typeof to !== 'string') return refused('that profile gives no Solana pay address')
-    const evidence = await this.payWith({ from: await payKey(this.seed, label, 'solana'), to, amount: args.amount as string, memo: offer })
+    const evidence = await this.payWith({ from: await payKey(this.seed, label, 'solana'), to, amount: args.amount as string })
     this.spent.push({ who: `${connector} ${connection}`, label, micros: micros(args.amount as string), time: Date.now() })
     return done({ evidence })
   }

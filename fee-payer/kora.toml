@@ -40,7 +40,7 @@ allowed_programs = [
   "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the fee payer's key may do nothing in it (below)
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account
   "11111111111111111111111111111111",            # System
-  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", # Memo: moves no money; how a direct payment names its post (the markets manual, Payment)
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr", # Memo: moves no money; an app may add a memo to a payment, and nothing reads it
 ]
 # The tokens people pay in, in this order, each its maker's own mint:
 #   USDC      EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  Circle; SPL Token

@@ -81,9 +81,9 @@ step checks what it did, and the run passes only if every step does.
 8. **The deal, paid twice by the signers.** Both go through the fee payer at cost: the price asked,
    paid exactly in the test dollar, and co-signed.
    - **A direct payment** of 2 test dollars, which the student's AI asks for (`pay`). It is within
-     the student's limit, so the signer pays at once: a transfer from the student's pay address to
-     the tutor's, with a memo naming the post, as the markets manual's Direct paragraph says. Its
-     evidence is `<CAIP-2 chain>:<signature>`, the chain worked out from the RPC's genesis hash.
+     the student's limit, so the signer pays at once: a plain transfer from the student's pay
+     address to the tutor's. Its evidence is `<CAIP-2 chain>:<signature>`, the chain worked out from
+     the RPC's genesis hash.
    - **An escrow** on the market's `session` schedule, read from the market file at `MARKETS`: one
      window until seven days after payment, in which the student takes nothing back, then `pay`.
      The student's device opens and pays into it in one transaction, then pays it out early
@@ -152,8 +152,7 @@ So against every deployed service, a copy of `services.json` names:
   reads the markets.
 
 The deployed host must sell its credits for the test dollar. The deployed fee payer must hold SOL
-and a test-dollar account, which its operator funds, not the loop; and its `kora.toml` must allow
-the Memo program, as this repo's does.
+and a test-dollar account, which its operator funds, not the loop.
 
 Each process the loop starts gets only the settings it needs, never the phrase. What any of them
 prints comes to the console with `RPC_URL` taken out.
@@ -166,7 +165,7 @@ prints comes to the console with `RPC_URL` taken out.
   - the two keys the loop takes from the phrase;
   - what it funds and mints;
   - a wallet's transfer for a credit buy;
-  - a direct payment with its memo;
+  - a direct payment, a plain transfer;
   - a market's schedule as the escrow takes it;
   - a transaction sent through the fee payer at cost.
 - `record.ts`: a run's record, `checkRecord` (its shape), and `holdsNone`, which refuses a record
@@ -216,7 +215,7 @@ The tests, which CI runs:
   - every funding and minting instruction, decoded by the token program's own decoders: with the
     loop's own fee payer and with a deployed one;
   - a wallet's transfer naming a buy's reference;
-  - a direct payment: the transfer, then the memo naming the post;
+  - a direct payment: one plain transfer, and nothing else;
   - dollars as base units, and what is refused;
   - tutoring's `session` schedule, from the market file at `MARKETS`, as the escrow's client takes
     it, and the schedules the loop refuses.

@@ -3,10 +3,10 @@
 // each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept.
 //
 // Reading needs no login. A call to a relayed tool with no token gets a 401 whose challenge starts
-// the AI app's login, and a token this copy did not give, or that is over, gets a 401 on any
-// request. The request's Origin is not checked: the transport's check guards a server on a
-// person's own computer from a web page's requests, and here every act needs a token no web page
-// holds, while reading is open to anyone. TLS is the operator's.
+// the AI app's login, and a token this copy did not give gets a 401 on any request. The request's
+// Origin is not checked: the transport's check guards a server on a person's own computer from a
+// web page's requests, and here every act needs a token no web page holds, while reading is open
+// to anyone. TLS is the operator's.
 
 import { type IncomingMessage, type Server as HttpServer, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'

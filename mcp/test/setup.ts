@@ -175,7 +175,7 @@ export type World = {
   own: { [label: string]: string }
   stranger: { address: string; offer: string; tutor: Awaited<ReturnType<typeof mainKey>> }
   /** Every payment the person's signer made. */
-  paid: Array<{ to: string; amount: string; memo: string }>
+  paid: Array<{ to: string; amount: string }>
   dataDir: string
   close: () => Promise<void>
 }
@@ -187,8 +187,8 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const hosts = [host.url!]
 
   const paid: World['paid'] = []
-  const payWith: PayWith = async ({ to, amount, memo }) => {
-    paid.push({ to, amount, memo })
+  const payWith: PayWith = async ({ to, amount }) => {
+    paid.push({ to, amount })
     return `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:stand-in-payment-${paid.length}`
   }
   const person = new Signer({ seed: newSeed(), hosts, appUrl: 'https://app.forest.test', payWith })

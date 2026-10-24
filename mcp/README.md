@@ -110,8 +110,7 @@ copy's key.
 
 1. **The challenge.** A relayed tool's call with no token gets a 401 with
    `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`; a
-   token this copy did not give, or that is over, gets the same on any request, with
-   `error="invalid_token"`.
+   token this copy did not give gets the same on any request, with `error="invalid_token"`.
 2. **Discovery.** `/.well-known/oauth-protected-resource` names this copy as the resource and its
    authorization server; `/.well-known/oauth-authorization-server` names `/authorize`, `/token` and
    `/register`, S256, and that client documents work.
@@ -145,7 +144,9 @@ copy's key.
    connection, the client, the redirect, the challenge and the resource, for 60 seconds.
 7. **`/token`** (`grant_type=authorization_code`) checks the code, the client (and its secret, if it
    has one), the redirect, `code_verifier` against the challenge, and `resource`, and gives an access
-   token naming the connection, the client and this copy, for 30 days. There is no refresh token.
+   token naming the connection, the client and this copy. It carries no expiry, so there is no
+   refresh token: the connection ends when the person removes it from their permissions, at their
+   signer, which then serves it no more.
 
 Without `APP_URL`, step 4 is a page saying logins wait for the Forest app's connect page, and reading
 works as before.
@@ -181,11 +182,11 @@ How the mcp behaves:
 What the signer does with an ask is the standard's: it acts only within an entry it knows whole
 (`knowsPermission`) that has not ended, covering the profile and the action (`post` and `remove` are
 the standard's `post`, `message` and `reply` its `message`, `inbox` its `read`, `pay` its `pay`, within
-every limit that holds); it never writes the profile record, the hosts record or the vault without the
-person's yes; and it asks the person about everything else. It numbers messages for each connection,
-so a number means the same message for as long as it keeps them, and shows a message from another of
-the person's own profiles by its label. [`test/signer.ts`](test/signer.ts) does all of it, in plain
-code, with the standard's libraries.
+every limit that holds, and an entry with no limit sets no money cap); it never writes the profile
+record, the hosts record or the vault without the person's yes; and it asks the person about
+everything else. It numbers messages for each connection, so a number means the same message for as
+long as it keeps them, and shows a message from another of the person's own profiles by its label.
+[`test/signer.ts`](test/signer.ts) does all of it, in plain code, with the standard's libraries.
 
 ### Run it
 
@@ -220,17 +221,18 @@ pay $50 a day:
 
 - `test/login.test.ts`: reading with no login; the challenge and the metadata; the login end to end
   through the MCP SDK's own client, by registration and by a client document; each login its own
-  connection in the person's permissions; refused: a login signed by a key that is not the
-  connection's, a login changed on the way, an unknown AI app, a person who says no, a code with the
-  wrong verifier or for another client, a token this copy did not give; with no `APP_URL`, reading
-  works and logins wait.
+  connection in the person's permissions; a login ending when the person removes its connection, at
+  their signer; refused: a login signed by a key that is not the connection's, a login changed on
+  the way, an unknown AI app, a person who says no, a code with the wrong verifier or for another
+  client, a token this copy did not give; with no `APP_URL`, reading works and logins wait.
 - `test/tools.test.ts`: each of the eleven tools; inside the permissions, done without asking;
   outside them (a profile the entry does not cover), needs approval, then done after the yes; a kind
   the market does not define, the profile record, the hosts record, a field that does not fit and a
   role the market lacks, refused before anything is relayed; the signer's own check that `post` never
   covers the profile record or the hosts record; pay within the limit, done, and past it, needs
-  approval; with no signer open, said plainly; and no answer in the whole run holds one of the person's
-  addresses (each profile's, each pay address, the vault's).
+  approval; pay by an entry with no limit, any amount, done; with no signer open, said plainly; and
+  no answer in the whole run holds one of the person's addresses (each profile's, each pay address,
+  the vault's).
 - `test/relay.test.ts`, with a signer made by hand: a registration by another key refused; a frame
   that is not JSON closing the socket; only the protocol's fields passed on; an approval link that is
   not https refused; a socket closing mid-ask said plainly; and nothing kept between calls but live
@@ -270,7 +272,7 @@ The foundation's copy, at https://mcp.forest.foundation:
   - 30 seconds for a new socket to register its first connection, and at most 100 connections on one
     socket;
   - 10 minutes on the connect page, to unlock the device and choose; 60 seconds for a code, which the
-    AI app redeems at once; 30 days for a login;
+    AI app redeems at once; no end for a login, which lasts until the person removes its connection;
   - at most 4,194,304 bytes for an MCP request, a frame either way, or an index's answer; at most 100
     pages for one folder read; the records library's 60 seconds for a read.
 - **Free:** no price.
@@ -313,6 +315,8 @@ acts.
 - **It never moves money itself, and holds nothing that could.** A payment is made by the person's
   signer, inside the limits their permissions set, or with their yes.
 - **It keeps nothing between calls but live sockets,** in memory. No login, call or answer is written.
+- **A login ends only when the person ends it.** Its access token carries no expiry. The person ends
+  a connection by removing it from their permissions, at their signer, which then serves it no more.
 - **It checks what it reads from hosts.** The standard's records library checks every record,
   signature included. What an index says is passed on as the index's word, and labelled so.
 - **No sign-up and no password.**
@@ -331,9 +335,10 @@ acts.
 - **Nothing acts while Forest is closed** on every one of the person's devices.
 - **The AI is not told when the person says yes.** It looks again, or asks again.
 - **An answer that comes after 45 seconds is lost,** though what was asked may be done.
-- **A login lasts 30 days, with no refresh token,** then the person goes through the connect page
-  again. A connection ends sooner when the person removes it from their permissions: their signer then
-  serves it no more.
+- **A login does not expire.** Its access token works for as long as the person keeps the connection
+  in their permissions. The AI's maker holds it all that time, and whoever takes it from them acts as
+  that connection, within its permissions, while the person's signer serves it. This copy cannot end
+  one token alone: only a new key ends a login here, and it ends every one.
 - **A code works more than once in its 60 seconds,** since nothing is kept; only the AI app holding
   the login's PKCE verifier can use it.
 - **One replica.** The sockets live in one process; when it restarts, each signer opens again, and
@@ -371,10 +376,11 @@ acts.
 So an AI app can read before the person connects anything, and so reading works while logins wait.
 An AI app logs in when a call answers 401, and only a relayed tool's call does.
 
-**Why does a login last 30 days, with no refresh token?**
-Nothing is stored, so a used refresh token could never be retired: it would be a 30-day token too, and
-OAuth 2.1 asks that a reused one be caught. So the access token itself lasts 30 days. Ending a
-connection sooner is the person's, on their signer, at once.
+**Why does a login not expire?**
+The person's permissions already say what a connection may do and until when (an entry's `until`).
+An expiry here would only send the person through the connect page again for nothing they chose, and
+a refresh token no store can retire would never expire either. Ending a connection is the person's,
+at their signer.
 
 **Why is the connection key Ed25519, and not a Baby Jubjub key as a profile's?**
 A connection key is no profile's and no service's: it signs a login and a socket's challenge, nothing
