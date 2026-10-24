@@ -16,8 +16,8 @@
 #   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
 #                starts, and mcp's reference signer and test client it acts through; and its tests:
 #                the credits client against the host's own code selling for tickets and for a dollar,
-#                the funding and minting it does, a direct payment and its memo, the market's
-#                schedule as the escrow takes it, and a run's record
+#                the funding and minting it does, a direct payment, the market's schedule as the
+#                escrow takes it, and a run's record
 #   mcp          its type-check and tests, on loopback: the standard's reference host, a stand-in
 #                index and connect page, and its reference signer; the login end to end through the
 #                MCP SDK's client, every tool, the relay, and the image's own command

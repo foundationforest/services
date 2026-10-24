@@ -351,8 +351,8 @@ Another index holds its own.
 - **Which verifier keys count, and how much** (`lists/verifiers.json`): each key by its address, with
   the verifier name its stamp proofs must carry, the name of its check, its points, and an optional
   `until`. Today it lists the two keys of the foundation's verifier, under its name
-  `verifier.forest.foundation`, neither with an `until`: its face key `MC8L1NFD…`, the face check at
-  1 point, and its ID key `HfYyeaez…`, the ID check at 2.
+  `verifier.forest.foundation`, neither with an `until`: its face key `9Kvr71eh…`, the face check at
+  1 point, and its ID key `G6hYSXZU…`, the ID check at 2.
 - **Which chains it reads** (`config/chains.json`): one, Solana's devnet
   (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`), the chain the escrow runs on today, with the reader
   `solana`, through `RPC_URL`.

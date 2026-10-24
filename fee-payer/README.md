@@ -60,7 +60,7 @@ finds it made.
 
 | Setting | Value | Why |
 |---|---|---|
-| `allowed_programs` | the escrow, SPL Token, Token-2022, Associated Token Account, System, Memo | Kora checks every program a transaction calls, inner calls included. Memo moves no money: it is how a direct payment names its post |
+| `allowed_programs` | the escrow, SPL Token, Token-2022, Associated Token Account, System, Memo | Kora checks every program a transaction calls, inner calls included. Memo moves no money: an app may add a memo to a payment, and nothing reads it |
 | No compute budget program | | So no priority fee: the fee payer never pays one it did not agree to |
 | `max_allowed_lamports` | 0.01 SOL | The most deposits one transaction may take; the largest, a one tap that also makes the recipient's token account, takes 5,354,320 lamports at 5,080 a byte |
 | `max_signatures` | 3 | The fee payer, and the payer and the recipient when both sign a split (`agree`), the way out of a stop with no arbiter |
@@ -176,8 +176,8 @@ address, and charged 5,111,680 test-dollar units.
 - **At cost:** the charge is the network fee and every deposit it puts down, at margin 0. It pays
   for no one: a transaction that pays less is refused.
 - **The programs it pays for:** the escrow, SPL Token, Token-2022, Associated Token Account,
-  System and Memo, and no others. Memo moves no money: a direct payment's memo names its post. No
-  compute budget program, so no priority fee.
+  System and Memo, and no others. Memo moves no money: an app may add a memo to a payment, and
+  nothing reads it. No compute budget program, so no priority fee.
 - **At most 0.01 SOL of deposits** in one transaction, and **at most three signatures.**
 - **Paid in four dollars by `kora.toml`:** USDC, USDT, Open USD and EURC, each its maker's own
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a

@@ -13,7 +13,7 @@ import * as escrow from '@foundationforest/escrow-client'
 import { decodeMintToCheckedInstruction, decodeTransferCheckedInstruction } from '@solana/spl-token'
 import { Keypair, PublicKey, SystemInstruction, SystemProgram, type TransactionInstruction } from '@solana/web3.js'
 
-import { DOLLAR, FUNDING, MEMO_PROGRAM, type Template, directPaymentIxs, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, scheduleOf, unitsOf } from '../chain.ts'
+import { DOLLAR, FUNDING, type Template, directPaymentIxs, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, scheduleOf, unitsOf } from '../chain.ts'
 
 const token: escrow.Token = { mint: new PublicKey('J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'), program: escrow.TOKEN_PROGRAM_ID, decimals: 6 }
 const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
@@ -95,16 +95,13 @@ test('a credit buy paid from a wallet: the service’s account made if missing, 
   assert.deepEqual(transfer!.keys.at(-1), { pubkey: new PublicKey(reference), isSigner: false, isWritable: false }, 'the reference, as one more account')
 })
 
-test('a direct payment: the transfer, then a memo naming the post, which names no signer', () => {
+test('a direct payment: one plain transfer, and nothing else', () => {
   const [from, to] = [key(), key()]
-  const post = `${key().toBase58()}/offer/maths`
-  const [transfer, memo] = directPaymentIxs({ from, to, units: 2n * DOLLAR, memo: post, token })
-  const t = decodeTransferCheckedInstruction(transfer!, token.program)
+  const ixs = directPaymentIxs({ from, to, units: 2n * DOLLAR, token })
+  assert.equal(ixs.length, 1)
+  const t = decodeTransferCheckedInstruction(ixs[0]!, token.program)
   assert.deepEqual([t.keys.source.pubkey, t.keys.destination.pubkey, t.keys.owner.pubkey].map((k) => k.toBase58()), [ata(from), ata(to), from].map((k) => k.toBase58()))
   assert.deepEqual([t.data.amount, t.data.decimals], [2n * DOLLAR, 6])
-  assert.ok(memo!.programId.equals(MEMO_PROGRAM))
-  assert.deepEqual(memo!.keys, [])
-  assert.equal(Buffer.from(memo!.data).toString('utf8'), post)
 })
 
 test('dollars as base units: whole and decimal text, never more places than the token has', () => {

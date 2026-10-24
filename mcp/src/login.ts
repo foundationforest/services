@@ -11,8 +11,9 @@
 // this copy wrote, with an HMAC-SHA256 under its own 32-byte key, kept in DATA_DIR. Only this copy
 // checks them, so a MAC is enough: no public half is needed. The MAC covers the kind, so a code is
 // never a token. What one cannot hold without a store: a code works more than once in its 60
-// seconds (only the AI app holding its PKCE verifier can use it), and there is no refresh token
-// (the token lasts 30 days, and a refresh token no store can retire would be a 30-day token too).
+// seconds (only the AI app holding its PKCE verifier can use it). A token carries no expiry, so
+// there is no refresh token: a connection ends when the person removes it from their permissions,
+// at their signer, which then serves it no more.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -27,8 +28,6 @@ import { json, page, readBody } from './http.ts'
 export const REQUEST_MS = 10 * 60_000
 /** How long a code lasts: the AI app redeems it as soon as the person is sent back to it. */
 export const CODE_MS = 60_000
-/** How long a login lasts. */
-export const TOKEN_MS = 30 * 86_400_000
 /** A client document: at most this many bytes, read within this many ms. */
 const CLIENT_DOC_BYTES = 65_536
 const CLIENT_DOC_MS = 10_000
@@ -146,17 +145,17 @@ export class Login {
 
   /** A 401: no login, or (`invalid`) one this copy does not take. */
   challenge(res: ServerResponse, invalid: boolean): void {
-    const error = invalid ? ', error="invalid_token", error_description="this login is not one this server gave, or it is over"' : ''
+    const error = invalid ? ', error="invalid_token", error_description="this login is not one this server gave"' : ''
     res.writeHead(401, { 'www-authenticate': `Bearer resource_metadata="${this.resourceMetadataUrl}"${error}`, 'content-type': 'application/json' })
-    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: invalid ? 'Log in again: this login is not one this server gave, or it is over.' : 'Acting for the person needs a login.' } }))
+    res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: invalid ? 'Log in again: this login is not one this server gave.' : 'Acting for the person needs a login.' } }))
   }
 
-  /** The connection a request's token names; null with no token; 'bad' for one this copy did not give, or that is over. */
+  /** The connection a request's token names; null with no token; 'bad' for one this copy did not give. */
   bearer(req: IncomingMessage): string | null | 'bad' {
     const header = req.headers.authorization
     if (header === undefined) return null
     const token = this.read('access', /^Bearer (\S+)$/i.exec(header)?.[1])
-    if (!token || typeof token.exp !== 'number' || Date.now() > token.exp || !sameResource(token.aud, this.origin) || !isConnection(token.connection)) return 'bad'
+    if (!token || !sameResource(token.aud, this.origin) || !isConnection(token.connection)) return 'bad'
     return token.connection
   }
 
@@ -295,7 +294,7 @@ export class Login {
     if (!verifier || b64u.encode(createHash('sha256').update(verifier).digest()) !== code.challenge) return deny(400, 'invalid_grant', 'code_verifier does not match the code challenge')
     const resource = form.get('resource')
     if (resource !== null && !sameResource(resource, code.resource as string)) return deny(400, 'invalid_target', `the code was made for ${code.resource as string}`)
-    const access = this.sign('access', { connection: code.connection, client: code.client, aud: code.resource, exp: Date.now() + TOKEN_MS })
-    json(res, 200, { access_token: access, token_type: 'Bearer', expires_in: TOKEN_MS / 1000 }, { 'cache-control': 'no-store' })
+    const access = this.sign('access', { connection: code.connection, client: code.client, aud: code.resource })
+    json(res, 200, { access_token: access, token_type: 'Bearer' }, { 'cache-control': 'no-store' })
   }
 }

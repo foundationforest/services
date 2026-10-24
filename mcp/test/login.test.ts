@@ -1,8 +1,9 @@
 // The login: reading with none; the challenge a relayed tool's call gets; the metadata an AI app
 // discovers; the login end to end through the stand-in connect page, by registration and by a client
-// document; and every way a login is refused: a connection whose key did not sign, a login changed
-// on the way, a person who says no, a code with the wrong verifier or for another client, a token
-// this copy did not give, and a copy with no connect page.
+// document, and its end when the person removes the connection; and every way a login is refused: a
+// connection whose key did not sign, a login changed on the way, a person who says no, a code with
+// the wrong verifier or for another client, a token this copy did not give, and a copy with no
+// connect page.
 
 import assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
@@ -83,6 +84,18 @@ describe('the login, end to end', () => {
     }
     assert.equal(new Set(entries.map((e) => e.who.connection)).size, entries.length)
   })
+
+  test('a login ends when the person removes its connection from their permissions, at their signer', async () => {
+    const c = await aiApp(w.mcp.origin)
+    await logIn(c)
+    const connection = (w.person.permissions().at(-1)!.who as { connection: string }).connection
+    await w.person.disconnect(connection)
+    assert.ok(!w.person.permissions().some((e) => (e.who as { connection: string }).connection === connection), 'gone from the vault')
+    const profiles = (await c.client.callTool({ name: 'profiles', arguments: {} })) as Result
+    assert.equal(profiles.isError, true)
+    assert.match(text(profiles), /this connection was removed/)
+    await c.client.close()
+  })
 })
 
 /** A login request, as /authorize writes it for the connect page, for a fresh registered AI app. */
@@ -143,9 +156,10 @@ describe('refused', () => {
     // The verifier RFC 7636 pairs with the challenge above: the right one gives a token.
     const right = await token({ grant_type: 'authorization_code', code, client_id: client, redirect_uri: REDIRECT, code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk' })
     assert.equal(right.status, 200, await right.clone().text())
-    const got = (await right.json()) as { access_token: string; token_type: string; expires_in: number }
+    const got = (await right.json()) as { access_token: string; token_type: string; expires_in?: number }
     assert.equal(got.token_type, 'Bearer')
-    assert.equal(got.expires_in, 30 * 86_400)
+    assert.equal(got.expires_in, undefined, 'a login does not expire')
+    assert.deepEqual(Object.keys(JSON.parse(Buffer.from(b64u.decode(got.access_token.split('.')[0]!)).toString())).sort(), ['aud', 'client', 'connection'], 'the token names the connection, the client and this copy, and no expiry')
   })
 
   test('a token this copy did not give gets the challenge again, on any request', async () => {

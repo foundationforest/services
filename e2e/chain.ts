@@ -1,6 +1,6 @@
 // The loop's money on the chain: the two keys it takes from the phrase, what it funds and mints
-// before two people can act, a plain transfer from a wallet app, a direct payment naming its post,
-// a market's schedule as the escrow takes it, and a transaction sent through the fee payer at cost,
+// before two people can act, a plain transfer from a wallet app, a direct payment, a market's
+// schedule as the escrow takes it, and a transaction sent through the fee payer at cost,
 // as a person's app sends one. Nothing a profile does goes through the phrase's keys: they fund and
 // mint only.
 
@@ -8,7 +8,7 @@ import { pbkdf2Sync } from 'node:crypto'
 
 import * as escrow from '@foundationforest/escrow-client'
 import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
-import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
+import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 /**
  * A key from the phrase, by the recipe in the standard's `escrows/solana/devnet/deploy.sh`: the
@@ -30,20 +30,10 @@ export function unitsOf(amount: string, decimals: number): bigint {
   return BigInt(m[1]! + (m[2] ?? '').padEnd(decimals, '0'))
 }
 
-/** Solana's Memo program: it moves nothing, and writes its data to the transaction's log. */
-export const MEMO_PROGRAM = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr')
-
-/**
- * A direct payment, as the markets manual's Direct paragraph has it: a plain transfer of `units`
- * from `from`'s token account to `to`'s, with a memo naming the post. The memo names no signer,
- * so it adds no signature to pay for.
- */
-export function directPaymentIxs(p: { from: PublicKey; to: PublicKey; units: bigint; memo: string; token: escrow.Token }): TransactionInstruction[] {
+/** A direct payment: a plain transfer of `units` from `from`'s token account to `to`'s. */
+export function directPaymentIxs(p: { from: PublicKey; to: PublicKey; units: bigint; token: escrow.Token }): TransactionInstruction[] {
   const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, p.token.mint, p.token.program)
-  return [
-    escrow.transferIx({ from: ata(p.from), to: ata(p.to), owner: p.from, mint: p.token.mint, amount: p.units, decimals: p.token.decimals, tokenProgram: p.token.program }),
-    new TransactionInstruction({ programId: MEMO_PROGRAM, keys: [], data: Buffer.from(p.memo, 'utf8') }),
-  ]
+  return [escrow.transferIx({ from: ata(p.from), to: ata(p.to), owner: p.from, mint: p.token.mint, amount: p.units, decimals: p.token.decimals, tokenProgram: p.token.program })]
 }
 
 /** A market's schedule, as its file writes it (the markets manual, Payment): windows relative to the deal. */

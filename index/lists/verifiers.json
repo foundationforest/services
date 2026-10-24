@@ -1,7 +1,7 @@
 {
   "about": "The verifier keys this index counts. Each key, by its address, belongs to a verifier by name: the verifier name its stamp proofs must carry. Beside it: what the key's check is called on the pages, the points a profile it checked starts the ranking with, and, for a key that leaked, until: proofs this index first saw after that time do not count. A profile counts only with a stamp proof for a key listed here. This is this index's opinion: another index counts other keys. These are the two keys of the foundation's verifier, under its name verifier.forest.foundation: its face key (face check, 1 point) and its ID key (ID check, 2 points).",
   "keys": [
-    { "key": "MC8L1NFDmyXGHno4QFJ6qB83qnVbAPnRt4MYeVeppmE", "verifier": "verifier.forest.foundation", "label": "face check", "points": 1 },
-    { "key": "HfYyeaezVFP5APn7tr192pupoTMe5Q3P4mpBr3A3d9xC", "verifier": "verifier.forest.foundation", "label": "ID check", "points": 2 }
+    { "key": "9Kvr71ehJp2ANiusuP3qUPz84ZdH12LQ1xn3RDz19Fhk", "verifier": "verifier.forest.foundation", "label": "face check", "points": 1 },
+    { "key": "G6hYSXZUgpp7SFPJgKH7awxbJAfXHmCkkLKx3RddrN22", "verifier": "verifier.forest.foundation", "label": "ID check", "points": 2 }
   ]
 }

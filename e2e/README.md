@@ -81,9 +81,9 @@ step checks what it did, and the run passes only if every step does.
 8. **The deal, paid twice by the signers.** Both go through the fee payer at cost: the price asked,
    paid exactly in the test dollar, and co-signed.
    - **A direct payment** of 2 test dollars, which the student's AI asks for (`pay`). It is within
-     the student's limit, so the signer pays at once: a transfer from the student's pay address to
-     the tutor's, with a memo naming the post, as the markets manual's Direct paragraph says. Its
-     evidence is `<CAIP-2 chain>:<signature>`, the chain worked out from the RPC's genesis hash.
+     the student's limit, so the signer pays at once: a plain transfer from the student's pay
+     address to the tutor's. Its evidence is `<CAIP-2 chain>:<signature>`, the chain worked out from
+     the RPC's genesis hash.
    - **An escrow** on the market's `session` schedule, read from the market file at `MARKETS`: one
      window until seven days after payment, in which the student takes nothing back, then `pay`.
      The student's device opens and pays into it in one transaction, then pays it out early
@@ -152,8 +152,7 @@ So against every deployed service, a copy of `services.json` names:
   reads the markets.
 
 The deployed host must sell its credits for the test dollar. The deployed fee payer must hold SOL
-and a test-dollar account, which its operator funds, not the loop; and its `kora.toml` must allow
-the Memo program, as this repo's does.
+and a test-dollar account, which its operator funds, not the loop.
 
 Each process the loop starts gets only the settings it needs, never the phrase. What any of them
 prints comes to the console with `RPC_URL` taken out.
@@ -166,7 +165,7 @@ prints comes to the console with `RPC_URL` taken out.
   - the two keys the loop takes from the phrase;
   - what it funds and mints;
   - a wallet's transfer for a credit buy;
-  - a direct payment with its memo;
+  - a direct payment, a plain transfer;
   - a market's schedule as the escrow takes it;
   - a transaction sent through the fee payer at cost.
 - `record.ts`: a run's record, `checkRecord` (its shape), and `holdsNone`, which refuses a record
@@ -216,7 +215,7 @@ The tests, which CI runs:
   - every funding and minting instruction, decoded by the token program's own decoders: with the
     loop's own fee payer and with a deployed one;
   - a wallet's transfer naming a buy's reference;
-  - a direct payment: the transfer, then the memo naming the post;
+  - a direct payment: one plain transfer, and nothing else;
   - dollars as base units, and what is refused;
   - tutoring's `session` schedule, from the market file at `MARKETS`, as the escrow's client takes
     it, and the schedules the loop refuses.
@@ -225,20 +224,28 @@ The tests, which CI runs:
 
 ### The latest run
 
-2026-10-24, 05:57:05 to 05:57:47 UTC, with this repo at `ddbc757` (standard at `d1fa942`, markets at
-`aca4dec`), everything on loopback but the chain, through `RPC_URL`: **passed** in 43 seconds. Its
-record is [`runs/2026-10-24T05-57-04-978Z.json`](runs/2026-10-24T05-57-04-978Z.json).
+2026-10-24, 17:45:50 to 17:47:12 UTC, with this repo at `fe1e8ec` (standard at `ba78e72`, markets at
+`aca4dec`), against the deployed host and fee payer, with the loop's own verifier, index and mcp on
+loopback and the chain through `RPC_URL`: **passed** in 82 seconds. Its record is
+[`runs/2026-10-24T17-45-49-532Z.json`](runs/2026-10-24T17-45-49-532Z.json).
 
-- **The services:** all the loop's own. The verifier `verifier.e2e-loop.invalid`, face key
-  `8tdBAdX1…`; the fee payer, key `7QM7wb7t…`; the index `4oMUgLW4…`.
+- **The services:**
+  - used as deployed: `https://host.forest.foundation`, and `https://fee-payer.forest.foundation`,
+    its key `F3Jjh7KG…`;
+  - only checked: the verifier `verifier.forest.foundation` said its face key `9Kvr71eh…` and its ID
+    key `G6hYSXZU…`; the index `5VKVW4FM…` answered; the mcp listed its 11 tools and read the
+    markets;
+  - the loop's own: the verifier `verifier.e2e-loop.invalid`, face key `DQrj5PsU…`; the index
+    `HvZo9uoa…`; the mcp.
 - **The test dollar:** `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`.
-- **People:** tutor `E2BZieMt…`, student `BqhWhVbJ…`, and the tutor's coach profile `DdSUSQHB…`.
+- **People:** tutor `3QFcTy4P…`, student `N7hhoD6B…`, and the tutor's coach profile `A4YLwvGX…`.
 - **Funding:** 10 test dollars to the student's pay address; 1 test dollar and 0.01 SOL to each
-  wallet; 0.05 SOL to the loop's own fee payer.
+  wallet. Before the run, outside the loop, the deploy key sent the deployed fee payer 0.05 SOL, as
+  it held 0.0455.
 - **Stamps:** one each from the loop verifier's face check, model `stand-in`, each kept in its
   vault.
-- **Credits:** each wallet paid the host 0.10 test dollars for 10 credits; the tutor spent 6 into
-  its folder, the student 10.
+- **Credits:** each wallet paid the deployed host 0.10 test dollars for 10 credits; the tutor spent 6
+  into its folder, the student 10.
 - **Logins:** the tutor's AI may post, message, read and pay; the student's post, message and pay;
   each up to 5 USD a day.
 - **mcp:**
@@ -248,8 +255,9 @@ record is [`runs/2026-10-24T05-57-04-978Z.json`](runs/2026-10-24T05-57-04-978Z.j
   - the student's AI's read of its inbox needed the student's yes ("inbox as tutoring/student is
     not in what this connection may do"), and got it.
 - **The deal:**
-  - the direct payment of 2 test dollars, asked for by the student's AI, charged 0.01 test dollars;
-  - the escrow `48h8NCus…`, opened and paid in, charged 3.73364, then paid out early, charged
+  - the direct payment of 2 test dollars, a plain transfer asked for by the student's AI, charged
+    0.01 test dollars;
+  - the escrow `6b1drJ6n…`, opened and paid in, charged 3.73364, then paid out early, charged
     0.01, its outcome `pay`, its rent back to the fee payer.
 - **The index:** the tutor rated 10 and the student 9, each from one review with its payment, each
   statement signed; the deal paid, 2 test dollars, with its review.
@@ -257,13 +265,14 @@ record is [`runs/2026-10-24T05-57-04-978Z.json`](runs/2026-10-24T05-57-04-978Z.j
   the coach profile with the tutor's last 4 credits; the index shows it.
 - **Addresses:** none of its own person's in any of the 6 answers to the tutor's AI or the 7 to the
   student's.
-- **Balances:** the tutor's folder 5.89792 credits, the student's 9.91152, the coach's 3.92039.
+- **Balances:** the tutor's folder 5.89795 credits, the student's 9.91154, the coach's 3.92039.
 
-The loop's own services stopped with the run, so their pages and records are gone. What the run did
-on chain is on Solana's explorer: [the escrow][e] and [the direct payment][p].
+The loop's own verifier, index and mcp stopped with the run, so their pages are gone. The three
+profiles' records and both vaults (encrypted) stay on the deployed host, and what the run did on
+chain is on Solana's explorer: [the escrow][e] and [the direct payment][p].
 
-[e]: https://explorer.solana.com/address/48h8NCusnhgHE2KV7rFXCp32wdCjnHuYCU5XujiH9AvD?cluster=devnet
-[p]: https://explorer.solana.com/tx/TTAUP8LwjmdW3qxuTCrYPqParShwHbfmCorDxNM47krhpzyvsWF3rK6gGG4x6bc4Mw8SLra5h4eQFqphftRps4R?cluster=devnet
+[e]: https://explorer.solana.com/address/6b1drJ6nzmEcPrWbKUQdUF4FpoPbpd3LFQRwwcT3uWo6?cluster=devnet
+[p]: https://explorer.solana.com/tx/4viVb2ymMYR7D2bZSau9tSbYZT2Dcks4kaHhbG5Np6h3L3v3EXWBHkKmSUoK24Tea3ApDn9Y4pLsfai9UUWcz8op?cluster=devnet
 
 ## Promises
 

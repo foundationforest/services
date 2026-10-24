@@ -2,7 +2,8 @@
 // with the reference signer open: the four reads, with what the index and the hosts say; and each
 // relayed tool against the person's permissions (their two tutoring profiles; post, message, read
 // and pay; $50 a day). Inside them it is done without asking; outside them it needs the person's
-// yes; a pay past the limit too. What the mcp checks first is refused before anything is relayed.
+// yes; a pay past the limit too, and an entry with no limit pays any amount. What the mcp checks
+// first is refused before anything is relayed.
 // With no signer open, it says so plainly. And no answer, in the whole run, holds one of the
 // person's own addresses.
 
@@ -10,7 +11,7 @@ import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { inboxKey } from '@foundationforest/keys'
-import { pull, pullRequest, readProfile } from '@foundationforest/records'
+import { b64u, pull, pullRequest, readProfile } from '@foundationforest/records'
 import { openMessage } from '@foundationforest/records/private'
 import { NO_SIGNER } from '../src/relay.ts'
 import { permits } from './signer.ts'
@@ -167,13 +168,23 @@ describe('through the signer', () => {
     assert.equal(first.status, 'done')
     assert.match(first.evidence, /^solana:/)
     assert.equal(w.paid[0]!.amount, '30')
-    assert.equal(w.paid[0]!.memo, w.stranger.offer)
     const second = await call('pay', { offer: w.stranger.offer, role: 'student', amount: '30' })
     assert.equal(second.status, 'needs approval')
     assert.match(second.why, /beyond a limit/)
     assert.equal(w.paid.length, 1, 'nothing paid past the limit')
     const missing = await call('pay', { offer: `${w.stranger.address}/offer/nothing`, role: 'student', amount: '5' })
     assert.equal(missing.refused, `there is no post at ${w.stranger.address}/offer/nothing`)
+  })
+
+  test('pay by an entry with no limit: no money cap, done without asking', async () => {
+    const request = `${b64u.encode(Buffer.from(JSON.stringify({ name: 'Another AI app' })))}.x`
+    const back = new URL(await w.person.connect(w.mcp.origin, request, { profiles: ['tutoring/student'], can: ['pay'] }))
+    const connection = back.searchParams.get('connection')!
+    for (const amount of ['1000', '1000000']) {
+      const out = await w.person.handle(w.mcp.origin, connection, 'pay', { offer: w.stranger.offer, market: 'tutoring', role: 'student', amount })
+      assert.equal(out.status, 'done', JSON.stringify(out))
+    }
+    assert.deepEqual(w.paid.slice(-2).map((p) => p.amount), ['1000', '1000000'])
   })
 
   test('a review naming the payment: done', async () => {
