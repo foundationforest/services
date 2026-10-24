@@ -1,0 +1,6 @@
+{
+  "about": "The chains whose evidence this index reads, each by its CAIP-2 id, with the reader that reads it and the setting that holds its RPC's URL. A review's evidence names its chain, <chain>:<id>; on a chain not listed here it is shown unchecked. The reader solana reads the standard's escrow and direct payments, and matches the two profiles' solana pay addresses. Today one chain: the one the standard's escrow runs on, through RPC_URL. This is this index's opinion: another index reads other chains.",
+  "chains": {
+    "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": { "reader": "solana", "rpc": "RPC_URL" }
+  }
+}

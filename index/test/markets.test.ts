@@ -1,20 +1,27 @@
 // The markets: read from the pinned checkout; a post that does not fit its market is kept, not
-// listed, and says why; the escrow this index reads is the one the pinned standard records.
+// listed, and says why; the escrow this index reads is the one the pinned standard records, on a
+// chain config/chains.json lists.
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
-import { ESCROW_PROGRAM } from '../src/chain.ts'
+import { ESCROW_CHAIN, ESCROW_PROGRAM } from '../src/chain.ts'
+import { ROOT } from '../src/index.ts'
+import { loadLists } from '../src/lists.ts'
 import { loadMarkets } from '../src/markets.ts'
 import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { at, index, issuer, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
 
-test('the escrow this index reads is the program the pinned standard records', () => {
-  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { escrow: { programId: string } }
+test('the escrow this index reads is the program the pinned standard records, on a chain this index reads', () => {
+  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string } }
   assert.equal(ESCROW_PROGRAM, record.escrow.programId)
+  // Solana's devnet in CAIP-2 form, as the markets manual writes it.
+  assert.equal(record.cluster, 'devnet')
+  assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
+  assert.deepEqual(loadLists(ROOT).chains.get(ESCROW_CHAIN), { reader: 'solana', rpc: 'RPC_URL' })
 })
 
 test("each market's check reads its file: fields, choices, lists, roles", () => {
@@ -39,7 +46,7 @@ test("each market's check reads its file: fields, choices, lists, roles", () => 
   assert.match(m.checkReview('tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', offer: 'maths' })!, /offer is not a post's address/)
 })
 
-const by = issuer()
+const by = verifier()
 let host: Awaited<ReturnType<typeof startHost>>
 let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
@@ -60,7 +67,7 @@ test('a post that does not fit its market is kept, not listed, and its profile p
     at(tutor, 'offer/odd', { description: 'Maths.', colour: 'red' }),
     at(student, 'offer/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, issuer: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
   await i.pass()
 
   const m = (await twin<MarketPage>(i, '/markets/tutoring.json')).body

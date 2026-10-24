@@ -1,5 +1,6 @@
-// The one chain reader: the standard's escrow, its program at ESCROW_PROGRAM, as the standard at the
-// pin records the program it deployed (a test checks they match).
+// The escrow's reader: the standard's escrow, its program at ESCROW_PROGRAM on ESCROW_CHAIN, as the
+// standard at the pin records the program it deployed (a test checks they match), read through the
+// RPC config/chains.json names for that chain, when it lists it.
 // Every transaction that named the program, oldest first, from a cursor (the newest signature read):
 // a failed one is skipped, and only events the program itself wrote are read (the escrow client's
 // `decodeEvents`). Each escrow's receipt is made from them, and each move is kept with who made it
@@ -12,6 +13,8 @@ import { type Rpc, transaction } from './rpc.ts'
 import type { Store } from './store.ts'
 
 export const ESCROW_PROGRAM = 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8'
+/** The chain the standard deployed it to, in CAIP-2 form: Solana's devnet. */
+export const ESCROW_CHAIN = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 const PROGRAM = new PublicKey(ESCROW_PROGRAM)
 const PAGE = 1000
 

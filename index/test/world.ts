@@ -1,5 +1,5 @@
-// A small Forest on loopback for the tests: the standard's reference host, a stand-in issuer whose
-// key the test's lists name, people with seeds, profiles with real note proofs made from the note
+// A small Forest on loopback for the tests: the standard's reference host, a stand-in verifier whose
+// key the test's lists name, people with seeds, profiles with real stamp proofs made from the stamp
 // circuit's committed proving files, records signed with their main keys, a stand-in Solana RPC,
 // and the index itself, with lists written to a directory of its own.
 
@@ -9,16 +9,18 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { mainKey, type MainKey, payKey, seedScalar } from '@foundationforest/keys'
-import { issuerKeyOf, noteNumberOf, proofBytes, proveNote, signNote, toBytes32 } from '@foundationforest/note'
+import { mainKey, type MainKey, type PayAddresses, payAddresses, seedScalar } from '@foundationforest/keys'
 import { b64u, hex, hostsRecord, ownerRecord, publish, type SignedRecord } from '@foundationforest/records'
 import { Host } from '@foundationforest/records/host'
+import { proofBytes, proveStamp, signStamp, stampNumberOf, toBytes32, verifierKeyOf } from '@foundationforest/stamp'
 
+import { ESCROW_CHAIN } from '../src/chain.ts'
 import { type Index, ROOT, startIndex } from '../src/index.ts'
 
 export const STANDARD = join(ROOT, '../standard')
 export const MARKETS = join(ROOT, '../markets')
-export const NOTE_FILES = { wasm: join(STANDARD, 'proofs/note/circuit/setup/note.wasm'), zkey: join(STANDARD, 'proofs/note/circuit/setup/note.zkey') }
+// The stamp circuit's files keep the names they were set up with.
+export const STAMP_FILES = { wasm: join(STANDARD, 'proofs/stamp/circuit/setup/note.wasm'), zkey: join(STANDARD, 'proofs/stamp/circuit/setup/note.zkey') }
 export const REPUTATION_FILES = {
   wasm: join(STANDARD, 'proofs/reputation/circuit/setup/reputation.wasm'),
   zkey: join(STANDARD, 'proofs/reputation/circuit/setup/reputation.zkey'),
@@ -26,34 +28,37 @@ export const REPUTATION_FILES = {
 
 export const tmp = (name: string) => mkdtempSync(join(tmpdir(), `index-${name}-`))
 
-/** An issuer: a name and a key that signs notes. */
-export type Issuer = { name: string; privateKey: Uint8Array; key: string }
-export function issuer(name = 'issuer.test.example'): Issuer {
+/** The chain the tests' evidence names: the one the escrow runs on, which the test lists read. */
+export const CHAIN = ESCROW_CHAIN
+
+/** A verifier: a name and a key that signs stamps. */
+export type Verifier = { name: string; privateKey: Uint8Array; key: string }
+export function verifier(name = 'verifier.test.example'): Verifier {
   const privateKey = new Uint8Array(randomBytes(32))
-  return { name, privateKey, key: issuerKeyOf(privateKey) }
+  return { name, privateKey, key: verifierKeyOf(privateKey) }
 }
 
-/** A note proof as a profile record carries it. */
-export type ProofField = { circuit: 'note'; issuer: string; issuerName: string; label: string; stamp: string; proof: string }
+/** A stamp proof as a profile record carries it. */
+export type ProofField = { circuit: 'stamp'; verifier: string; verifierName: string; label: string; tag: string; proof: string }
 
-/** A person's profile under one label: its main key, its pay address, and note proofs from each issuer given. */
-export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: string; proofs: ProofField[] }
+/** A person's profile under one label: its main key, its pay addresses, and stamp proofs from each verifier given. */
+export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: PayAddresses; proofs: ProofField[] }
 
-/** A note from `by` for this seed, and its proof for `label` (about a second each). */
-export async function noteProof(seed: Uint8Array<ArrayBuffer>, label: string, by: Issuer): Promise<ProofField> {
+/** A stamp from `by` for this seed, and its proof for `label` (about a second each). */
+export async function stampProof(seed: Uint8Array<ArrayBuffer>, label: string, by: Verifier): Promise<ProofField> {
   const scalar = await seedScalar(seed)
-  const note = signNote(by.privateKey, { noteNumber: noteNumberOf(scalar, by.name), attributes: 1n })
-  const r = await proveNote({ seedScalar: scalar, issuerName: by.name, note, label, artifacts: NOTE_FILES })
-  return { circuit: 'note', issuer: r.issuer, issuerName: by.name, label, stamp: hex.encode(toBytes32(r.stamp)), proof: b64u.encode(proofBytes(r.proof)) }
+  const stamp = signStamp(by.privateKey, { stampNumber: stampNumberOf(scalar, by.name), facts: 1n })
+  const r = await proveStamp({ seedScalar: scalar, verifierName: by.name, stamp, label, artifacts: STAMP_FILES })
+  return { circuit: 'stamp', verifier: r.verifier, verifierName: by.name, label, tag: hex.encode(toBytes32(r.tag)), proof: b64u.encode(proofBytes(r.proof)) }
 }
 
-export async function profile(label: string, by: Issuer[] = [], seed = new Uint8Array(randomBytes(32))): Promise<Profile> {
+export async function profile(label: string, by: Verifier[] = [], seed = new Uint8Array(randomBytes(32))): Promise<Profile> {
   const proofs = []
-  for (const i of by) proofs.push(await noteProof(seed, label, i))
-  return { seed, label, key: await mainKey(seed, label), pay: (await payKey(seed, label)).address, proofs }
+  for (const v of by) proofs.push(await stampProof(seed, label, v))
+  return { seed, label, key: await mainKey(seed, label), pay: await payAddresses(seed, label), proofs }
 }
 
-/** The profile record a profile shows: its market, role, pay address and proofs, and anything more. */
+/** The profile record a profile shows: its market, role, pay addresses and proofs, and anything more. */
 export function profileBody(p: Profile, more: { [key: string]: unknown } = {}): { [key: string]: unknown } {
   const [market, role] = p.label.split('/')
   return { market, role, pay: p.pay, proofs: p.proofs, ...more }
@@ -104,7 +109,7 @@ export async function startRpc(answer: (method: string, params: unknown[]) => un
 
 export type Lists = {
   hosts: string[]
-  keys?: Array<{ key: string; issuer: string; label: string; points: number; until?: string }>
+  keys?: Array<{ key: string; verifier: string; label: string; points: number; until?: string }>
   indexes?: Array<{ index: string; name: string }>
   roots?: number
   scoring?: { [key: string]: unknown }
@@ -117,7 +122,7 @@ export function listsDir(l: Lists): string {
   mkdirSync(join(dir, 'config'))
   const about = 'For a test.'
   writeFileSync(join(dir, 'lists/hosts.json'), JSON.stringify({ about, hosts: l.hosts }))
-  writeFileSync(join(dir, 'lists/issuers.json'), JSON.stringify({ about, keys: l.keys ?? [] }))
+  writeFileSync(join(dir, 'lists/verifiers.json'), JSON.stringify({ about, keys: l.keys ?? [] }))
   writeFileSync(join(dir, 'lists/indexes.json'), JSON.stringify({ about, roots: l.roots ?? 10, indexes: l.indexes ?? [{ index: 'self', name: 'Test index' }] }))
   writeFileSync(
     join(dir, 'config/scoring.json'),
@@ -127,6 +132,7 @@ export function listsDir(l: Lists): string {
     join(dir, 'config/currencies.json'),
     JSON.stringify({ about, mints: { J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa: { name: 'test dollar', code: 'USD', decimals: 6 } } }),
   )
+  writeFileSync(join(dir, 'config/chains.json'), JSON.stringify({ about, chains: { [CHAIN]: { reader: 'solana', rpc: 'RPC_URL' } } }))
   return dir
 }
 
@@ -135,7 +141,7 @@ export const DOLLAR = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
 /** The index over these lists; with no readSeconds, no pass of its own: the test asks for each. */
 export async function index(l: Lists, rpcUrl: string, options: { port?: number | null; dataDir?: string; readSeconds?: number } = {}): Promise<Index & { dataDir: string }> {
   const dataDir = options.dataDir ?? tmp('data')
-  const i = await startIndex({ dataDir, publicUrl: 'https://index.test.example', rpcUrl, readSeconds: options.readSeconds ?? 0, listsRoot: listsDir(l), marketsDir: MARKETS, port: options.port ?? null, hostname: '127.0.0.1', log: () => {} })
+  const i = await startIndex({ dataDir, publicUrl: 'https://index.test.example', settings: { RPC_URL: rpcUrl }, readSeconds: options.readSeconds ?? 0, listsRoot: listsDir(l), marketsDir: MARKETS, port: options.port ?? null, hostname: '127.0.0.1', log: () => {} })
   return Object.assign(i, { dataDir })
 }
 

@@ -6,12 +6,12 @@
 // same records sees:
 //
 //   profile      the current profile record, if it has one
-//   offer/<id>   a post; a delete, or a post no key lets count any more, keeps its last body here
-//                for good, marked deleted, so a review that names it still finds it
+//   offer/<id>   a post; a delete keeps its last body here for good, marked deleted, so a review
+//                that names it still finds it
 //   review/<id>  a review; a delete removes it
 //
-// A private record is left alone at any path: only its readers open it. Other paths are not this
-// index's.
+// A private record is left alone at any path: it is encrypted to its readers. Other paths are not
+// this index's.
 
 import { type Checked, encodeRecord, isPrivate, MAX_FUTURE_MS, readPage, type SignedRecord, viewProfile } from '@foundationforest/records'
 
@@ -77,8 +77,8 @@ const live = (c: Checked | undefined) => (c && c.record.body !== null && !isPriv
 export function viewAgain(store: Store, profiles: Iterable<string>, now: number): void {
   const { db } = store
   const recordsOf = db.prepare('select id, text from records where profile = ?')
-  const upsertProfile = db.prepare(`insert into profiles (address, body, market, role, pay, time) values (?, ?, ?, ?, ?, ?)
-    on conflict (address) do update set body = excluded.body, market = excluded.market, role = excluded.role, pay = excluded.pay, time = excluded.time`)
+  const upsertProfile = db.prepare(`insert into profiles (address, body, market, role, time) values (?, ?, ?, ?, ?)
+    on conflict (address) do update set body = excluded.body, market = excluded.market, role = excluded.role, time = excluded.time`)
   const dropProfile = db.prepare('delete from profiles where address = ?')
   const postsOf = db.prepare('select address from posts where profile = ? and deleted = 0')
   const upsertPost = db.prepare(`insert into posts (address, profile, body, time, deleted) values (?, ?, ?, ?, 0)
@@ -102,7 +102,7 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
       const body = top?.record.body as { [key: string]: unknown } | undefined
       if (top && body) {
         const text = (v: unknown) => (typeof v === 'string' ? v : null)
-        upsertProfile.run(profile, JSON.stringify(body), text(body.market), text(body.role), text(body.pay), top.record.time)
+        upsertProfile.run(profile, JSON.stringify(body), text(body.market), text(body.role), top.record.time)
       } else {
         dropProfile.run(profile)
       }

@@ -22,6 +22,8 @@ export type Market = {
   description: string
   roles: Role[]
   offer: { [name: string]: Field }
+  /** The offer fields a post's preview shows first, in order; served as the file holds it. */
+  preview?: string[]
   review: { shared: string[]; fields?: { [name: string]: Field } }
   payment: { [name: string]: unknown }
   howDealsGo: string

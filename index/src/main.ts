@@ -24,7 +24,8 @@ function seconds(name: string, fallback: string): number {
 
 const dataDir = setting('DATA_DIR')
 const publicUrl = setting('PUBLIC_URL', 'https://index.forest.foundation')
-const rpcUrl = setting('RPC_URL', 'https://api.devnet.solana.com')
+// The settings config/chains.json names for its chains' RPCs; RPC_URL has a default.
+const settings = { ...env, RPC_URL: setting('RPC_URL', 'https://api.devnet.solana.com') }
 if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an origin, such as https://index.forest.foundation')
 
 if (process.argv[2] === 'rebuild') {
@@ -32,14 +33,14 @@ if (process.argv[2] === 'rebuild') {
   const store = openStore(dataDir)
   store.drop()
   store.close()
-  const index = await startIndex({ dataDir, publicUrl, rpcUrl, readSeconds: 0, port: null })
+  const index = await startIndex({ dataDir, publicUrl, settings, readSeconds: 0, port: null })
   await index.pass()
   await index.close()
   console.log('rebuilt: read the hosts and the chain again, and ranked')
 } else {
   const port = Number(setting('PORT', '8080'))
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('PORT is a port number')
-  const index = await startIndex({ dataDir, publicUrl, rpcUrl, readSeconds: seconds('READ_SECONDS', '30'), port })
+  const index = await startIndex({ dataDir, publicUrl, settings, readSeconds: seconds('READ_SECONDS', '30'), port })
   console.log(`index ${index.address}, listening on ${port}`)
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => void index.close().then(() => process.exit(0)))
 }

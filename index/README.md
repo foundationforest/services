@@ -2,19 +2,20 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The foundation's index reads the hosts it lists, keeps the profiles whose note proof checks for an
-issuer key it lists, ranks them, and serves what it finds as pages and as JSON.
+The foundation's index ranks what is public: it reads the hosts it lists and the chains it lists,
+keeps the profiles whose stamp proof checks for a verifier key it lists, rates them, and serves what
+it finds as pages and as JSON. Every index ranks what is public, each by its own opinions.
+
+This is one copy, run by the Open Forest Foundation at https://index.forest.foundation. Anyone can
+run another index; the main way is this code with lists of its own. It holds opinions and nothing of
+the person's: which hosts and chains to read, which verifier keys count and how much, and every
+number it ranks by are files in this directory, and everything it ranks is public on a host or on
+chain. It holds no key of anyone's but its own.
 
 Of Forest's four jobs (who you are, that you are real, what you have done, your money), it does one:
 what you have done. It reads the offers and reviews profiles publish and the receipts the escrow
 leaves on chain, and gives each profile one rating. The other three it only reads: a profile record
-on a host, a note proof an issuer made possible, a payment.
-
-This is one copy, run by the Forest Foundation at https://index.forest.foundation. Anyone can run
-another index; the main way is this code with lists of its own. It holds opinions and nothing of the
-person's: which hosts to read, which issuer keys count and how much, and every number it ranks by are
-files in this directory, and everything it ranks is public on a host or on chain. It holds no key of
-anyone's but its own.
+on a host, a stamp proof a verifier made possible, a payment.
 
 For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
@@ -44,39 +45,40 @@ passes it serves the pages. Three verbs, each one place in the code:
   Each profile is then viewed with the standard's `viewProfile`, which decides which record counts at
   each path, so this index sees what any other reader of the same records sees. It reads three paths:
   - `profile`: the profile record;
-  - `offer/<id>`: a post. A delete, or a post no key lets count any more, keeps its last body here for
-    good, marked deleted, so a review that names it still finds it. A post deleted before this index
-    first read it keeps the last version a host still serves;
+  - `offer/<id>`: a post. A delete keeps its last body here for good, marked deleted, so a review
+    that names it still finds it. A post deleted before this index first read it keeps the last
+    version a host still serves;
   - `review/<id>`: a review. A delete removes it.
 
-  A private record is left alone at any path: only its readers open it. A record dated ahead of the
+  A private record, encrypted to its readers, is left alone at any path. A record dated ahead of the
   clock waits until it is due.
 - **The markets** (`src/markets.ts`): `directory.json`, each market's file and `build/types.json`,
   from the checkout of [foundationforest/markets](https://github.com/foundationforest/markets) that
   `../standard.sh` makes at the commit in `../MARKETS`. Never over the network at run time.
 - **The escrow's receipts** (`src/chain.ts`): every transaction that named the standard's escrow
-  program, oldest first, from a cursor (the newest signature read), through `RPC_URL` at `finalized`.
-  A failed transaction is skipped, and only events the program itself wrote are read (the escrow
-  client's `decodeEvents`). From them it keeps each escrow's receipt (payer, recipient, mint, amount,
-  arbiter, schedule, when it was funded and stopped, how and when it ended, what each side got) and
-  every move, with who made it and when. An event the client cannot read was written by an earlier
-  version of the program, whose escrows this version refuses: it is skipped.
+  program, oldest first, from a cursor (the newest signature read), at `finalized`, through the RPC
+  `config/chains.json` names for the chain the escrow runs on. A failed transaction is skipped, and
+  only events the program itself wrote are read (the escrow client's `decodeEvents`). From them it
+  keeps each escrow's receipt (payer, recipient, mint, amount, arbiter, schedule, when it was funded
+  and stopped, how and when it ended, what each side got) and every move, with who made it and when.
+  An event the client cannot read was written by an earlier version of the program, whose escrows
+  this version refuses: it is skipped.
 - **The payments reviews name** (`src/evidence/payment.ts`): one `getTransaction` each (Evidence,
   below). Nothing else is read from any chain.
 
 ### Which profiles count
 
 A profile counts when its profile record names a market in the directory and one of that market's
-roles, and carries a note proof that:
+roles, and carries a stamp proof that:
 
-1. is a note proof's shape (the standard's `noteCheck`, for this profile's address);
-2. names an issuer key `lists/issuers.json` lists;
-3. carries the issuer name that list gives the key;
+1. is a stamp proof's shape (the standard's `stampCheck`, for this profile's address);
+2. names a verifier key `lists/verifiers.json` lists;
+3. carries the verifier name that list gives the key;
 4. is for the label `<market>/<role>`, the profile record's own;
-5. checks (the note client's `verifyNote`), checked once and its answer kept;
+5. checks (the stamp client's `checkStamp`), checked once and its answer kept;
 6. was first seen by this index no later than the key's `until`, when the list gives one.
 
-This index keeps, for each proof that checks, its stamp and when it first saw it. A proof carries no
+This index keeps, for each proof that checks, its tag and when it first saw it. A proof carries no
 date, and a record's time is its signer's word, so when this index first saw it is the only time it
 can trust for a key that leaked: proofs first seen after the leak do not count, and those seen before
 still do.
@@ -117,24 +119,39 @@ A review that does not count says why, on both profiles' pages.
 
 ### Evidence
 
-A counted review's `evidence` is checked against the two profiles' `pay` addresses. Each kind is one
-file in `src/evidence/`, with its name, how it recognizes a value, and its check:
+A counted review's `evidence` is `<chain>:<id>`, the chain in CAIP-2 form, as the markets manual
+writes it; the chain holds a colon itself, so the text splits at its last colon. `config/chains.json`
+names each chain this index reads, with its reader and the setting that holds its RPC's URL. A
+reader reads one type of chain and matches the two profiles' pay addresses of that type, from each
+profile record's `pay`, `{ solana, evm }`. This index has one reader, `solana`, which matches the
+`solana` pay addresses and has two kinds of evidence, each one file in `src/evidence/`, with its
+name, how it recognizes an id, and its check:
 
-- **`escrow`**, an address of 32 bytes: the escrow's receipt, from what this index read on chain. It
-  counts when the receipt's payer and recipient are the two profiles' `pay` addresses, in either
-  order, its mint is one `config/currencies.json` lists, and it ended with money to the recipient.
-- **`payment`**, a transaction's signature of 64 bytes: one `getTransaction` at `finalized`, its
-  answer kept once the chain has one. It counts when the transaction succeeded and, in a mint
-  `config/currencies.json` lists, one of the two `pay` addresses lost and the other gained, in either
-  direction: a buyer reviewing the seller they paid, or the seller reviewing them. An app writes the
-  review seconds after paying, before the chain holds the payment as final, so a signature the RPC
-  holds no transaction for is asked again on each pass until the review's record is a day old; only
-  then is it kept as invalid.
+- **`escrow`**, an address of 32 bytes, on the chain the escrow runs on: the escrow's receipt, from
+  what this index read on chain. It counts when the receipt's payer and recipient are the two
+  profiles' pay addresses, in either order, its mint is one `config/currencies.json` lists, and it
+  ended with money to the recipient.
+- **`payment`**, a transaction's signature of 64 bytes: one `getTransaction` at `finalized`, through
+  the chain's RPC, its answer kept once the chain has one. It counts when the transaction succeeded
+  and, in a mint `config/currencies.json` lists, one of the two pay addresses lost and the other
+  gained, in either direction: a buyer reviewing the seller they paid, or the seller reviewing them.
+  An app writes the review seconds after paying, before the chain holds the payment as final, so a
+  signature the RPC holds no transaction for is asked again on each pass until the review's record
+  is a day old; only then is it kept as invalid.
 
-A review is shown `with` a payment, `without` (it names none), or `invalid` (it names one that does
-not count, or a value no kind recognizes, or one of the two profiles has no `pay` address). When the
-RPC does not answer, or does not hold the payment yet, the review counts as without for that pass
-and is checked again on the next. A review that does not count is not checked, and shows without.
+A review is shown:
+
+- `with` a payment: its evidence counts;
+- `without`: it names none;
+- `unchecked`: it names a chain `config/chains.json` does not list, so this index cannot tell
+  whether it holds; `evidenceWhy` names the chain, and it weighs as a review without;
+- `invalid`: it names no chain (the text before its last colon is no CAIP-2 chain), an id its
+  chain's reader does not recognize, or one that does not count, or one of the two profiles has no
+  pay address of the chain's type.
+
+When the RPC does not answer, or does not hold the payment yet, the review counts as without for that
+pass and is checked again on the next. A review that does not count is not checked, and shows
+without.
 
 ### How it scores
 
@@ -184,7 +201,7 @@ standard's records' `canonical`) of
 
 signed over its UTF-8 bytes with EdDSA-Poseidon (the standard's keys' `signBytes`), and served in the
 profile's `rating` as `statement` and `signature` (64 bytes, base64url). Anyone checks it with the
-standard's keys' `verifyBytes`, against the index's address. The statement begins with `{`, never
+standard's keys' `checkBytes`, against the index's address. The statement begins with `{`, never
 with the `0xff` every record, message, pull, blob request and root begins with, so the signature is
 never one of those. `time` is when the rating first had that value: a rating that does not move keeps
 its statement and signature.
@@ -196,20 +213,20 @@ After each pass, the index builds its ratings into a tree in the standard's form
 so a person proves a rating from their own profiles on their device, naming none of them
 (`src/tree.ts`):
 
-- **one leaf per stamp** of a counted profile with a rating: the stamp its counted note proof shows;
+- **one leaf per tag** of a counted profile with a rating: the tag its counted stamp proof shows;
   the scope of its label; its rating times ten, rounded (9.2 is 92); and how many counted reviews it
-  received. Two counted proofs with one stamp, two keys of one issuer, give one leaf;
-- **in order of stamp,** which says nothing about whose leaf is whose;
+  received. Two counted proofs with one tag, two keys of one verifier, give one leaf;
+- **in order of tag,** which says nothing about whose leaf is whose;
 - **its root** is the reputation client's `buildTree`, signed with the index's key over the client's
   `signedBytes(root, time)`, the time in ms. A new root only when the leaves change. Every root is
   kept.
 
 `/v1/reputation` serves `{ index, root, time, signature, leaves }` (`leaves`: how many), and
-`/v1/reputation/leaves` serves `{ root, leaves: [{ stamp, scope, score, count }] }`, stamp and scope
-in hex, both 404 while there is no tree.
+`/v1/reputation/leaves` serves `{ root, leaves: [{ tag, scope, score, count }] }`, tag and scope in
+hex, both 404 while there is no tree.
 
 A reputation proof on a profile record is shown when its index is one `lists/indexes.json` names, its
-root is one of that index's newest `roots`, and it checks (the client's `verifyReputation`, its answer
+root is one of that index's newest `roots`, and it checks (the client's `checkReputation`, its answer
 kept). This index knows only its own roots, so a proof against another index's tree shows nothing.
 
 ### What it serves
@@ -222,7 +239,8 @@ HTML runs no script; each page carries schema.org JSON-LD. GET and HEAD only, op
 - **`/`**, twin `/index.json`: `{ "index", "markets": [{ "name", "description", "roles" }], "lists" }`:
   this index's address, every market in the directory with its role words, and its lists.
 - **`/markets/<name>`**: `{ "index", "market", "posts": { "<role>": [<result>] } }`: the market's file
-  as the directory holds it, and its listed posts by role, by the shrunk rating, then the newest.
+  verbatim as the directory holds it, its `preview` among the rest, and its listed posts by role, by
+  the shrunk rating, then the newest.
 - **`/search`**: `{ "index", "total", "results": [<result>] }`, with any of `q` (words in the post,
   each a word's start, all of them), `market`, `role`, `near=lat,lon` with `km` (a post with a place
   within `km` kilometres, 10 unless given), `minRating`, `minReviews`, `limit` (20 unless given, at
@@ -230,15 +248,16 @@ HTML runs no script; each page carries schema.org JSON-LD. GET and HEAD only, op
 - **`/profiles/<address>`**: `{ "index", "address", "profile", "checks", "rating", "posts", "reviews":
   { "received", "given" }, "proofs" }`:
   - `profile`: the profile record's body;
-  - `checks`: `[{ "issuer", "key", "label" }]`;
+  - `checks`: `[{ "verifier", "key", "label" }]`;
   - `rating`: `{ "value", "reviews", "withPayment", "statement", "signature" }`, with no statement or
     signature for a profile that does not count;
   - `posts`: `[{ "address", "body", "listed", "why" }]`, `why` only when not listed;
-  - each review: `{ "reviewer", "address", "body", "counted", "why", "evidence", "weight" }`, `why`
-    only when it does not count;
+  - each review: `{ "reviewer", "address", "body", "counted", "why", "evidence", "evidenceWhy",
+    "weight" }`, `why` only when it does not count, `evidenceWhy` only when its evidence is
+    `unchecked`;
   - `proofs`: each proof on the profile record with its `result`.
-- **`/deals/<escrow>`**: the receipt, every move, the profiles whose `pay` address is either side, and
-  the reviews that name it.
+- **`/deals/<escrow>`**: the receipt, every move, the profiles whose `solana` pay address is either
+  side, and the reviews that name it as `<the escrow's chain>:<escrow>`.
 - `/v1/reputation`, `/v1/reputation/leaves`, `/sitemap.xml` (the home page, each market, each counted
   profile, each deal with a receipt), `/robots.txt`, and `/llms.txt` and `/skill.md`, files in this
   directory written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place.
@@ -249,16 +268,17 @@ A `<result>` is `{ "profile", "market", "role", "post": { "address", "body" }, "
 
 The index's key is made from its seed (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes
 at its first start, kept in `DATA_DIR/index-seed.json`, readable by its own user only, never printed
-or logged. The key is `hkdf(seed, "index/key")`, the standard's keys' `hkdf`, made into a Baby Jubjub
-key as the standard's keys make one from random bytes (`accessKey`). Its address is the index's name:
-every page shows it, and it signs the ratings and the roots.
+or logged. The key is `hkdf(seed, "index/key")`, the standard's keys' `hkdf`, made into a service
+key, the standard's keys' `serviceKey`. Its address is the index's name: every page shows it, and it
+signs the ratings and the roots.
 
 ### Where it keeps things
 
 One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of posts; `src/store.ts`),
 a fresh schema, beside the seed. Everything in it comes back from the hosts and the chain, but two
-tables: when each note proof was first seen, and every root it signed. `npm run rebuild` drops every
-other table, reads the hosts and the chain again, ranks, and exits; the seed is never touched.
+tables: when each stamp proof was first seen, and every root it signed. `npm run rebuild` drops every
+other table, makes each again with the schema of this code, reads the hosts and the chain again,
+ranks, and exits; the seed is never touched.
 
 ### Settings
 
@@ -266,12 +286,13 @@ other table, reads the hosts and the chain again, ranks, and exits; the seed is 
 |---|---|---|
 | `DATA_DIR` | required | The seed and the one file, on a volume |
 | `PUBLIC_URL` | `https://index.forest.foundation` | Where the pages are published: an origin |
-| `RPC_URL` | `https://api.devnet.solana.com` | The Solana RPC it reads the escrow and payments through: Solana's public endpoint for the chain the escrow runs on today |
+| `RPC_URL` | `https://api.devnet.solana.com` | The RPC of each chain `config/chains.json` reads through `RPC_URL`: Solana's public endpoint for the chain the escrow runs on today |
 | `READ_SECONDS` | `30` | Seconds between the end of one pass and the start of the next |
 | `PORT` | `8080` | |
 
-A setting that cannot be read, a list or a config file that does not read, or a seed file that is not
-a seed, stops the start, naming what is wrong.
+A chain in `config/chains.json` names the setting that holds its RPC's URL; today each names
+`RPC_URL`. A setting that cannot be read, a chain whose setting is not set, a list or a config file
+that does not read, or a seed file that is not a seed, stops the start, naming what is wrong.
 
 ### Run it
 
@@ -286,11 +307,11 @@ npm test                                                   # everything below, o
 DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 ```
 
-The tests run the standard's reference host on loopback, make real note proofs from the note
-circuit's committed proving files for a stand-in issuer key their lists name, and answer the chain
+The tests run the standard's reference host on loopback, make real stamp proofs from the stamp
+circuit's committed proving files for a stand-in verifier key their lists name, and answer the chain
 from a stand-in RPC:
 
-- **filter:** a note proof that checks for a listed key counts; a changed byte, an unlisted key, a
+- **filter:** a stamp proof that checks for a listed key counts; a changed byte, an unlisted key, a
   wrong name, a label other than the profile's market and role, a market not in the directory, a role
   not the market's, and a proof first seen after its key's `until` do not;
 - **rank,** on fixtures: a ring of ten ends with at most ten points; a writer of a hundred reviews
@@ -302,18 +323,22 @@ from a stand-in RPC:
 - **evidence:** escrows and payments in either direction count, and the wrong parties, a refund, an
   open escrow, another mint, a failed transaction do not; a payment the chain answers for is asked
   once, one not on chain yet is asked again on the next pass and counts once it is, and one still
-  missing a day after its review is invalid for good;
+  missing a day after its review is invalid for good; evidence on a chain the lists do not name is
+  unchecked, says which chain, and is never asked for, and evidence with no chain is invalid; a
+  deal's page finds the reviews that name it on its chain;
 - **markets:** the checks of fields, choices, lists and roles; a post that does not fit is kept and
-  not listed; the escrow program is the one the pinned standard records;
+  not listed; the escrow program is the one the pinned standard records, on a chain
+  `config/chains.json` lists;
 - **tree:** the served leaves rebuild the served root, whose signature checks; a reputation proof made
   from the leaves shows on its profile, and not with a byte changed, on another profile, or against a
   root past the newest;
-- **pages:** the four answers' shapes; every page drawn from its twin's object; every JSON-LD block
-  passes schema.org's vocabulary (`test/schemaorg/`); search's filters and sort; every URL in
-  `llms.txt` and `skill.md` answers;
+- **pages:** the four answers' shapes; a market's file served verbatim, its `preview` with it; every
+  page drawn from its twin's object; every JSON-LD block passes schema.org's vocabulary
+  (`test/schemaorg/`); search's filters and sort; every URL in `llms.txt` and `skill.md` answers;
 - **seed:** made at the first start, readable by its user only, the same key after;
-- **end to end,** over HTTP: two profiles with real note proofs, an offer, a review, the index reading
-  on its own schedule and serving the rating; then a rebuild gives the same.
+- **end to end,** over HTTP: two profiles with real stamp proofs, an offer, a review, the index
+  reading on its own schedule and serving the rating; then a rebuild gives the same; and a rebuild of
+  a file from before tags were called tags keeps when each proof was first seen.
 
 ## How we run it
 
@@ -323,11 +348,14 @@ Another index holds its own.
 - **Its name:** the address of its key, made at its first start (Its key), on `/` and every page.
 - **Which hosts it reads** (`lists/hosts.json`): https://host.forest.foundation, in full. It reads no
   other host, follows no profile's hosts record, and takes no hosts record sent to it.
-- **Which issuer keys count, and how much** (`lists/issuers.json`): each key by its address, with the
-  issuer name its proofs must carry, the name of its check, its points, and an optional `until`.
-  Today it lists the two keys the issuer `issuer.forest.foundation` publishes at its `GET /`, neither
-  with an `until`: its face key `MC8L1NFD…`, the face check at 1 point, and its ID key `HfYyeaez…`,
-  the ID check at 2.
+- **Which verifier keys count, and how much** (`lists/verifiers.json`): each key by its address, with
+  the verifier name its stamp proofs must carry, the name of its check, its points, and an optional
+  `until`. Today it lists the two keys of the foundation's verifier, under its name
+  `verifier.forest.foundation`, neither with an `until`: its face key `MC8L1NFD…`, the face check at
+  1 point, and its ID key `HfYyeaez…`, the ID check at 2.
+- **Which chains it reads** (`config/chains.json`): one, Solana's devnet
+  (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`), the chain the escrow runs on today, with the reader
+  `solana`, through `RPC_URL`.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **How it weighs** (`config/scoring.json`): `damping` 0.85, `tolerance` 10⁻⁹, `maxRounds` 100,
   `shrink` (m) 0.5, about the weight of three brand-new reviewers, and the evidence weights `escrow`
@@ -357,12 +385,12 @@ Another index holds its own.
 
 ## Promises
 
-- **It holds no key of anyone's but its own,** and no account: everything it serves is open to anyone,
-  with no login.
+- **It holds no key of anyone's but its own,** and has no sign-up: everything it serves is open to
+  anyone, with no login.
 - **It keeps no network address** and logs no request but a failed one's path and error.
-- **What it reads and how it weighs are files:** the hosts and the keys in `lists/`, its numbers and
-  its money in `config/`, its markets the directory at `MARKETS`. A change to one is a change anyone
-  sees.
+- **What it reads and how it weighs are files:** the hosts and the keys in `lists/`, its chains, its
+  numbers and its money in `config/`, its markets the directory at `MARKETS`. A change to one is a
+  change anyone sees.
 - **One rating, and no other score.** Every counted profile's rating is signed with the key whose
   address is on every page, and so is every root.
 - **Every page is drawn from its JSON twin,** so a person and a machine read the same facts.
@@ -371,10 +399,12 @@ Another index holds its own.
 
 ## Limits
 
-- **It trusts the issuers it lists** to sign notes only for the people they say. It cannot tell.
+- **It trusts the verifiers it lists** to sign stamps only for the people they say. It cannot tell.
 - **It trusts its RPC** for receipts and payments; no second source checks it.
 - **The public RPC answers a few requests at a time.** The first read of the escrow's history takes
   many passes there; a keyed RPC in `RPC_URL` reads it at once.
+- **It reads evidence only on the chains it lists.** A review backed on another chain is shown
+  unchecked, and weighs as a review without.
 - **A payment not final within a day of its review counts for nothing, for good.** The day runs from
   the review's record time, which its writer signs.
 - **A writer's reviews each count in the review count.** One review counts per writer, subject and
@@ -399,21 +429,21 @@ Another index holds its own.
 
 ## Who decides what
 
-- **The standard:** the record, the note proof, the tree and the reputation proof, the escrow and
+- **The standard:** the record, the stamp proof, the tree and the reputation proof, the escrow and
   its receipt.
-- **The markets directory, at `MARKETS`:** the markets, their roles, and what a post and a review
-  hold.
-- **This index, by its own choice:** which hosts it reads; which issuer keys count, under which
-  names, with how many points, and until when; which money counts; every number in
-  `config/scoring.json`; which indexes' reputation proofs it shows, and how many roots back; what its
-  pages show.
+- **The markets directory, at `MARKETS`:** the markets, their roles, what a post and a review hold,
+  and how evidence is written.
+- **This index, by its own choice:** which hosts it reads; which verifier keys count, under which
+  names, with how many points, and until when; which chains it reads evidence on, and through which
+  RPC; which money counts; every number in `config/scoring.json`; which indexes' reputation proofs it
+  shows, and how many roots back; what its pages show.
 - **A person, through their app:** where their records live, which proofs their profile record shows,
   and which index they read.
 
 ## FAQ
 
 **Why does a profile with two counted keys start with the larger of their points, not their sum?**
-Two keys of one issuer, a face check and an ID check, are one person checked twice. Their sum would
+Two keys of one verifier, a face check and an ID check, are one person checked twice. Their sum would
 make the same person count for more by being checked again.
 
 **Why does a rebuild keep when each proof was first seen, and the roots?**
@@ -431,7 +461,7 @@ age would end it while it is still true. Keeping the root while nothing moves me
 only when something it could say changed.
 
 **Why serve every leaf, and no URL for one leaf and its path?**
-A path asked for by stamp tells the index, and whoever logs its requests, which profile is the
+A path asked for by tag tells the index, and whoever logs its requests, which profile is the
 caller's. With every leaf, an app finds its person's own on the device.
 
 **Why is a deleted post still here?**

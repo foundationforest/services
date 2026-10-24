@@ -1,4 +1,4 @@
-// The index's opinions: the three lists in lists/ and the two files in config/, read once at start.
+// The index's opinions: the three lists in lists/ and the three files in config/, read once at start.
 // Each is a file anyone can read; README.md, How we run it, says what each holds today. A file that
 // does not read stops the start, naming the file and what is wrong.
 
@@ -7,12 +7,12 @@ import { join } from 'node:path'
 
 import { normalizeOrigin, publicKeyFromAddress } from '@foundationforest/records'
 
-/** One issuer key this index counts. */
+/** One verifier key this index counts. */
 export type ListedKey = {
   /** The key's address. */
   key: string
-  /** The issuer name its note proofs must carry. */
-  issuer: string
+  /** The verifier name its stamp proofs must carry. */
+  verifier: string
   /** What the pages call its check, such as "face check". */
   label: string
   /** The points a profile it checked starts the ranking with. */
@@ -37,6 +37,12 @@ export type Scoring = {
 /** A mint this index takes as money. */
 export type Currency = { name: string; code: string; decimals: number }
 
+/** A chain this index reads evidence on: the reader that reads it, and the setting that holds its RPC's URL. */
+export type Chain = { reader: string; rpc: string }
+
+/** A chain id in CAIP-2 form, such as solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1: a namespace and a reference. */
+export const CHAIN = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/
+
 export type Lists = {
   hosts: string[]
   keys: ListedKey[]
@@ -44,6 +50,8 @@ export type Lists = {
   indexes: ListedIndex[]
   scoring: Scoring
   currencies: Map<string, Currency>
+  /** By CAIP-2 id. */
+  chains: Map<string, Chain>
 }
 
 const isObject = (v: unknown): v is { [key: string]: unknown } => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -71,19 +79,19 @@ export function loadLists(root: string): Lists {
   if (!Array.isArray(hostsFile.hosts)) fail('lists/hosts.json', 'hosts is a list of origins')
   const hosts = hostsFile.hosts.map((h) => (typeof h === 'string' && normalizeOrigin(h) === h ? h : fail('lists/hosts.json', `${JSON.stringify(h)} is not an origin`)))
 
-  const issuersFile = read(root, 'lists/issuers.json')
-  if (!Array.isArray(issuersFile.keys)) fail('lists/issuers.json', 'keys is a list')
-  const keys = issuersFile.keys.map((k): ListedKey => {
+  const verifiersFile = read(root, 'lists/verifiers.json')
+  if (!Array.isArray(verifiersFile.keys)) fail('lists/verifiers.json', 'keys is a list')
+  const keys = verifiersFile.keys.map((k): ListedKey => {
     const where = `key ${JSON.stringify(isObject(k) ? k.key : k)}`
-    if (!isObject(k) || !publicKeyFromAddress(k.key)) fail('lists/issuers.json', `${where}: key is an address`)
-    if (typeof k.issuer !== 'string' || !k.issuer) fail('lists/issuers.json', `${where}: issuer is a name`)
-    if (typeof k.label !== 'string' || !k.label) fail('lists/issuers.json', `${where}: label is text`)
-    if (!isNumber(k.points) || k.points < 0) fail('lists/issuers.json', `${where}: points is a number from 0`)
+    if (!isObject(k) || !publicKeyFromAddress(k.key)) fail('lists/verifiers.json', `${where}: key is an address`)
+    if (typeof k.verifier !== 'string' || !k.verifier) fail('lists/verifiers.json', `${where}: verifier is a name`)
+    if (typeof k.label !== 'string' || !k.label) fail('lists/verifiers.json', `${where}: label is text`)
+    if (!isNumber(k.points) || k.points < 0) fail('lists/verifiers.json', `${where}: points is a number from 0`)
     const until = k.until === undefined ? undefined : Date.parse(k.until as string)
-    if (k.until !== undefined && (typeof k.until !== 'string' || !Number.isFinite(until))) fail('lists/issuers.json', `${where}: until is a time, such as 2026-11-01T00:00:00Z`)
-    return { key: k.key as string, issuer: k.issuer, label: k.label, points: k.points, ...(until !== undefined && { until }) }
+    if (k.until !== undefined && (typeof k.until !== 'string' || !Number.isFinite(until))) fail('lists/verifiers.json', `${where}: until is a time, such as 2026-11-01T00:00:00Z`)
+    return { key: k.key as string, verifier: k.verifier, label: k.label, points: k.points, ...(until !== undefined && { until }) }
   })
-  if (new Set(keys.map((k) => k.key)).size !== keys.length) fail('lists/issuers.json', 'a key is listed twice')
+  if (new Set(keys.map((k) => k.key)).size !== keys.length) fail('lists/verifiers.json', 'a key is listed twice')
 
   const indexesFile = read(root, 'lists/indexes.json')
   if (!Number.isSafeInteger(indexesFile.roots) || (indexesFile.roots as number) < 1) fail('lists/indexes.json', 'roots is a whole number from 1')
@@ -114,6 +122,17 @@ export function loadLists(root: string): Lists {
     currencies.set(mint, { name: c.name, code: c.code, decimals: c.decimals as number })
   }
 
+  const chainsFile = read(root, 'config/chains.json')
+  if (!isObject(chainsFile.chains)) fail('config/chains.json', 'chains is an object')
+  const chains = new Map<string, Chain>()
+  for (const [chain, c] of Object.entries(chainsFile.chains)) {
+    if (!CHAIN.test(chain)) fail('config/chains.json', `${chain} is not a CAIP-2 chain id, such as solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`)
+    if (!isObject(c) || typeof c.reader !== 'string' || typeof c.rpc !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(c.rpc)) {
+      fail('config/chains.json', `${chain}: { reader, rpc: the name of the setting that holds its RPC's URL }`)
+    }
+    chains.set(chain, { reader: c.reader, rpc: c.rpc })
+  }
+
   return {
     hosts,
     keys,
@@ -121,5 +140,6 @@ export function loadLists(root: string): Lists {
     indexes,
     scoring: { damping, tolerance, maxRounds: maxRounds as number, shrink, evidence: evidence as Scoring['evidence'] },
     currencies,
+    chains,
   }
 }
