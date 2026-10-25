@@ -1,7 +1,8 @@
 // Evidence, against a stand-in RPC: `<chain>:<id>` on the chain the lists read; escrow receipts
 // read from the program's own events, and direct payments read from one getTransaction each, kept
-// once the chain has an answer, and asked again while it has none until the review is a day old. On
-// a chain the lists do not name it is unchecked, and with no chain invalid.
+// once the chain has an answer, and asked again while it has none until a day after this index
+// first saw the review, by its own clock. One payment or escrow backs one review, the earliest it
+// backs. On a chain the lists do not name it is unchecked, and with no chain invalid.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
@@ -11,6 +12,7 @@ import { discriminator } from '@foundationforest/escrow-client'
 import { base58, ownerRecord } from '@foundationforest/records'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
+import { USED } from '../src/evidence/index.ts'
 import type { DealPage } from '../src/pages/deal.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, CHAIN, DOLLAR, index, verifier, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
@@ -54,7 +56,8 @@ after(() => host.close())
 test('evidence: an escrow or a payment between the two profiles, in either direction, in a listed mint, counts', async () => {
   const tutor = await profile('tutoring/tutor', [by])
   const student = await profile('tutoring/student', [by])
-  for (const p of [tutor, student]) await publishProfile(host.url, p)
+  const stranger = await profile('tutoring/student', [by])
+  for (const p of [tutor, student, stranger]) await publishProfile(host.url, p)
   const [T, S] = [tutor.pay.solana, student.pay.solana]
   const other = address()
   const otherMint = address()
@@ -106,7 +109,7 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
   // One review for each, by the student of the tutor, each about its own post so each counts.
   const on = (id: string) => `${CHAIN}:${id}`
   const mainnet = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
-  const reviews: Array<[string, string | undefined, 'with' | 'invalid' | 'without' | 'unchecked']> = [
+  const reviews: Array<[string, string | undefined, 'with' | 'invalid' | 'without' | 'unchecked', string?]> = [
     ['escrow-paid', on(escrows.paid), 'with'],
     ['escrow-refunded', on(escrows.refunded), 'invalid'],
     ['escrow-others', on(escrows.others), 'invalid'],
@@ -129,39 +132,66 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
     ['other-chain-escrow', `${mainnet}:${escrows.paid}`, 'unchecked'],
     ['evm', `eip155:1:0x${'ab'.repeat(32)}`, 'unchecked'],
     ['none', undefined, 'without'],
+    // A payment that backed an earlier review backs no other.
+    ['payment-reused', on(payments.paid!.signature), 'invalid', USED],
   ]
   await post(
     host.url,
     reviews.map(([id, evidence]) => at(student, `review/${id}`, { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/${id}`, ...(evidence && { evidence }) })),
   )
-  // A review written two days ago, naming a payment the chain still does not hold.
+  // A review written two days ago, which this index first sees now, naming a payment the chain
+  // still does not hold: its day runs from now.
   const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000
   await post(host.url, [ownerRecord(student.key, 'review/payment-old', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/old`, evidence: on(payments.old!.signature) }, twoDaysAgo)])
-  reviews.push(['payment-old', payments.old!.signature, 'invalid'])
+  reviews.push(['payment-old', payments.old!.signature, 'without'])
+  // The tutor names the escrow the student's review already used; and a stranger names the
+  // student's payment in a review dated before it, which takes nothing from the student's.
+  await post(host.url, [at(tutor, 'review/escrow-paid', { subject: student.key.address, score: '9', evidence: on(escrows.paid) })])
+  await post(host.url, [ownerRecord(stranger.key, 'review/grief', { subject: tutor.key.address, score: '1', evidence: on(payments.paid!.signature) }, Date.now() - 60_000)])
 
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  let clock = Date.now()
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url, { now: () => clock })
+  const page = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body
   await i.pass()
-  const early = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
-  const status = (id: string) => early.reviews.received.find((x) => x.address.endsWith(`/review/${id}`))!.evidence
-  assert.deepEqual([status('payment-late'), status('payment-missing'), status('payment-old')], ['without', 'without', 'invalid'])
+  const statusOf = (o: ProfilePage, id: string) => o.reviews.received.find((x) => x.address.endsWith(`/review/${id}`))!.evidence
+  const early = await page(tutor)
+  assert.deepEqual([statusOf(early, 'payment-late'), statusOf(early, 'payment-missing'), statusOf(early, 'payment-old')], ['without', 'without', 'without'])
   final = true
+  clock = Date.now()
   await i.pass()
-  const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
-  for (const [id, , want] of reviews) {
+  const t = await page(tutor)
+  for (const [id, , want, why] of reviews) {
     const r = t.reviews.received.find((x) => x.address.endsWith(`/review/${id}`))!
     assert.equal(r.counted, true, id)
     assert.equal(r.evidence, want, id)
-    // Only an unchecked one says why: the chain this index does not read.
-    assert.equal(r.evidenceWhy, want === 'unchecked' ? `this index reads no evidence on ${id === 'evm' ? 'eip155:1' : mainnet}` : undefined, id)
+    // An unchecked one says why, the chain this index does not read; a reused one, that it is used.
+    assert.equal(r.evidenceWhy, want === 'unchecked' ? `this index reads no evidence on ${id === 'evm' ? 'eip155:1' : mainnet}` : why, id)
   }
-  assert.equal(t.rating.withPayment, 5)
-  assert.equal(t.rating.reviews, reviews.length)
+  assert.equal(t.reviews.received.filter((r) => r.evidence === 'with').length, 5)
+  const grief = t.reviews.received.find((r) => r.address === `${stranger.key.address}/review/grief`)!
+  assert.deepEqual([grief.counted, grief.evidence, grief.evidenceWhy], [true, 'invalid', undefined])
+  const s = (await page(student)).reviews.received.find((r) => r.address === `${tutor.key.address}/review/escrow-paid`)!
+  assert.deepEqual([s.counted, s.evidence, s.evidenceWhy], [true, 'invalid', USED])
+  // The review count is the writers': the student and the stranger.
+  assert.equal(t.rating.reviews, 2)
 
-  // Over two passes: a payment the chain answered for, and one past its day, asked once; one not on
-  // chain yet, on each pass. Each escrow transaction once.
+  // Over two passes: a payment the chain answered for asked once for each pair of pay addresses (the
+  // stranger's review asks for the paid one for its own); one not on chain yet, on each pass. Each
+  // escrow transaction once.
   const asks = (p: { signature: string }) => asked.filter((s) => s === p.signature).length
-  for (const [name, p] of Object.entries(payments)) assert.equal(asks(p), name === 'missing' || name === 'late' ? 2 : 1, name)
+  for (const [name, p] of Object.entries(payments)) assert.equal(asks(p), ['missing', 'late', 'old', 'paid'].includes(name) ? 2 : 1, name)
   for (const h of history) assert.equal(asked.filter((s) => s === h.signature).length, 1)
+
+  // The day runs from when this index first saw each review, by its clock: 23 hours on, the two
+  // missing payments are still asked for; 25 hours on, they are invalid, and never asked again.
+  const first = Date.now()
+  for (const [hours, want, times] of [[23, 'without', 3], [25, 'invalid', 4], [26, 'invalid', 4]] as const) {
+    clock = first + hours * 60 * 60 * 1000
+    await i.pass()
+    const o = await page(tutor)
+    for (const id of ['payment-missing', 'payment-old']) assert.equal(statusOf(o, id), want, `${id}, ${hours} hours on`)
+    for (const name of ['missing', 'old']) assert.equal(asks(payments[name]!), times, `${name}, ${hours} hours on`)
+  }
 
   // The deal's page: its receipt and its moves.
   const d = (await twin<DealPage>(i, `/deals/${escrows.reverse}.json`)).body
@@ -172,7 +202,8 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
   assert.deepEqual(d.profiles, { payer: [tutor.key.address], recipient: [student.key.address] })
   // The reviews that name it, as <chain>:<escrow>; one naming it on another chain does not.
   assert.deepEqual(d.reviews.map((r) => r.address), [`${student.key.address}/review/escrow-reverse`])
-  assert.deepEqual((await twin<DealPage>(i, `/deals/${escrows.paid}.json`)).body.reviews.map((r) => r.address.split('/review/')[1]), ['escrow-paid'])
+  // Both reviews that name the paid escrow, the newest first: the tutor's, which it no longer backs, and the student's.
+  assert.deepEqual((await twin<DealPage>(i, `/deals/${escrows.paid}.json`)).body.reviews.map((r) => r.address), [`${tutor.key.address}/review/escrow-paid`, `${student.key.address}/review/escrow-paid`])
   assert.equal(d.money!.code, 'USD')
   assert.equal((await twin(i, `/deals/${address()}.json`)).status, 404)
 

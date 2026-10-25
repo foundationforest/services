@@ -1,8 +1,13 @@
 {
-  "about": "Every number this index ranks by, explained in README.md, How it scores. Changing one changes every rating. This is this index's opinion: another index ranks by other numbers. evidence holds one weight per kind of evidence a review can carry (escrow, payment), and none for a review with no evidence or evidence that does not count.",
-  "damping": 0.85,
-  "tolerance": 1e-9,
-  "maxRounds": 100,
-  "shrink": 0.5,
+  "about": "Every number this index ranks by, explained in README.md, How it scores. Changing one changes every rating. This is this index's opinion: another index ranks by other numbers. evidence holds one factor per kind of evidence a review can carry (escrow, payment), and none for a review with no evidence or evidence that does not count.",
+  "mu0": 7.5,
+  "marketPrior": 5,
+  "calibrationPrior": 3,
+  "beta": 0.5,
+  "neutral": 5,
+  "alpha": 0.6,
+  "sink": 2,
+  "rounds": 10,
+  "ratingPrior": 0.5,
   "evidence": { "escrow": 1, "payment": 1, "none": 1 }
 }

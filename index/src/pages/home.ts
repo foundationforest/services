@@ -9,7 +9,7 @@ export type Home = {
     hosts: string[]
     keys: Array<{ key: string; verifier: string; label: string; points: number; until?: string }>
     indexes: Array<{ index: string; name: string }>
-    roots: number
+    maxAgeDays: number
   }
 }
 
@@ -22,7 +22,7 @@ export const home: Page<Home> = {
         hosts: lists.hosts,
         keys: lists.keys.map((k) => ({ key: k.key, verifier: k.verifier, label: k.label, points: k.points, ...(k.until !== undefined && { until: new Date(k.until).toISOString() }) })),
         indexes: lists.indexes.map((i) => ({ index: i.index === 'self' ? self : i.index, name: i.name })),
-        roots: lists.roots,
+        maxAgeDays: lists.maxAgeDays,
       },
     }
   },
@@ -33,7 +33,7 @@ ${o.markets.map((m) => html`<section><h2><a href="${urls(base).market(m.name)}">
 <h2>What this index reads</h2>
 <p>Hosts, each read in full: ${o.lists.hosts.join(', ') || 'none'}.</p>
 <p>Verifier keys it counts: ${o.lists.keys.length ? o.lists.keys.map((k) => html`<br><code>${k.key}</code>, the ${k.label} of ${k.verifier}, ${k.points} points${k.until ? `, until ${k.until}` : ''}`) : 'none yet, so no profile counts here yet.'}</p>
-<p>Reputation proofs it shows: ${o.lists.indexes.map((i) => html`${i.name} (<code>${i.index}</code>)`)}, against one of an index's newest ${o.lists.roots} roots.</p>`
+<p>Reputation proofs it shows: ${o.lists.indexes.map((i) => html`${i.name} (<code>${i.index}</code>)`)}, against an index's newest root or one it signed in the last ${o.lists.maxAgeDays} days.</p>`
   },
   ld(o, base, url) {
     return {

@@ -5,30 +5,34 @@ import type { Check } from '../filter.ts'
 import { parse, type Store } from '../store.ts'
 import { html, type Raw, short, urls } from './template.ts'
 
-export type Rating = { value: number | null; reviews: number; withPayment: number; statement?: string; signature?: string }
+/** `backing` is the trust behind the rating; `reviews` is how many writers reviewed the profile. */
+export type Rating = { value: number | null; backing: number; reviews: number; statement?: string; signature?: string }
 export type Post = { address: string; body: { [key: string]: unknown } }
 export type Result = { profile: string; market: string; role: string; post: Post; rating: Rating; checks: Check[] }
 
-type RatingColumns = { value: number | null; reviews: number | null; with_payment: number | null; statement: string | null; signature: string | null }
+type RatingColumns = { value: number | null; backing: number | null; reviews: number | null; statement: string | null; signature: string | null }
 
 export function ratingOf(held: Partial<RatingColumns> | undefined): Rating {
-  if (!held || held.reviews === null || held.reviews === undefined) return { value: null, reviews: 0, withPayment: 0 }
-  return { value: held.value ?? null, reviews: held.reviews, withPayment: held.with_payment ?? 0, statement: held.statement!, signature: held.signature! }
+  if (!held || held.reviews === null || held.reviews === undefined) return { value: null, backing: 0, reviews: 0 }
+  return { value: held.value ?? null, backing: held.backing ?? 0, reviews: held.reviews, statement: held.statement!, signature: held.signature! }
 }
 
 /** A profile's rating, as the ratings table holds it; a profile that does not count has none. */
 export function ratingFor(store: Store, address: string): Rating {
-  return ratingOf(store.db.prepare('select value, reviews, with_payment, statement, signature from ratings where profile = ?').get(address) as RatingColumns | undefined)
+  return ratingOf(store.db.prepare('select value, backing, reviews, statement, signature from ratings where profile = ?').get(address) as RatingColumns | undefined)
 }
 
-/** The listed posts, with their profiles, sorted by the shrunk rating, then the newest post. `where` narrows them. */
+/**
+ * The listed posts, with their profiles, sorted by rating, then the newest post; a profile with no
+ * rating after every rated one, since the rating is the one score there is. `where` narrows them.
+ */
 export function results(store: Store, where = '', params: Array<string | number> = []): Array<Result & { time: number }> {
   const found = store.db
     .prepare(
-      `select p.address, p.profile, p.body, p.time, f.market, f.role, f.checks, r.value, r.reviews, r.with_payment, r.statement, r.signature
+      `select p.address, p.profile, p.body, p.time, f.market, f.role, f.checks, r.value, r.backing, r.reviews, r.statement, r.signature
        from posts p join profiles f on f.address = p.profile left join ratings r on r.profile = p.profile
        where p.listed = 1 ${where}
-       order by r.shrunk is null, r.shrunk desc, p.time desc, p.address`,
+       order by r.value is null, r.value desc, p.time desc, p.address`,
     )
     .all(...params) as Array<RatingColumns & { address: string; profile: string; body: string; time: number; market: string; role: string; checks: string }>
   return found.map((r) => ({
@@ -42,12 +46,10 @@ export function results(store: Store, where = '', params: Array<string | number>
   }))
 }
 
-/** "9.2 from 14 reviews, 11 with a payment", or "No reviews yet". */
+/** "9.2 · backing 1.4 (14 reviews)", or "No reviews yet". */
 export function ratingText(r: Rating): string {
-  if (!r.reviews) return 'No reviews yet'
-  const of = `${r.reviews} review${r.reviews === 1 ? '' : 's'}`
-  const paid = `${r.withPayment} with a payment`
-  return r.value === null ? `${of}, ${paid}` : `${r.value.toFixed(1)} from ${of}, ${paid}`
+  if (r.value === null) return 'No reviews yet'
+  return `${r.value.toFixed(1)} · backing ${r.backing.toFixed(1)} (${r.reviews} review${r.reviews === 1 ? '' : 's'})`
 }
 
 export function checksText(checks: Check[]): string {
@@ -82,7 +84,7 @@ export function postFields(body: { [key: string]: unknown }): Raw {
 
 /** One result, as a market page and the search page draw it. */
 export function resultHtml(r: Result, base: string): Raw {
-  return html`<section><p><a href="${urls(base).profile(r.profile)}">${r.market} ${r.role} ${short(r.profile)}</a>. ${ratingText(r.rating)}. ${checksText(r.checks)}.</p>${postFields(r.post.body)}</section>`
+  return html`<section><p><a href="${urls(base).profile(r.profile)}">${r.market} ${r.role} ${short(r.profile)}</a>. ${ratingText(r.rating)} · ${checksText(r.checks)}.</p>${postFields(r.post.body)}</section>`
 }
 
 /** A Person node for a profile, by its page. */

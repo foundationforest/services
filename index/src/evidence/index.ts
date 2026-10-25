@@ -3,8 +3,8 @@
 // config/chains.json names each chain this index reads, and its reader. A reader reads one type of
 // chain, matches the two profiles' pay addresses of that type, and has its kinds of evidence: each
 // kind is one file here, exporting its name, how it recognizes an id, and check().
-// config/scoring.json holds one weight per kind, and `none`. A new kind is one file, one line in
-// its reader, and one weight.
+// config/scoring.json holds one factor per kind, and `none`. A new kind is one file, one line in
+// its reader, and one factor.
 
 import type { PayType } from '@foundationforest/keys'
 
@@ -14,8 +14,8 @@ import type { Store } from '../store.ts'
 import * as escrow from './escrow.ts'
 import * as payment from './payment.ts'
 
-/** The two profiles' pay addresses of the reader's type, the reviewer's first, and when the review's record was written (ms). */
-export type Between = { a: string; b: string; written: number }
+/** The two profiles' pay addresses of the reader's type, the reviewer's first, and when this index first saw the review name this evidence (ms). */
+export type Between = { a: string; b: string; seen: number }
 /** What a check reads: the chain the evidence names, and that chain's RPC. */
 export type Context = { store: Store; chain: string; rpc: Rpc; mints: Map<string, Currency>; now: number }
 
@@ -39,8 +39,12 @@ export const KINDS: Kind[] = Object.values(READERS).flatMap((r) => r.kinds)
 /**
  * with: it counts, under `kind`; without: the review carries none; unchecked: it names a chain this
  * index does not read; invalid: it carries one that does not count, or one that names no chain.
+ * `why` says which chain, for unchecked, and that another review used it, for invalid (pass.ts).
  */
-export type Evidence = { status: 'with' | 'without' | 'unchecked' | 'invalid'; kind: string | null }
+export type Evidence = { status: 'with' | 'without' | 'unchecked' | 'invalid'; kind: string | null; why?: string }
+
+/** Why evidence that backs an earlier review counts for nothing on a later one (pass.ts). */
+export const USED = 'already used'
 
 /** An evidence value's chain and id, split at its last colon; null when the text before it is no CAIP-2 chain. */
 export function split(value: unknown): { chain: string; id: string } | null {
@@ -51,7 +55,7 @@ export function split(value: unknown): { chain: string; id: string } | null {
 }
 
 /** Why a review's evidence is unchecked, from the value it carries. */
-export const uncheckedWhy = (value: unknown) => `this index reads no evidence on ${split(value)?.chain}`
+const uncheckedWhy = (value: unknown) => `this index reads no evidence on ${split(value)?.chain}`
 
 /** A pay address of one type, from a profile record's `pay`; a type it does not hold is null. */
 const payOf = (pay: unknown, type: PayType): string | null => {
@@ -66,20 +70,20 @@ const payOf = (pay: unknown, type: PayType): string | null => {
  */
 export async function evidenceOf(
   value: unknown,
-  pays: { a: unknown; b: unknown; written: number },
+  pays: { a: unknown; b: unknown; seen: number },
   ctx: { store: Store; chains: Map<string, { reader: Reader; rpc: Rpc }>; mints: Map<string, Currency>; now: number },
 ): Promise<Evidence> {
   if (value === undefined) return { status: 'without', kind: null }
   const at = split(value)
   if (!at) return { status: 'invalid', kind: null }
   const chain = ctx.chains.get(at.chain)
-  if (!chain) return { status: 'unchecked', kind: null }
+  if (!chain) return { status: 'unchecked', kind: null, why: uncheckedWhy(value) }
   const kind = chain.reader.kinds.find((k) => k.recognizes(at.id))
   const a = payOf(pays.a, chain.reader.pay)
   const b = payOf(pays.b, chain.reader.pay)
   if (!kind || !a || !b) return { status: 'invalid', kind: kind?.name ?? null }
   try {
-    const ok = await kind.check(at.id, { a, b, written: pays.written }, { store: ctx.store, chain: at.chain, rpc: chain.rpc, mints: ctx.mints, now: ctx.now })
+    const ok = await kind.check(at.id, { a, b, seen: pays.seen }, { store: ctx.store, chain: at.chain, rpc: chain.rpc, mints: ctx.mints, now: ctx.now })
     return { status: ok ? 'with' : 'invalid', kind: kind.name }
   } catch {
     return { status: 'without', kind: null }

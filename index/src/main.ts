@@ -1,9 +1,9 @@
 // The index, from its settings (README.md, Settings):
 //
 //   node src/main.ts            reads every READ_SECONDS and serves the pages
-//   node src/main.ts rebuild    drops everything but when each proof was first seen and the signed
-//                               roots (store.ts), reads the hosts and the chain again, ranks, and
-//                               exits; the next start serves what it read
+//   node src/main.ts rebuild    drops everything but when each proof and each review was first seen
+//                               and the signed roots (store.ts), reads the hosts and the chain
+//                               again, ranks, and exits; the next start serves what it read
 
 import { mkdirSync } from 'node:fs'
 

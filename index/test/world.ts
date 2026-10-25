@@ -4,7 +4,7 @@
 // and the index itself, with lists written to a directory of its own.
 
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -111,9 +111,12 @@ export type Lists = {
   hosts: string[]
   keys?: Array<{ key: string; verifier: string; label: string; points: number; until?: string }>
   indexes?: Array<{ index: string; name: string }>
-  roots?: number
+  maxAgeDays?: number
   scoring?: { [key: string]: unknown }
 }
+
+/** The index's own numbers, config/scoring.json. */
+export const SCORING = JSON.parse(readFileSync(join(ROOT, 'config/scoring.json'), 'utf8'))
 
 /** A directory with lists/ and config/, the index's own but for what is given. */
 export function listsDir(l: Lists): string {
@@ -123,11 +126,8 @@ export function listsDir(l: Lists): string {
   const about = 'For a test.'
   writeFileSync(join(dir, 'lists/hosts.json'), JSON.stringify({ about, hosts: l.hosts }))
   writeFileSync(join(dir, 'lists/verifiers.json'), JSON.stringify({ about, keys: l.keys ?? [] }))
-  writeFileSync(join(dir, 'lists/indexes.json'), JSON.stringify({ about, roots: l.roots ?? 10, indexes: l.indexes ?? [{ index: 'self', name: 'Test index' }] }))
-  writeFileSync(
-    join(dir, 'config/scoring.json'),
-    JSON.stringify({ about, damping: 0.85, tolerance: 1e-9, maxRounds: 100, shrink: 0.5, evidence: { escrow: 1, payment: 1, none: 1 }, ...l.scoring }),
-  )
+  writeFileSync(join(dir, 'lists/indexes.json'), JSON.stringify({ about, maxAgeDays: l.maxAgeDays ?? 30, indexes: l.indexes ?? [{ index: 'self', name: 'Test index' }] }))
+  writeFileSync(join(dir, 'config/scoring.json'), JSON.stringify({ ...SCORING, about, ...l.scoring }))
   writeFileSync(
     join(dir, 'config/currencies.json'),
     JSON.stringify({ about, mints: { J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa: { name: 'test dollar', code: 'USD', decimals: 6 } } }),
@@ -138,10 +138,25 @@ export function listsDir(l: Lists): string {
 
 export const DOLLAR = 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'
 
-/** The index over these lists; with no readSeconds, no pass of its own: the test asks for each. */
-export async function index(l: Lists, rpcUrl: string, options: { port?: number | null; dataDir?: string; readSeconds?: number } = {}): Promise<Index & { dataDir: string }> {
+/** The index over these lists; with no readSeconds, no pass of its own: the test asks for each. `now`, a clock of the test's, Date.now unless given. */
+export async function index(
+  l: Lists,
+  rpcUrl: string,
+  options: { port?: number | null; dataDir?: string; readSeconds?: number; now?: () => number } = {},
+): Promise<Index & { dataDir: string }> {
   const dataDir = options.dataDir ?? tmp('data')
-  const i = await startIndex({ dataDir, publicUrl: 'https://index.test.example', settings: { RPC_URL: rpcUrl }, readSeconds: options.readSeconds ?? 0, listsRoot: listsDir(l), marketsDir: MARKETS, port: options.port ?? null, hostname: '127.0.0.1', log: () => {} })
+  const i = await startIndex({
+    dataDir,
+    publicUrl: 'https://index.test.example',
+    settings: { RPC_URL: rpcUrl },
+    readSeconds: options.readSeconds ?? 0,
+    listsRoot: listsDir(l),
+    marketsDir: MARKETS,
+    port: options.port ?? null,
+    hostname: '127.0.0.1',
+    log: () => {},
+    ...(options.now && { now: options.now }),
+  })
   return Object.assign(i, { dataDir })
 }
 
