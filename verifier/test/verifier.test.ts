@@ -459,7 +459,7 @@ test('with no price, the ID check is not offered', async () => {
   }
 })
 
-test('the file keeps which session gave which stamp number and which check it was, and each person as a fingerprint: nothing else', async () => {
+test('the file keeps which session gave which stamp number and which check it was, the stamp it signed, and each person as a fingerprint: nothing else', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await stampNumber(), await stampNumber()]
@@ -475,11 +475,74 @@ test('the file keeps which session gave which stamp number and which check it wa
     assertKept(h.dbPath, {
       sessions: [[a.sessionId, n1, 'face'], [b.sessionId, n2, 'face'], [id, n1, 'id']],
       fingerprints: [[1, n1]],
-      never: ['Lovelace', 'lovelace', '1990-04-01', a.stamp.embedding, res.body.stamp.embedding, a.stamp.signature.s, a.stamp.facts],
+      // The stamp's facts and signature are kept; the fields beside it are not.
+      never: ['Lovelace', 'lovelace', '1990-04-01', 'test-model', a.stamp.embedding, res.body.stamp.embedding],
     })
     assert.equal(readFileSync(h.dbPath).includes(Buffer.from(faceOf('alice'))), false, 'no embedding')
   } finally {
     await h.verifier.close().catch(() => {})
+  }
+})
+
+/** A stamp's own fields: what the verifier keeps of it, and hands back. */
+const own = ({ stampNumber, facts, verifier, signature }: Record<string, unknown>) => ({ stampNumber, facts, verifier, signature })
+const stampBack = (h: Harness, n: bigint) => h.post('/stamp', { stampNumber: n.toString() })
+
+test('a stamp asked back by its stamp number is the one signed, its own fields only, for both keys, and after its session is deleted in Didit', async () => {
+  const dbPath = join(tempDir(), 'verifier.sqlite')
+  let h = await start({ dbPath })
+  try {
+    const [n, m] = [await stampNumber(), await stampNumber()]
+    const signedFace = await face(h, 'alice', n)
+    const id = await h.idSession(passedId('alice', doc('Lovelace')))
+    const signedId = await idStamp(h, id, n)
+    assert.equal(signedId.status, 200)
+    const back = await stampBack(h, n)
+    assert.equal(back.status, 200)
+    assert.deepEqual(back.body, { face: own(signedFace.stamp), id: own(signedId.body.stamp) }, 'each the one signed, without the fields beside it')
+    for (const stamp of [back.body.face, back.body.id]) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier'])
+    const published = await about(h)
+    assert.deepEqual([back.body.face.verifier, back.body.id.verifier], [published.face.key, published.id.key])
+    assert.ok(stampSigned(stampFromJson(back.body.face)) && stampSigned(stampFromJson(back.body.id)))
+
+    // A number with a face stamp only: no ID stamp.
+    const bob = await face(h, 'bob', m)
+    assert.deepEqual((await stampBack(h, m)).body, { face: own(bob.stamp), id: null })
+    // A later check for the same number answers its own stamp; the first stays the one handed back.
+    const later = await face(h, 'carol', n)
+    assert.notEqual(later.stamp.facts, signedFace.stamp.facts)
+    assert.deepEqual((await stampBack(h, n)).body, back.body)
+
+    // The sessions deleted in Didit, and the verifier started again on the same file: the stamps still come back.
+    h.later(SIGNED_FOR_MS)
+    await h.verifier.sweep()
+    assert.deepEqual([h.faces.deleted.sort(), h.ids.deleted], [[signedFace.sessionId, bob.sessionId, later.sessionId].sort(), [id]])
+    assert.deepEqual(h.logs, [], 'nothing is logged')
+    await h.verifier.close()
+    h = await start({ dbPath })
+    assert.deepEqual(await stampBack(h, n), back)
+    assert.deepEqual(h.logs, [])
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('a stamp number nothing was signed for is 404, and a body with any other field is refused', async () => {
+  const h = await start()
+  try {
+    assert.deepEqual(await stampBack(h, await stampNumber()), { status: 404, body: { error: 'not_found' } })
+    const bad: [unknown, number, string][] = [
+      ['nope', 400, 'not_json'],
+      [{}, 400, 'expected_exactly_stampNumber'],
+      [{ stampNumber: 5 }, 400, 'expected_exactly_stampNumber'],
+      [{ stampNumber: '5', sessionId: '4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a' }, 400, 'expected_exactly_stampNumber'],
+      [{ stampNumber: '05' }, 400, 'bad_stamp_number'],
+      [{ stampNumber: (2n ** 254n).toString() }, 400, 'bad_stamp_number'],
+    ]
+    for (const [body, status, error] of bad) assert.deepEqual(await h.post('/stamp', body), { status, body: { error } }, error)
+    assert.equal((await fetch(h.verifier.url + '/stamp')).status, 405)
+  } finally {
+    await h.verifier.close()
   }
 })
 

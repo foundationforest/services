@@ -191,6 +191,7 @@ const TABLES = [
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID',
   'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
@@ -198,8 +199,9 @@ const TABLES = [
 export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
 
 /**
- * The file holds five tables and nothing else: each session that gave a stamp as the hash of its id,
- * next to its stamp number and its check; the sessions not yet deleted in Didit, by id; each
+ * The file holds six tables and nothing else: each session that gave a stamp as the hash of its id,
+ * next to its stamp number and its check; one stamp for each stamp number and check those sessions
+ * gave; the sessions not yet deleted in Didit, by id; each
  * fingerprint next to its stamp number; the payments used, each with its reference; the stamp numbers
  * given a gift, each with a hash of its buy. None of `never` (names, birth dates, embeddings,
  * references) is anywhere in its bytes, no other session id is in the clear, and no journal is left
@@ -217,7 +219,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'five tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'six tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -225,6 +227,12 @@ export function assertKept(path: string, expected: Expected): void {
       .sort()
     const want = expected.sessions.map(([id, n, kind]) => `${Buffer.from(sessionHash(id)).toString('hex')} ${n} ${kind}`).sort()
     assert.deepEqual(sessions, want, 'each session that gave a stamp, hashed, next to its stamp number and its check')
+    const stamps = db
+      .prepare('SELECT stamp_number, kind FROM stamps')
+      .all()
+      .map((r) => `${fromBytes32(r.stamp_number as Uint8Array)} ${r.kind}`)
+      .sort()
+    assert.deepEqual(stamps, [...new Set(expected.sessions.map(([, n, kind]) => `${n} ${kind}`))].sort(), 'one stamp for each stamp number and check a session gave')
     const pending = db
       .prepare('SELECT session_id FROM to_delete')
       .all()

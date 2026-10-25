@@ -2,7 +2,7 @@
   "name": "@forest/verifier",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's verifier: it checks with Didit that a person is one real person and signs them the standard's stamp. A face check, free, gives a stamp from its face key; an ID check, offered only with a price, a stamp from its ID key, once per name and birth date. Each stamp's facts are a fixed Poseidon recipe of what the check saw, kept beside it for the person. It keeps which check session gave which stamp number and, for the ID check, a keyed hash of the name and birth date. At a stamp number's first face stamp it signs a sponsor's ticket for the host credits the person's app buys.",
+  "description": "The Forest Foundation's verifier: it checks with Didit that a person is one real person and signs them the standard's stamp. A face check, free, gives a stamp from its face key; an ID check, offered only with a price, a stamp from its ID key, once per name and birth date. Each stamp's facts are a fixed Poseidon recipe of what the check saw, kept beside it for the person. It keeps which check session gave which stamp number, and the stamp it signed, which it hands back by stamp number, and, for the ID check, a keyed hash of the name and birth date. At a stamp number's first face stamp it signs a sponsor's ticket for the host credits the person's app buys.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
