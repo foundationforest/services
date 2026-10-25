@@ -1,11 +1,13 @@
 // The index's one file: `index.sqlite` in DATA_DIR, through Node's own SQLite (`node:sqlite`), with
 // FTS5 for the text of posts. A fresh schema, made when the file is new; no migrations. Everything
-// in it comes back from the hosts and the chain but two tables, which `rebuild` keeps:
+// in it comes back from the hosts and the chain but three tables, which `rebuild` keeps:
 //
-//   seen    when this index first saw each stamp proof, for a key's `until`: no host can give that
-//           back, since a proof carries no date and a record's time is its signer's word
-//   roots   every root this index signed, with its time and signature: the reputation proofs people
-//           show are made against them
+//   seen          when this index first saw each stamp proof, for a key's `until`: no host can give
+//                 that back, since a proof carries no date and a record's time is its signer's word
+//   seen_reviews  when this index first saw each review name its evidence, for the day a payment
+//                 may take to be final, for the same reason
+//   roots         every root this index signed, with its time and signature: the reputation proofs
+//                 people show are made against them
 //
 // `rebuild` (main.ts) drops every other table and reads the hosts and the chain again.
 
@@ -22,6 +24,12 @@ create table if not exists seen (
   tag text not null,
   first integer not null,
   primary key (profile, key)
+);
+create table if not exists seen_reviews (
+  review text not null,
+  evidence text not null,
+  first integer not null,
+  primary key (review, evidence)
 );
 create table if not exists roots (
   root text primary key,
@@ -48,7 +56,7 @@ create table if not exists profiles (
   role text,
   time integer not null,
   counted integer not null default 0,
-  points real not null default 0,
+  trust real not null default 0,
   checks text not null default '[]',
   proofs text not null default '[]',
   tags text not null default '[]'
@@ -75,6 +83,7 @@ create table if not exists reviews (
   counted integer not null default 0,
   why text,
   evidence text not null default 'without',
+  evidence_why text,
   weight real not null default 0
 );
 create index if not exists reviews_subject on reviews (subject);
@@ -92,10 +101,8 @@ create table if not exists chain (one integer primary key check (one = 1), curso
 create table if not exists ratings (
   profile text primary key,
   value real,
+  backing real not null,
   reviews integer not null,
-  with_payment integer not null,
-  weight real not null,
-  shrunk real,
   statement text not null,
   signature text not null
 );
@@ -107,7 +114,7 @@ export type Store = {
   db: DatabaseSync
   /** Runs `fn` in one transaction. */
   tx<T>(fn: () => T): T
-  /** Drops every table but `seen` and `roots`, and makes them again, empty; `seen` takes its column's new name. */
+  /** Drops every table but `seen`, `seen_reviews` and `roots`, and makes them again, empty; `seen` takes its column's new name. */
   drop(): void
   close(): void
 }

@@ -1,12 +1,12 @@
-// `/search`: listed posts, each with its profile's rating and checks, sorted by the shrunk rating
-// (README.md, How it scores), then the newest post.
+// `/search`: listed posts, each with its profile's rating and checks, sorted by rating (README.md,
+// How it scores), then the newest post; a profile with no rating after every rated one.
 //
 //   q            words in the post, each a word's start, all of them (FTS5)
 //   market, role only that market, only posts by that role
 //   near, km     near=lat,lon: a post with a place within km kilometres of it (km is 10 unless given);
 //                a post that names no point is left out
 //   minRating    a profile rated at least this; one with no rating is left out
-//   minReviews   a profile with at least this many counted reviews
+//   minReviews   a profile reviewed by at least this many writers
 //   limit        20 unless given, at most 100; offset skips that many
 
 import { offerOf, type Result, resultHtml, results } from './common.ts'

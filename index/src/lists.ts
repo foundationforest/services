@@ -7,6 +7,8 @@ import { join } from 'node:path'
 
 import { normalizeOrigin, publicKeyFromAddress } from '@foundationforest/records'
 
+import type { Numbers } from './rank.ts'
+
 /** One verifier key this index counts. */
 export type ListedKey = {
   /** The key's address. */
@@ -24,13 +26,9 @@ export type ListedKey = {
 /** An index whose reputation proofs this index shows. `self` is this index's own key. */
 export type ListedIndex = { index: string; name: string }
 
-/** The numbers the ranking takes (config/scoring.json). */
-export type Scoring = {
-  damping: number
-  tolerance: number
-  maxRounds: number
-  shrink: number
-  /** One weight per kind of evidence, and `none`. */
+/** The numbers the ranking takes (config/scoring.json), each explained in README.md, How it scores. */
+export type Scoring = Numbers & {
+  /** One factor per kind of evidence, and `none`. */
   evidence: { [kind: string]: number; none: number }
 }
 
@@ -46,7 +44,8 @@ export const CHAIN = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/
 export type Lists = {
   hosts: string[]
   keys: ListedKey[]
-  roots: number
+  /** How many days old a root, not the newest, may be for a reputation proof to show. */
+  maxAgeDays: number
   indexes: ListedIndex[]
   scoring: Scoring
   currencies: Map<string, Currency>
@@ -94,7 +93,7 @@ export function loadLists(root: string): Lists {
   if (new Set(keys.map((k) => k.key)).size !== keys.length) fail('lists/verifiers.json', 'a key is listed twice')
 
   const indexesFile = read(root, 'lists/indexes.json')
-  if (!Number.isSafeInteger(indexesFile.roots) || (indexesFile.roots as number) < 1) fail('lists/indexes.json', 'roots is a whole number from 1')
+  if (!Number.isSafeInteger(indexesFile.maxAgeDays) || (indexesFile.maxAgeDays as number) < 1) fail('lists/indexes.json', 'maxAgeDays is a whole number of days from 1')
   if (!Array.isArray(indexesFile.indexes)) fail('lists/indexes.json', 'indexes is a list')
   const indexes = indexesFile.indexes.map((i): ListedIndex => {
     if (!isObject(i) || typeof i.name !== 'string' || (i.index !== 'self' && !publicKeyFromAddress(i.index))) fail('lists/indexes.json', `${JSON.stringify(i)}: each is { index: self or an address, name }`)
@@ -102,13 +101,18 @@ export function loadLists(root: string): Lists {
   })
 
   const scoringFile = read(root, 'config/scoring.json')
-  const { damping, tolerance, maxRounds, shrink, evidence } = scoringFile
-  if (!isNumber(damping) || damping < 0 || damping >= 1) fail('config/scoring.json', 'damping is from 0 to below 1')
-  if (!isNumber(tolerance) || tolerance <= 0) fail('config/scoring.json', 'tolerance is above 0')
-  if (!Number.isSafeInteger(maxRounds) || (maxRounds as number) < 1) fail('config/scoring.json', 'maxRounds is a whole number from 1')
-  if (!isNumber(shrink) || shrink < 0) fail('config/scoring.json', 'shrink is a number from 0')
+  const { mu0, marketPrior, calibrationPrior, beta, neutral, alpha, sink, rounds, ratingPrior, evidence } = scoringFile
+  if (!isNumber(mu0) || mu0 < 1 || mu0 > 10) fail('config/scoring.json', 'mu0 is a score from 1 to 10')
+  if (!isNumber(marketPrior) || marketPrior <= 0) fail('config/scoring.json', 'marketPrior is above 0')
+  if (!isNumber(calibrationPrior) || calibrationPrior < 0) fail('config/scoring.json', 'calibrationPrior is a number from 0')
+  if (!isNumber(beta) || beta < 0) fail('config/scoring.json', 'beta is a number from 0')
+  if (!isNumber(neutral) || neutral <= 0 || neutral >= 10) fail('config/scoring.json', 'neutral is above 0 and below 10')
+  if (!isNumber(alpha) || alpha < 0 || alpha >= 1) fail('config/scoring.json', 'alpha is from 0 to below 1')
+  if (!isNumber(sink) || sink < 0) fail('config/scoring.json', 'sink is a number from 0')
+  if (!Number.isSafeInteger(rounds) || (rounds as number) < 1) fail('config/scoring.json', 'rounds is a whole number from 1')
+  if (!isNumber(ratingPrior) || ratingPrior <= 0) fail('config/scoring.json', 'ratingPrior is above 0')
   if (!isObject(evidence) || !Object.values(evidence).every((w) => isNumber(w) && w >= 0) || !isNumber(evidence.none)) {
-    fail('config/scoring.json', 'evidence holds a weight from 0 for each kind, and none')
+    fail('config/scoring.json', 'evidence holds a factor from 0 for each kind, and none')
   }
 
   const currenciesFile = read(root, 'config/currencies.json')
@@ -136,9 +140,9 @@ export function loadLists(root: string): Lists {
   return {
     hosts,
     keys,
-    roots: indexesFile.roots as number,
+    maxAgeDays: indexesFile.maxAgeDays as number,
     indexes,
-    scoring: { damping, tolerance, maxRounds: maxRounds as number, shrink, evidence: evidence as Scoring['evidence'] },
+    scoring: { mu0, marketPrior, calibrationPrior, beta, neutral, alpha, sink, rounds: rounds as number, ratingPrior, evidence: evidence as Scoring['evidence'] },
     currencies,
     chains,
   }

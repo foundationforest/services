@@ -34,8 +34,8 @@ passes it serves the pages. Three verbs, each one place in the code:
 - **filter** (`src/filter.ts`): which profiles count;
 - **format** (`src/pages/`): one file per page, each building the page's JSON and drawing its HTML
   from that JSON;
-- **rank** (`src/rank.ts`): one pure function from counted profiles and counted reviews to points and
-  ratings.
+- **rank** (`src/rank.ts`): one pure function, run once per market, from counted profiles and counted
+  reviews to trust, ratings and backing.
 
 ### What it reads
 
@@ -111,8 +111,10 @@ A review counts when, in this order:
    `<profile>/offer/<id>`, `evidence`) and the fields the market adds;
 3. it gives a score;
 4. it is about another profile, not its writer;
-5. the profile it is about counts here;
-6. it is the latest of its writer's reviews of that profile and that post (or of no post), by its
+5. its writer and the profile it is about have the same `market` in their profile records, so each
+   market is ranked on its own;
+6. the profile it is about counts here;
+7. it is the latest of its writer's reviews of that profile and that post (or of no post), by its
    record's time. One review counts per writer, subject and offer.
 
 A review that does not count says why, on both profiles' pages.
@@ -136,8 +138,15 @@ name, how it recognizes an id, and its check:
   and, in a mint `config/currencies.json` lists, one of the two pay addresses lost and the other
   gained, in either direction: a buyer reviewing the seller they paid, or the seller reviewing them.
   An app writes the review seconds after paying, before the chain holds the payment as final, so a
-  signature the RPC holds no transaction for is asked again on each pass until the review's record
-  is a day old; only then is it kept as invalid.
+  signature the RPC holds no transaction for is asked again on each pass until a day after this
+  index first saw the review name it, by its own clock; only then is it kept as invalid. A record's
+  time is its writer's word, and a review read late, after a host or this index was down, would
+  have no day left by it.
+
+**One payment, one review.** An escrow or a payment backs one review: the earliest of the reviews it
+backs, by record time, then by address. A later review that names it is `invalid`, with
+`evidenceWhy` "already used". Only a review between its two pay addresses can be backed by it, so a
+review by anyone else that names it takes nothing from them, however early its writer dates it.
 
 A review is shown:
 
@@ -146,8 +155,9 @@ A review is shown:
 - `unchecked`: it names a chain `config/chains.json` does not list, so this index cannot tell
   whether it holds; `evidenceWhy` names the chain, and it weighs as a review without;
 - `invalid`: it names no chain (the text before its last colon is no CAIP-2 chain), an id its
-  chain's reader does not recognize, or one that does not count, or one of the two profiles has no
-  pay address of the chain's type.
+  chain's reader does not recognize, or one that does not count, or one an earlier review used
+  (`evidenceWhy` says "already used"), or one of the two profiles has no pay address of the chain's
+  type.
 
 When the RPC does not answer, or does not hold the payment yet, the review counts as without for that
 pass and is checked again on the next. A review that does not count is not checked, and shows
@@ -155,56 +165,77 @@ without.
 
 ### How it scores
 
-One score, the rating. The code is `src/rank.ts`; every number is in `config/scoring.json` (How we run
-it).
+One rating per profile, and its backing: how much trust stands behind it. The code is `src/rank.ts`,
+one pure function run once per market, since a review counts only inside one; every number is in
+`config/scoring.json` (How we run it).
 
-**Points.** Every counted profile starts with its points `s`. Points flow along counted reviews: each
-round, a profile keeps `1 − d` of its starting points, and each review passes its subject `d` times
-its writer's points, split equally across all the writer's counted reviews, times `score / 10`, times
-its evidence weight `e`:
+**Scores.** For each writer and each profile it reviewed, the scores of its counted reviews (one per
+post) are averaged into one score `s`, from 1 to 10. `d` is how many profiles a writer reviewed. A
+profile's review count is how many writers reviewed it.
 
-    x(p) = (1 − d) · s(p) + d · Σ over reviews of p of  x(writer) / n(writer) · score / 10 · e
+**Trust.** Every counted profile starts with `(1 − alpha) · v`, where `v` is the points of its
+largest counted key: 0.4 for a face check and 0.8 for an ID check, at today's numbers. Then, `rounds`
+times, each step reading what the round before left:
 
-starting from `x = s`, until no profile moves by more than `tolerance`, or for at most `maxRounds`
-rounds. `n(writer)` is how many counted reviews the writer wrote, so a writer of a hundred reviews
-passes a hundredth of its share with each. With every evidence weight at most 1, profiles that review
-only each other never end with more points among them than they started with: a ring of ten profiles
-of 1 point each ends with at most 10. A profile no counted review points to keeps `1 − d` of its
-starting points: 0.15 of a point, for a face check, at today's numbers.
+1. **The baseline,** `mu`: the market's mean score, each score weighed by its writer's weight `w`,
+   pulled toward `mu0` as if `marketPrior` of weight scored it:
+   `mu = (marketPrior · mu0 + Σ w · s) / (marketPrior + Σ w)`. The first round weighs each score by
+   its seed weight, its weight (step 5) from the starting trust: `(1 − alpha) · v / (d + sink)`,
+   times its evidence factor. Many scores from a ring move the baseline only as far as the trust
+   behind them.
+2. **A writer's habit,** `sbar`: its mean score, pulled toward the baseline as if it had given
+   `calibrationPrior` more scores at it: `sbar = (calibrationPrior · mu + Σ s) / (calibrationPrior + d)`.
+3. **The calibrated score,** `shat = s − beta · (sbar − mu)`, kept within 1 to 10. A writer who scores
+   above the baseline has each score lowered by `beta` of how far above it scores, and one who scores
+   below has each raised. So a 9.5 from a writer who averages 6.5 counts for more than a 10 from one
+   who gives everyone 10.
+4. **Its quality,** `q = (shat − neutral) / neutral`: from −0.8 to 1, and 0 at `neutral`. A score
+   above `neutral` passes trust to the profile it is about; one below takes some away.
+5. **Its weight,** `w = min(1, T′ / (d + sink))` times its evidence factor. `T′` is the writer's
+   trust less what that profile passed the writer, so two profiles that review each other pass
+   nothing back and forth. A writer of many reviews splits its trust thinly. `sink` holds back part
+   of every writer's trust: a writer of one review passes a third of it, at today's numbers.
+6. **The flow** along it is `alpha · w · q`. Each profile's trust becomes `(1 − alpha) · v` plus
+   every flow into it, never below 0.
 
-**A review's weight** is the share it passes in the flow: its writer's points over how many counted
-reviews the writer wrote, times its evidence weight, `x(writer) / n(writer) · e`. So one writer weighs
-at most their own points in anyone's rating, however many posts of that profile they review.
+**The backing,** `B`: the sum of the weights of a profile's writers, from the last round, shown to
+one decimal. Each review's `weight` is its writer's weight split equally across that writer's counted
+reviews of the profile, so a profile's backing is the sum of its counted reviews' weights.
 
-**The rating** is the mean of the scores a profile received, each weighted by its review's weight:
-`Σ weight · score / Σ weight`. It is shown to one decimal, with how many counted reviews it comes
-from and how many of those have a payment: "9.2 from 14 reviews, 11 with a payment". With no counted
-review, there is no rating.
+**The rating,** `R = (ratingPrior · mu + Σ w · shat) / (ratingPrior + B)`, with the last round's
+baseline: the calibrated scores, each weighed by its writer's weight, pulled toward the baseline as if
+`ratingPrior` of backing scored it. It is shown to one decimal. A profile no counted review is about
+has no rating.
 
-**The shrunk rating** is what search and a market's page sort by: the rating pulled toward its
-market's mean rating, more so the less weight is behind it:
+**Evidence factors** (`evidence`): one for each kind of evidence, and `none` for a review with no
+evidence or evidence that does not count. A writer takes, for one profile, the largest factor among
+its reviews of it: evidence shows that money moved between the two profiles, whichever post a review
+names.
 
-    (Σ weight · score + m · the market's mean rating) / (Σ weight + m)
+At today's numbers:
+- five face-checked profiles, each of which wrote one review of a sixth, back it with about 0.67;
+- ten faces rating each other 10 end with a backing of about 0.54 each, and a rating within 1 of
+  their market's baseline;
+- two profiles of one person rating each other back each other with about 0.13.
 
-with `m` = `shrink`, and the market's mean rating the mean of the ratings of its rated profiles. A
-profile with no rating sorts at its market's mean. `m` is about the weight of three brand-new
-reviewers: a face-checked profile nobody has reviewed has 0.15 of a point, and passes all of it with
-its only review, so after three such reviews a rating sits about halfway between its own value and
-its market's mean.
+Search and a market's page sort by rating, then the newest post. A profile with no rating comes
+after every rated one, since the rating is the one score there is.
 
 ### The signed rating
 
 Each counted profile's rating is signed with the index's key, as a statement: canonical JSON (the
 standard's records' `canonical`) of
 
-    {"index":"<this index>","profile":"<the profile>","rating":"9.2" or null,"reviews":14,"withPayment":11,"time":<ms>}
+    {"index":"<this index>","profile":"<the profile>","rating":"9.2" or null,"backing":"1.4","reviews":14,"time":<ms>}
 
 signed over its UTF-8 bytes with EdDSA-Poseidon (the standard's keys' `signBytes`), and served in the
-profile's `rating` as `statement` and `signature` (64 bytes, base64url). Anyone checks it with the
+profile's `rating` as `statement` and `signature` (64 bytes, base64url). `rating` and `backing` are
+text, to one decimal, since canonical JSON's numbers are whole; `reviews` is how many writers
+reviewed the profile. Anyone checks it with the
 standard's keys' `checkBytes`, against the index's address. The statement begins with `{`, never
 with the `0xff` every record, message, pull, blob request and root begins with, so the signature is
-never one of those. `time` is when the rating first had that value: a rating that does not move keeps
-its statement and signature.
+never one of those. `time` is when the rating, its backing and its review count first had those
+values: while none of them moves, the statement and signature stay.
 
 ### The tree
 
@@ -214,8 +245,11 @@ so a person proves a rating from their own profiles on their device, naming none
 (`src/tree.ts`):
 
 - **one leaf per tag** of a counted profile with a rating: the tag its counted stamp proof shows;
-  the scope of its label; its rating times ten, rounded (9.2 is 92); and how many counted reviews it
-  received. Two counted proofs with one tag, two keys of one verifier, give one leaf;
+  the scope of its label; its rating times ten, rounded (9.2 is 92); and its backing times ten,
+  rounded, at least 1 (1.4 is 14). A reputation proof averages the scores of the leaves it counts,
+  each weighted by its count, so a rating carried from several profiles weighs each by the trust
+  behind it, not by how many reviews it has (FAQ). Two counted proofs with one tag, two keys of one
+  verifier, give one leaf;
 - **in order of tag,** which says nothing about whose leaf is whose;
 - **its root** is the reputation client's `buildTree`, signed with the index's key over the client's
   `signedBytes(root, time)`, the time in ms. A new root only when the leaves change. Every root is
@@ -225,9 +259,14 @@ so a person proves a rating from their own profiles on their device, naming none
 `/v1/reputation/leaves` serves `{ root, leaves: [{ tag, scope, score, count }] }`, tag and scope in
 hex, both 404 while there is no tree.
 
-A reputation proof on a profile record is shown when its index is one `lists/indexes.json` names, its
-root is one of that index's newest `roots`, and it checks (the client's `checkReputation`, its answer
-kept). This index knows only its own roots, so a proof against another index's tree shows nothing.
+A reputation proof on a profile record is shown when:
+- its index is one `lists/indexes.json` names;
+- its root is that index's newest, or one the index signed within `maxAgeDays` days;
+- it checks (the client's `checkReputation`, its answer kept).
+
+The newest root always counts: a tree that has not moved still says exactly what its proofs say. A
+root's age runs from when this index last signed it, since a root that comes back is signed again.
+This index knows only its own roots, so a proof against another index's tree shows nothing.
 
 ### What it serves
 
@@ -240,21 +279,21 @@ HTML runs no script; each page carries schema.org JSON-LD. GET and HEAD only, op
   this index's address, every market in the directory with its role words, and its lists.
 - **`/markets/<name>`**: `{ "index", "market", "posts": { "<role>": [<result>] } }`: the market's file
   verbatim as the directory holds it, its `preview` among the rest, and its listed posts by role, by
-  the shrunk rating, then the newest.
+  rating, then the newest; a profile with no rating after every rated one.
 - **`/search`**: `{ "index", "total", "results": [<result>] }`, with any of `q` (words in the post,
   each a word's start, all of them), `market`, `role`, `near=lat,lon` with `km` (a post with a place
-  within `km` kilometres, 10 unless given), `minRating`, `minReviews`, `limit` (20 unless given, at
-  most 100) and `offset`; sorted as a market's page.
+  within `km` kilometres, 10 unless given), `minRating`, `minReviews` (at least this many writers),
+  `limit` (20 unless given, at most 100) and `offset`; sorted as a market's page.
 - **`/profiles/<address>`**: `{ "index", "address", "profile", "checks", "rating", "posts", "reviews":
   { "received", "given" }, "proofs" }`:
   - `profile`: the profile record's body;
   - `checks`: `[{ "verifier", "key", "label" }]`;
-  - `rating`: `{ "value", "reviews", "withPayment", "statement", "signature" }`, with no statement or
-    signature for a profile that does not count;
+  - `rating`: `{ "value", "backing", "reviews", "statement", "signature" }`, with no statement or
+    signature for a profile that does not count, drawn as "9.2 · backing 1.4 (14 reviews)";
   - `posts`: `[{ "address", "body", "listed", "why" }]`, `why` only when not listed;
   - each review: `{ "reviewer", "address", "body", "counted", "why", "evidence", "evidenceWhy",
     "weight" }`, `why` only when it does not count, `evidenceWhy` only when its evidence is
-    `unchecked`;
+    `unchecked` or already used, and `weight` its share of its writer's weight (How it scores);
   - `proofs`: each proof on the profile record with its `result`.
 - **`/deals/<escrow>`**: the receipt, every move, the profiles whose `solana` pay address is either
   side, and the reviews that name it as `<the escrow's chain>:<escrow>`.
@@ -275,8 +314,9 @@ signs the ratings and the roots.
 ### Where it keeps things
 
 One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of posts; `src/store.ts`),
-a fresh schema, beside the seed. Everything in it comes back from the hosts and the chain, but two
-tables: when each stamp proof was first seen, and every root it signed. `npm run rebuild` drops every
+a fresh schema, beside the seed. Everything in it comes back from the hosts and the chain, but three
+tables: when each stamp proof was first seen, when each review was first seen naming its evidence,
+and every root it signed. `npm run rebuild` drops every
 other table, makes each again with the schema of this code, reads the hosts and the chain again,
 ranks, and exits; the seed is never touched.
 
@@ -314,31 +354,46 @@ from a stand-in RPC:
 - **filter:** a stamp proof that checks for a listed key counts; a changed byte, an unlisted key, a
   wrong name, a label other than the profile's market and role, a market not in the directory, a role
   not the market's, and a proof first seen after its key's `until` do not;
-- **rank,** on fixtures: a ring of ten ends with at most ten points; a writer of a hundred reviews
-  passes a hundredth with each; the rating is weighted by the share each review passes, so ten
-  reviews by one writer weigh as one; the shrunk rating; the rounds stop;
-- **reviews:** one from a profile that does not count, with no score, of itself, about a profile that
-  does not count, or with a field its market does not name is skipped and says why; the latest per
-  writer, subject and post counts; a deleted post keeps its body;
-- **evidence:** escrows and payments in either direction count, and the wrong parties, a refund, an
-  open escrow, another mint, a failed transaction do not; a payment the chain answers for is asked
-  once, one not on chain yet is asked again on the next pass and counts once it is, and one still
-  missing a day after its review is invalid for good; evidence on a chain the lists do not name is
-  unchecked, says which chain, and is never asked for, and evidence with no chain is invalid; a
-  deal's page finds the reviews that name it on its chain;
+- **rank,** on fixtures, with this index's numbers:
+  - a ring of ten faces all rating each other 10 ends with each backing below 1 and each rating
+    within 1 of the market's baseline;
+  - a star of five one-review puppets backs its boss with about 0.67;
+  - one face's two roles rating each other back each other with about 0.13;
+  - an honest provider outranks the ring in its market. Its ten writers each rate it 9, rate four
+    other providers 5 to 8, and are rated by them in turn;
+  - a 9.5 from a writer averaging 6.5 weighs more in the rating than a 10 from one averaging 10;
+  - mutual reviews pass no trust back and forth;
+  - a writer's reviews of one profile are one score, and the review count is the writers';
+  - evidence factors scale a writer's weight;
+- **reviews:** one from a profile that does not count, with no score, of itself, from another
+  market, about a profile that does not count, or with a field its market does not name is skipped
+  and says why; the latest per writer, subject and post counts; a deleted post keeps its body;
+- **evidence:**
+  - escrows and payments in either direction count, and the wrong parties, a refund, an open escrow,
+    another mint, a failed transaction do not;
+  - one used by an earlier review is invalid, "already used", and a stranger's earlier review naming
+    it takes nothing;
+  - a payment the chain answers for is asked once, and one not on chain yet is asked again on the
+    next pass and counts once it is;
+  - one seen late, in a review written two days before, is still asked for 23 hours after this
+    index first saw it, and is invalid for good 25 hours after;
+  - evidence on a chain the lists do not name is unchecked, says which chain, and is never asked
+    for, and evidence with no chain is invalid;
+  - a deal's page finds the reviews that name it on its chain;
 - **markets:** the checks of fields, choices, lists and roles; a post that does not fit is kept and
   not listed; the escrow program is the one the pinned standard records, on a chain
   `config/chains.json` lists;
-- **tree:** the served leaves rebuild the served root, whose signature checks; a reputation proof made
-  from the leaves shows on its profile, and not with a byte changed, on another profile, or against a
-  root past the newest;
+- **tree:** the served leaves carry each rating and its backing times ten and rebuild the served root,
+  whose signature checks; a reputation proof made from the leaves shows on its profile, and not with
+  a byte changed or on another profile; against a root that is not the newest it shows 29 days after
+  this index signed it and not 31, and against the newest root it shows at any age;
 - **pages:** the four answers' shapes; a market's file served verbatim, its `preview` with it; every
   page drawn from its twin's object; every JSON-LD block passes schema.org's vocabulary
   (`test/schemaorg/`); search's filters and sort; every URL in `llms.txt` and `skill.md` answers;
 - **seed:** made at the first start, readable by its user only, the same key after;
 - **end to end,** over HTTP: two profiles with real stamp proofs, an offer, a review, the index
-  reading on its own schedule and serving the rating; then a rebuild gives the same; and a rebuild of
-  a file from before tags were called tags keeps when each proof was first seen.
+  reading on its own schedule and serving the rating and its backing; then a rebuild gives the same;
+  and a rebuild of a file from before tags were called tags keeps when each proof was first seen.
 
 ## How we run it
 
@@ -357,26 +412,34 @@ Another index holds its own.
   (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`), the chain the escrow runs on today, with the reader
   `solana`, through `RPC_URL`.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
-- **How it weighs** (`config/scoring.json`): `damping` 0.85, `tolerance` 10⁻⁹, `maxRounds` 100,
-  `shrink` (m) 0.5, about the weight of three brand-new reviewers, and the evidence weights `escrow`
-  1, `payment` 1 and `none` 1: today a payment changes nothing but what a review shows; the weights
-  are there for when money moves.
-- **How long a payment may take to be final:** a day from its review's record (`WAIT_MS` in
-  `src/evidence/payment.ts`); until then a payment the RPC does not hold is asked for again on each
-  pass.
+- **How it weighs** (`config/scoring.json`, How it scores):
+  - `mu0` 7.5, the score a market's baseline starts from;
+  - `marketPrior` 5, how much weight `mu0` holds in it;
+  - `calibrationPrior` 3, how many scores at the baseline each writer's habit starts with;
+  - `beta` 0.5, how much of a writer's habit comes off its scores;
+  - `neutral` 5, the score that passes no trust;
+  - `alpha` 0.6, how much of a profile's trust it takes from reviews, the rest from its key;
+  - `sink` 2, the trust each writer holds back, counted as reviews;
+  - `rounds` 10;
+  - `ratingPrior` 0.5, the backing the baseline holds in each rating;
+  - the evidence factors `escrow` 1, `payment` 1 and `none` 1. Today a payment changes nothing but
+    what a review shows; the factors are there for when money moves.
+- **How long a payment may take to be final:** a day from when this index first saw its review name
+  it, by its own clock (`WAIT_MS` in `src/evidence/payment.ts`). Until then, a payment the RPC does
+  not hold is asked for again on each pass.
 - **Which money counts** (`config/currencies.json`): USDC, USDT, Open USD and EURC, the dollars the
   fee payer takes, and two test dollars, each with its code and six decimals: the classic one, which
   its maker, a key from the phrase that funds the loop, mints at will; and the one shaped like Open
   USD, which no one can mint any more, since its maker's key came from a phrase that is lost.
 - **Which escrow:** the standard's, its program at `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`.
 - **Which reputation proofs it shows, and how old a signed root may be** (`lists/indexes.json`): its
-  own (`self`), against one of its newest 10 roots.
+  own (`self`), against its newest root, or one it signed in the last 30 days (`maxAgeDays`).
 - **How often:** a pass every 30 seconds after the last ends (`READ_SECONDS`). A host that takes more
   than 60 seconds to serve a page fails that read, and the next pass tries again; an RPC request
   times out after 30 seconds.
 - **What it keeps:** every record its hosts served that checks, the escrow's receipts and moves, each
-  answer of a proof or payment check, every root, and when each proof was first seen. Never a network
-  address.
+  answer of a proof or payment check, every root, when each proof was first seen, and when each
+  review was first seen naming its evidence. Never a network address.
 - **No request logs.** It logs its address at start, that it made a seed, a host or the RPC failing,
   how many records a host served that did not check, a pass that failed, and a failed request's path
   and error.
@@ -405,20 +468,22 @@ Another index holds its own.
   many passes there; a keyed RPC in `RPC_URL` reads it at once.
 - **It reads evidence only on the chains it lists.** A review backed on another chain is shown
   unchecked, and weighs as a review without.
-- **A payment not final within a day of its review counts for nothing, for good.** The day runs from
-  the review's record time, which its writer signs.
-- **A writer's reviews each count in the review count.** One review counts per writer, subject and
-  post, so a writer who names many posts of one profile adds to "from N reviews" with each, though
-  together they weigh no more than the writer's points.
+- **A payment not final within a day counts for nothing, for good.** The day runs from when this
+  index first saw the review name it.
 - **Two of one person's profiles can review each other,** and with small payments between them, each
-  backed. Nothing here links them, so nothing here can tell.
+  backed. Nothing here links them, so nothing here can tell. What it buys is small: each passes the
+  other only its own starting trust, and nothing back, about 0.13 of backing for two face checks.
+- **In a market where one side is never reviewed, that side's writers keep their starting trust and
+  spread it thin.** Trust grows only from reviews received, so a buyer no one reviews passes its key's
+  start, 0.4 for a face check, split across every profile it reviewed and `sink`, however many good
+  deals it made.
 - **Only its own roots.** A reputation proof against another index's tree shows nothing here.
 - **It reads only the hosts it lists.** A profile whose records live elsewhere is not here.
 - **In a small tree, a rating can point at one leaf** (the standard's
   [reputation](https://github.com/foundationforest/standard/blob/main/proofs/reputation/README.md#limits)).
 - **Losing the volume loses the key,** and with it the address every rating and root was signed with,
-  every root, and when each proof was first seen. A new start makes a new key, and every proof is
-  first seen again.
+  every root, and when each proof and each review was first seen. A new start makes a new key, and
+  every proof and review is first seen again.
 - **Escrows of earlier versions of the program are not read.**
 - **Everything after the reading is computed again on every pass,** in one process; each proof and
   payment is checked once. One sitemap file; a profile's page lists every review; search reads every
@@ -436,7 +501,7 @@ Another index holds its own.
 - **This index, by its own choice:** which hosts it reads; which verifier keys count, under which
   names, with how many points, and until when; which chains it reads evidence on, and through which
   RPC; which money counts; every number in `config/scoring.json`; which indexes' reputation proofs it
-  shows, and how many roots back; what its pages show.
+  shows, and how old a root may be; what its pages show.
 - **A person, through their app:** where their records live, which proofs their profile record shows,
   and which index they read.
 
@@ -446,19 +511,20 @@ Another index holds its own.
 Two keys of one verifier, a face check and an ID check, are one person checked twice. Their sum would
 make the same person count for more by being checked again.
 
-**Why does a rebuild keep when each proof was first seen, and the roots?**
-Neither comes back from the hosts or the chain. Without the first, every proof would be first seen at
-the rebuild, after any key's `until`; without the roots, every reputation proof people show would
-stop showing.
+**Why does a rebuild keep when each proof and each review was first seen, and the roots?**
+None of them comes back from the hosts or the chain. Without the first, every proof would be first
+seen at the rebuild, after any key's `until`. Without the second, every payment still missing would be
+asked for another day. Without the roots, every reputation proof people show would stop showing.
 
 **Why does evidence count only in a mint this index lists, for an escrow too?**
 Anyone can make a mint. A receipt in a token its maker mints at will would show "with a payment" for
 nothing.
 
-**Why keep a root while the leaves do not change, and count roots, not their age?**
-A proof against the newest root stays exact however old it is, until a rating in the tree moves; an
-age would end it while it is still true. Keeping the root while nothing moves means a proof goes stale
-only when something it could say changed.
+**Why is a leaf's count its backing, not its number of reviews?**
+A reputation proof weighs each profile it carries by its leaf's count. Anyone can add reviews, and
+puppets can write them; backing grows only with the trust behind them. By backing, a profile with
+many thin reviews does not outweigh one with fewer, better-backed ones. The count is at least 1,
+since the proof divides by the sum of its counts.
 
 **Why serve every leaf, and no URL for one leaf and its path?**
 A path asked for by tag tells the index, and whoever logs its requests, which profile is the
@@ -467,7 +533,3 @@ caller's. With every leaf, an app finds its person's own on the device.
 **Why is a deleted post still here?**
 So a review that names it still finds what it was about. The post is not listed, and its page says it
 was deleted.
-
-**How would one market rank by other numbers?**
-A `markets` section in `config/scoring.json`, by market name, with the same keys; nothing reads one
-today.

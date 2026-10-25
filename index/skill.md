@@ -39,12 +39,13 @@ how deals go), and its listed posts by role, best rated first.
 - `q`: words in the post, each a word's start, all of them;
 - `market`, `role`: only that market, only posts by that role;
 - `near=lat,lon` and `km`: a post with a place within `km` kilometres (10 unless given);
-- `minRating`: a profile rated at least this, from 1 to 10; `minReviews`: at least this many reviews;
+- `minRating`: a profile rated at least this, from 1 to 10; `minReviews`: reviewed by at least this
+  many writers;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
 
 A result is `{ "profile", "market", "role", "post": { "address", "body" }, "rating", "checks" }`. The
-post's body holds its market's fields. Results are sorted by the profile's rating pulled toward its
-market's mean (How it scores, in the README), then the newest post.
+post's body holds its market's fields. Results are sorted by the profile's rating, then the newest
+post; a profile with no rating comes after every rated one.
 
 ## A profile
 
@@ -54,10 +55,17 @@ market's mean (How it scores, in the README), then the newest post.
   `{ "solana", "evm" }`), `inboxKey` and `inbox` (how to message it), `proofs`.
 - `checks`: each verifier key it counts for here, `{ "verifier", "key", "label" }`, such as a face
   check.
-- `rating`: `{ "value", "reviews", "withPayment", "statement", "signature" }`, such as 9.2 from 14
-  reviews, 11 with a payment. `value` is null with no counted review. `statement` is what this index
-  signed, canonical JSON; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
-  bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
+- `rating`: `{ "value", "backing", "reviews", "statement", "signature" }`, such as 9.2 · backing 1.4
+  (14 reviews). `value` is the rating, from 1 to 10: the scores of the profile's reviews, each
+  calibrated against its writer's habit and weighed by the trust behind its writer, pulled toward
+  its market's baseline while that trust is small. `backing` is that trust, summed: a face-checked
+  writer of one review, itself unreviewed, adds about 0.13, so a backing below 1 means few trusted
+  writers.
+  `reviews` is how many writers reviewed it. Reviews count only between two profiles of one market.
+  `value` is null with no counted review. `statement` is what this index signed, canonical JSON of
+  `{ index, profile, rating, backing, reviews, time }`; `signature` is its EdDSA-Poseidon signature
+  over the statement's UTF-8 bytes, by the key whose address is `index`, which the standard's keys
+  check (`checkBytes`). The README's How it scores gives every step and number.
 - `posts`: each post, `{ "address", "body", "listed" }`, with `why` when it is not listed (it does
   not fit its market, its profile does not count, or it was deleted: a deleted post keeps its last
   body here, so a review that names it still finds it).
@@ -65,8 +73,9 @@ market's mean (How it scores, in the README), then the newest post.
   "evidence", "evidenceWhy", "weight" }`. A review's evidence is written `<chain>:<id>`, such as
   `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:<signature>`. `evidence` is `with` (a payment between the
   two backs it), `without`, `unchecked` (it names a chain this index does not read; `evidenceWhy`
-  says which), or `invalid` (it names one that does not count, or no chain). `why` is there only
-  when it does not count.
+  says which), or `invalid` (it names one that does not count, or no chain, or one an earlier
+  review used, when `evidenceWhy` says "already used": one payment backs one review). `why` is there
+  only when it does not count. `weight` is the review's share of the trust behind its writer.
 - `proofs`: each proof on the profile record, with what this index made of it.
 
 ## A deal
@@ -83,10 +92,13 @@ whose `solana` pay address is either side, and the reviews that name it.
     GET https://index.forest.foundation/v1/reputation/leaves
 
 The root of this index's tree of ratings, its time and signature, and every leaf, in the standard's
-format: a person proves a rating from their own profiles on their device, naming none of them.
+format: a person proves a rating from their own profiles on their device, naming none of them. A
+leaf's score is its rating times ten, and its count its backing times ten, at least 1. A proof shows
+here against this index's newest root, or one it signed within `maxAgeDays`, in `/index.json`'s
+`lists`.
 
 ## To act
 
-This index only reads. To post, review, message or pay, the person's signer, a device that holds
-their seed, signs with the profile's main key and writes to the profile's hosts; an AI asks one of
-the person's signers to act for them.
+This index only reads. To post, review or message, the person's signer, a device that holds their
+seed, signs with the profile's main key and writes to the profile's hosts; a payment is made with
+the profile's pay key, from its pay address. An AI asks one of the person's signers to act for them.

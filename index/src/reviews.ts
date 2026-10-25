@@ -6,8 +6,10 @@
 //   2. it fits its writer's market's review fields (markets.ts);
 //   3. it gives a score;
 //   4. it is about another profile, not its writer;
-//   5. the profile it is about counts here;
-//   6. it is the latest of the writer's reviews of that profile and that post (or of no post), by
+//   5. its writer and the profile it is about have the same market in their profile records, so
+//      each market is ranked on its own (rank.ts);
+//   6. the profile it is about counts here;
+//   7. it is the latest of the writer's reviews of that profile and that post (or of no post), by
 //      its record's time: one counted review per writer, subject and offer.
 //
 // A review that does not count says why. A post a review names may be deleted; it is kept here with
@@ -23,6 +25,7 @@ export const WHY = {
   writer: 'its writer does not count here',
   score: 'it gives no score',
   itself: 'it is a review of its own writer',
+  market: 'the profile it is about is in another market',
   subject: 'the profile it is about does not count here',
   later: 'a later review by the same writer, of the same profile and post, counts instead',
 }
@@ -38,6 +41,8 @@ export function judgeReviews(reviews: Review[], profiles: Map<string, Author>, m
     else why = markets.checkReview(writer.market!, subject && subject.market === writer.market ? subject.role : null, r.body)
     if (!why && r.body.score === undefined) why = WHY.score
     if (!why && r.body.subject === r.reviewer) why = WHY.itself
+    // Only a subject with a profile record here has a market to compare; one without does not count here.
+    if (!why && subject && subject.market !== writer!.market) why = WHY.market
     if (!why && !subject?.counted) why = WHY.subject
     if (why) {
       out.set(r.address, { counted: false, why })

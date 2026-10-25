@@ -2,16 +2,21 @@
 // rating from their own profiles on their device, naming none of them.
 //
 //   - One leaf per tag of a counted profile with a rating: the tag its counted stamp proof shows;
-//     the scope of its label; its rating times ten, rounded (9.2 is 92); and how many counted
-//     reviews it received. Two counted proofs with one tag (two keys of one verifier) give one leaf.
+//     the scope of its label; its rating times ten, rounded (9.2 is 92); and its backing times ten,
+//     rounded, at least 1 (1.4 is 14). A reputation proof averages its leaves' scores weighted by
+//     their counts, so a rating carried from several profiles weighs by the trust behind each, not
+//     by how many reviews it has. Two counted proofs with one tag (two keys of one verifier) give
+//     one leaf.
 //   - In order of tag, which says nothing about whose leaf is whose.
 //   - Built with the reputation client's `buildTree`; its root signed with the index's key over the
 //     client's `signedBytes(root, time)`, the time in ms. A new root only when the leaves change, so
 //     a proof goes stale only when a rating in the tree moves. Every root is kept (store.ts).
 //
 // A reputation proof on a profile record shows when its index is one lists/indexes.json names, its
-// root is one of that index's newest `roots`, and it checks (the client's `checkReputation`). This
-// index knows only its own roots.
+// root is that index's newest or one it signed within `maxAgeDays`, and it checks (the client's
+// `checkReputation`). The newest always counts: a tree that does not move for a month still says
+// exactly what its proofs say. A root's age is from when this index last signed it, since a root
+// that comes back is signed again. This index knows only its own roots.
 
 import { packSignature, scopeOf, signBytes } from '@foundationforest/keys'
 import { b64u, hex, type Key, proofsOf, reputationCheck } from '@foundationforest/records'
@@ -38,13 +43,13 @@ export type ReputationResult = {
 export const SHOWN = 'shown'
 
 /** The leaves for these profiles, in order of tag. */
-export function leavesOf(profiles: Array<{ tags: Array<{ tag: string; label: string }>; value: number | null; reviews: number }>): ServedLeaf[] {
+export function leavesOf(profiles: Array<{ tags: Array<{ tag: string; label: string }>; value: number | null; backing: number }>): ServedLeaf[] {
   const leaves = new Map<string, ServedLeaf>()
   for (const p of profiles) {
     if (p.value === null) continue
     for (const { tag, label } of p.tags) {
       // One tag is one seed, label and verifier name, so one profile; a second is left out.
-      if (!leaves.has(tag)) leaves.set(tag, { tag, scope: hex.encode(toBytes32(scopeOf(label))), score: Math.round(p.value * 10), count: p.reviews })
+      if (!leaves.has(tag)) leaves.set(tag, { tag, scope: hex.encode(toBytes32(scopeOf(label))), score: Math.round(p.value * 10), count: Math.max(1, Math.round(p.backing * 10)) })
     }
   }
   return [...leaves.values()].sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
@@ -55,9 +60,13 @@ export function newestRoot(store: Store): Root | null {
   return (store.db.prepare('select root, time, signature, leaves from roots order by time desc limit 1').get() as Root | undefined) ?? null
 }
 
-/** The newest `n` roots. */
-export function newestRoots(store: Store, n: number): Root[] {
-  return store.db.prepare('select root, time, signature, leaves from roots order by time desc limit ?').all(n) as Root[]
+export const DAY_MS = 24 * 60 * 60 * 1000
+
+/** The roots a reputation proof may be made against at `now`: the newest, and every one signed within `maxAgeDays`. */
+export function shownRoots(store: Store, maxAgeDays: number, now: number): string[] {
+  const within = store.db.prepare('select root from roots where time >= ?').all(now - maxAgeDays * DAY_MS) as Array<{ root: string }>
+  const newest = newestRoot(store)
+  return [...(newest ? [newest.root] : []), ...within.map((r) => r.root)]
 }
 
 export function servedLeaves(store: Store): ServedLeaf[] {
@@ -92,9 +101,17 @@ export function updateTree(store: Store, key: Key, leaves: ServedLeaf[], now: nu
 }
 
 /** Each reputation proof on a profile record, by its place in `proofs`, with what this index made of it. */
-export async function reputationProofs(store: Store, profile: string, body: { [key: string]: unknown }, indexes: ListedIndex[], self: string, roots: number): Promise<Map<number, ReputationResult>> {
+export async function reputationProofs(
+  store: Store,
+  profile: string,
+  body: { [key: string]: unknown },
+  indexes: ListedIndex[],
+  self: string,
+  maxAgeDays: number,
+  now: number,
+): Promise<Map<number, ReputationResult>> {
   const out = new Map<number, ReputationResult>()
-  const ours = newestRoots(store, roots).map((r) => r.root)
+  const ours = shownRoots(store, maxAgeDays, now)
   for (const [i, proof] of proofsOf(body as never).entries()) {
     if (proof.circuit !== 'reputation') continue
     const r = reputationCheck(proof, profile)
@@ -110,7 +127,7 @@ export async function reputationProofs(store: Store, profile: string, body: { [k
     if (!r) result = "it is not a reputation proof's shape"
     else if (!indexes.some((x) => (x.index === 'self' ? self : x.index) === r.index)) result = 'its index is not one this index lists'
     else if (r.index !== self) result = "this index knows none of that index's roots"
-    else if (!ours.includes(hex.encode(toBytes32(r.root)))) result = `its root is not one of this index's newest ${roots}`
+    else if (!ours.includes(hex.encode(toBytes32(r.root)))) result = `its root is neither this index's newest nor one it signed in the last ${maxAgeDays} days`
     else {
       const what = ['reputation', r.index, r.root.toString(), r.time, hex.encode(r.signature), r.score.toString(), r.label ?? null, r.profile, hex.encode(r.proof)]
       result = (await checkedOnce(store, what, () => checkReputation(r))) ? SHOWN : 'it does not check'

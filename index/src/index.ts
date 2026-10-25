@@ -34,6 +34,8 @@ export type Options = {
   port?: number | null
   hostname?: string
   log?: (line: string) => void
+  /** The clock each pass reads: Date.now unless given, as the tests give one to run a pass days on. */
+  now?: () => number
 }
 
 export type Index = {
@@ -72,7 +74,7 @@ export async function startIndex(o: Options): Promise<Index> {
   let running: Promise<void> = Promise.resolve()
   const pass = () =>
     (running = running.then(async () => {
-      const now = Date.now()
+      const now = (o.now ?? Date.now)()
       try {
         await runPass(ctx, before, now)
         before = now

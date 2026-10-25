@@ -1,9 +1,9 @@
 // `/profiles/<address>`: a profile this index holds a profile record for. Its profile record; each
 // proof on it with what this index made of it; the checks it counts for; its rating; its posts,
 // listed or not and why; and the reviews it received and gave, each with whether it counts and why
-// not, its evidence (and why, when it is unchecked) and its weight.
+// not, its evidence (and why, when it is unchecked or already used) and its weight.
 
-import { type Evidence, uncheckedWhy } from '../evidence/index.ts'
+import type { Evidence } from '../evidence/index.ts'
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
 import { aggregateOf, checksText, personOf, postFields, type Rating, ratingFor, ratingText } from './common.ts'
@@ -16,7 +16,7 @@ export type ReviewEntry = {
   counted: boolean
   why?: string
   evidence: Evidence['status']
-  /** Only when the evidence is unchecked: the chain this index does not read. */
+  /** Only when the evidence is unchecked, the chain this index does not read; or invalid because an earlier review used it, "already used". */
   evidenceWhy?: string
   weight: number
 }
@@ -31,7 +31,7 @@ export type ProfilePage = {
   proofs: Array<{ circuit: unknown; result: string; [key: string]: unknown }>
 }
 
-type ReviewColumns = { address: string; reviewer: string; body: string; counted: number; why: string | null; evidence: ReviewEntry['evidence']; weight: number }
+type ReviewColumns = { address: string; reviewer: string; body: string; counted: number; why: string | null; evidence: ReviewEntry['evidence']; evidence_why: string | null; weight: number }
 const entry = (r: ReviewColumns): ReviewEntry => {
   const body = parse<{ [key: string]: unknown }>(r.body)
   return {
@@ -41,7 +41,7 @@ const entry = (r: ReviewColumns): ReviewEntry => {
     counted: r.counted === 1,
     ...(r.why !== null && { why: r.why }),
     evidence: r.evidence,
-    ...(r.evidence === 'unchecked' && { evidenceWhy: uncheckedWhy(body.evidence) }),
+    ...(r.evidence_why !== null && { evidenceWhy: r.evidence_why }),
     weight: r.weight,
   }
 }
@@ -67,7 +67,7 @@ export const profile: Page<ProfilePage> = {
       why: string | null
     }>
     const reviews = (column: string) =>
-      (store.db.prepare(`select address, reviewer, subject, body, counted, why, evidence, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
+      (store.db.prepare(`select address, reviewer, subject, body, counted, why, evidence, evidence_why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
     return {
       index: self,
       address: found.address,
@@ -84,7 +84,7 @@ export const profile: Page<ProfilePage> = {
     const subjectOf = (r: ReviewEntry) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     return html`<h1>${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ') || 'A profile'}</h1>
 <p><code>${o.address}</code></p>
-<p>${ratingText(o.rating)}. ${checksText(o.checks)}.</p>
+<p>${ratingText(o.rating)} · ${checksText(o.checks)}.</p>
 <h2>Proofs</h2>
 ${o.proofs.length ? o.proofs.map((p) => html`<section><p>${String(p.circuit)} proof${p.verifier ? ` from ${p.verifier}` : ''}${p.index ? html`, index <code>${String(p.index)}</code>` : ''}${typeof p.rating === 'number' ? `, ${p.rating.toFixed(1)}` : ''}: ${p.result}.</p></section>`) : html`<p class="muted">None.</p>`}
 <h2>Posts</h2>

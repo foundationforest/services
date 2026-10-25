@@ -1,6 +1,6 @@
 // `/markets/<name>`: the market's file, verbatim from the pinned directory, and its listed posts by
-// role, each with its profile's rating and checks, sorted by the shrunk rating (README.md, How it
-// scores), then the newest post.
+// role, each with its profile's rating and checks, sorted by rating (README.md, How it scores), then
+// the newest post; a profile with no rating after every rated one.
 
 import type { Market } from '../markets.ts'
 import { offerOf, type Result, resultHtml, results } from './common.ts'

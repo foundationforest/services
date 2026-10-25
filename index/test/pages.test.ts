@@ -77,7 +77,7 @@ after(async () => {
 
 const keysOf = (o: object) => Object.keys(o).sort()
 const RESULT = ['checks', 'market', 'post', 'profile', 'rating', 'role']
-const RATING = ['reviews', 'signature', 'statement', 'value', 'withPayment']
+const RATING = ['backing', 'reviews', 'signature', 'statement', 'value']
 
 test('the four answers the mcp reads, in their shapes', async () => {
   const home = (await twin<{ index: string; markets: Array<{ name: string; description: string; roles: string[] }> }>(i, '/index.json')).body
@@ -112,16 +112,18 @@ test('the four answers the mcp reads, in their shapes', async () => {
   const reviews = p.reviews as { received: Array<{ [k: string]: unknown }>; given: unknown[] }
   assert.deepEqual(keysOf(reviews), ['given', 'received'])
   for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'evidence', 'reviewer', 'weight', ...(r.counted ? [] : ['why'])].sort())
-  assert.deepEqual(p.rating, { ...(p.rating as object), value: 9, reviews: 2, withPayment: 1 })
+  // Two writers of 9, of one review and of two: little backing, so a rating near the baseline.
+  assert.deepEqual(p.rating, { ...(p.rating as object), value: 8, backing: 0.2, reviews: 2 })
 
   // The rating's statement, signed by the index's key.
   const rating = p.rating as unknown as { statement: string; signature: string }
-  assert.deepEqual(JSON.parse(rating.statement), { ...JSON.parse(rating.statement), index: i.address, profile: people.a!.key.address, rating: '9.0', reviews: 2, withPayment: 1 })
+  assert.deepEqual(keysOf(JSON.parse(rating.statement)), ['backing', 'index', 'profile', 'rating', 'reviews', 'time'])
+  assert.deepEqual(JSON.parse(rating.statement), { ...JSON.parse(rating.statement), index: i.address, profile: people.a!.key.address, rating: '8.0', backing: '0.2', reviews: 2 })
   assert.ok(checkBytes(i.address, new TextEncoder().encode(rating.statement), unpackSignature(b64u.decode(rating.signature))!))
 
   // A profile that does not count has a page, and no rating.
   const u = (await twin<{ rating: unknown; checks: unknown[] }>(i, `/profiles/${people.uncounted!.key.address}.json`)).body
-  assert.deepEqual(u.rating, { value: null, reviews: 0, withPayment: 0 })
+  assert.deepEqual(u.rating, { value: null, backing: 0, reviews: 0 })
   assert.deepEqual(u.checks, [])
 })
 
@@ -147,24 +149,24 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
   }
 })
 
-test('search: words, market, role, a place, a rating, reviews, pages; sorted by the shrunk rating', async () => {
+test('search: words, market, role, a place, a rating, reviews, pages; sorted by rating, unrated last', async () => {
   const s = async (q: string) => (await twin<{ total: number; results: Array<{ profile: string; post: { address: string } }> }>(i, `/search.json?${q}`)).body
   const who = (r: { results: Array<{ profile: string }> }) => r.results.map((x) => Object.keys(people).find((k) => people[k]!.key.address === x.profile))
-  // a: two reviews of 9; b: one of 4; c: none, so its market's mean; a, c, b.
-  assert.deepEqual(who(await s('market=tutoring&role=tutor')), ['a', 'c', 'b'])
-  // The student's request has no rating, so its market's mean: between a and b.
-  assert.deepEqual(who(await s('q=maths')), ['a', 's1', 'b'])
+  // a: two reviews of 9, 8.0; b: one of 4, 7.0; c: none, so after both.
+  assert.deepEqual(who(await s('market=tutoring&role=tutor')), ['a', 'b', 'c'])
+  // The student's request has no rating, so it comes last.
+  assert.deepEqual(who(await s('q=maths')), ['a', 'b', 's1'])
   assert.deepEqual(who(await s('q=math&role=tutor')), ['a', 'b'])
   assert.deepEqual(who(await s('q=chem')), ['c'])
   assert.deepEqual(who(await s('q=maths%20lisbon')), [])
   assert.deepEqual(who(await s('near=40.4,-3.7&km=50')), ['a'])
   assert.deepEqual(who(await s('near=38.7,-9.1')), ['c'])
-  assert.deepEqual(who(await s('minRating=8')), ['a'])
+  assert.deepEqual(who(await s('minRating=7.5')), ['a'])
   assert.deepEqual(who(await s('minReviews=1&role=tutor')), ['a', 'b'])
   assert.deepEqual(who(await s('market=clothing')), [])
   const paged = await s('role=tutor&limit=1&offset=1')
   assert.equal(paged.total, 3)
-  assert.deepEqual(who(paged), ['c'])
+  assert.deepEqual(who(paged), ['b'])
   // The uncounted profile's post is never a result.
   assert.ok(!who(await s('q=uncounted')).length)
 })

@@ -1,5 +1,5 @@
 {
-  "about": "The indexes whose reputation proofs this index shows on a profile's page, each with a name, and how many of an index's newest roots a proof may be made against. self is this index's own key. This index knows only its own roots, so a proof against another index's tree shows nothing here. This is this index's opinion: another index shows other indexes' proofs.",
-  "roots": 10,
+  "about": "The indexes whose reputation proofs this index shows on a profile's page, each with a name, and how many days old a root may be: a proof shows against an index's newest root, or against one the index signed within maxAgeDays. self is this index's own key. This index knows only its own roots, so a proof against another index's tree shows nothing here. This is this index's opinion: another index shows other indexes' proofs.",
+  "maxAgeDays": 30,
   "indexes": [{ "index": "self", "name": "Forest index" }]
 }
