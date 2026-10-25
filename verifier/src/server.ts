@@ -14,11 +14,14 @@
 //   POST /id/session    {} or {payment}           -> 201 {sessionId, url}   an ID check, or 402 with a
 //                                                    payment to make first
 //   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key
+//   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
+//                                                    a stamp or null, its own fields only; 404
+//                                                    `not_found` when none was signed for it
 //
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
 // in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
 // 402 a payment still to make or still to land, 403 a check that does not count (the code says why),
-// 404 `not_offered` for the ID check when it has no price, 409 a session or payment already used for
+// 404 `not_offered` for the ID check when it has no price or `not_found`, 409 a session or payment already used for
 // another stamp number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
 // share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
 // nothing up: the same session can be sent again.
@@ -34,7 +37,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { type Stamp, signStamp, stampToJson } from '@foundationforest/stamp'
+import { signStamp, stampToJson } from '@foundationforest/stamp'
 import type { ServiceKey } from '@foundationforest/keys'
 import { b64u } from '@foundationforest/records'
 
@@ -265,9 +268,6 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     if (outcome !== 'ok') throw new HttpError(403, outcome)
   }
 
-  /** A stamp signed with this key, in the standard's JSON form, with the fields its facts were made from beside it. */
-  const signed = (key: ServiceKey, stamp: Stamp & { [field: string]: unknown }): Record<string, unknown> => ({ stamp: stampToJson(signStamp(key.secret, stamp)) })
-
   /**
    * The welcome gift for this stamp number, once: a ticket for the app's host buy, and the buy kept,
    * hashed, next to the stamp number. The same buy asked for again gets the same ticket; another buy
@@ -289,11 +289,13 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
     const decision = await decided(face, sessionId)
     const embedded = await embedding(face, decision.faceImage)
+    const model = embedder.model
+    // Signed, with the fields its facts were made from beside it, and kept without them.
+    const stamp = signStamp(deps.stampKeys.face.secret, { stampNumber, facts: faceFacts(model, embedded), model, embedding: b64u.encode(embedded) })
     // Checked again, for good, inside one transaction: the session may have given a stamp for another
     // stamp number while this request waited for Didit.
-    kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now() }))
-    const model = embedder.model
-    const answer = signed(deps.stampKeys.face, { stampNumber, facts: faceFacts(model, embedded), model, embedding: b64u.encode(embedded) })
+    kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now(), stamp }))
+    const answer: Record<string, unknown> = { stamp: stampToJson(stamp) }
     if (asked) answer.gift = giveGift(stampNumber, reference)
     return [200, answer]
   }
@@ -313,10 +315,27 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const print = fingerprint(deps.fingerprintKey, who)
     kept(store.check({ sessionId, stampNumber, since: since(), fingerprint: print }))
     const embedded = await embedding(id, decision.faceImage)
-    kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), fingerprint: print }))
     const model = embedder.model
     const facts = idFacts(model, embedded, who)
-    return [200, signed(deps.stampKeys.id, { stampNumber, facts, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })]
+    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
+    kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print }))
+    return [200, { stamp: stampToJson(stamp) }]
+  }
+
+  /**
+   * The stamps kept for a stamp number, one for each key, each with its own fields only: the fields
+   * beside it were never kept. A stamp is no use without the seed behind its number.
+   */
+  async function stampBack(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const stampNumber = decimal(fields(body, ['stampNumber']).stampNumber)
+    if (stampNumber === null) throw new HttpError(400, 'bad_stamp_number')
+    const kept = store.stamps(stampNumber)
+    if (!kept.face && !kept.id) throw new HttpError(404, 'not_found')
+    const back = (check: Check) => {
+      const stamp = kept[check]
+      return stamp ? stampToJson({ stampNumber, ...stamp, verifier: deps.stampKeys[check].address }) : null
+    }
+    return [200, { face: back('face'), id: back('id') }]
   }
 
   /**
@@ -405,6 +424,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     '/face/stamp': faceStamp,
     '/id/session': openId,
     '/id/stamp': idStamp,
+    '/stamp': stampBack,
   }
 
   return (req, res) => {

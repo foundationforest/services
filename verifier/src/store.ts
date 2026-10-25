@@ -1,8 +1,10 @@
-// The verifier's one file, five tables:
+// The verifier's one file, six tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
 //                  to one stamp number only, and once its hour is over, is known as used
+//   stamps         for each stamp number and key (`face` or `id`): the first stamp that key signed for
+//                  it, as its facts and its signature (r8, s), so a lost stamp is handed back
 //   to_delete      for each session signed and not yet deleted in Didit: its id, which check it was,
 //                  and when it was first signed, so it is signed again only within the hour after, and
 //                  the sweep deletes it in Didit once the hour is over; it goes once Didit has
@@ -16,8 +18,8 @@
 //   gifts          each stamp number given its welcome gift (gift.ts), with a hash of the buy it was
 //                  given for, so a person gets one, and the same buy asked again gets the same ticket
 //
-// Nothing else: no face, no embedding, no name, no birth date, no document, and of a gift only a hash
-// of its buy. A session id is kept as its hash; in clear, and with a time, only in `to_delete`, until
+// Nothing else: no face, no embedding, no name, no birth date, no document, none of the fields beside a
+// stamp, and of a gift only a hash of its buy. A session id is kept as its hash; in clear, and with a time, only in `to_delete`, until
 // Didit has deleted the session, so then the file names no Didit session and holds no time.
 // The stamp number links the tables: a person's fingerprint sits next to the same stamp number as the
 // hashes of the sessions signed for it, face sessions included. Deleted bytes are overwritten
@@ -26,7 +28,7 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { fromBytes32, toBytes32 } from '@foundationforest/stamp'
+import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/stamp'
 import { base58 } from '@foundationforest/records'
 
 import type { Check } from './didit.ts'
@@ -38,12 +40,17 @@ export function sessionHash(sessionId: string): Uint8Array {
 
 export type Remembered = 'ok' | 'session_used' | 'duplicate_document'
 
+/** What the file keeps of a stamp, beside its stamp number and key: its facts and its signature. */
+export type KeptStamp = { facts: bigint; signature: StampSignature }
+
 export class Store {
   readonly #db: DatabaseSync
   readonly #session: StatementSync
   readonly #fingerprint: StatementSync
   readonly #addSession: StatementSync
   readonly #addFingerprint: StatementSync
+  readonly #addStamp: StatementSync
+  readonly #stamps: StatementSync
   readonly #pay: StatementSync
   readonly #paidFor: StatementSync
   readonly #open: StatementSync
@@ -62,6 +69,7 @@ export class Store {
       PRAGMA temp_store = MEMORY;
       PRAGMA journal_mode = DELETE;
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
@@ -71,6 +79,8 @@ export class Store {
     this.#fingerprint = this.#db.prepare('SELECT stamp_number FROM fingerprints WHERE fingerprint = ?')
     this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, stamp_number, kind) VALUES (?, ?, ?)')
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, stamp_number) VALUES (?, ?)')
+    this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
+    this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ?')
     this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature, reference) VALUES (?, ?)')
     this.#paidFor = this.#db.prepare('SELECT reference, opened FROM id_payments WHERE signature = ?')
     this.#open = this.#db.prepare('UPDATE id_payments SET opened = 1 WHERE signature = ?')
@@ -106,17 +116,21 @@ export class Store {
   }
 
   /**
-   * `check`, and when it passes, the session and the fingerprint kept with the stamp number, in one
-   * transaction. Two requests can both pass every check before this while each waits for Didit; only
-   * the first to get here keeps anything, and the second is checked against it.
+   * `check`, and when it passes, the session, the stamp and the fingerprint kept with the stamp
+   * number, in one transaction. Two requests can both pass every check before this while each waits
+   * for Didit; only the first to get here keeps anything, and the second is checked against it.
    */
-  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; fingerprint?: Uint8Array }): Remembered {
+  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; stamp: KeptStamp; fingerprint?: Uint8Array }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       const outcome = this.check(input)
       if (outcome === 'ok') {
         const number = toBytes32(input.stampNumber)
         this.#addSession.run(sessionHash(input.sessionId), number, input.kind)
+        // The first stamp a key signs for a stamp number stays: a later check for that number, by
+        // anyone who knows it, never changes the stamp handed back. Any of them gives the same tag.
+        const { facts, signature } = input.stamp
+        this.#addStamp.run(number, input.kind, toBytes32(facts), Buffer.concat([toBytes32(signature.R8[0]), toBytes32(signature.R8[1])]), toBytes32(signature.S))
         // The first signing's time stays: a session signed again within its hour gets no more time.
         this.#addToDelete.run(input.sessionId, input.kind, input.signedAt)
         if (input.fingerprint) this.#addFingerprint.run(input.fingerprint, number)
@@ -128,6 +142,19 @@ export class Store {
       if (this.#db.isTransaction) this.#db.exec('ROLLBACK')
       throw error
     }
+  }
+
+  /** The stamps kept for this stamp number, by key: the first each key signed for it. */
+  stamps(stampNumber: bigint): Partial<Record<Check, KeptStamp>> {
+    const kept: Partial<Record<Check, KeptStamp>> = {}
+    for (const row of this.#stamps.all(toBytes32(stampNumber))) {
+      const r8 = row.r8 as Uint8Array
+      kept[row.kind as Check] = {
+        facts: fromBytes32(row.facts as Uint8Array),
+        signature: { R8: [fromBytes32(r8.subarray(0, 32)), fromBytes32(r8.subarray(32))], S: fromBytes32(row.s as Uint8Array) },
+      }
+    }
+    return kept
   }
 
   /** Whom this payment, by its transaction's signature (base58), opened a check for: its reference; undefined if unused. */
