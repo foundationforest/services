@@ -240,11 +240,60 @@ The tests, which CI runs:
 - `test/record.test.ts`: a passed run's and a failed run's records, what is refused, `holdsNone`,
   and every record in `runs/`.
 
-### The next run
+### The latest run
 
-None yet on this design: the records of earlier runs, made before each profile's rules and USDC, are
-in this repo's history. The next run, by hand once this is on `main`, writes its record to `runs/`
-and its summary here: what it used, what it paid, and its links on the chain.
+2026-10-26, 18:23:30 to 18:24:15 UTC, with this repo at `ef7bd25` (standard at `7b1c937`, markets at
+`50685eb`), with every service the loop's own on loopback and the chain through `RPC_URL`:
+**passed** in 45 seconds. Its record is
+[`runs/2026-10-26T18-23-30-348Z.json`](runs/2026-10-26T18-23-30-348Z.json). The records of earlier
+runs, made before each profile's rules and USDC, are in this repo's history.
+
+- **The services,** all the loop's own: the verifier `verifier.e2e-loop.invalid`, face key
+  `j9ikYH58…`, ID key `EGbxQcjk…`; the host, paid at the deploy key; the fee payer, its new key
+  `F6sGRxaz…`; the index `7HTr1upd…`; the mcp.
+- **The dollar:** Circle's USDC, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
+- **People:** tutor `AMLNioGB…`, student `3VnkKTEj…`, and the tutor's coach profile `CDirZA3d…`.
+- **Funding:** 42 USDC to the student's pay address; 1 USDC and 0.01 SOL to each wallet; 0.05 SOL
+  to the loop's fee payer. Before the run, outside the loop, the phrase's `payer` key sent the
+  deploy key its 20 USDC.
+- **Stamps:** one each from the loop verifier's face check, model `stand-in`, kept on each device,
+  and the same asked back by its stamp number.
+- **Credits:** each wallet paid the loop's host 0.10 USDC for 10 credits; the tutor spent 6 into its
+  folder, the student 10.
+- **Logins:** the tutor's AI may post, message, read and pay; the student's post, message and pay;
+  each up to 5 USD a day, one rule in each profile's folder.
+- **mcp:**
+  - the offer `offer/maths`, posted by the tutor's AI;
+  - found by the student's AI through the index's search, which messaged the tutor;
+  - read by the tutor's AI as number 1, and replied to by that number;
+  - the student's AI's read of its inbox needed the student's yes ("inbox as tutoring/student is
+    not in what this connection may do"), and got it.
+- **The deal:**
+  - the direct payment of 2 USDC, a plain transfer asked for by the student's AI, charged 0.10;
+  - the escrow `5X7LME2J…`, version 4, opened and paid in, charged 37.3364, then paid out early,
+    charged 0.10, its outcome `pay`, its deposit address's rent back to the fee payer.
+- **Reviews:** the student's, posted by its AI, its evidence the direct payment, filled in by its
+  signer; the tutor's AI refused naming the escrow, and the tutor's app wrote that review.
+- **The index:** the tutor rated 8.0 and the student 7.9, each backed 0.1, from one review with its
+  payment, each statement signed; the deal paid, 2 USDC, with its review.
+- **The rating, carried:** the tutor's leaf found by its tag among 2 leaves, 80 tenths, proven onto
+  the coach profile with the tutor's last 4 credits; the index shows it.
+- **Addresses:** none of its own person's in any of the 6 answers to the tutor's AI or the 7 to the
+  student's.
+- **Balances:** the tutor's folder 5.84329 credits, the student's 9.85697, the coach's 3.90393.
+- **The sweep:** the fee payer gave back everything it held, 37.5364 USDC and 49,223,240 lamports
+  with its USDC account's rent. It spent 2,265,200: 30,000 in fees and the escrow receipt's
+  2,235,200.
+- **What it cost the deploy key:** 6.2636 USDC (44 out; 0.20 back from the host and 37.5364 from the
+  sweep) and 28,238,960 lamports.
+
+The loop's own services stopped with the run, so their pages and the three profiles' records are
+gone. What the run did on chain is on Solana's explorer: [the escrow][e], [the direct payment][p]
+and [the sweep][s].
+
+[e]: https://explorer.solana.com/address/5X7LME2JF4eK1tmuVTE88LwrRwroxSFkFubsUaYg1LH6?cluster=devnet
+[p]: https://explorer.solana.com/tx/2io8sTDpjSeroKKmaN5rqzX2UsF7c5H2xWdWQXDpWCP43omaMSUKoGuaunxQv5uTamLRZMTBFDAKHEM2Xp5SrZYA?cluster=devnet
+[s]: https://explorer.solana.com/tx/5tdzRUHEKAfLFF97YoweA6U7K53PefN33WbzAmVxE64r8R13WNHJn74CwMoUmqBQGPamLPzoiPaXUJ9GwWJWaRz?cluster=devnet
 
 ## Promises
 
