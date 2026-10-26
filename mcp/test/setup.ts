@@ -42,7 +42,7 @@ export const lesson = (description: string): Body => ({
 })
 
 /** What the person chooses on the connect page, unless a test says otherwise: their two tutoring profiles, everything, $50 a day. */
-export const CHOICE: Choice = { profiles: ['tutoring/tutor', 'tutoring/student'], can: ['post', 'message', 'read', 'pay'], limits: [{ amount: '50', currency: 'USD', per: 'day' }] }
+export const CHOICE: Choice = { profiles: ['tutoring/tutor', 'tutoring/student'], can: ['post', 'message', 'read', 'pay'], limit: { amount: '50', currency: 'USD', per: 'day' } }
 
 /** Where the AI app is sent back to, and where it keeps its client document: never fetched over the network. */
 export const REDIRECT = 'https://ai-app.example/callback'
@@ -192,7 +192,6 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
     return `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:stand-in-payment-${paid.length}`
   }
   const person = new Signer({ seed: newSeed(), hosts, appUrl: 'https://app.forest.test', payWith })
-  await person.restore()
   const own: World['own'] = {}
   for (const label of ['tutoring/tutor', 'tutoring/student', 'clothing/seller']) own[label] = await person.addProfile(label)
   const personTutor = own['tutoring/tutor']!

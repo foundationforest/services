@@ -62,7 +62,7 @@ const BOTH = ['tutor', 'student']
 const SHAPES: { [step in Step]: { [path: string]: Check } } = {
   keys: each(['tutor', 'student', 'coach'], { label: text, profile: address, 'pay.solana': address, 'pay.evm': evm }),
   funding: { accounts: signature, money: signature, 'wallets.tutor': address, 'wallets.student': address },
-  stamps: each(BOTH, { verifier: address, model: text, inVault: is(true) }),
+  stamps: each(BOTH, { verifier: address, model: text }),
   credits: each(BOTH, { signature, amount: text, credits: count, reference: address }),
   profiles: each(BOTH, { profile: address, tag: hex32, spent: count, stampProof: is('checks') }),
   logins: each(BOTH, { profiles: words, can: words, limit: text }),

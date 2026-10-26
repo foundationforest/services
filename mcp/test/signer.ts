@@ -1,37 +1,37 @@
 // A reference signer: what Forest on a person's device does for the mcp, in plain code, for the app
-// to read and for the tests (and the loop, later) to run. It holds the person's seed, keeps their
-// vault in the standard's format, makes connections on the connect page, opens a socket to each
-// connector its permissions name, and answers each ask by the person's permissions, exactly as the
-// standard says (records/README.md, Permissions; keys/README.md, Signers):
+// to read and for the tests (and the loop, later) to run. It holds the person's seed, keeps each
+// profile's rules in the standard's format, makes connections on the connect page, opens a socket
+// to each connector its rules name, and answers each ask by the person's rules, exactly as the
+// standard says (records/README.md, Rules; keys/README.md, Signers):
 //
-// - an entry is for one who: here a connection, { connector, connection };
-// - it acts on no entry it does not know whole (knowsPermission), nor on one that has ended;
-// - `post` never covers a profile's profile record or its hosts record (and the vault is no
-//   label's, so no ask reaches it): those it always asks the person about;
-// - `pay` only within every limit that holds, counting what this who asked for over any day, week
-//   or month; an entry with no limit sets no money cap;
-// - anything no entry covers waits for the person's yes: here a link to open, and approve().
+// - a rule is for one who, on one profile: here a connection, { connector, connection };
+// - it reads a profile's rules from its hosts before it acts on any ask for it (readRules), and acts
+//   on no rule it does not know whole (knowsRule), nor on one that has ended;
+// - `post` never covers a profile's profile record, its hosts record or a rule: those it always
+//   asks the person about;
+// - `pay` only within the rule's limit, counting what this who asked for over any day, week or
+//   month; a rule with no limit sets no money cap;
+// - anything no rule covers waits for the person's yes: here a link to open, and approve().
 //
 // Whatever it does, it signs with the profile's main key and publishes straight to the profile's
 // hosts. Its answers carry no address of the person's: a message from one of their own profiles
 // shows its label, and numbers stand in for messages.
 //
-// What is the app's and not the standard's, chosen here the simplest way: the connection keys are
-// kept in the vault's settings (`connections`), so each of the person's signers can serve each
-// connection; messages are numbered per connection, in memory; what a who spent is counted in
-// memory; and a payment is made by the function the signer is given.
+// What is the app's and not the standard's, chosen here the simplest way: the labels of the
+// profiles it made are kept in memory; messages are numbered per connection, in memory; what a who
+// spent is counted in memory; and a payment is made by the function the signer is given.
 
 import { type KeyObject, createPrivateKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
-import { type PayKey, inboxKey, mainKey, payAddresses, payKey, vaultKey } from '@foundationforest/keys'
-import { type Body, RecordError, b64u, deliver, hostsRecord, nextTime, ownerRecord, publish, pull, pullRequest, readProfile } from '@foundationforest/records'
-import { PERIODS, type Permission, type Vault, knowsPermission, message, openMessage, readVault, vaultRecord } from '@foundationforest/records/private'
+import { type MainKey, type PayKey, inboxKey, mainKey, payAddresses, payKey, signPay } from '@foundationforest/keys'
+import { type Body, RecordError, type View, b64u, deliver, hostsRecord, nextTime, ownerRecord, publish, pull, pullRequest, readProfile } from '@foundationforest/records'
+import { type Limit, PERIODS, RULE_PREFIX, type Rule, knowsRule, message, openMessage, readRules, ruleId, ruleRecord } from '@foundationforest/records/private'
 import { LOGIN, REGISTER } from '../src/connection.ts'
 
 export type Answer = { status: 'done'; result: Body } | { status: 'approval'; link: string; why: string } | { status: 'refused'; why: string }
 /** A payment: from a pay key, to a Solana address, so many dollars. Gives back its evidence, `<chain>:<id>`. */
 export type PayWith = (payment: { from: PayKey; to: string; amount: string }) => Promise<string>
-/** What the person chose on the connect page: a permission without its who, or no. */
-export type Choice = Omit<Permission, 'who'> | 'no'
+/** What the person chose on the connect page: the profiles a rule goes on, and the rule without its who; or no. */
+export type Choice = { profiles: string[]; can: string[]; limit?: Limit; until?: number } | 'no'
 
 type Connection = { connector: string; connection: string; secret: string }
 type Numbered = { id: string; label: string; from: string }
@@ -50,16 +50,15 @@ function micros(amount: string): bigint {
 const ACTION: { [tool: string]: string } = { post: 'post', remove: 'post', message: 'message', reply: 'message', inbox: 'read', pay: 'pay' }
 
 /**
- * Whether an entry lets its who ask for `action` on the profile `label`, at `path` for a write: an
- * entry this signer knows whole, not ended, covering the profile and the action. `post` never covers
- * the profile record or the hosts record.
+ * Whether a rule lets its who ask for `action`, at `path` for a write: a rule this signer knows
+ * whole, not ended, covering the action. `post` never covers the profile record, the hosts record
+ * or a rule.
  */
-export function permits(entry: Permission, label: string, action: string, path?: string, now = Date.now()): boolean {
-  if (!knowsPermission(entry)) return false
-  if (entry.until !== undefined && now > entry.until) return false
-  if (entry.profiles !== 'all' && !entry.profiles.includes(label)) return false
-  if (!entry.can.includes(action)) return false
-  if (action === 'post' && (path === 'profile' || path === 'hosts')) return false
+export function permits(rule: Rule, action: string, path?: string, now = Date.now()): boolean {
+  if (!knowsRule(rule)) return false
+  if (rule.until !== undefined && now > rule.until) return false
+  if (!rule.can.includes(action)) return false
+  if (action === 'post' && (path === 'profile' || path === 'hosts' || path?.startsWith(RULE_PREFIX))) return false
   return true
 }
 
@@ -68,8 +67,8 @@ export class Signer {
   private readonly hosts: string[]
   private readonly appUrl: string
   private readonly payWith: PayWith | undefined
-  private vault: Vault = {}
-  private vaultTime = -1
+  /** The labels of the profiles it made. */
+  private readonly profiles: string[] = []
   /** One socket per connector, and its challenge. */
   private readonly sockets = new Map<string, { ws: WebSocket; challenge?: string }>()
   /** Each connection's numbered messages: number n is the (n-1)th. */
@@ -89,59 +88,56 @@ export class Signer {
   }
 
   // -------------------------------------------------------------------------------------------
-  // The vault
-
-  /** The vault, read from the hosts, or a new one. */
-  async restore(): Promise<void> {
-    const vk = await vaultKey(this.seed)
-    const read = await readVault(this.hosts, { address: vk.address, identity: (await inboxKey(vk.secret)).identity }, Date.now())
-    this.vault = read?.vault ?? {}
-    this.vaultTime = read?.time ?? -1
-  }
-
-  /** The vault, written to the hosts, at a time past the last. */
-  private async saveVault(): Promise<void> {
-    const vk = await vaultKey(this.seed)
-    const time = Math.max(Date.now(), this.vaultTime + 1)
-    const records = [...(this.vaultTime < 0 ? [hostsRecord(vk, this.hosts, time)] : []), await vaultRecord(vk, (await inboxKey(vk.secret)).encryptTo, this.vault, time)]
-    await publish(this.hosts, records)
-    this.vaultTime = time
-  }
-
-  /** The person's permissions, as the vault holds them. */
-  permissions(): Permission[] {
-    return this.vault.permissions ?? []
-  }
+  // Profiles and their rules
 
   /** The labels of the person's profiles. */
   labels(): string[] {
-    return (this.vault.profiles ?? []).map((p) => p.label)
+    return [...this.profiles]
   }
 
-  /** Every address of the person's: each profile's, its pay addresses, and the vault's. For the tests to look for. */
+  /** Every address of the person's: each profile's, and its pay addresses. For the tests to look for. */
   async addresses(): Promise<string[]> {
-    const out = [(await vaultKey(this.seed)).address]
+    const out: string[] = []
     for (const label of this.labels()) out.push((await mainKey(this.seed, label)).address, ...Object.values(await payAddresses(this.seed, label)))
     return out
   }
 
-  /** A new profile, `<market>/<role>`, with an inbox anyone may write to: its hosts record and profile record, then the vault. */
+  /** A new profile, `<market>/<role>`, with an inbox anyone may write to: its hosts record and profile record, each pay address signed. */
   async addProfile(label: string): Promise<string> {
     const [market, role] = label.split('/')
     const main = await mainKey(this.seed, label)
     const now = Date.now()
-    const body = { market: market!, role: role!, inboxKey: (await inboxKey(main.secret)).encryptTo, inbox: { senders: 'anyone' }, pay: { ...(await payAddresses(this.seed, label)) } }
+    const paySig = { solana: signPay(await payKey(this.seed, label, 'solana'), main.address), evm: signPay(await payKey(this.seed, label, 'evm'), main.address) }
+    const body = { market: market!, role: role!, inboxKey: (await inboxKey(main.secret)).encryptTo, inbox: { senders: 'anyone' }, pay: { ...(await payAddresses(this.seed, label)) }, paySig }
     await publish(this.hosts, [hostsRecord(main, this.hosts, now), ownerRecord(main, 'profile', body, now)])
-    this.vault.profiles = [...(this.vault.profiles ?? []), { label, hosts: this.hosts }]
-    await this.saveVault()
+    this.profiles.push(label)
     return main.address
+  }
+
+  /** A profile's main key, its view as its hosts serve it, and its rules by id, read before acting. */
+  private async read(label: string): Promise<{ main: MainKey; view: View; rules: Map<string, Rule> }> {
+    const main = await mainKey(this.seed, label)
+    const view = await readProfile(this.hosts, main.address, Date.now(), { post: true })
+    return { main, view, rules: await readRules(view, main) }
+  }
+
+  /** A profile's rules, as its hosts serve them. */
+  async rules(label: string): Promise<Rule[]> {
+    return [...(await this.read(label)).rules.values()]
   }
 
   // -------------------------------------------------------------------------------------------
   // Connections
 
-  private connections(): Connection[] {
-    return ((this.vault.settings?.connections ?? []) as Connection[]).filter((c) => typeof c.secret === 'string')
+  /** Every connection a rule on any profile names, with its key. */
+  private async connections(): Promise<Connection[]> {
+    const out = new Map<string, Connection>()
+    for (const label of this.labels()) {
+      for (const { who } of await this.rules(label)) {
+        if ('connector' in who && typeof who.key === 'string') out.set(`${who.connector} ${who.connection}`, { connector: who.connector, connection: who.connection, secret: who.key })
+      }
+    }
+    return [...out.values()]
   }
 
   private keyOf(c: Connection): KeyObject {
@@ -154,9 +150,10 @@ export class Signer {
 
   /**
    * The connect page: the person saw the AI app's name, where it sends them back and the connector,
-   * and chose. On a yes: a new connection key, its id and the person's choice saved as a permission
-   * in the vault, the login request signed with it, and, if a socket to that connector is open, the
-   * connection registered there. Gives back where to send the person's browser.
+   * and chose. On a yes: a new connection key, and a rule on each profile chosen with its id, its
+   * key and the person's choice, the login request signed with it, and, if a socket to that
+   * connector is open, the connection registered there. Gives back where to send the person's
+   * browser.
    */
   async connect(connector: string, request: string, choice: Choice): Promise<string> {
     const back = new URL('/connected', connector)
@@ -168,9 +165,13 @@ export class Signer {
     const { name } = JSON.parse(Buffer.from(b64u.decode(request.split('.')[0]!)).toString('utf8')) as { name: string }
     const jwk = generateKeyPairSync('ed25519').privateKey.export({ format: 'jwk' })
     const c: Connection = { connector, connection: jwk.x!, secret: jwk.d! }
-    this.vault.permissions = [...(this.vault.permissions ?? []), { who: { connector, connection: c.connection, name }, ...choice }]
-    this.vault.settings = { ...this.vault.settings, connections: [...this.connections(), c] }
-    await this.saveVault()
+    const { profiles, ...rest } = choice
+    const rule: Rule = { who: { connector, connection: c.connection, key: c.secret, name }, ...rest }
+    for (const label of profiles) {
+      const { main, view } = await this.read(label)
+      const path = RULE_PREFIX + (await ruleId(main, rule.who))
+      await publish(view.hosts, [await ruleRecord(main, rule, nextTime(Date.now(), view, path))])
+    }
     const open = this.sockets.get(connector)
     if (open?.challenge) open.ws.send(JSON.stringify({ type: 'register', connection: c.connection, sig: this.signAs(c, `${REGISTER}${connector}\n${open.challenge}`) }))
     back.searchParams.set('connection', c.connection)
@@ -178,16 +179,21 @@ export class Signer {
     return back.href
   }
 
-  /** A connection removed: its permission and its key, so this signer serves it no more. */
+  /** A connection removed: its rule on every profile, and with it its key, so this signer serves it no more. */
   async disconnect(connection: string): Promise<void> {
-    this.vault.permissions = (this.vault.permissions ?? []).filter((p) => (p.who as { connection?: string }).connection !== connection)
-    this.vault.settings = { ...this.vault.settings, connections: this.connections().filter((c) => c.connection !== connection) }
-    await this.saveVault()
+    for (const label of this.labels()) {
+      const { main, view, rules } = await this.read(label)
+      for (const [id, { who }] of rules) {
+        if (!('connection' in who) || who.connection !== connection) continue
+        const path = RULE_PREFIX + id
+        await publish(view.hosts, [ownerRecord(main, path, null, nextTime(Date.now(), view, path))])
+      }
+    }
   }
 
   /** Forest opened: a socket to `connector`, every connection for it registered. */
   async open(connector: string): Promise<void> {
-    const mine = this.connections().filter((c) => c.connector === connector)
+    const mine = (await this.connections()).filter((c) => c.connector === connector)
     const ws = new WebSocket(`${connector.replace(/^http/, 'ws')}/signer`)
     const socket: { ws: WebSocket; challenge?: string } = { ws }
     this.sockets.set(connector, socket)
@@ -222,23 +228,23 @@ export class Signer {
   // -------------------------------------------------------------------------------------------
   // Asks
 
-  private entryFor(connector: string, connection: string): Permission | undefined {
-    return (this.vault.permissions ?? []).find((p) => {
-      const who = p.who as { connector?: string; connection?: string }
-      return who.connector === connector && who.connection === connection
-    })
+  /** This connection's rule on each profile, read from its hosts: undefined where it has none. */
+  private async rulesFor(connector: string, connection: string): Promise<Map<string, Rule | undefined>> {
+    const out = new Map<string, Rule | undefined>()
+    for (const label of this.labels()) {
+      const { main, rules } = await this.read(label)
+      out.set(label, rules.get(await ruleId(main, { connector, connection })))
+    }
+    return out
   }
 
-  /** Whether paying `amount` keeps `who` within every limit of `entry` that holds on `label`: always, for an entry with none. */
-  private withinLimits(entry: Permission, who: string, label: string, amount: string): boolean {
-    const now = Date.now()
-    for (const limit of entry.limits ?? []) {
-      if (limit.profile !== undefined && limit.profile !== label) continue
-      const since = now - PERIODS[limit.per as keyof typeof PERIODS]
-      const spent = this.spent.filter((s) => s.who === who && s.time > since && (limit.profile === undefined || s.label === label)).reduce((sum, s) => sum + s.micros, 0n)
-      if (spent + micros(amount) > micros(limit.amount)) return false
-    }
-    return true
+  /** Whether paying `amount` keeps `who` within the rule's limit on `label`: always, for a rule with none. */
+  private withinLimit(rule: Rule, who: string, label: string, amount: string): boolean {
+    const limit = rule.limit
+    if (!limit) return true
+    const since = Date.now() - PERIODS[limit.per as keyof typeof PERIODS]
+    const spent = this.spent.filter((s) => s.who === who && s.label === label && s.time > since).reduce((sum, s) => sum + s.micros, 0n)
+    return spent + micros(amount) <= micros(limit.amount)
   }
 
   /** What waits for the person's yes, and the link that shows it to them. */
@@ -247,13 +253,16 @@ export class Signer {
     return { status: 'approval', link: `${this.appUrl}/approve/${this.waiting.length}`, why }
   }
 
-  /** An ask from `connection` through `connector`: done within the person's permissions, waiting for their yes outside them. */
+  /** An ask from `connection` through `connector`: done within the person's rules, waiting for their yes outside them. */
   async handle(connector: string, connection: string, tool: string, args: Body): Promise<Answer> {
     this.asked.push({ tool, args })
-    if (!this.connections().some((c) => c.connector === connector && c.connection === connection)) return refused('this connection was removed')
-    const entry = this.entryFor(connector, connection)
+    const rules = await this.rulesFor(connector, connection)
+    if (![...rules.values()].some(Boolean)) return refused('this connection was removed')
     if (tool === 'profiles') {
-      const covered = entry && knowsPermission(entry) ? this.labels().filter((l) => entry.profiles === 'all' || entry.profiles.includes(l)) : []
+      const covered = this.labels().filter((l) => {
+        const rule = rules.get(l)
+        return rule && knowsRule(rule)
+      })
       return done({ profiles: covered.map((l) => ({ market: l.split('/')[0]!, role: l.split('/').slice(1).join('/') })) })
     }
     const action = ACTION[tool] ?? null
@@ -270,8 +279,9 @@ export class Signer {
     if (tool === 'post' && args.id === undefined) ask = { ...args, id: randomBytes(8).toString('hex') }
     const path = tool === 'post' || tool === 'remove' ? `${ask.kind as string}/${ask.id as string}` : undefined
     const pending = { connector, connection, tool, args: ask }
-    if (!entry || !permits(entry, label, action, path)) return this.wait(pending, `${tool} as ${label} is not in what this connection may do`)
-    if (tool === 'pay' && !this.withinLimits(entry, `${connector} ${connection}`, label, ask.amount as string)) return this.wait(pending, `this payment goes beyond a limit the person set`)
+    const rule = rules.get(label)
+    if (!rule || !permits(rule, action, path)) return this.wait(pending, `${tool} as ${label} is not in what this connection may do`)
+    if (tool === 'pay' && !this.withinLimit(rule, `${connector} ${connection}`, label, ask.amount as string)) return this.wait(pending, `this payment goes beyond a limit the person set`)
     return this.act(pending, label)
   }
 

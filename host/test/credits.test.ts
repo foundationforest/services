@@ -1,9 +1,9 @@
-// The host's credits, through the real reference host on loopback: what a 1 kB record, a 200 kB blob
-// and a delete cost; a write refused with no balance, and taking down never blocked by it, nor a vault
-// write; a ticket
-// collected; a payment checked against a stand-in RPC; the credit key made at the first start; and
-// one end to end, a folder, a record and a blob, read back. The reference host's own tests are the
-// standard's.
+// The host's credits, through the real reference host on loopback: what joining, a 1 kB record, a
+// 200 kB blob and a delete cost; a write refused with no balance, joining too, and leaving and taking
+// down never blocked by it; a message to its own inbox priced, others' free up to the day's cap; a
+// ticket collected; a payment checked against a stand-in RPC; the credit key made at the first
+// start; and one end to end, a folder, a record and a blob, read back. The reference host's own tests
+// are the standard's.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
@@ -11,13 +11,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 
-import { inboxKey, mainKey, newSeed, vaultKey } from '@foundationforest/keys'
-import { type BlobName, type SignedBlobRequest, type SignedRecord, base58, blobNameOf, blobRequest, deleteBlob, encodeRecord, getBlob, hostsRecord, ownerRecord, publish, putBlob, readProfile } from '@foundationforest/records'
-import { vaultRecord } from '@foundationforest/records/private'
+import { inboxKey, mainKey, newSeed } from '@foundationforest/keys'
+import { type BlobName, type SignedBlobRequest, type SignedMessage, type SignedRecord, base58, blobNameOf, blobRequest, deleteBlob, deliver, encodeRecord, getBlob, hostsRecord, ownerRecord, publish, putBlob, readProfile } from '@foundationforest/records'
+import { message } from '@foundationforest/records/private'
 
 import type { Rpc } from '../credits/seller.ts'
 import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
-import { type RunningHost, readConfig, startHost } from '../src/host.ts'
+import { MESSAGES_A_DAY, type RunningHost, pricedMessages, readConfig, startHost } from '../src/host.ts'
 import { buy, collect, keyOf, spend, sponsor } from './buyer.ts'
 
 const ORIGIN = 'http://127.0.0.1'
@@ -46,6 +46,17 @@ type Folder = Awaited<ReturnType<typeof folder>>
 const put = (url: string, me: Folder, name: BlobName, bytes: Uint8Array) => putBlob([url], blobRequest(me, { action: 'put', ...name }, Date.now()) as SignedBlobRequest & { action: 'put' }, bytes)
 const remove = (url: string, me: Folder, sha256: string) => deleteBlob([url], blobRequest(me, { action: 'delete', sha256 }, Date.now()) as SignedBlobRequest & { action: 'delete' })
 const balance = (running: RunningHost, folder: string) => running.credits.balance(folder)
+/** What a folder spent since the last time this was asked, in millionths of a credit. */
+function spending(running: RunningHost, folder: string): () => number {
+  const held = () => Math.round(balance(running, folder) * MILLIONTHS)
+  let last = held()
+  return () => {
+    const now = held()
+    const spent = last - now
+    last = now
+    return spent
+  }
+}
 const results = async (running: RunningHost, records: SignedRecord[]) => (await publish([running.url], records))[0]!.results
 
 /** An offer whose canonical text is exactly `bytes` long. */
@@ -61,55 +72,62 @@ test('the price of a 1 kB record, of a 200 kB blob, and of a delete', async () =
   try {
     const me = await folder()
     await fund(running, me.address, 5)
+    const spent = spending(running, me.address)
     const now = Date.now()
-    // A hosts record is free: the standard's host never asks about it.
-    assert.ok((await results(running, [hostsRecord(me, [running.url], now)]))[0]!.ok)
-    assert.equal(balance(running, me.address), 5)
+    // Joining costs a write: the folder's first hosts record, priced like any record. A later one is
+    // free.
+    const hosts = hostsRecord(me, [running.url], now)
+    assert.ok((await results(running, [hosts]))[0]!.ok)
+    assert.equal(spent(), running.credits.priceOf(Buffer.byteLength(encodeRecord(hosts))), 'the first hosts record, at its price')
+    assert.ok((await results(running, [hostsRecord(me, [running.url], now + 1)]))[0]!.ok)
+    assert.equal(spent(), 0, 'a later hosts record costs nothing')
 
     const offer = offerOf(me, 1000, now)
     assert.ok((await results(running, [offer]))[0]!.ok)
-    assert.equal(balance(running, me.address), 4.98, 'a 1 kB record: 0.01, and 0.01 for its kilobyte')
+    assert.equal(spent(), 20_000, 'a 1 kB record: 0.01, and 0.01 for its kilobyte')
     assert.equal((await results(running, [offer]))[0]!.message, 'already here')
-    assert.equal(balance(running, me.address), 4.98, 'the same record again costs nothing')
+    assert.equal(spent(), 0, 'the same record again costs nothing')
 
     const photo = new Uint8Array(200_000).fill(7)
     const name = blobNameOf(photo, 'image/png')
     assert.ok((await put(running.url, me, name, photo))[0]!.ok)
-    assert.equal(balance(running, me.address), 2.97, 'a 200 kB blob: 0.01, and 0.01 for each of its 200 kilobytes')
+    assert.equal(spent(), 2_010_000, 'a 200 kB blob: 0.01, and 0.01 for each of its 200 kilobytes')
     assert.equal((await put(running.url, me, name, photo))[0]!.message, 'already here')
-    assert.equal(balance(running, me.address), 2.97, 'the same bytes again cost nothing')
+    assert.equal(spent(), 0, 'the same bytes again cost nothing')
 
     assert.ok((await results(running, [ownerRecord(me, 'offer/maths', null, now + 1)]))[0]!.ok)
-    assert.equal(balance(running, me.address), 2.96, 'taking a record down: the floor')
+    assert.equal(spent(), 10_000, 'taking a record down: the floor')
     assert.ok((await remove(running.url, me, name.sha256))[0]!.ok)
-    assert.equal(balance(running, me.address), 2.95, 'taking a blob down: the floor')
+    assert.equal(spent(), 10_000, 'taking a blob down: the floor')
     assert.equal((await remove(running.url, me, name.sha256))[0]!.message, 'not here')
-    assert.equal(balance(running, me.address), 2.95, 'a delete of bytes the folder does not hold costs nothing')
+    assert.equal(spent(), 0, 'a delete of bytes the folder does not hold costs nothing')
   } finally {
     await running.close()
   }
 })
 
-test('a write is refused with no balance; taking your own things down never is', async () => {
-  // A write costs exactly one credit here, so two credits pay for one record and one blob.
+test('a write is refused with no balance, joining too; leaving and taking your own things down never are', async () => {
+  // A write costs exactly one credit here: three credits pay for joining, one record and one blob.
   const running = await start({ WRITE_FLOOR: '1', PER_KB: '0' })
   try {
     const me = await folder()
     const now = Date.now()
-    assert.ok((await results(running, [hostsRecord(me, [running.url], now)]))[0]!.ok, 'a hosts record needs no balance')
+    const join = (await results(running, [hostsRecord(me, [running.url], now)]))[0]!
+    assert.deepEqual([join.ok, join.error], [false, 'refused'], 'joining costs a write')
+    assert.match(join.message!, /costs 1 credit, and the folder holds 0 here/)
     const refused = (await results(running, [ownerRecord(me, 'offer/maths', { text: 'maths' }, now)]))[0]!
-    assert.equal(refused.ok, false)
-    assert.equal(refused.error, 'refused')
-    assert.match(refused.message!, /costs 1 credit, and the folder holds 0 here/)
+    assert.deepEqual([refused.ok, refused.error], [false, 'refused'])
     const photo = new Uint8Array(1000).fill(1)
     const name = blobNameOf(photo, 'image/jpeg')
     const short = await put(running.url, me, name, photo)
     assert.deepEqual([short[0]!.ok, short[0]!.error], [false, 'refused'], 'bytes too')
 
-    await fund(running, me.address, 2)
+    await fund(running, me.address, 3)
+    assert.ok((await results(running, [hostsRecord(me, [running.url], now)]))[0]!.ok)
     assert.ok((await results(running, [ownerRecord(me, 'offer/maths', { text: 'maths' }, now)]))[0]!.ok)
     assert.ok((await put(running.url, me, name, photo))[0]!.ok)
     assert.equal(balance(running, me.address), 0)
+    assert.ok((await results(running, [hostsRecord(me, [running.url, 'https://elsewhere.example'], now + 1)]))[0]!.ok, 'a later hosts record, an update, needs no balance')
 
     assert.ok((await results(running, [ownerRecord(me, 'offer/maths', null, now + 1)]))[0]!.ok, 'a live record taken down, free')
     assert.ok((await remove(running.url, me, name.sha256))[0]!.ok, 'a blob taken down, free')
@@ -117,17 +135,48 @@ test('a write is refused with no balance; taking your own things down never is',
     assert.equal(balance(running, me.address), 0)
     const nothing = (await results(running, [ownerRecord(me, 'offer/physics', null, now)]))[0]!
     assert.deepEqual([nothing.ok, nothing.error], [false, 'refused'], 'a null body where nothing stands is a write like any other')
+    assert.ok((await results(running, [hostsRecord(me, ['https://elsewhere.example'], now + 2)]))[0]!.ok, 'leaving needs no balance')
+  } finally {
+    await running.close()
+  }
+})
 
-    // The vault is free: changing the person's permissions never fails for lack of credits.
-    const vault = await vaultKey(newSeed())
-    const { encryptTo } = await inboxKey(vault.secret)
-    const permissions = [{ who: { profile: me.address }, profiles: 'all' as const, can: ['post'] }]
-    assert.ok((await results(running, [hostsRecord(vault, [running.url], now)]))[0]!.ok)
-    assert.ok((await results(running, [await vaultRecord(vault, encryptTo, { permissions }, now)]))[0]!.ok, 'a vault write needs no balance')
-    assert.ok((await results(running, [await vaultRecord(vault, encryptTo, { permissions: [] }, now + 1)]))[0]!.ok, 'nor a change to it')
-    assert.equal(balance(running, vault.address), 0)
-    const open = (await results(running, [ownerRecord(vault, 'vault', { text: 'not encrypted' }, now + 2)]))[0]!
-    assert.deepEqual([open.ok, open.error], [false, 'refused'], 'a record at vault that is not encrypted is no vault: a write like any other')
+test('a message to its own inbox is priced like a record from its folder; others’ messages are free', async () => {
+  // A write costs exactly one credit here: joining, the profile record, and one message to itself.
+  const running = await start({ WRITE_FLOOR: '1', PER_KB: '0' })
+  try {
+    const me = await folder()
+    await fund(running, me.address, 3)
+    const now = Date.now()
+    const profile = { market: 'tutoring', role: 'seller', inboxKey: (await inboxKey(me.secret)).encryptTo, inbox: { senders: 'anyone' } }
+    assert.ok((await results(running, [hostsRecord(me, [running.url], now), ownerRecord(me, 'profile', profile, now)])).every((r) => r.ok))
+    const send = async (from: Folder, text: string) => (await deliver([running.url], [await message(from, me.address, { text }, Date.now(), profile)]))[0]!.results[0]!
+    assert.ok((await send(me, 'A note to my other devices.')).ok)
+    assert.equal(balance(running, me.address), 0, 'one credit, as a record of its size')
+    const short = await send(me, 'Another note.')
+    assert.deepEqual([short.ok, short.error], [false, 'refused'], 'refused when the folder cannot pay')
+    assert.match(short.message!, /costs 1 credit, and the folder holds 0 here/)
+    assert.ok((await send(await mainKey(newSeed(), 'tutoring/buyer'), 'Is the coat still for sale?')).ok, 'someone else’s message is free')
+  } finally {
+    await running.close()
+  }
+})
+
+test('others’ messages: an inbox takes MESSAGES_A_DAY of them a day, from midnight UTC', async () => {
+  assert.equal(MESSAGES_A_DAY, 1000)
+  const running = await start()
+  try {
+    let clock = Date.UTC(2026, 9, 26, 23, 59)
+    const choose = pricedMessages(running.credits, 2, () => clock)
+    const [inbox, another, sender] = [(await folder()).address, (await folder()).address, (await folder()).address]
+    const to = (address: string) => ({ v: 1, from: sender, to: address, time: clock, body: { private: '' }, sig: '' }) as SignedMessage
+    const stored = { messages: 0, bytes: 0 }
+    assert.equal(await choose(to(inbox), stored), null)
+    assert.equal(await choose(to(inbox), stored), null)
+    assert.match((await choose(to(inbox), stored))!, /this inbox has taken 2 messages from others today/)
+    assert.equal(await choose(to(another), stored), null, 'each inbox counts its own')
+    clock += 2 * 60_000
+    assert.equal(await choose(to(inbox), stored), null, 'a new day, counted again')
   } finally {
     await running.close()
   }
@@ -224,9 +273,10 @@ test('end to end: a folder, a record and a blob, through the reference host with
     const me = await folder()
     await fund(running, me.address, 10)
     const now = Date.now()
+    const hosts = hostsRecord(me, [running.url], now)
     const profile = ownerRecord(me, 'profile', { market: 'tutoring', role: 'seller' }, now)
     const offer = ownerRecord(me, 'offer/maths', { text: 'Maths, an hour on Tuesdays.' }, now)
-    const outcome = await publish([running.url], [hostsRecord(me, [running.url], now), profile, offer])
+    const outcome = await publish([running.url], [hosts, profile, offer])
     assert.deepEqual(outcome[0]!.results.map((r) => [r.ok, r.error]), [[true, undefined], [true, undefined], [true, undefined]])
     const photo = crypto.getRandomValues(new Uint8Array(30_000))
     const name = blobNameOf(photo, 'image/jpeg')
@@ -239,8 +289,8 @@ test('end to end: a folder, a record and a blob, through the reference host with
     assert.deepEqual((await getBlob(view.hosts, name.sha256))?.bytes, photo)
 
     const price = (bytes: number) => running.credits.priceOf(bytes)
-    const spent = price(Buffer.byteLength(encodeRecord(profile))) + price(Buffer.byteLength(encodeRecord(offer))) + price(photo.length)
-    assert.equal(balance(running, me.address), (10 * MILLIONTHS - spent) / MILLIONTHS, 'each write at its price, the hosts record free')
+    const spent = [hosts, profile, offer].reduce((sum, r) => sum + price(Buffer.byteLength(encodeRecord(r))), 0) + price(photo.length)
+    assert.equal(balance(running, me.address), (10 * MILLIONTHS - spent) / MILLIONTHS, 'each write at its price, the hosts record too')
   } finally {
     await running.close()
   }

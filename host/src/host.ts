@@ -8,13 +8,13 @@
 // host on loopback.
 //
 // Every write is paid for in credits, from its folder's balance here: the standard's host asks this
-// host's choices (`recordChoice`, `blobChoice`). A record is claimed by its id as its price is taken,
-// so two copies pay once. Bytes are stored first: their price is reserved, then taken once the
-// standard's host answers that it kept them, or released; the front sends on one request for the
-// same bytes at a time. The standard's host asks nothing about a hosts record, so it is free, and
-// nothing about a message here, so messages are free. A vault write, an encrypted record at
-// `vault`, is free too: the vault is one small record, and changing the person's permissions in it
-// never fails for lack of credits. Reads are free.
+// host's choices (`recordChoice`, `blobChoice`, `messageChoice`). A record is claimed by its id as
+// its price is taken, so two copies pay once. Bytes are stored first: their price is reserved, then
+// taken once the standard's host answers that it kept them, or released; the front sends on one
+// request for the same bytes at a time. The standard's host asks about a folder's first hosts
+// record, so joining costs a write, and never about a later one, so leaving and updating are free.
+// A message to its own profile's inbox is a write of that folder's, priced and claimed as a record
+// is; others' messages are free, MESSAGES_A_DAY an inbox a day. Reads are free.
 //
 // Taking your own things down is never blocked by money: a null body over a live record, and a blob
 // delete the standard's host carries out, cost the floor when the balance holds it, and go through
@@ -35,9 +35,8 @@ import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, 
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { type Checked, checkBlobRequest, encodeRecord, readPage, recordId, unsignedOf } from '@foundationforest/records'
-import { type BlobChoice, type BlobDriver, Host, type HostOptions, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
-import { VAULT_PATH, isPrivate } from '@foundationforest/records/private'
+import { type Checked, checkBlobRequest, encodeMessage, encodeRecord, messageId, readPage, recordId, unsignedMessageOf, unsignedOf } from '@foundationforest/records'
+import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
 import { publicFetch } from '@foundationforest/records/public'
 import { checkStamp } from '@foundationforest/stamp'
 import { base58 } from '@scure/base'
@@ -68,6 +67,10 @@ export const choice = {
 
 /** Milliseconds a sender's host may take to serve all of the sender's records. */
 export const SENDER_READ_MS = 5_000
+
+/** Others' messages one inbox takes in a day, from midnight UTC. */
+export const MESSAGES_A_DAY = 1_000
+const DAY_MS = 86_400_000
 
 export type Config = {
   /** The data directory: the standard's storage, and the credits' file and key in `credits/`. */
@@ -181,19 +184,42 @@ function rpcAt(url: string): Rpc {
 
 /**
  * A record's price, from its own folder's balance: the floor and its canonical bytes by the kilobyte.
- * A vault write, an encrypted record at `vault`, is free. A null body over a live record takes it
- * down: it costs the floor, and goes through free when the folder cannot pay. `host` is the
- * standard's host the record is going into, for what stands there.
+ * The standard's host asks about a folder's first hosts record too, so it is priced like any. A null
+ * body over a live record takes it down: it costs the floor, and goes through free when the folder
+ * cannot pay. `host` is the standard's host the record is going into, for what stands there.
  */
 export function paidRecords(credits: Credits, host: () => Host): RecordChoice {
   return (record) => {
-    if (record.path === VAULT_PATH && isPrivate(record.body)) return null
     const id = recordId(unsignedOf(record))
     if (record.body === null && host().view(record.profile).current.get(record.path)?.record.body) {
       credits.charge(record.profile, credits.floor, id)
       return null
     }
     return credits.charge(record.profile, credits.priceOf(Buffer.byteLength(encodeRecord(record))), id)
+  }
+}
+
+/**
+ * A message's price. One whose `from` is its `to` is the profile writing to its own inbox, its
+ * devices passing things to each other: a write of that folder's, priced from its balance as a
+ * record of the same canonical bytes is, and claimed by its id, so two copies pay once. Any other is
+ * free, and one inbox takes `cap` of them a day, from midnight UTC. The count is kept in memory, so
+ * no file holds how many messages an inbox got, and a restart counts the day again from none.
+ */
+export function pricedMessages(credits: Credits, cap = MESSAGES_A_DAY, now: () => number = Date.now): MessageChoice {
+  let day = -1
+  const counted = new Map<string, number>()
+  return (m) => {
+    if (m.from === m.to) return credits.charge(m.to, credits.priceOf(Buffer.byteLength(encodeMessage(m))), messageId(unsignedMessageOf(m)))
+    const today = Math.floor(now() / DAY_MS)
+    if (today !== day) {
+      day = today
+      counted.clear()
+    }
+    const n = counted.get(m.to) ?? 0
+    if (n >= cap) return `this inbox has taken ${cap} messages from others today, as many as this host takes in a day; send again after midnight UTC`
+    counted.set(m.to, n + 1)
+    return null
   }
 }
 
@@ -404,6 +430,7 @@ export async function startHost(config: Config, stand: { fetch?: typeof fetch; r
     ...choice,
     recordChoice: paidRecords(credits, () => host),
     blobChoice: paidBlobs(credits),
+    messageChoice: pricedMessages(credits),
     readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
     checkStamp,
   })

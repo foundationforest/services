@@ -74,8 +74,8 @@ describe('the login, end to end', () => {
     await c.client.close()
   })
 
-  test('each login is its own connection, saved in the person’s permissions with the AI app’s name', async () => {
-    const entries = w.person.permissions() as Array<{ who: { connector: string; connection: string; name: string } }>
+  test('each login is its own connection, saved in a rule on each profile chosen, with the AI app’s name', async () => {
+    const entries = (await w.person.rules('tutoring/tutor')) as Array<{ who: { connector: string; connection: string; name: string } }>
     assert.ok(entries.length >= 2)
     for (const e of entries) {
       assert.equal(e.who.connector, w.mcp.origin)
@@ -85,12 +85,16 @@ describe('the login, end to end', () => {
     assert.equal(new Set(entries.map((e) => e.who.connection)).size, entries.length)
   })
 
-  test('a login ends when the person removes its connection from their permissions, at their signer', async () => {
+  test('a login ends when the person removes its connection’s rules, at their signer', async () => {
+    const connections = async () => (await w.person.rules('tutoring/tutor')).map((e) => (e.who as { connection: string }).connection)
+    const before = await connections()
     const c = await aiApp(w.mcp.origin)
     await logIn(c)
-    const connection = (w.person.permissions().at(-1)!.who as { connection: string }).connection
+    const connection = (await connections()).find((x) => !before.includes(x))!
     await w.person.disconnect(connection)
-    assert.ok(!w.person.permissions().some((e) => (e.who as { connection: string }).connection === connection), 'gone from the vault')
+    for (const label of ['tutoring/tutor', 'tutoring/student']) {
+      assert.ok(!(await w.person.rules(label)).some((e) => (e.who as { connection: string }).connection === connection), `gone from ${label}'s rules`)
+    }
     const profiles = (await c.client.callTool({ name: 'profiles', arguments: {} })) as Result
     assert.equal(profiles.isError, true)
     assert.match(text(profiles), /this connection was removed/)

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
-import { discriminator } from '@foundationforest/escrow-client'
+import { VERSION, discriminator } from '@foundationforest/escrow-client'
 import { checkBytes, unpackSignature } from '@foundationforest/keys'
 import { b64u, base58 } from '@foundationforest/records'
 
@@ -60,7 +60,7 @@ before(async () => {
   const signature = base58.encode(randomBytes(64))
   const key = (x: string) => base58.decode(x)
   const empty = bytes(Uint8Array.of(0), ...Array.from({ length: 4 }, () => new Uint8Array(10)), Uint8Array.of(0))
-  const created = bytes(discriminator('event', 'Created'), key(escrow), Uint8Array.of(3), u64(1n), key(s1!.pay.solana), key(a!.pay.solana), Uint8Array.of(0), new Uint8Array(32), key(DOLLAR), randomBytes(32), randomBytes(32), u64(30_000_000n), empty, u64(1_790_000_000n))
+  const created = bytes(discriminator('event', 'Created'), key(escrow), Uint8Array.of(VERSION), u64(1n), key(s1!.pay.solana), key(a!.pay.solana), Uint8Array.of(0), new Uint8Array(32), key(DOLLAR), randomBytes(32), randomBytes(32), u64(30_000_000n), empty, u64(1_790_000_000n))
   const ended = bytes(discriminator('event', 'Ended'), key(escrow), Uint8Array.of(0), u64(30_000_000n), u64(30_000_000n), u64(0n), u64(30_000_000n), u64(1_790_000_100n), randomBytes(32), u64(0n), u64(1_790_000_050n))
   const logs = [`Program ${ESCROW_PROGRAM} invoke [1]`, ...[created, ended].map((e) => `Program data: ${Buffer.from(e).toString('base64')}`), `Program ${ESCROW_PROGRAM} success`]
   rpc = await startRpc((method, params) =>

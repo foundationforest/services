@@ -18,9 +18,9 @@ code, or the standard's reference host alone, or one of their own that answers t
 ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)).
 
 Of the person's, it keeps copies: the records each of their profiles' main keys signed, a private
-one encrypted; the messages to each inbox, encrypted; the blobs each folder put; and their vault,
-encrypted, when their app keeps it here. Anyone can copy a folder out of it; the main way is the
-person's app reading every record (`GET /v1/records?profile=<address>`) and every blob
+one (each of a profile's rules among them) encrypted; the messages to each inbox, encrypted; and the
+blobs each folder put. Anyone can copy a folder out of it; the main way is the person's app reading
+every record (`GET /v1/records?profile=<address>`) and every blob
 (`GET /v1/blobs/<sha256>`), and posting them to another host. The only thing here that is not a copy
 of what the person's main keys signed is each folder's balance of credits.
 
@@ -37,16 +37,20 @@ So the routes are the standard's eight (records in and out, read by GET or POST,
 pulled, blobs in, out and deleted), the four credit routes, and `/`. The reference host checks every
 record, message and blob, as the standard says, before it keeps anything.
 
-`src/host.ts` hands the reference host this host's numbers ([How we run it](#how-we-run-it)), two
+`src/host.ts` hands the reference host this host's numbers ([How we run it](#how-we-run-it)), three
 hooks that charge for writes, and two of the standard's pieces:
 
 - **`recordChoice`** charges a record to its own folder's balance, or refuses it (`refused`, with
-  what it costs and what the folder holds). The reference host never asks about a hosts record,
-  so it is free. A vault write, an encrypted record at `vault` (the person's vault, which holds their
-  permissions), it takes free too.
+  what it costs and what the folder holds). The reference host asks it about every content record
+  and about a folder's first hosts record, so joining costs a write; it never asks about a later
+  hosts record, so leaving and updating are free.
 - **`blobChoice`** takes the standard's blob types, then reserves the bytes' price on the folder
   that puts them. The front takes the price once the reference host answers that it kept them, or
   releases it.
+- **`messageChoice`** charges a message whose `from` is its `to` (a profile writing to its own
+  inbox, its devices passing things to each other) to that folder's balance, as a record of the
+  same size, or refuses it. Others' messages are free, and an inbox takes 1,000 of them a day,
+  counted from midnight UTC; past that it refuses them (`refused`) until the next day.
 - **`readSender`** reads a sender's records, for a message to an inbox that takes messages only
   from a verifier's stamp holders. It uses the standard's client
   (`readPage`, every page) through the standard's `publicFetch`, so it reaches only public
@@ -55,8 +59,6 @@ hooks that charge for writes, and two of the standard's pieces:
 - **`checkStamp`**, the stamp client's (`@foundationforest/stamp`), checks the stamp proof on that
   sender's profile record, as the standard's `stampCheck` gives it. Its key is in the stamp client,
   so the check reads no file and asks no network.
-
-A message costs nothing, so the reference host is given no message hook.
 
 **Taking your own things down is never blocked by money.**
 
@@ -82,7 +84,7 @@ bytes at a time, so a second put finds them kept and pays nothing.
 The credits keep their own two files in `credits/`:
 
 - `credits.sqlite`: the spent list, the proofs it took, its sponsors' bill, the balances, and the
-  id of each record it took a price for;
+  id of each record and message it took a price for;
 - `key.der`: the credit key.
 
 ### Credits
@@ -184,29 +186,33 @@ costs add up.
 **What a write costs:**
 
 - The floor (`WRITE_FLOOR`), plus what it stores at `PER_KB` for each 1,000 bytes, rounded up to a
-  millionth of a credit. What it stores is a record's canonical text, or a blob's bytes.
+  millionth of a credit. What it stores is a record's canonical text, a message's to its own inbox,
+  or a blob's bytes.
 - A delete costs the floor.
 - Each is paid from its own folder's balance.
-- A write is paid once: a record is claimed by its id in the transaction that takes its price, so
-  the same record sent again, or two copies at once, pay once; bytes the folder holds already cost
-  nothing again.
+- A write is paid once: a record, or a message to its own inbox, is claimed by its id in the
+  transaction that takes its price, so the same one sent again, or two copies at once, pay once;
+  bytes the folder holds already cost nothing again.
 
 ## How we run it
 
-Every number here is set in `src/host.ts` (`choice`, `SENDER_READ_MS`), `src/credits.ts`
-(`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting, so moving the standard's pin cannot change
-it without a pull request here. Two are the standard's defaults, not set here: the largest record or
-message, and the blob types.
+Every number here is set in `src/host.ts` (`choice`, `SENDER_READ_MS`, `MESSAGES_A_DAY`),
+`src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting, so moving the standard's
+pin cannot change it without a pull request here. Two are the standard's defaults, not set here: the
+largest record or message, and the blob types.
 
 - **One credit is one US cent** (`CREDIT_PRICE_CENTS`). Paid on Solana, it is 0.01 of the dollar
-  `CREDIT_MINT` names, at face value.
+  `CREDIT_MINT` names, at face value. On Railway that dollar is Circle's USDC on Solana's devnet,
+  the chain things run on today, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, six decimals,
+  which anyone gets from [Circle's faucet](https://faucet.circle.com).
 - **A write costs 0.01 credit** (`WRITE_FLOOR`), **plus 0.01 credit for each kilobyte** (1,000 bytes)
   **it stores** (`PER_KB`), rounded up to a millionth of a credit.
   - A 1 kB record costs 0.02 credit, a 200 kB photo 2.01, and a 50 MB video 500.01: five dollars.
   - A delete costs the floor, 0.01, and goes through free when the folder cannot pay.
-  - A hosts record is free. A vault write is free: the vault is one small record, and changing the
-    person's permissions in it must never fail for lack of credits. A message is free. Reads are
-    free.
+  - A folder's first hosts record costs what any record does, and is refused when the folder cannot
+    pay: joining costs a write. A later hosts record, which leaves or updates, is free.
+  - A message to its own inbox costs what a record of its size does. Others' messages are free, up
+    to **1,000** an inbox a day (`MESSAGES_A_DAY`), counted from midnight UTC. Reads are free.
   - Both prices are in the directory, where an app reads them.
 - **Why these prices:** ten years of keeping at Railway's prices today, plus reads, plus 40%. The
   numbers move when Railway's prices do.
@@ -228,21 +234,21 @@ message, and the blob types.
 - **Keeps** a replaced record and a message for **30 days**, by its own clock. A current record stays.
 - **Inboxes:** it takes a message for any profile whose profile record here declares an inbox. It
   follows each of the standard's `senders` kinds: anyone, or the holders of a stamp from one
-  verifier, checked by the stamp proof on the sender's profile record. It also follows one message per sender
-  (`once`) and a largest size (`maxBytes`).
+  verifier, checked by the stamp proof on the sender's profile record. It also follows a largest
+  size (`maxBytes`).
 - **Senders' records:** to take a message for a verifier's stamp holders, it reads the sender's
   records from the host the message names. The read takes at most **5 seconds**, goes only to a
   public address, and follows no redirect. What it read is kept for **60 seconds**
   (`SENDER_CACHE_SECONDS`): at most one read a sender a minute.
 - **Who may write:** anyone can, who pays; the main way is the person's app, posting each record to
-  every host its hosts record names. It refuses no write by its own choice but its price, and has
-  no rate limit.
+  every host its hosts record names. It refuses no write by its own choice but its price, and no
+  message but its price and an inbox's day of others' messages; it has no other rate limit.
 - **Who may read:** anyone can read any folder here, for free; the main way is an index reading
   every page, or an app reading one profile.
 - **No request logs.** Neither the reference host nor the front logs a request or keeps an address.
 - **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with
   the buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of
-  each record it took a price for. Nothing ties a credit to the folder it went into.
+  each record and message it took a price for. Nothing ties a credit to the folder it went into.
 - **Where:** one copy on Railway: one replica built from `deploy/Dockerfile`, with this repo's root
   as the build context, and the data directory on its volume. Blobs go in a Railway bucket
   (`BLOBS=s3`).
@@ -287,10 +293,13 @@ and buy with `test/buyer.ts`, which blinds with privacypass-ts as an app does:
 
 - the price of a 1 kB record (0.02), a 200 kB blob (2.01), and taking each down (0.01); the same
   record or bytes again for nothing; a blob delete that finds nothing, for nothing;
-- a write refused with no balance, bytes too, and a hosts record taken with none. With no balance,
-  a live record and a blob are still taken down, for nothing, and a null body where nothing stands
-  is refused. A vault, written and changed with the standard's `vaultRecord`, is taken with none, and
-  a record at `vault` that is not encrypted is refused;
+- joining: a folder's first hosts record at its price, and refused with no balance; a later one, an
+  update or leaving, taken with none;
+- a write refused with no balance, bytes too. With no balance, a live record and a blob are still
+  taken down, for nothing, and a null body where nothing stands is refused;
+- a message to its own inbox charged as a record of its size, and refused with no balance;
+  someone else's taken free; an inbox taking a day's cap of others' messages, the next refused,
+  another inbox counted on its own, and the next UTC day counted again;
 - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
   not listed, for another count, or for another buy, and a credit is spent once;
 - a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or naming
@@ -308,8 +317,9 @@ What every host must do, and its tests, are the standard's.
   price of each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live record, or of a
   blob the folder holds, goes through when the balance cannot pay its floor.
-- **A person can always move, and always change their permissions.** A hosts record is free: the
-  reference host never asks about it. A vault write is free: this host's price skips it.
+- **A person can always leave; joining costs a write.** A folder's first hosts record here is priced
+  like any record. A later one, which leaves this host or updates the list, the reference host never
+  asks about, so it is free.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
   record's signature is its only proof, and a pull's is the profile's main key's.
 - **No address logs.** Neither the reference host nor the front logs a request or keeps an
@@ -325,12 +335,12 @@ What every host must do, and its tests, are the standard's.
 ## Limits
 
 - **Anyone who pays can write here** anything the reference host accepts.
-- **Messages are free, so an inbox open to anyone can be flooded.** Each message takes up to 64 KB
-  of this host's volume for 30 days, and there is no rate limit. The inbox's own fields (a
-  verifier's stamp holders only, one message each, a largest size) are what limit it.
-- **Vault writes are free, so they can keep bytes here for free.** This host cannot open an
-  encrypted record, so it takes any one at `vault` as a vault: up to 64 KB, as often as a folder
-  writes it, each replaced one kept for 30 days, in any number of folders, with no rate limit.
+- **Others' messages are free, so an inbox open to anyone can be filled.** 1,000 a day reach it,
+  and past them the inbox's own friends wait for the next day. The inbox's own fields (a verifier's
+  stamp holders only, a largest size) are what limit who may write.
+- **Others' messages are free, so they can keep bytes here for free.** A message from any key but
+  the profile's own costs nothing: up to 64 KB each, 1,000 an inbox a day, each kept for 30 days, in
+  any number of inboxes. The day's count is kept in memory, so a restart counts it again from none.
 - **A folder's balance is public.** Anyone who knows its address can ask for it.
 - **A balance is never refunded,** and never moves to another folder.
 - **A network address can tie a buy to a folder.** The foundation runs this host and the verifier
@@ -394,10 +404,12 @@ A write costs a fraction of a credit, and an app should not have to show credits
 The reference host also takes records in batches. A balance takes credits once, through one route,
 and every write after draws from it.
 
-**Why are messages free?**
-A message is in no one's folder, so no folder's balance is its own to pay from. A sender's folder
-usually lives on another host: charging it here would mean a sender needs credits at every host it
-writes to. The inbox's fields are what limit messages (Limits).
+**Why are others' messages free, and yours priced?**
+A message from someone else is paid by no folder here: the sender's folder usually lives on another
+host, and charging it here would mean a sender needs credits at every host it writes to. So it is
+free, and capped at 1,000 an inbox a day instead. A message whose `from` is its `to` is a profile
+writing to its own inbox, and that folder is here, with a balance of its own: it pays as for any
+record it writes, so its own inbox is no free store.
 
 **Why is a null body free over a live record, but not where nothing stands?**
 Over a live record it takes something down, and a person can always take down what they put up. A

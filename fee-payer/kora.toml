@@ -9,7 +9,7 @@
 #
 # The escrow is at the address the standard records for it (standard/escrows/solana/devnet/devnet.json).
 # The tokens it is paid in and its price source are for real dollars; deploy/devnet-config.sh swaps
-# them for the test dollars and Kora's mock price, for the chain the escrow runs on today. The local
+# them for Circle's USDC on the chain the escrow runs on today, and Kora's mock price. The local
 # run (test/fee-payer.test.ts) copies this file and changes two lines: `price_source`, to "Mock",
 # and the escrow's address, to the id in its source. Every key Kora 2.0.5 requires in a table is
 # written out, so nothing here is a default someone has to look up.
@@ -35,7 +35,7 @@ max_signatures = 3
 # limit (the largest the escrow's README measures, a one tap with a hook, takes 97,205 units), and
 # the fee payer never pays a priority fee it did not agree to.
 allowed_programs = [
-  "FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8", # the Forest escrow
+  "38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J", # the Forest escrow
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # SPL Token
   "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", # Token-2022: the escrow takes its dollars (Open USD); the fee payer's key may do nothing in it (below)
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL", # Associated Token Account

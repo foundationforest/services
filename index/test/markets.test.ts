@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
+import { VERSION } from '@foundationforest/escrow-client'
+
 import { ESCROW_CHAIN, ESCROW_PROGRAM } from '../src/chain.ts'
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
@@ -15,9 +17,11 @@ import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
 
-test('the escrow this index reads is the program the pinned standard records, on a chain this index reads', () => {
-  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string } }
+test('the escrow this index reads is the program the pinned standard records, of the version its client reads, on a chain this index reads', () => {
+  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
   assert.equal(ESCROW_PROGRAM, record.escrow.programId)
+  assert.equal(record.escrow.version, VERSION)
+  assert.equal(VERSION, 4)
   // Solana's devnet in CAIP-2 form, as the markets manual writes it.
   assert.equal(record.cluster, 'devnet')
   assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
