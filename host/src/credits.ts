@@ -8,17 +8,20 @@
 //
 // A write costs a floor (WRITE_FLOOR) plus what it stores at a price a kilobyte (PER_KB), both in
 // credits, rounded up to a millionth of a credit: the unit a balance is kept in, so the fractions of
-// a cent each write costs add up. A delete costs the floor. The standard's host never asks about a
-// hosts record, so it is free; a vault write and messages are free too (src/host.ts).
+// a cent each write costs add up. A delete costs the floor. A folder's first hosts record and a
+// message to its own inbox are writes like any other; a later hosts record and others' messages are
+// free (src/host.ts).
 //
-// A record is claimed once, by its id, in the same transaction that takes its price: a second copy
-// in flight, or the same record sent again, costs nothing. Bytes are stored first and charged after:
-// their price is reserved from the balance before the standard's host stores them, taken once they
-// are stored, released if they are not; a blob delete's floor the same way.
+// A record, or a message to its own inbox, is claimed once, by its id, in the same transaction that
+// takes its price: a second copy in flight, or the same one sent again, costs nothing. Bytes are
+// stored first and charged after: their price is reserved from the balance before the standard's
+// host stores them, taken once they are stored, released if they are not; a blob delete's floor the
+// same way.
 //
 // One SQLite file, its seller's: the spent list, the proofs, the bill, each folder's balance in
-// millionths of a credit and each record id it took a price for. A spend marks its credits spent and
-// adds them to the balance in one transaction. Nothing ties a credit to a folder. It logs nothing.
+// millionths of a credit and each record's and message's id it took a price for. A spend marks its
+// credits spent and adds them to the balance in one transaction. Nothing ties a credit to a folder.
+// It logs nothing.
 
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -165,7 +168,7 @@ export class Credits {
   }
 
   /**
-   * A record's price, in millionths, from the folder's balance, claimed by the record's id
+   * A record's or a message's price, in millionths, from the folder's balance, claimed by its id
    * (lowercase hex) in the same transaction: null if it was paid, now or before, else what to tell
    * the writer.
    */
