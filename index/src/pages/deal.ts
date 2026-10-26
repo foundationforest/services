@@ -1,6 +1,9 @@
 // `/deals/<escrow>`: an escrow's receipt as chain.ts reads it, every move with who made it and when,
-// the profiles whose solana pay address is the payer or the recipient, and the reviews that name it,
-// as `<the escrow's chain>:<escrow>`.
+// the profiles whose solana pay address is the payer or the recipient, signed by that pay key for
+// the profile (the standard's checkPay), and the reviews that name it, as
+// `<the escrow's chain>:<escrow>`.
+
+import { type Body, checkPay } from '@foundationforest/records'
 
 import { ESCROW_CHAIN, type Move, type Receipt } from '../chain.ts'
 import type { Currency } from '../lists.ts'
@@ -35,7 +38,11 @@ export const deal: Page<DealPage> = {
     if (!held && !moves.length) return null
     const receipt = held ? parse<Receipt>(held.receipt) : null
     const payTo = (pay: string | undefined) =>
-      pay ? (store.db.prepare("select address from profiles where json_extract(body, '$.pay.solana') = ? order by address").all(pay) as Array<{ address: string }>).map((p) => p.address) : []
+      pay
+        ? (store.db.prepare("select address, body from profiles where json_extract(body, '$.pay.solana') = ? order by address").all(pay) as Array<{ address: string; body: string }>)
+            .filter((p) => checkPay(parse<Body>(p.body), p.address).includes('solana'))
+            .map((p) => p.address)
+        : []
     const reviews = store.db
       .prepare("select address, reviewer, subject, counted from reviews where json_extract(body, '$.evidence') = ? order by time desc, address")
       .all(`${ESCROW_CHAIN}:${escrow}`) as Array<{ address: string; reviewer: string; subject: string | null; counted: number }>

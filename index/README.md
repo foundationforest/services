@@ -125,9 +125,11 @@ A counted review's `evidence` is `<chain>:<id>`, the chain in CAIP-2 form, as th
 writes it; the chain holds a colon itself, so the text splits at its last colon. `config/chains.json`
 names each chain this index reads, with its reader and the setting that holds its RPC's URL. A
 reader reads one type of chain and matches the two profiles' pay addresses of that type, from each
-profile record's `pay`, `{ solana, evm }`. This index has one reader, `solana`, which matches the
-`solana` pay addresses and has two kinds of evidence, each one file in `src/evidence/`, with its
-name, how it recognizes an id, and its check:
+profile record's `pay`, `{ solana, evm }`. A pay address counts only when its signature in the
+profile record's `paySig` holds: its pay key signed that profile's address (the standard's
+`checkPay`), so a profile cannot borrow someone else's payments. This index has one reader,
+`solana`, which matches the `solana` pay addresses and has two kinds of evidence, each one file in
+`src/evidence/`, with its name, how it recognizes an id, and its check:
 
 - **`escrow`**, an address of 32 bytes, on the chain the escrow runs on: the escrow's receipt, from
   what this index read on chain. It counts when the receipt's payer and recipient are the two
@@ -151,7 +153,8 @@ review by anyone else that names it takes nothing from them, however early its w
 A review is shown:
 
 - `with` a payment: its evidence counts;
-- `without`: it names none;
+- `without`: it names none, or one of the two profiles' pay addresses of the chain's type is
+  unsigned (`evidenceWhy` says "pay address unsigned");
 - `unchecked`: it names a chain `config/chains.json` does not list, so this index cannot tell
   whether it holds; `evidenceWhy` names the chain, and it weighs as a review without;
 - `invalid`: it names no chain (the text before its last colon is no CAIP-2 chain), an id its
@@ -293,10 +296,12 @@ HTML runs no script; each page carries schema.org JSON-LD. GET and HEAD only, op
   - `posts`: `[{ "address", "body", "listed", "why" }]`, `why` only when not listed;
   - each review: `{ "reviewer", "address", "body", "counted", "why", "evidence", "evidenceWhy",
     "weight" }`, `why` only when it does not count, `evidenceWhy` only when its evidence is
-    `unchecked` or already used, and `weight` its share of its writer's weight (How it scores);
+    `unchecked`, already used, or a pay address it is between is unsigned, and `weight` its share
+    of its writer's weight (How it scores);
   - `proofs`: each proof on the profile record with its `result`.
 - **`/deals/<escrow>`**: the receipt, every move, the profiles whose `solana` pay address is either
-  side, and the reviews that name it as `<the escrow's chain>:<escrow>`.
+  side, signed for that profile (`checkPay`), and the reviews that name it as
+  `<the escrow's chain>:<escrow>`.
 - `/v1/reputation`, `/v1/reputation/leaves`, `/sitemap.xml` (the home page, each market, each counted
   profile, each deal with a receipt), `/robots.txt`, and `/llms.txt` and `/skill.md`, files in this
   directory written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place.
@@ -379,10 +384,12 @@ from a stand-in RPC:
     index first saw it, and is invalid for good 25 hours after;
   - evidence on a chain the lists do not name is unchecked, says which chain, and is never asked
     for, and evidence with no chain is invalid;
+  - a profile that lists another's pay addresses, with that profile's signatures, gives no evidence,
+    "pay address unsigned", takes nothing from the real one's review, and is no side of the deal;
   - a deal's page finds the reviews that name it on its chain;
 - **markets:** the checks of fields, choices, lists and roles; a post that does not fit is kept and
-  not listed; the escrow program is the one the pinned standard records, on a chain
-  `config/chains.json` lists;
+  not listed; the escrow program is the one the pinned standard records, of the version its client
+  reads, on a chain `config/chains.json` lists;
 - **tree:** the served leaves carry each rating and its backing times ten and rebuild the served root,
   whose signature checks; a reputation proof made from the leaves shows on its profile, and not with
   a byte changed or on another profile; against a root that is not the newest it shows 29 days after
@@ -428,10 +435,10 @@ Another index holds its own.
   it, by its own clock (`WAIT_MS` in `src/evidence/payment.ts`). Until then, a payment the RPC does
   not hold is asked for again on each pass.
 - **Which money counts** (`config/currencies.json`): USDC, USDT, Open USD and EURC, the dollars the
-  fee payer takes, and two test dollars, each with its code and six decimals: the classic one, which
-  its maker, a key from the phrase that funds the loop, mints at will; and the one shaped like Open
-  USD, which no one can mint any more, since its maker's key came from a phrase that is lost.
-- **Which escrow:** the standard's, its program at `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`.
+  fee payer takes, kept for when money is real, and Circle's test USDC on the chain it reads,
+  `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, each with its code and six decimals.
+- **Which escrow:** the standard's, version 4, its program at
+  `38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J`.
 - **Which reputation proofs it shows, and how old a signed root may be** (`lists/indexes.json`): its
   own (`self`), against its newest root, or one it signed in the last 30 days (`maxAgeDays`).
 - **How often:** a pass every 30 seconds after the last ends (`READ_SECONDS`). A host that takes more

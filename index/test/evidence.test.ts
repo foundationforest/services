@@ -2,17 +2,18 @@
 // read from the program's own events, and direct payments read from one getTransaction each, kept
 // once the chain has an answer, and asked again while it has none until a day after this index
 // first saw the review, by its own clock. One payment or escrow backs one review, the earliest it
-// backs. On a chain the lists do not name it is unchecked, and with no chain invalid.
+// backs. On a chain the lists do not name it is unchecked, and with no chain invalid. A pay address
+// its pay key did not sign for the profile gives no evidence, and no place on a deal's page.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { after, before, test } from 'node:test'
 
-import { discriminator } from '@foundationforest/escrow-client'
+import { VERSION, discriminator } from '@foundationforest/escrow-client'
 import { base58, ownerRecord } from '@foundationforest/records'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
-import { USED } from '../src/evidence/index.ts'
+import { UNSIGNED, USED } from '../src/evidence/index.ts'
 import type { DealPage } from '../src/pages/deal.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, CHAIN, DOLLAR, index, verifier, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
@@ -38,7 +39,7 @@ const OUTCOMES = ['pay', 'refund', 'takeBack', 'agree', 'decide', 'end']
 
 /** The program's Created and Ended events, as its log lines carry them. */
 function created(escrow: string, payer: string, recipient: string, mint: string, amount: bigint): Uint8Array {
-  return concat(discriminator('event', 'Created'), key(escrow), u8(3), u64(1n), key(payer), key(recipient), u8(0), new Uint8Array(32), key(mint), key(address()), key(address()), u64(amount), noSchedule, u64(1_790_000_000n))
+  return concat(discriminator('event', 'Created'), key(escrow), u8(VERSION), u64(1n), key(payer), key(recipient), u8(0), new Uint8Array(32), key(mint), key(address()), key(address()), u64(amount), noSchedule, u64(1_790_000_000n))
 }
 function ended(escrow: string, outcome: string, amount: bigint, toPayer: bigint, toRecipient: bigint): Uint8Array {
   return concat(discriminator('event', 'Ended'), key(escrow), u8(OUTCOMES.indexOf(outcome)), u64(amount), u64(amount), u64(toPayer), u64(toRecipient), u64(1_790_000_100n), key(address()), u64(0n), u64(1_790_000_050n))
@@ -209,4 +210,42 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
 
   await i.close()
   await rpc.close()
+})
+
+test('evidence: a pay address its pay key did not sign for the profile gives none, and no side of a deal', async () => {
+  const tutor = await profile('tutoring/tutor', [by])
+  const student = await profile('tutoring/student', [by])
+  // The impostor lists the tutor's pay addresses, with the tutor's signatures: they hold for the
+  // tutor's address, not the impostor's.
+  const impostor = await profile('tutoring/tutor', [by])
+  await publishProfile(host.url, tutor)
+  await publishProfile(host.url, student)
+  await publishProfile(host.url, impostor, { pay: tutor.pay, paySig: tutor.paySig })
+  const escrow = address()
+  const paid = { signature: signature(), logs: logs(created(escrow, student.pay.solana, tutor.pay.solana, DOLLAR, 100n), ended(escrow, 'pay', 100n, 0n, 100n)) }
+  const rpc = await startRpc((method, params) => {
+    if (method === 'getSignaturesForAddress') return (params[1] as { until?: string }).until ? [] : [{ signature: paid.signature, err: null }]
+    return params[0] === paid.signature ? { blockTime: 1_790_000_200, meta: { err: null, logMessages: paid.logs } } : null
+  })
+  // The student reviews both, naming the one escrow; the review of the impostor, dated first, would
+  // take it from the tutor's if the impostor's address counted.
+  const evidence = `${CHAIN}:${escrow}`
+  await post(host.url, [
+    ownerRecord(student.key, 'review/impostor', { subject: impostor.key.address, score: '9', offer: `${impostor.key.address}/offer/maths`, evidence }, Date.now() - 60_000),
+    at(student, 'review/tutor', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/maths`, evidence }),
+  ])
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  try {
+    await i.pass()
+    const received = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.reviews.received[0]!
+    const fake = await received(impostor)
+    assert.deepEqual([fake.counted, fake.evidence, fake.evidenceWhy], [true, 'without', UNSIGNED])
+    const real = await received(tutor)
+    assert.deepEqual([real.counted, real.evidence, real.evidenceWhy], [true, 'with', undefined])
+    const d = (await twin<DealPage>(i, `/deals/${escrow}.json`)).body
+    assert.deepEqual(d.profiles, { payer: [student.key.address], recipient: [tutor.key.address] }, 'the impostor is no side of the deal')
+  } finally {
+    await i.close()
+    await rpc.close()
+  }
 })

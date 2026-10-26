@@ -61,8 +61,9 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     filtered.set(r.address, { ...(await filter(store, { address: r.address, body, market: r.market, role: r.role }, lists.keys, markets, now)), market: r.market, role: r.role, body })
   }
 
-  // Reviews, and the evidence of each that counts, between the two profiles' `pay`. A payment's day
-  // runs from when this index first saw the review name it (evidence/payment.ts), kept by rebuild.
+  // Reviews, and the evidence of each that counts, between the two profiles' signed pay addresses. A
+  // payment's day runs from when this index first saw the review name it (evidence/payment.ts), kept
+  // by rebuild.
   const reviews = (db.prepare('select address, reviewer, body, time from reviews').all() as Array<{ address: string; reviewer: string; body: string; time: number }>).map(
     (r): Review => ({ ...r, body: parse(r.body) }),
   )
@@ -76,8 +77,9 @@ export async function runPass(ctx: Context, before: number | null, now: number):
   for (const r of reviews) {
     if (!judged.get(r.address)!.counted) continue
     const seen = typeof r.body.evidence === 'string' ? (firstSeen.get(r.address, r.body.evidence) as { first: number }).first : now
-    const pays = { a: filtered.get(r.reviewer)?.body.pay, b: filtered.get(r.body.subject as string)?.body.pay, seen }
-    evidence.set(r.address, await evidenceOf(r.body.evidence, pays, { store, chains, mints: lists.currencies, now }))
+    const subject = r.body.subject as string
+    const sides = { a: { address: r.reviewer, body: filtered.get(r.reviewer)?.body }, b: { address: subject, body: filtered.get(subject)?.body }, seen }
+    evidence.set(r.address, await evidenceOf(r.body.evidence, sides, { store, chains, mints: lists.currencies, now }))
   }
   // One payment or escrow backs one review: the earliest of the reviews it backs, by record time,
   // then address; each later one is invalid. Only reviews between its two pay addresses can be

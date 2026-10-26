@@ -12,7 +12,8 @@ import { PublicKey } from '@solana/web3.js'
 import { type Rpc, transaction } from './rpc.ts'
 import type { Store } from './store.ts'
 
-export const ESCROW_PROGRAM = 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8'
+/** Version 4 of the escrow, as the pinned standard records it. */
+export const ESCROW_PROGRAM = '38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J'
 /** The chain the standard deployed it to, in CAIP-2 form: Solana's devnet. */
 export const ESCROW_CHAIN = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
 const PROGRAM = new PublicKey(ESCROW_PROGRAM)

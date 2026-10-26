@@ -9,7 +9,7 @@ import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { mainKey, type MainKey, type PayAddresses, payAddresses, seedScalar } from '@foundationforest/keys'
+import { mainKey, type MainKey, type PayAddresses, payAddresses, payKey, seedScalar, signPay } from '@foundationforest/keys'
 import { b64u, hex, hostsRecord, ownerRecord, publish, type SignedRecord } from '@foundationforest/records'
 import { Host } from '@foundationforest/records/host'
 import { proofBytes, proveStamp, signStamp, stampNumberOf, toBytes32, verifierKeyOf } from '@foundationforest/stamp'
@@ -41,8 +41,8 @@ export function verifier(name = 'verifier.test.example'): Verifier {
 /** A stamp proof as a profile record carries it. */
 export type ProofField = { circuit: 'stamp'; verifier: string; verifierName: string; label: string; tag: string; proof: string }
 
-/** A person's profile under one label: its main key, its pay addresses, and stamp proofs from each verifier given. */
-export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: PayAddresses; proofs: ProofField[] }
+/** A person's profile under one label: its main key, its pay addresses and each one's signature for it, and stamp proofs from each verifier given. */
+export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: PayAddresses; paySig: { solana: string; evm: string }; proofs: ProofField[] }
 
 /** A stamp from `by` for this seed, and its proof for `label` (about a second each). */
 export async function stampProof(seed: Uint8Array<ArrayBuffer>, label: string, by: Verifier): Promise<ProofField> {
@@ -55,13 +55,15 @@ export async function stampProof(seed: Uint8Array<ArrayBuffer>, label: string, b
 export async function profile(label: string, by: Verifier[] = [], seed = new Uint8Array(randomBytes(32))): Promise<Profile> {
   const proofs = []
   for (const v of by) proofs.push(await stampProof(seed, label, v))
-  return { seed, label, key: await mainKey(seed, label), pay: await payAddresses(seed, label), proofs }
+  const key = await mainKey(seed, label)
+  const paySig = { solana: signPay(await payKey(seed, label, 'solana'), key.address), evm: signPay(await payKey(seed, label, 'evm'), key.address) }
+  return { seed, label, key, pay: await payAddresses(seed, label), paySig, proofs }
 }
 
-/** The profile record a profile shows: its market, role, pay addresses and proofs, and anything more. */
+/** The profile record a profile shows: its market, role, pay addresses signed and proofs, and anything more. */
 export function profileBody(p: Profile, more: { [key: string]: unknown } = {}): { [key: string]: unknown } {
   const [market, role] = p.label.split('/')
-  return { market, role, pay: p.pay, proofs: p.proofs, ...more }
+  return { market, role, pay: p.pay, paySig: p.paySig, proofs: p.proofs, ...more }
 }
 
 let clock = Date.now()
