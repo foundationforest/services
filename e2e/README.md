@@ -39,10 +39,12 @@ step checks what it did, and the run passes only if every step does.
    From the tutor's seed, a second profile too: `sports-coaching/coach`.
 2. **Funding.** The phrase's `deploy` key makes a USDC account for both Solana pay addresses and
    for each person's wallet app (an address of its own, apart from any profile), and sends each
-   wallet 0.01 SOL for its fees. From its own USDC it sends 10 to the student's pay address and 1 to
-   each wallet: 12 in all, by plain transfers; nothing is minted. When the fee payer is the loop's
-   own, it gets 0.05 SOL and its USDC account, where it is paid. A deploy key holding less than 12
-   stops the run, saying so.
+   wallet 0.01 SOL for its fees. From its own USDC it sends 42 to the student's pay address and 1 to
+   each wallet: 44 in all, by plain transfers; nothing is minted. The student's 42 cover its two
+   payments of 2 and the fee payer's charges, 37.5364 at Kora's mock price, ten base units a
+   lamport ([fee-payer](../fee-payer/README.md)). When the fee payer is the loop's own, it gets
+   0.05 SOL and its USDC account, where it is paid. A deploy key holding less than 44 stops the run,
+   saying so.
 3. **Stamps.** Each person takes the loop verifier's face check: its stand-in Didit passes everyone.
    Each gets a stamp for their stamp number, checked:
    - its signature;
@@ -203,7 +205,7 @@ FOREST_DEVNET_SEED='<the phrase>' npm run e2e -- deployed.json   # against what 
 
 - **`FOREST_DEVNET_SEED`** (required): the phrase. Its `deploy` key comes by the recipe in the
   standard's `escrows/solana/devnet/deploy.sh`, and pays the setup: the accounts' rent, the SOL, and
-  the 12 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. Never in
+  the 44 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. Never in
   this repo, and never given to a service.
 - **`RPC_URL`** (optional): the RPC everything uses, in place of `services.json`'s `rpc`. It may
   hold a key, so a run's record says only `RPC_URL`. Kora needs an RPC that returns inner
@@ -220,7 +222,7 @@ The tests, which CI runs:
 - `test/chain.test.ts`:
   - the phrase's key, against PBKDF2 made by Web Crypto;
   - every funding instruction, decoded by the token program's own decoders: plain transfers from
-    the deploy key's own USDC, 12 in all, with the loop's own fee payer and with a deployed one;
+    the deploy key's own USDC, 44 in all, with the loop's own fee payer and with a deployed one;
   - a wallet's transfer naming a buy's reference;
   - a direct payment: one plain transfer, and nothing else;
   - dollars as base units, and what is refused;
@@ -273,8 +275,8 @@ and its summary here: what it used, what it paid, and its links on the chain.
   no AI may name and no signer of the tutor's paid, so the loop's app writes it.
 - **One host, inboxes open to anyone.** Both people are on the same host, and each inbox takes
   messages from anyone: no stamp holders only, no `maxBytes`.
-- **The loop's own fee payer gets a new key each run,** and the 0.05 SOL the loop gives it stays
-  with that key.
+- **The loop's own fee payer gets a new key each run,** and what it holds stays with that key: the
+  0.05 SOL the loop gives it, and the 37.5364 USDC the student pays it.
 - **Each wait on the index is up to 15 minutes.** The loop index reads the escrow's whole history
   from its first transaction, which a public RPC serves slowly.
 

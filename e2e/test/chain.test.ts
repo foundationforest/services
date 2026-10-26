@@ -64,13 +64,13 @@ test('with the loop’s own fee payer: each dollar account, the student’s doll
   assert.deepEqual(
     got.dollars,
     [
-      { to: ata(studentPay).toBase58(), units: 10n * DOLLAR },
+      { to: ata(studentPay).toBase58(), units: 42n * DOLLAR },
       { to: ata(w1).toBase58(), units: DOLLAR },
       { to: ata(w2).toBase58(), units: DOLLAR },
     ].map((m) => ({ from: ata(payer).toBase58(), ...m, owner: payer.toBase58(), mint: token.mint.toBase58(), decimals: 6 })),
-    'plain transfers from the deploy key’s own dollars: 10 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
+    'plain transfers from the deploy key’s own dollars: 42 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
   )
-  assert.equal(dollarsOf(plan), 12n * DOLLAR, 'a run moves 12 dollars')
+  assert.equal(dollarsOf(plan), 44n * DOLLAR, 'a run moves 44 dollars')
   assert.deepEqual(got.sol, [
     { from: payer.toBase58(), to: w1.toBase58(), lamports: FUNDING.walletLamports },
     { from: payer.toBase58(), to: w2.toBase58(), lamports: FUNDING.walletLamports },

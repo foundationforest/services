@@ -56,10 +56,14 @@ export function scheduleOf(template: Template, paidAt: number): { windows: { unt
   return { windows, end: template.end }
 }
 
-/** What the loop gives before anyone acts: 12 dollars in all, and SOL. */
+/** What the loop gives before anyone acts: 44 dollars in all, and SOL. */
 export const FUNDING = {
-  /** To the student's pay address: two payments of 2 and the fee payer's charges, about 4. */
-  studentDollars: 10n * DOLLAR,
+  /**
+   * To the student's pay address: two payments of 2 and the fee payer's charges, 37.5364. Kora's
+   * mock prices Circle's devnet USDC at ten base units a lamport (fee-payer/README.md), and opening
+   * the escrow costs the fee payer 3,733,640 lamports: 37.3364 of the charges.
+   */
+  studentDollars: 42n * DOLLAR,
   /** To each wallet app's address: ten host credits at a cent each, and more. */
   walletDollars: DOLLAR,
   /** To each wallet app's address: its fees for buying credits. */

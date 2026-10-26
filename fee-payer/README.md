@@ -92,8 +92,9 @@ paid in is `allowed_spl_paid_tokens`.
 
 `deploy/devnet-config.sh` prints `kora.toml` with exactly three lines changed, and stops if any is
 not there exactly once: the two lists of dollars it is paid in (Circle's test USDC in place of the
-four) and `price_source = "Mock"`. Kora's mock values it at 0.001 SOL a whole dollar: one base unit
-buys one lamport.
+four) and `price_source = "Mock"`. Kora's mock values it at 0.0001 SOL a whole dollar, by its
+address (a mint it does not know, at 0.001): ten base units buy one lamport. So opening an escrow,
+its two deposits and the network fee, 3,733,640 lamports, is charged 37.3364 of it.
 
 Refused, each checked by the local run ([Run it](#run-it)), with nothing landing: a program not on
 the list (`… is not in the allowed list`): the compute budget program; the fee payer's
@@ -186,7 +187,7 @@ address, and charged 5,111,680 test-dollar units.
   key Open USD's maker holds, which can move or burn Open USD out of any account) are accepted.
   Where it stands, in Circle's test USDC instead, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`,
   six decimals, which anyone gets from Circle's faucet.
-- **Prices:** Jupiter's, for real dollars; for Circle's test USDC, Kora's mock, one base unit a
+- **Prices:** Jupiter's, for real dollars; for Circle's test USDC, Kora's mock, ten base units a
   lamport.
 - **What its key may do:** fund a new account it is paid for, and nothing else.
 - **Its key:** one key of its own, random, made by `run.sh` at the first start and kept at
