@@ -55,7 +55,7 @@ import * as escrow from '@foundationforest/escrow-client'
 const here = dirname(fileURLToPath(import.meta.url))
 const escrowSo = join(here, '../../standard/escrows/solana/program/target/deploy/forest_escrow.so')
 /** The escrow's address, as kora.toml names it. */
-const ESCROW_IN_KORA_TOML = 'FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8'
+const ESCROW_IN_KORA_TOML = '38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J'
 const kora = join(here, '../.kora/bin/kora')
 const RPC = 'http://127.0.0.1:8899'
 const KORA_PORT = 8080

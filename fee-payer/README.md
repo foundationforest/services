@@ -11,10 +11,12 @@ lets a person who holds dollars and no SOL open an escrow, pay into it and settl
 copy, which the Open Forest Foundation runs; anyone can run another, and an app can use any fee
 payer or none. It keeps nothing of the person's: it holds no key of theirs, it signs only as the
 transaction's payer, and the money in an escrow moves only as the escrow allows
-([the standard's escrow](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md)).
+([the standard's escrow](https://github.com/foundationforest/standard/blob/7b1c937f3e4265b094623faf21c51b1957b9adf9/escrows/solana/README.md)).
 
 **Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
-there, paid in two test dollars, at https://fee-payer.forest.foundation.
+there, at https://fee-payer.forest.foundation, paid in Circle's USDC on that chain,
+`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, which anyone gets from
+[Circle's faucet](https://faucet.circle.com).
 
 ## How it works
 
@@ -65,15 +67,15 @@ finds it made.
 | `max_allowed_lamports` | 0.01 SOL | The most deposits one transaction may take; the largest, a one tap that also makes the recipient's token account, takes 5,354,320 lamports at 5,080 a byte |
 | `max_signatures` | 3 | The fee payer, and the payer and the recipient when both sign a split (`agree`), the way out of a stop with no arbiter |
 | `price` | margin 0 | The charge is the cost |
-| `price_source` | `Jupiter` (needs `JUPITER_API_KEY`) | For real dollars; `deploy/devnet-config.sh` sets Kora's mock for the test dollars |
+| `price_source` | `Jupiter` (needs `JUPITER_API_KEY`) | For real dollars; `deploy/devnet-config.sh` sets Kora's mock for Circle's test USDC |
 | `rate_limit` | 100 a second, across all callers | Kora's own limiter, at Kora's example value |
 | `payment_address` | unset | Payments go to token accounts the fee payer's own key owns |
 | What its own key may do | create an account, and nothing else | It may fund a new account it is paid for; no transfer, assign, allocate or nonce use, and no SPL Token or Token-2022 instruction as owner or authority |
 | No API key or HMAC | | A page in a browser cannot keep a secret, and every transaction pays its way |
 
-The escrow is `FA6ZodkyhMDj9yjzY27dk8JDCtcHnJx8mr45Mx9TfKg8`, as the standard records it
-(`standard/escrows/solana/devnet/devnet.json`). The dollars it is paid in, in `kora.toml`, are real
-ones, each its maker's own mint:
+The escrow is version 4, at `38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J`, as the standard records
+it (`standard/escrows/solana/devnet/devnet.json`). The dollars it is paid in, in `kora.toml`, are
+real ones, each its maker's own mint:
 
 | Dollar | Mint | Program |
 |---|---|---|
@@ -89,9 +91,9 @@ so an escrow in a dollar not on that list still goes through; the list of dollar
 paid in is `allowed_spl_paid_tokens`.
 
 `deploy/devnet-config.sh` prints `kora.toml` with exactly three lines changed, and stops if any is
-not there exactly once: the two lists of dollars it is paid in (the two test dollars in place of
-the four) and `price_source = "Mock"`. Kora's mock values a test dollar at 0.001 SOL a whole
-dollar: one base unit buys one lamport.
+not there exactly once: the two lists of dollars it is paid in (Circle's test USDC in place of the
+four) and `price_source = "Mock"`. Kora's mock values it at 0.001 SOL a whole dollar: one base unit
+buys one lamport.
 
 Refused, each checked by the local run ([Run it](#run-it)), with nothing landing: a program not on
 the list (`… is not in the allowed list`): the compute budget program; the fee payer's
@@ -103,7 +105,7 @@ anywhere (`… 'SPL Token Transfer'`); a payment one unit short of the price (`I
 Every account on Solana holds a deposit, its rent, and gives it back when the account closes. The
 fee payer fronts an escrow's two deposits, charges the person for them when the escrow opens, and
 the escrow records it as the key that fronted the rent and sends every rent back to it
-([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/0facafe182ab3768cd2a7177a38c01caf51e0d4a/escrows/solana/README.md#rent)):
+([the standard's escrow, Rent](https://github.com/foundationforest/standard/blob/7b1c937f3e4265b094623faf21c51b1957b9adf9/escrows/solana/README.md#rent)):
 
 - **The escrow's account,** 312 bytes (2,235,200 lamports at 5,080 a byte), stays as the receipt
   for good and keeps its rent; it comes back whole only if the escrow closes unfunded.
@@ -182,10 +184,9 @@ address, and charged 5,111,680 test-dollar units.
 - **Paid in four dollars by `kora.toml`:** USDC, USDT, Open USD and EURC, each its maker's own
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a
   key Open USD's maker holds, which can move or burn Open USD out of any account) are accepted.
-  Where it stands, in two test dollars instead: the classic one,
-  `537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt`, and the one shaped like Open USD,
-  `g55mjY4swDAFt16TZds3tsmoK55qkdhDLn4kb32RGZz`.
-- **Prices:** Jupiter's, for real dollars; for the test dollars, Kora's mock, one base unit a
+  Where it stands, in Circle's test USDC instead, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`,
+  six decimals, which anyone gets from Circle's faucet.
+- **Prices:** Jupiter's, for real dollars; for Circle's test USDC, Kora's mock, one base unit a
   lamport.
 - **What its key may do:** fund a new account it is paid for, and nothing else.
 - **Its key:** one key of its own, random, made by `run.sh` at the first start and kept at
@@ -230,7 +231,7 @@ address, and charged 5,111,680 test-dollar units.
 - **It takes EURC too,** a euro, on purpose: people pay in what they hold, and Jupiter prices it
   against SOL like the dollars, so the charge is the same SOL cost at the euro's rate.
 - **The four real dollars and Jupiter's price have never run here.** No transaction has paid it in
-  USDC, USDT, Open USD or EURC; Kora handles them as it handles the test dollars.
+  USDC, USDT, Open USD or EURC; Kora handles them as it handles Circle's test USDC.
 - **No priority fee,** so under congestion a transaction may land late.
 - **It trusts its RPC's simulation** of each transaction, for what it calls and what it costs, and
   Jupiter's price for each dollar against SOL, with nothing for that price's error.
