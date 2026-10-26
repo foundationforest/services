@@ -39,9 +39,11 @@ payer, app, market, role, ramp. Plain words, no em-dashes.
 - The foundation runs every service here, never Soil; the app is the Forest app.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
-- devnet and mainnet appear in no README, but in one line in each README where it matters, naming
-  the chain things run on today. A name we do not own (`FOREST_DEVNET_SEED`, a path in the
-  standard) is a name.
+- devnet, devnet USDC and mainnet are named only where something is configured for them: in a
+  README's How we run it, as a setting of the service configured for them (the fee payer's chain
+  and dollar, the host's credit dollar, the index's chain list), and in `e2e/`. Every intro says
+  what its service does, chain-free. A name is a name: `FOREST_DEVNET_SEED`, a file's path, here
+  or in the standard.
 - Never "replace every app".
 
 ## How to work in this repo

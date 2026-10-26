@@ -7,16 +7,13 @@ charges them what that cost in the dollar they pay with.
 
 Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
 rank; the deals behind them are paid directly, between people. The fee payer serves the paying: it
-lets a person who holds dollars and no SOL open an escrow, pay into it and settle it. This is one
-copy, which the Open Forest Foundation runs; anyone can run another, and an app can use any fee
-payer or none. It keeps nothing of the person's: it holds no key of theirs, it signs only as the
-transaction's payer, and the money in an escrow moves only as the escrow allows
+lets a person who holds dollars and no SOL (the chain's own coin) open an escrow (money held on the
+chain by a program, and paid out as the deal says), pay into it and settle it. This is one copy,
+which the Open Forest Foundation runs at https://fee-payer.forest.foundation; anyone can run
+another, and an app can use any fee payer or none. It keeps nothing of the person's: it holds no key
+of theirs, it signs only as the transaction's payer, and the money in an escrow moves only as the
+escrow allows
 ([the standard's escrow](https://github.com/foundationforest/standard/blob/7b1c937f3e4265b094623faf21c51b1957b9adf9/escrows/solana/README.md)).
-
-**Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
-there, at https://fee-payer.forest.foundation, paid in Circle's USDC on that chain,
-`4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, which anyone gets from
-[Circle's faucet](https://faucet.circle.com).
 
 ## How it works
 
@@ -26,8 +23,8 @@ The fee payer is one address, and behind it one copy of
 [Kora](https://github.com/solana-foundation/kora) 2.0.5, the Solana Foundation's open fee payer,
 configured and nothing else: `kora.toml`. Nothing of ours runs inside it or in front of it. Kora
 answers its own JSON-RPC at `/` (POST) and `GET /liveness`. It co-signs any transaction `kora.toml`
-allows, pays the network fee and any deposit, and charges the person what that cost it, in the
-dollar they pay with.
+allows, pays the network fee and any deposit (the rent each new account on the chain holds,
+[Rent](#rent)), and charges the person what that cost it, in the dollar they pay with.
 
 Anyone can pay a transaction's fees: whoever signs as its payer pays them, and the escrow cares
 nothing for who that is. The main way, for a person who holds dollars and no SOL, is a fee payer
@@ -51,8 +48,8 @@ person's.
 
 **The price** is the network fee plus every account the fee payer funds, counted from the
 simulation, including the ones a program creates inside its own call: opening an escrow funds the
-escrow's account, made inside `create`, and its deposit address. One unit short is refused, and
-nothing lands.
+escrow's account, made inside `create`, and its deposit address (the token account the escrow's
+money sits in). One unit short is refused, and nothing lands.
 
 The escrow's client makes the deposit address at the top of every transaction that pays into an
 escrow, before `create`, so a fee payer that checks each transfer's destination before it signs
@@ -62,20 +59,20 @@ finds it made.
 
 | Setting | Value | Why |
 |---|---|---|
-| `allowed_programs` | the escrow, SPL Token, Token-2022, Associated Token Account, System, Memo | Kora checks every program a transaction calls, inner calls included. Memo moves no money: an app may add a memo to a payment, and nothing reads it |
+| `allowed_programs` | the escrow, SPL Token and Token-2022 (Solana's two token programs), Associated Token Account, System, Memo | Kora checks every program a transaction calls, inner calls included. Memo moves no money: an app may add a memo to a payment, and nothing reads it |
 | No compute budget program | | So no priority fee: the fee payer never pays one it did not agree to |
-| `max_allowed_lamports` | 0.01 SOL | The most deposits one transaction may take; the largest, a one tap that also makes the recipient's token account, takes 5,354,320 lamports at 5,080 a byte |
+| `max_allowed_lamports` | 0.01 SOL | The most deposits one transaction may take; the largest, a one tap (an escrow opened, paid into and paid out in one transaction) that also makes the recipient's token account, takes 5,354,320 lamports (billionths of a SOL) at 5,080 a byte |
 | `max_signatures` | 3 | The fee payer, and the payer and the recipient when both sign a split (`agree`), the way out of a stop with no arbiter |
 | `price` | margin 0 | The charge is the cost |
-| `price_source` | `Jupiter` (needs `JUPITER_API_KEY`) | For real dollars; `deploy/devnet-config.sh` sets Kora's mock for Circle's test USDC |
+| `price_source` | `Jupiter` (needs `JUPITER_API_KEY`) | For real dollars; the image's own copy takes Kora's mock ([How we run it](#how-we-run-it)) |
 | `rate_limit` | 100 a second, across all callers | Kora's own limiter, at Kora's example value |
 | `payment_address` | unset | Payments go to token accounts the fee payer's own key owns |
 | What its own key may do | create an account, and nothing else | It may fund a new account it is paid for; no transfer, assign, allocate or nonce use, and no SPL Token or Token-2022 instruction as owner or authority |
 | No API key or HMAC | | A page in a browser cannot keep a secret, and every transaction pays its way |
 
 The escrow is version 4, at `38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J`, as the standard records
-it (`standard/escrows/solana/devnet/devnet.json`). The dollars it is paid in, in `kora.toml`, are
-real ones, each its maker's own mint:
+it ([How we run it](#how-we-run-it)). The dollars it is paid in, in `kora.toml`, are real ones, each
+its maker's own mint:
 
 | Dollar | Mint | Program |
 |---|---|---|
@@ -89,12 +86,6 @@ prices each against SOL, so the charge is the same SOL cost in whichever is paid
 euro's rate. In Kora 2.0.5, `allowed_tokens` limits only Kora's own `transferTransaction` helper,
 so an escrow in a dollar not on that list still goes through; the list of dollars the fee payer is
 paid in is `allowed_spl_paid_tokens`.
-
-`deploy/devnet-config.sh` prints `kora.toml` with exactly three lines changed, and stops if any is
-not there exactly once: the two lists of dollars it is paid in (Circle's test USDC in place of the
-four) and `price_source = "Mock"`. Kora's mock values it at 0.0001 SOL a whole dollar, by its
-address (a mint it does not know, at 0.001): ten base units buy one lamport. So opening an escrow,
-its two deposits and the network fee, 3,733,640 lamports, is charged 37.3364 of it.
 
 Refused, each checked by the local run ([Run it](#run-it)), with nothing landing: a program not on
 the list (`… is not in the allowed list`): the compute budget program; the fee payer's
@@ -135,10 +126,10 @@ paid in.
 | Variable | What |
 |---|---|
 | `KEY_PATH` | The key file. Default `/data/fee-payer-keypair.json`, on the volume |
-| `RPC_URL` | The Solana RPC Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
+| `RPC_URL` | The Solana RPC (the access point to the chain) Kora simulates and sends through. Required. It must return inner instructions from `simulateTransaction` |
 | `JUPITER_API_KEY` | For `price_source = "Jupiter"` |
 | `PORT` | Default `8080` |
-| `KORA_CONFIG` | Default `kora.toml`; the image sets `kora.devnet.toml`, which `deploy/devnet-config.sh` makes |
+| `KORA_CONFIG` | Default `kora.toml`; the image sets its own copy ([How we run it](#how-we-run-it)) |
 | `KORA_BIN` | Default `.kora/bin/kora` |
 | `RUST_LOG` | Kora's log filter. Unset, Kora logs at `info`, which writes the body of every request: each transaction it is asked to price or sign. `warn` writes no request |
 
@@ -162,8 +153,10 @@ escrow's address to that id, and `price_source = "Mock"`. It checks that `run.sh
 (mode 0600, its address printed once, the key never); that a person whose key never held a lamport
 opens an escrow with a schedule and pays into it in one transaction, co-signed and charged in the
 test dollar exactly what it cost the fee payer (one unit short refused first); and the refusals
-above. Every balance is checked. It needs `solana-test-validator` (Solana CLI 4.2.2), the escrow
-built, the standard built and `./build.sh`, and skips, saying which, if one is missing. Not in CI.
+above. Every balance of the person's and the fee payer's is checked. It needs
+`solana-test-validator` (Solana CLI 4.2.2), the escrow built, the standard built and `./build.sh`.
+It skips, saying which, if the validator, the escrow or Kora is missing; without the standard
+built, it does not load. Not in CI.
 
 What it measured, at the local validator's 6,960 lamports a byte: opening and paying into an
 escrow with a schedule is 691 bytes and about 36,000 to 41,000 compute units, varying with the keys'
@@ -173,29 +166,37 @@ address, and charged 5,111,680 test-dollar units.
 
 ## How we run it
 
+- **Where it stands:** the chain the escrow runs on today is Solana's devnet, so this fee payer runs
+  there, paid in Circle's USDC on that chain, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, six
+  decimals, which anyone gets from [Circle's faucet](https://faucet.circle.com).
 - **Kora,** 2.0.5, configured by `kora.toml`, with no code of ours inside it or in front of it. Its
   binary comes from Kora's own published image, `ghcr.io/solana-foundation/kora:v2.0.5`, pinned by
   digest, and the image build checks its version against `KORA`.
 - **At cost:** the charge is the network fee and every deposit it puts down, at margin 0. It pays
   for no one: a transaction that pays less is refused.
-- **The programs it pays for:** the escrow, SPL Token, Token-2022, Associated Token Account,
-  System and Memo, and no others. Memo moves no money: an app may add a memo to a payment, and
-  nothing reads it. No compute budget program, so no priority fee.
+- **The programs it pays for:** the escrow, version 4, at the address the standard records for that
+  chain (`standard/escrows/solana/devnet/devnet.json`), SPL Token, Token-2022, Associated Token
+  Account, System and Memo, and no others. Memo moves no money: an app may add a memo to a payment,
+  and nothing reads it. No compute budget program, so no priority fee.
 - **At most 0.01 SOL of deposits** in one transaction, and **at most three signatures.**
 - **Paid in four dollars by `kora.toml`:** USDC, USDT, Open USD and EURC, each its maker's own
   mint, since people pay in what they hold. The makers' freeze and Open USD's permanent delegate (a
   key Open USD's maker holds, which can move or burn Open USD out of any account) are accepted.
-  Where it stands, in Circle's test USDC instead, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`,
-  six decimals, which anyone gets from Circle's faucet.
-- **Prices:** Jupiter's, for real dollars; for Circle's test USDC, Kora's mock, ten base units a
-  lamport.
+- **The image's own copy, for devnet:** `deploy/devnet-config.sh` prints `kora.toml` with exactly
+  three lines changed, and stops if any is not there exactly once: the two lists of dollars it is
+  paid in (Circle's devnet USDC in place of the four) and `price_source = "Mock"`. The image writes
+  it to `kora.devnet.toml` and sets `KORA_CONFIG` to it.
+- **Prices:** Jupiter's, for real dollars. For Circle's devnet USDC, Kora's mock, which values it
+  at 0.0001 SOL a whole dollar, by its address (a mint it does not know, at 0.001): ten base units
+  buy one lamport. So opening an escrow, its two deposits and the network fee, 3,733,640 lamports,
+  is charged 37.3364 of it.
 - **What its key may do:** fund a new account it is paid for, and nothing else.
 - **Its key:** one key of its own, random, made by `run.sh` at the first start and kept at
   `/data/fee-payer-keypair.json` on the volume, mode 0600. No phrase gives it, and no variable
   holds it.
 - **The float:** the SOL in its key. Nothing refills it but a person sending it SOL. It is paid back
   in dollars; turning them back into SOL is done by hand, not by code.
-- **The rate limit:** Kora signs at most 100 transactions a second, across all callers.
+- **The rate limit:** Kora answers at most 100 requests a second, across all callers.
 - **No API key for callers.** A page in a browser cannot keep a secret, and every transaction pays
   its way.
 - **No request logs:** Kora runs at `RUST_LOG=warn`, which writes no request, since at its default
@@ -205,13 +206,14 @@ address, and charged 5,111,680 test-dollar units.
 - **Where it runs:** Railway, service `fee payer`, built from `deploy/Dockerfile` on this repo's
   `main` (`RAILWAY_DOCKERFILE_PATH=fee-payer/deploy/Dockerfile`, build context the repo root), one
   replica, health check `GET /liveness`, a public domain to port 8080, and a volume at `/data`. Its
-  variables: `RPC_URL`, Helius's RPC, whose URL holds a key (secret); `RUST_LOG=warn` and
-  `PORT=8080`, as the image sets them.
+  variables: `RPC_URL`, Helius's RPC, whose URL holds a key (secret); `RUST_LOG=warn`, as the image
+  sets it; and `PORT=8080`, as `run.sh` defaults it.
 
 ## Promises
 
 - **At cost, never above.** Each transaction is charged what it costs the fee payer: the network
-  fee and every deposit it puts down, at margin 0, and nothing more.
+  fee and every deposit it puts down, at margin 0, and nothing more, though a deposit that comes
+  back to it when an escrow ends it keeps ([Rent](#rent)).
 - **It never moves its own money.** Kora signs no transaction that sends the fee payer's SOL or
   dollars anywhere; its key only funds a new account the same transaction pays it for.
 
@@ -220,9 +222,8 @@ address, and charged 5,111,680 test-dollar units.
 - **A deposit that comes back is not passed back.** The person is charged for an escrow's deposit
   address when it opens; when the escrow ends, that rent goes back to the fee payer, which keeps it
   ([Rent](#rent)). Over a whole deal, the fee payer ends up that rent ahead.
-- **A one tap (an escrow opened, paid into and paid out in one transaction) in a Token-2022 dollar
-  is refused** by Kora 2.0.5 ([FAQ](#faq)): two transactions instead. In a classic dollar it goes
-  through.
+- **A one tap in a Token-2022 dollar is refused** by Kora 2.0.5 ([FAQ](#faq)): two transactions
+  instead. In a classic dollar it goes through.
 - **The key lives only on the volume.** Lose the volume and the key is gone, with the SOL and
   dollars it holds; the next start makes a new key, at a new address.
 - **What it collects sits under its key,** in the key's own token accounts; nothing moves it but

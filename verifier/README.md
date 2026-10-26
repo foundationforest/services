@@ -2,7 +2,8 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The verifier checks that you are one real person and signs you a stamp.
+The verifier checks that you are one real person and signs you a stamp: its signature saying it
+checked whoever holds your seed, the secret on your own devices that all your keys come from.
 
 Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
 rank. The verifier serves one of these: verified once. Once it signs you a stamp you are verified,
@@ -62,8 +63,10 @@ facts recipe:
  "name":"verifier.forest.foundation"}
 ```
 
-With a welcome gift it adds `"gift":{"host":"<origin>","credits":<n>,"sponsor":"<address>"}`. It is
-canonical JSON.
+With a welcome gift (credits at a host, prepaid units of its writes:
+[The welcome gift](#the-welcome-gift)) it adds
+`"gift":{"credits":<n>,"host":"<origin>","sponsor":"<address>"}`, `sponsor` being the key that
+signs the gift's tickets. It is canonical JSON (one exact way of writing it), with its keys sorted.
 
 - **The name** is `VERIFIER_NAME`, `verifier.forest.foundation` unless set. Everyone's stamp number and
   tags at this verifier are mixed from it
@@ -72,15 +75,18 @@ canonical JSON.
 - **Two keys, one for each check.** The face key signs face stamps and the ID key signs ID stamps, so
   a reader that trusts one and not the other, or weighs them differently, can tell them apart from
   the key alone.
-- **Its seed.** Every key the verifier holds is mixed from one seed: 32 random bytes, made on its own
-  machine the first time it starts and finds none (the standard's `newSeed`), and kept in one file,
-  `verifier-seed.json`, beside its database, readable by its own user only. So the seed and the record
-  of what it signed are kept, or lost, together. No variable holds it, and nothing prints or logs it.
-- **What is mixed from the seed,** with the standard's `hkdf`:
+- **Its seed.** Every key the verifier keeps is mixed from one seed: 32 random bytes, made on its
+  own machine the first time it starts and finds none (the standard's `newSeed`), and kept in one
+  file, `verifier-seed.json`, beside its database, readable by its own user only. So the seed and
+  the record of what it signed are kept, or lost, together. No variable holds it, and nothing prints
+  or logs it.
+- **What is mixed from the seed,** with the standard's `hkdf` (a standard way to make many keys
+  from one secret):
   - under `issuer/face`, the face key;
   - under `issuer/id`, the ID key;
   - under `issuer/fingerprint`, the key of the ID check's fingerprints;
-  - under `issuer/sponsor`, the sponsor key, an Ed25519 key that signs the gift's tickets;
+  - under `issuer/sponsor`, the sponsor key, an Ed25519 key (a common kind of signing key) that
+    signs the gift's tickets;
   - under `issuer/reference/<id>`, the address a payment for one ID check names.
 
   None of them holds money. The texts never change, since a new text would mix a new key, so they
@@ -120,7 +126,8 @@ Offered only with a price (`ID_PRICE`, [Payment](#payment)). Otherwise its route
 4. **The verifier asks Didit what the session came to.** In Review and refusals are as for the face
    check. Approved means every document step, liveness step and face match passed too.
 5. **The person's fingerprint.** The verifier computes it from the name and birth date Didit read
-   (HMAC-SHA256, under the fingerprint key, of the standard's canonical JSON of `{birth, name}`):
+   (HMAC-SHA256, a keyed hash, under the fingerprint key, of the standard's canonical JSON of
+   `{birth, name}`):
    - already kept next to another stamp number: refused (`duplicate_document`);
    - next to the same one: signed again, so a lost ID stamp comes back.
 6. **The stamp.** It computes the selfie's embedding, keeps the session and the fingerprint next to
@@ -132,7 +139,7 @@ space between words. The birth date is `YYYY-MM-DD`. The country is left out of 
 purpose: a renewed document, or another country's, is the same person. Without the key, a guessed
 name and birthday cannot be tested against the file.
 
-A refused or failed request uses nothing up: the same session can be sent again.
+A refused or failed stamp request uses nothing up: the same session can be sent again.
 
 ### Once a stamp is signed
 
@@ -168,9 +175,10 @@ face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","s
 ID:    the same, from the ID key, and "name":"ada lovelace","birth":"1815-12-10","country":826
 ```
 
-Each key's recipe is fixed for good; a new recipe would be a new key. Poseidon is the standard's
-(circomlib's, through `poseidon-lite` 0.3.0, as the standard's keys use it), and h(x) is SHA-256 of
-x's bytes, read as a big-endian integer, reduced mod BN254's scalar order:
+Each key's recipe is fixed for good; a new recipe would be a new key. Poseidon, a hash made for
+zero-knowledge proofs, is the standard's (circomlib's, through `poseidon-lite` 0.3.0, as the
+standard's keys use it), and h(x) is SHA-256 of x's bytes, read as a big-endian integer, reduced
+mod BN254's scalar order (the size of the numbers the proofs work in):
 
 | | |
 |---|---|
@@ -199,7 +207,7 @@ and from the same session within its hour.
 
 ### What it keeps
 
-One SQLite file, six tables:
+One SQLite file (a database in a single file), six tables:
 
 | Table | What | Why |
 |---|---|---|
@@ -265,26 +273,27 @@ without the others stops the verifier from starting.
    opens the session: `201`. One payment opens one session, for its own payment id: a transaction
    another payment id already used is `409 payment_used`.
 4. **A lost answer, or Didit not answering.** Each session a payment id opens carries, as its
-   `vendor_data` in Didit, the SHA-256 of the payment id, so Didit never holds the id. Asked again
-   with a payment id whose payments are all used, the verifier looks the session up by it (Didit's
-   list of sessions) and answers it again; if Didit never answered that it opened one, it opens one
-   now. A payment whose session Didit answered it opened, and no longer lists, gave its stamp and was
-   deleted since:
-   `409 payment_used`. A payment is never given back. A second payment naming the same reference
-   opens a second session.
+   `vendor_data` in Didit, `id-` and the SHA-256 of `payment/<id>`, so Didit never holds the id.
+   Asked again with a payment id whose payments are all used, the verifier looks the session up by
+   it (Didit's list of sessions) and answers it again; if Didit never answered that it opened one,
+   it opens one now. A payment whose session Didit answered it opened, and no longer lists, gave its
+   stamp and was deleted since: `409 payment_used`. A payment is never given back. A second payment
+   naming the same reference opens a second session.
 
-The reference is the address of a key mixed from the verifier's seed, so only whoever holds the id can
-claim a payment that names it, and the id never goes on chain. To find a payment, the verifier asks
-its RPC for the 20 newest finalized transactions that name the reference
-(`getSignaturesForAddress`), and reads each (`getTransaction`): what `to`'s token accounts in the
-dollar gained in it must be at least the price. It reads nothing about who paid.
+The reference is the address of a key mixed from the verifier's seed, so only whoever holds the id
+can claim a payment that names it, and the id never goes on chain. To find a payment, the verifier
+asks its RPC (the access point it reads the chain through) for the 20 newest finalized transactions
+that name the reference (`getSignaturesForAddress`), and reads each (`getTransaction`): what `to`'s
+token accounts in the dollar gained in it must be at least the price. It reads nothing about who
+paid.
 
 ### The welcome gift
 
-With `HOST_URL`, a stamp number's first face stamp comes with `HOST_CREDITS` of the host's credits
-(prepaid units, [host](../host/README.md#credits)). The app buys them, the verifier signs a sponsor's
-ticket for the buy, and the host signs them blind, so the verifier never sees them. It pays nothing:
-the host lists the verifier's sponsor key and counts what its tickets paid for.
+With `HOST_URL`, a face stamp asked with a gift comes with `HOST_CREDITS` of the host's credits
+(prepaid units of its writes, [host](../host/README.md#credits)), once a stamp number. The app buys
+them, the verifier signs a sponsor's ticket for the buy, and the host signs them blind, so the
+verifier never sees them. It pays nothing: the host lists the verifier's sponsor key and counts what
+its tickets paid for.
 
 1. **The app reads the gift** in `GET /`: the host, how many credits, and the sponsor key.
 2. **The app makes one buy at the host** for exactly those credits (as the buyer's credits client
@@ -313,7 +322,7 @@ the host lists the verifier's sponsor key and counts what its tickets paid for.
 A session Didit holds In Review answers `202 {"waiting": "review"}`. A stamp number is decimal text,
 as the standard's `verifierSecret` gives it: no sign, no leading zero, below BN254's scalar order. A
 payment's id is 32 lowercase hex characters. A body with any other field is refused. CORS is open
-to any origin.
+to any origin: any web page may call it.
 
 Errors are `{"error": "<code>"}`:
 
@@ -436,7 +445,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   and which document, goes with that profile. A stamp exists so that a profile shows its holder was
   checked and nothing more. The app pays from an address that holds no profile; the verifier cannot
   tell, and does not check.
-- **The welcome gift:** at a stamp number's first face stamp, 10 of the host's credits
+- **The welcome gift:** with a face stamp asked with a gift, 10 of the host's credits
   (`HOST_CREDITS`, a cent of writes each) at the foundation's host (`HOST_URL`), as a sponsor's
   ticket. Once a stamp number.
 - **No money:** the verifier holds no key that holds money. The ID check's price would go straight to
@@ -502,13 +511,13 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 
   No face, no embedding, no name, no birth date, no document, and no time or session id in clear
   once a session is deleted in Didit. Deleted bytes are overwritten (`secure_delete`). A test reads
-  the raw file and checks this.
+  the raw file and checks it for names, birth dates, embeddings, references and session ids.
 - **It never logs a request, an address, a session, a stamp number or a stamp.** It logs an error's
   kind, never its message.
 - **It never writes down an address.** It reads the client's address only to count sessions against
   the limit, in memory, as a keyed hash under a key made at start.
-- **It never puts what a person sends in a URL.** The routes an app calls are POST with a JSON body,
-  since hosting platforms log paths.
+- **It never puts what a person sends in a URL of its own routes.** The routes an app calls are POST
+  with a JSON body, since hosting platforms log paths.
 - **It takes no key of the person's.** An app sends it a session and a stamp number, never a key.
 - **No sign-ups.**
 - **Nothing it keeps ties a person to a profile.** No request names a profile: the stamp proof that
@@ -517,10 +526,9 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   tickets, nothing else.
 - **A key's recipe never changes.** What a key's stamps' `facts` are made from is fixed for good;
   a new recipe is a new key.
-- **It deletes every session in Didit an hour after its stamp is first signed, and no other.** Never
-  one In Review.
-  Each deletion asks Didit to keep only a template of the face, so its search still sees a face that
-  comes back.
+- **It deletes every session in Didit an hour after its stamp is first signed, or at the first sweep
+  after that which Didit answers, and no other.** Never one In Review. Each deletion asks Didit to
+  keep only a template of the face, so its search still sees a face that comes back.
 - **It never puts a stamp on chain.** A stamp stays with the person; a profile record carries only the
   stamp proof.
 
@@ -624,9 +632,11 @@ never changes, so the stamp stays good. A new photo would give a slightly differ
 whether two lists are the same face is a comparison, made with the model, and that is where the
 fuzziness lives, not in the stamp.
 
-**Why a fresh `vendor_data` on every Didit session?**
-Didit's face search compares a face with faces checked under another `vendor_data`. The random id
-names nobody, and its prefix says only which check the session was for.
+**Why does every Didit session carry a `vendor_data`?**
+Didit's face search compares a face with faces checked under another `vendor_data`. A face
+session's is a fresh random id, which names nobody, after a prefix that says only which check the
+session was for. An ID session's is its payment's hash ([Payment](#payment)), which only the
+sessions that one payment opens share.
 
 **Why does the price go to one address, with a reference per payment, and not to an address per
 payment?**

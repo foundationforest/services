@@ -2,23 +2,25 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The mcp passes what an AI app asks to the person's signer, and the answer back.
+The mcp passes what an AI app asks to the person's signer, one of their own devices that holds
+their seed (the secret all their keys come from), and the answer back.
 
 It serves the AI's door to all of Forest: an AI app reads markets, posts, profiles and ratings
 through it, and acts for a person through it, by asking Forest on one of that person's own devices.
-It is the MCP connector your AI app adds.
+It is a connector, a service your AI app adds, for MCP: the Model Context Protocol, the way AI apps
+call outside tools.
 
 The foundation runs one copy, at https://mcp.forest.foundation. Anyone can run another; the main way
 is this directory, or its image.
 
-**What it keeps:** nothing of the person's. No seed, no key, no rule, no record, no message.
-Its own key, which signs the logins it gives, on its volume. The live connections from signers, in
-memory, gone when it stops.
+**What it keeps:** nothing of the person's. No seed, no key, no rule (what the person lets each AI
+app ask their signers to do), no record, no message. Its own key, which signs the logins it gives,
+on its volume. The live sockets from signers, in memory, gone when it stops.
 
 **What it sees:** what the AI asks, in plain text, and the answer the signer gives. Never a key, and
 never the person's own profiles' addresses: the AI asks in words ("post this offer in tutoring as
 tutor"), the signer picks the profile, signs and publishes straight to the host, and the answers
-carry no addresses.
+carry none of the person's own addresses.
 
 ## How it works
 
@@ -29,8 +31,8 @@ AI app ── MCP, over HTTPS ──▶ mcp ◀── WebSocket ── signer (F
 
 A person's seed lives only on their signers, the devices they own that hold it
 ([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#signers)).
-A signer acts by the rules in each of the person's profiles' folders, private records only the
-person's signers open
+A signer acts by the rules in each of the person's profiles' folders (what each profile's main
+key signs on a host), private records only the person's signers open
 ([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#rules)),
 and signs everything with the profile's main key. The mcp only carries asks and answers between an AI
 app, calling from its maker's cloud, and that signer.
@@ -49,7 +51,8 @@ Four tools read what is public, with no login and no signer:
   `minReviews`, `limit`, `offset`).
 - `profile`: any profile, from its hosts, every signature checked: its profile record (without its
   inbox key, about 2 KB a sender's app finds itself) and its other records by kind, each with its full
-  address; and, from the index, `checks` (which verifiers' stamps it shows) and `rating`.
+  address; and, from the index, `checks` (which verifiers' stamps it shows a proof of; a stamp is a
+  verifier's signature that it checked the person) and `rating`.
 
 A folder is always read from hosts, never from an index: first from the start hosts, then from every
 host its hosts record names, by POST so the address is in no URL. A host other than the start hosts is
@@ -77,20 +80,19 @@ names its address. A record of a kind sits at `<kind>/<id>` in the profile's fol
 
 **Kinds come from the markets' own format,** `build/market.schema.json` at `MARKETS`: a kind is a
 top-level property of a market file that is fields (`offer`) or holds fields beside shared names
-(`review`). So a market that adds a kind needs only `MARKETS` to move. A body is checked as the old
-mcp checked it, against a JSON Schema made from each field's type in `build/types.json`: a field the
-market names for that kind, for the writer's role (an `offer` field's `roles`) or the subject's (a
-`review` field's, read from the subject's profile record), of its type, a choice among its values.
-Shared names are checked by their meaning in the manual: `subject` an address, `score` `"1"` to
-`"10"` with at most one decimal, `offer` a post's full address, `text` text; a kind with `subject`
-among its shared names needs one. `evidence` is refused: the person's signer fills it in, from the
-payment the profile made for the review's `offer`, so an AI never names a payment. A body that does
-not fit is refused naming the field, before anything reaches the signer. A field marked `required`
-is not asked for: the manual says an app asks for it, and nothing enforces it. No kind can be
-`profile`, `hosts` or `rule`, so `post` never reaches the profile record, the hosts record or a
-rule.
+(`review`). So a market that adds a kind needs only `MARKETS` to move. A body is checked against a
+JSON Schema made from each field's type in `build/types.json`: a field the market names for that
+kind, for the writer's role (an `offer` field's `roles`) or the subject's (a `review` field's, read
+from the subject's profile record), of its type, a choice among its values. Shared names are checked
+by their meaning in the manual: `subject` an address, `score` `"1"` to `"10"` with at most one
+decimal, `offer` a post's full address, `text` text; a kind with `subject` among its shared names
+needs one. `evidence` is refused: the person's signer fills it in, from the payment the profile made
+for the review's `offer`, so an AI never names a payment. A body that does not fit is refused naming
+the field, before anything reaches the signer. A field marked `required` is not asked for: the
+manual says an app asks for it, and nothing enforces it. No kind can be `profile`, `hosts` or
+`rule`, so `post` never reaches the profile record, the hosts record or a rule.
 
-Each relayed call ends one of three ways:
+Each relayed call the signer answers ends one of three ways:
 
 - **done:** `{ "status": "done", …the fields above }`;
 - **needs approval:** `{ "status": "needs approval", "link", "why" }`: the request is outside what the
@@ -105,15 +107,16 @@ their devices, then try again."
 ### The login
 
 Each AI app is its own connection. Its login is the MCP specification's authorization flow, version
-2025-11-25, the one AI apps implement today (OAuth 2.1 with PKCE, Protected Resource Metadata, and
-Authorization Server Metadata), with this copy as both the resource and its own authorization server.
-It also sends RFC 9207's `iss`, which the next version asks for. Nothing about a login is stored: each
-piece below is a body this copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under this
-copy's key.
+2025-11-25, the one AI apps implement today (OAuth 2.1, the web's usual way to let one app act for
+you at another, with PKCE, Protected Resource Metadata, and Authorization Server Metadata), with
+this copy as both the resource and its own authorization server. It also sends RFC 9207's `iss`,
+which the next version asks for. Nothing about a login is stored: each piece below is a body this
+copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under this copy's key.
 
 1. **The challenge.** A relayed tool's call with no token gets a 401 with
    `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`; a
-   token this copy did not give gets the same on any request, with `error="invalid_token"`.
+   token this copy did not give gets the same on any request to its MCP door (`/` or `/mcp`), with
+   `error="invalid_token"`.
 2. **Discovery.** `/.well-known/oauth-protected-resource` names this copy as the resource and its
    authorization server; `/.well-known/oauth-authorization-server` names `/authorize`, `/token` and
    `/register`, S256, and that client documents work.
@@ -147,13 +150,13 @@ copy's key.
    sends the browser to the AI app's redirect address with `code`, `state` and `iss`; `code` names the
    connection, the client, the redirect, the challenge and the resource, for 60 seconds.
 7. **`/token`** (`grant_type=authorization_code`) checks the code, the client (and its secret, if it
-   has one), the redirect, `code_verifier` against the challenge, and `resource`, and gives an access
-   token naming the connection, the client and this copy. It carries no expiry, so there is no
-   refresh token: the login ends when the person removes its rules, at any of their signers, and no
-   signer of theirs serves it from its next ask.
+   has one), the redirect, `code_verifier` against the challenge, and `resource`, and gives an
+   access token naming the connection, the client and this copy. It carries no expiry, so there is
+   no refresh token: the login ends when the person removes its rules, at any of their signers, or
+   their `until` passes, and no signer of theirs serves it from its next ask.
 
 Without `APP_URL`, step 4 is a page saying logins wait for the Forest app's connect page, and reading
-works as before.
+still works.
 
 ### The relay protocol
 
@@ -228,7 +231,7 @@ packages (`@foundationforest/keys`, `@foundationforest/records`, through file: l
 | `DATA_DIR` | Where its key is kept: `mcp-key.json`, 32 random bytes made at the first start, readable by its own user only | needed |
 | `PUBLIC_URL` | Its origin: the resource, the authorization server, and the connector in a person's rules | https://mcp.forest.foundation |
 | `APP_URL` | The app's connect page | none: logins wait |
-| `INDEX_URL` | The index read for posts, search, checks and ratings | https://index.forest.foundation |
+| `INDEX_URL` | The index read for the markets it lists, posts, search, checks and ratings | https://index.forest.foundation |
 | `HOST_URLS` | Where a profile's hosts record is looked for first, comma separated | https://host.forest.foundation |
 | `PORT`, `BIND` | Where it listens | 8080, 127.0.0.1 |
 
@@ -239,10 +242,10 @@ message, read and pay $50 a day on each:
 
 - `test/login.test.ts`: reading with no login; the challenge and the metadata; the login end to end
   through the MCP SDK's own client, by registration and by a client document; each login its own
-  connection, in a rule on each profile chosen; a login ending when the person removes its rules, at
-  their signer; refused: a login signed by a key that is not the connection's, a login changed on
-  the way, an unknown AI app, a person who says no, a code with the wrong verifier or for another
-  client, a token this copy did not give; with no `APP_URL`, reading works and logins wait.
+  connection, in a rule of its own; a login ending when the person removes its rules, at their
+  signer; refused: a login signed by a key that is not the connection's, a login changed on the way,
+  an unknown AI app, a person who says no, a code with the wrong verifier or for another client, a
+  token this copy did not give; with no `APP_URL`, reading works and logins wait.
 - `test/tools.test.ts`: each of the eleven tools. The login's rule in each chosen folder, encrypted
   to that profile alone, the connection's key inside, and none in the third. `profiles`, the
   profiles holding a rule for the connection. Another device on the same seed serving the login from
@@ -256,7 +259,7 @@ message, read and pay $50 a day on each:
   yes given twice pays once; a rule with no limit, any amount, done. A review of a paid post
   carrying the signer's evidence, and none for a post the profile never paid. A rule removed on the
   other device gone at the next ask, and with none left the login ended. With no signer open, said
-  plainly; and no answer in the whole run holds one of the person's addresses (each profile's, each
+  plainly; and no answer in this file holds one of the person's addresses (each profile's, each
   pay address).
 - `test/relay.test.ts`, with a signer made by hand: a registration by another key refused; a frame
   that is not JSON closing the socket; only the protocol's fields passed on; an approval link that is
@@ -287,8 +290,8 @@ The foundation's copy, at https://mcp.forest.foundation:
 - **Its connect page:** this copy sends logins to the Forest app's page; another app runs its own
   copy, with its own page.
 - **What it reads:** profiles from the foundation's host first, then the hosts each profile's hosts
-  record names; markets from the directory at `MARKETS`; posts, search, checks and ratings from the
-  foundation's index.
+  record names; markets from the directory at `MARKETS`; the markets it lists, posts, search,
+  checks and ratings from the foundation's index.
 - **The tools.** All eleven, over Streamable HTTP at its root, and at `/mcp` for connectors added
   before. An AI app first gets how Forest works, as the server's instructions (`HOW` in `src/tools.ts`).
 - **Its numbers, and why:**
@@ -298,10 +301,10 @@ The foundation's copy, at https://mcp.forest.foundation:
     many proxies let a quiet connection live, and a phone that slept is noticed within a minute;
   - 30 seconds for a new socket to register its first connection, and at most 100 connections on one
     socket;
-  - 10 minutes on the connect page, to unlock the device and choose; 60 seconds for a code, which the
-    AI app redeems at once; no end for a login, which lasts until the person removes its connection;
-  - at most 4,194,304 bytes for an MCP request, a frame either way, or an index's answer; at most 100
-    pages for one folder read; the records library's 60 seconds for a read.
+  - 10 minutes on the connect page, to unlock the device and choose; 60 seconds for a code, which
+    the AI app redeems at once; no end for a login, which lasts until the person ends it;
+  - at most 4,194,304 bytes for an MCP request, a frame from a signer, or an index's answer; at most
+    100 pages for one folder read; the records library's 60 seconds for a read.
 - **Free:** no price.
 - **Keeps nothing of anyone's:** its key on the volume, and live sockets in memory; no call, token or
   answer is written.
@@ -313,8 +316,7 @@ The foundation's copy, at https://mcp.forest.foundation:
   serves it at `/icon.svg`, and at `/favicon.ico` as an ICO of 16, 32, 48 and 64 pixels. `src/icon.ts`
   draws both from the mark's strokes.
 
-Payments are the signer's, on the chain the escrow runs on today, Solana's devnet, in Circle's USDC.
-Hosts and indexes see this copy's network address, not the person's.
+Payments are the signer's. Hosts and indexes see this copy's network address, not the person's.
 
 ### Connect an AI app
 
@@ -338,12 +340,14 @@ acts.
 - **It holds nothing of the person's.** No seed, no key, no rule; it never receives the
   person's own profiles' addresses, keys or folders.
 - **It acts only through the person's signer,** which acts by the person's rules and asks them
-  about the rest. It signs nothing for anyone.
+  about the rest, so whoever runs it can do no more than the connections it carries may. It signs
+  nothing for anyone.
 - **It never moves money itself, and holds nothing that could.** A payment is made by the person's
   signer, inside the limits their rules set, or with their yes.
 - **It keeps nothing between calls but live sockets,** in memory. No login, call or answer is written.
-- **A login ends only when the person ends it.** Its access token carries no expiry. A login ends
-  when the person removes its rule, at their signer, which then serves it no more.
+- **A login ends only when the person ends it, or when this copy's key changes.** Its access token
+  carries no expiry. A login ends when the person removes its rule at their signer, or the rule's
+  `until` passes, and the signer then serves it no more; a new key here ends every login at once.
 - **It checks what it reads from hosts.** The standard's records library checks every record,
   signature included. What an index says is passed on as the index's word, and labelled so.
 - **No sign-up and no password.**
@@ -363,14 +367,14 @@ acts.
 - **The AI is not told when the person says yes.** It looks again, or asks again.
 - **An answer that comes after 45 seconds is lost,** though what was asked may be done.
 - **A login does not expire.** Its access token works for as long as a rule for the connection stays
-  in one of the person's profiles' folders. The AI's maker holds it all that time, and whoever takes
-  it from them acts as that connection, within its rules, while the person's signer serves it. This
-  copy cannot end one token alone: only a new key ends a login here, and it ends every one.
+  in one of the person's profiles' folders and has not ended. The AI's maker holds it all that time,
+  and whoever takes it from them acts as that connection, within its rules, while the person's
+  signer serves it. This copy cannot end one token alone: only a new key ends a login here, and it
+  ends every one.
 - **A code works more than once in its 60 seconds,** since nothing is kept; only the AI app holding
   the login's PKCE verifier can use it.
 - **One replica.** The sockets live in one process; when it restarts, each signer opens again, and
   until it does, nothing acts.
-- **What an index says goes unchecked.**
 - **The markets are the directory's at one commit.** A market or kind added since is unknown here
   until `MARKETS` moves.
 - **A profile its start hosts do not hold is out of reach for reading,** until one of its hosts is
@@ -378,9 +382,9 @@ acts.
 - **Slow reads.** Each call reads the whole folder from every host, and checks signatures in
   JavaScript.
 - **No rate limit.** Anyone can keep the copy busy.
-- **Not here:** putting or deleting blobs (photos and videos), buying credits for a host that charges,
-  making a profile, views in the AI app (MCP Apps), a post's preview in pictures, and a copy on the
-  person's own computer.
+- **Not here:** putting or deleting blobs (photos and videos), buying credits (a host's prepaid
+  units of writes) for a host that charges, making a profile, views in the AI app (MCP Apps), a
+  post's preview in pictures, and a copy on the person's own computer.
 
 ## Who decides what
 
@@ -401,7 +405,7 @@ acts.
 
 **Why does reading need no login?**
 So an AI app can read before the person connects anything, and so reading works while logins wait.
-An AI app logs in when a call answers 401, and only a relayed tool's call does.
+An AI app logs in when a call answers 401, and with no token, only a relayed tool's call does.
 
 **Why does a login not expire?**
 The person's rules already say what a connection may do and until when (a rule's `until`).

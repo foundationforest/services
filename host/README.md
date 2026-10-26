@@ -2,14 +2,17 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The foundation's host keeps people's signed records, messages and photos, and serves them to anyone, with each write paid in credits.
+The foundation's host keeps people's signed records, messages and photos, serves the records and
+photos to anyone, and takes each write's price in credits: prepaid units of its writes.
 
 Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
-rank. A host serves two of these: it keeps the folder of each profile a seed gives, and serves the
-offers and reviews in it to anyone. The rest it only carries:
+rank. A host serves two of these: it keeps the folder of each profile a seed gives (every record
+that profile's main key signs here), and serves the offers and reviews in it to anyone. The rest it
+only carries:
 
-- the stamp proofs on a profile record, which a verifier's stamp made possible and readers check
-  (this host checks one only for an inbox that asks for it);
+- the stamp proofs on a profile record, which a verifier's stamp (its signature saying it checked
+  the person) made possible and readers check (this host checks one only for an inbox that asks
+  for it);
 - the records an index reads to rank profiles;
 - no money but its own credits.
 
@@ -18,11 +21,12 @@ code, or the standard's reference host alone, or one of their own that answers t
 ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)).
 
 Of the person's, it keeps copies: the records each of their profiles' main keys signed, a private
-one (each of a profile's rules among them) encrypted; the messages to each inbox, encrypted; and the
-blobs each folder put. Anyone can copy a folder out of it; the main way is the person's app reading
-every record (`GET /v1/records?profile=<address>`) and every blob
-(`GET /v1/blobs/<sha256>`), and posting them to another host. The only thing here that is not a copy
-of what the person's main keys signed is each folder's balance of credits.
+one encrypted, each of a profile's rules among them (who may ask the person's signers, the devices
+of theirs that hold the seed, to act as that profile); the messages to each inbox, encrypted; and
+the blobs each folder put. Anyone can copy a folder out of it; the main way is the person's app
+reading every record (`GET /v1/records?profile=<address>`) and every blob
+(`GET /v1/blobs/<sha256>`), and posting them to another host. The only thing here about a folder
+that no key signed is its balance of credits.
 
 ## How it works
 
@@ -41,9 +45,10 @@ record, message and blob, as the standard says, before it keeps anything.
 hooks that charge for writes, and two of the standard's pieces:
 
 - **`recordChoice`** charges a record to its own folder's balance, or refuses it (`refused`, with
-  what it costs and what the folder holds). The reference host asks it about every content record
-  and about a folder's first hosts record, so joining costs a write; it never asks about a later
-  hosts record, so leaving and updating are free.
+  what it costs and what the folder holds). The reference host asks it about every content record,
+  and about a hosts record only while the folder holds no record yet, so a folder's first record
+  costs a write, whatever it is; it never asks about a hosts record after that, so leaving and
+  updating are free.
 - **`blobChoice`** takes the standard's blob types, then reserves the bytes' price on the folder
   that puts them. The front takes the price once the reference host answers that it kept them, or
   releases it.
@@ -72,7 +77,7 @@ hooks that charge for writes, and two of the standard's pieces:
   so an empty folder cannot fill paths for free.
 
 **One request for the same bytes at a time.** The front sends on one put or delete of the same
-bytes at a time, so a second put finds them kept and pays nothing.
+bytes at a time, so a second put of them by the same folder finds them kept and pays nothing.
 
 **Where it keeps things** is the standard's storage, in the data directory (`DATA_DIR`):
 
@@ -83,8 +88,9 @@ bytes at a time, so a second put finds them kept and pays nothing.
 
 The credits keep their own two files in `credits/`:
 
-- `credits.sqlite`: the spent list, the proofs it took, its sponsors' bill, the balances, and the
-  id of each record and message it took a price for;
+- `credits.sqlite`: the spent list, the proofs it took, the bill of its sponsors (the keys whose
+  tickets pay for a buy, [Credits](#credits)), the balances, and the id of each record and message
+  it took a price for;
 - `key.der`: the credit key.
 
 ### Credits
@@ -94,9 +100,10 @@ in `credits/`; `src/credits.ts` keeps the balances and the price. The buyer's si
 runs to buy and spend them, is `client/client.ts`: the loop buys with it, and so do the verifier's
 tests.
 
-**A credit** is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578). The host
-signs it blind, over a number only the buyer's app knows, so when the credit comes back to be spent
-the host sees a good signature and nothing that ties it to the buy.
+**A credit** is a Privacy Pass credit (the IETF's standard for tokens that cannot be tied to their
+buy) of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578). The host signs it blind, over a number
+only the buyer's app knows, so when the credit comes back to be spent the host sees a good signature
+and nothing that ties it to the buy.
 
 - Every credit of this host answers one challenge: credit type 2, the host's name (from
   `PUBLIC_ORIGIN`) as its `issuer_name`, no redemption context and no origin info. With no
@@ -160,10 +167,10 @@ Anyone can buy credits for any folder; the main way is a sponsor's ticket.
 - **A dollar payment on Solana,** `Forest-Payment: solana <transaction signature>`, when
   `CREDIT_MINT`, `CREDIT_PAY_TO` and `RPC_URL` are set.
   - Anyone pays it from any wallet app that reads Solana Pay:
-    `solana:<address>?amount=<n × price>&spl-token=<mint>&reference=<reference>`.
-  - The host checks that one transaction, at finalized, in one `getTransaction` over `RPC_URL`: no
-    error, the buy's reference among its accounts, and `address` gained at least `n` × `price` of
-    the dollar, at face value.
+    `solana:<address>?amount=<n × price>&spl-token=<mint>&reference=<reference>&label=<host>`.
+  - The host checks that one transaction, at finalized, in one `getTransaction` over `RPC_URL`, its
+    RPC (the access point it reads the chain through): no error, the buy's reference among its
+    accounts, and `address` gained at least `n` × `price` of the dollar, at face value.
   - Unset, only tickets buy, and a Solana proof is answered 503.
 
 The buyer or the sponsor sees the reference, never the credits; the host sees who paid, or which
@@ -174,7 +181,10 @@ sponsor, and the blinded buy, never which spends they become.
 | `GET /.well-known/private-token-issuer-directory` | Its directory, above |
 | `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Answers its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`; `too_many` (over `MAX_BUY`); `bad_payment` (a header it cannot read); `not_paid` (402, with what to pay); `proof_used` (409, the proof paid for another buy); `payment_check_unavailable` (503: no payment on Solana here, or the RPC did not answer) |
 | `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, each in base64url. All go into that folder's balance, or none. The answer is `{ folder, credits }`, the balance, a number with up to six decimals. Refused: `bad_request`; `credit` (402: one does not hold, or one is there twice); `spent` (409: one was spent) |
-| `GET /credits/balance/<folder>` | `{ folder, credits }` |
+| `GET /credits/balance/<folder>` | `{ folder, credits }`. Refused: `bad_request` (not a folder's address) |
+
+A credit route asked with a method it does not take answers `method` (405), and a POST body over
+512 KB answers `too_big` (413).
 
 **A folder's balance** is kept in millionths of a credit, so the fractions of a cent each write
 costs add up.
@@ -211,8 +221,9 @@ largest record or message, and the blob types.
   **it stores** (`PER_KB`), rounded up to a millionth of a credit.
   - A 1 kB record costs 0.02 credit, a 200 kB photo 2.01, and a 50 MB video 500.01: five dollars.
   - A delete costs the floor, 0.01, and goes through free when the folder cannot pay.
-  - A folder's first hosts record costs what any record does, and is refused when the folder cannot
-    pay: joining costs a write. A later hosts record, which leaves or updates, is free.
+  - A folder's first record, whatever it is, costs what any record does, and is refused when the
+    folder cannot pay: joining costs a write. A hosts record after it, which leaves or updates, is
+    free.
   - A message to its own inbox costs what a record of its size does. Others' messages are free, up
     to **1,000** an inbox a day (`MESSAGES_A_DAY`), counted from midnight UTC. Reads are free.
   - Both prices are in the directory, where an app reads them.
@@ -241,7 +252,8 @@ largest record or message, and the blob types.
 - **Senders' records:** to take a message for a verifier's stamp holders, it reads the sender's
   records from the host the message names. The read takes at most **5 seconds**, goes only to a
   public address, and follows no redirect. What it read is kept for **60 seconds**
-  (`SENDER_CACHE_SECONDS`): at most one read a sender a minute.
+  (`SENDER_CACHE_SECONDS`): at most one read a minute for each sender at each host. A read that
+  fails is not kept.
 - **Who may write:** anyone can, who pays; the main way is the person's app, posting each record to
   every host its hosts record names. It refuses no write by its own choice but its price, and no
   message but its price and an inbox's day of others' messages; it has no other rate limit.
@@ -299,9 +311,10 @@ and buy with `test/buyer.ts`, which blinds with privacypass-ts as an app does:
   update or leaving, taken with none;
 - a write refused with no balance, bytes too. With no balance, a live record and a blob are still
   taken down, for nothing, and a null body where nothing stands is refused;
-- a message to its own inbox charged as a record of its size, and refused with no balance;
-  someone else's taken free; an inbox taking a day's cap of others' messages, the next refused,
-  another inbox counted on its own, and the next UTC day counted again;
+- a message to its own inbox charged as a record, at a flat one credit a write, and refused with
+  no balance; someone else's taken free; on the cap's own code, with a cap of 2 and a stand-in
+  clock, an inbox taking a day's cap of others' messages, the next refused, another inbox counted
+  on its own, and the next UTC day counted again;
 - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
   not listed, for another count, or for another buy, and a credit is spent once;
 - a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or naming
@@ -319,20 +332,20 @@ What every host must do, and its tests, are the standard's.
   price of each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live record, or of a
   blob the folder holds, goes through when the balance cannot pay its floor.
-- **A person can always leave; joining costs a write.** A folder's first hosts record here is priced
-  like any record. A later one, which leaves this host or updates the list, the reference host never
-  asks about, so it is free.
+- **A person can always leave; joining costs a write.** A folder's first record here costs a write,
+  whatever it is. Later hosts records, which leave this host or update the list, the reference host
+  never asks about, so they are free.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
   record's signature is its only proof, and a pull's is the profile's main key's.
 - **No address logs.** Neither the reference host nor the front logs a request or keeps an
   address. On Railway, Railway's own request logs exist.
-- **It cannot tell which buy a credit came from.** It signed the credit blind and never saw its
-  nonce (but see Limits).
-- **A credit is spent once, and a buy is paid once.** Collecting a buy again gives the same
-  credits, never more.
+- **It cannot tell which buy a credit came from, as long as it gave everyone the same key.** It
+  signed the credit blind and never saw its nonce.
+- **A credit is spent once, and a buy's credits are signed once.** A second payment for the same
+  buy is taken and gives nothing more; collecting a buy again gives the same credits, never more.
 - **A write is paid once.** The same record, or the same bytes, sent again cost nothing.
-- **Credits are never refunded and never move between folders.** One credit is a cent of writes
-  here, and nothing anywhere else.
+- **Credits are never refunded, and once in a folder never move to another.** One credit is a cent
+  of writes here, and nothing anywhere else.
 
 ## Limits
 
@@ -344,19 +357,12 @@ What every host must do, and its tests, are the standard's.
   the profile's own costs nothing: up to 64 KB each, 1,000 an inbox a day, each kept for 30 days, in
   any number of inboxes. The day's count is kept in memory, so a restart counts it again from none.
 - **A folder's balance is public.** Anyone who knows its address can ask for it.
-- **A balance is never refunded,** and never moves to another folder.
-- **A network address can tie a buy to a folder.** The foundation runs this host and the verifier
-  whose tickets pay for a person's first credits. A buy collected and spent into a folder from one
-  network address can be matched, and the verifier knows whose buy it paid. An app that spends over
-  a VPN makes that harder.
 - **A credit names nobody, so it is a bearer credit.** That is what makes it unlinkable. Nothing
   stops a person from handing its bytes to someone else, and whoever holds them can spend it.
 - **One key for everyone, as far as the app can tell.** The app takes the key from the host's
   directory. A host could give one person a key of their own and so know their credits, and
   blinding holds only when the key is a real RSA key. An app can compare the key with what others
   see; this code cannot prevent it.
-- **The count can show.** A buy of an unusual number of credits, spent in a burst, is easier to
-  tell apart.
 - **Not post-quantum.** A large quantum computer could break RSA-2048 and make credits; the host
   would change its key. It could still not link a spend to its buy: blinding hides that from any
   computer.
@@ -373,12 +379,10 @@ What every host must do, and its tests, are the standard's.
   memory, in this one process.
 - **It trusts its RPC** for payments. A payment check that fails refuses the buy (503), and the app
   collects it again.
-- **Taking a message for a verifier's stamp holders tells the sender's host something:** this host asks it for the sender's records, so it sees that this host asked, and
-  when.
+- **Taking a message for a verifier's stamp holders tells the sender's host something:** this host
+  asks it for the sender's records, so it sees that this host asked, and when.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
   change to the standard's storage first.
-- **A host that holds one person's profiles can link them** by the network address that writes
-  them; a shared host is the crowd.
 
 ## Who decides what
 
