@@ -123,13 +123,14 @@ describe('through the signer', () => {
     assert.equal(await at('tutoring/tutor', 'profile').then((b) => b?.role), 'tutor', 'the profile record is as it was')
   })
 
-  test('the signer asked to post at the profile record or the hosts record asks the person, whatever the permission says', () => {
-    const entry = { who: { connector: 'https://mcp.example', connection: 'x' }, profiles: 'all' as const, can: ['post'] }
-    assert.equal(permits(entry, 'tutoring/tutor', 'post', 'offer/maths'), true)
-    assert.equal(permits(entry, 'tutoring/tutor', 'post', 'profile'), false)
-    assert.equal(permits(entry, 'tutoring/tutor', 'post', 'hosts'), false)
-    assert.equal(permits({ ...entry, spend: 'any' } as never, 'tutoring/tutor', 'post', 'offer/maths'), false, 'an entry it does not know whole')
-    assert.equal(permits({ ...entry, until: Date.now() - 1 }, 'tutoring/tutor', 'post', 'offer/maths'), false, 'an entry that ended')
+  test('the signer asked to post at the profile record, the hosts record or a rule asks the person, whatever the rule says', () => {
+    const rule = { who: { connector: 'https://mcp.example', connection: 'x' }, can: ['post'] }
+    assert.equal(permits(rule, 'post', 'offer/maths'), true)
+    assert.equal(permits(rule, 'post', 'profile'), false)
+    assert.equal(permits(rule, 'post', 'hosts'), false)
+    assert.equal(permits(rule, 'post', 'rule/0123456789abcdef0123456789abcdef'), false)
+    assert.equal(permits({ ...rule, spend: 'any' } as never, 'post', 'offer/maths'), false, 'a rule it does not know whole')
+    assert.equal(permits({ ...rule, until: Date.now() - 1 }, 'post', 'offer/maths'), false, 'a rule that ended')
   })
 
   test('remove: done, and the record is gone', async () => {
