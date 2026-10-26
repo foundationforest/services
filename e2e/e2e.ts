@@ -1,8 +1,8 @@
 // The loop: Forest end to end. Two people from two seeds, a tutor and a student. Each one's device is
-// the reference signer (mcp/test/signer.ts), unchanged: it holds the seed, keeps the vault with the
-// person's permissions, signs, publishes, and answers the mcp's relay. What it has no method for,
-// the device does here with the standard's pieces: the stamp kept in the vault, the stamp proof on
-// the profile record, the escrow. Each person's AI is the MCP SDK's own client (mcp/test/setup.ts),
+// the reference signer (mcp/test/signer.ts), unchanged: it holds the seed, keeps each profile's
+// rules, signs, publishes, and answers the mcp's relay. What it has no method for, the device does
+// here with the standard's pieces: the stamp kept on the device, the stamp proof on the profile
+// record, the escrow. Each person's AI is the MCP SDK's own client (mcp/test/setup.ts),
 // logging in through the loop's connect page and calling the mcp's tools. Against the host and fee
 // payer services.json names, or the loop's own copies on loopback, with the loop's own verifier,
 // index and mcp (services.ts); the chain is remote, through RPC_URL, or services.json's rpc.
@@ -18,12 +18,12 @@
 //       dollar's authority mints: the student's pay address, each wallet app's, and the loop's own
 //       fee payer;
 //    3. stamps: the loop verifier's face check (its stand-in Didit passes it), a stamp for each,
-//       kept in the person's vault;
+//       kept on the person's device;
 //    4. credits: each wallet app buys 10 of the host's credits for the test dollar;
 //    5. profiles: credits into the folder, the signer adds the profile, and the device writes its
 //       profile record again with a real stamp proof;
 //    6. logins: each AI logs in through the connect page, where the person's signer makes the
-//       connection and keeps its permission in the vault: post, message and pay within $5 a day,
+//       connection and keeps its rule on the profile: post, message and pay within $5 a day,
 //       and for the tutor read;
 //    7. mcp: the tutor's AI posts an offer; the student's finds it and messages; the tutor's reads the
 //       inbox and replies by number; the student's reads its inbox, outside its permissions, so it
@@ -49,9 +49,8 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as escrow from '@foundationforest/escrow-client'
-import { type PayAddresses, checkBytes, inboxKey, mainKey, newSeed, payAddresses, payKey, seedScalar, tagOf, unpackSignature, vaultKey, verifierScalarOf, verifierSecret } from '@foundationforest/keys'
+import { type PayAddresses, checkBytes, inboxKey, mainKey, newSeed, payAddresses, payKey, seedScalar, tagOf, unpackSignature, verifierScalarOf, verifierSecret } from '@foundationforest/keys'
 import { type Body, b64u, hex, hostsRecord, nextTime, ownerRecord, proofsOf, publish, readProfile, stampCheck } from '@foundationforest/records'
-import { readVault, vaultRecord } from '@foundationforest/records/private'
 import { buildTree, checkReputation, proofBytes as reputationBytes, proveReputation, signedBytes } from '@foundationforest/reputation'
 import { type SignedStamp, checkStamp, proofBytes as stampBytes, proveStamp, stampFromJson, stampSigned, toBytes32 } from '@foundationforest/stamp'
 import { Connection, Keypair, PublicKey } from '@solana/web3.js'
@@ -234,8 +233,7 @@ const people: Person[] = []
 
 /**
  * The face check, as the app does it: a session, the check (the stand-in passes it), the stamp
- * number sent, and a stamp back, checked. The app keeps it in the vault, as safely as a key: written
- * before the signer first reads the vault, so the signer keeps it beside what it writes.
+ * number sent, and a stamp back, checked. The app keeps it on the device, as safely as a key.
  */
 async function faceStamp(p: Person) {
   const verifier = services!.verifier
@@ -248,18 +246,8 @@ async function faceStamp(p: Person) {
   assert.equal(stamp.verifier, verifier.keys.face, 'with its face key, which the loop index lists')
   assert.equal(stamp.stampNumber, p.stampNumber, 'for this person’s stamp number')
   p.stamp = stamp
-
-  const host = services!.host
-  const vault = await vaultKey(p.seed)
-  const opener = await inboxKey(vault.secret)
-  secrets.push(opener.identity)
-  const now = Date.now()
-  const [out] = await publish([host], [hostsRecord(vault, [host], now), await vaultRecord(vault, opener.encryptTo, { stamps: [{ verifier: VERIFIER_NAME, stamp: got.body.stamp }] }, now)])
-  assert.ok(out!.results.every((r) => r.ok), `the host takes the vault, free: ${JSON.stringify(out)}`)
-  const read = await readVault([host], { address: vault.address, identity: opener.identity }, Date.now())
-  assert.equal(read?.vault.stamps?.[0]?.verifier, VERIFIER_NAME, 'the stamp is in the vault')
-  say(`${p.role}: a stamp from the loop verifier's face check, kept in the vault`)
-  return { verifier: stamp.verifier, model: String(got.body.stamp.model), inVault: true }
+  say(`${p.role}: a stamp from the loop verifier's face check, kept on the device`)
+  return { verifier: stamp.verifier, model: String(got.body.stamp.model) }
 }
 
 /**
@@ -298,8 +286,8 @@ async function spend(p: Person, folder: string, n: number): Promise<number> {
 }
 
 /**
- * A profile of the person's, as their device makes it: the signer adds it (its hosts record, its
- * profile record, the vault), then the device writes its profile record again with a stamp proof
+ * A profile of the person's, as their device makes it: the signer adds it (its hosts record and its
+ * profile record), then the device writes its profile record again with a stamp proof
  * made on the device, and `more` proofs after it. Read back as any reader reads it, its stamp proof
  * checked as any reader checks it. Its folder holds credits first: the signer does not ask whether
  * the host took what it published.
@@ -345,12 +333,7 @@ async function logInAs(p: Person, choice: Exclude<Choice, 'no'>) {
   p.ai = new AI(c)
   const [market, role] = p.label.split('/')
   assert.deepEqual((await p.ai.done('profiles')).profiles, [{ market, role }], 'it may act for this profile, named by its market and role')
-
-  const vault = await vaultKey(p.seed)
-  const read = await readVault([services!.host], { address: vault.address, identity: (await inboxKey(vault.secret)).identity }, Date.now())
-  assert.deepEqual(read?.vault.profiles?.map((x) => x.label), [p.label], 'the vault holds the profile')
-  assert.equal(read?.vault.stamps?.length, 1, 'and the stamp')
-  assert.deepEqual(read?.vault.permissions?.map((x) => x.can), [choice.can], 'and the permission')
+  assert.deepEqual((await p.signer!.rules(p.label)).map((x) => x.can), [choice.can], 'its rule is on the profile')
   say(`${p.role}: its AI logged in, and may ${choice.can.join(', ')} as ${p.label}, paying up to ${LIMIT.amount} ${LIMIT.currency} a ${LIMIT.per}`)
   return { profiles: choice.profiles as string[], can: choice.can, limit: `${LIMIT.amount} ${LIMIT.currency} a ${LIMIT.per}` }
 }
@@ -418,7 +401,6 @@ async function main() {
   const profiles: { [role: string]: unknown } = {}
   for (const [p, n] of [[tutor, CREDITS - 4], [student, CREDITS]] as const) {
     p.signer = new Signer({ seed: p.seed, hosts: [s.host], appUrl: APP, payWith })
-    await p.signer.restore()
     const spent = await spend(p, p.address, n)
     const made = await profile(p, p.label)
     profiles[p.role] = { profile: made.address, tag: made.tag, spent, stampProof: 'checks' }
@@ -428,7 +410,7 @@ async function main() {
 
   // 6. Logins: what each person lets their AI do. The tutor's AI reads the tutor's inbox; the
   // student's may not read, so its one read waits for the student's yes.
-  const choice = (p: Person, can: string[]): Exclude<Choice, 'no'> => ({ profiles: [p.label], can, limits: [{ ...LIMIT, profile: p.label }] })
+  const choice = (p: Person, can: string[]): Exclude<Choice, 'no'> => ({ profiles: [p.label], can, limit: LIMIT })
   steps.logins = { tutor: await logInAs(tutor, choice(tutor, ['post', 'message', 'read', 'pay'])), student: await logInAs(student, choice(student, ['post', 'message', 'pay'])) }
 
   // 7. mcp: every call through the AI's own client.
@@ -573,7 +555,7 @@ async function main() {
   say('the index shows the carried rating on the coach profile')
 
   // 12. No answer either AI received holds one of its own person's addresses: each profile's, the
-  // coach's included, each pay address and the vault's. An AI acting for one person reads the
+  // coach's included, and each pay address. An AI acting for one person reads the
   // other's addresses, as it must to message them and review them.
   const addresses: { [role: string]: unknown } = {}
   for (const p of people) {

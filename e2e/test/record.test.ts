@@ -32,7 +32,7 @@ function passed(): RunRecord {
     steps: {
       keys: { tutor: person(), student: person(), coach: person() },
       funding: { accounts: signature(), money: signature(), wallets: { tutor: address(), student: address() } },
-      stamps: { tutor: { verifier: address(), model: 'stand-in', inVault: true }, student: { verifier: address(), model: 'stand-in', inVault: true } },
+      stamps: { tutor: { verifier: address(), model: 'stand-in' }, student: { verifier: address(), model: 'stand-in' } },
       credits: {
         tutor: { signature: signature(), amount: '0.1', credits: 10, reference: address() },
         student: { signature: signature(), amount: '0.1', credits: 10, reference: address() },
