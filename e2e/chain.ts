@@ -1,14 +1,14 @@
 // The loop's money on the chain: the key it takes from the phrase, what it funds before two people
-// can act, a plain transfer from a wallet app, a direct payment, a market's schedule as the escrow
-// takes it, and a transaction sent through the fee payer at cost, as a person's app sends one. The
-// dollar is Circle's USDC on the loop's chain, which the phrase's deploy key holds, filled from
-// Circle's faucet; the loop mints nothing. Nothing a profile does goes through the phrase's key: it
-// funds only.
+// can act and sweeps back from its own fee payer when the run ends, a plain transfer from a wallet
+// app, a direct payment, a market's schedule as the escrow takes it, and a transaction sent through
+// the fee payer at cost, as a person's app sends one. The dollar is Circle's USDC on the loop's
+// chain, which the phrase's deploy key holds, filled from Circle's faucet; the loop mints nothing.
+// Nothing a profile does goes through the phrase's key: it funds, and takes back.
 
 import { pbkdf2Sync } from 'node:crypto'
 
 import * as escrow from '@foundationforest/escrow-client'
-import { createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token'
+import { createAssociatedTokenAccountIdempotentInstruction, createCloseAccountInstruction } from '@solana/spl-token'
 import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 /**
@@ -56,10 +56,14 @@ export function scheduleOf(template: Template, paidAt: number): { windows: { unt
   return { windows, end: template.end }
 }
 
-/** What the loop gives before anyone acts: 12 dollars in all, and SOL. */
+/** What the loop gives before anyone acts: 44 dollars in all, and SOL. */
 export const FUNDING = {
-  /** To the student's pay address: two payments of 2 and the fee payer's charges, about 4. */
-  studentDollars: 10n * DOLLAR,
+  /**
+   * To the student's pay address: two payments of 2 and the fee payer's charges, 37.5364. Kora's
+   * mock prices Circle's devnet USDC at ten base units a lamport (fee-payer/README.md), and opening
+   * the escrow costs the fee payer 3,733,640 lamports: 37.3364 of the charges.
+   */
+  studentDollars: 42n * DOLLAR,
   /** To each wallet app's address: ten host credits at a cent each, and more. */
   walletDollars: DOLLAR,
   /** To each wallet app's address: its fees for buying credits. */
@@ -101,6 +105,24 @@ export function fundingIxs(f: Funding, payer: PublicKey, token: escrow.Token): {
       ...f.lamports.map((l) => SystemProgram.transfer({ fromPubkey: payer, toPubkey: l.to, lamports: l.lamports })),
     ],
   }
+}
+
+/**
+ * What the loop's own fee payer `from` holds when the run ends, swept back to the deploy key `to`,
+ * which gave it: all its `dollars`, its dollar account closed with that account's rent, then all its
+ * `lamports`. `dollars` is null when it has no dollar account. Sent with `to` as payer, so nothing is
+ * left on `from`.
+ */
+export function sweepIxs(p: { from: PublicKey; to: PublicKey; dollars: bigint | null; lamports: number; token: escrow.Token }): TransactionInstruction[] {
+  const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, p.token.mint, p.token.program)
+  const dollars =
+    p.dollars === null
+      ? []
+      : [
+          ...(p.dollars > 0n ? [escrow.transferIx({ from: ata(p.from), to: ata(p.to), owner: p.from, mint: p.token.mint, amount: p.dollars, decimals: p.token.decimals, tokenProgram: p.token.program })] : []),
+          createCloseAccountInstruction(ata(p.from), p.to, p.from, [], p.token.program),
+        ]
+  return [...dollars, ...(p.lamports > 0 ? [SystemProgram.transfer({ fromPubkey: p.from, toPubkey: p.to, lamports: p.lamports })] : [])]
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

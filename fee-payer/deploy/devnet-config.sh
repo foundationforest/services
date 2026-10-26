@@ -7,8 +7,8 @@
 #   (USDC, USDT, Open USD,  gets it from Circle's faucet (fee-payer/README.md)
 #   EURC)
 #   Jupiter's price      -> Kora's mock, since Jupiter prices real dollars only (fee-payer/README.md).
-#                           The mock values that USDC at 0.001 SOL a whole token: one base unit buys
-#                           one lamport.
+#                           The mock values that USDC at 0.0001 SOL a whole token, by its address
+#                           (Kora 2.0.5's oracle/utils.rs): ten base units buy one lamport.
 set -euo pipefail
 src="${1:?usage: devnet-config.sh path/to/kora.toml}"
 

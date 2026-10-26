@@ -1,7 +1,8 @@
-// What the loop funds before anyone acts, the key it takes from the phrase, the direct payment and
-// the market's schedule (chain.ts), checked with no chain: the recipe against PBKDF2 made by Web
-// Crypto and the ed25519 key made by node:crypto, each instruction decoded by the token program's
-// own decoders, and the schedule from the market file at MARKETS, as the escrow's client takes it.
+// What the loop funds before anyone acts and sweeps back from its own fee payer, the key it takes
+// from the phrase, the direct payment and the market's schedule (chain.ts), checked with no chain:
+// the recipe against PBKDF2 made by Web Crypto and the ed25519 key made by node:crypto, each
+// instruction decoded by the token program's own decoders, and the schedule from the market file at
+// MARKETS, as the escrow's client takes it.
 
 import assert from 'node:assert/strict'
 import { createPrivateKey, createPublicKey } from 'node:crypto'
@@ -9,10 +10,10 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import * as escrow from '@foundationforest/escrow-client'
-import { decodeTransferCheckedInstruction } from '@solana/spl-token'
+import { decodeCloseAccountInstruction, decodeTransferCheckedInstruction } from '@solana/spl-token'
 import { Keypair, PublicKey, SystemInstruction, SystemProgram, type TransactionInstruction } from '@solana/web3.js'
 
-import { DOLLAR, FUNDING, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, scheduleOf, unitsOf } from '../chain.ts'
+import { DOLLAR, FUNDING, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, scheduleOf, sweepIxs, unitsOf } from '../chain.ts'
 
 const token: escrow.Token = { mint: new PublicKey('J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'), program: escrow.TOKEN_PROGRAM_ID, decimals: 6 }
 const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
@@ -64,13 +65,13 @@ test('with the loop’s own fee payer: each dollar account, the student’s doll
   assert.deepEqual(
     got.dollars,
     [
-      { to: ata(studentPay).toBase58(), units: 10n * DOLLAR },
+      { to: ata(studentPay).toBase58(), units: 42n * DOLLAR },
       { to: ata(w1).toBase58(), units: DOLLAR },
       { to: ata(w2).toBase58(), units: DOLLAR },
     ].map((m) => ({ from: ata(payer).toBase58(), ...m, owner: payer.toBase58(), mint: token.mint.toBase58(), decimals: 6 })),
-    'plain transfers from the deploy key’s own dollars: 10 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
+    'plain transfers from the deploy key’s own dollars: 42 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
   )
-  assert.equal(dollarsOf(plan), 12n * DOLLAR, 'a run moves 12 dollars')
+  assert.equal(dollarsOf(plan), 44n * DOLLAR, 'a run moves 44 dollars')
   assert.deepEqual(got.sol, [
     { from: payer.toBase58(), to: w1.toBase58(), lamports: FUNDING.walletLamports },
     { from: payer.toBase58(), to: w2.toBase58(), lamports: FUNDING.walletLamports },
@@ -83,6 +84,21 @@ test('with a deployed fee payer: nothing for it, which its operator funds', () =
   const got = decoded(fundingIxs(fundingFor({ tutorPay, studentPay, wallets: [w1, w2], feePayer: null }), payer, token))
   assert.deepEqual(got.accounts.map((a) => a.owner), [tutorPay, studentPay, w1, w2].map((k) => k.toBase58()))
   assert.deepEqual(got.sol.map((s) => s.to), [w1, w2].map((k) => k.toBase58()))
+})
+
+test('the sweep: all the fee payer’s dollars, its dollar account closed, then all its SOL, each back to the deploy key', () => {
+  const [from, to] = [key(), key()]
+  const [move, close, sol] = sweepIxs({ from, to, dollars: 37_536_400n, lamports: 46_255_640, token })
+  const t = decodeTransferCheckedInstruction(move!, token.program)
+  assert.deepEqual([t.keys.source.pubkey, t.keys.destination.pubkey, t.keys.owner.pubkey].map((k) => k.toBase58()), [ata(from), ata(to), from].map((k) => k.toBase58()))
+  assert.deepEqual([t.data.amount, t.data.decimals], [37_536_400n, 6], 'every dollar')
+  const c = decodeCloseAccountInstruction(close!, token.program)
+  assert.deepEqual([c.keys.account.pubkey, c.keys.destination.pubkey, c.keys.authority.pubkey].map((k) => k.toBase58()), [ata(from), to, from].map((k) => k.toBase58()), 'its rent to the deploy key')
+  const s = SystemInstruction.decodeTransfer(sol!)
+  assert.deepEqual([s.fromPubkey.toBase58(), s.toPubkey.toBase58(), Number(s.lamports)], [from.toBase58(), to.toBase58(), 46_255_640], 'every lamport')
+  assert.deepEqual(sweepIxs({ from, to, dollars: 0n, lamports: 0, token }).map((ix) => ix.programId.toBase58()), [token.program.toBase58()], 'an empty dollar account is still closed')
+  assert.deepEqual(sweepIxs({ from, to, dollars: null, lamports: 5000, token }).map((ix) => ix.programId.toBase58()), [SystemProgram.programId.toBase58()], 'no dollar account: only the SOL')
+  assert.deepEqual(sweepIxs({ from, to, dollars: null, lamports: 0, token }), [], 'nothing held, nothing sent')
 })
 
 test('a credit buy paid from a wallet: the service’s account made if missing, then the transfer naming the buy’s reference', () => {

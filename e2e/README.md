@@ -39,10 +39,12 @@ step checks what it did, and the run passes only if every step does.
    From the tutor's seed, a second profile too: `sports-coaching/coach`.
 2. **Funding.** The phrase's `deploy` key makes a USDC account for both Solana pay addresses and
    for each person's wallet app (an address of its own, apart from any profile), and sends each
-   wallet 0.01 SOL for its fees. From its own USDC it sends 10 to the student's pay address and 1 to
-   each wallet: 12 in all, by plain transfers; nothing is minted. When the fee payer is the loop's
-   own, it gets 0.05 SOL and its USDC account, where it is paid. A deploy key holding less than 12
-   stops the run, saying so.
+   wallet 0.01 SOL for its fees. From its own USDC it sends 42 to the student's pay address and 1 to
+   each wallet: 44 in all, by plain transfers; nothing is minted. The student's 42 cover its two
+   payments of 2 and the fee payer's charges, 37.5364 at Kora's mock price, ten base units a
+   lamport ([fee-payer](../fee-payer/README.md)). When the fee payer is the loop's own, it gets
+   0.05 SOL and its USDC account, where it is paid. A deploy key holding less than 44 stops the run,
+   saying so.
 3. **Stamps.** Each person takes the loop verifier's face check: its stand-in Didit passes everyone.
    Each gets a stamp for their stamp number, checked:
    - its signature;
@@ -124,6 +126,12 @@ step checks what it did, and the run passes only if every step does.
     addresses, as it must to message and review them.
 13. **Balances.** What each folder's credits came to.
 
+Then, passed or failed, the services stop, and when the fee payer is the loop's own, what its key
+holds goes back to the deploy key, which gave it: all its USDC, its USDC account closed with that
+account's rent, and all its SOL, in one transaction its key signs, as its operator's would, and the
+deploy key pays for. The record says how much came back (`sweep`). A sweep that fails fails the run,
+saying so.
+
 ### Two ways to run, one loop
 
 `services.json` names what a run uses:
@@ -144,7 +152,7 @@ the dollar is Circle's USDC there, which the deploy key holds: fill it from
 |---|---|
 | verifier | `verifier/`'s code, with the stand-in Didit its tests run (`verifier/test/fake-didit.ts`) and the stand-in face model. Its own name, `verifier.e2e-loop.invalid`, and its own seed. No welcome gift |
 | host | `host/`'s code, as `npm start` runs it, selling credits for USDC, paid to the deploy key's address and checked through the RPC |
-| fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds |
+| fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds and, when the run ends, sweeps back |
 | index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check 1 point, ID check 2); its own reputation proofs, against a root up to 30 days old. Its numbers, money and chains are `index/config/`'s: `config/chains.json` reads the chain above |
 | mcp | `mcp/`'s code, reading the host first and the loop's index, with the loop's connect page as its `APP_URL` |
 
@@ -174,7 +182,7 @@ prints comes to the console with `RPC_URL` taken out.
 - `services.ts`: reads `services.json`, and starts and stops the loop's own copies.
 - `chain.ts`:
   - the key the loop takes from the phrase;
-  - what it funds, all from that key's own USDC;
+  - what it funds, all from that key's own USDC, and what it sweeps back from its own fee payer;
   - a wallet's transfer for a credit buy;
   - a direct payment, a plain transfer;
   - a market's schedule as the escrow takes it;
@@ -203,8 +211,9 @@ FOREST_DEVNET_SEED='<the phrase>' npm run e2e -- deployed.json   # against what 
 
 - **`FOREST_DEVNET_SEED`** (required): the phrase. Its `deploy` key comes by the recipe in the
   standard's `escrows/solana/devnet/deploy.sh`, and pays the setup: the accounts' rent, the SOL, and
-  the 12 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. Never in
-  this repo, and never given to a service.
+  the 44 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. With the
+  loop's own host and fee payer, 37.7364 of it comes back by the run's end: the host's 0.20 for
+  credits, and the sweep. Never in this repo, and never given to a service.
 - **`RPC_URL`** (optional): the RPC everything uses, in place of `services.json`'s `rpc`. It may
   hold a key, so a run's record says only `RPC_URL`. Kora needs an RPC that returns inner
   instructions from `simulateTransaction`.
@@ -220,7 +229,9 @@ The tests, which CI runs:
 - `test/chain.test.ts`:
   - the phrase's key, against PBKDF2 made by Web Crypto;
   - every funding instruction, decoded by the token program's own decoders: plain transfers from
-    the deploy key's own USDC, 12 in all, with the loop's own fee payer and with a deployed one;
+    the deploy key's own USDC, 44 in all, with the loop's own fee payer and with a deployed one;
+  - the sweep: all the fee payer's USDC, its USDC account closed, and all its SOL, each to the
+    deploy key; nothing sent when it holds nothing;
   - a wallet's transfer naming a buy's reference;
   - a direct payment: one plain transfer, and nothing else;
   - dollars as base units, and what is refused;
@@ -229,11 +240,60 @@ The tests, which CI runs:
 - `test/record.test.ts`: a passed run's and a failed run's records, what is refused, `holdsNone`,
   and every record in `runs/`.
 
-### The next run
+### The latest run
 
-None yet on this design: the records of earlier runs, made before each profile's rules and USDC, are
-in this repo's history. The next run, by hand once this is on `main`, writes its record to `runs/`
-and its summary here: what it used, what it paid, and its links on the chain.
+2026-10-26, 18:23:30 to 18:24:15 UTC, with this repo at `ef7bd25` (standard at `7b1c937`, markets at
+`50685eb`), with every service the loop's own on loopback and the chain through `RPC_URL`:
+**passed** in 45 seconds. Its record is
+[`runs/2026-10-26T18-23-30-348Z.json`](runs/2026-10-26T18-23-30-348Z.json). The records of earlier
+runs, made before each profile's rules and USDC, are in this repo's history.
+
+- **The services,** all the loop's own: the verifier `verifier.e2e-loop.invalid`, face key
+  `j9ikYH58…`, ID key `EGbxQcjk…`; the host, paid at the deploy key; the fee payer, its new key
+  `F6sGRxaz…`; the index `7HTr1upd…`; the mcp.
+- **The dollar:** Circle's USDC, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
+- **People:** tutor `AMLNioGB…`, student `3VnkKTEj…`, and the tutor's coach profile `CDirZA3d…`.
+- **Funding:** 42 USDC to the student's pay address; 1 USDC and 0.01 SOL to each wallet; 0.05 SOL
+  to the loop's fee payer. Before the run, outside the loop, the phrase's `payer` key sent the
+  deploy key its 20 USDC.
+- **Stamps:** one each from the loop verifier's face check, model `stand-in`, kept on each device,
+  and the same asked back by its stamp number.
+- **Credits:** each wallet paid the loop's host 0.10 USDC for 10 credits; the tutor spent 6 into its
+  folder, the student 10.
+- **Logins:** the tutor's AI may post, message, read and pay; the student's post, message and pay;
+  each up to 5 USD a day, one rule in each profile's folder.
+- **mcp:**
+  - the offer `offer/maths`, posted by the tutor's AI;
+  - found by the student's AI through the index's search, which messaged the tutor;
+  - read by the tutor's AI as number 1, and replied to by that number;
+  - the student's AI's read of its inbox needed the student's yes ("inbox as tutoring/student is
+    not in what this connection may do"), and got it.
+- **The deal:**
+  - the direct payment of 2 USDC, a plain transfer asked for by the student's AI, charged 0.10;
+  - the escrow `5X7LME2J…`, version 4, opened and paid in, charged 37.3364, then paid out early,
+    charged 0.10, its outcome `pay`, its deposit address's rent back to the fee payer.
+- **Reviews:** the student's, posted by its AI, its evidence the direct payment, filled in by its
+  signer; the tutor's AI refused naming the escrow, and the tutor's app wrote that review.
+- **The index:** the tutor rated 8.0 and the student 7.9, each backed 0.1, from one review with its
+  payment, each statement signed; the deal paid, 2 USDC, with its review.
+- **The rating, carried:** the tutor's leaf found by its tag among 2 leaves, 80 tenths, proven onto
+  the coach profile with the tutor's last 4 credits; the index shows it.
+- **Addresses:** none of its own person's in any of the 6 answers to the tutor's AI or the 7 to the
+  student's.
+- **Balances:** the tutor's folder 5.84329 credits, the student's 9.85697, the coach's 3.90393.
+- **The sweep:** the fee payer gave back everything it held, 37.5364 USDC and 49,223,240 lamports
+  with its USDC account's rent. It spent 2,265,200: 30,000 in fees and the escrow receipt's
+  2,235,200.
+- **What it cost the deploy key:** 6.2636 USDC (44 out; 0.20 back from the host and 37.5364 from the
+  sweep) and 28,238,960 lamports.
+
+The loop's own services stopped with the run, so their pages and the three profiles' records are
+gone. What the run did on chain is on Solana's explorer: [the escrow][e], [the direct payment][p]
+and [the sweep][s].
+
+[e]: https://explorer.solana.com/address/5X7LME2JF4eK1tmuVTE88LwrRwroxSFkFubsUaYg1LH6?cluster=devnet
+[p]: https://explorer.solana.com/tx/2io8sTDpjSeroKKmaN5rqzX2UsF7c5H2xWdWQXDpWCP43omaMSUKoGuaunxQv5uTamLRZMTBFDAKHEM2Xp5SrZYA?cluster=devnet
+[s]: https://explorer.solana.com/tx/5tdzRUHEKAfLFF97YoweA6U7K53PefN33WbzAmVxE64r8R13WNHJn74CwMoUmqBQGPamLPzoiPaXUJ9GwWJWaRz?cluster=devnet
 
 ## Promises
 
@@ -254,9 +314,11 @@ and its summary here: what it used, what it paid, and its links on the chain.
 
 - **CI does not run it.** It needs the phrase and the chain. CI type-checks it and runs its tests.
   It runs by hand, and its records in `runs/` say when it last passed.
-- **Every run leaves its people on the chain for good:** their payments and their escrow's receipt.
-  On the loop's own host and index, the rest goes when the run ends. On a deployed host, their
-  records, their rules among them (encrypted), stay until it is wiped.
+- **Every run leaves its people on the chain for good:** their payments, their escrow's receipt, and
+  the USDC left with them, about 6.26 a run (the tutor's 4, the student's 0.4636 and each wallet's
+  0.90), since the run keeps no seed. On the loop's own host and index, the rest goes when the run
+  ends. On a deployed host, their records, their rules among them (encrypted), stay until it is
+  wiped.
 - **The checks are stand-ins.** The stand-in Didit passes everyone, and the stand-in face model
   gives everyone one embedding, so a run says nothing about Didit or the face model. Only the face
   check: the loop verifier offers no ID check, since it sets no price.
@@ -273,8 +335,9 @@ and its summary here: what it used, what it paid, and its links on the chain.
   no AI may name and no signer of the tutor's paid, so the loop's app writes it.
 - **One host, inboxes open to anyone.** Both people are on the same host, and each inbox takes
   messages from anyone: no stamp holders only, no `maxBytes`.
-- **The loop's own fee payer gets a new key each run,** and the 0.05 SOL the loop gives it stays
-  with that key.
+- **The loop's own fee payer gets a new key each run,** and the sweep gives back only what that key
+  still holds when the run ends. What it spent stays spent: the network fees, and the escrow
+  receipt's rent, 2,235,200 lamports, which stays in the receipt for good.
 - **Each wait on the index is up to 15 minutes.** The loop index reads the escrow's whole history
   from its first transaction, which a public RPC serves slowly.
 

@@ -13,7 +13,7 @@
 //                  `payTo`, and checked through the RPC
 //   the fee payer  fee-payer/run.sh, a process of its own: Kora, with the kora.toml its image runs
 //                  (fee-payer/deploy/devnet-config.sh), a fresh key made at its first start, which
-//                  the loop funds (chain.ts)
+//                  the loop funds, and sweeps back when the run ends (chain.ts)
 //   the index      index/src, with lists of its own: the host it reads, the loop verifier's two keys
 //                  (the face check 1 point, the ID check 2, as the foundation's index lists them),
 //                  and its own reputation proofs; its numbers, money and chains are index/config's
@@ -81,6 +81,12 @@ export type Running = {
   mcp: string
   /** The loop's own fee payer's key, which the loop funds; null when the fee payer is deployed. */
   ownFeePayer: string | null
+  /**
+   * That key's secret, its keypair file's 64 bytes, read once Kora made it and before `stop` deletes
+   * it: what sweeps back what the fee payer holds when the run ends. Null when the fee payer is
+   * deployed.
+   */
+  ownFeePayerKey: Uint8Array | null
   /** The deployed services the run only checked to answer. */
   checked: string[]
   stop(): Promise<void>
@@ -213,14 +219,16 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     // The fee payer: Kora, through run.sh, with its image's kora.toml and a new key.
     let feePayer = s.feePayer
     let ownFeePayer: string | null = null
+    let ownFeePayerKey: Uint8Array | null = null
     if (!feePayer) {
       const port = await freePort()
       feePayer = `http://127.0.0.1:${port}`
       const config = join(dir, 'kora.toml')
+      const keyPath = join(dir, 'fee-payer', 'fee-payer-keypair.json')
       writeFileSync(config, execFileSync('bash', [join(repo, 'fee-payer/deploy/devnet-config.sh'), join(repo, 'fee-payer/kora.toml')]))
       const kora = child('loop fee payer', 'bash', [join(repo, 'fee-payer/run.sh')], join(repo, 'fee-payer'), {
         RPC_URL: o.rpcUrl,
-        KEY_PATH: join(dir, 'fee-payer', 'fee-payer-keypair.json'),
+        KEY_PATH: keyPath,
         KORA_CONFIG: config,
         PORT: String(port),
         RUST_LOG: 'warn',
@@ -228,6 +236,7 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
       await answers(`${feePayer}/liveness`, kora)
       const res = await fetch(feePayer, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getPayerSigner', params: {} }) })
       ownFeePayer = ((await res.json()) as { result: { signer_address: string } }).result.signer_address
+      ownFeePayerKey = Uint8Array.from(JSON.parse(readFileSync(keyPath, 'utf8')) as number[])
     }
 
     // The index: its own lists, beside index/config.
@@ -253,7 +262,7 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { hosts: hostsFrom([host]), index: indexUrl } }, '127.0.0.1', 0)
     closers.push(() => mcp.close())
 
-    return { verifier: { url: verifier.url, name: VERIFIER_NAME, keys: verifier.keys }, host, feePayer, index: { url: indexUrl, address: index.address }, mcp: mcp.origin, ownFeePayer, checked, stop }
+    return { verifier: { url: verifier.url, name: VERIFIER_NAME, keys: verifier.keys }, host, feePayer, index: { url: indexUrl, address: index.address }, mcp: mcp.origin, ownFeePayer, ownFeePayerKey, checked, stop }
   } catch (error) {
     await stop()
     throw error

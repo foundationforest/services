@@ -53,6 +53,7 @@ function passed(): RunRecord {
       addresses: { tutor: { answers: 7, addresses: 7, held: 0 }, student: { answers: 6, addresses: 4, held: 0 } },
       balances: { tutor: 5.9, student: 9.92, coach: 3.97 },
     },
+    sweep: { signature: signature(), dollars: '37536400', lamports: 48294920 },
   }
 }
 
@@ -63,13 +64,15 @@ test('a passed run has every step, each with its fields', () => {
     services: { ...passed().services, host: 'https://host.forest.foundation', feePayer: 'https://fee-payer.forest.foundation' },
     checked: ['https://verifier.forest.foundation', 'https://index.forest.foundation', 'https://mcp.forest.foundation'],
     chain: { ...passed().chain, rpc: 'RPC_URL' },
+    sweep: undefined,
   })
 })
 
 test('a failed run has its error and the steps it finished, in order', () => {
   const { steps } = passed()
   checkRecord({ ...passed(), passed: false, error: 'Error: timed out waiting for the index', steps: { keys: steps.keys, funding: steps.funding, stamps: steps.stamps } })
-  checkRecord({ ...passed(), passed: false, error: 'Error: no RPC', steps: {} })
+  checkRecord({ ...passed(), passed: false, error: 'Error: no RPC', steps: {}, sweep: { dollars: '0', lamports: 0 } })
+  checkRecord({ ...passed(), passed: false, error: 'the sweep: Error: no RPC', sweep: undefined })
 })
 
 test('refused: a record that is not one', () => {
@@ -95,6 +98,9 @@ test('refused: a record that is not one', () => {
     ['an answer that held an own address', { ...p, steps: { ...p.steps, addresses: { ...p.steps.addresses, student: { answers: 6, addresses: 4, held: 1 } } } }],
     ['not a commit', { ...p, commits: { ...p.commits, standard: 'main' } }],
     ['an end before its start', { ...p, ended: '2026-10-22T09:00:00.000Z' }],
+    ['a passed run that swept nothing back from its own fee payer', { ...p, sweep: undefined }],
+    ['a passed run whose sweep sent nothing', { ...p, sweep: { dollars: '0', lamports: 0 } }],
+    ['a sweep of the wrong kind', { ...p, sweep: { ...p.sweep, dollars: 37.5 } }],
   ]
   for (const [why, r] of bad) assert.throws(() => checkRecord(r), /not a run's record/, why)
   assert.equal(STEPS.length, Object.keys(p.steps).length)

@@ -1,8 +1,8 @@
-// A run's record: what one run of the loop did, written to runs/<time>.json whether it passed or not.
-// It holds addresses, signatures, amounts and counts, and the commits it ran: never a key, a credit,
-// a login, the phrase, or the RPC's URL when RPC_URL gave it, which may hold a key. `checkRecord` is
-// its shape; the run checks its record with it before writing it, and the tests check every record
-// in runs/ with it.
+// A run's record: what one run of the loop did, and what its own fee payer swept back, written to
+// runs/<time>.json whether it passed or not. It holds addresses, signatures, amounts and counts, and
+// the commits it ran: never a key, a credit, a login, the phrase, or the RPC's URL when RPC_URL gave
+// it, which may hold a key. `checkRecord` is its shape; the run checks its record with it before
+// writing it, and the tests check every record in runs/ with it.
 
 /** The steps of a run, in order. A failed run's record holds the ones it finished. */
 export const STEPS = ['keys', 'funding', 'stamps', 'credits', 'profiles', 'logins', 'mcp', 'deal', 'reviews', 'index', 'reputation', 'addresses', 'balances'] as const
@@ -28,6 +28,12 @@ export type RunRecord = {
   /** The loop's own verifier (its name and two keys) and index (its address); a run that failed before they started has none. */
   loop?: { verifier: { name: string; face: string; id: string }; index: string }
   steps: { [step in Step]?: { [key: string]: unknown } }
+  /**
+   * What the loop's own fee payer held when the run ended, swept back to the deploy key: its dollars
+   * in base units, and in lamports its SOL and its dollar account's rent; the transaction, when it held
+   * anything. A passed run with the loop's own fee payer has one.
+   */
+  sweep?: { signature?: string; dollars: string; lamports: number }
 }
 
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
@@ -115,6 +121,10 @@ export function checkRecord(r: unknown): asserts r is RunRecord {
   for (const step of done as Step[]) {
     for (const [path, check] of Object.entries(SHAPES[step])) if (!check(at(rec.steps, `${step}.${path}`))) fail(`steps.${step}.${path}`)
   }
+  if (rec.sweep !== undefined && !(units(at(rec, 'sweep.dollars')) && count(at(rec, 'sweep.lamports')) && (at(rec, 'sweep.signature') === undefined || signature(at(rec, 'sweep.signature'))))) {
+    fail('sweep says what came back')
+  }
+  if (rec.passed && at(rec, 'services.feePayer') === 'loopback' && !signature(at(rec, 'sweep.signature'))) fail('a passed run swept back what its own fee payer held')
 }
 
 /** Throws if the record's text holds any of `secrets`: the phrase, the RPC's URL, the keys, credits and logins the run made. */
