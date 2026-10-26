@@ -10,7 +10,7 @@ const env = (name: string) => process.env[name] || undefined
 
 function settings() {
   const origin = env('PUBLIC_URL') ?? 'https://mcp.forest.foundation'
-  if (normalizeOrigin(origin) !== origin) refuse(`PUBLIC_URL is an origin, https://host[:port], as a person's permissions name it: not ${origin}`)
+  if (normalizeOrigin(origin) !== origin) refuse(`PUBLIC_URL is an origin, https://host[:port], as a person's rules name it: not ${origin}`)
   const appUrl = env('APP_URL')
   if (appUrl !== undefined && !(URL.canParse(appUrl) && normalizeOrigin(new URL(appUrl).origin))) refuse(`APP_URL is the app's connect page, an https address (http only on loopback): not ${appUrl}`)
   const port = Number(env('PORT') ?? 8080)

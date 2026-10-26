@@ -6,7 +6,7 @@ import { type Args, type Ctx, MARKET, type Param, ROLE } from '../params.ts'
 
 export const name = 'post'
 export const description =
-  "Write a record as the person's profile in a market and role: a post (kind offer) or a review (kind review), or any kind the market defines. The body is checked against the market's fields for that kind before it goes to the person's signer, which writes it to the profile's hosts. With an id, it replaces the record at <kind>/<id>; without, the signer picks a fresh one. Answers done with the kind and id, needs approval with a link for the person, or refused. Needs the person's login."
+  "Write a record as the person's profile in a market and role: a post (kind offer) or a review (kind review), or any kind the market defines. The body is checked against the market's fields for that kind before it goes to the person's signer, which writes it to the profile's hosts. A review names the post it is about as offer, and leaves evidence out: the signer fills it in from the payment the profile made for that post. With an id, it replaces the record at <kind>/<id>; without, the signer picks a fresh one. Answers done with the kind and id, needs approval with a link for the person, or refused. Needs the person's login."
 export const params: Param[] = [
   MARKET,
   ROLE,

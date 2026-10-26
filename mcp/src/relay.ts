@@ -68,7 +68,7 @@ const RESULTS: { [tool: string]: (r: { [key: string]: unknown }) => { [key: stri
       }
     }),
   }),
-  pay: (r) => ({ evidence: text(r.evidence, 'evidence') }),
+  pay: () => ({}),
 }
 
 export class Relay {

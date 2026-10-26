@@ -1,7 +1,7 @@
 // A connection: how one AI app reaches the person's signer through this copy. The signer makes it:
 // an Ed25519 key pair, kept on the person's devices, whose public key, its 32 bytes in base64url,
-// is the connection's id, saved in the person's permissions as who: { connector: this copy's
-// origin, connection: <id> }. This copy holds only the id. The key signs two texts, and nothing
+// is the connection's id, saved in a rule on each profile the person chose as who: { connector:
+// this copy's origin, connection: <id>, key }. This copy holds only the id. The key signs two texts, and nothing
 // else here: a login, so only the signer can mint one for its connection, and a socket's challenge,
 // so only the signer serves it.
 //

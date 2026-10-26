@@ -23,7 +23,7 @@ export type RunRecord = {
   services: { verifier: Where; host: Where; feePayer: Where; index: Where; mcp: Where }
   /** The deployed verifier, index or mcp services.json names, which the run only checked to answer. */
   checked: string[]
-  /** The chain: the RPC (`RPC_URL` when that setting gave it), the escrow program, the test dollar, and the market. */
+  /** The chain: the RPC (`RPC_URL` when that setting gave it), the escrow program, the dollar the loop pays in, and the market. */
   chain: { rpc: string; escrow: string; testDollar: string; market: string }
   /** The loop's own verifier (its name and two keys) and index (its address); a run that failed before they started has none. */
   loop?: { verifier: { name: string; face: string; id: string }; index: string }
@@ -48,6 +48,12 @@ const evm: Check = (v) => typeof v === 'string' && EVM.test(v)
 const evidence: Check = (v) => typeof v === 'string' && EVIDENCE.test(v)
 const count: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 0
 const text: Check = (v) => typeof v === 'string' && v.length > 0
+/** A rating as the index shows it: 1 to 10, one decimal. */
+const rating: Check = (v) => typeof v === 'number' && v >= 1 && v <= 10 && Math.round(v * 10) === v * 10
+/** A backing as the index shows it: above 0, one decimal. */
+const backing: Check = (v) => typeof v === 'number' && v > 0 && Math.round(v * 10) === v * 10
+/** A leaf's score: a rating times ten. */
+const score: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 10 && (v as number) <= 100
 const words: Check = (v) => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string' && w.length > 0)
 const is =
   (value: unknown): Check =>
@@ -62,15 +68,15 @@ const BOTH = ['tutor', 'student']
 const SHAPES: { [step in Step]: { [path: string]: Check } } = {
   keys: each(['tutor', 'student', 'coach'], { label: text, profile: address, 'pay.solana': address, 'pay.evm': evm }),
   funding: { accounts: signature, money: signature, 'wallets.tutor': address, 'wallets.student': address },
-  stamps: each(BOTH, { verifier: address, model: text }),
+  stamps: each(BOTH, { verifier: address, model: text, askedBack: is('same') }),
   credits: each(BOTH, { signature, amount: text, credits: count, reference: address }),
   profiles: each(BOTH, { profile: address, tag: hex32, spent: count, stampProof: is('checks') }),
   logins: each(BOTH, { profiles: words, can: words, limit: text }),
   mcp: { offer: text, 'found.profile': address, 'message.number': count, reply: is('done'), 'approval.tool': is('inbox'), 'approval.why': text, 'approval.approved': is('done') },
-  deal: { ...prefixed('payment', paid), 'payment.evidence': evidence, 'escrow.address': address, ...prefixed('escrow.open', paid), ...prefixed('escrow.pay', paid), 'escrow.outcome': is('pay'), 'escrow.sponsor': address, 'escrow.evidence': evidence },
-  reviews: each(BOTH, { id: text, evidence }),
-  index: { 'tutor.rating': is(10), 'tutor.withPayment': is(1), 'student.rating': is(9), 'student.withPayment': is(1), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },
-  reputation: { profile: address, tag: hex32, root: hex32, time: count, score: is(100), result: is('shown') },
+  deal: { ...prefixed('payment', paid), 'payment.evidence': evidence, 'escrow.address': address, 'escrow.version': is(4), ...prefixed('escrow.open', paid), ...prefixed('escrow.pay', paid), 'escrow.outcome': is('pay'), 'escrow.sponsor': address, 'escrow.evidence': evidence },
+  reviews: { ...each(BOTH, { id: text, evidence }), 'student.postedBy': is('ai'), 'tutor.postedBy': is('app') },
+  index: { ...each(BOTH, { rating, backing, reviews: is(1) }), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },
+  reputation: { profile: address, tag: hex32, root: hex32, time: count, score, result: is('shown') },
   addresses: each(BOTH, { answers: count, addresses: count, held: is(0) }),
   balances: { tutor: (v) => typeof v === 'number', student: (v) => typeof v === 'number', coach: (v) => typeof v === 'number' },
 }

@@ -7,8 +7,8 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 Use these words: seed, seed scalar, main key, profile, profile record, address, label, scope, tag,
 verifier, verified, stamp, stamp number, facts, stamp proof, reputation proof, check, record,
-folder, host, service key, signer, connection, connector, permissions, private, envelope, encrypted
-(an envelope), message, inbox key, inbox, pull, vault, blob, pay address, pay key, escrow, schedule,
+folder, host, service key, signer, connection, connector, rule, rules, private, envelope, encrypted
+(an envelope), message, inbox key, inbox, pull, blob, pay address, pay key, escrow, schedule,
 window, stop, payer, recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, fee
 payer, app, market, role, ramp. Plain words, no em-dashes.
 
@@ -19,15 +19,15 @@ payer, app, market, role, ramp. Plain words, no em-dashes.
   which signs the ID check's.
 - A signer is a device the person owns that holds their seed. An AI app reaches it through its
   connection, carried by a connector such as mcp; a person or a business, by a message to the
-  person's inbox. The signer acts by the person's permissions, kept in their vault, and asks the
-  person about the rest. No key is ever handed out.
+  person's inbox. The signer acts by the rules in each of the person's profiles' folders, and asks
+  the person about the rest. No key is ever handed out.
 - A profile record is the record at `profile`, never a card. A pay address is one of a profile's
   `pay` addresses, `{ solana, evm }`, each from its pay key.
 - Check, never verify: a reader checks a proof or a signature. Fee payer, never relayer; main key,
   never profile key; address, never wallet, for a key ("a wallet app" is fine).
 - Never: issuer, note, attributes, sealed, access key, write key, read key, account for a person,
-  card, registry, row, tier, standing, rules, policy. A string baked into a recipe, a circuit or a
-  key's text keeps its bytes even when its words are old (`forest/v1/issuer`, `forest/v1/note`,
+  card, registry, row, tier, standing, policy. A string baked into a recipe, a circuit or a key's
+  text keeps its bytes even when its words are old (`forest/v1/issuer`, `forest/v1/note`,
   the circuits' signal names and files, the verifier's `issuer/...` texts): rename the code around
   it, never the string, and say why in a comment beside it. Another standard's own names stay too
   (Privacy Pass's `issuer_name`, snarkjs's verifier).

@@ -288,7 +288,7 @@ the host lists the verifier's sponsor key and counts what its tickets paid for.
 
 1. **The app reads the gift** in `GET /`: the host, how many credits, and the sponsor key.
 2. **The app makes one buy at the host** for exactly those credits (as the buyer's credits client
-   in `e2e/credits/` does, `buy`), and keeps what it needs to finish the buy later.
+   in `host/client/` does, `buy`), and keeps what it needs to finish the buy later.
 3. **It sends the buy's reference with the stamp request:** `POST /face/stamp` with
    `"gift": "<reference>"`.
 4. **Once a stamp number,** the verifier keeps a hash of the buy next to it, and signs a ticket with its
@@ -359,7 +359,7 @@ Node 22.18 or later. From the repo root:
 
 ```
 ./standard.sh                     # the standard at the pinned commit, installed and built
-(cd e2e && npm ci) && (cd host && npm ci)   # the buyer's credits client and the host's seller, for the gift's tests
+(cd host && npm ci)               # the buyer's credits client and the host's seller, for the gift's tests
 cd verifier && npm ci             # the standard's packages, linked by name from ../standard/
 npm run fetch                     # the face models, and the three test portraits, each checked by SHA-256
 npm run check                     # type-check

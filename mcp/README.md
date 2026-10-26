@@ -11,7 +11,7 @@ It is the MCP connector your AI app adds.
 The foundation runs one copy, at https://mcp.forest.foundation. Anyone can run another; the main way
 is this directory, or its image.
 
-**What it keeps:** nothing of the person's. No seed, no key, no permission, no record, no message.
+**What it keeps:** nothing of the person's. No seed, no key, no rule, no record, no message.
 Its own key, which signs the logins it gives, on its volume. The live connections from signers, in
 memory, gone when it stops.
 
@@ -29,8 +29,9 @@ AI app ── MCP, over HTTPS ──▶ mcp ◀── WebSocket ── signer (F
 
 A person's seed lives only on their signers, the devices they own that hold it
 ([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#signers)).
-A signer acts by the person's permissions, kept in their vault
-([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#permissions)),
+A signer acts by the rules in each of the person's profiles' folders, private records only the
+person's signers open
+([the standard's records](https://github.com/foundationforest/standard/blob/main/records/README.md#rules)),
 and signs everything with the profile's main key. The mcp only carries asks and answers between an AI
 app, calling from its maker's cloud, and that signer.
 
@@ -64,12 +65,12 @@ Seven tools go to the person's signer, and need a login:
 | Tool | The AI gives | The mcp checks first | The signer's answer, when done |
 |---|---|---|---|
 | `profiles` | | | `profiles`: the market and role of each profile this connection may act for |
-| `post` | `market`, `role`, `kind`, `body`, `id` if wanted | the market and role exist; `kind` is one the market defines; `body` fits that kind's fields | `kind`, `id` |
+| `post` | `market`, `role`, `kind`, `body`, `id` if wanted | the market and role exist; `kind` is one the market defines; `body` fits that kind's fields, and a review's holds no `evidence` | `kind`, `id` |
 | `remove` | `market`, `role`, `kind`, `id` | the same, with no body | `kind`, `id` |
 | `message` | `market`, `role`, `to`, `text` | the market and role exist; `to` is an address | nothing more |
 | `inbox` | `market`, `role` | the market and role exist | `messages`: each `number`, `from`, `time`, and `text` or `body` |
 | `reply` | `number`, `text` | `number` is from 1 | nothing more |
-| `pay` | `offer`, `role`, `amount` | `offer` is a post's address and the post is on its hosts; `role` is one of its market's; `amount` is US dollars, more than 0, up to six places; the signer gets the market too | `evidence`, `<chain>:<id>`, to name in a review |
+| `pay` | `offer`, `role`, `amount` | `offer` is a post's address and the post is on its hosts; `role` is one of its market's; `amount` is US dollars, more than 0, up to six places; the signer gets the market too | nothing more: a review of the post from the same profile then carries the payment as its evidence, which the signer fills in |
 
 `market` and `role` name the person's profile the signer acts as; the signer picks it, and no answer
 names its address. A record of a kind sits at `<kind>/<id>` in the profile's folder.
@@ -80,12 +81,14 @@ top-level property of a market file that is fields (`offer`) or holds fields bes
 mcp checked it, against a JSON Schema made from each field's type in `build/types.json`: a field the
 market names for that kind, for the writer's role (an `offer` field's `roles`) or the subject's (a
 `review` field's, read from the subject's profile record), of its type, a choice among its values.
-Shared names are checked by their meaning in the manual: `subject` an address, `score` `"1"` to `"10"`
-with at most one decimal, `offer` a post's full address, `text` and `evidence` text; a kind with
-`subject` among its shared names needs one. A body that does not fit is refused naming the field,
-before anything reaches the signer. A field marked `required` is not asked for: the manual says an app
-asks for it, and nothing enforces it. No kind can be `profile`, `hosts` or the vault, so `post` never
-reaches the profile record, the hosts record or the vault.
+Shared names are checked by their meaning in the manual: `subject` an address, `score` `"1"` to
+`"10"` with at most one decimal, `offer` a post's full address, `text` text; a kind with `subject`
+among its shared names needs one. `evidence` is refused: the person's signer fills it in, from the
+payment the profile made for the review's `offer`, so an AI never names a payment. A body that does
+not fit is refused naming the field, before anything reaches the signer. A field marked `required`
+is not asked for: the manual says an app asks for it, and nothing enforces it. No kind can be
+`profile`, `hosts` or `rule`, so `post` never reaches the profile record, the hosts record or a
+rule.
 
 Each relayed call ends one of three ways:
 
@@ -131,8 +134,9 @@ copy's key.
    connection:
    - an Ed25519 key pair, whose public key, its 32 bytes in base64url (43 characters), is the
      connection's id;
-   - a permission in the person's vault, `who: { connector: <origin>, connection: <id>, name }`, with
-     the profiles, actions and limits the person chose;
+   - one rule in the folder of each profile the person chose,
+     `who: { connector: <origin>, connection: <id>, key, name }`, with the actions and the limit the
+     person chose; `key` is the connection's own key, so each of the person's signers serves it;
    - its signature, with the connection's key, on the UTF-8 bytes of `forest-mcp/v1/login\n`
      followed by `request`, exactly as received.
 
@@ -145,8 +149,8 @@ copy's key.
 7. **`/token`** (`grant_type=authorization_code`) checks the code, the client (and its secret, if it
    has one), the redirect, `code_verifier` against the challenge, and `resource`, and gives an access
    token naming the connection, the client and this copy. It carries no expiry, so there is no
-   refresh token: the connection ends when the person removes it from their permissions, at their
-   signer, which then serves it no more.
+   refresh token: the login ends when the person removes its rules, at any of their signers, and no
+   signer of theirs serves it from its next ask.
 
 Without `APP_URL`, step 4 is a page saying logins wait for the Forest app's connect page, and reading
 works as before.
@@ -179,13 +183,27 @@ How the mcp behaves:
   or of no type above closes the socket (1008).
 - The live sockets are the only thing this copy holds between calls, in memory.
 
-What the signer does with an ask is the standard's: it acts only within an entry it knows whole
-(`knowsPermission`) that has not ended, covering the profile and the action (`post` and `remove` are
-the standard's `post`, `message` and `reply` its `message`, `inbox` its `read`, `pay` its `pay`, within
-every limit that holds, and an entry with no limit sets no money cap); it never writes the profile
-record, the hosts record or the vault without the person's yes; and it asks the person about
-everything else. It numbers messages for each connection, so a number means the same message for as
-long as it keeps them, and shows a message from another of the person's own profiles by its label.
+What the signer does with an ask is the standard's. Before any ask it reads the rules in each of the
+person's profiles' folders (`readRules`), so a rule removed on any of their devices is gone at the
+next ask, and a connection with no rule left has ended. It acts only within the rule for this
+connection on the profile asked for, one it knows whole (`knowsRule`) that has not ended, covering
+the action (`post` and `remove` are the standard's `post`, `message` and `reply` its `message`,
+`inbox` its `read`, `pay` its `pay`, within the rule's limit, counted on that profile, and a rule
+with no limit sets no money cap). It refuses to write or remove the profile record, the hosts record
+or a rule, and asks the person about everything else. It registers each connection its rules name
+for this copy, with the key in the rule, so any of the person's devices serves it.
+
+On money it does more, as the app's choice:
+
+- a `pay` asked again for the same post and amount within an hour answers done, and pays nothing;
+- any other payment for a post the profile already paid waits for the person's yes;
+- a review of a post the profile paid gets the latest such payment as its evidence, filled in by the
+  signer, which drops any evidence an ask carries;
+- it keeps those payments in memory, on the device that paid, so another device of the person's
+  knows none of them.
+
+It numbers messages for each connection, so a number means the same message for as long as it keeps
+them, and shows a message from another of the person's own profiles by its label.
 [`test/signer.ts`](test/signer.ts) does all of it, in plain code, with the standard's libraries.
 
 ### Run it
@@ -208,7 +226,7 @@ packages (`@foundationforest/keys`, `@foundationforest/records`, through file: l
 | Variable | What it sets | Unless set |
 |---|---|---|
 | `DATA_DIR` | Where its key is kept: `mcp-key.json`, 32 random bytes made at the first start, readable by its own user only | needed |
-| `PUBLIC_URL` | Its origin: the resource, the authorization server, and the connector in a person's permissions | https://mcp.forest.foundation |
+| `PUBLIC_URL` | Its origin: the resource, the authorization server, and the connector in a person's rules | https://mcp.forest.foundation |
 | `APP_URL` | The app's connect page | none: logins wait |
 | `INDEX_URL` | The index read for posts, search, checks and ratings | https://index.forest.foundation |
 | `HOST_URLS` | Where a profile's hosts record is looked for first, comma separated | https://host.forest.foundation |
@@ -216,23 +234,30 @@ packages (`@foundationforest/keys`, `@foundationforest/records`, through file: l
 
 The tests run the standard's reference host, a stand-in index serving the four answers in the index's
 JSON as it is now, a stand-in connect page, and the reference signer, holding a person's seed with
-three profiles, a vault, and a permission for their two tutoring profiles to post, message, read and
-pay $50 a day:
+three profiles; a login writes a rule into the folders of their two tutoring profiles, to post,
+message, read and pay $50 a day on each:
 
 - `test/login.test.ts`: reading with no login; the challenge and the metadata; the login end to end
   through the MCP SDK's own client, by registration and by a client document; each login its own
-  connection in the person's permissions; a login ending when the person removes its connection, at
+  connection, in a rule on each profile chosen; a login ending when the person removes its rules, at
   their signer; refused: a login signed by a key that is not the connection's, a login changed on
   the way, an unknown AI app, a person who says no, a code with the wrong verifier or for another
   client, a token this copy did not give; with no `APP_URL`, reading works and logins wait.
-- `test/tools.test.ts`: each of the eleven tools; inside the permissions, done without asking;
-  outside them (a profile the entry does not cover), needs approval, then done after the yes; a kind
-  the market does not define, the profile record, the hosts record, a field that does not fit and a
-  role the market lacks, refused before anything is relayed; the signer's own check that `post` never
-  covers the profile record or the hosts record; pay within the limit, done, and past it, needs
-  approval; pay by an entry with no limit, any amount, done; with no signer open, said plainly; and
-  no answer in the whole run holds one of the person's addresses (each profile's, each pay address,
-  the vault's).
+- `test/tools.test.ts`: each of the eleven tools. The login's rule in each chosen folder, encrypted
+  to that profile alone, the connection's key inside, and none in the third. `profiles`, the
+  profiles holding a rule for the connection. Another device on the same seed serving the login from
+  the rules. Inside the rules, done without asking; outside them (a profile no rule covers), needs
+  approval, then done after the yes. A kind the market does not define, the profile record, the
+  hosts record, a field that does not fit, a role the market lacks and a review naming `evidence`,
+  refused before anything is relayed; the signer's own refusal to write or remove the profile
+  record, the hosts record or a rule. `pay` answering only done; past the student's limit, needs
+  approval, while the tutor's limit counts on its own; the same pay again within the hour, nothing
+  paid; another payment for a post already paid, and the same one an hour on, needs approval, and a
+  yes given twice pays once; a rule with no limit, any amount, done. A review of a paid post
+  carrying the signer's evidence, and none for a post the profile never paid. A rule removed on the
+  other device gone at the next ask, and with none left the login ended. With no signer open, said
+  plainly; and no answer in the whole run holds one of the person's addresses (each profile's, each
+  pay address).
 - `test/relay.test.ts`, with a signer made by hand: a registration by another key refused; a frame
   that is not JSON closing the socket; only the protocol's fields passed on; an approval link that is
   not https refused; a socket closing mid-ask said plainly; and nothing kept between calls but live
@@ -259,6 +284,8 @@ The foundation's copy, at https://mcp.forest.foundation:
   to the port in `PORT`, WebSockets through Railway's proxy, and no health check (the root answers only
   what an MCP client sends). `APP_URL` is unset until the Forest app's connect page exists; until then
   reading works and logins wait.
+- **Its connect page:** this copy sends logins to the Forest app's page; another app runs its own
+  copy, with its own page.
 - **What it reads:** profiles from the foundation's host first, then the hosts each profile's hosts
   record names; markets from the directory at `MARKETS`; posts, search, checks and ratings from the
   foundation's index.
@@ -286,7 +313,7 @@ The foundation's copy, at https://mcp.forest.foundation:
   serves it at `/icon.svg`, and at `/favicon.ico` as an ICO of 16, 32, 48 and 64 pixels. `src/icon.ts`
   draws both from the mark's strokes.
 
-Payments are the signer's, on the chain the escrow runs on today, Solana's devnet, with test dollars.
+Payments are the signer's, on the chain the escrow runs on today, Solana's devnet, in Circle's USDC.
 Hosts and indexes see this copy's network address, not the person's.
 
 ### Connect an AI app
@@ -308,15 +335,15 @@ acts.
 
 ## Promises
 
-- **It holds nothing of the person's.** No seed, no key, no permission; it never receives the
+- **It holds nothing of the person's.** No seed, no key, no rule; it never receives the
   person's own profiles' addresses, keys or folders.
-- **It acts only through the person's signer,** which acts by the person's permissions and asks them
+- **It acts only through the person's signer,** which acts by the person's rules and asks them
   about the rest. It signs nothing for anyone.
 - **It never moves money itself, and holds nothing that could.** A payment is made by the person's
-  signer, inside the limits their permissions set, or with their yes.
+  signer, inside the limits their rules set, or with their yes.
 - **It keeps nothing between calls but live sockets,** in memory. No login, call or answer is written.
-- **A login ends only when the person ends it.** Its access token carries no expiry. The person ends
-  a connection by removing it from their permissions, at their signer, which then serves it no more.
+- **A login ends only when the person ends it.** Its access token carries no expiry. A login ends
+  when the person removes its rule, at their signer, which then serves it no more.
 - **It checks what it reads from hosts.** The standard's records library checks every record,
   signature included. What an index says is passed on as the index's word, and labelled so.
 - **No sign-up and no password.**
@@ -325,7 +352,7 @@ acts.
 
 ## Limits
 
-- **It can act as any connection it carries,** within that connection's permissions: it sees each
+- **It can act as any connection it carries,** within that connection's rules: it sees each
   ask in plain text and each token passed through it. You trust its operator, the foundation for this
   copy, as far as the limits you set; anyone can run their own
   ([the standard's keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#signers)).
@@ -335,10 +362,10 @@ acts.
 - **Nothing acts while Forest is closed** on every one of the person's devices.
 - **The AI is not told when the person says yes.** It looks again, or asks again.
 - **An answer that comes after 45 seconds is lost,** though what was asked may be done.
-- **A login does not expire.** Its access token works for as long as the person keeps the connection
-  in their permissions. The AI's maker holds it all that time, and whoever takes it from them acts as
-  that connection, within its permissions, while the person's signer serves it. This copy cannot end
-  one token alone: only a new key ends a login here, and it ends every one.
+- **A login does not expire.** Its access token works for as long as a rule for the connection stays
+  in one of the person's profiles' folders. The AI's maker holds it all that time, and whoever takes
+  it from them acts as that connection, within its rules, while the person's signer serves it. This
+  copy cannot end one token alone: only a new key ends a login here, and it ends every one.
 - **A code works more than once in its 60 seconds,** since nothing is kept; only the AI app holding
   the login's PKCE verifier can use it.
 - **One replica.** The sockets live in one process; when it restarts, each signer opens again, and
@@ -357,16 +384,16 @@ acts.
 
 ## Who decides what
 
-- **The standard:** keys, records, signers, the vault and the permissions in it.
+- **The standard:** keys, records, signers, and each profile's rules.
 - **The markets directory, at the commit in `MARKETS`:** each market's roles, kinds and fields.
 - **The foundation, in this directory:** the tools, what each checks and says, the login, the relay
   protocol and its numbers; and, as it runs the copy, its origin, its connect page, the host and index
   it reads, where it runs, and that it is free.
 - **Whoever runs a copy:** the same, for theirs.
 - **The person, through their signer:** which AI apps connect, what each may do, on which profiles,
-  within which limits and until when; each yes; and removing a connection.
-- **The app that signs:** how it asks the person, how it numbers messages, and where it keeps
-  connection keys.
+  within which limits and until when; each yes; and removing a rule.
+- **The app that signs:** how it asks the person, how it numbers messages, and what it does with a
+  payment asked twice.
 - **An index, by its own choice:** what its posts, checks and ratings say.
 - **The AI's maker:** what it keeps of a conversation, the token included.
 
@@ -377,7 +404,7 @@ So an AI app can read before the person connects anything, and so reading works 
 An AI app logs in when a call answers 401, and only a relayed tool's call does.
 
 **Why does a login not expire?**
-The person's permissions already say what a connection may do and until when (an entry's `until`).
+The person's rules already say what a connection may do and until when (a rule's `until`).
 An expiry here would only send the person through the connect page again for nothing they chose, and
 a refresh token no store can retire would never expire either. Ending a connection is the person's,
 at their signer.

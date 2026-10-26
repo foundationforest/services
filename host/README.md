@@ -90,7 +90,9 @@ The credits keep their own two files in `credits/`:
 ### Credits
 
 A credit here is a prepaid unit of this host's writes. The host sells and takes them with the code
-in `credits/`; `src/credits.ts` keeps the balances and the price.
+in `credits/`; `src/credits.ts` keeps the balances and the price. The buyer's side, what an app
+runs to buy and spend them, is `client/client.ts`: the loop buys with it, and so do the verifier's
+tests.
 
 **A credit** is a Privacy Pass credit of type 2, Blind RSA (RFC 9576, RFC 9577, RFC 9578). The host
 signs it blind, over a number only the buyer's app knows, so when the credit comes back to be spent
