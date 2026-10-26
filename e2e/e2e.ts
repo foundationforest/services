@@ -39,7 +39,8 @@
 //       coach profile, and the index shows the proof;
 //   12. addresses: no answer either AI received holds one of its own person's addresses;
 //   13. balances: what each folder's credits came to.
-// Everything it did goes to runs/<time>.json, whether it passed or not. What the loop started stops.
+// Then, passed or failed, what the loop started stops, and the loop's own fee payer's USDC and SOL go
+// back to the deploy key. Everything it did goes to runs/<time>.json, whether it passed or not.
 
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -62,7 +63,7 @@ import { tenth } from '../index/src/pass.ts'
 import { type Numbers, rank } from '../index/src/rank.ts'
 import { aiApp, logIn } from '../mcp/test/setup.ts'
 import { type Choice, type PayWith, Signer } from '../mcp/test/signer.ts'
-import { DOLLAR, type Paid, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, kora, payReferenceIxs, scheduleOf, send, throughFeePayer, unitsOf } from './chain.ts'
+import { DOLLAR, type Paid, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, kora, payReferenceIxs, scheduleOf, send, sweepIxs, throughFeePayer, unitsOf } from './chain.ts'
 import { type RunRecord, checkRecord, holdsNone } from './record.ts'
 import { type Running, VERIFIER_NAME, readServices, startServices } from './services.ts'
 
@@ -238,6 +239,8 @@ async function person(role: Person['role']): Promise<Person> {
 let services: Running | undefined
 let page: Awaited<ReturnType<typeof connectPage>> | undefined
 const people: Person[] = []
+/** What the loop's own fee payer holds, swept back to the deploy key: set once it runs, sent when the run ends. */
+let sweepBack: (() => Promise<NonNullable<RunRecord['sweep']>>) | undefined
 
 /**
  * The face check, as the app does it: a session, the check (the stand-in passes it), the stamp
@@ -379,6 +382,23 @@ async function main() {
   record.checked = s.checked
   record.loop = { verifier: { name: s.verifier.name, face: s.verifier.keys.face, id: s.verifier.keys.id }, index: s.index.address }
   say(`verifier ${s.verifier.url}, host ${s.host}, fee payer ${s.feePayer}, index ${s.index.url} (${s.index.address}), mcp ${s.mcp}`)
+
+  // When the run ends, whatever happened, the loop's own fee payer gives back to the deploy key what
+  // it holds: what the loop gave it, and what it was paid. Its key signs, as its operator's would;
+  // the deploy key pays the fee, so nothing is left on it.
+  if (s.ownFeePayerKey) {
+    const key = Keypair.fromSecretKey(s.ownFeePayerKey)
+    assert.equal(key.publicKey.toBase58(), s.ownFeePayer, 'the key the fee payer signs with')
+    secrets.push(b64u.encode(key.secretKey.subarray(0, 32)), hex.encode(key.secretKey.subarray(0, 32)))
+    sweepBack = async () => {
+      const account = await connection.getAccountInfo(ata(key.publicKey))
+      const dollars = account ? BigInt((await connection.getTokenAccountBalance(ata(key.publicKey))).value.amount) : null
+      const lamports = await connection.getBalance(key.publicKey)
+      const back = { dollars: (dollars ?? 0n).toString(), lamports: lamports + (account?.lamports ?? 0) }
+      const ixs = sweepIxs({ from: key.publicKey, to: deploy.publicKey, dollars, lamports, token })
+      return ixs.length ? { signature: (await send(connection, ixs, [deploy, key])).signature, ...back } : back
+    }
+  }
 
   // A payment the signer makes when the person's AI asks it to pay: a direct payment, a plain
   // transfer from the profile's pay key, through the fee payer at cost.
@@ -647,6 +667,17 @@ try {
   }
   await services?.stop().catch((err) => console.error(redact(String(err))))
   page?.close()
+  if (sweepBack) {
+    try {
+      record.sweep = await sweepBack()
+      say(`swept back from our own fee payer to the deploy key: ${Number(record.sweep.dollars) / 1e6} USDC and ${record.sweep.lamports / 1e9} SOL`)
+    } catch (err) {
+      // A run that cannot give back what its own fee payer holds fails, saying so: the fee payer's key goes with the run.
+      record.passed = false
+      record.error = `${record.error ?? ''}\nthe sweep: ${redact((err as Error).stack ?? String(err))}`.trim()
+      console.error(redact(String(err)))
+    }
+  }
   record.ended = new Date().toISOString()
   let text = JSON.stringify(record, null, 2) + '\n'
   try {

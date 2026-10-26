@@ -126,6 +126,12 @@ step checks what it did, and the run passes only if every step does.
     addresses, as it must to message and review them.
 13. **Balances.** What each folder's credits came to.
 
+Then, passed or failed, the services stop, and when the fee payer is the loop's own, what its key
+holds goes back to the deploy key, which gave it: all its USDC, its USDC account closed with that
+account's rent, and all its SOL, in one transaction its key signs, as its operator's would, and the
+deploy key pays for. The record says how much came back (`sweep`). A sweep that fails fails the run,
+saying so.
+
 ### Two ways to run, one loop
 
 `services.json` names what a run uses:
@@ -146,7 +152,7 @@ the dollar is Circle's USDC there, which the deploy key holds: fill it from
 |---|---|
 | verifier | `verifier/`'s code, with the stand-in Didit its tests run (`verifier/test/fake-didit.ts`) and the stand-in face model. Its own name, `verifier.e2e-loop.invalid`, and its own seed. No welcome gift |
 | host | `host/`'s code, as `npm start` runs it, selling credits for USDC, paid to the deploy key's address and checked through the RPC |
-| fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds |
+| fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds and, when the run ends, sweeps back |
 | index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check 1 point, ID check 2); its own reputation proofs, against a root up to 30 days old. Its numbers, money and chains are `index/config/`'s: `config/chains.json` reads the chain above |
 | mcp | `mcp/`'s code, reading the host first and the loop's index, with the loop's connect page as its `APP_URL` |
 
@@ -176,7 +182,7 @@ prints comes to the console with `RPC_URL` taken out.
 - `services.ts`: reads `services.json`, and starts and stops the loop's own copies.
 - `chain.ts`:
   - the key the loop takes from the phrase;
-  - what it funds, all from that key's own USDC;
+  - what it funds, all from that key's own USDC, and what it sweeps back from its own fee payer;
   - a wallet's transfer for a credit buy;
   - a direct payment, a plain transfer;
   - a market's schedule as the escrow takes it;
@@ -205,8 +211,9 @@ FOREST_DEVNET_SEED='<the phrase>' npm run e2e -- deployed.json   # against what 
 
 - **`FOREST_DEVNET_SEED`** (required): the phrase. Its `deploy` key comes by the recipe in the
   standard's `escrows/solana/devnet/deploy.sh`, and pays the setup: the accounts' rent, the SOL, and
-  the 44 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. Never in
-  this repo, and never given to a service.
+  the 44 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. With the
+  loop's own host and fee payer, 37.7364 of it comes back by the run's end: the host's 0.20 for
+  credits, and the sweep. Never in this repo, and never given to a service.
 - **`RPC_URL`** (optional): the RPC everything uses, in place of `services.json`'s `rpc`. It may
   hold a key, so a run's record says only `RPC_URL`. Kora needs an RPC that returns inner
   instructions from `simulateTransaction`.
@@ -223,6 +230,8 @@ The tests, which CI runs:
   - the phrase's key, against PBKDF2 made by Web Crypto;
   - every funding instruction, decoded by the token program's own decoders: plain transfers from
     the deploy key's own USDC, 44 in all, with the loop's own fee payer and with a deployed one;
+  - the sweep: all the fee payer's USDC, its USDC account closed, and all its SOL, each to the
+    deploy key; nothing sent when it holds nothing;
   - a wallet's transfer naming a buy's reference;
   - a direct payment: one plain transfer, and nothing else;
   - dollars as base units, and what is refused;
@@ -256,9 +265,11 @@ and its summary here: what it used, what it paid, and its links on the chain.
 
 - **CI does not run it.** It needs the phrase and the chain. CI type-checks it and runs its tests.
   It runs by hand, and its records in `runs/` say when it last passed.
-- **Every run leaves its people on the chain for good:** their payments and their escrow's receipt.
-  On the loop's own host and index, the rest goes when the run ends. On a deployed host, their
-  records, their rules among them (encrypted), stay until it is wiped.
+- **Every run leaves its people on the chain for good:** their payments, their escrow's receipt, and
+  the USDC left with them, about 6.26 a run (the tutor's 4, the student's 0.4636 and each wallet's
+  0.90), since the run keeps no seed. On the loop's own host and index, the rest goes when the run
+  ends. On a deployed host, their records, their rules among them (encrypted), stay until it is
+  wiped.
 - **The checks are stand-ins.** The stand-in Didit passes everyone, and the stand-in face model
   gives everyone one embedding, so a run says nothing about Didit or the face model. Only the face
   check: the loop verifier offers no ID check, since it sets no price.
@@ -275,8 +286,9 @@ and its summary here: what it used, what it paid, and its links on the chain.
   no AI may name and no signer of the tutor's paid, so the loop's app writes it.
 - **One host, inboxes open to anyone.** Both people are on the same host, and each inbox takes
   messages from anyone: no stamp holders only, no `maxBytes`.
-- **The loop's own fee payer gets a new key each run,** and what it holds stays with that key: the
-  0.05 SOL the loop gives it, and the 37.5364 USDC the student pays it.
+- **The loop's own fee payer gets a new key each run,** and the sweep gives back only what that key
+  still holds when the run ends. What it spent stays spent: the network fees, and the escrow
+  receipt's rent, 2,235,200 lamports, which stays in the receipt for good.
 - **Each wait on the index is up to 15 minutes.** The loop index reads the escrow's whole history
   from its first transaction, which a public RPC serves slowly.
 
