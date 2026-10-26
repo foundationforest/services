@@ -2,8 +2,9 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The loop: Forest end to end, two people doing everything a person does, each with a signer on their
-own device and an AI acting for them, with every service this repo runs.
+The loop: Forest end to end, two people doing everything a person does, each with a signer (a
+device of their own that holds their seed) and an AI acting for them, with every service this repo
+runs.
 
 It is not a service. The foundation runs it by hand, and anyone can; the main way is
 `npm run e2e` with the phrase that funds it. Each run writes one record to `runs/`.
@@ -13,12 +14,14 @@ It is not a service. The foundation runs it by hand, and anyone can; the main wa
 ### Who is who
 
 - **Each person's device** is the reference signer, [`mcp/test/signer.ts`](../mcp/test/signer.ts),
-  unchanged. It holds the seed, keeps each profile's rules in that profile's folder, signs with
-  each profile's main key, publishes straight to the host, and answers the mcp's relay by those
-  rules. What it has no method for, the device does in `e2e.ts`, with the standard's pieces:
-  - the stamp, kept on the device;
+  unchanged. It holds the seed, keeps each profile's rules (what the person lets their AI ask for)
+  in that profile's folder (what its main key signs on the host), signs with each profile's main
+  key, publishes straight to the host, and answers by those rules what the mcp relays to it from an
+  AI app, over MCP (the Model Context Protocol, the way AI apps call outside tools). What it has no
+  method for, the device does in `e2e.ts`, with the standard's pieces:
+  - the stamp (the verifier's signature that it checked the person), kept on the device;
   - the stamp proof, made on the device and put on the profile record;
-  - the escrow;
+  - the escrow (money held on the chain by a program, and paid out as the deal says);
   - the review only the person's app can write, one naming the escrow it was paid through.
 - **Each person's AI** is the MCP SDK's own client, through mcp's own test helpers (`aiApp`,
   `logIn`, in [`mcp/test/setup.ts`](../mcp/test/setup.ts)). It logs in as an AI app does, and calls
@@ -37,14 +40,14 @@ step checks what it did, and the run passes only if every step does.
    - the stamp number at the loop verifier's name.
 
    From the tutor's seed, a second profile too: `sports-coaching/coach`.
-2. **Funding.** The phrase's `deploy` key makes a USDC account for both Solana pay addresses and
-   for each person's wallet app (an address of its own, apart from any profile), and sends each
-   wallet 0.01 SOL for its fees. From its own USDC it sends 42 to the student's pay address and 1 to
-   each wallet: 44 in all, by plain transfers; nothing is minted. The student's 42 cover its two
-   payments of 2 and the fee payer's charges, 37.5364 at Kora's mock price, ten base units a
-   lamport ([fee-payer](../fee-payer/README.md)). When the fee payer is the loop's own, it gets
-   0.05 SOL and its USDC account, where it is paid. A deploy key holding less than 44 stops the run,
-   saying so.
+2. **Funding.** The phrase's `deploy` key makes a USDC account for both Solana pay addresses and for
+   each person's wallet app (an address of its own, apart from any profile), and sends each wallet
+   0.01 SOL (the chain's own coin) for its fees. From its own USDC it sends 42 to the student's pay
+   address and 1 to each wallet: 44 in all, by plain transfers; nothing is minted. The student's 42
+   cover its two payments of 2 and the fee payer's charges, 37.5364 at Kora's mock price, ten base
+   units a lamport, a billionth of a SOL ([fee-payer](../fee-payer/README.md)). When the fee payer
+   is the loop's own, it gets 0.05 SOL and its USDC account, where it is paid. A deploy key holding
+   less than 44 stops the run, saying so.
 3. **Stamps.** Each person takes the loop verifier's face check: its stand-in Didit passes everyone.
    Each gets a stamp for their stamp number, checked:
    - its signature;
@@ -53,17 +56,18 @@ step checks what it did, and the run passes only if every step does.
 
    The device keeps the stamp. Then it asks the verifier for it again by its stamp number
    (`POST /stamp`), as a device that lost it would, and the stamp that comes back is the one signed.
-4. **Credits.** Each wallet buys 10 of the host's credits for USDC: a plain transfer of 0.10 to the
-   host's address, naming the buy's reference, collected once the host finds it final, and finished
-   with the host's credits client (`host/client/`). A host that sells only for its sponsors' tickets
-   stops the run, saying so.
+4. **Credits.** Each wallet buys 10 of the host's credits (prepaid units of its writes) for USDC: a
+   plain transfer of 0.10 to the host's address, naming the buy's reference, collected once the host
+   finds it final, and finished with the host's credits client (`host/client/`). A host that sells
+   only for its sponsors' tickets (signed by the keys it lets pay for others' buys) stops the run,
+   saying so.
 5. **Profiles.** Each person's device spends credits into the profile's folder, then the signer adds
    the profile (its hosts record and its profile record, each pay address signed by its pay key).
    The device then writes the profile record again, with a real stamp proof made on the device from
    the stamp circuit's committed proving files. Read back from the host as any reader reads it, the
-   record holds:
-   - the market, the role, and `pay { solana, evm }`;
-   - the inbox key and an inbox anyone may write to;
+   record holds the market, the role and an inbox anyone may write to, and the run checks:
+   - its pay addresses, `pay { solana, evm }`;
+   - its inbox key and its inbox;
    - the stamp proof, which checks.
 
    The tutor keeps 4 credits for the coach profile.
@@ -95,8 +99,8 @@ step checks what it did, and the run passes only if every step does.
      early (`pay`). The run checks the receipt:
      - version 4, paid between the two pay addresses, on the schedule;
      - its rent going back to the fee payer that fronted it.
-9. **Reviews.** Each names its evidence as `<CAIP-2 chain>:<id>`, the chain worked out from the
-   RPC's genesis hash:
+9. **Reviews.** Each names its evidence as `<CAIP-2 chain>:<id>` (CAIP-2: a standard way to name a
+   chain), the chain worked out from the genesis hash its RPC, the access point to the chain, gives:
    - the student's AI posts one through mcp (`post`, kind `review`): it scores the tutor 10 and
      names the offer, and the student's signer fills in its evidence, the direct payment it made;
    - the tutor's AI tries to post one naming the escrow, and the mcp refuses it, naming `evidence`:
@@ -107,10 +111,10 @@ step checks what it did, and the run passes only if every step does.
     - both profiles counted under the loop verifier's face key;
     - the offer listed;
     - both reviews counted, each with its payment;
-    - each rating and backing as the index's own ranking makes them from these two reviews, with its
-      numbers in `index/config/scoring.json` (the loop works them out with the same code: today 8.0
-      for the tutor and 7.9 for the student, each backed 0.1), each from one review, each statement
-      signed by the index and checked;
+    - each rating and backing (how much trust stands behind the rating) as the index's own ranking
+      makes them from these two reviews, with its numbers in `index/config/scoring.json` (the loop
+      works them out with the same code: today 8.0 for the tutor and 7.9 for the student, each
+      backed 0.1), each from one review, each statement signed by the index and checked;
     - the deal paid out, with the review that names it.
 
     No message appears anywhere in its JSON.
@@ -228,8 +232,9 @@ The tests, which CI runs:
   - the client alone, against Cloudflare's own Privacy Pass issuer.
 - `test/chain.test.ts`:
   - the phrase's key, against PBKDF2 made by Web Crypto;
-  - every funding instruction, decoded by the token program's own decoders: plain transfers from
-    the deploy key's own USDC, 44 in all, with the loop's own fee payer and with a deployed one;
+  - every funding instruction, decoded by the token program's own decoders: with the loop's own
+    fee payer, plain transfers from the deploy key's own dollars, 44 in all; with a deployed one,
+    nothing for it;
   - the sweep: all the fee payer's USDC, its USDC account closed, and all its SOL, each to the
     deploy key; nothing sent when it holds nothing;
   - a wallet's transfer naming a buy's reference;
@@ -298,13 +303,14 @@ and [the sweep][s].
 ## Promises
 
 - **No key, phrase or keyed URL (a web address with a key inside) in this directory.** The phrase
-  and `RPC_URL` come from the environment. A run's record holds addresses, signatures, amounts and
-  counts only. The run will not write one that holds the phrase, the RPC's URL, a login, or any key
-  or credit it made.
-- **It does what a person's device and their AI would,** with the standard's own pieces, the
-  reference signer, the MCP SDK's client and the credits client: keys, records and each profile's
-  rules, the stamp and reputation proofs, and the escrow client. Nothing in it reaches around a
-  service.
+  and `RPC_URL` come from the environment. A run's record holds only public things: addresses,
+  signatures, amounts, counts, commits, times, labels, signed statements, tags, a root, a refusal's
+  text, and the loop's own page addresses on loopback. The run will not write one that holds the
+  phrase, the RPC's URL, a login, or any key or credit it made.
+- **It does what a person's device and their AI would,** with stand-ins only for Didit, the face
+  model and the Forest app's connect page, and with the standard's own pieces, the reference signer,
+  the MCP SDK's client and the credits client: keys, records and each profile's rules, the stamp and
+  reputation proofs, and the escrow client. Nothing in it reaches around a service.
 - **No credit in a run's record.** A credit is a bearer credit. The record holds how many were
   bought, spent and left, and the buys' references.
 - **A run passes only if every step passed.** A failed run's record holds the steps it finished
