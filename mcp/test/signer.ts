@@ -4,22 +4,30 @@
 // to each connector its rules name, and answers each ask by the person's rules, exactly as the
 // standard says (records/README.md, Rules; keys/README.md, Signers):
 //
-// - a rule is for one who, on one profile: here a connection, { connector, connection };
-// - it reads a profile's rules from its hosts before it acts on any ask for it (readRules), and acts
-//   on no rule it does not know whole (knowsRule), nor on one that has ended;
-// - `post` never covers a profile's profile record, its hosts record or a rule: those it always
-//   asks the person about;
-// - `pay` only within the rule's limit, counting what this who asked for over any day, week or
-//   month; a rule with no limit sets no money cap;
+// - a rule is for one who, on one profile: here a connection, { connector, connection }, with the
+//   connection's key, so any of the person's signers serves it;
+// - it reads every profile's rules from its hosts before it acts on any ask (readRules), so a rule
+//   removed on another device is gone at the next ask, and acts on no rule it does not know whole
+//   (knowsRule), nor on one that has ended; with no rule left anywhere, the connection has ended;
+// - `post` never covers a profile's profile record, its hosts record or a rule: an ask to write or
+//   remove one is refused, and the person writes those in Forest;
+// - `pay` only within the rule's limit, counting what this who paid as that profile over any day,
+//   week or month; a rule with no limit sets no money cap;
 // - anything no rule covers waits for the person's yes: here a link to open, and approve().
+//
+// And for money, what is the app's to choose: a `pay` asked again for the same offer and amount
+// within an hour answers done and pays nothing; any other second payment for an offer it paid waits
+// for the person's yes. A review naming an offer the profile paid gets that payment as its
+// evidence, filled in here: evidence is never the AI's to write. The answer to `pay` says only done.
 //
 // Whatever it does, it signs with the profile's main key and publishes straight to the profile's
 // hosts. Its answers carry no address of the person's: a message from one of their own profiles
 // shows its label, and numbers stand in for messages.
 //
 // What is the app's and not the standard's, chosen here the simplest way: the labels of the
-// profiles it made are kept in memory; messages are numbered per connection, in memory; what a who
-// spent is counted in memory; and a payment is made by the function the signer is given.
+// person's profiles are kept in memory; messages are numbered per connection, in memory; what a who
+// spent, and each payment by profile and offer, are kept in memory, on the device that paid; and a
+// payment is made by the function the signer is given.
 
 import { type KeyObject, createPrivateKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { type MainKey, type PayKey, inboxKey, mainKey, payAddresses, payKey, signPay } from '@foundationforest/keys'
@@ -36,6 +44,12 @@ export type Choice = { profiles: string[]; can: string[]; limit?: Limit; until?:
 type Connection = { connector: string; connection: string; secret: string }
 type Numbered = { id: string; label: string; from: string }
 type Ask = { connector: string; connection: string; tool: string; args: Body }
+type Payment = { micros: bigint; evidence: string; time: number }
+
+/** How long a `pay` asked again, for the same offer and amount, answers the payment made instead of paying again. */
+export const REPEAT_MS = 3_600_000
+/** The kinds no rule covers and no ask writes: the profile record, the hosts record and a rule are the person's own. */
+const OWN = ['profile', 'hosts', RULE_PREFIX.slice(0, -1)]
 
 const done = (result: Body = {}): Answer => ({ status: 'done', result })
 const refused = (why: string): Answer => ({ status: 'refused', why })
@@ -49,17 +63,14 @@ function micros(amount: string): bigint {
 /** What each tool asks to do, in the standard's actions. `profiles` asks for nothing. */
 const ACTION: { [tool: string]: string } = { post: 'post', remove: 'post', message: 'message', reply: 'message', inbox: 'read', pay: 'pay' }
 
-/**
- * Whether a rule lets its who ask for `action`, at `path` for a write: a rule this signer knows
- * whole, not ended, covering the action. `post` never covers the profile record, the hosts record
- * or a rule.
- */
-export function permits(rule: Rule, action: string, path?: string, now = Date.now()): boolean {
-  if (!knowsRule(rule)) return false
-  if (rule.until !== undefined && now > rule.until) return false
-  if (!rule.can.includes(action)) return false
-  if (action === 'post' && (path === 'profile' || path === 'hosts' || path?.startsWith(RULE_PREFIX))) return false
-  return true
+/** Whether this signer acts on a rule at all: one it knows whole, not ended. */
+export function live(rule: Rule, now = Date.now()): boolean {
+  return knowsRule(rule) && (rule.until === undefined || now <= rule.until)
+}
+
+/** Whether a rule lets its who ask for `action`: a live rule covering the action. */
+export function permits(rule: Rule, action: string, now = Date.now()): boolean {
+  return live(rule, now) && rule.can.includes(action)
 }
 
 export class Signer {
@@ -67,7 +78,7 @@ export class Signer {
   private readonly hosts: string[]
   private readonly appUrl: string
   private readonly payWith: PayWith | undefined
-  /** The labels of the profiles it made. */
+  /** The labels of the person's profiles. */
   private readonly profiles: string[] = []
   /** One socket per connector, and its challenge. */
   private readonly sockets = new Map<string, { ws: WebSocket; challenge?: string }>()
@@ -75,16 +86,20 @@ export class Signer {
   private readonly numbers = new Map<string, Numbered[]>()
   /** What each who spent, and when. */
   private readonly spent: Array<{ who: string; label: string; micros: bigint; time: number }> = []
+  /** Each payment it made, by profile and offer: `<label> <offer>`. */
+  private readonly payments = new Map<string, Payment[]>()
   /** What waits for the person's yes, by number. */
   private readonly waiting: Ask[] = []
   /** Every ask it answered, for the tests to count. */
   readonly asked: Array<{ tool: string; args: Body }> = []
 
-  constructor(options: { seed: Uint8Array; hosts: string[]; appUrl: string; payWith?: PayWith }) {
+  /** `labels`: the person's profiles another of their devices made, for this one to serve too. */
+  constructor(options: { seed: Uint8Array; hosts: string[]; appUrl: string; payWith?: PayWith; labels?: string[] }) {
     this.seed = options.seed
     this.hosts = options.hosts
     this.appUrl = options.appUrl
     this.payWith = options.payWith
+    this.profiles.push(...(options.labels ?? []))
   }
 
   // -------------------------------------------------------------------------------------------
@@ -179,16 +194,19 @@ export class Signer {
     return back.href
   }
 
-  /** A connection removed: its rule on every profile, and with it its key, so this signer serves it no more. */
-  async disconnect(connection: string): Promise<void> {
-    for (const label of this.labels()) {
-      const { main, view, rules } = await this.read(label)
-      for (const [id, { who }] of rules) {
-        if (!('connection' in who) || who.connection !== connection) continue
-        const path = RULE_PREFIX + id
-        await publish(view.hosts, [ownerRecord(main, path, null, nextTime(Date.now(), view, path))])
-      }
+  /** A connection's rule on one profile removed: a null body at its path. Every signer of the person's stops acting on it at its next ask. */
+  async removeRule(label: string, connection: string): Promise<void> {
+    const { main, view, rules } = await this.read(label)
+    for (const [id, { who }] of rules) {
+      if (!('connection' in who) || who.connection !== connection) continue
+      const path = RULE_PREFIX + id
+      await publish(view.hosts, [ownerRecord(main, path, null, nextTime(Date.now(), view, path))])
     }
+  }
+
+  /** A connection removed: its rule on every profile, and with it its key, so no signer serves it any more. */
+  async disconnect(connection: string): Promise<void> {
+    for (const label of this.labels()) await this.removeRule(label, connection)
   }
 
   /** Forest opened: a socket to `connector`, every connection for it registered. */
@@ -247,6 +265,11 @@ export class Signer {
     return spent + micros(amount) <= micros(limit.amount)
   }
 
+  /** A payment made as `label` for `offer`, of `amount`, within the last hour: what a `pay` asked again answers. */
+  private repeated(label: string, offer: string, amount: string): Payment | undefined {
+    return this.payments.get(`${label} ${offer}`)?.find((p) => p.micros === micros(amount) && Date.now() - p.time < REPEAT_MS)
+  }
+
   /** What waits for the person's yes, and the link that shows it to them. */
   private wait(ask: Ask, why: string): Answer {
     this.waiting.push(ask)
@@ -261,7 +284,7 @@ export class Signer {
     if (tool === 'profiles') {
       const covered = this.labels().filter((l) => {
         const rule = rules.get(l)
-        return rule && knowsRule(rule)
+        return rule && live(rule)
       })
       return done({ profiles: covered.map((l) => ({ market: l.split('/')[0]!, role: l.split('/').slice(1).join('/') })) })
     }
@@ -275,13 +298,18 @@ export class Signer {
       label = m.label
     } else label = `${args.market as string}/${args.role as string}`
     if (!this.labels().includes(label)) return refused(`the person has no profile as ${label.split('/')[1]} in ${label.split('/')[0]}; they make one in Forest`)
+    if ((tool === 'post' || tool === 'remove') && OWN.includes(args.kind as string)) return refused(`the ${args.kind as string} record is the person's own to write, in Forest`)
     // A new record's id is chosen now, so a yes later writes the same path.
     if (tool === 'post' && args.id === undefined) ask = { ...args, id: randomBytes(8).toString('hex') }
-    const path = tool === 'post' || tool === 'remove' ? `${ask.kind as string}/${ask.id as string}` : undefined
     const pending = { connector, connection, tool, args: ask }
     const rule = rules.get(label)
-    if (!rule || !permits(rule, action, path)) return this.wait(pending, `${tool} as ${label} is not in what this connection may do`)
-    if (tool === 'pay' && !this.withinLimit(rule, `${connector} ${connection}`, label, ask.amount as string)) return this.wait(pending, `this payment goes beyond a limit the person set`)
+    if (!rule || !permits(rule, action)) return this.wait(pending, `${tool} as ${label} is not in what this connection may do`)
+    if (tool === 'pay') {
+      const offer = ask.offer as string
+      if (this.repeated(label, offer, ask.amount as string)) return done()
+      if (this.payments.has(`${label} ${offer}`)) return this.wait(pending, 'this offer was paid already: another payment needs the person’s yes')
+      if (!this.withinLimit(rule, `${connector} ${connection}`, label, ask.amount as string)) return this.wait(pending, `this payment goes beyond a limit the person set`)
+    }
     return this.act(pending, label)
   }
 
@@ -300,7 +328,14 @@ export class Signer {
     if (tool === 'post' || tool === 'remove') {
       const path = `${args.kind as string}/${args.id as string}`
       if (tool === 'remove' && !view.current.get(path)?.record.body) return refused(`nothing at ${args.kind as string} ${args.id as string}`)
-      const outcomes = await publish(view.hosts, [ownerRecord(main, path, tool === 'post' ? (args.body as Body) : null, nextTime(Date.now(), view, path))])
+      let body = tool === 'post' ? (args.body as Body) : null
+      if (body && args.kind === 'review') {
+        // A review's evidence is this signer's: the latest payment the profile made for the offer it names, or none.
+        const { evidence: _, ...rest } = body
+        const paid = typeof rest.offer === 'string' ? this.payments.get(`${label} ${rest.offer}`)?.at(-1) : undefined
+        body = paid ? { ...rest, evidence: paid.evidence } : rest
+      }
+      const outcomes = await publish(view.hosts, [ownerRecord(main, path, body, nextTime(Date.now(), view, path))])
       const took = outcomes.filter((o) => o.results[0]?.ok)
       if (!took.length) return refused(`no host took it: ${outcomes.map((o) => o.error ?? o.results[0]?.message ?? o.status).join('; ')}`)
       return done({ kind: args.kind as string, id: args.id as string })
@@ -347,14 +382,18 @@ export class Signer {
       }
       return done({ messages: messages.sort((a, b) => (a.time as number) - (b.time as number)) })
     }
-    // pay
+    // pay: once, even when the person said yes to the same payment asked twice.
     if (!this.payWith) return refused('this signer has no way to pay')
     const offer = args.offer as string
+    const amount = args.amount as string
+    if (this.repeated(label, offer, amount)) return done()
     const theirs = await readProfile(this.hosts, offer.split('/')[0]!, Date.now())
     const to = (theirs.current.get('profile')?.record.body?.pay as { solana?: unknown } | undefined)?.solana
     if (typeof to !== 'string') return refused('that profile gives no Solana pay address')
-    const evidence = await this.payWith({ from: await payKey(this.seed, label, 'solana'), to, amount: args.amount as string })
-    this.spent.push({ who: `${connector} ${connection}`, label, micros: micros(args.amount as string), time: Date.now() })
-    return done({ evidence })
+    const evidence = await this.payWith({ from: await payKey(this.seed, label, 'solana'), to, amount })
+    const time = Date.now()
+    this.spent.push({ who: `${connector} ${connection}`, label, micros: micros(amount), time })
+    this.payments.set(`${label} ${offer}`, [...(this.payments.get(`${label} ${offer}`) ?? []), { micros: micros(amount), evidence, time }])
+    return done()
   }
 }

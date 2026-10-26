@@ -1,13 +1,14 @@
-// The loop's money on the chain: the two keys it takes from the phrase, what it funds and mints
-// before two people can act, a plain transfer from a wallet app, a direct payment, a market's
-// schedule as the escrow takes it, and a transaction sent through the fee payer at cost,
-// as a person's app sends one. Nothing a profile does goes through the phrase's keys: they fund and
-// mint only.
+// The loop's money on the chain: the key it takes from the phrase, what it funds before two people
+// can act, a plain transfer from a wallet app, a direct payment, a market's schedule as the escrow
+// takes it, and a transaction sent through the fee payer at cost, as a person's app sends one. The
+// dollar is Circle's USDC on the loop's chain, which the phrase's deploy key holds, filled from
+// Circle's faucet; the loop mints nothing. Nothing a profile does goes through the phrase's key: it
+// funds only.
 
 import { pbkdf2Sync } from 'node:crypto'
 
 import * as escrow from '@foundationforest/escrow-client'
-import { createAssociatedTokenAccountIdempotentInstruction, createMintToCheckedInstruction } from '@solana/spl-token'
+import { createAssociatedTokenAccountIdempotentInstruction } from '@solana/spl-token'
 import { type Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 
 /**
@@ -20,7 +21,7 @@ export function keyFromPhrase(phrase: string, label: string): Keypair {
   return Keypair.fromSeed(pbkdf2Sync(Buffer.from(normal, 'utf8'), Buffer.from(`forest-devnet:${label}`, 'utf8'), 600_000, 32, 'sha256'))
 }
 
-/** One whole test dollar, in base units: it has six decimals. */
+/** One whole dollar, in base units: USDC has six decimals. */
 export const DOLLAR = 1_000_000n
 
 /** Decimal text in whole units, such as "2" or "0.1", in base units of a token with `decimals`; more places than that are refused. */
@@ -55,7 +56,7 @@ export function scheduleOf(template: Template, paidAt: number): { windows: { unt
   return { windows, end: template.end }
 }
 
-/** What the loop gives before anyone acts. */
+/** What the loop gives before anyone acts: 12 dollars in all, and SOL. */
 export const FUNDING = {
   /** To the student's pay address: two payments of 2 and the fee payer's charges, about 4. */
   studentDollars: 10n * DOLLAR,
@@ -67,12 +68,12 @@ export const FUNDING = {
   feePayerLamports: 50_000_000,
 } as const
 
-/** Who the loop funds: each one's test-dollar account, then dollars and SOL. */
+/** Who the loop funds: each one's dollar account, then dollars and SOL. */
 export type Funding = { accounts: PublicKey[]; dollars: { owner: PublicKey; units: bigint }[]; lamports: { to: PublicKey; lamports: number }[] }
 
 /**
- * What the loop funds: a test-dollar account for both pay addresses and each wallet; the student's
- * dollars; each wallet's dollar and SOL; and, when the fee payer is the loop's own, its test-dollar
+ * What the loop funds: a dollar account for both pay addresses and each wallet; the student's
+ * dollars; each wallet's dollar and SOL; and, when the fee payer is the loop's own, its dollar
  * account, where it is paid, and its SOL. A deployed fee payer is its operator's to fund.
  */
 export function fundingFor(p: { tutorPay: PublicKey; studentPay: PublicKey; wallets: PublicKey[]; feePayer: PublicKey | null }): Funding {
@@ -83,17 +84,21 @@ export function fundingFor(p: { tutorPay: PublicKey; studentPay: PublicKey; wall
   }
 }
 
+/** How many base units of the dollar the funding moves, all from the payer's own account. */
+export const dollarsOf = (f: Funding): bigint => f.dollars.reduce((sum, d) => sum + d.units, 0n)
+
 /**
- * The funding as two transactions' instructions: the accounts, which `payer` pays the rent of; then
- * the dollars, which `authority` mints, and the SOL, which `payer` sends. Two, so each fits.
+ * The funding as two transactions' instructions, all by `payer`: the accounts, which it pays the rent
+ * of; then the dollars, each a plain transfer from its own dollar account, and the SOL. Two, so each
+ * fits.
  */
-export function fundingIxs(f: Funding, keys: { payer: PublicKey; authority: PublicKey }, token: escrow.Token): { accounts: TransactionInstruction[]; money: TransactionInstruction[] } {
+export function fundingIxs(f: Funding, payer: PublicKey, token: escrow.Token): { accounts: TransactionInstruction[]; money: TransactionInstruction[] } {
   const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
   return {
-    accounts: f.accounts.map((owner) => createAssociatedTokenAccountIdempotentInstruction(keys.payer, ata(owner), owner, token.mint, token.program)),
+    accounts: f.accounts.map((owner) => createAssociatedTokenAccountIdempotentInstruction(payer, ata(owner), owner, token.mint, token.program)),
     money: [
-      ...f.dollars.map((d) => createMintToCheckedInstruction(token.mint, ata(d.owner), keys.authority, d.units, token.decimals, [], token.program)),
-      ...f.lamports.map((l) => SystemProgram.transfer({ fromPubkey: keys.payer, toPubkey: l.to, lamports: l.lamports })),
+      ...f.dollars.map((d) => escrow.transferIx({ from: ata(payer), to: ata(d.owner), owner: payer, mint: token.mint, amount: d.units, decimals: token.decimals, tokenProgram: token.program })),
+      ...f.lamports.map((l) => SystemProgram.transfer({ fromPubkey: payer, toPubkey: l.to, lamports: l.lamports })),
     ],
   }
 }
@@ -126,7 +131,7 @@ export async function send(connection: Connection, instructions: TransactionInst
 /**
  * What a wallet app sends to pay a credit buy: a plain transfer of `units` from its own address to
  * the service's, with the buy's reference as one more account, as Solana Pay does. It makes the
- * service's test-dollar account first if it is missing, and pays its own fee.
+ * service's dollar account first if it is missing, and pays its own fee.
  */
 export function payReferenceIxs(p: { from: PublicKey; to: PublicKey; reference: string; units: bigint; token: escrow.Token }): TransactionInstruction[] {
   const into = escrow.associatedTokenAddress(p.to, p.token.mint, p.token.program)

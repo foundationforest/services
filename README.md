@@ -70,7 +70,7 @@ on `main`, from a clean install, six jobs:
 ./standard.sh
 (cd standard/proofs/reputation/circuit && npm run fetch)   # for the index's tests
 
-(cd verifier && npm ci && npm run fetch && npm run check && npm test)   # needs e2e and host installed
+(cd verifier && npm ci && npm run fetch && npm run check && npm test)   # needs host installed
 (cd index && npm ci && npm run check && npm test)
 (cd fee-payer && npm ci && npm run check) && bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
 (cd host && npm ci && npm run check && npm test)

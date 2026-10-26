@@ -5,7 +5,7 @@
 import { readdirSync } from 'node:fs'
 import type { Tool } from './params.ts'
 
-export const HOW = `Forest: people offer, pay and review each other directly, through profiles they own, with nobody in the middle. This is the person's Forest connector. It reads what is public, and passes what you ask to the person's signer: Forest on one of their own devices, which acts for them by the permissions they set. It keeps nothing, and holds no key.
+export const HOW = `Forest: people offer, pay and review each other directly, through profiles they own, with nobody in the middle. This is the person's Forest connector. It reads what is public, and passes what you ask to the person's signer: Forest on one of their own devices, which acts for them by the rules they set. It keeps nothing, and holds no key.
 
 - A profile is one of a person's identities, one per market and role, such as tutoring/tutor. Its records (its profile record, its posts, its reviews) live on hosts anyone reads. Nothing public links one of a person's profiles to another: keep it so.
 - A verifier checks a person and signs them a stamp; a profile shows a proof of its stamp without saying who the person is. An index reads hosts, lists posts, says which verifiers' stamps each profile shows, and rates it: its own word.

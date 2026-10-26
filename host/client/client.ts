@@ -8,9 +8,9 @@
 // tickets; the buy, and its pay link when there is a payment to make; finishing the credits from the
 // service's answer; listing them for a spend. It talks to no network of its own. The blinding and
 // the signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
-// memory only, so the buy here keeps it as bytes, to finish later, on any device, from the vault.
-// The host checks and sells credits with its own code (host/credits/), on the same wire format. The
-// e2e loop buys with this, and so do the issuer's tests.
+// memory only, so the buy here keeps it as bytes, to finish later, from what the app keeps. The
+// host checks and sells credits with its own code (../credits/), on the same wire format. The e2e
+// loop buys with this, and so do the verifier's tests.
 
 import { AuthenticatorInput, Token, TokenChallenge, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad } from '@scure/base'
@@ -46,10 +46,10 @@ export type Service = {
   price: string
 }
 
-/** A credit, as the vault keeps it: the service's origin, and the credit's bytes in base64url. */
+/** A credit, as the app keeps it: the service's origin, and the credit's bytes in base64url. */
 export type Credit = { service: string; credit: string }
 
-/** A buy waiting for its answer, as the vault keeps it: what `finish` needs, all of it bytes. */
+/** A buy waiting for its answer, as the app keeps it: what `finish` needs, all of it bytes. */
 export type Pending = {
   service: string
   /** The service's credit key, base64url. */
@@ -147,7 +147,7 @@ export function amountOf(price: string, count: number): string {
 /**
  * A buy of `count` credits: the requests, blinded so the service never sees what it signs; the
  * reference a payment or a sponsor's ticket names this buy by; when the service takes a payment, the
- * pay link anyone pays it with; and what the app keeps to finish the credits, in the vault. Whoever
+ * pay link anyone pays it with; and what the app keeps to finish the credits. Whoever
  * holds the buy can collect it, once paid; only the app holding `pending` can finish the credits.
  */
 export async function buy(service: Service, count: number): Promise<{ buy: Uint8Array; reference: string; payLink?: string; pending: Pending }> {
@@ -173,7 +173,7 @@ export async function buy(service: Service, count: number): Promise<{ buy: Uint8
   return { buy: bytes, reference, payLink, pending }
 }
 
-/** A pending buy's shape, as the vault keeps it. Throws on any other. */
+/** A pending buy's shape, as the app keeps it. Throws on any other. */
 export function checkPending(value: unknown): asserts value is Pending {
   if (!isObject(value)) throw new Error('a pending buy is an object')
   for (const k of Object.keys(value)) if (!['service', 'key', 'buy', 'blinds'].includes(k)) throw new Error(`unknown pending field ${k}`)
@@ -224,7 +224,7 @@ export const CREDIT_BYTES = 2 + 32 + 32 + 32 + 256
  */
 const own = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes)
 
-/** A credit's bytes, from the vault's form or as they are: exactly CREDIT_BYTES, in an array of their own. */
+/** A credit's bytes, from the form the app keeps or as they are: exactly CREDIT_BYTES, in an array of their own. */
 function bytesOf(credit: Credit | Uint8Array | string): Uint8Array {
   const bytes = own(credit instanceof Uint8Array ? credit : b64u.decode(typeof credit === 'string' ? credit : credit.credit))
   if (bytes.length !== CREDIT_BYTES) throw new Error(`not a credit: a credit is ${CREDIT_BYTES} bytes`)

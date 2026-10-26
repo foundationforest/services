@@ -8,7 +8,7 @@
 // The kinds of record a market defines are read from the format, not written here: a kind is a
 // top-level property of a market file that is fields (`offer`) or holds fields beside shared names
 // (`review`). A record of a kind sits at `<kind>/<id>`. So a market that adds a kind needs only
-// MARKETS to move, and no kind is ever `profile`, `hosts` or the vault.
+// MARKETS to move, and no kind is ever `profile`, `hosts` or `rule`.
 //
 // A field the market marks `required` is not asked for here: the markets manual says an app asks
 // for it and nothing enforces it.
@@ -165,7 +165,8 @@ const SHARED: { [name: string]: (value: unknown) => void } = {
   score: (v) => (typeof v === 'string' && /^(10(\.0)?|[1-9](\.[0-9])?)$/.test(v)) || refuse('score is "1" to "10" as decimal text, at most one decimal, such as "8.5"'),
   text: (v) => typeof v === 'string' || refuse('text takes text'),
   offer: (v) => checkPostAddress(v, 'offer'),
-  evidence: (v) => typeof v === 'string' || refuse('evidence takes text: <chain>:<id>, a payment\'s or an escrow\'s'),
+  // A review's evidence is the person's signer's: it names the payment the profile made for the review's offer.
+  evidence: () => refuse("evidence is the person's signer's to fill, from the payment it made for the review's offer: leave evidence out"),
 }
 
 /**

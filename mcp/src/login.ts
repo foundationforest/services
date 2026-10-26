@@ -12,8 +12,8 @@
 // checks them, so a MAC is enough: no public half is needed. The MAC covers the kind, so a code is
 // never a token. What one cannot hold without a store: a code works more than once in its 60
 // seconds (only the AI app holding its PKCE verifier can use it). A token carries no expiry, so
-// there is no refresh token: a connection ends when the person removes it from their permissions,
-// at their signer, which then serves it no more.
+// there is no refresh token: a login ends when the person removes its rules, at their signer, which
+// then serves it no more.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -70,7 +70,7 @@ type Body = { [key: string]: unknown }
 type Client = { id: string; name: string; redirects: string[] }
 
 export type LoginSettings = {
-  /** This copy's origin: the authorization server, the resource, and the connector in a person's permissions. */
+  /** This copy's origin: the authorization server, the resource, and the connector in a person's rules. */
   origin: string
   /** The app's connect page; without it, logins wait. */
   appUrl?: string

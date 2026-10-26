@@ -6,7 +6,7 @@
 #                from its stamps and checked against its published keys, the facts vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its welcome gift's ticket taken by the host's own seller, bought with
-#                e2e's credits client
+#                the host's credits client
 #   index        its type-check and its tests, on loopback: the standard's reference host, real stamp
 #                proofs from the stamp circuit's committed proving files, a real reputation proof (the
 #                reputation circuit's proving files, fetched), a stand-in RPC, and the index end to end
@@ -58,7 +58,6 @@ jobs:
       - name: Install
         run: |
           ./standard.sh
-          (cd e2e && npm ci --no-audit --no-fund)
           (cd host && npm ci --no-audit --no-fund)
           (cd verifier && npm ci --no-audit --no-fund && npm run fetch)
       - name: Type-check

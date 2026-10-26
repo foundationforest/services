@@ -7,7 +7,7 @@ import type { Args, Ctx, Param } from '../params.ts'
 
 export const name = 'pay'
 export const description =
-  "Pay for a post, in US dollars, from the person's profile with this role in the post's market. The person's signer pays within the limits the person set, and asks them for the rest. Answers done with the payment's evidence, to name in a review, needs approval with a link for the person, or refused. Needs the person's login."
+  "Pay for a post, in US dollars, from the person's profile with this role in the post's market. The person's signer pays within the limits the person set, and asks them for the rest. Asked again for the same post and amount within an hour, it pays nothing more; another payment for a post already paid needs the person's yes. Answers done, needs approval with a link for the person, or refused. A review of this post from the same profile then carries the payment as its evidence, which the signer fills in. Needs the person's login."
 export const params: Param[] = [
   { name: 'offer', type: 'string', required: true, description: "The post's address: <profile address>/offer/<id>." },
   { name: 'role', type: 'string', required: true, description: "The role of the person's profile that pays, in the post's market, such as student." },

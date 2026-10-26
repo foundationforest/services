@@ -18,7 +18,7 @@ import { hkdf, seedScalar, serviceKey, verifierSecret } from '@foundationforest/
 import { checkStamp, proveStamp, stampFromJson, stampSigned } from '@foundationforest/stamp'
 import { b64u, canonical, parseCanonical } from '@foundationforest/records'
 
-import { buy, finish, serviceOf } from '../../e2e/credits/client.ts'
+import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
 import { DiditClient } from '../src/didit.ts'

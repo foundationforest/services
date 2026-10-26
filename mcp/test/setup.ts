@@ -6,7 +6,8 @@
 // Two people:
 // - the person, whose signer holds three profiles, tutoring/tutor, tutoring/student and
 //   clothing/seller, and pays with a stand-in that only counts;
-// - a stranger, a tutoring/tutor with an offer, who wrote to the person's tutor profile.
+// - a stranger, a tutoring/tutor with three offers, physics, chemistry and biology, who wrote to the
+//   person's tutor profile.
 //
 // And an AI app: the MCP SDK's own client, with an OAuth provider that follows the browser's
 // redirects through the login, by registration (DCR) or by a client document (CIMD).
@@ -55,10 +56,10 @@ async function listen(server: Server): Promise<string> {
 
 const close = (server: Server) => new Promise((resolve) => server.close(resolve))
 
-/** The stand-in index: the four answers, in the index's JSON as #77 left it. */
+/** The stand-in index: the four answers, in the index's JSON as #83 left it. */
 async function standIn(stranger: string, offer: string): Promise<{ url: string; server: Server }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face' }]
-  const rating = { value: '9.2', reviews: 14, withPayment: 11, statement: '{}', signature: 'x' }
+  const rating = { value: 9.2, backing: 3.4, reviews: 14, statement: '{}', signature: 'x' }
   const result = { profile: stranger, market: 'tutoring', role: 'tutor', post: { address: offer, body: lesson('Physics, from the stranger.') }, rating, checks }
   const files: { [path: string]: unknown } = {
     '/index.json': { index: 'stand-in', markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }], lists: {} },
@@ -171,11 +172,14 @@ export type World = {
   index: string
   appUrl: string
   person: Signer
+  /** The person's seed, for another of their devices in a test: never given to an AI app. */
+  seed: Uint8Array
   /** The person's profiles' addresses, by label: for the tests to read their hosts, never given to an AI app. */
   own: { [label: string]: string }
-  stranger: { address: string; offer: string; tutor: Awaited<ReturnType<typeof mainKey>> }
-  /** Every payment the person's signer made. */
-  paid: Array<{ to: string; amount: string }>
+  /** The stranger: `offer` is the physics one, and `offers` all three by subject. */
+  stranger: { address: string; offer: string; offers: { [subject: string]: string }; tutor: Awaited<ReturnType<typeof mainKey>> }
+  /** Every payment the person's signer made, with the evidence it gave back. */
+  paid: Array<{ to: string; amount: string; evidence: string }>
   dataDir: string
   close: () => Promise<void>
 }
@@ -188,10 +192,12 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
 
   const paid: World['paid'] = []
   const payWith: PayWith = async ({ to, amount }) => {
-    paid.push({ to, amount })
-    return `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:stand-in-payment-${paid.length}`
+    const evidence = `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:stand-in-payment-${paid.length + 1}`
+    paid.push({ to, amount, evidence })
+    return evidence
   }
-  const person = new Signer({ seed: newSeed(), hosts, appUrl: 'https://app.forest.test', payWith })
+  const seed = newSeed()
+  const person = new Signer({ seed, hosts, appUrl: 'https://app.forest.test', payWith })
   const own: World['own'] = {}
   for (const label of ['tutoring/tutor', 'tutoring/student', 'clothing/seller']) own[label] = await person.addProfile(label)
   const personTutor = own['tutoring/tutor']!
@@ -199,7 +205,9 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const tutor = await mainKey(newSeed(), 'tutoring/tutor')
   const now = Date.now()
   const profile = { market: 'tutoring', role: 'tutor', inboxKey: (await inboxKey(tutor.secret)).encryptTo, inbox: { senders: 'anyone' }, pay: { ...(await payAddresses(newSeed(), 'tutoring/tutor')) } }
-  await publish(hosts, [hostsRecord(tutor, hosts, now), ownerRecord(tutor, 'profile', profile, now), ownerRecord(tutor, 'offer/physics', lesson('Physics, from the stranger.'), now)])
+  const subjects = ['physics', 'chemistry', 'biology']
+  const offered = subjects.map((s) => ownerRecord(tutor, `offer/${s}`, lesson(`${s[0]!.toUpperCase()}${s.slice(1)}, from the stranger.`), now))
+  await publish(hosts, [hostsRecord(tutor, hosts, now), ownerRecord(tutor, 'profile', profile, now), ...offered])
   const theirs = (await readProfile(hosts, personTutor, Date.now())).current.get('profile')!.record.body!
   await deliver(hosts, [await message({ from: tutor, host: hosts[0]! }, personTutor, { text: 'Hello from a stranger: do you teach physics too?' }, Date.now(), theirs)])
   const offer = `${tutor.address}/offer/physics`
@@ -215,8 +223,9 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
     index: index.url,
     appUrl: page.url,
     person,
+    seed,
     own,
-    stranger: { address: tutor.address, offer, tutor },
+    stranger: { address: tutor.address, offer, offers: Object.fromEntries(subjects.map((s) => [s, `${tutor.address}/offer/${s}`])), tutor },
     paid,
     dataDir,
     close: async () => {

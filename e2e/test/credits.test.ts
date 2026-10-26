@@ -1,9 +1,9 @@
-// The credits buyer (credits/client.ts). First against the host's own code, started here on loopback
+// The credits buyer (host/client/client.ts). First against the host's own code, started here on loopback
 // as it runs (host/src/host.ts): a host that sells only for its sponsors' tickets, and one that sells
 // for a dollar on Solana, its payment checked through a stand-in RPC; each bought from, collected,
 // finished and spent into a folder, as the loop and an app do. Then the client alone, against a
 // stand-in service made of Cloudflare's own Privacy Pass issuer and origin: the directory, the buy,
-// the credits finished and listed, a buy finished later from what the vault keeps, and every answer
+// the credits finished and listed, a buy finished later from what the app keeps, and every answer
 // that must finish nothing. The host's own checks of a credit are tested in host/.
 
 import assert from 'node:assert/strict'
@@ -20,7 +20,7 @@ import { base58, base64urlnopad as b64u } from '@scure/base'
 import { ticketMessage } from '../../host/credits/credit.ts'
 import type { Rpc } from '../../host/credits/seller.ts'
 import { type RunningHost, readConfig, startHost } from '../../host/src/host.ts'
-import { CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, type Pending, buy, challengeOf, checkPending, creditList, finish, referenceOf, serviceOf } from '../credits/client.ts'
+import { CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, type Pending, buy, challengeOf, checkPending, creditList, finish, referenceOf, serviceOf } from '../../host/client/client.ts'
 
 const { BLIND_RSA, BlindRSAMode, Issuer, Origin, getPublicKeyBytes } = publicVerif
 const T = Date.UTC(2026, 9, 9)
@@ -197,12 +197,12 @@ test('the credits: finished from the answer, each a Privacy Pass token Cloudflar
     assert.equal(await new Origin(BlindRSAMode.PSS).verify(token, stand.keys.publicKey), true, 'a Privacy Pass token, as Cloudflare checks one')
   }
   const list = creditList(credits)
-  assert.deepEqual(list, credits.map((c) => c.credit), 'each credit as the vault keeps it')
+  assert.deepEqual(list, credits.map((c) => c.credit), 'each credit as the app keeps it')
   assert.deepEqual(creditList(credits.map((c) => b64u.decode(c.credit))), list, 'the same from bytes')
   assert.throws(() => creditList([...list, 'AAAA']), /not a credit/)
 })
 
-test('the same buy collected twice gives the same credits; what the vault keeps finishes it later', async () => {
+test('the same buy collected twice gives the same credits; what the app keeps finishes it later', async () => {
   const b = await buy(stand.info, 2)
   const first = await stand.answer(b.buy)
   const again = await stand.answer(b.buy)

@@ -1,5 +1,5 @@
 {
-  "about": "What a run of the loop runs against. Each service is its origin, or null for the loop's own copy, started on loopback from this repo (services.ts). The host and the fee payer named here are used as deployed; the verifier, the index and the mcp are always the loop's own, and one named here is only checked to answer. rpc is the chain's public RPC, which RPC_URL replaces; escrow is the standard's program on that chain, testDollar the classic test dollar the loop mints and pays in, and market the market the two people deal in.",
+  "about": "What a run of the loop runs against. Each service is its origin, or null for the loop's own copy, started on loopback from this repo (services.ts). The host and the fee payer named here are used as deployed; the verifier, the index and the mcp are always the loop's own, and one named here is only checked to answer. rpc is the chain's public RPC, which RPC_URL replaces; escrow is the standard's program on that chain, testDollar the dollar the loop pays in, Circle's USDC on that chain, which the phrase's deploy key holds and sends, and market the market the two people deal in.",
   "verifier": null,
   "host": null,
   "feePayer": null,
@@ -7,6 +7,6 @@
   "mcp": null,
   "rpc": "https://api.devnet.solana.com",
   "escrow": "38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J",
-  "testDollar": "537LFFpTfrbvopMQwi8wSTc767PsWjqwptNmBtUGj7bt",
+  "testDollar": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
   "market": "tutoring"
 }

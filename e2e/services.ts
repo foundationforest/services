@@ -9,7 +9,7 @@
 //   the verifier   verifier/src, with the stand-in Didit its tests run (verifier/test/fake-didit.ts,
 //                  a process of its own) and the stand-in face model; its own name and seed in a
 //                  directory of its own; no gift, since a deployed host takes no loop's tickets
-//   the host       host/src, as `npm start` runs it, selling credits for the test dollar, paid to
+//   the host       host/src, as `npm start` runs it, selling credits for the loop's dollar, paid to
 //                  `payTo`, and checked through the RPC
 //   the fee payer  fee-payer/run.sh, a process of its own: Kora, with the kora.toml its image runs
 //                  (fee-payer/deploy/devnet-config.sh), a fresh key made at its first start, which
@@ -40,7 +40,7 @@ import { readConfig as verifierConfig, startVerifier } from '../verifier/src/ser
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..')
 
-/** services.json: each service's origin, or null for the loop's own; the RPC, the escrow, the test dollar, the market. */
+/** services.json: each service's origin, or null for the loop's own; the RPC, the escrow, the dollar the loop pays in, the market. */
 export type Services = {
   verifier: string | null
   host: string | null
@@ -77,7 +77,7 @@ export type Running = {
   host: string
   feePayer: string
   index: { url: string; address: string }
-  /** The loop's own mcp: its origin, which a person's permissions name as the connector. */
+  /** The loop's own mcp: its origin, which a person's rules name as the connector. */
   mcp: string
   /** The loop's own fee payer's key, which the loop funds; null when the fee payer is deployed. */
   ownFeePayer: string | null
@@ -200,7 +200,7 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     )
     closers.push(() => verifier.close())
 
-    // The host, selling for the test dollar.
+    // The host, selling for the loop's dollar.
     let host = s.host
     if (!host) {
       const port = await freePort()
@@ -243,7 +243,7 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
         { key: verifier.keys.id, verifier: VERIFIER_NAME, label: 'ID check', points: 2 },
       ],
     })
-    write('indexes.json', { roots: 10, indexes: [{ index: 'self', name: 'e2e loop index' }] })
+    write('indexes.json', { maxAgeDays: 30, indexes: [{ index: 'self', name: 'e2e loop index' }] })
     const indexPort = await freePort()
     const indexUrl = `http://127.0.0.1:${indexPort}`
     const index = await startIndex({ dataDir: join(dir, 'index'), publicUrl: indexUrl, settings: { RPC_URL: o.rpcUrl }, readSeconds: 5, listsRoot: lists, port: indexPort, hostname: '127.0.0.1', log: log('loop index') })
