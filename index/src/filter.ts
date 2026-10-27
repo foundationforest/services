@@ -8,9 +8,9 @@
 //   5. checks (the stamp client's `checkStamp`);
 //   6. was first seen by this index no later than the key's `until`, when the list gives one.
 //
-// A counted profile starts the ranking with the points of its counted keys, the largest one: two
-// keys of one verifier are one person checked twice (README.md, FAQ). Each counted proof gives the
-// profile's tag for its label at that verifier, the tree's leaf (tree.ts).
+// A counted profile's uniqueness is 1 - prod(1 - c) over the confidences of the keys its proofs count
+// for, each key once (rank.ts): the chance that at least one of its checks holds. Each counted proof
+// gives the profile's tag for its label at that verifier, the tree's leaf (tree.ts).
 
 import { createHash } from 'node:crypto'
 
@@ -19,6 +19,7 @@ import { checkStamp } from '@foundationforest/stamp'
 
 import type { ListedKey } from './lists.ts'
 import type { Markets } from './markets.ts'
+import { uniqueness } from './rank.ts'
 import type { Store } from './store.ts'
 
 /** One check a counted profile passed: the verifier's name, its key, and what the pages call its check. */
@@ -29,7 +30,8 @@ export type StampResult = { circuit: 'stamp'; verifier: string | null; key: stri
 
 export type Filtered = {
   counted: boolean
-  points: number
+  /** From 0 to 1, from the keys its proofs count for. */
+  uniqueness: number
   checks: Check[]
   /** The profile's tags from its counted proofs, each with its label, in hex. */
   tags: Array<{ tag: string; label: string }>
@@ -58,7 +60,8 @@ function firstSeen(store: Store, profile: string, key: string, tag: string, now:
 }
 
 export async function filter(store: Store, profile: Profile, keys: ListedKey[], markets: Markets, now: number): Promise<Filtered> {
-  const out: Filtered = { counted: false, points: 0, checks: [], tags: [], stampProofs: new Map() }
+  const out: Filtered = { counted: false, uniqueness: 0, checks: [], tags: [], stampProofs: new Map() }
+  const confidences = new Map<string, number>()
   const market = profile.market ? markets.get(profile.market) : undefined
   const inDirectory = !!market && market.roles.some((r) => r.role === profile.role)
   const label = `${profile.market}/${profile.role}`
@@ -90,12 +93,13 @@ export async function filter(store: Store, profile: Profile, keys: ListedKey[], 
       } else {
         result = COUNTS
         out.counted = true
-        out.points = Math.max(out.points, listed.points)
+        confidences.set(listed.key, listed.confidence)
         if (!out.checks.some((c) => c.key === listed.key)) out.checks.push({ verifier: listed.verifier, key: listed.key, label: listed.label })
         if (!out.tags.some((t) => t.tag === tag)) out.tags.push({ tag, label })
       }
     }
     out.stampProofs.set(i, said(result))
   }
+  out.uniqueness = uniqueness([...confidences.values()])
   return out
 }

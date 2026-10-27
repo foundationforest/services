@@ -1,7 +1,8 @@
-// The tree: the served leaves, each carrying its rating and its backing times ten, rebuild the
-// served root, which the index's key signed as the reputation client expects; a reputation proof
-// made from those leaves shows on the profile that carries it, and not on another, nor against a
-// root this index signed more than maxAgeDays ago, unless it is the newest.
+// The tree: the served leaves, one per counted profile's tag, each carrying that profile's trust with
+// a count of 1, rebuild the served root, which the index's key signed as the reputation client
+// expects; a reputation proof made from those leaves shows on the profile that carries it, with the
+// trust it carries, and not on another, nor against a root this index signed more than maxAgeDays
+// ago, unless it is the newest.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -38,7 +39,7 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   for (const p of [tutor, ...students, later]) await publishProfile(host.url, p)
   await post(host.url, students.map((s) => at(s, 'review/one', { subject: tutor.key.address, score: '9' })))
 
-  const keys = [first, second].map((v) => ({ key: v.key, verifier: v.name, label: 'face check', points: 1 }))
+  const keys = [first, second].map((v) => ({ key: v.key, verifier: v.name, label: 'face check', confidence: 0.75 }))
   let clock = Date.now()
   const i = await index({ hosts: [host.url], keys }, rpc.url, { now: () => clock })
   assert.equal((await twin(i, '/v1/reputation')).status, 404)
@@ -47,13 +48,17 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const served = (await twin<Served>(i, '/v1/reputation')).body
   const { leaves } = (await twin<Leaves>(i, '/v1/reputation/leaves')).body
   assert.equal(served.index, i.address)
-  // One leaf per tag: the tutor's two, one for each verifier; the students have no rating. Each
-  // carries the tutor's rating and backing times ten: three writers' backing, more than one review's.
-  assert.deepEqual(leaves.map((l) => l.tag).sort(), tutor.proofs.map((p) => p.tag).sort())
-  const rating = async () => (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body.rating
-  const { value, backing } = await rating()
-  assert.ok(Math.round(backing * 10) > 1, `${backing}`)
-  assert.deepEqual(leaves.map((l) => [l.score, l.count]), [0, 1].map(() => [Math.round(value! * 10), Math.round(backing * 10)]))
+  // One leaf per tag of every counted profile: the tutor's two, one for each verifier, and each
+  // student's. A leaf's score is its profile's trust, as its page shows it, and its count is 1.
+  const people = [tutor, ...students, later]
+  assert.deepEqual(leaves.map((l) => l.tag).sort(), people.flatMap((p) => p.proofs.map((x) => x.tag)).sort())
+  const trustOf = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.trust
+  for (const p of people) {
+    for (const proof of p.proofs) assert.deepEqual([leaves.find((l) => l.tag === proof.tag)!.score, leaves.find((l) => l.tag === proof.tag)!.count], [await trustOf(p), 1])
+  }
+  const value = await trustOf(tutor)
+  // Three students' ratings are three vouches: more than a newcomer's half of its uniqueness.
+  assert.ok(value > Math.round(100 * (1 - 0.25 * 0.25) / 2), `${value}`)
   const asLeaves = (ls: Leaves['leaves']) => ls.map((l) => ({ tag: BigInt('0x' + l.tag), scope: BigInt('0x' + l.scope), score: BigInt(l.score), count: BigInt(l.count) }))
   const root = buildTree(asLeaves(leaves)).root
   assert.equal(hex.encode(toBytes32(root)), served.root)
@@ -86,11 +91,11 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const results = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.proofs
   const t = await results(tutor)
   assert.deepEqual(t.map((x) => x.result), ['counts', 'counts', 'shown', 'it does not check'])
-  assert.deepEqual({ ...t[2] }, { circuit: 'reputation', index: i.address, rating: value, label: 'tutoring/tutor', time: served.time, result: 'shown' })
+  assert.deepEqual({ ...t[2] }, { circuit: 'reputation', index: i.address, trust: value, label: 'tutoring/tutor', time: served.time, result: 'shown' })
   assert.equal((await results(students[0]!))[1]!.result, 'it does not check')
   assert.deepEqual((await twin<Served>(i, '/v1/reputation')).body, served)
 
-  // A new rating moves the tree a day on; the proof's root, no longer the newest, shows while this
+  // A new rating, a vouch too, moves the tutor's trust and the tree a day on; the proof's root, no longer the newest, shows while this
   // index signed it within 30 days: 29 days on it does, 31 days on it does not.
   await post(host.url, [at(later, 'review/two', { subject: tutor.key.address, score: '5' })])
   clock = served.time + DAY

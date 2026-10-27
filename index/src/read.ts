@@ -9,6 +9,8 @@
 //   offer/<id>   a post; a delete keeps its last body here for good, marked deleted, so a review
 //                that names it still finds it
 //   review/<id>  a review; a delete removes it
+//   vouch/<id>   a vouch; a delete removes it
+//   report/<id>  a report; a delete removes it
 //
 // A private record is left alone at any path: it is encrypted to its readers. Other paths are not
 // this index's.
@@ -19,6 +21,11 @@ import type { Store } from './store.ts'
 
 const POST = /^offer\/[^/]+$/
 const REVIEW = /^review\/[^/]+$/
+/** Vouches and reports, each kind into its own table, as reviews are. */
+const SAID = [
+  { path: /^vouch\/[^/]+$/, table: 'vouches' },
+  { path: /^report\/[^/]+$/, table: 'reports' },
+]
 
 /** Every record new on each host since its cursor; the profiles they are for. A host that fails is logged and skipped. */
 export async function readHosts(store: Store, hosts: string[], log: (line: string) => void): Promise<Set<string>> {
@@ -73,7 +80,7 @@ function textOf(value: unknown): string {
 
 const live = (c: Checked | undefined) => (c && c.record.body !== null && !isPrivate(c.record.body) ? c : undefined)
 
-/** Each profile viewed again from every record held for it, at `now`, into profiles, posts and reviews. */
+/** Each profile viewed again from every record held for it, at `now`, into profiles, posts, reviews, vouches and reports. */
 export function viewAgain(store: Store, profiles: Iterable<string>, now: number): void {
   const { db } = store
   const recordsOf = db.prepare('select id, text from records where profile = ?')
@@ -92,6 +99,13 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
   const upsertReview = db.prepare(`insert into reviews (address, reviewer, subject, body, time) values (?, ?, ?, ?, ?)
     on conflict (address) do update set subject = excluded.subject, body = excluded.body, time = excluded.time`)
   const dropReview = db.prepare('delete from reviews where address = ?')
+  const said = SAID.map((k) => ({
+    ...k,
+    of: db.prepare(`select address from ${k.table} where writer = ?`),
+    upsert: db.prepare(`insert into ${k.table} (address, writer, subject, body, time) values (?, ?, ?, ?, ?)
+      on conflict (address) do update set subject = excluded.subject, body = excluded.body, time = excluded.time`),
+    drop: db.prepare(`delete from ${k.table} where address = ?`),
+  }))
 
   store.tx(() => {
     for (const profile of profiles) {
@@ -109,6 +123,7 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
 
       const posts = new Set<string>()
       const reviews = new Set<string>()
+      const saidHere = new Set<string>()
       for (const [path, c] of view.current) {
         const it = live(c)
         if (!it) continue
@@ -122,6 +137,12 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
           reviews.add(address)
           const subject = (it.record.body as { subject?: unknown }).subject
           upsertReview.run(address, profile, typeof subject === 'string' ? subject : null, JSON.stringify(it.record.body), it.record.time)
+        } else {
+          const kind = said.find((k) => k.path.test(path))
+          if (!kind) continue
+          saidHere.add(address)
+          const subject = (it.record.body as { subject?: unknown }).subject
+          kind.upsert.run(address, profile, typeof subject === 'string' ? subject : null, JSON.stringify(it.record.body), it.record.time)
         }
       }
       for (const r of postsOf.all(profile)) if (!posts.has(r.address as string)) deletePost.run(r.address as string)
@@ -134,6 +155,7 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
         if (last) keepDeleted.run(address, profile, JSON.stringify(last.record.body), last.record.time)
       }
       for (const r of reviewsOf.all(profile)) if (!reviews.has(r.address as string)) dropReview.run(r.address as string)
+      for (const k of said) for (const r of k.of.all(profile)) if (!saidHere.has(r.address as string)) k.drop.run(r.address as string)
     }
   })
 }

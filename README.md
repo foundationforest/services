@@ -23,7 +23,7 @@ service here helps with one part, and holds none of it for the person:
 | One seed and its profiles | A main key from the seed for each profile's label (its market and role, such as `tutoring/tutor`), the records it signs, and each profile's rules, encrypted so only the person's own devices open them | Each record's signature, against the profile's address | The **host** keeps each profile's folder (every record its main key signs there), its rules among its records, and its inbox, and serves the records to anyone |
 | Verified once | A stamp, a verifier's signature to their seed saying it checked them, which any of their profiles shows as a stamp proof | The proof, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
 | Offers and reviews in public | The offers and reviews each profile signs, each review naming its evidence: a payment, or the receipt of an escrow (money held on the chain by a program, and paid out as the deal says) | Each record's signature; each review's evidence, on chain | The **host** keeps them; the **fee payer** pays the chain's fees for the payment a review names, for a person who holds dollars and none of the chain's own coin |
-| Indexes rank them | A rating, and a reputation proof that carries it to another of their profiles without linking them | Each rating, and the root of the index's tree (one number that stands for all its ratings), against the index's key; the proof, against the root | The **index** reads the hosts and the chain, rates each profile, and signs what it says |
+| Indexes rank them | Ratings and a trust, and a reputation proof that carries the trust to another of their profiles without linking them | Each signed statement, and the root of the index's tree (one number that stands for all its trusts), against the index's key; the proof, against the root | The **index** reads the hosts and the chain, ranks each profile, and signs what it says |
 
 **The mcp** is the AI's door to all of it, over MCP (the Model Context Protocol, the way AI apps
 call outside tools): it reads what hosts and indexes say, and carries what an AI app asks to the
@@ -34,8 +34,8 @@ person's signer, and the answer back.
 - **[standard](https://github.com/foundationforest/standard):** what two strangers' programs must
   agree on. That means formats, recipes and checks: keys, the stamp and reputation proofs, records
   and each profile's rules, and the escrow. Every service here uses its pieces unchanged.
-- **[markets](https://github.com/foundationforest/markets):** what a post and a review hold, one
-  market at a time.
+- **[markets](https://github.com/foundationforest/markets):** what a post, a review, a vouch and a
+  report hold, one market at a time.
 - **services, this repo:** the foundation's copy of each service, and the loop.
 - **[app](https://github.com/foundationforest/app):** the Forest app, a signer: it holds the
   person's seed and uses any copy of any service.
@@ -46,7 +46,7 @@ person's signer, and the answer back.
 |---|---|---|
 | [`verifier`](verifier/README.md) | Checks that you are one real person, by face, through Didit, and signs you a stamp with its face key; its ID check, once it has a price, signs with its ID key | https://verifier.forest.foundation |
 | [`host`](host/README.md) | Keeps profiles' signed records, their inboxes and photos, serves the records to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
-| [`index`](index/README.md) | Reads the hosts it lists and the chains it lists, rates each profile whose stamp proof checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
+| [`index`](index/README.md) | Reads the hosts it lists and the chains it lists, ranks each profile whose stamp proof checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
 | [`fee-payer`](fee-payer/README.md) | Pays the chain's fees for a person's transaction, and charges them what that cost in the dollar they pay with | https://fee-payer.forest.foundation |
 | [`mcp`](mcp/README.md) | The AI's door: reads markets, profiles and indexes, and passes what an AI app asks to the person's signer, and the answer back | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all five, each with a signer and an AI, end to end. Not a service | |

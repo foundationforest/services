@@ -86,8 +86,9 @@ ${page.noindex ? '<meta name="robots" content="noindex">\n' : ''}<link rel="alte
 body{font:16px/1.5 system-ui,sans-serif;max-width:46rem;margin:0 auto;padding:0 1rem;color:#1b1b1b;background:#fff}
 a{color:#205d3b}header,footer{padding:1rem 0;color:#555}header a{margin-right:1rem}
 section{border-top:1px solid #ddd;padding:.5rem 0}.muted{color:#666}.no{color:#8a2a2a}
+.badge{display:inline-block;border:1px solid #9bc4a9;border-radius:.75rem;padding:0 .5rem;font-size:.85em}
 form input{font:inherit;padding:.25rem}code{font-size:.9em;word-break:break-all}
-@media (prefers-color-scheme:dark){body{color:#e6e6e6;background:#151515}a{color:#8fd1a8}.muted,header,footer{color:#aaa}.no{color:#e59a9a}section{border-color:#333}}
+@media (prefers-color-scheme:dark){body{color:#e6e6e6;background:#151515}a{color:#8fd1a8}.muted,header,footer{color:#aaa}.no{color:#e59a9a}section{border-color:#333}.badge{border-color:#4f7a5f}}
 </style>
 <script type="application/ld+json">${ld}</script>
 </head>

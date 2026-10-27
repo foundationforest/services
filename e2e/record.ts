@@ -56,10 +56,9 @@ const count: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 0
 const text: Check = (v) => typeof v === 'string' && v.length > 0
 /** A rating as the index shows it: 1 to 10, one decimal. */
 const rating: Check = (v) => typeof v === 'number' && v >= 1 && v <= 10 && Math.round(v * 10) === v * 10
-/** A backing as the index shows it: above 0, one decimal. */
-const backing: Check = (v) => typeof v === 'number' && v > 0 && Math.round(v * 10) === v * 10
-/** A leaf's score: a rating times ten. */
-const score: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 10 && (v as number) <= 100
+/** A trust or a uniqueness as the index shows it, and a leaf's score, a trust: a whole number from 0 to 100. */
+const hundred: Check = (v) => Number.isSafeInteger(v) && (v as number) >= 0 && (v as number) <= 100
+const pickiness: Check = (v) => v === 'tough' || v === 'average' || v === 'easy'
 const words: Check = (v) => Array.isArray(v) && v.length > 0 && v.every((w) => typeof w === 'string' && w.length > 0)
 const is =
   (value: unknown): Check =>
@@ -81,8 +80,8 @@ const SHAPES: { [step in Step]: { [path: string]: Check } } = {
   mcp: { offer: text, 'found.profile': address, 'message.number': count, reply: is('done'), 'approval.tool': is('inbox'), 'approval.why': text, 'approval.approved': is('done') },
   deal: { ...prefixed('payment', paid), 'payment.evidence': evidence, 'escrow.address': address, 'escrow.version': is(4), ...prefixed('escrow.open', paid), ...prefixed('escrow.pay', paid), 'escrow.outcome': is('pay'), 'escrow.sponsor': address, 'escrow.evidence': evidence },
   reviews: { ...each(BOTH, { id: text, evidence }), 'student.postedBy': is('ai'), 'tutor.postedBy': is('app') },
-  index: { ...each(BOTH, { rating, backing, reviews: is(1) }), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },
-  reputation: { profile: address, tag: hex32, root: hex32, time: count, score, result: is('shown') },
+  index: { ...each(BOTH, { rating, count: is(1), trust: hundred, uniqueness: hundred, pickiness }), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },
+  reputation: { profile: address, tag: hex32, root: hex32, time: count, score: hundred, result: is('shown') },
   addresses: each(BOTH, { answers: count, addresses: count, held: is(0) }),
   balances: { tutor: (v) => typeof v === 'number', student: (v) => typeof v === 'number', coach: (v) => typeof v === 'number' },
 }

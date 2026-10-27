@@ -1,12 +1,13 @@
-// `/search`: listed posts, each with its profile's rating and checks, sorted by rating (README.md,
-// How it scores), then the newest post; a profile with no rating after every rated one.
+// `/search`: listed posts, each with what its profile shows (its ratings, trust, uniqueness, pickiness
+// and checks), sorted by its ratings with one unit of its market's average added (README.md, How it
+// scores), then the newest post.
 //
 //   q            words in the post, each a word's start, all of them (FTS5)
 //   market, role only that market, only posts by that role
 //   near, km     near=lat,lon: a post with a place within km kilometres of it (km is 10 unless given);
 //                a post that names no point is left out
 //   minRating    a profile rated at least this; one with no rating is left out
-//   minReviews   a profile reviewed by at least this many writers
+//   minReviews   a profile scored by at least this many raters
 //   limit        20 unless given, at most 100; offset skips that many
 
 import { offerOf, type Result, resultHtml, results } from './common.ts'
@@ -62,7 +63,7 @@ export const search: Page<SearchPage> = {
     const minRating = number(q, 'minRating')
     if (minRating !== null) where.push('and r.value >= ?'), params.push(minRating)
     const minReviews = number(q, 'minReviews')
-    if (minReviews !== null) where.push('and coalesce(r.reviews, 0) >= ?'), params.push(minReviews)
+    if (minReviews !== null) where.push('and coalesce(r.count, 0) >= ?'), params.push(minReviews)
     let found = results(store, where.join(' '), params)
     const near = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(q.get('near') ?? '')
     if (near) {

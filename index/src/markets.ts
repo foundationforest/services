@@ -2,7 +2,7 @@
 // from this directory): directory.json, each market's file, and build/types.json. Nothing is read
 // over the network at run time.
 //
-// A market's check, for a post and for a review, reads its file as the markets manual says
+// A market's check, for a post and for a review, a vouch or a report, reads its file as the markets manual says
 // (build/README.md there), and as the mcp checks a body before it signs one: each field is one the
 // market names, for the role, of its type in types.json; a choice takes only its values; `many`
 // holds a list of the type, each different. `required` is for apps to ask for, and nothing enforces
@@ -17,6 +17,10 @@ import formats from 'ajv-formats'
 
 export type Field = { type: string; description?: string; values?: string[]; many?: true; required?: true; roles?: string[] }
 export type Role = { role: string; posts: 'offers' | 'requests' | 'posts' }
+/** The kinds of record about a profile, each naming it as its subject: review/<id>, vouch/<id>, report/<id>. */
+export type About = 'review' | 'vouch' | 'report'
+/** Each kind's plural, as its words say it and its table is named. */
+export const MANY: { [kind in About]: string } = { review: 'reviews', vouch: 'vouches', report: 'reports' }
 export type Market = {
   name: string
   description: string
@@ -25,6 +29,8 @@ export type Market = {
   /** The offer fields a post's preview shows first, in order; served as the file holds it. */
   preview?: string[]
   review: { shared: string[]; fields?: { [name: string]: Field } }
+  vouch: { shared: string[]; fields?: { [name: string]: Field } }
+  report: { shared: string[]; fields?: { [name: string]: Field } }
   payment: { [name: string]: unknown }
   howDealsGo: string
 }
@@ -37,8 +43,8 @@ export type Markets = {
   file(name: string): unknown
   /** Why a post by `role` in `market` does not fit its market, or null when it does. */
   checkPost(market: string, role: string, body: unknown): string | null
-  /** Why a review in `market` does not fit, or null when it does; `subjectRole`, when known, is the role a field's `roles` is read against. */
-  checkReview(market: string, subjectRole: string | null, body: unknown): string | null
+  /** Why a review, vouch or report in `market` does not fit, or null when it does; `subjectRole`, when known, is the role a field's `roles` is read against. */
+  checkAbout(kind: About, market: string, subjectRole: string | null, body: unknown): string | null
 }
 
 /** A post's full address, `<profile address>/offer/<id>`: its profile and its path, or null. */
@@ -52,7 +58,7 @@ export function postAddress(text: unknown): { profile: string; path: string } | 
 
 const isObject = (v: unknown): v is { [key: string]: unknown } => typeof v === 'object' && v !== null && !Array.isArray(v)
 
-/** The review fields every market shares, each by its meaning (build/README.md, Shared names). */
+/** The fields every market shares on a review, a vouch and a report, each by its meaning (build/README.md, Shared names). */
 const SHARED: { [name: string]: (value: unknown) => string | null } = {
   subject: (v) => (publicKeyFromAddress(v) ? null : 'its subject is not an address'),
   score: (v) => (typeof v === 'string' && /^(10(\.0)?|[1-9](\.[0-9])?)$/.test(v) ? null : 'its score is not "1" to "10" with at most one decimal'),
@@ -106,19 +112,19 @@ export function loadMarkets(dir: string): Markets {
       if (!market.roles.some((r) => r.role === role)) return `${role} is not a role in the ${name} market`
       return fit(body, market.offer, role, name)
     },
-    checkReview(name, subjectRole, body) {
+    checkAbout(kind, name, subjectRole, body) {
       const market = markets.get(name)
       if (!market) return `${name} is not a market in the directory`
       if (!isObject(body)) return 'it is not an object'
       const { subject: _, score: __, text: ___, offer: ____, evidence: _____, ...added } = body
       for (const shared of Object.keys(SHARED)) {
         if (!(shared in body)) continue
-        if (!market.review.shared.includes(shared)) return `the ${name} market's reviews hold no ${shared}`
+        if (!market[kind].shared.includes(shared)) return `the ${name} market's ${MANY[kind]} hold no ${shared}`
         const wrong = SHARED[shared]!(body[shared])
         if (wrong) return wrong
       }
       if (!('subject' in body)) return 'it names no subject'
-      return fit(added, market.review.fields ?? {}, subjectRole, name)
+      return fit(added, market[kind].fields ?? {}, subjectRole, name)
     },
   }
 }

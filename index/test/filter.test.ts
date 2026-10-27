@@ -1,5 +1,6 @@
 // Which profiles count: a stamp proof that checks, for a key the lists name, under that key's verifier
-// name, for the profile's own market and role, first seen no later than the key's until.
+// name, for the profile's own market and role, first seen no later than the key's until; and each
+// counted profile's uniqueness, from the keys it counts for.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -10,6 +11,7 @@ import { index, verifier, profile, publishProfile, startHost, startRpc, twin } f
 const listed = verifier('verifier.test.example')
 const other = verifier('other.test.example')
 const leaked = verifier('leaked.test.example')
+const id = verifier('id.test.example')
 let host: Awaited<ReturnType<typeof startHost>>
 let rpc: Awaited<ReturnType<typeof startRpc>>
 
@@ -23,9 +25,10 @@ after(async () => {
 })
 
 const keys = () => [
-  { key: listed.key, verifier: listed.name, label: 'face check', points: 1 },
-  { key: other.key, verifier: 'someone.else.example', label: 'face check', points: 1 },
-  { key: leaked.key, verifier: leaked.name, label: 'face check', points: 1, until: '2020-01-01T00:00:00Z' },
+  { key: listed.key, verifier: listed.name, label: 'face check', confidence: 0.75 },
+  { key: other.key, verifier: 'someone.else.example', label: 'face check', confidence: 0.75 },
+  { key: leaked.key, verifier: leaked.name, label: 'face check', confidence: 0.75, until: '2020-01-01T00:00:00Z' },
+  { key: id.key, verifier: id.name, label: 'ID check', confidence: 0.95 },
 ]
 
 test('a profile counts only with a stamp proof that checks, for a listed key, under its name, for its own market and role', async () => {
@@ -39,7 +42,9 @@ test('a profile counts only with a stamp proof that checks, for a listed key, un
   const noMarket = await profile('knitting/maker', [listed])
   const noRole = await profile('tutoring/seller', [listed])
   const afterUntil = await profile('tutoring/tutor', [leaked])
-  const all = { good, changed, unlisted, wrongName, wrongLabel, noMarket, noRole, afterUntil }
+  const twice = await profile('tutoring/tutor', [listed, listed])
+  const both = await profile('tutoring/tutor', [listed, id])
+  const all = { good, changed, unlisted, wrongName, wrongLabel, noMarket, noRole, afterUntil, twice, both }
   for (const p of Object.values(all)) await publishProfile(host.url, p)
 
   const i = await index({ hosts: [host.url], keys: keys() }, rpc.url)
@@ -50,6 +55,11 @@ test('a profile counts only with a stamp proof that checks, for a listed key, un
   assert.deepEqual(counted.checks, [{ verifier: listed.name, key: listed.key, label: 'face check' }])
   assert.equal(counted.proofs[0]!.result, 'counts')
   assert.equal(i.store.db.prepare('select counted from profiles where address = ?').get(good.key.address)!.counted, 1)
+  // Its uniqueness is its key's confidence; a key counts once, however many proofs show it; a face
+  // check and an ID check together, 1 - 0.25 x 0.05.
+  assert.equal(counted.uniqueness, 75)
+  assert.equal((await seen(twice)).uniqueness, 75)
+  assert.deepEqual([(await seen(both)).uniqueness, (await seen(both)).checks.map((c) => c.label)], [99, ['face check', 'ID check']])
 
   const why = async (p: typeof good) => {
     const o = await seen(p)

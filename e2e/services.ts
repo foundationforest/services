@@ -68,6 +68,8 @@ export function readServices(path: string): Services {
 
 /** The loop verifier's name, which each person's stamp number and tags at it are mixed from: one no real verifier has. */
 export const VERIFIER_NAME = 'verifier.e2e-loop.invalid'
+/** The confidence the loop index's lists give the loop verifier's face key, as the index's own lists give the foundation's. */
+export const FACE_CONFIDENCE = 0.75
 /** The stand-in Didit's two workflows. */
 const FACE_WORKFLOW = '00000000-0000-4000-8000-00000000f0ce'
 const ID_WORKFLOW = '00000000-0000-4000-8000-0000000001d0'
@@ -248,8 +250,8 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     write('hosts.json', { hosts: [host] })
     write('verifiers.json', {
       keys: [
-        { key: verifier.keys.face, verifier: VERIFIER_NAME, label: 'face check', points: 1 },
-        { key: verifier.keys.id, verifier: VERIFIER_NAME, label: 'ID check', points: 2 },
+        { key: verifier.keys.face, verifier: VERIFIER_NAME, label: 'face check', confidence: FACE_CONFIDENCE },
+        { key: verifier.keys.id, verifier: VERIFIER_NAME, label: 'ID check', confidence: 0.95 },
       ],
     })
     write('indexes.json', { maxAgeDays: 30, indexes: [{ index: 'self', name: 'e2e loop index' }] })
