@@ -1,5 +1,5 @@
 // A profile: its profile record and its other records from its hosts, by kind, every signature
-// checked; and the index's checks and rating for it.
+// checked; and the index's whole answer for it, untouched.
 
 import { type Body, type Checked, isPrivate, liveContent } from '@foundationforest/records'
 import { type Context, folder, indexSays } from '../forest.ts'
@@ -7,7 +7,7 @@ import type { Args, Param } from '../params.ts'
 
 export const name = 'profile'
 export const description =
-  "Any profile, read from its hosts, every signature checked: its profile record (its market, role, pay addresses, inbox and proofs; its inbox key, a long public key, is left out), and its other records by kind, such as its posts (offer) and the reviews it wrote (review), each with its full address. Also the index's checks for it (which verifiers' stamps it shows) and its rating, as the index's word. No login."
+  "Any profile, read from its hosts, every signature checked: its profile record (its market, role, pay addresses, inbox and proofs; its inbox key, a long public key, is left out), and its other records by kind, such as its posts (offer) and the reviews it wrote (review), each with its full address. Also the index's whole answer for it, untouched, as the index's word: the index tool says what it holds. No login."
 export const params: Param[] = [{ name: 'address', type: 'string', required: true, description: "The profile's address." }]
 export const relayed = false
 
@@ -34,6 +34,6 @@ export async function run(args: Args, ctx: Context) {
     hosts: view.hosts,
     profile: !record ? null : isPrivate(record) ? { private: true } : withoutKey(record),
     records,
-    index: await indexSays(ctx, `profiles/${address}.json`, ['index', 'checks', 'rating']),
+    index: await indexSays(ctx, `profiles/${address}.json`),
   }
 }

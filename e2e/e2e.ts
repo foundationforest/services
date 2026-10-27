@@ -480,8 +480,8 @@ async function main() {
   say(`mcp: the tutor's AI posted ${offerAddress}`)
 
   const found = await waitFor('the offer in the index’s search, through the mcp', INDEX_WAIT, async () => {
-    const out = await student.ai!.call('search', { q: 'maths', market, role: tutorRole })
-    return (out.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === offerAddress)
+    const out = await student.ai!.call('search', { filters: { q: 'maths', market, role: tutorRole } })
+    return (out.index.answer.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === offerAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
   await student.ai!.done('message', { market, role: studentRole, to: found.profile, text })

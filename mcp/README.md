@@ -39,27 +39,38 @@ app, calling from its maker's cloud, and that signer.
 
 ### Reading
 
-Four tools read what is public, with no login and no signer:
+Five tools read what is public, with no login and no signer:
 
 - `markets`: every market in the markets directory this copy reads, with its roles and what each
-  posts; and the markets the index lists.
+  posts.
 - `market`: a market's file, as the
   [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it,
   with `preview`, the fields a post's preview shows first (the manual's default when the file leaves
-  it out), and `kinds`, the kinds of record it defines; and its posts by role, from the index.
-- `search`: the index's search, with its filters (`q`, `market`, `role`, `near`, `km`, `minRating`,
-  `minReviews`, `limit`, `offset`).
+  it out), and `kinds`, the kinds of record it defines; and, under `index`, the index's whole answer
+  for the market.
+- `search`: the index's search. It takes `filters`, an object of text values, and passes them to the
+  index as they are; under `index`, the index's whole answer.
 - `profile`: any profile, from its hosts, every signature checked: its profile record (without its
   inbox key, about 2 KB a sender's app finds itself) and its other records by kind, each with its full
-  address; and, from the index, `checks` (which verifiers' stamps it shows a proof of; a stamp is a
-  verifier's signature that it checked the person) and `rating`.
+  address; and, under `index`, the index's whole answer for the profile.
+- `index`: what the index says about itself: `skill`, its `skill.md`, its guide for AI agents to what
+  its answers hold and which filters its search takes; and `home`, its home's JSON (`index.json`). The
+  server's instructions say to call it before reading ratings or filtering a search.
+
+**An index's answers pass through whole.** Nothing here names a field or a filter of an index's, so
+an index can change what it shows, or another index show other things, and this copy passes it on the
+same; the AI learns what each holds from the index itself, through `index`. Each answer comes as
+`{ url, word, answer }`: the URL it was read from; `word`, saying it is the index's own, passed on
+whole and unchecked; and `answer`, its JSON, or `skill.md`'s text, as the index sent it, never merged
+with this copy's own fields. An index that does not answer never hides what the hosts gave: `market`,
+`profile` and each half of `index` then give `{ url, word, unread }`, saying why; `search`, which is
+the index's alone, is refused.
 
 A folder is always read from hosts, never from an index: first from the start hosts, then from every
 host its hosts record names, by POST so the address is in no URL. A host other than the start hosts is
 reached only at a public address, through the standard's `publicFetch`; no request follows a redirect;
 a read stops after 100 pages. The markets come from `../markets`, the directory at the commit in
-`MARKETS`, never over the network. What an index says is passed on as its word, unchecked, with the
-URL it was read from; an index that does not answer never hides what the hosts gave.
+`MARKETS`, never over the network.
 
 ### Acting, through the person's signer
 
@@ -231,14 +242,15 @@ packages (`@foundationforest/keys`, `@foundationforest/records`, through file: l
 | `DATA_DIR` | Where its key is kept: `mcp-key.json`, 32 random bytes made at the first start, readable by its own user only | needed |
 | `PUBLIC_URL` | Its origin: the resource, the authorization server, and the connector in a person's rules | https://mcp.forest.foundation |
 | `APP_URL` | The app's connect page | none: logins wait |
-| `INDEX_URL` | The index read for the markets it lists, posts, search, checks and ratings | https://index.forest.foundation |
+| `INDEX_URL` | The index whose answers it passes on: its `skill.md` and home, its search, and its answer for each market and profile | https://index.forest.foundation |
 | `HOST_URLS` | Where a profile's hosts record is looked for first, comma separated | https://host.forest.foundation |
 | `PORT`, `BIND` | Where it listens | 8080, 127.0.0.1 |
 
-The tests run the standard's reference host, a stand-in index serving the four answers in the index's
-JSON as it is now, a stand-in connect page, and the reference signer, holding a person's seed with
-three profiles; a login writes a rule into the folders of their two tutoring profiles, to post,
-message, read and pay $50 a day on each:
+The tests run the standard's reference host; a stand-in index serving its `skill.md` and four
+answers in the index's JSON as it is now, each with `badge`, a field this copy has never seen, and a
+search that answers with the filters it got; a stand-in connect page; and the reference signer,
+holding a person's seed with three profiles. A login writes a rule into the folders of their two
+tutoring profiles, to post, message, read and pay $50 a day on each:
 
 - `test/login.test.ts`: reading with no login; the challenge and the metadata; the login end to end
   through the MCP SDK's own client, by registration and by a client document; each login its own
@@ -246,7 +258,12 @@ message, read and pay $50 a day on each:
   signer; refused: a login signed by a key that is not the connection's, a login changed on the way,
   an unknown AI app, a person who says no, a code with the wrong verifier or for another client, a
   token this copy did not give; with no `APP_URL`, reading works and logins wait.
-- `test/tools.test.ts`: each of the eleven tools. The login's rule in each chosen folder, encrypted
+- `test/tools.test.ts`: each of the twelve tools. The five reads, each of the index's answers whole,
+  `badge` in it, and the filters given reaching the index as they are, `badge` among them; a filter
+  that is not text refused; and no file in `src/` naming a field or filter of the index's, as its
+  `skill.md` gives them today, quoted, read as a property, written as a key or put in a query (those
+  that are also this copy's own words or the markets' are left out, since the test could not tell
+  them apart). The login's rule in each chosen folder, encrypted
   to that profile alone, the connection's key inside, and none in the third. `profiles`, the
   profiles holding a rule for the connection. Another device on the same seed serving the login from
   the rules. Inside the rules, done without asking; outside them (a profile no rule covers), needs
@@ -290,9 +307,9 @@ The foundation's copy, at https://mcp.forest.foundation:
 - **Its connect page:** this copy sends logins to the Forest app's page; another app runs its own
   copy, with its own page.
 - **What it reads:** profiles from the foundation's host first, then the hosts each profile's hosts
-  record names; markets from the directory at `MARKETS`; the markets it lists, posts, search,
-  checks and ratings from the foundation's index.
-- **The tools.** All eleven, over Streamable HTTP at its root, and at `/mcp` for connectors added
+  record names; markets from the directory at `MARKETS`; and the foundation's index, whose answers
+  it passes on whole.
+- **The tools.** All twelve, over Streamable HTTP at its root, and at `/mcp` for connectors added
   before. An AI app first gets how Forest works, as the server's instructions (`HOW` in `src/tools.ts`).
 - **Its numbers, and why:**
   - 45 seconds for a signer's answer: under the 60 seconds the MCP SDK's client waits by default, so
@@ -381,6 +398,8 @@ acts.
   given.
 - **Slow reads.** Each call reads the whole folder from every host, and checks signatures in
   JavaScript.
+- **An index's answer may repeat what the hosts gave,** a profile's inbox key among it, since nothing
+  here picks from it.
 - **No rate limit.** Anyone can keep the copy busy.
 - **Not here:** putting or deleting blobs (photos and videos), buying credits (a host's prepaid
   units of writes) for a host that charges, making a profile, views in the AI app (MCP Apps), a
@@ -398,7 +417,7 @@ acts.
   within which limits and until when; each yes; and removing a rule.
 - **The app that signs:** how it asks the person, how it numbers messages, and what it does with a
   payment asked twice.
-- **An index, by its own choice:** what its posts, checks and ratings say.
+- **An index, by its own choice:** what its answers hold, and which filters its search takes.
 - **The AI's maker:** what it keeps of a conversation, the token included.
 
 ## FAQ
