@@ -83,7 +83,7 @@ describe('reading, with no signer', () => {
     const out = await call('market', { market: 'tutoring' })
     assert.equal(out.market.howDealsGo, TUTORING.howDealsGo)
     assert.deepEqual(out.market.preview, ['subjects', 'description', 'price', 'place'])
-    assert.deepEqual(out.kinds, ['offer', 'review'])
+    assert.deepEqual(out.kinds, ['offer', 'review', 'vouch', 'report'])
     assert.deepEqual(out.index, said('/markets/tutoring.json'))
     assert.equal(out.index.answer.badge, 'early')
   })
@@ -193,9 +193,9 @@ describe('through the signer', () => {
   test('what the mcp checks is refused before anything is relayed: a kind the market does not define, the profile record, a field that does not fit', async () => {
     const before = w.person.asked.length
     const profile = await call('post', { market: 'tutoring', role: 'tutor', kind: 'profile', body: { market: 'tutoring', role: 'tutor' } })
-    assert.equal(profile.refused, 'tutoring has no kind profile: its kinds are offer, review')
+    assert.equal(profile.refused, 'tutoring has no kind profile: its kinds are offer, review, vouch, report')
     const hosts = await call('post', { market: 'tutoring', role: 'tutor', kind: 'hosts', body: { urls: ['https://evil.example'] } })
-    assert.equal(hosts.refused, 'tutoring has no kind hosts: its kinds are offer, review')
+    assert.equal(hosts.refused, 'tutoring has no kind hosts: its kinds are offer, review, vouch, report')
     const field = await call('post', { market: 'tutoring', role: 'tutor', kind: 'offer', body: { colour: 'red' } })
     assert.equal(field.refused, 'an offer in tutoring has no field colour')
     const role = await call('post', { market: 'tutoring', role: 'parent', kind: 'offer', body: {} })
