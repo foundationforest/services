@@ -76,7 +76,8 @@ test('the vouch part and the report part each change without touching the other'
   const vouched = rank(profiles, [], [said('voucher', 'x', 'vouch')], numbers).trust.get('x')!
   const reported = rank(profiles, [], [said('reporter', 'x', 'report')], numbers).trust.get('x')!
   const both = rank(profiles, [], [said('voucher', 'x', 'vouch'), said('reporter', 'x', 'report')], numbers).trust.get('x')!
-  // A report scales trust by the same part with or without the vouch, and the vouch by the same part with or without the report.
+  // A report scales trust by the same part with or without the vouch, and the vouch by the same
+  // part with or without the report.
   assert.ok(near(both / vouched, reported / nothing))
   assert.ok(near(both / reported, vouched / nothing))
   assert.ok(vouched > nothing && reported < nothing)
@@ -115,9 +116,9 @@ test('trust never passes uniqueness, a self-vouching ring included', () => {
 })
 
 test('reports that push trust both ways still settle: thirty profiles all reporting each other', () => {
-  // Moved the whole way each round, these flip for ever: trust high, so heavy reports, so trust low,
-  // so light reports. Moving half as far once the biggest move stops shrinking, they settle where
-  // trust equals what the reports leave of it.
+  // Moved the whole way each round, these flip for ever: trust high, so heavy reports, so trust
+  // low, so light reports. Moving half as far once the biggest move stops shrinking, they settle
+  // where trust equals what the reports leave of it.
   const ring = Array.from({ length: 30 }, (_, i) => ({ address: `r${i}`, uniqueness: 1 }))
   const r = rank(ring, [], ring.flatMap((w) => ring.filter((s) => s !== w).map((s) => said(w.address, s.address, 'report'))), numbers)
   assert.ok(r.rounds < numbers.maxRounds, `${r.rounds}`)
@@ -127,9 +128,9 @@ test('reports that push trust both ways still settle: thirty profiles all report
 })
 
 test("a rater who gives 1s to well-rated places counts less on low scores than a neutral rater", () => {
-  // Three places, each rated 10 by three raters; the harsh rater gives each a 1. Then the harsh rater
-  // and a neutral one, who has scored nothing else, each give the target a 1. Neither has received a
-  // word, so both have the same trust.
+  // Three places, each rated 10 by three raters; the harsh rater gives each a 1. Then the harsh
+  // rater and a neutral one, who has scored nothing else, each give the target a 1. Neither has
+  // received a word, so both have the same trust.
   const places = ['p1', 'p2', 'p3']
   const fans = ['f1', 'f2', 'f3']
   const { ratings, said: words } = rated(
@@ -155,7 +156,8 @@ test("words: each writer's one word, by its latest counted record: a report, or 
   assert.equal(word('report', 'rating'), 'vouch')
   assert.equal(word('vouch', 'report', 'vouch'), 'vouch')
   assert.equal(word('report'), 'report')
-  // Two writers, two words; a word about its own writer, or by or about a profile not given, is none.
+  // Two writers, two words; a word about its own writer, or by or about a profile not given, is
+  // none.
   const r = rank([face('a'), face('b')], [rating('a', 'b', 1)], [said('a', 'b', 'rating'), said('b', 'a', 'report'), said('a', 'a', 'vouch'), said('nobody', 'a', 'report'), said('a', 'nobody', 'vouch')], numbers)
   assert.deepEqual(
     r.words.map((w) => [w.writer, w.subject, w.word]),

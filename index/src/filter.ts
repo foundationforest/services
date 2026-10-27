@@ -8,9 +8,9 @@
 //   5. checks (the stamp client's `checkStamp`);
 //   6. was first seen by this index no later than the key's `until`, when the list gives one.
 //
-// A counted profile's uniqueness is 1 - prod(1 - c) over the confidences of the keys its proofs count
-// for, each key once (rank.ts): the chance that at least one of its checks holds. Each counted proof
-// gives the profile's tag for its label at that verifier, the tree's leaf (tree.ts).
+// A counted profile's uniqueness is 1 - prod(1 - c) over the confidences of the keys its proofs
+// count for, each key once (rank.ts): the chance that at least one of its checks holds. Each
+// counted proof gives the profile's tag for its label at that verifier, the tree's leaf (tree.ts).
 
 import { createHash } from 'node:crypto'
 

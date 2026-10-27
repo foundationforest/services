@@ -1,6 +1,7 @@
-// One pass, every READ_SECONDS: read the hosts and the chain, then filter, judge the reviews, vouches
-// and reports, check the reviews' evidence, rank each market, sign what changed, and build the tree. Everything after the
-// reading is computed again on every pass, from what the store holds.
+// One pass, every READ_SECONDS: read the hosts and the chain, then filter, judge the reviews,
+// vouches and reports, check the reviews' evidence, rank each market, sign what changed, and build
+// the tree. Everything after the reading is computed again on every pass, from what the store
+// holds.
 
 import { b64u, canonical, type Key, proofsOf } from '@foundationforest/records'
 import { packSignature, signBytes } from '@foundationforest/keys'
@@ -109,9 +110,9 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     return { kind, table, records, judged: judge(kind, records, filtered, markets) }
   })
 
-  // Rank, one market at a time: a review, a vouch or a report counts only between two profiles of one
-  // market. Each counted review is a rating, and with each counted vouch and report, a record its
-  // writer's word is drawn from.
+  // Rank, one market at a time: a review, a vouch or a report counts only between two profiles of
+  // one market. Each counted review is a rating, and with each counted vouch and report, a record
+  // its writer's word is drawn from.
   const counted = [...filtered].filter(([, f]) => f.counted)
   const countedReviews = reviews.filter((r) => judged.get(r.address)!.counted)
   const factorOf = (e: Evidence) => (e.status === 'with' ? lists.scoring.evidence[e.kind!]! : lists.scoring.evidence.none)

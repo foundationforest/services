@@ -1,11 +1,11 @@
 // The tree this index publishes in the standard's format (proofs/reputation), so a person proves a
 // trust from their own profiles on their device, naming none of them.
 //
-//   - One leaf per tag of a counted profile: the tag its counted stamp proof shows; the scope of its
-//     label; its trust, from 0 to 100, as its page shows it; and a count of 1. A reputation proof
-//     averages its leaves' scores weighted by their counts, so a trust carried from several profiles
-//     is their plain average. Two counted proofs with one tag (two keys of one verifier) give one
-//     leaf.
+//   - One leaf per tag of a counted profile: the tag its counted stamp proof shows; the scope of
+//     its label; its trust, from 0 to 100, as its page shows it; and a count of 1. A reputation
+//     proof averages its leaves' scores weighted by their counts, so a trust carried from several
+//     profiles is their plain average. Two counted proofs with one tag (two keys of one verifier)
+//     give one leaf.
 //   - In order of tag, which says nothing about whose leaf is whose.
 //   - Built with the reputation client's `buildTree`; its root signed with the index's key over the
 //     client's `signedBytes(root, time)`, the time in ms. A new root only when the leaves change, so

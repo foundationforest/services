@@ -1,9 +1,9 @@
 // End to end, on loopback, over real HTTP: the standard's reference host; two profiles with real
-// stamp proofs from a stand-in verifier key the index lists; an offer and a review; the index reading
-// the host on its own schedule, counting the review, and serving the rating and the trust it gives.
-// Then `rebuild`: every table dropped but when each proof and review was first seen and the signed
-// roots, read again, the same rating and trust; and on a file from before tags were called tags, the
-// kept table's column renamed, what it held kept.
+// stamp proofs from a stand-in verifier key the index lists; an offer and a review; the index
+// reading the host on its own schedule, counting the review, and serving the rating and the trust
+// it gives. Then `rebuild`: every table dropped but when each proof and review was first seen and
+// the signed roots, read again, the same rating and trust; and on a file from before tags were
+// called tags, the kept table's column renamed, what it held kept.
 
 import assert from 'node:assert/strict'
 import { join } from 'node:path'

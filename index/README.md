@@ -542,9 +542,9 @@ Another index holds its own.
   order pulls a profile with few scores toward its market's average.
 - **Only its own roots.** A reputation proof against another index's tree shows nothing here.
 - **It reads only the hosts it lists.** A profile whose records live elsewhere is not here.
-- **Losing the volume loses the key,** and with it the address every statement and root was signed with,
-  every root, and when each proof and each review was first seen. A new start makes a new key, and
-  every proof and review is first seen again.
+- **Losing the volume loses the key,** and with it the address every statement and root was signed
+  with, every root, and when each proof and each review was first seen. A new start makes a new key,
+  and every proof and review is first seen again.
 - **Escrows of earlier versions of the program are not read.**
 - **Everything after the reading is computed again on every pass,** in one process; each proof is
   checked once, and each payment once for each pair of pay addresses, once the chain holds it. The
@@ -562,9 +562,9 @@ Another index holds its own.
 - **The markets directory, at `MARKETS`:** the markets, their roles, what a post, a review, a vouch
   and a report hold, and how evidence is written.
 - **This index, by its own choice:** which hosts it reads; which verifier keys count, under which
-  names, with what confidence, and until when; how a rating counts as a vouch; which chains it reads evidence on, and through which
-  RPC; which money counts; every number in `config/scoring.json`; which indexes' reputation proofs it
-  shows, and how old a root may be; what its pages show.
+  names, with what confidence, and until when; how a rating counts as a vouch; which chains it reads
+  evidence on, and through which RPC; which money counts; every number in `config/scoring.json`;
+  which indexes' reputation proofs it shows, and how old a root may be; what its pages show.
 - **A person, through their app:** where their records live, which proofs their profile record shows,
   and which index they read.
 

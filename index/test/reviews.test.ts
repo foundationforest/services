@@ -1,5 +1,6 @@
-// Which reviews, vouches and reports count, and why the others do not, one from another market among
-// them; each writer's word; a deleted post keeps its body, so a review's offer still finds it.
+// Which reviews, vouches and reports count, and why the others do not, one from another market
+// among them; each writer's word; a deleted post keeps its body, so a review's offer still finds
+// it.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'

@@ -2,11 +2,11 @@
 // from this directory): directory.json, each market's file, and build/types.json. Nothing is read
 // over the network at run time.
 //
-// A market's check, for a post and for a review, a vouch or a report, reads its file as the markets manual says
-// (build/README.md there), and as the mcp checks a body before it signs one: each field is one the
-// market names, for the role, of its type in types.json; a choice takes only its values; `many`
-// holds a list of the type, each different. `required` is for apps to ask for, and nothing enforces
-// it, so neither does this.
+// A market's check, for a post and for a review, a vouch or a report, reads its file as the markets
+// manual says (build/README.md there), and as the mcp checks a body before it signs one: each field
+// is one the market names, for the role, of its type in types.json; a choice takes only its values;
+// `many` holds a list of the type, each different. `required` is for apps to ask for, and nothing
+// enforces it, so neither does this.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'

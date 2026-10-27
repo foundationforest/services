@@ -1,5 +1,6 @@
 // What several pages share: what a profile shows (its ratings, trust, uniqueness, pickiness and
-// checks) as the JSON gives it, a search or market result, and how the HTML draws each from the object.
+// checks) as the JSON gives it, a search or market result, and how the HTML draws each from the
+// object.
 
 import type { Check } from '../filter.ts'
 import type { Pickiness } from '../rank.ts'
@@ -7,9 +8,9 @@ import { parse, type Store } from '../store.ts'
 import { html, type Raw, short, urls } from './template.ts'
 
 /**
- * What a profile shows: its ratings, from 1 to 10 to one decimal, with how many raters scored it; its
- * trust and uniqueness, whole numbers from 0 to 100; and its pickiness as a word. A profile that does
- * not count shows no rating, 0, 0 and no pickiness.
+ * What a profile shows: its ratings, from 1 to 10 to one decimal, with how many raters scored it;
+ * its trust and uniqueness, whole numbers from 0 to 100; and its pickiness as a word. A profile
+ * that does not count shows no rating, 0, 0 and no pickiness.
  */
 export type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: Pickiness | null }
 export type Post = { address: string; body: { [key: string]: unknown } }

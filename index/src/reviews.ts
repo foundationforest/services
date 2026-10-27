@@ -1,7 +1,7 @@
-// Which reviews, vouches and reports count. Each is a record in its writer's folder, at review/<id>,
-// vouch/<id> or report/<id>, with the fields the markets manual names: a review's subject, score
-// ("1" to "10"), text, offer (the post's full address) and evidence; a vouch's and a report's
-// subject and text. One counts when, in this order:
+// Which reviews, vouches and reports count. Each is a record in its writer's folder, at
+// review/<id>, vouch/<id> or report/<id>, with the fields the markets manual names: a review's
+// subject, score ("1" to "10"), text, offer (the post's full address) and evidence; a vouch's and a
+// report's subject and text. One counts when, in this order:
 //
 //   1. its writer counts here (filter.ts);
 //   2. it fits its writer's market's fields for its kind (markets.ts);
@@ -11,8 +11,8 @@
 //      each market is ranked on its own (rank.ts);
 //   6. the profile it is about counts here;
 //   7. it is the latest of its kind by its writer about that profile, by its record's time: for a
-//      review, the latest of that profile and that post (or of no post), one per writer, subject and
-//      offer; for a vouch or a report, one per writer and subject.
+//      review, the latest of that profile and that post (or of no post), one per writer, subject
+//      and offer; for a vouch or a report, one per writer and subject.
 //
 // One that does not count says why. A post a review names may be deleted; it is kept here with its
 // last body (read.ts), so the review's offer still finds it.

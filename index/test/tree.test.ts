@@ -1,5 +1,5 @@
-// The tree: the served leaves, one per counted profile's tag, each carrying that profile's trust with
-// a count of 1, rebuild the served root, which the index's key signed as the reputation client
+// The tree: the served leaves, one per counted profile's tag, each carrying that profile's trust
+// with a count of 1, rebuild the served root, which the index's key signed as the reputation client
 // expects; a reputation proof made from those leaves shows on the profile that carries it, with the
 // trust it carries, and not on another, nor against a root this index signed more than maxAgeDays
 // ago, unless it is the newest.
@@ -95,8 +95,9 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   assert.equal((await results(students[0]!))[1]!.result, 'it does not check')
   assert.deepEqual((await twin<Served>(i, '/v1/reputation')).body, served)
 
-  // A new rating, a vouch too, moves the tutor's trust and the tree a day on; the proof's root, no longer the newest, shows while this
-  // index signed it within 30 days: 29 days on it does, 31 days on it does not.
+  // A new rating, a vouch too, moves the tutor's trust and the tree a day on; the proof's root, no
+  // longer the newest, shows while this index signed it within 30 days: 29 days on it does, 31 days
+  // on it does not.
   await post(host.url, [at(later, 'review/two', { subject: tutor.key.address, score: '5' })])
   clock = served.time + DAY
   await i.pass()

@@ -111,20 +111,20 @@ step checks what it did, and the run passes only if every step does.
     - both profiles counted under the loop verifier's face key;
     - the offer listed;
     - both reviews counted, each with its payment;
-    - each rating and backing (how much trust stands behind the rating) as the index's own ranking
-      makes them from these two reviews, with its numbers in `index/config/scoring.json` (the loop
-      works them out with the same code: today 8.0 for the tutor and 7.9 for the student, each
-      backed 0.1), each from one review, each statement signed by the index and checked;
+    - what each profile shows as the index's own ranking makes it from these two reviews, each a
+      rating and its writer's word about the other, a vouch, with the index's numbers in
+      `index/config/scoring.json`. The loop works them out with the same code: today the tutor rated
+      10.0 and the student 9.0, each by one rater, each with trust 45, uniqueness 75 and pickiness
+      average. Each statement is signed by the index and checked;
     - the deal paid out, with the review that names it.
 
     No message appears anywhere in its JSON.
-11. **The rating, carried.** The tutor's device finds its own leaf among the index's leaves by its
-    tag, without asking for it: its rating and its backing, each times ten. It checks the root the
-    index signed, and proves its tutoring rating on the device onto its coach profile (the
-    standard's reputation circuit), naming none of its profiles. The signer adds the coach profile,
-    paid with the tutor's last four credits, and its profile record carries a stamp proof of its own
-    and that reputation proof. The index shows the proof on the coach's page, with the tutor's
-    rating.
+11. **The trust, carried.** The tutor's device finds its own leaf among the index's leaves by its
+    tag, without asking for it: its trust, with a count of 1. It checks the root the index signed,
+    and proves its tutoring trust on the device onto its coach profile (the standard's reputation
+    circuit), naming none of its profiles. The signer adds the coach profile, paid with the tutor's
+    last four credits, and its profile record carries a stamp proof of its own and that reputation
+    proof. The index shows the proof on the coach's page, with the tutor's trust.
 12. **Addresses.** No answer either AI received holds one of its own person's addresses: each of
     their profiles, the coach's included, and each pay address. An AI reads the other person's
     addresses, as it must to message and review them.
@@ -157,7 +157,7 @@ the dollar is Circle's USDC there, which the deploy key holds: fill it from
 | verifier | `verifier/`'s code, with the stand-in Didit its tests run (`verifier/test/fake-didit.ts`) and the stand-in face model. Its own name, `verifier.e2e-loop.invalid`, and its own seed. No welcome gift |
 | host | `host/`'s code, as `npm start` runs it, selling credits for USDC, paid to the deploy key's address and checked through the RPC |
 | fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds and, when the run ends, sweeps back |
-| index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check 1 point, ID check 2); its own reputation proofs, against a root up to 30 days old. Its numbers, money and chains are `index/config/`'s: `config/chains.json` reads the chain above |
+| index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check at confidence 0.75, ID check at 0.95, as the index's own lists give the foundation's); its own reputation proofs, against a root up to 30 days old. Its numbers, money and chains are `index/config/`'s: `config/chains.json` reads the chain above |
 | mcp | `mcp/`'s code, reading the host first and the loop's index, with the loop's connect page as its `APP_URL` |
 
 A `services.json` that names a host or a fee payer runs the same loop against it, as it is
@@ -247,20 +247,19 @@ The tests, which CI runs:
 
 ### The latest run
 
-2026-10-26, 18:23:30 to 18:24:15 UTC, with this repo at `ef7bd25` (standard at `7b1c937`, markets at
-`50685eb`), with every service the loop's own on loopback and the chain through `RPC_URL`:
-**passed** in 45 seconds. Its record is
-[`runs/2026-10-26T18-23-30-348Z.json`](runs/2026-10-26T18-23-30-348Z.json). The records of earlier
-runs, made before each profile's rules and USDC, are in this repo's history.
+2026-10-27, 21:42:11 to 21:42:55 UTC, with this repo at `7fcdede` (standard at `7b1c937`, markets at
+`c06d195`), with every service the loop's own on loopback and the chain through `RPC_URL`:
+**passed** in 43 seconds. Its record is
+[`runs/2026-10-27T21-42-11-701Z.json`](runs/2026-10-27T21-42-11-701Z.json). The records of earlier
+runs, made before this ranking, are in this repo's history.
 
 - **The services,** all the loop's own: the verifier `verifier.e2e-loop.invalid`, face key
-  `j9ikYH58…`, ID key `EGbxQcjk…`; the host, paid at the deploy key; the fee payer, its new key
-  `F6sGRxaz…`; the index `7HTr1upd…`; the mcp.
+  `2ow28jFT…`, ID key `31TsNy2W…`; the host, paid at the deploy key; the fee payer, its new key
+  `CoZwtpXL…`; the index `D9Y3chpT…`; the mcp.
 - **The dollar:** Circle's USDC, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
-- **People:** tutor `AMLNioGB…`, student `3VnkKTEj…`, and the tutor's coach profile `CDirZA3d…`.
+- **People:** tutor `7xLAD973…`, student `3CQ92f7X…`, and the tutor's coach profile `677N9yZi…`.
 - **Funding:** 42 USDC to the student's pay address; 1 USDC and 0.01 SOL to each wallet; 0.05 SOL
-  to the loop's fee payer. Before the run, outside the loop, the phrase's `payer` key sent the
-  deploy key its 20 USDC.
+  to the loop's fee payer. Before the run, outside the loop, the deploy key was sent 20 USDC.
 - **Stamps:** one each from the loop verifier's face check, model `stand-in`, kept on each device,
   and the same asked back by its stamp number.
 - **Credits:** each wallet paid the loop's host 0.10 USDC for 10 credits; the tutor spent 6 into its
@@ -275,17 +274,18 @@ runs, made before each profile's rules and USDC, are in this repo's history.
     not in what this connection may do"), and got it.
 - **The deal:**
   - the direct payment of 2 USDC, a plain transfer asked for by the student's AI, charged 0.10;
-  - the escrow `5X7LME2J…`, version 4, opened and paid in, charged 37.3364, then paid out early,
+  - the escrow `8vAkoqNk…`, version 4, opened and paid in, charged 37.3364, then paid out early,
     charged 0.10, its outcome `pay`, its deposit address's rent back to the fee payer.
 - **Reviews:** the student's, posted by its AI, its evidence the direct payment, filled in by its
   signer; the tutor's AI refused naming the escrow, and the tutor's app wrote that review.
-- **The index:** the tutor rated 8.0 and the student 7.9, each backed 0.1, from one review with its
-  payment, each statement signed; the deal paid, 2 USDC, with its review.
-- **The rating, carried:** the tutor's leaf found by its tag among 2 leaves, 80 tenths, proven onto
-  the coach profile with the tutor's last 4 credits; the index shows it.
+- **The index:** the tutor rated 10.0 and the student 9.0, each by one rater with its payment, each
+  with trust 45, uniqueness 75 and pickiness average, each statement signed; the deal paid, 2 USDC,
+  with its review.
+- **The trust, carried:** the tutor's leaf found by its tag among 2 leaves, its trust 45, proven
+  onto the coach profile with the tutor's last 4 credits; the index shows it.
 - **Addresses:** none of its own person's in any of the 6 answers to the tutor's AI or the 7 to the
   student's.
-- **Balances:** the tutor's folder 5.84329 credits, the student's 9.85697, the coach's 3.90393.
+- **Balances:** the tutor's folder 5.84328 credits, the student's 9.85697, the coach's 3.90392.
 - **The sweep:** the fee payer gave back everything it held, 37.5364 USDC and 49,223,240 lamports
   with its USDC account's rent. It spent 2,265,200: 30,000 in fees and the escrow receipt's
   2,235,200.
@@ -296,9 +296,9 @@ The loop's own services stopped with the run, so their pages and the three profi
 gone. What the run did on chain is on Solana's explorer: [the escrow][e], [the direct payment][p]
 and [the sweep][s].
 
-[e]: https://explorer.solana.com/address/5X7LME2JF4eK1tmuVTE88LwrRwroxSFkFubsUaYg1LH6?cluster=devnet
-[p]: https://explorer.solana.com/tx/2io8sTDpjSeroKKmaN5rqzX2UsF7c5H2xWdWQXDpWCP43omaMSUKoGuaunxQv5uTamLRZMTBFDAKHEM2Xp5SrZYA?cluster=devnet
-[s]: https://explorer.solana.com/tx/5tdzRUHEKAfLFF97YoweA6U7K53PefN33WbzAmVxE64r8R13WNHJn74CwMoUmqBQGPamLPzoiPaXUJ9GwWJWaRz?cluster=devnet
+[e]: https://explorer.solana.com/address/8vAkoqNk2re4JWvpK4LRWBt6CjhoQptZRGjshfV2TNsp?cluster=devnet
+[p]: https://explorer.solana.com/tx/ZyKbSZLwwCwFL8Ch28otjovjK363M1ALwTQzNGoe1xeX45Z1ezXf7XTHKhitdv6H7CHoQBmMf4JMYQKwCczYZoE?cluster=devnet
+[s]: https://explorer.solana.com/tx/3sx4PcWf9cLztmFzGxKM2zyzwpWjWk8yoEUT75S912yRJwCUU2JZ8WjgPDJSAsnWMX9BrcaWhUdSRWHcv35iP1xP?cluster=devnet
 
 ## Promises
 
@@ -355,8 +355,8 @@ and [the sweep][s].
   written, and the session schedule.
 - **Each service, by its own choice:** what it takes and what it charges. The loop checks it as it
   runs.
-- **The index, by its own numbers:** each rating and backing. The loop expects what those numbers
-  make of its two reviews.
+- **The index, by its own numbers:** each rating, trust, uniqueness and pickiness. The loop expects
+  what those numbers make of its two reviews.
 - **The foundation:** when to run it, what `services.json` names, what the loop's own copies are set
   to (`services.ts`), and what each person in it lets their AI do (`e2e.ts`).
 
@@ -379,11 +379,11 @@ The reference signer adds a profile with the profile record it makes itself, whi
 The stamp proof is made on the device from the stamp it keeps, so the device writes the profile
 record again with it, as an app does when the person chooses to show a proof.
 
-**Why are the ratings 8.0 and 7.9, and not the 10 and 9 the reviews give?**
-The index ranks by trust: each review weighs as much as its writer is trusted, and a writer with
-only a face check is trusted little, so each rating stays near the market's baseline. The loop works
-out what the index's own ranking and numbers make of its two reviews, and checks the index shows
-exactly that.
+**Why is each trust 45, and not the 75 a face check gives as uniqueness?**
+A newcomer's trust is half its uniqueness, 38. Each review is also its writer's vouch for the other,
+weighing the writer's uniqueness times trust, so each lifts the other to 45, and no further: two
+faces vouching for each other never pass 75. The loop works out what the index's own ranking and
+numbers make of its two reviews, and checks the index shows exactly that.
 
 **Why does the phrase pay for setup?**
 A new person has no dollars. The phrase's `deploy` key makes the accounts and sends them USDC from

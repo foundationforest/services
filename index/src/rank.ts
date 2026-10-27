@@ -2,8 +2,8 @@
 // another file. README.md, How it scores, says the same in words; every number is in
 // config/scoring.json, and each verifier key's confidence in lists/verifiers.json.
 //
-// A review, a vouch or a report counts only between two profiles of one market (reviews.ts), so each
-// market is ranked on its own. Each part is its own function, with its own knobs:
+// A review, a vouch or a report counts only between two profiles of one market (reviews.ts), so
+// each market is ranked on its own. Each part is its own function, with its own knobs:
 //
 //   uniqueness   u = 1 - prod(1 - c), over the keys a profile's stamp proofs count for (filter.ts)
 //   words        each writer has one word per subject: a report if its latest counted record about
@@ -14,8 +14,9 @@
 //   trust        T = u V R, never above u
 //   pickiness    scores on 0 to 1 as (s - 1) / 9; P = 0.5 + 0.5 sum(Rt - s) / (1 + n), over the n
 //                subjects a rater scored, Rt each one's current rating on the same scale
-//   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)) times its evidence factor;
-//                a rating is the weighted average of its scores, shown as it is, with how many raters
+//   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)) times its evidence
+//                factor; a rating is the weighted average of its scores, shown as it is, with how
+//                many raters
 //   order        search sorts by the same average with marketWeight of the market's average added
 //
 // A rater's reviews of one subject (one per post) are one score, their mean, with the largest

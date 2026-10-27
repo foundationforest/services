@@ -33,9 +33,9 @@
 //    9. reviews, each naming its evidence as <CAIP-2 chain>:<id>: the student's AI names the offer,
 //       and its signer fills in the direct payment; the tutor's AI may not name the escrow, so the
 //       tutor's app writes that review;
-//   10. the loop index counts it all: both profiles, the offer, both reviews with their payments, and
-//       what each profile shows (ratings, trust, uniqueness, pickiness) as its own ranking makes
-//       them, signed, the deal; no message anywhere;
+//   10. the loop index counts it all: both profiles, the offer, both reviews with their payments,
+//       and what each profile shows (ratings, trust, uniqueness, pickiness) as its own ranking
+//       makes them, signed, the deal; no message anywhere;
 //   11. the trust carried: the tutor's device finds its leaf by its tag, proves its trust onto its
 //       coach profile, and the index shows the proof;
 //   12. addresses: no answer either AI received holds one of its own person's addresses;

@@ -1,9 +1,9 @@
 // `/profiles/<address>`: a profile this index holds a profile record for. Its profile record; each
-// proof on it with what this index made of it; the checks it counts for; what it shows (its ratings,
-// trust, uniqueness and pickiness) and the statement that signs them; its posts, listed or not and
-// why; the reviews, vouches and reports it received and gave, each with whether it counts and why
-// not, a review with its evidence (and why, when it is unchecked or already used) and its weight; and
-// the words it received and gave, each with its weight.
+// proof on it with what this index made of it; the checks it counts for; what it shows (its
+// ratings, trust, uniqueness and pickiness) and the statement that signs them; its posts, listed or
+// not and why; the reviews, vouches and reports it received and gave, each with whether it counts
+// and why not, a review with its evidence (and why, when it is unchecked or already used) and its
+// weight; and the words it received and gave, each with its weight.
 
 import type { Evidence } from '../evidence/index.ts'
 import type { Check } from '../filter.ts'
