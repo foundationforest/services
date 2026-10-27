@@ -17,8 +17,8 @@ export type ListedKey = {
   verifier: string
   /** What the pages call its check, such as "face check". */
   label: string
-  /** The points a profile it checked starts the ranking with. */
-  points: number
+  /** From 0 to 1: how sure this index is that a profile it checked is one real person. */
+  confidence: number
   /** For a key that leaked: proofs first seen after this time (ms) do not count. */
   until?: number
 }
@@ -85,10 +85,10 @@ export function loadLists(root: string): Lists {
     if (!isObject(k) || !publicKeyFromAddress(k.key)) fail('lists/verifiers.json', `${where}: key is an address`)
     if (typeof k.verifier !== 'string' || !k.verifier) fail('lists/verifiers.json', `${where}: verifier is a name`)
     if (typeof k.label !== 'string' || !k.label) fail('lists/verifiers.json', `${where}: label is text`)
-    if (!isNumber(k.points) || k.points < 0) fail('lists/verifiers.json', `${where}: points is a number from 0`)
+    if (!isNumber(k.confidence) || k.confidence < 0 || k.confidence > 1) fail('lists/verifiers.json', `${where}: confidence is a number from 0 to 1`)
     const until = k.until === undefined ? undefined : Date.parse(k.until as string)
     if (k.until !== undefined && (typeof k.until !== 'string' || !Number.isFinite(until))) fail('lists/verifiers.json', `${where}: until is a time, such as 2026-11-01T00:00:00Z`)
-    return { key: k.key as string, verifier: k.verifier, label: k.label, points: k.points, ...(until !== undefined && { until }) }
+    return { key: k.key as string, verifier: k.verifier, label: k.label, confidence: k.confidence, ...(until !== undefined && { until }) }
   })
   if (new Set(keys.map((k) => k.key)).size !== keys.length) fail('lists/verifiers.json', 'a key is listed twice')
 
@@ -101,16 +101,14 @@ export function loadLists(root: string): Lists {
   })
 
   const scoringFile = read(root, 'config/scoring.json')
-  const { mu0, marketPrior, calibrationPrior, beta, neutral, alpha, sink, rounds, ratingPrior, evidence } = scoringFile
-  if (!isNumber(mu0) || mu0 < 1 || mu0 > 10) fail('config/scoring.json', 'mu0 is a score from 1 to 10')
-  if (!isNumber(marketPrior) || marketPrior <= 0) fail('config/scoring.json', 'marketPrior is above 0')
-  if (!isNumber(calibrationPrior) || calibrationPrior < 0) fail('config/scoring.json', 'calibrationPrior is a number from 0')
-  if (!isNumber(beta) || beta < 0) fail('config/scoring.json', 'beta is a number from 0')
-  if (!isNumber(neutral) || neutral <= 0 || neutral >= 10) fail('config/scoring.json', 'neutral is above 0 and below 10')
-  if (!isNumber(alpha) || alpha < 0 || alpha >= 1) fail('config/scoring.json', 'alpha is from 0 to below 1')
-  if (!isNumber(sink) || sink < 0) fail('config/scoring.json', 'sink is a number from 0')
-  if (!Number.isSafeInteger(rounds) || (rounds as number) < 1) fail('config/scoring.json', 'rounds is a whole number from 1')
-  if (!isNumber(ratingPrior) || ratingPrior <= 0) fail('config/scoring.json', 'ratingPrior is above 0')
+  const { vouchStep, reportCut, toughFrom, easyTo, marketWeight, tolerance, maxRounds, evidence } = scoringFile
+  if (!isNumber(vouchStep) || vouchStep < 0 || vouchStep > 1) fail('config/scoring.json', 'vouchStep is from 0 to 1')
+  if (!isNumber(reportCut) || reportCut < 0 || reportCut > 1) fail('config/scoring.json', 'reportCut is from 0 to 1')
+  if (!isNumber(toughFrom) || toughFrom <= 0.5 || toughFrom > 1) fail('config/scoring.json', 'toughFrom is above 0.5, up to 1')
+  if (!isNumber(easyTo) || easyTo < 0 || easyTo >= 0.5) fail('config/scoring.json', 'easyTo is from 0 to below 0.5')
+  if (!isNumber(marketWeight) || marketWeight <= 0) fail('config/scoring.json', 'marketWeight is above 0')
+  if (!isNumber(tolerance) || tolerance <= 0) fail('config/scoring.json', 'tolerance is above 0')
+  if (!Number.isSafeInteger(maxRounds) || (maxRounds as number) < 1) fail('config/scoring.json', 'maxRounds is a whole number from 1')
   if (!isObject(evidence) || !Object.values(evidence).every((w) => isNumber(w) && w >= 0) || !isNumber(evidence.none)) {
     fail('config/scoring.json', 'evidence holds a factor from 0 for each kind, and none')
   }
@@ -142,7 +140,7 @@ export function loadLists(root: string): Lists {
     keys,
     maxAgeDays: indexesFile.maxAgeDays as number,
     indexes,
-    scoring: { mu0, marketPrior, calibrationPrior, beta, neutral, alpha, sink, rounds: rounds as number, ratingPrior, evidence: evidence as Scoring['evidence'] },
+    scoring: { vouchStep, reportCut, toughFrom, easyTo, marketWeight, tolerance, maxRounds: maxRounds as number, evidence: evidence as Scoring['evidence'] },
     currencies,
     chains,
   }

@@ -1,16 +1,15 @@
 // The tree this index publishes in the standard's format (proofs/reputation), so a person proves a
-// rating from their own profiles on their device, naming none of them.
+// trust from their own profiles on their device, naming none of them.
 //
-//   - One leaf per tag of a counted profile with a rating: the tag its counted stamp proof shows;
-//     the scope of its label; its rating times ten, rounded (9.2 is 92); and its backing times ten,
-//     rounded, at least 1 (1.4 is 14). A reputation proof averages its leaves' scores weighted by
-//     their counts, so a rating carried from several profiles weighs by the trust behind each, not
-//     by how many reviews it has. Two counted proofs with one tag (two keys of one verifier) give
-//     one leaf.
+//   - One leaf per tag of a counted profile: the tag its counted stamp proof shows; the scope of
+//     its label; its trust, from 0 to 100, as its page shows it; and a count of 1. A reputation
+//     proof averages its leaves' scores weighted by their counts, so a trust carried from several
+//     profiles is their plain average. Two counted proofs with one tag (two keys of one verifier)
+//     give one leaf.
 //   - In order of tag, which says nothing about whose leaf is whose.
 //   - Built with the reputation client's `buildTree`; its root signed with the index's key over the
 //     client's `signedBytes(root, time)`, the time in ms. A new root only when the leaves change, so
-//     a proof goes stale only when a rating in the tree moves. Every root is kept (store.ts).
+//     a proof goes stale only when a trust in the tree moves. Every root is kept (store.ts).
 //
 // A reputation proof on a profile record shows when its index is one lists/indexes.json names, its
 // root is that index's newest or one it signed within `maxAgeDays`, and it checks (the client's
@@ -34,22 +33,21 @@ export type Root = { root: string; time: number; signature: string; leaves: numb
 export type ReputationResult = {
   circuit: 'reputation'
   index: string | null
-  /** The score the proof shows, out of 10. */
-  rating: number | null
+  /** The trust the proof shows, from 0 to 100. */
+  trust: number | null
   label: string | null
   time: number | null
   result: string
 }
 export const SHOWN = 'shown'
 
-/** The leaves for these profiles, in order of tag. */
-export function leavesOf(profiles: Array<{ tags: Array<{ tag: string; label: string }>; value: number | null; backing: number }>): ServedLeaf[] {
+/** The leaves for these profiles, each with its trust from 0 to 100, in order of tag. */
+export function leavesOf(profiles: Array<{ tags: Array<{ tag: string; label: string }>; trust: number }>): ServedLeaf[] {
   const leaves = new Map<string, ServedLeaf>()
   for (const p of profiles) {
-    if (p.value === null) continue
     for (const { tag, label } of p.tags) {
       // One tag is one seed, label and verifier name, so one profile; a second is left out.
-      if (!leaves.has(tag)) leaves.set(tag, { tag, scope: hex.encode(toBytes32(scopeOf(label))), score: Math.round(p.value * 10), count: Math.max(1, Math.round(p.backing * 10)) })
+      if (!leaves.has(tag)) leaves.set(tag, { tag, scope: hex.encode(toBytes32(scopeOf(label))), score: p.trust, count: 1 })
     }
   }
   return [...leaves.values()].sort((a, b) => (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
@@ -118,7 +116,7 @@ export async function reputationProofs(
     const said = (result: string): ReputationResult => ({
       circuit: 'reputation',
       index: typeof proof.index === 'string' ? proof.index : null,
-      rating: Number.isSafeInteger(proof.score) ? (proof.score as number) / 10 : null,
+      trust: Number.isSafeInteger(proof.score) ? (proof.score as number) : null,
       label: typeof proof.label === 'string' ? proof.label : null,
       time: Number.isSafeInteger(proof.time) ? (proof.time as number) : null,
       result,

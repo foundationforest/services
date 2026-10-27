@@ -40,7 +40,7 @@ create table if not exists roots (
 `
 
 /** Tables `rebuild` drops: each comes back from the hosts and the chain. */
-const DROPPED = ['hosts', 'records', 'profiles', 'posts', 'posts_text', 'reviews', 'checked', 'evidence', 'receipts', 'moves', 'chain', 'ratings', 'leaves']
+const DROPPED = ['hosts', 'records', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'evidence', 'receipts', 'moves', 'chain', 'ratings', 'leaves']
 
 const SCHEMA = `
 create table if not exists hosts (url text primary key, cursor integer not null);
@@ -56,7 +56,6 @@ create table if not exists profiles (
   role text,
   time integer not null,
   counted integer not null default 0,
-  trust real not null default 0,
   checks text not null default '[]',
   proofs text not null default '[]',
   tags text not null default '[]'
@@ -88,6 +87,16 @@ create table if not exists reviews (
 );
 create index if not exists reviews_subject on reviews (subject);
 create index if not exists reviews_reviewer on reviews (reviewer);
+-- Every live vouch and report, and what this index made of each on the last pass.
+create table if not exists vouches (address text primary key, writer text not null, subject text, body text not null, time integer not null, counted integer not null default 0, why text);
+create index if not exists vouches_subject on vouches (subject);
+create index if not exists vouches_writer on vouches (writer);
+create table if not exists reports (address text primary key, writer text not null, subject text, body text not null, time integer not null, counted integer not null default 0, why text);
+create index if not exists reports_subject on reports (subject);
+create index if not exists reports_writer on reports (writer);
+-- Each writer's one word about each profile on the last pass, and its weight.
+create table if not exists words (writer text not null, subject text not null, word text not null, weight real not null, primary key (writer, subject));
+create index if not exists words_subject on words (subject);
 -- A proof check's answer, by a hash of everything the check took.
 create table if not exists checked (hash text primary key, ok integer not null);
 -- An evidence check's answer, once: by kind, value and the two pay addresses.
@@ -97,12 +106,15 @@ create table if not exists receipts (escrow text primary key, receipt text not n
 create table if not exists moves (signature text not null, n integer not null, escrow text not null, move text not null, primary key (signature, n));
 create index if not exists moves_escrow on moves (escrow);
 create table if not exists chain (one integer primary key check (one = 1), cursor text not null);
--- Each counted profile's rating, as signed.
+-- Each counted profile's ratings, trust, uniqueness and pickiness, as signed, and what search sorts it by.
 create table if not exists ratings (
   profile text primary key,
   value real,
-  backing real not null,
-  reviews integer not null,
+  count integer not null,
+  trust integer not null,
+  uniqueness integer not null,
+  pickiness text not null,
+  sort real,
   statement text not null,
   signature text not null
 );

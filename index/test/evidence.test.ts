@@ -151,7 +151,7 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
   await post(host.url, [ownerRecord(stranger.key, 'review/grief', { subject: tutor.key.address, score: '1', evidence: on(payments.paid!.signature) }, Date.now() - 60_000)])
 
   let clock = Date.now()
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url, { now: () => clock })
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url, { now: () => clock })
   const page = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body
   await i.pass()
   const statusOf = (o: ProfilePage, id: string) => o.reviews.received.find((x) => x.address.endsWith(`/review/${id}`))!.evidence
@@ -173,8 +173,8 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
   assert.deepEqual([grief.counted, grief.evidence, grief.evidenceWhy], [true, 'invalid', undefined])
   const s = (await page(student)).reviews.received.find((r) => r.address === `${tutor.key.address}/review/escrow-paid`)!
   assert.deepEqual([s.counted, s.evidence, s.evidenceWhy], [true, 'invalid', USED])
-  // The review count is the writers': the student and the stranger.
-  assert.equal(t.rating.reviews, 2)
+  // The count of raters: the student and the stranger.
+  assert.equal(t.ratings.count, 2)
 
   // Over two passes: a payment the chain answered for asked once for each pair of pay addresses (the
   // stranger's review asks for the paid one for its own); one not on chain yet, on each pass. Each
@@ -234,7 +234,7 @@ test('evidence: a pay address its pay key did not sign for the profile gives non
     ownerRecord(student.key, 'review/impostor', { subject: impostor.key.address, score: '9', offer: `${impostor.key.address}/offer/maths`, evidence }, Date.now() - 60_000),
     at(student, 'review/tutor', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/maths`, evidence }),
   ])
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
   try {
     await i.pass()
     const received = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.reviews.received[0]!

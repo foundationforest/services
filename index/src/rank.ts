@@ -1,67 +1,117 @@
-// The ranking: one pure function for one market, with no database inside, so another ranking is
+// The ranking: pure functions for one market, with no database inside, so another ranking is
 // another file. README.md, How it scores, says the same in words; every number is in
-// config/scoring.json.
+// config/scoring.json, and each verifier key's confidence in lists/verifiers.json.
 //
-// A review counts only between two profiles of one market (reviews.ts), so each market is ranked
-// on its own. For each writer u and subject v, the scores of u's counted reviews of v (the latest
-// per post) are averaged into one score s(u,v), an edge from u to v; d(u) is how many profiles u
-// reviewed. Each profile i has v(i), the points of its largest counted verifier key (filter.ts).
+// A review, a vouch or a report counts only between two profiles of one market (reviews.ts), so
+// each market is ranked on its own. Each part is its own function, with its own knobs:
 //
-//   trust      T(i) starts at (1 - alpha) v(i), and each edge's flow e at 0.
-//   rounds     `rounds` times, each reading only what the round before left:
-//     baseline   mu = (marketPrior mu0 + sum of w s) / (marketPrior + sum of w), over every edge;
-//                the first round weighs each edge by its seed weight, its w from the starting trust
-//     habit      sbar(u) = (calibrationPrior mu + sum over v of s(u,v)) / (calibrationPrior + d(u))
-//     calibrated shat(u,v) = s(u,v) - beta (sbar(u) - mu), kept within 1 to 10
-//     quality    q(u,v) = (shat(u,v) - neutral) / neutral
-//     weight     w(u,v) = min(1, T'(u,v) / (d(u) + sink)) times the edge's evidence factor, with
-//                T'(u,v) = max(0, T(u) - max(0, e(v,u))): u's trust without what v passed it
-//     flow       e(u,v) = alpha w(u,v) q(u,v)
-//     trust      T(v) = max(0, (1 - alpha) v(v) + sum over u of e(u,v))
-//   backing    B(v) = sum over u of w(u,v), from the last round
-//   rating     R(v) = (ratingPrior mu + sum over u of w(u,v) shat(u,v)) / (ratingPrior + B(v)),
-//              with the last round's mu and shat; a profile no edge points to has none
+//   uniqueness   u = 1 - prod(1 - c), over the keys a profile's stamp proofs count for (filter.ts)
+//   words        each writer has one word per subject: a report if its latest counted record about
+//                it is a report, otherwise a vouch (it rated or vouched); a word weighs its giver's
+//                u times trust
+//   vouch part   V = 1 - 0.5 vouchStep^v, v the sum of the vouches' weights: 0.5 with none, never 1
+//   report part  R = reportCut^r, r the sum of the reports' weights: 1 with none
+//   trust        T = u V R, never above u
+//   pickiness    scores on 0 to 1 as (s - 1) / 9; P = 0.5 + 0.5 sum(Rt - s) / (1 + n), over the n
+//                subjects a rater scored, Rt each one's current rating on the same scale
+//   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)) times its evidence
+//                factor; a rating is the weighted average of its scores, shown as it is, with how
+//                many raters
+//   order        search sorts by the same average with marketWeight of the market's average added
 //
-// Every edge in a round reads the trust and flows of the round before, so the order of the edges
-// changes nothing. An edge takes the largest evidence factor among its reviews: evidence shows that
-// money moved between the two profiles, whichever post a review names. A review's weight is its
-// edge's w split equally across the edge's reviews, so a profile's backing is the sum of its
-// reviews' weights.
+// A rater's reviews of one subject (one per post) are one score, their mean, with the largest
+// evidence factor among them; each review's weight is that score's weight split equally among them.
+//
+// Settling: from T = u / 2 and P = 0.5, each round works out every trust, pickiness and rating from
+// the round before only, so the order of anything changes nothing. A round moves each trust and
+// pickiness the whole way to its new value until the biggest move stops shrinking: reports can make
+// whole moves flip for ever (trust high, so heavy reports, so trust low, so light reports, so trust
+// high), and each time the biggest move stops shrinking, every later round moves half as far as
+// before. It ends when nothing moves by more than `tolerance`, or after `maxRounds`.
 
-export type RankProfile = { address: string; points: number }
-export type RankReview = { writer: string; subject: string; score: number; evidence: number }
+export type RankProfile = { address: string; uniqueness: number }
+/** A counted review with a score, from 1 to 10. */
+export type RankRating = { writer: string; subject: string; score: number; evidence: number }
+/** A counted review, vouch or report, for its writer's word: by its record's time, then its address. */
+export type Said = { writer: string; subject: string; kind: 'rating' | 'vouch' | 'report'; time: number; address: string }
+export type Word = { writer: string; subject: string; word: 'vouch' | 'report' }
+export type Pickiness = 'tough' | 'average' | 'easy'
 export type Numbers = {
-  mu0: number
-  marketPrior: number
-  calibrationPrior: number
-  beta: number
-  neutral: number
-  alpha: number
-  sink: number
-  rounds: number
-  ratingPrior: number
+  vouchStep: number
+  reportCut: number
+  toughFrom: number
+  easyTo: number
+  marketWeight: number
+  tolerance: number
+  maxRounds: number
 }
-/** `value` is null for a profile no counted review is about; `reviews` is how many writers reviewed it. */
-export type Rating = { value: number | null; backing: number; reviews: number }
+/** `value` is null for a profile no weighed score is about; `count` is how many raters scored it; `order` is what search sorts it by. */
+export type Rating = { value: number | null; count: number; order: number | null }
 export type Ranked = {
-  /** The market's baseline, mu, as the last round left it. */
-  baseline: number
   trust: Map<string, number>
-  /** Each review's weight, in the order given; 0 for one that does not count. */
-  weights: number[]
+  /** Each profile's P, from 0 to 1. */
+  pickiness: Map<string, number>
   ratings: Map<string, Rating>
+  /** Each rating's weight, in the order given; 0 for one that does not count. */
+  weights: number[]
+  words: Array<Word & { weight: number }>
+  /** The weighted average of every score in the market, or null with none. */
+  average: number | null
+  rounds: number
 }
+
+/** The chance that at least one of these checks holds: 0 with none. */
+export function uniqueness(confidences: number[]): number {
+  return 1 - confidences.reduce((left, c) => left * (1 - c), 1)
+}
+
+/** Each writer's one word about each subject, from its latest counted record about it. */
+export function wordsOf(said: Said[]): Word[] {
+  const latest = new Map<string, Said>()
+  for (const s of said) {
+    const pair = JSON.stringify([s.writer, s.subject])
+    const held = latest.get(pair)
+    if (!held || s.time > held.time || (s.time === held.time && s.address > held.address)) latest.set(pair, s)
+  }
+  return [...latest.values()].map((s) => ({ writer: s.writer, subject: s.subject, word: s.kind === 'report' ? 'report' : 'vouch' }))
+}
+
+/** `v`, the sum of a profile's vouches' weights. */
+export const vouchPart = (v: number, { vouchStep }: Pick<Numbers, 'vouchStep'>) => 1 - 0.5 * vouchStep ** v
+
+/** `r`, the sum of a profile's reports' weights. */
+export const reportPart = (r: number, { reportCut }: Pick<Numbers, 'reportCut'>) => reportCut ** r
+
+export const trustOf = (u: number, V: number, R: number) => u * V * R
+
+/** A score from 1 to 10 on 0 to 1. */
+export const scaled = (score: number) => (score - 1) / 9
+
+/** A rater's P, from what it scored each subject and each one's current rating, both on 0 to 1; a subject with no rating adds nothing. */
+export function pickinessOf(scored: Array<{ score: number; rating: number | null }>): number {
+  const sum = scored.reduce((a, x) => (x.rating === null ? a : a + x.rating - x.score), 0)
+  return 0.5 + (0.5 * sum) / (1 + scored.length)
+}
+
+/** How much a score `s`, on 0 to 1, weighs from a rater of pickiness P. */
+export const scoreWeight = (s: number, P: number) => s * P + (1 - s) * (1 - P)
+
+export const pickinessWord = (P: number, { toughFrom, easyTo }: Pick<Numbers, 'toughFrom' | 'easyTo'>): Pickiness => (P >= toughFrom ? 'tough' : P <= easyTo ? 'easy' : 'average')
+
+/** What search sorts a profile by: its scores' weighted sum and their weights, with `marketWeight` of the market's average added; null in a market with none. */
+export const searchOrder = (sum: number, weight: number, average: number | null, { marketWeight }: Pick<Numbers, 'marketWeight'>) =>
+  average === null ? null : (sum + marketWeight * average) / (weight + marketWeight)
 
 type Edge = { writer: string; subject: string; score: number; evidence: number; reviews: number[] }
 
-/** Reviews whose writer or subject is not among `profiles`, or that review their writer, are left out: they do not count. */
-export function rank(profiles: RankProfile[], reviews: RankReview[], numbers: Numbers): Ranked {
-  const { mu0, marketPrior, calibrationPrior, beta, neutral, alpha, sink, rounds, ratingPrior } = numbers
-  const start = new Map(profiles.map((p) => [p.address, (1 - alpha) * p.points]))
+/** Ratings and said things whose writer or subject is not among `profiles`, or that are about their writer, are left out: they do not count. */
+export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[], numbers: Numbers): Ranked {
+  const u = new Map(profiles.map((p) => [p.address, p.uniqueness]))
+  const counts = (writer: string, subject: string) => u.has(writer) && u.has(subject) && writer !== subject
 
   const byPair = new Map<string, Edge>()
-  reviews.forEach((r, i) => {
-    if (!start.has(r.writer) || !start.has(r.subject) || r.writer === r.subject) return
+  ratings.forEach((r, i) => {
+    if (!counts(r.writer, r.subject)) return
     const pair = JSON.stringify([r.writer, r.subject])
     const edge = byPair.get(pair) ?? byPair.set(pair, { writer: r.writer, subject: r.subject, score: 0, evidence: 0, reviews: [] }).get(pair)!
     edge.score += r.score
@@ -70,47 +120,78 @@ export function rank(profiles: RankProfile[], reviews: RankReview[], numbers: Nu
   })
   const edges = [...byPair.values()]
   for (const e of edges) e.score /= e.reviews.length
-  const d = new Map<string, number>()
-  const given = new Map<string, number>()
-  for (const e of edges) {
-    d.set(e.writer, (d.get(e.writer) ?? 0) + 1)
-    given.set(e.writer, (given.get(e.writer) ?? 0) + e.score)
-  }
-  // Each edge's reverse, from its subject back to its writer, or -1.
-  const at = new Map(edges.map((e, i) => [JSON.stringify([e.writer, e.subject]), i]))
-  const back = edges.map((e) => at.get(JSON.stringify([e.subject, e.writer])) ?? -1)
-  const weightOf = (trust: number, e: Edge) => Math.min(1, trust / (d.get(e.writer)! + sink)) * e.evidence
+  const scoredBy = new Map<string, Edge[]>()
+  for (const e of edges) (scoredBy.get(e.writer) ?? scoredBy.set(e.writer, []).get(e.writer)!).push(e)
+  const words = wordsOf(said.filter((s) => counts(s.writer, s.subject)))
 
-  let trust = new Map(start)
-  let flow = edges.map(() => 0)
-  let w = edges.map((e) => weightOf(start.get(e.writer)!, e))
-  let mu = mu0
-  let shat = edges.map((e) => e.score)
-  for (let round = 0; round < rounds; round++) {
-    mu = (marketPrior * mu0 + edges.reduce((a, e, i) => a + w[i]! * e.score, 0)) / (marketPrior + w.reduce((a, x) => a + x, 0))
-    const sbar = new Map([...given].map(([u, total]) => [u, (calibrationPrior * mu + total) / (calibrationPrior + d.get(u)!)]))
-    shat = edges.map((e) => Math.min(10, Math.max(1, e.score - beta * (sbar.get(e.writer)! - mu))))
-    w = edges.map((e, i) => weightOf(Math.max(0, trust.get(e.writer)! - Math.max(0, back[i]! < 0 ? 0 : flow[back[i]!]!)), e))
-    flow = edges.map((_, i) => (alpha * w[i]! * (shat[i]! - neutral)) / neutral)
-    const next = new Map(start)
-    edges.forEach((e, i) => next.set(e.subject, next.get(e.subject)! + flow[i]!))
-    trust = new Map([...next].map(([p, t]) => [p, Math.max(0, t)]))
+  const weightOf = (e: Edge, trust: Map<string, number>, picky: Map<string, number>) => u.get(e.writer)! * trust.get(e.writer)! * scoreWeight(scaled(e.score), picky.get(e.writer)!) * e.evidence
+  /** Each subject's weighted sum of scores, from 1 to 10, and their weights. */
+  const sumsOf = (trust: Map<string, number>, picky: Map<string, number>) => {
+    const sums = new Map<string, { sum: number; weight: number }>()
+    for (const e of edges) {
+      const w = weightOf(e, trust, picky)
+      const s = sums.get(e.subject) ?? { sum: 0, weight: 0 }
+      sums.set(e.subject, { sum: s.sum + w * e.score, weight: s.weight + w })
+    }
+    return sums
   }
 
-  const sums = new Map(profiles.map((p) => [p.address, { backing: 0, scored: 0, reviews: 0 }]))
-  edges.forEach((e, i) => {
-    const s = sums.get(e.subject)!
-    s.backing += w[i]!
-    s.scored += w[i]! * shat[i]!
-    s.reviews++
-  })
-  const ratings = new Map<string, Rating>()
-  for (const [address, s] of sums) {
-    ratings.set(address, { value: s.reviews ? (ratingPrior * mu + s.scored) / (ratingPrior + s.backing) : null, backing: s.backing, reviews: s.reviews })
+  let trust = new Map(profiles.map((p) => [p.address, p.uniqueness / 2]))
+  let picky = new Map(profiles.map((p) => [p.address, 0.5]))
+  let step = 1
+  let last = Infinity
+  let rounds = 0
+  while (rounds < numbers.maxRounds) {
+    rounds++
+    const v = new Map<string, number>()
+    const r = new Map<string, number>()
+    for (const w of words) {
+      const sums = w.word === 'vouch' ? v : r
+      sums.set(w.subject, (sums.get(w.subject) ?? 0) + u.get(w.writer)! * trust.get(w.writer)!)
+    }
+    const nextTrust = new Map([...u].map(([a, x]) => [a, trustOf(x, vouchPart(v.get(a) ?? 0, numbers), reportPart(r.get(a) ?? 0, numbers))]))
+    const sums = sumsOf(trust, picky)
+    const ratingOf = (subject: string) => {
+      const s = sums.get(subject)
+      return s && s.weight > 0 ? scaled(s.sum / s.weight) : null
+    }
+    const nextPicky = new Map([...u].map(([a]) => [a, pickinessOf((scoredBy.get(a) ?? []).map((e) => ({ score: scaled(e.score), rating: ratingOf(e.subject) })))]))
+
+    let moved = 0
+    for (const [a, x] of nextTrust) moved = Math.max(moved, Math.abs(x - trust.get(a)!))
+    for (const [a, x] of nextPicky) moved = Math.max(moved, Math.abs(x - picky.get(a)!))
+    if (moved <= numbers.tolerance) {
+      trust = nextTrust
+      picky = nextPicky
+      break
+    }
+    if (moved >= last) step /= 2
+    last = moved
+    const toward = (now: Map<string, number>, next: Map<string, number>) => new Map([...now].map(([a, x]) => [a, x + step * (next.get(a)! - x)]))
+    trust = toward(trust, nextTrust)
+    picky = toward(picky, nextPicky)
   }
-  const weights = reviews.map(() => 0)
-  edges.forEach((e, i) => {
-    for (const r of e.reviews) weights[r] = w[i]! / e.reviews.length
-  })
-  return { baseline: mu, trust, weights, ratings }
+
+  const sums = sumsOf(trust, picky)
+  let all = { sum: 0, weight: 0 }
+  for (const s of sums.values()) all = { sum: all.sum + s.sum, weight: all.weight + s.weight }
+  const average = all.weight > 0 ? all.sum / all.weight : null
+  const raters = new Map<string, number>()
+  for (const e of edges) raters.set(e.subject, (raters.get(e.subject) ?? 0) + 1)
+  const out = new Map<string, Rating>()
+  for (const p of profiles) {
+    const s = sums.get(p.address) ?? { sum: 0, weight: 0 }
+    out.set(p.address, { value: s.weight > 0 ? s.sum / s.weight : null, count: raters.get(p.address) ?? 0, order: searchOrder(s.sum, s.weight, average, numbers) })
+  }
+  const weights = ratings.map(() => 0)
+  for (const e of edges) for (const i of e.reviews) weights[i] = weightOf(e, trust, picky) / e.reviews.length
+  return {
+    trust,
+    pickiness: picky,
+    ratings: out,
+    weights,
+    words: words.map((w) => ({ ...w, weight: u.get(w.writer)! * trust.get(w.writer)! })),
+    average,
+    rounds,
+  }
 }

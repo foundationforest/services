@@ -33,9 +33,10 @@
 //    9. reviews, each naming its evidence as <CAIP-2 chain>:<id>: the student's AI names the offer,
 //       and its signer fills in the direct payment; the tutor's AI may not name the escrow, so the
 //       tutor's app writes that review;
-//   10. the loop index counts it all: both profiles, the offer, both reviews with their payments, both
-//       ratings and backings as its own ranking makes them, signed, the deal; no message anywhere;
-//   11. the rating carried: the tutor's device finds its leaf by its tag, proves its rating onto its
+//   10. the loop index counts it all: both profiles, the offer, both reviews with their payments,
+//       and what each profile shows (ratings, trust, uniqueness, pickiness) as its own ranking
+//       makes them, signed, the deal; no message anywhere;
+//   11. the trust carried: the tutor's device finds its leaf by its tag, proves its trust onto its
 //       coach profile, and the index shows the proof;
 //   12. addresses: no answer either AI received holds one of its own person's addresses;
 //   13. balances: what each folder's credits came to.
@@ -59,13 +60,13 @@ import { type SignedStamp, checkStamp, proofBytes as stampBytes, proveStamp, sta
 import { Connection, Keypair, PublicKey } from '@solana/web3.js'
 
 import { type Credit, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, buy, creditList, finish, serviceOf } from '../host/client/client.ts'
-import { tenth } from '../index/src/pass.ts'
-import { type Numbers, rank } from '../index/src/rank.ts'
+import { hundredth, tenth } from '../index/src/pass.ts'
+import { type Numbers, pickinessWord, rank, uniqueness } from '../index/src/rank.ts'
 import { aiApp, logIn } from '../mcp/test/setup.ts'
 import { type Choice, type PayWith, Signer } from '../mcp/test/signer.ts'
 import { DOLLAR, type Paid, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, kora, payReferenceIxs, scheduleOf, send, sweepIxs, throughFeePayer, unitsOf } from './chain.ts'
 import { type RunRecord, checkRecord, holdsNone } from './record.ts'
-import { type Running, VERIFIER_NAME, readServices, startServices } from './services.ts'
+import { FACE_CONFIDENCE, type Running, VERIFIER_NAME, readServices, startServices } from './services.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..')
@@ -79,7 +80,7 @@ const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/circuit/
 const MARKET = JSON.parse(readFileSync(join(repo, 'markets/markets', `${cfg.market}.json`), 'utf8')) as { payment: { [name: string]: Template } }
 /** The market's schedule the escrow runs on. */
 const SCHEDULE = 'session'
-/** The tutor's second profile, where it carries its rating: another market, from the same seed. */
+/** The tutor's second profile, where it carries its trust: another market, from the same seed. */
 const COACH = 'sports-coaching/coach'
 /** How many of the host's credits each person buys: about a dollar of writes a hundred times over. */
 const CREDITS = 10
@@ -93,8 +94,6 @@ const APP = 'https://app.e2e-loop.invalid'
 const INDEX_WAIT = 15 * 60_000
 /** The numbers the loop index ranks by: its own, from index/config. */
 const SCORING = JSON.parse(readFileSync(join(repo, 'index/config/scoring.json'), 'utf8')) as Numbers & { evidence: { [kind: string]: number } }
-/** What the loop index gives a profile whose face check counts: the face key's points in its lists (services.ts). */
-const FACE_POINTS = 1
 
 /** What must never reach the record or the log: the phrase, the RPC's URL when RPC_URL gave it, and each key, credit and login the run makes. */
 const secrets: string[] = [process.env.FOREST_DEVNET_SEED ?? '', process.env.RPC_URL ?? '']
@@ -557,63 +556,77 @@ async function main() {
   steps.reviews = { student: { id: byStudent.id, evidence: directEvidence, postedBy: 'ai' }, tutor: { id: tutorReviewId, evidence: escrowEvidence, postedBy: 'app' } }
   say('two reviews: the student’s AI named the offer and its signer the direct payment; the tutor’s AI was refused the escrow, and the tutor’s app named it')
 
-  // 10. The loop index counts it all. Each rating and backing is what the index's own ranking makes
-  // of these two reviews, with its own numbers: each profile's face check counted, each review
-  // backed by a payment, one tenth as the index shows it.
+  // 10. The loop index counts it all. What each profile shows is what the index's own ranking makes
+  // of these two reviews, with its own numbers: each profile's face check counted, each review a
+  // rating backed by a payment and its writer's word about the other, a vouch; a rating to one
+  // decimal, trust and uniqueness from 0 to 100, as the index shows them.
   const index = s.index
   const profilePage = (address: string) => json(`${index.url}/profiles/${address}.json`)
+  const face = uniqueness([FACE_CONFIDENCE])
   const ranked = rank(
-    [{ address: tutor.address, points: FACE_POINTS }, { address: student.address, points: FACE_POINTS }],
+    [{ address: tutor.address, uniqueness: face }, { address: student.address, uniqueness: face }],
     [
       { writer: student.address, subject: tutor.address, score: 10, evidence: SCORING.evidence.payment! },
       { writer: tutor.address, subject: student.address, score: 9, evidence: SCORING.evidence.escrow! },
     ],
+    [
+      { writer: student.address, subject: tutor.address, kind: 'rating', time: 0, address: `${student.address}/review/${byStudent.id}` },
+      { writer: tutor.address, subject: student.address, kind: 'rating', time: 0, address: `${tutor.address}/review/${tutorReviewId}` },
+    ],
     SCORING,
-  ).ratings
-  const want = (address: string) => ({ value: tenth(ranked.get(address)!.value), backing: tenth(ranked.get(address)!.backing), reviews: 1 })
-  say(`the index: waiting for both profiles, the offer, both reviews with their payments, ratings ${want(tutor.address).value} and ${want(student.address).value}, and the deal`)
+  )
+  const want = (address: string) => ({
+    ratings: { value: tenth(ranked.ratings.get(address)!.value), count: 1 },
+    trust: hundredth(ranked.trust.get(address)!),
+    uniqueness: hundredth(face),
+    pickiness: pickinessWord(ranked.pickiness.get(address)!, SCORING),
+  })
+  type Shown = { ratings: { value: number; count: number }; trust: number; uniqueness: number; pickiness: string; statement: string; signature: string }
+  const shownOf = (v: Shown) => ({ ratings: v.ratings, trust: v.trust, uniqueness: v.uniqueness, pickiness: v.pickiness })
+  const describe = (w: { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: string }) => `rated ${w.ratings.value} by ${w.ratings.count}, trust ${w.trust}, uniqueness ${w.uniqueness}, pickiness ${w.pickiness}`
+  say(`the index: waiting for both profiles, the offer, both reviews with their payments, the tutor ${describe(want(tutor.address))}, the student ${describe(want(student.address))}, and the deal`)
   const shown = await waitFor('the index to show it all', INDEX_WAIT, async () => {
     const [t, st] = await Promise.all([profilePage(tutor.address), profilePage(student.address)])
     if (t.status !== 200 || st.status !== 200) return null
     for (const [v, w] of [[t.body, want(tutor.address)], [st.body, want(student.address)]] as const) {
       if (!v.checks.some((c: { key: string }) => c.key === s.verifier.keys.face)) return null
-      if (v.rating.value !== w.value || v.rating.backing !== w.backing || v.rating.reviews !== w.reviews) return null
+      if (JSON.stringify(shownOf(v)) !== JSON.stringify(w)) return null
       if (!v.reviews.received.every((r: { counted: boolean; evidence: string }) => r.counted && r.evidence === 'with')) return null
     }
     if (!t.body.posts.some((p: { address: string; listed: boolean }) => p.address === offerAddress && p.listed)) return null
     const d = await json(`${index.url}/deals/${keys.escrow.toBase58()}.json`)
     if (d.status !== 200 || d.body.receipt?.outcome !== 'pay' || d.body.reviews.length !== 1 || !d.body.reviews[0].counted) return null
-    return { tutor: t.body, student: st.body, deal: d.body }
+    return { tutor: t.body as Shown, student: st.body as Shown, deal: d.body }
   })
   for (const v of [shown.tutor, shown.student]) {
-    const signature = unpackSignature(b64u.decode(v.rating.signature))
-    assert.ok(signature && checkBytes(index.address, new TextEncoder().encode(v.rating.statement), signature), 'each rating signed by the index')
+    const signature = unpackSignature(b64u.decode(v.signature))
+    assert.ok(signature && checkBytes(index.address, new TextEncoder().encode(v.statement), signature), 'what each profile shows, signed by the index')
   }
   assert.equal(JSON.stringify(shown).includes(text) || JSON.stringify(shown).includes(replyText), false, 'no message is anywhere in the index')
-  const rated = (v: { rating: { value: number; backing: number; reviews: number; statement: string } }, address: string) => ({
+  const rated = (v: Shown, address: string) => ({
     url: `${index.url}/profiles/${address}`,
-    rating: v.rating.value,
-    backing: v.rating.backing,
-    reviews: v.rating.reviews,
-    statement: v.rating.statement,
+    rating: v.ratings.value,
+    count: v.ratings.count,
+    trust: v.trust,
+    uniqueness: v.uniqueness,
+    pickiness: v.pickiness,
+    statement: v.statement,
   })
   steps.index = {
     tutor: rated(shown.tutor, tutor.address),
     student: rated(shown.student, student.address),
     deal: { url: `${index.url}/deals/${keys.escrow.toBase58()}`, outcome: shown.deal.receipt.outcome, amount: shown.deal.receipt.amount, reviews: shown.deal.reviews.length },
   }
-  say(`the index counts it all: ratings ${shown.tutor.rating.value} and ${shown.student.rating.value}, backing ${shown.tutor.rating.backing} and ${shown.student.rating.backing}, each from one review with a payment, signed; the deal paid`)
+  say(`the index counts it all: the tutor ${describe(shownOf(shown.tutor))}, the student ${describe(shownOf(shown.student))}, each from one review with a payment, signed; the deal paid`)
 
-  // 11. The rating carried to the coach profile, proven on the device. The tutor's leaf holds its
-  // rating and its backing, each times ten: the index's tree, as its README says.
+  // 11. The trust carried to the coach profile, proven on the device. The tutor's leaf holds its
+  // trust, with a count of 1: the index's tree, as its README says.
   const tag = hex.encode(toBytes32(tagOf(verifierScalarOf(tutor.scalar, VERIFIER_NAME), tutor.label)))
-  const leafScore = Math.round(shown.tutor.rating.value * 10)
-  const leafCount = Math.max(1, Math.round(shown.tutor.rating.backing * 10))
   const tree = await waitFor('the tutor’s leaf in the index’s tree', INDEX_WAIT, async () => {
     const [t, l] = await Promise.all([json(`${index.url}/v1/reputation`), json(`${index.url}/v1/reputation/leaves`)])
     if (t.status !== 200 || l.status !== 200 || t.body.root !== l.body.root) return null
     const mine = l.body.leaves.find((x: { tag: string }) => x.tag === tag)
-    return mine?.score === leafScore && mine.count === leafCount ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { tag: string; scope: string; score: number; count: number }[] } : null
+    return mine?.score === shown.tutor.trust && mine.count === 1 ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { tag: string; scope: string; score: number; count: number }[] } : null
   })
   const leaves = tree.leaves.map((l) => ({ tag: BigInt(`0x${l.tag}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) }))
   const root = buildTree(leaves).root
@@ -622,18 +635,19 @@ async function main() {
   assert.ok(checkBytes(index.address, signedBytes(root, tree.served.time), unpackSignature(rootSignature)!), 'signed by the index')
   const carried = await proveReputation({ seedScalar: tutor.scalar, sources: [{ label: tutor.label, verifierName: VERIFIER_NAME }], leaves, profileLabel: COACH, artifacts: REPUTATION_FILES })
   assert.equal(carried.address, coach.address, 'proven onto the coach profile')
+  assert.equal(Number(carried.score), shown.tutor.trust, 'carrying the tutor’s trust')
   assert.ok(await checkReputation({ proof: carried.proof, root, score: carried.score, profile: coach.address, index: index.address, time: tree.served.time, signature: rootSignature }), 'it checks')
   const reputation = { circuit: 'reputation', index: tree.served.index, root: tree.served.root, time: tree.served.time, signature: tree.served.signature, score: Number(carried.score), proof: b64u.encode(reputationBytes(carried.proof)) }
   await spend(tutor, coach.address, 4)
   await profile(tutor, COACH, [reputation])
-  say(`tutor: its rating, ${carried.score} tenths, proven onto ${coach.address}`)
+  say(`tutor: its trust, ${carried.score}, proven onto ${coach.address}`)
   const proofShown = await waitFor('the index to show the proof on the coach profile', INDEX_WAIT, async () => {
     const v = await profilePage(coach.address)
     const x = v.status === 200 ? v.body.proofs?.find((p: { circuit: string }) => p.circuit === 'reputation') : null
-    return x?.result === 'shown' && x.rating === shown.tutor.rating.value ? x : null
+    return x?.result === 'shown' && x.trust === shown.tutor.trust ? x : null
   })
   steps.reputation = { profile: coach.address, url: `${index.url}/profiles/${coach.address}`, tag, root: tree.served.root, time: tree.served.time, leaves: leaves.length, score: Number(carried.score), result: proofShown.result }
-  say('the index shows the carried rating on the coach profile')
+  say('the index shows the carried trust on the coach profile')
 
   // 12. No answer either AI received holds one of its own person's addresses: each profile's, the
   // coach's included, and each pay address. An AI acting for one person reads the

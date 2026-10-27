@@ -44,10 +44,15 @@ test("each market's check reads its file: fields, choices, lists, roles", () => 
   assert.equal(m.checkPost('electronics', 'seller', { photos: [] }), null)
   assert.match(m.checkPost('tutoring', 'seller', {})!, /seller is not a role in the tutoring market/)
   assert.match(m.checkPost('knitting', 'maker', {})!, /knitting is not a market/)
-  assert.equal(m.checkReview('tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)
-  assert.match(m.checkReview('tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', evidence: 'x' })!, /reviews hold no evidence/)
-  assert.match(m.checkReview('tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '11' })!, /score is not "1" to "10"/)
-  assert.match(m.checkReview('tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', offer: 'maths' })!, /offer is not a post's address/)
+  assert.equal(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)
+  assert.match(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', evidence: 'x' })!, /reviews hold no evidence/)
+  assert.match(m.checkAbout('review', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '11' })!, /score is not "1" to "10"/)
+  assert.match(m.checkAbout('review', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', offer: 'maths' })!, /offer is not a post's address/)
+  // A vouch and a report hold a subject and text, by the market's own vouch and report.
+  assert.equal(m.checkAbout('vouch', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', text: 'Real and honest.' }), null)
+  assert.equal(m.checkAbout('report', 'clothing', 'seller', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC' }), null)
+  assert.match(m.checkAbout('vouch', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '9' })!, /the tutoring market's vouches hold no score/)
+  assert.match(m.checkAbout('report', 'tutoring', null, { text: 'A scam.' })!, /names no subject/)
 })
 
 const by = verifier()
@@ -71,7 +76,7 @@ test('a post that does not fit its market is kept, not listed, and its profile p
     at(tutor, 'offer/odd', { description: 'Maths.', colour: 'red' }),
     at(student, 'offer/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', points: 1 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
   await i.pass()
 
   const m = (await twin<MarketPage>(i, '/markets/tutoring.json')).body

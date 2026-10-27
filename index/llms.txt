@@ -1,17 +1,17 @@
 # Forest index
 
-> The foundation's index of Forest. It ranks what is public: it reads the hosts it lists, keeps the profiles whose stamp proof (a proof that a verifier checked the person behind the profile) checks for a verifier key it lists, rates each by the trust behind its reviews, within its market, and serves what it finds as pages for people and as JSON for machines. Each profile is one person's profile in one market and role; nothing here links one profile to another.
+> The foundation's index of Forest. It ranks what is public: it reads the hosts it lists, keeps the profiles whose stamp proof (a proof that a verifier checked the person behind the profile) checks for a verifier key it lists, ranks each within its market, and serves what it finds as pages for people and as JSON for machines. Each profile shows its ratings (a weighted average from 1 to 10, as it is, with how many raters), its trust (0 to 100: how much its own words weigh, from the vouches, ratings and reports it gets), its uniqueness (0 to 100: how sure the index is that it is one real person) and its pickiness (tough, average or easy), signed. Evidence weighs nothing today; a review backed by a deal may count more later. Each profile is one person's profile in one market and role; nothing here links one profile to another.
 
 Every page has a JSON twin at the same address with `.json` on its path. Reading needs no key, no sign-up and no sign-in.
 
 ## For AI agents
 
-- [Read skill](https://index.forest.foundation/skill.md): how to search, read a market, a profile and a deal, and what a rating and its backing mean
+- [Read skill](https://index.forest.foundation/skill.md): every field and filter in plain words: how to search, read a market, a profile and a deal, and what ratings, trust, uniqueness and pickiness mean
 - [Markets](https://index.forest.foundation/index.json): every market, this index's address, and the lists it reads by
 - [A market](https://index.forest.foundation/markets/tutoring.json): its file, its preview among the rest, and its listed posts by role
-- [Search](https://index.forest.foundation/search.json?q=maths&market=tutoring): posts matching words and filters, best rated first, unrated last
+- [Search](https://index.forest.foundation/search.json?q=maths&market=tutoring): posts matching words and filters, by their ratings with the market's average added, so few scores sit near it
 - [Sitemap](https://index.forest.foundation/sitemap.xml): the home page, each market, each counted profile, and each deal with a receipt
-- [Reputation tree](https://index.forest.foundation/v1/reputation): this index's signed root, and [every leaf](https://index.forest.foundation/v1/reputation/leaves), for proving a rating from one's own profiles without naming them
+- [Reputation tree](https://index.forest.foundation/v1/reputation): this index's signed root, and [every leaf](https://index.forest.foundation/v1/reputation/leaves), each a profile's trust, for carrying a trust from one's own profiles without naming them
 
 ## How it works
 

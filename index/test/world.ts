@@ -111,7 +111,7 @@ export async function startRpc(answer: (method: string, params: unknown[]) => un
 
 export type Lists = {
   hosts: string[]
-  keys?: Array<{ key: string; verifier: string; label: string; points: number; until?: string }>
+  keys?: Array<{ key: string; verifier: string; label: string; confidence: number; until?: string }>
   indexes?: Array<{ index: string; name: string }>
   maxAgeDays?: number
   scoring?: { [key: string]: unknown }
