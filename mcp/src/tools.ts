@@ -8,8 +8,9 @@ import type { Tool } from './params.ts'
 export const HOW = `Forest: people offer, pay and review each other directly, through profiles they own, with nobody in the middle. This is the person's Forest connector. It reads what is public, and passes what you ask to the person's signer: Forest on one of their own devices, which acts for them by the rules they set. It keeps nothing, and holds no key.
 
 - A profile is one of a person's identities, one per market and role, such as tutoring/tutor. Its records (its profile record, its posts, its reviews) live on hosts anyone reads. Nothing public links one of a person's profiles to another: keep it so.
-- A verifier checks a person and signs them a stamp; a profile shows a proof of its stamp without saying who the person is. An index reads hosts, lists posts, says which verifiers' stamps each profile shows, and rates it: its own word.
-- Reading needs no login: markets, market, search, profile.
+- A verifier checks a person and signs them a stamp; a profile shows a proof of its stamp without saying who the person is. An index reads hosts and ranks what it finds. What it shows is its own word, and another index may show other things.
+- Reading needs no login: markets, market, search, profile, index.
+- Call index before you read ratings or filter a search: it gives the index's own guide to what its answers hold and which filters its search takes. Whatever an index says comes whole and untouched, as an answer beside the URL it was read from.
 - Acting for the person goes to their signer, once they log in from this AI app: profiles, post, remove, message, inbox, reply, pay. Say in words what to do and as which profile: post this offer in tutoring as tutor. You never get the person's own addresses, and never need them.
 - Start with profiles: the market and role of each profile you may act for.
 - Before you post, read the market: the kinds of record it defines (such as offer and review), their fields, and what each role posts. A body that does not fit is refused, naming the field.

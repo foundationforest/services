@@ -84,7 +84,7 @@ test('1. the MCP SDK’s client finds the door, with every tool, reading with no
     assert.deepEqual(await started, { listening: true })
     const url = `http://127.0.0.1:${port}`
     const seen = await smoke(url, { provider: new AiApp(), browse })
-    assert.deepEqual(seen.tools, ['inbox', 'market', 'markets', 'message', 'pay', 'post', 'profile', 'profiles', 'remove', 'reply', 'search'])
+    assert.deepEqual(seen.tools, ['inbox', 'index', 'market', 'markets', 'message', 'pay', 'post', 'profile', 'profiles', 'remove', 'reply', 'search'])
     assert.equal(seen.logins, `to ${new URL(w.appUrl).origin}`)
     assert.equal(seen.login, 'done')
     assert.equal(await raw(port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')

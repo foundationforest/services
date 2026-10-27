@@ -3,7 +3,9 @@
 // acts for a person goes to their signer (relay.ts).
 //
 // A folder is always read from hosts, every signature checked (records' readProfile). What an index
-// says is passed on as its own word: nothing here checks it.
+// says is passed on whole, as its own word: nothing here checks it, and nothing here names a field
+// of it, so an index can change what it shows, or another index show other things, and this copy
+// passes it on the same.
 //
 // The start hosts are reached as they are: whoever runs this copy chose them. Any other host, one a
 // profile's hosts record names, is reached only at a public address; no request follows a
@@ -22,10 +24,10 @@ export function refuse(why: string): never {
 
 /** The foundation's host, where a profile's hosts record is looked for first unless told otherwise. */
 export const HOST = 'https://host.forest.foundation'
-/** The foundation's index, read for markets' posts, search, checks and ratings unless told otherwise. */
+/** The foundation's index, whose answers are passed on unless told otherwise. */
 export const INDEX = 'https://index.forest.foundation'
-/** The most of an index's JSON read: a page's worth on the reference host. */
-export const MAX_JSON_BYTES = 4 * 1024 * 1024
+/** The most of an index's answer read: a page's worth on the reference host. */
+export const MAX_ANSWER_BYTES = 4 * 1024 * 1024
 /** The most pages one folder read takes, across all its hosts. */
 export const MAX_PAGES = 100
 
@@ -64,8 +66,8 @@ export function profileOf(view: View): Body | null {
   return view.current.get('profile')?.record.body ?? null
 }
 
-/** JSON from a URL, read up to `max` bytes, with `fetchWith`. */
-export async function readJson(url: string, fetchWith: typeof fetch = fetch, max = MAX_JSON_BYTES, timeout = READ_TIMEOUT_MS): Promise<unknown> {
+/** What a URL answers, read up to `max` bytes, with `fetchWith`. */
+async function readBytes(url: string, fetchWith: typeof fetch, max: number, timeout: number): Promise<Buffer> {
   const res = await fetchWith(url, { signal: AbortSignal.timeout(timeout), redirect: 'error' })
   if (!res.ok) {
     await res.body?.cancel()
@@ -76,7 +78,7 @@ export async function readJson(url: string, fetchWith: typeof fetch = fetch, max
   const reader = res.body!.getReader()
   for (;;) {
     const { done, value } = await reader.read()
-    if (done) return JSON.parse(Buffer.concat(parts).toString('utf8'))
+    if (done) return Buffer.concat(parts)
     size += value.length
     if (size > max) {
       await reader.cancel()
@@ -86,24 +88,35 @@ export async function readJson(url: string, fetchWith: typeof fetch = fetch, max
   }
 }
 
-/** What the index says at `path`, passed on as its word, with where it was read; refused when it says nothing. */
-export async function fromIndex(ctx: Context, path: string): Promise<Body> {
-  const url = `${ctx.index.replace(/\/+$/, '')}/${path}`
+/** JSON from a URL, read up to `max` bytes, with `fetchWith`. */
+export async function readJson(url: string, fetchWith: typeof fetch = fetch, max = MAX_ANSWER_BYTES, timeout = READ_TIMEOUT_MS): Promise<unknown> {
+  return JSON.parse((await readBytes(url, fetchWith, max, timeout)).toString('utf8'))
+}
+
+/** Whose word an index's answer is, as the AI is shown it beside the answer. */
+export const WORD = "the index's own, passed on whole and unchecked"
+
+/** What an index said at a URL: its answer, untouched, or why it said nothing. Never spread into one object, so no field of the index's can stand for one of these. */
+export type Said = { url: string; word: string } & ({ answer: unknown } | { unread: string })
+
+const at = (ctx: Context, path: string) => `${ctx.index.replace(/\/+$/, '')}/${path}`
+
+/** What the index says at `path`, untouched, as JSON or as text, with where it was read; refused when it says nothing. */
+export async function fromIndex(ctx: Context, path: string, as: 'json' | 'text' = 'json'): Promise<Said> {
+  const url = at(ctx, path)
   try {
-    const says = await readJson(url)
-    if (!isObject(says)) throw new Error('answered something other than a JSON object')
-    return { url, ...says }
+    const answer = as === 'json' ? await readJson(url) : (await readBytes(url, fetch, MAX_ANSWER_BYTES, READ_TIMEOUT_MS)).toString('utf8')
+    return { url, word: WORD, answer }
   } catch (err) {
     return refuse(`the index gave nothing for ${url}: ${(err as Error).message}`)
   }
 }
 
-/** The fields `keep` of what the index says at `path`; or why it said nothing, so a down index never hides what the hosts gave. */
-export async function indexSays(ctx: Context, path: string, keep: string[]): Promise<Body> {
+/** The same, or why the index said nothing, so a down index never hides what the hosts gave. */
+export async function indexSays(ctx: Context, path: string, as: 'json' | 'text' = 'json'): Promise<Said> {
   try {
-    const says = await fromIndex(ctx, path)
-    return Object.fromEntries(['url', ...keep].filter((k) => k in says).map((k) => [k, says[k]!]))
+    return await fromIndex(ctx, path, as)
   } catch (err) {
-    return { url: `${ctx.index.replace(/\/+$/, '')}/${path}`, unread: (err as Error).message }
+    return { url: at(ctx, path), word: WORD, unread: (err as Error).message }
   }
 }

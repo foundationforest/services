@@ -1,5 +1,6 @@
 // What the tests act on, all on loopback: the standard's reference host; a stand-in index serving
-// the four answers this copy reads, in the index's JSON as it is now; a stand-in for the app's
+// its skill.md and four answers, in the index's JSON as it is now, each with a field this copy has
+// never seen, and a search that answers with what it was asked; a stand-in for the app's
 // connect page, where the reference signer (signer.ts) makes the connection with the person's
 // choice; and this copy, started in-process, reading the host and the index.
 //
@@ -56,23 +57,33 @@ async function listen(server: Server): Promise<string> {
 
 const close = (server: Server) => new Promise((resolve) => server.close(resolve))
 
-/** The stand-in index: the four answers, in the index's JSON as #83 left it. */
-async function standIn(stranger: string, offer: string): Promise<{ url: string; server: Server }> {
+/** What the stand-in index says about itself, for AI agents. */
+export const SKILL = '# A stand-in index\n\nEach answer here holds badge, a field the mcp has never seen, and search takes badge as a filter.\n'
+
+/**
+ * The stand-in index: its skill.md, and four answers in the index's JSON as #83 left it, each with
+ * `badge`, a field the mcp has never seen. Its search answers with `asked` too: the filters it got.
+ */
+async function standIn(stranger: string, offer: string): Promise<{ url: string; server: Server; said: World['said'] }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face' }]
   const rating = { value: 9.2, backing: 3.4, reviews: 14, statement: '{}', signature: 'x' }
   const result = { profile: stranger, market: 'tutoring', role: 'tutor', post: { address: offer, body: lesson('Physics, from the stranger.') }, rating, checks }
-  const files: { [path: string]: unknown } = {
-    '/index.json': { index: 'stand-in', markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }], lists: {} },
-    '/markets/tutoring.json': { index: 'stand-in', market: TUTORING, posts: { tutor: [result], student: [] } },
-    '/search.json': { index: 'stand-in', total: 1, results: [result] },
-    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: {}, checks, rating, posts: [], reviews: { received: [], given: [] }, proofs: [] },
+  const badge = 'early'
+  const said: World['said'] = {
+    '/skill.md': SKILL,
+    '/index.json': { index: 'stand-in', markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }], lists: {}, badge },
+    '/markets/tutoring.json': { index: 'stand-in', market: TUTORING, posts: { tutor: [result], student: [] }, badge },
+    '/search.json': { index: 'stand-in', total: 1, results: [result], badge },
+    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: {}, checks, rating, posts: [], reviews: { received: [], given: [] }, proofs: [], badge },
   }
   const server = createServer((req, res) => {
-    const body = files[new URL(req.url ?? '/', 'http://x').pathname]
+    const url = new URL(req.url ?? '/', 'http://x')
+    const body = said[url.pathname]
     if (body === undefined) res.writeHead(404).end()
-    else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(body))
+    else if (typeof body === 'string') res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8' }).end(body)
+    else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(url.pathname === '/search.json' ? { ...body, asked: Object.fromEntries(url.searchParams) } : body))
   })
-  return { url: await listen(server), server }
+  return { url: await listen(server), server, said }
 }
 
 /** The stand-in connect page: hands the login to the person's signer, with the person's choice, and sends the browser where it says. */
@@ -170,6 +181,8 @@ export type World = {
   host: string
   /** The stand-in index, and the stand-in connect page. */
   index: string
+  /** What the stand-in index serves, by path; its search adds `asked`. */
+  said: { [path: string]: unknown }
   appUrl: string
   person: Signer
   /** The person's seed, for another of their devices in a test: never given to an AI app. */
@@ -221,6 +234,7 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
     mcp,
     host: host.url!,
     index: index.url,
+    said: index.said,
     appUrl: page.url,
     person,
     seed,

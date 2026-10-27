@@ -11,7 +11,7 @@ export const description =
 export const params: Param[] = [
   MARKET,
   ROLE,
-  { name: 'to', type: 'string', required: true, description: "The address of the profile it is to, such as a post's profile from search." },
+  { name: 'to', type: 'string', required: true, description: 'The address of the profile it is to.' },
   { name: 'text', type: 'string', required: true, description: 'What the message says.' },
 ]
 export const relayed = true

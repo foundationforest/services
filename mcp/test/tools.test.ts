@@ -1,5 +1,6 @@
 // Every tool, through the MCP SDK's own client, as an AI app calls it after the person logged in,
-// with the reference signer open: the four reads, with what the index and the hosts say; and each
+// with the reference signer open: the five reads, with what the hosts say and the index's answers
+// whole, a field and a filter this copy has never seen among them; and each
 // relayed tool against the person's rules, one in each of their two tutoring profiles' folders
 // (post, message, read and pay; $50 a day on each). Inside them it is done without asking; outside
 // them it needs the person's yes; a pay past the profile's limit too, and a rule with no limit pays
@@ -11,11 +12,13 @@
 // run, holds one of the person's own addresses.
 
 import assert from 'node:assert/strict'
+import { readFileSync, readdirSync } from 'node:fs'
 import { after, before, describe, mock, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { inboxKey } from '@foundationforest/keys'
 import { b64u, pull, pullRequest, readProfile } from '@foundationforest/records'
 import { RULE_PREFIX, openMessage, readerCount } from '@foundationforest/records/private'
+import { WORD } from '../src/forest.ts'
 import { NO_SIGNER } from '../src/relay.ts'
 import { REPEAT_MS, Signer, permits } from './signer.ts'
 import { TUTORING, type World, aiApp, lesson, logIn, world } from './setup.ts'
@@ -66,19 +69,23 @@ async function closed() {
   for (let i = 0; i < 50 && w.mcp.relay.size; i++) await new Promise((r) => setTimeout(r, 20))
 }
 
+/** What the index said at `path`, as the AI is shown it: whole, with where it was read and whose word it is. */
+const said = (path: string, answer = w.said[path]) => ({ url: `${w.index}${path}`, word: WORD, answer })
+
 describe('reading, with no signer', () => {
-  test('markets: the directory, and the markets the index lists', async () => {
+  test('markets: the directory', async () => {
     const out = await call('markets')
     assert.ok(out.markets.some((m: { name: string }) => m.name === 'tutoring'))
-    assert.deepEqual(out.index.markets, ['tutoring'])
+    assert.deepEqual(Object.keys(out), ['markets'], 'which markets an index lists is in its home, from index')
   })
 
-  test('market: the file with its preview, its kinds, and the index’s posts', async () => {
+  test('market: the file with its preview, its kinds, and the index’s whole answer, a field the mcp never saw in it', async () => {
     const out = await call('market', { market: 'tutoring' })
     assert.equal(out.market.howDealsGo, TUTORING.howDealsGo)
     assert.deepEqual(out.market.preview, ['subjects', 'description', 'price', 'place'])
     assert.deepEqual(out.kinds, ['offer', 'review'])
-    assert.equal(out.index.posts.tutor[0].post.address, w.stranger.offer)
+    assert.deepEqual(out.index, said('/markets/tutoring.json'))
+    assert.equal(out.index.answer.badge, 'early')
   })
 
   test('a market whose file leaves preview out gets the manual’s default', async () => {
@@ -86,19 +93,44 @@ describe('reading, with no signer', () => {
     assert.ok(Array.isArray(out.market.preview) && out.market.preview[0] === 'description')
   })
 
-  test('search: the index’s word, with the verifiers whose stamps it shows', async () => {
-    const out = await call('search', { q: 'physics', market: 'tutoring' })
-    assert.equal(out.total, 1)
-    assert.equal(out.results[0].checks[0].verifier, 'verifier.forest.foundation')
+  test('search: the filters given reach the index as they are, one the mcp never saw among them, and its answer comes whole', async () => {
+    const filters = { q: 'physics', market: 'tutoring', badge: 'early' }
+    const out = await call('search', { filters })
+    const asked = `/search.json?${new URLSearchParams(filters)}`
+    assert.deepEqual(out, { index: said(asked, { ...(w.said['/search.json'] as object), asked: filters }) })
+    assert.deepEqual((await call('search')).index.answer.asked, {}, 'with no filters, none')
+    assert.equal((await call('search', { filters: { limit: 5 } })).refused, "each filter's value is text: limit is not")
   })
 
-  test('profile: any profile, from its hosts, its records by kind, and the index’s checks and rating', async () => {
+  test('profile: any profile, from its hosts, its records by kind, and the index’s whole answer, a field the mcp never saw in it', async () => {
     const out = await call('profile', { address: w.stranger.address })
     assert.equal(out.profile.role, 'tutor')
     assert.equal(out.profile.inboxKey, undefined, 'the long inbox key is left out')
     assert.deepEqual(out.records.offer.map((r: { address: string }) => r.address).sort(), Object.values(w.stranger.offers).sort())
-    assert.equal(out.index.checks[0].verifier, 'verifier.forest.foundation')
-    assert.deepEqual([out.index.rating.value, out.index.rating.backing], [9.2, 3.4])
+    assert.deepEqual(out.index, said(`/profiles/${w.stranger.address}.json`))
+    assert.equal(out.index.answer.badge, 'early')
+  })
+
+  test('index: its skill.md and its home, each whole', async () => {
+    assert.deepEqual(await call('index'), { skill: said('/skill.md'), home: said('/index.json') })
+  })
+
+  test('no source file names a field or a filter of the index’s', () => {
+    // The index's fields and filters as its skill.md names them today. Left out: those that are also
+    // the mcp's own words or the markets' (index and markets, its tools; market, role and name, its
+    // parameters and the markets' fields; posts, what a market's role posts), which this could not
+    // tell from the index's.
+    const theirs = ['checks', 'rating', 'backing', 'results', 'total', 'q', 'near', 'km', 'minRating', 'minReviews', 'limit', 'offset']
+    const files = readdirSync(new URL('../src/', import.meta.url), { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts'))
+    assert.ok(files.length > 10)
+    for (const file of files) {
+      const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+      for (const field of theirs) {
+        // Quoted, read as a property, written as a key, or put in a query.
+        const named = new RegExp(`(['"\`])${field}\\1|\\.${field}\\b|\\b${field}\\s*:|[?&]${field}=`)
+        assert.doesNotMatch(source, named, `src/${file} names ${field}`)
+      }
+    }
   })
 })
 
