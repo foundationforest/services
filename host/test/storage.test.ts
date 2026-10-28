@@ -12,7 +12,7 @@ import { type IncomingMessage, createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { after, describe, test } from 'node:test'
+import { after, describe, mock, test } from 'node:test'
 import { inboxKey } from '@foundationforest/keys'
 import { type Body, blobNameOf, blobRequest, deleteBlob, deliver, getBlob, ownerRecord, publish, pull, pullRequest, putBlob, readAll, readPage } from '@foundationforest/records'
 import { message } from '@foundationforest/records/private'
@@ -273,6 +273,17 @@ function toVersion1(file: string, more = '') {
   db.close()
 }
 
+/**
+ * Make a folder file version 1 as the standard's host wrote it from d1958a4 until 2d1a597: d1958a4
+ * dropped `by` and still wrote version 1, so its blobs are as version 3's, beside the table of
+ * senders. The foundation's host made folders like this on Oct 24.
+ */
+function toVersion1WithoutBy(file: string) {
+  const db = new DatabaseSync(file)
+  db.exec('CREATE TABLE once (sender TEXT PRIMARY KEY) WITHOUT ROWID; PRAGMA user_version = 1')
+  db.close()
+}
+
 /** A folder file's version, its blobs table's columns, and whether it has the table of senders. */
 const shapeOf = (file: string) => [
   query<{ user_version: number }>(file, 'PRAGMA user_version')[0]!.user_version,
@@ -307,6 +318,43 @@ describe('a folder file of an older version', () => {
     }
     assert.deepEqual(shapeOf(file), [3, ['sha256', 'type', 'size', 'arrived'], false])
   })
+
+  test('is migrated when it opens, version 1 without `by` too: the feed across folders and the folder’s own read answer it, and a rebuild takes it', async () => {
+    const dir = scratch()
+    const options = { dir, now: () => T0 }
+    let h = await startPlug(options)
+    let feed: Array<[number, string[]]>
+    let hers: Array<[number, string[]]>
+    try {
+      await publish([h.url], [ownerRecord(alice, 'profile', aliceProfile, T0), photoOffer, ownerRecord(bob, 'profile', bobProfile, T0)])
+      assert.ok((await putBlob([h.url], putAs(alice, photo, 'image/jpeg'), photo))[0]!.ok)
+      feed = await pages(h.url)
+      hers = await pages(h.url, alice.address)
+    } finally {
+      await h.close()
+    }
+    const [aliceFile, bobFile] = [alice, bob].map((key) => join(dir, 'folders', `${key.address}.sqlite`)) as [string, string]
+    toVersion1WithoutBy(aliceFile)
+    assert.deepEqual(shapeOf(aliceFile), [1, ['sha256', 'type', 'size', 'arrived'], true])
+    h = await startPlug(options)
+    try {
+      assert.deepEqual(await pages(h.url), feed)
+      assert.deepEqual(await pages(h.url, alice.address), hers)
+      assert.equal((await putBlob([h.url], putAs(alice, photo, 'image/jpeg'), photo))[0]!.message, 'already here')
+    } finally {
+      await h.close()
+    }
+    assert.deepEqual(shapeOf(aliceFile), [3, ['sha256', 'type', 'size', 'arrived'], false])
+    toVersion1WithoutBy(bobFile)
+    await rebuild(dir)
+    assert.deepEqual(shapeOf(bobFile), [3, ['sha256', 'type', 'size', 'arrived'], false])
+    h = await startPlug(options)
+    try {
+      assert.deepEqual(await pages(h.url), feed)
+    } finally {
+      await h.close()
+    }
+  })
 })
 
 describe('a folder file in another layout', () => {
@@ -317,7 +365,7 @@ describe('a folder file in another layout', () => {
     await h.close()
     const aliceFile = join(dir, 'folders', `${alice.address}.sqlite`)
     const bobFile = join(dir, 'folders', `${bob.address}.sqlite`)
-    // Alice's says version 1, with no blobs table: its step fails.
+    // Alice's says version 1, with no blobs table and no table of senders: a step fails.
     const db = new DatabaseSync(aliceFile)
     db.exec('DROP TABLE blobs; PRAGMA user_version = 1')
     db.close()
@@ -334,6 +382,28 @@ describe('a folder file in another layout', () => {
     }
     await assert.rejects(rebuild(dir), /is not a folder file in this host's layout/)
     assert.deepEqual([shapeOf(aliceFile), shapeOf(bobFile)], [[1, [], false], [1, ['sha256', 'type', 'size', 'by', 'arrived'], true]])
+  })
+
+  test('a read of it answers 500, the folder’s own and the feed’s, and each logs one line: the path and the error, its address taken out', async () => {
+    const dir = scratch()
+    let h = await startPlug({ dir, now: () => T0 })
+    await publish([h.url], [ownerRecord(alice, 'profile', aliceProfile, T0)])
+    await h.close()
+    const db = new DatabaseSync(join(dir, 'folders', `${alice.address}.sqlite`))
+    db.exec('DROP TABLE blobs; PRAGMA user_version = 1')
+    db.close()
+    h = await startPlug({ dir, now: () => T0 })
+    const logged = mock.method(console, 'error', () => {})
+    try {
+      const one = await fetch(`${h.url}/v1/records?profile=${alice.address}`)
+      const feed = await fetch(`${h.url}/v1/records/read`, { method: 'POST', body: '{}' })
+      assert.deepEqual([one.status, await one.text(), feed.status, await feed.text()], [500, '', 500, ''])
+      const why = `${join(dir, 'folders', '<address>.sqlite')} is not a folder file in this host's layout`
+      assert.deepEqual(logged.mock.calls.map((c) => c.arguments), [[`500 /v1/records: ${why}`], [`500 /v1/records/read: ${why}`]])
+    } finally {
+      logged.mock.restore()
+      await h.close()
+    }
   })
 })
 

@@ -106,12 +106,15 @@ const VERSION = 3
 /**
  * What turns a folder file of each older version into the next. Version 1's blobs said which key
  * put each one; only the main key puts a folder's blobs now, so every blob is the folder's like any
- * other. Version 2 kept who had written to an inbox that took one message from each sender; no
- * inbox says that now, so the table goes.
+ * other. The standard's host at d1958a4 dropped that column and still wrote version 1, so a version
+ * 1 file may have it or not, and the step drops it where it is. Version 2 kept who had written to
+ * an inbox that took one message from each sender; no inbox says that now, so the table goes.
  */
-const STEPS: Record<number, string> = {
-  1: 'ALTER TABLE blobs DROP COLUMN by',
-  2: 'DROP TABLE once',
+const STEPS: Record<number, (db: DatabaseSync) => void> = {
+  1: (db) => {
+    if (db.prepare(`SELECT 1 FROM pragma_table_info('blobs') WHERE name = 'by'`).get()) db.exec('ALTER TABLE blobs DROP COLUMN by')
+  },
+  2: (db) => db.exec('DROP TABLE once'),
 }
 
 // A folder file keeps SQLite's default rollback journal, not WAL: no -wal file is left beside it
@@ -232,7 +235,8 @@ function openFolder(file: string): Db {
           const step = STEPS[version]
           if (step === undefined) throw refused()
           try {
-            folder.db.exec(`${step}; PRAGMA user_version = ${version + 1}`)
+            step(folder.db)
+            folder.db.exec(`PRAGMA user_version = ${version + 1}`)
           } catch (cause) {
             throw refused(cause)
           }

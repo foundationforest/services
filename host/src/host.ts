@@ -36,7 +36,7 @@ import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { type Rpc, keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
-import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice } from './plug.ts'
+import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice, logFailure } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -340,8 +340,11 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
       }
       send(res, await credits.spend(body))
     })
-    .catch(() => {
-      if (!res.headersSent) res.writeHead(500, CORS)
+    .catch((err: unknown) => {
+      if (!res.headersSent) {
+        logFailure(path, err)
+        res.writeHead(500, CORS)
+      }
       res.end()
     })
   return true

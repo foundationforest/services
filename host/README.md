@@ -268,7 +268,8 @@ in this directory, so nothing outside it changes one.
   message but its price and an inbox's day of others' messages; it has no other rate limit.
 - **Who may read:** anyone can read any folder here, for free; the main way is an index reading
   every page, or an app reading one profile.
-- **No request logs.** Neither the plug nor the front logs a request or keeps an address.
+- **No request logs.** Neither the plug nor the front logs a request or keeps an address. A request
+  it answers 500 logs one line: its path and the error's message, any address in them taken out.
 - **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with
   the buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of
   each record and message it took a price for. Nothing ties a credit to the folder it went into.
@@ -334,8 +335,9 @@ The tests, on loopback:
   refuses; its sizes, batches and pages; a host's own choice for records, blobs and messages;
   deliveries in the plug's order, an inbox it cannot read refused as `no_inbox`, `maxBytes`; pulls
   only by the main key, within ten minutes, by POST; and the storage: a file per folder, the feed
-  across them, removing a folder, `rebuild`, a folder file of an older layout migrated and one of
-  another refused, and the S3 driver.
+  across them, removing a folder, `rebuild`, a folder file of an older layout migrated (version 1
+  with `by` and without it, which the feed and a rebuild then read) and one of another refused, a
+  read of it answering 500 and logging one line with no address, and the S3 driver.
 - `test/credits.test.ts`, through the whole host, buying with `test/buyer.ts`, which blinds with
   privacypass-ts as an app does:
   - the price of a 1 kB record (0.02), a 200 kB blob (2.01), and taking each down (0.01); the same
@@ -354,6 +356,8 @@ The tests, on loopback:
     naming another buy; with no payment set, only tickets buy and the directory names no address;
   - the credit key made at the first start, readable only by the host's user, and the same at the
     next start;
+  - a credit route that fails answering 500 and logging one line, its path and the error, with no
+    address;
   - end to end: a folder's hosts record, profile record and offer, and a photo, written with credits
     and read back with the standard's client, the balance down by exactly their prices.
 
@@ -369,8 +373,9 @@ The tests, on loopback:
   about, so they are free.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
   record's signature is its only proof, and a pull's is the profile's main key's.
-- **No address logs.** Neither the plug nor the front logs a request or keeps an address. On
-  Railway, Railway's own request logs exist.
+- **No address logs.** Neither the plug nor the front logs an address or keeps one. It logs no
+  request but one it answers 500: its path and the error's message, any address in them taken
+  out. On Railway, Railway's own request logs exist.
 - **It cannot tell which buy a credit came from, as long as it gave everyone the same key.** It
   signed the credit blind and never saw its nonce.
 - **A credit is spent once, and a buy's credits are signed once.** A second payment for the same

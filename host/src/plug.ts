@@ -100,6 +100,18 @@ export type BlobChoice = (blob: { sha256: string; type: string; size: number; pr
 
 export const defaultBlobChoice: BlobChoice = (blob) => (DEFAULT_BLOB_TYPES.includes(blob.type) ? null : `this host takes ${DEFAULT_BLOB_TYPES.join(', ')}`)
 
+/** An address as text: base58 of 32 bytes, 32 to 44 characters, a word of its own. */
+const ADDRESS = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g
+
+/**
+ * The one line a request answered 500 leaves in the log: its path and the error's message, any
+ * address in them taken out (a folder's file is named by its address). No query, no body, no IP.
+ */
+export function logFailure(path: string, err: unknown): void {
+  const said = err instanceof Error ? err.message : String(err)
+  console.error(`500 ${path}: ${said}`.replace(/\s+/g, ' ').replace(ADDRESS, '<address>'))
+}
+
 export type HostOptions = {
   /**
    * The data directory: `folders/` (a SQLite file per folder), `host.sqlite` (the log and the blob
@@ -387,8 +399,11 @@ export class Host {
   async listen(port = 0, hostname = '127.0.0.1'): Promise<string> {
     // Node looks for requests past the timeout every 30 seconds by default; every second keeps it near.
     this.server = createServer({ requestTimeout: this.timeout, connectionsCheckingInterval: 1000 }, (req, res) => {
-      this.handle(req, res).catch(() => {
-        if (!res.headersSent) res.writeHead(500).end()
+      this.handle(req, res).catch((err: unknown) => {
+        // A request dropped while it arrived (408, or the asker gone) gets no 500, so it logs none.
+        if (res.headersSent || res.destroyed) return
+        logFailure(URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname ?? '', err)
+        res.writeHead(500).end()
       })
     })
     await new Promise<void>((resolve) => this.server!.listen(port, hostname, resolve))
