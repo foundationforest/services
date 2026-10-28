@@ -9,7 +9,7 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { after, test } from 'node:test'
+import { after, mock, test } from 'node:test'
 
 import { inboxKey, mainKey, newSeed } from '@foundationforest/keys'
 import { type BlobName, type SignedBlobRequest, type SignedMessage, type SignedRecord, base58, blobNameOf, blobRequest, deleteBlob, deliver, encodeRecord, getBlob, hostsRecord, ownerRecord, publish, putBlob, readProfile } from '@foundationforest/records'
@@ -264,6 +264,23 @@ test('the credit key is made on the volume at the first start, and kept', async 
     assert.deepEqual(await keyOf(again.url), key)
   } finally {
     await again.close()
+  }
+})
+
+test('a credit route that fails answers 500, and logs one line: its path and the error, any address taken out', async () => {
+  const running = await start()
+  const me = await folder()
+  running.credits.spend = async () => {
+    throw new Error(`the balance of ${me.address} was not kept`)
+  }
+  const logged = mock.method(console, 'error', () => {})
+  try {
+    const res = await fetch(`${running.url}/credits/spend`, { method: 'POST', body: JSON.stringify({ folder: me.address, credits: [] }) })
+    assert.deepEqual([res.status, await res.text()], [500, ''])
+    assert.deepEqual(logged.mock.calls.map((c) => c.arguments), [['500 /credits/spend: the balance of <address> was not kept']])
+  } finally {
+    logged.mock.restore()
+    await running.close()
   }
 })
 

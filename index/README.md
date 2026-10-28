@@ -453,7 +453,9 @@ answer the chain from a stand-in RPC:
 - **end to end,** over HTTP: two profiles with real stamp proofs, an offer, a review, the index
   reading on its own schedule and serving the rating and the trust its vouch gives; then a rebuild
   gives the same;
-  and a rebuild of a file from before tags were called tags keeps when each proof was first seen.
+  and a rebuild of a file from before tags were called tags keeps when each proof was first seen;
+  and a rebuild in a process of its own, as `npm run rebuild` runs it, ends that process once it is
+  done, a stamp proof checked.
 
 ## How we run it
 

@@ -56,7 +56,7 @@ import {
   readMessage,
   viewProfile,
 } from '@foundationforest/records'
-import { type BlobDriver, type Row, Storage } from './storage.ts'
+import { type BlobDriver, type Row, Storage, logLine } from './storage.ts'
 
 export { type BlobDriver, type S3Options, rebuild } from './storage.ts'
 
@@ -99,6 +99,14 @@ export type MessageChoice = (message: SignedMessage, stored: { messages: number;
 export type BlobChoice = (blob: { sha256: string; type: string; size: number; profile: string }, stored: { blobs: number; bytes: number }) => string | null | Promise<string | null>
 
 export const defaultBlobChoice: BlobChoice = (blob) => (DEFAULT_BLOB_TYPES.includes(blob.type) ? null : `this host takes ${DEFAULT_BLOB_TYPES.join(', ')}`)
+
+/**
+ * The one line a request answered 500 leaves in the log: its path and the error's message, any
+ * address in them taken out (logLine). No query, no body, no IP.
+ */
+export function logFailure(path: string, err: unknown): void {
+  logLine(`500 ${path}: ${err instanceof Error ? err.message : String(err)}`)
+}
 
 export type HostOptions = {
   /**
@@ -387,8 +395,11 @@ export class Host {
   async listen(port = 0, hostname = '127.0.0.1'): Promise<string> {
     // Node looks for requests past the timeout every 30 seconds by default; every second keeps it near.
     this.server = createServer({ requestTimeout: this.timeout, connectionsCheckingInterval: 1000 }, (req, res) => {
-      this.handle(req, res).catch(() => {
-        if (!res.headersSent) res.writeHead(500).end()
+      this.handle(req, res).catch((err: unknown) => {
+        // A request dropped while it arrived (408, or the asker gone) gets no 500, so it logs none.
+        if (res.headersSent || res.destroyed) return
+        logFailure(URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname ?? '', err)
+        res.writeHead(500).end()
       })
     })
     await new Promise<void>((resolve) => this.server!.listen(port, hostname, resolve))
