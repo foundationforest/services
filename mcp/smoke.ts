@@ -4,12 +4,12 @@
 // copy, and checks what needs no person.
 //
 // What it checks: how Forest works comes first, as the server's instructions, with the mark as the
-// server's icon; there is no session; every tool is listed; reading works with no login; a relayed
-// tool's call with no token gets the 401 challenge, naming the metadata; the metadata names this copy
-// as the resource and its own authorization server; an AI app can register; /authorize sends the
-// person to the app's connect page, or says logins wait; the same tools answer at /mcp; the icon is
-// at /favicon.ico and /icon.svg. Given a way through the connect page, also: the login, and a
-// relayed tool's answer with no signer open.
+// server's icon; there is no session; every tool is listed; reading works with no login; a call to
+// a tool that goes to the person's app, with no token, gets the 401 challenge, naming the metadata;
+// the metadata names this copy as the resource and its own authorization server; an AI app can
+// register; /authorize sends the person to the app's connect page, or says logins wait; the same
+// tools answer at /mcp; the icon is at /favicon.ico and /icon.svg. Given a way through the connect
+// page, also: the login, and the answer to an ask with no app of the person's open.
 
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -19,7 +19,7 @@ import { type OAuthClientProvider, UnauthorizedError } from '@modelcontextprotoc
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 import { ICO, ICON, SVG } from './src/icon.ts'
-import { NO_SIGNER } from './src/relay.ts'
+import { NO_SIGNER } from './src/link.ts'
 import { HOW, TOOLS } from './src/tools.ts'
 
 type Result = { isError?: boolean; content: Array<{ type: string; text?: string }> }
@@ -54,9 +54,9 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     const challenge = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'profiles', arguments: {} } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'read', arguments: {} } }),
     })
-    assert.equal(challenge.status, 401, 'a relayed tool with no token gets the challenge')
+    assert.equal(challenge.status, 401, 'a tool that goes to the person’s app, with no token, gets the challenge')
     assert.equal(challenge.headers.get('www-authenticate'), `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`)
     const resource = (await (await fetch(`${origin}/.well-known/oauth-protected-resource`)).json()) as { resource: string; authorization_servers: string[] }
     assert.deepEqual([resource.resource, resource.authorization_servers], [origin, [origin]])
@@ -80,10 +80,10 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     const seen: Record<string, unknown> = { tools: tools.map((t) => t.name), logins, icon: ['/favicon.ico', '/icon.svg'] }
 
     if (login) {
-      await assert.rejects(client.callTool({ name: 'profiles', arguments: {} }), UnauthorizedError, 'a relayed tool starts the login')
+      await assert.rejects(client.callTool({ name: 'read', arguments: {} }), UnauthorizedError, 'a tool that goes to the person’s app starts the login')
       await transport.finishAuth((await login.browse(login.provider.authorization!)).get('code')!)
-      const acted = (await client.callTool({ name: 'profiles', arguments: {} })) as Result
-      assert.deepEqual([acted.isError, text(acted)], [true, NO_SIGNER], 'logged in, with no signer open, it says so plainly')
+      const acted = (await client.callTool({ name: 'read', arguments: {} })) as Result
+      assert.deepEqual([acted.isError, text(acted)], [true, NO_SIGNER], 'logged in, with no app of the person’s open, it says so plainly')
       seen.login = 'done'
     }
     return seen

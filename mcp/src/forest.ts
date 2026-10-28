@@ -1,18 +1,11 @@
-// What the read tools do: find a profile's folder on its hosts, and read what an index says.
-// Nothing is kept between calls: every call reads again what it needs. No tool here signs: what
-// acts for a person goes to their signer (relay.ts).
+// What the read tools do with an index: read what it says, and pass it on whole, as its own word.
+// Nothing is kept between calls: every call reads again what it needs. No tool here signs, and none
+// reads a host: what acts for a person goes to their app, over the live link (link.ts).
 //
-// A folder is always read from hosts, every signature checked (records' readProfile). What an index
-// says is passed on whole, as its own word: nothing here checks it, and nothing here names a field
-// of it, so an index can change what it shows, or another index show other things, and this copy
-// passes it on the same.
-//
-// The start hosts are reached as they are: whoever runs this copy chose them. Any other host, one a
-// profile's hosts record names, is reached only at a public address; no request follows a
-// redirect; and a folder read stops after MAX_PAGES pages.
+// Nothing here checks what an index says, and nothing here names a field of it, so an index can
+// change what it shows, or another index show other things, and this copy passes it on the same.
 
-import { type Body, READ_TIMEOUT_MS, type Reach, type View, normalizeOrigin, publicKeyFromAddress, readProfile } from '@foundationforest/records'
-import { publicFetch } from '@foundationforest/records/public'
+import { type Body, READ_TIMEOUT_MS } from '@foundationforest/records'
 
 /** A plain refusal: what could not be done, and why, in words a person reads. */
 export class Refusal extends Error {
@@ -22,49 +15,15 @@ export function refuse(why: string): never {
   throw new Refusal(why)
 }
 
-/** The foundation's host, where a profile's hosts record is looked for first unless told otherwise. */
-export const HOST = 'https://host.forest.foundation'
 /** The foundation's index, whose answers are passed on unless told otherwise. */
 export const INDEX = 'https://index.forest.foundation'
-/** The most of an index's answer read: a page's worth on the reference host. */
+/** The most of an index's answer read: a page's worth on this repo's host. */
 export const MAX_ANSWER_BYTES = 4 * 1024 * 1024
-/** The most pages one folder read takes, across all its hosts. */
-export const MAX_PAGES = 100
 
-/** What reading starts with: the hosts to look for a profile's hosts record on first, and the index. */
-export type Context = { hosts: string[]; index: string }
-
-/** Start hosts, each an origin as a hosts record writes it. */
-export function hostsFrom(hosts: string[]): string[] {
-  for (const host of hosts) if (normalizeOrigin(host) !== host) refuse(`${host} is not a host: give an origin, https://host[:port]`)
-  return hosts
-}
+/** What reading starts with: the index whose answers it passes on. */
+export type Context = { index: string }
 
 export const isObject = (value: unknown): value is Body => value !== null && typeof value === 'object' && !Array.isArray(value)
-
-/** How a call reaches hosts: the start hosts by the plain fetch, every other host by publicFetch, never after a redirect. */
-function reach(start: string[]): Reach {
-  const fetchFor = (input: string | URL | Request) => (start.includes(new URL(input instanceof Request ? input.url : input).origin) ? fetch : publicFetch)
-  return { fetch: (input, init) => fetchFor(input)(input, init), redirect: 'error' }
-}
-
-/** A profile's folder, read from the start hosts and every host its hosts record names, each record checked. */
-export async function folder(ctx: Context, address: string): Promise<View> {
-  if (!publicKeyFromAddress(address)) refuse(`${address} is not a profile's address`)
-  const how = reach(ctx.hosts)
-  let pages = 0
-  const counted: typeof fetch = (input, init) => (++pages > MAX_PAGES ? Promise.reject(new Error(`more than ${MAX_PAGES} pages`)) : how.fetch!(input, init))
-  // By POST, so the address is not in a URL a front door logs.
-  const view = await readProfile(ctx.hosts, address, Date.now(), { post: true, ...how, fetch: counted })
-  if (pages > MAX_PAGES) refuse(`the hosts of ${address} served more than ${MAX_PAGES} pages; this reads no further`)
-  if (!view.current.size) refuse(`no records for ${address} on ${ctx.hosts.join(', ')}: a profile none of these hosts holds is out of reach here`)
-  return view
-}
-
-/** The current profile record's body, or null. */
-export function profileOf(view: View): Body | null {
-  return view.current.get('profile')?.record.body ?? null
-}
 
 /** What a URL answers, read up to `max` bytes, with `fetchWith`. */
 async function readBytes(url: string, fetchWith: typeof fetch, max: number, timeout: number): Promise<Buffer> {
@@ -112,7 +71,7 @@ export async function fromIndex(ctx: Context, path: string, as: 'json' | 'text' 
   }
 }
 
-/** The same, or why the index said nothing, so a down index never hides what the hosts gave. */
+/** The same, or why the index said nothing, so a down index never hides what the markets gave. */
 export async function indexSays(ctx: Context, path: string, as: 'json' | 'text' = 'json'): Promise<Said> {
   try {
     return await fromIndex(ctx, path, as)

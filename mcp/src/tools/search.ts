@@ -10,7 +10,7 @@ export const description =
 export const params: Param[] = [
   { name: 'filters', type: 'object', description: "The filters, by the names the index gives them, each value as text. Left out, the index's search with none." },
 ]
-export const relayed = false
+export const toApp = false
 
 export async function run(args: Args, ctx: Context) {
   const filters = (args.filters ?? {}) as { [name: string]: unknown }

@@ -9,16 +9,16 @@
 //   the verifier   verifier/src, with the stand-in Didit its tests run (verifier/test/fake-didit.ts,
 //                  a process of its own) and the stand-in face model; its own name and seed in a
 //                  directory of its own; no gift, since a deployed host takes no loop's tickets
-//   the host       host/src, as `npm start` runs it, selling credits for the loop's dollar, paid to
-//                  `payTo`, and checked through the RPC
+//   the host       host/src, as `npm start` runs it, the plug and the credits, selling credits for
+//                  the loop's dollar, paid to `payTo`, and checked through the RPC
 //   the fee payer  fee-payer/run.sh, a process of its own: Kora, with the kora.toml its image runs
 //                  (fee-payer/deploy/devnet-config.sh), a fresh key made at its first start, which
 //                  the loop funds, and sweeps back when the run ends (chain.ts)
 //   the index      index/src, with lists of its own: the host it reads, the loop verifier's two keys
 //                  (the face check 1 point, the ID check 2, as the foundation's index lists them),
 //                  and its own reputation proofs; its numbers, money and chains are index/config's
-//   the mcp        mcp/src, reading the host and the loop's index, with `appUrl` as its connect page:
-//                  the loop's stand-in for the Forest app's
+//   the mcp        mcp/src, reading the loop's index and the markets, with `appUrl` as its connect
+//                  page: the loop's stand-in for the Forest app's
 //
 // Each process of its own gets only the settings it needs, never the phrase, and what it prints
 // comes here with the RPC's URL taken out.
@@ -32,7 +32,6 @@ import { fileURLToPath } from 'node:url'
 
 import { readConfig as hostConfig, startHost } from '../host/src/host.ts'
 import { startIndex } from '../index/src/index.ts'
-import { hostsFrom } from '../mcp/src/forest.ts'
 import { serve } from '../mcp/src/server.ts'
 import { aiApp } from '../mcp/test/setup.ts'
 import { readConfig as verifierConfig, startVerifier } from '../verifier/src/service.ts'
@@ -79,7 +78,7 @@ export type Running = {
   host: string
   feePayer: string
   index: { url: string; address: string }
-  /** The loop's own mcp: its origin, which a person's rules name as the connector. */
+  /** The loop's own mcp: its origin, which a person's permissions name as the connector. */
   mcp: string
   /** The loop's own fee payer's key, which the loop funds; null when the fee payer is deployed. */
   ownFeePayer: string | null
@@ -149,7 +148,7 @@ async function deployedAnswer(s: Services, say: (line: string) => void): Promise
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name)
       const markets = (await client.callTool({ name: 'markets', arguments: {} })) as { isError?: boolean; content: Array<{ text?: string }> }
-      if (markets.isError || !tools.includes('post')) throw new Error(`the deployed mcp ${s.mcp} does not answer as an mcp`)
+      if (markets.isError || !tools.includes('write')) throw new Error(`the deployed mcp ${s.mcp} does not answer as an mcp`)
       say(`the deployed mcp answers: ${tools.length} tools, and the markets`)
     } finally {
       await client.close()
@@ -260,8 +259,8 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     const index = await startIndex({ dataDir: join(dir, 'index'), publicUrl: indexUrl, settings: { RPC_URL: o.rpcUrl }, readSeconds: 5, listsRoot: lists, port: indexPort, hostname: '127.0.0.1', log: log('loop index') })
     closers.push(() => index.close())
 
-    // The mcp: reading the host and the loop's index, its logins through the loop's connect page.
-    const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { hosts: hostsFrom([host]), index: indexUrl } }, '127.0.0.1', 0)
+    // The mcp: reading the loop's index, its logins through the loop's connect page.
+    const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { index: indexUrl } }, '127.0.0.1', 0)
     closers.push(() => mcp.close())
 
     return { verifier: { url: verifier.url, name: VERIFIER_NAME, keys: verifier.keys }, host, feePayer, index: { url: indexUrl, address: index.address }, mcp: mcp.origin, ownFeePayer, ownFeePayerKey, checked, stop }

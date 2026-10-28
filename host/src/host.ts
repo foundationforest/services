@@ -1,57 +1,49 @@
-// The foundation's host: the standard's reference host (@foundationforest/records/host), unchanged,
-// run with this service's choices. It takes anyone's records, delivers messages to inboxes, and
-// keeps blobs, as the standard's host does; every number it uses is in `choice` below or a setting,
-// and README.md says each in words.
+// The foundation's host: the plug (plug.ts, over storage.ts), run with this service's choices. It
+// takes anyone's records, delivers messages to inboxes, and keeps blobs, as the standard's plug
+// says; every number it uses is in `choice` below, in plug.ts's defaults, or a setting, and
+// README.md says each in words.
 //
-// Around the standard's host, one thing only: a front that answers `GET /` with one line saying what
-// this is, sells and takes credits (credits.ts), and passes every other request, untouched, to the
-// host on loopback.
+// Around the plug, one thing only: a front that answers `GET /` with one line saying what this is,
+// sells and takes credits (credits.ts), and passes every other request, untouched, to the plug on
+// loopback.
 //
-// Every write is paid for in credits, from its folder's balance here: the standard's host asks this
-// host's choices (`recordChoice`, `blobChoice`, `messageChoice`). A record is claimed by its id as
-// its price is taken, so two copies pay once. Bytes are stored first: their price is reserved, then
-// taken once the standard's host answers that it kept them, or released; the front sends on one
-// request for the same bytes at a time. The standard's host asks about a folder's first hosts
-// record, so joining costs a write, and never about a later one, so leaving and updating are free.
-// A message to its own profile's inbox is a write of that folder's, priced and claimed as a record
-// is; others' messages are free, MESSAGES_A_DAY an inbox a day. Reads are free.
+// Every write is paid for in credits, from its folder's balance here: the plug asks this host's
+// choices (`recordChoice`, `blobChoice`, `messageChoice`). A record is claimed by its id as its
+// price is taken, so two copies pay once. Bytes are stored first: their price is reserved, then
+// taken once the plug answers that it kept them, or released; the front sends on one request for
+// the same bytes at a time. The plug asks about a folder's first hosts record, so joining costs a
+// write, and never about a later one, so leaving and updating are free. A message to its own
+// profile's inbox is a write of that folder's, priced and claimed as a record is; others' messages
+// are free, MESSAGES_A_DAY an inbox a day. Reads are free.
 //
 // Taking your own things down is never blocked by money: a null body over a live record, and a blob
-// delete the standard's host carries out, cost the floor when the balance holds it, and go through
-// free when it does not. A null body where nothing stands is a write like any other.
+// delete the plug carries out, cost the floor when the balance holds it, and go through free when it
+// does not. A null body where nothing stands is a write like any other.
 //
-// Where it keeps things is the standard's storage: a data directory (DATA_DIR) with a SQLite file per
-// folder, and the blobs on disk there or in an S3-compatible bucket (BLOBS=s3). The credits keep
-// their own file and their key in DATA_DIR/credits.
-//
-// A message to an inbox that takes messages only from a verifier's stamp holders needs the sender's
-// records: the standard's host asks `readSender`, and this host reads them with the standard's
-// client, within SENDER_READ_MS, from a public address only and with no redirect (the standard's
-// `publicFetch`), and keeps what it read for SENDER_CACHE_SECONDS. The stamp proof on the sender's
-// profile record is checked by the stamp client's `checkStamp`.
+// Where it keeps things is storage.ts's: a data directory (DATA_DIR) with a SQLite file per folder,
+// and the blobs on disk there or in an S3-compatible bucket (BLOBS=s3). The credits keep their own
+// file and their key in DATA_DIR/credits.
 
 import { mkdirSync } from 'node:fs'
 import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { type Checked, checkBlobRequest, encodeMessage, encodeRecord, messageId, readPage, recordId, unsignedMessageOf, unsignedOf } from '@foundationforest/records'
-import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice } from '@foundationforest/records/host'
-import { publicFetch } from '@foundationforest/records/public'
-import { checkStamp } from '@foundationforest/stamp'
+import { checkBlobRequest, encodeMessage, encodeRecord, messageId, recordId, unsignedMessageOf, unsignedOf } from '@foundationforest/records'
 import { base58 } from '@scure/base'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { type Rpc, keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
+import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
-  'A Forest host, run by the Forest Foundation: the standard’s reference host with the choices in ' +
-  'foundationforest/services, host/README.md. Anyone can write here, paying in credits.\n'
+  'A Forest host, run by the Forest Foundation: the code and the choices in foundationforest/services, ' +
+  'host/README.md. Anyone can write here, paying in credits.\n'
 
-/** This host's choices: each number the standard's host takes as an option. */
+/** This host's choices: each number the plug takes as an option. */
 export const choice = {
   /** Days a replaced record or a message is kept. */
   keepDays: 30,
@@ -65,21 +57,16 @@ export const choice = {
   maxBlobBytes: 50_000_000,
 } as const satisfies HostOptions
 
-/** Milliseconds a sender's host may take to serve all of the sender's records. */
-export const SENDER_READ_MS = 5_000
-
 /** Others' messages one inbox takes in a day, from midnight UTC. */
 export const MESSAGES_A_DAY = 1_000
 const DAY_MS = 86_400_000
 
 export type Config = {
-  /** The data directory: the standard's storage, and the credits' file and key in `credits/`. */
+  /** The data directory: the plug's storage, and the credits' file and key in `credits/`. */
   dir: string
   /** Where blob bytes go: disk in `dir`, or a bucket. */
   blobs: BlobDriver
   port: number
-  /** Milliseconds what a sender's host served is kept; 0 reads it again for every request. */
-  senderCacheMs: number
   /** Its public origin, `https://host`: the name its credits carry, and that a ticket names. */
   origin: string
   /** One credit's price, in US cents. */
@@ -114,7 +101,7 @@ function blobDriver(env: Record<string, string | undefined>): BlobDriver {
     bucket: env.BLOBS_BUCKET!,
     accessKeyId: env.BLOBS_ACCESS_KEY_ID!,
     secretAccessKey: env.BLOBS_SECRET_ACCESS_KEY!,
-    // The standard signs with whatever region it is given, `auto` included; us-east-1 when none.
+    // storage.ts signs with whatever region it is given, `auto` included; us-east-1 when none.
     ...(env.BLOBS_REGION && { region: env.BLOBS_REGION }),
     ...(style && { style }),
   }
@@ -157,7 +144,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     dir,
     blobs: blobDriver(env),
     port: whole('PORT', env.PORT || '8080'),
-    senderCacheMs: whole('SENDER_CACHE_SECONDS', env.SENDER_CACHE_SECONDS || '60') * 1000,
     origin,
     priceCents: whole('CREDIT_PRICE_CENTS', env.CREDIT_PRICE_CENTS || '1', 1),
     payment: rpcUrl ? { address: solanaAddress('CREDIT_PAY_TO', env.CREDIT_PAY_TO!.trim()), mint: solanaAddress('CREDIT_MINT', env.CREDIT_MINT!.trim()), rpcUrl } : null,
@@ -184,9 +170,9 @@ function rpcAt(url: string): Rpc {
 
 /**
  * A record's price, from its own folder's balance: the floor and its canonical bytes by the kilobyte.
- * The standard's host asks about a folder's first hosts record too, so it is priced like any. A null
- * body over a live record takes it down: it costs the floor, and goes through free when the folder
- * cannot pay. `host` is the standard's host the record is going into, for what stands there.
+ * The plug asks about a folder's first hosts record too, so it is priced like any. A null body over a
+ * live record takes it down: it costs the floor, and goes through free when the folder cannot pay.
+ * `host` is the plug the record is going into, for what stands there.
  */
 export function paidRecords(credits: Credits, host: () => Host): RecordChoice {
   return (record) => {
@@ -223,51 +209,9 @@ export function pricedMessages(credits: Credits, cap = MESSAGES_A_DAY, now: () =
   }
 }
 
-/** Bytes, paid for once stored: the standard's own types, then their price, reserved on the folder that puts them. The front takes it once they are kept, or releases it. */
+/** Bytes, paid for once stored: the plug's own types, then their price, reserved on the folder that puts them. The front takes it once they are kept, or releases it. */
 export function paidBlobs(credits: Credits): BlobChoice {
   return async (blob, stored) => (await defaultBlobChoice(blob, stored)) ?? credits.reserve(blob.sha256, blob.profile, credits.priceOf(blob.size))
-}
-
-/**
- * A profile's records, every page, as `host` serves them, each checked by the standard's reader; all within
- * SENDER_READ_MS. Through `get`, `publicFetch` but for tests, and never after a redirect.
- */
-async function readRecords(host: string, profile: string, get: typeof fetch): Promise<Checked[]> {
-  const deadline = Date.now() + SENDER_READ_MS
-  const records: Checked[] = []
-  for (let after = 0; ; ) {
-    const left = deadline - Date.now()
-    if (left <= 0) throw new Error(`${host} took more than ${SENDER_READ_MS} ms`)
-    const page = await readPage(host, { profile, after, timeout: left, fetch: get, redirect: 'error' })
-    records.push(...page.records)
-    if (page.cursor <= after) return records
-    after = page.cursor
-  }
-}
-
-/**
- * The standard's `readSender`: a sender's records from the host a message names, kept for `cacheMs`
- * per sender and host. Two messages at once share one read; a read that fails is not kept, so the
- * standard's host answers `lookup` and the sender's next try reads again. A host at no public
- * address, or one that redirects, is a read that fails.
- */
-export function senderReader(cacheMs: number, now: () => number = Date.now, get: typeof fetch = publicFetch): NonNullable<HostOptions['readSender']> {
-  const kept = new Map<string, { at: number; records: Promise<Checked[]> }>()
-  return (host, profile) => {
-    const t = now()
-    const key = `${profile} ${host}`
-    const held = kept.get(key)
-    if (held && t - held.at < cacheMs) return held.records
-    for (const [k, v] of kept) if (t - v.at >= cacheMs) kept.delete(k)
-    const records = readRecords(host, profile, get)
-    if (cacheMs > 0) {
-      kept.set(key, { at: t, records })
-      records.catch(() => {
-        if (kept.get(key)?.records === records) kept.delete(key)
-      })
-    }
-    return records
-  }
 }
 
 const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding']
@@ -288,9 +232,9 @@ export type RunningHost = {
 const BLOB = /^\/v1\/blobs\/([0-9a-f]{64})$/
 
 /**
- * A request sent on to the standard's host, untouched, and its answer back. With `heard`, the
- * answer (a blob request's, a little JSON) is read whole first, and `heard` learns, once, whether the
- * standard's host carried the request out (`{ "ok": true }` and no message: bytes stored, or deleted)
+ * A request sent on to the plug, untouched, and its answer back. With `heard`, the answer (a blob
+ * request's, a little JSON) is read whole first, and `heard` learns, once, whether the plug carried
+ * the request out (`{ "ok": true }` and no message: bytes stored, or deleted)
  * before the answer goes back; anything else, or no answer, is false.
  */
 function forward(inner: URL, req: IncomingMessage, res: ServerResponse, heard?: (done: boolean) => void): void {
@@ -360,7 +304,7 @@ async function readBytes(req: IncomingMessage): Promise<Uint8Array | undefined> 
   return new Uint8Array(Buffer.concat(chunks))
 }
 
-/** The credit routes (credits.ts); false for any other path, which goes to the standard's host. */
+/** The credit routes (credits.ts); false for any other path, which goes to the plug. */
 function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: ServerResponse): boolean {
   const routes = [DIRECTORY_PATH, BUY_PATH, SPEND_PATH]
   if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
@@ -403,7 +347,7 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   return true
 }
 
-/** The folder a blob delete is for, when the header holds a signed delete of the bytes `name`; null for anything else, which the standard's host refuses itself. */
+/** The folder a blob delete is for, when the header holds a signed delete of the bytes `name`; null for anything else, which the plug refuses itself. */
 function deleteFrom(header: string | string[] | undefined, name: string): string | null {
   if (typeof header !== 'string') return null
   try {
@@ -414,11 +358,8 @@ function deleteFrom(header: string | string[] | undefined, name: string): string
   }
 }
 
-/**
- * In tests, `rpc` stands in for the RPC the payment check asks, otherwise made from the payment's
- * `rpcUrl`; `fetch` stands in for `publicFetch`, so a sender's host on loopback can be read.
- */
-export async function startHost(config: Config, stand: { fetch?: typeof fetch; rpc?: Rpc } = {}): Promise<RunningHost> {
+/** In tests, `rpc` stands in for the RPC the payment check asks, otherwise made from the payment's `rpcUrl`. */
+export async function startHost(config: Config, stand: { rpc?: Rpc } = {}): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
   mkdirSync(creditsDir, { recursive: true })
   const creditKey = await keyAt(join(creditsDir, 'key.der'))
@@ -431,8 +372,6 @@ export async function startHost(config: Config, stand: { fetch?: typeof fetch; r
     recordChoice: paidRecords(credits, () => host),
     blobChoice: paidBlobs(credits),
     messageChoice: pricedMessages(credits),
-    readSender: senderReader(config.senderCacheMs, Date.now, stand.fetch),
-    checkStamp,
   })
   const inner = new URL(await host.listen(0))
   const blobQueue = new Map<string, Promise<void>>()
@@ -454,9 +393,9 @@ export async function startHost(config: Config, stand: { fetch?: typeof fetch; r
     const name = req.method === 'PUT' || req.method === 'DELETE' ? BLOB.exec(path)?.[1] : undefined
     if (!name) return forward(inner, req, res)
     // One put or delete of the same bytes at a time: a second put finds them kept, and pays nothing.
-    // A put's price was reserved by the standard's host (paidBlobs); a delete's floor is reserved here,
-    // when the folder holds it, and the delete goes on either way. Each is taken once the standard's
-    // host answers that it carried the request out, before the answer goes back, or released.
+    // A put's price was reserved by the plug (paidBlobs); a delete's floor is reserved here, when the
+    // folder holds it, and the delete goes on either way. Each is taken once the plug answers that it
+    // carried the request out, before the answer goes back, or released.
     const turn = (blobQueue.get(name) ?? Promise.resolve()).then(
       () =>
         new Promise<void>((done) => {

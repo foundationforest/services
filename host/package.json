@@ -2,7 +2,7 @@
   "name": "@forest/host",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's host: the standard's reference host, unchanged, run with this service's choices, and credits: it sells them blind, and every write is paid from its folder's balance.",
+  "description": "The Forest Foundation's host: the plug every host answers, with its storage (from the standard's reference host, now this repo's), run with this service's choices, and credits: it sells them blind, and every write is paid from its folder's balance.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -10,18 +10,20 @@
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/credits.test.ts",
-    "check": "tsc --noEmit"
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 --test-force-exit test/*.test.ts",
+    "check": "tsc --noEmit",
+    "bench": "node --disable-warning=ExperimentalWarning bench/throughput.ts",
+    "check-host": "cd ../standard/records && node scripts/check-host.ts"
   },
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",
     "@foundationforest/records": "file:../standard/records",
-    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
     "@scure/base": "2.4.0"
   },
   "devDependencies": {
     "@foundationforest/keys": "file:../standard/keys",
     "@types/node": "22.20.2",
+    "@zk-kit/eddsa-poseidon": "1.0.4",
     "typescript": "5.9.3"
   }
 }

@@ -1,9 +1,9 @@
-// The host's credits, through the real reference host on loopback: what joining, a 1 kB record, a
-// 200 kB blob and a delete cost; a write refused with no balance, joining too, and leaving and taking
-// down never blocked by it; a message to its own inbox priced, others' free up to the day's cap; a
-// ticket collected; a payment checked against a stand-in RPC; the credit key made at the first
-// start; and one end to end, a folder, a record and a blob, read back. The reference host's own tests
-// are the standard's.
+// The host's credits, through the whole host on loopback, its plug and its front: what joining, a
+// 1 kB record, a 200 kB blob and a delete cost; a write refused with no balance, joining too, and
+// leaving and taking down never blocked by it; a message to its own inbox priced, others' free up
+// to the day's cap; a ticket collected; a payment checked against a stand-in RPC; the credit key
+// made at the first start; and one end to end, a folder, a record and a blob, read back. The plug's
+// own tests are plug.test.ts and its neighbours, and the standard's host check is check.test.ts.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
@@ -148,7 +148,7 @@ test('a message to its own inbox is priced like a record from its folder; others
     const me = await folder()
     await fund(running, me.address, 3)
     const now = Date.now()
-    const profile = { market: 'tutoring', role: 'seller', inboxKey: (await inboxKey(me.secret)).encryptTo, inbox: { senders: 'anyone' } }
+    const profile = { market: 'tutoring', role: 'seller', inboxKey: (await inboxKey(me.secret)).encryptTo, inbox: {} }
     assert.ok((await results(running, [hostsRecord(me, [running.url], now), ownerRecord(me, 'profile', profile, now)])).every((r) => r.ok))
     const send = async (from: Folder, text: string) => (await deliver([running.url], [await message(from, me.address, { text }, Date.now(), profile)]))[0]!.results[0]!
     assert.ok((await send(me, 'A note to my other devices.')).ok)
@@ -267,7 +267,7 @@ test('the credit key is made on the volume at the first start, and kept', async 
   }
 })
 
-test('end to end: a folder, a record and a blob, through the reference host with credits on', async () => {
+test('end to end: a folder, a record and a blob, through the whole host with credits on', async () => {
   const running = await start()
   try {
     const me = await folder()

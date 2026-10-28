@@ -4,7 +4,8 @@
 //   1. the MCP SDK's client finds the door there (../smoke.ts): its instructions and icon, every
 //      tool, no session, reading with no login, the challenge and the metadata, the same tools at
 //      /mcp, the icon's two files, and a login through the stand-in connect page, answered plainly
-//      with no signer open; a request whose URL is no path (`//`) gets 400, and it goes on answering;
+//      with no app of the person's open; a request whose URL is no path (`//`) gets 400, and it goes
+//      on answering;
 //   2. with no APP_URL, reading works and logins wait;
 //   3. with no DATA_DIR, it refuses to start.
 //
@@ -75,7 +76,7 @@ function raw(port: number, request: string): Promise<number | null> {
 }
 
 /** The settings a deploy gives, pointing at the test world, on `port`. */
-const settings = (port: number) => ({ PORT: String(port), PUBLIC_URL: `http://127.0.0.1:${port}`, DATA_DIR: mkdtempSync(join(tmpdir(), 'forest-mcp-smoke-')), HOST_URLS: w.host, INDEX_URL: w.index })
+const settings = (port: number) => ({ PORT: String(port), PUBLIC_URL: `http://127.0.0.1:${port}`, DATA_DIR: mkdtempSync(join(tmpdir(), 'forest-mcp-smoke-')), INDEX_URL: w.index })
 
 test('1. the MCP SDK’s client finds the door, with every tool, reading with no login, and a login through the connect page', async () => {
   const port = await freePort()
@@ -84,7 +85,7 @@ test('1. the MCP SDK’s client finds the door, with every tool, reading with no
     assert.deepEqual(await started, { listening: true })
     const url = `http://127.0.0.1:${port}`
     const seen = await smoke(url, { provider: new AiApp(), browse })
-    assert.deepEqual(seen.tools, ['inbox', 'index', 'market', 'markets', 'message', 'pay', 'post', 'profile', 'profiles', 'remove', 'reply', 'search'])
+    assert.deepEqual(seen.tools, ['index', 'market', 'markets', 'pay', 'profile', 'read', 'search', 'write'])
     assert.equal(seen.logins, `to ${new URL(w.appUrl).origin}`)
     assert.equal(seen.login, 'done')
     assert.equal(await raw(port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')

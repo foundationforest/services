@@ -1,39 +1,47 @@
 // Every tool, through the MCP SDK's own client, as an AI app calls it after the person logged in,
-// with the reference signer open: the five reads, with what the hosts say and the index's answers
-// whole, a field and a filter this copy has never seen among them; and each
-// relayed tool against the person's rules, one in each of their two tutoring profiles' folders
-// (post, message, read and pay; $50 a day on each). Inside them it is done without asking; outside
-// them it needs the person's yes; a pay past the profile's limit too, and a rule with no limit pays
-// any amount. A pay asked again within the hour pays nothing; another payment for a post already
-// paid needs the yes; a review's evidence is the signer's, never the AI's. The profile record, the
-// hosts record and a rule are refused. What the mcp checks first is refused before anything is
-// relayed. Another device on the same seed serves the login from the rules, and a rule removed there
-// is gone at the next ask. With no signer open, it says so plainly. And no answer, in the whole
+// with the reference signer open. The five reads: the index's answers whole, a field and a filter
+// this copy has never seen among them, and the markets; and no source file reads a host or names a
+// field of the index's. Then `read`, `write` and `pay`, each the standard's ask, against the
+// person's permissions: the connect step makes one with `can` empty on each profile picked, so every
+// ask waits for the person's yes, until they allow more in their app ($50 a day on each tutoring
+// profile). Inside a permission it is done without asking; outside, it waits, a pay past the
+// profile's limit too, and a permission with no limit pays any amount. What the standard refuses as
+// an ask never reaches the app; what the app checks (the market, the hosts record, a permission, a
+// review's evidence) it refuses naming why. A write of the profile record asks the person, and on
+// a yes keeps the app's own fields, or makes a new profile, with a stamp proof from the stamp the
+// device holds. A pay asked again within the hour pays nothing; another payment for what was paid
+// waits. Another device on the same seed serves the login from the permissions, and one removed
+// there is gone at the next ask. With no app open, it says so plainly. And no answer, in the whole
 // run, holds one of the person's own addresses.
 
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
 import { after, before, describe, mock, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { inboxKey } from '@foundationforest/keys'
-import { b64u, pull, pullRequest, readProfile } from '@foundationforest/records'
-import { RULE_PREFIX, openMessage, readerCount } from '@foundationforest/records/private'
+import { inboxKey, mainKey, newSeed, seedScalar } from '@foundationforest/keys'
+import { proofsOf, pull, pullRequest, readProfile, stampCheck } from '@foundationforest/records'
+import { openMessage, readerCount } from '@foundationforest/records/private'
+import { PERMISSION_PREFIX } from '@foundationforest/signers'
+import { checkStamp, signStamp, stampNumberOf, verifierKeyOf } from '@foundationforest/stamp'
 import { WORD } from '../src/forest.ts'
-import { NO_SIGNER } from '../src/relay.ts'
-import { REPEAT_MS, Signer, permits } from './signer.ts'
+import { NO_SIGNER } from '../src/link.ts'
+import { REPEAT_MS, Signer, live } from './signer.ts'
 import { TUTORING, type World, aiApp, lesson, logIn, world } from './setup.ts'
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
 
 let w: World
 let client: Client
-/** The AI app's connection, as its rules name it. */
+/** The AI app's connection, as its permissions name it. */
 let connection: string
 /** Every answer an AI app got in this file. */
 const answers: string[] = []
 
-const TUTOR = { market: 'tutoring', role: 'tutor' }
-const STUDENT = { market: 'tutoring', role: 'student' }
+const TUTOR = 'tutoring/tutor'
+const STUDENT = 'tutoring/student'
+/** What the person lets the AI app do on each tutoring profile, once it has logged in. */
+const ALLOWED = { can: ['read', 'write', 'pay'], limit: { amount: '50', currency: 'USD', per: 'day' } }
 
 before(async () => {
   w = await world()
@@ -41,7 +49,7 @@ before(async () => {
   const c = await aiApp(w.mcp.origin)
   await logIn(c)
   client = c.client
-  connection = ((await w.person.rules('tutoring/tutor'))[0]!.who as { connection: string }).connection
+  connection = ((await w.person.permissions(TUTOR))[0]!.who as { connection: string }).connection
 })
 after(async () => {
   await client.close()
@@ -66,13 +74,13 @@ const otherDevice = () => new Signer({ seed: w.seed, hosts: [w.host], appUrl: 'h
 
 /** Until the mcp has seen every socket close: the close reaches it on its own time. */
 async function closed() {
-  for (let i = 0; i < 50 && w.mcp.relay.size; i++) await new Promise((r) => setTimeout(r, 20))
+  for (let i = 0; i < 50 && w.mcp.link.size; i++) await new Promise((r) => setTimeout(r, 20))
 }
 
 /** What the index said at `path`, as the AI is shown it: whole, with where it was read and whose word it is. */
 const said = (path: string, answer = w.said[path]) => ({ url: `${w.index}${path}`, word: WORD, answer })
 
-describe('reading, with no signer', () => {
+describe('reading, with no app', () => {
   test('markets: the directory', async () => {
     const out = await call('markets')
     assert.ok(out.markets.some((m: { name: string }) => m.name === 'tutoring'))
@@ -102,20 +110,20 @@ describe('reading, with no signer', () => {
     assert.equal((await call('search', { filters: { limit: 5 } })).refused, "each filter's value is text: limit is not")
   })
 
-  test('profile: any profile, from its hosts, its records by kind, and the index’s whole answer, a field the mcp never saw in it', async () => {
+  test('profile: any profile, as the index shows it, its whole answer and nothing else; refused when the index has nothing', async () => {
     const out = await call('profile', { address: w.stranger.address })
-    assert.equal(out.profile.role, 'tutor')
-    assert.equal(out.profile.inboxKey, undefined, 'the long inbox key is left out')
-    assert.deepEqual(out.records.offer.map((r: { address: string }) => r.address).sort(), Object.values(w.stranger.offers).sort())
-    assert.deepEqual(out.index, said(`/profiles/${w.stranger.address}.json`))
-    assert.equal(out.index.answer.badge, 'early')
+    assert.deepEqual(out, { index: said(`/profiles/${w.stranger.address}.json`) })
+    assert.equal((out.index.answer as { badge: string }).badge, 'early')
+    const unknown = (await mainKey(newSeed(), 'tutoring/tutor')).address
+    assert.match((await call('profile', { address: unknown })).refused, /^the index gave nothing for .*: answered 404$/)
+    assert.equal((await call('profile', { address: '../search' })).refused, "../search is not a profile's address")
   })
 
   test('index: its skill.md and its home, each whole', async () => {
     assert.deepEqual(await call('index'), { skill: said('/skill.md'), home: said('/index.json') })
   })
 
-  test('no source file names a field or a filter of the index’s', () => {
+  test('no source file reads a host, or names a field or a filter of the index’s', () => {
     // The index's fields and filters as its skill.md names them today. Left out: those that are also
     // the mcp's own words or the markets' (index and markets, its tools; market, role and name, its
     // parameters and the markets' fields; posts, what a market's role posts), which this could not
@@ -125,6 +133,7 @@ describe('reading, with no signer', () => {
     assert.ok(files.length > 10)
     for (const file of files) {
       const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+      assert.doesNotMatch(source, /\b(readProfile|readAll|readPage|publish|deliver|pull)\(/, `src/${file} reads or writes a host`)
       for (const field of theirs) {
         // Quoted, read as a property, written as a key, or put in a query.
         const named = new RegExp(`(['"\`])${field}\\1|\\.${field}\\b|\\b${field}\\s*:|[?&]${field}=`)
@@ -134,35 +143,48 @@ describe('reading, with no signer', () => {
   })
 })
 
-describe('through the signer', () => {
-  test('the login wrote one rule into each chosen profile’s folder: private to the profile, the connection’s key inside', async () => {
-    for (const label of ['tutoring/tutor', 'tutoring/student']) {
+describe('through the person’s app', () => {
+  test('the connect step wrote one permission into each picked profile’s folder, can empty: private to the profile, the connection’s key inside', async () => {
+    for (const label of [TUTOR, STUDENT]) {
       const view = await readProfile([w.host], w.own[label]!, Date.now(), { post: true })
-      const held = [...view.current].filter(([path, { record }]) => path.startsWith(RULE_PREFIX) && record.body)
-      assert.equal(held.length, 1, `one rule in ${label}'s folder`)
+      const held = [...view.current].filter(([path, { record }]) => path.startsWith(PERMISSION_PREFIX) && record.body)
+      assert.equal(held.length, 1, `one permission in ${label}'s folder`)
       assert.equal(readerCount(held[0]![1].record.body as { private: string }), 1, 'encrypted to the profile’s own inbox key alone')
-      const [rule] = await w.person.rules(label)
-      const { who, ...rest } = rule!
-      assert.deepEqual(rest, { can: ['post', 'message', 'read', 'pay'], limit: { amount: '50', currency: 'USD', per: 'day' } }, 'what the person chose')
+      const [permission] = await w.person.permissions(label)
+      const { who, ...rest } = permission!
+      assert.deepEqual(rest, { can: [] }, 'the profiles it sees, and nothing more')
       assert.deepEqual(Object.keys(who).sort(), ['connection', 'connector', 'key', 'name'])
-      assert.equal((who as { connector: string }).connector, w.mcp.origin)
-      assert.equal((who as { connection: string }).connection, connection)
+      assert.deepEqual([(who as { connector: string }).connector, (who as { connection: string }).connection, (who as { name: string }).name], [w.mcp.origin, connection, 'An AI app'])
       assert.match((who as { key: string }).key, /^[A-Za-z0-9_-]{43}$/)
     }
-    assert.deepEqual(await w.person.rules('clothing/seller'), [], 'none in a profile the person did not choose')
+    assert.deepEqual(await w.person.permissions('clothing/seller'), [], 'none in a profile the person did not pick')
   })
 
-  test('profiles: the market and role of each profile whose folder holds a rule for the connection, and nothing else', async () => {
-    assert.deepEqual(await call('profiles'), { status: 'done', profiles: [TUTOR, STUDENT] })
+  test('read with nothing named: each profile the AI app sees, by its label, and what it may do there', async () => {
+    assert.deepEqual(await call('read'), { status: 'done', profiles: [{ label: TUTOR, can: [] }, { label: STUDENT, can: [] }] })
   })
 
-  test('another of the person’s devices, from the same seed, serves the login with the key from the rule', async () => {
+  test('with can empty, every ask waits for the person’s yes, with a link; after it, done', async () => {
+    const out = await call('write', { label: TUTOR, path: 'offer/first', body: lesson('A first lesson.') })
+    assert.equal(out.status, 'waiting')
+    assert.match(out.link, /^https:\/\/app\.forest\.test\/approve\/\d+$/)
+    assert.equal(await at(TUTOR, 'offer/first'), null, 'nothing written before the yes')
+    assert.deepEqual(await w.person.approve(out.link), { status: 'done' })
+    assert.equal((await at(TUTOR, 'offer/first'))?.description, 'A first lesson.')
+  })
+
+  test('the person allows more, in their app; read with nothing named says so', async () => {
+    for (const label of [TUTOR, STUDENT]) await w.person.allow(label, connection, ALLOWED)
+    assert.deepEqual(await call('read'), { status: 'done', profiles: [{ label: TUTOR, ...ALLOWED }, { label: STUDENT, ...ALLOWED }] })
+  })
+
+  test('another of the person’s devices, from the same seed, serves the login with the key from the permission', async () => {
     w.person.close()
     await closed()
     const other = otherDevice()
     try {
       await other.open(w.mcp.origin)
-      assert.deepEqual(await call('profiles'), { status: 'done', profiles: [TUTOR, STUDENT] })
+      assert.equal((await call('read')).status, 'done')
       assert.equal(other.asked.length, 1, 'the other device answered')
     } finally {
       other.close()
@@ -171,175 +193,217 @@ describe('through the signer', () => {
     }
   })
 
-  test('post inside the rule: done without asking, written by the main key to the profile’s hosts', async () => {
-    const out = await call('post', { market: 'tutoring', role: 'tutor', kind: 'offer', body: lesson('Maths, one hour, online.') })
-    assert.equal(out.status, 'done')
-    assert.equal(out.kind, 'offer')
-    assert.match(out.id, /^[0-9a-f]{16}$/)
-    assert.equal((await at('tutoring/tutor', `offer/${out.id}`))?.description, 'Maths, one hour, online.')
-    assert.deepEqual(await call('post', { market: 'tutoring', role: 'tutor', kind: 'offer', id: 'maths', body: lesson('Maths, two hours.') }), { status: 'done', kind: 'offer', id: 'maths' })
-    assert.equal((await at('tutoring/tutor', 'offer/maths'))?.description, 'Maths, two hours.')
+  test('write inside the permission: done without asking, signed by the main key and on the profile’s hosts; read gives it back', async () => {
+    assert.deepEqual(await call('write', { label: TUTOR, path: 'offer/maths', body: lesson('Maths, one hour, online.') }), { status: 'done' })
+    assert.equal((await at(TUTOR, 'offer/maths'))?.description, 'Maths, one hour, online.')
+    const back = await call('read', { label: TUTOR, path: 'offer/maths' })
+    assert.equal(back.status, 'done')
+    assert.equal(back.body.description, 'Maths, one hour, online.')
+    assert.ok(Number.isSafeInteger(back.time))
+    assert.deepEqual(await call('read', { label: TUTOR, path: 'offer/none' }), { status: 'done', body: null })
   })
 
-  test('post outside the rules: needs the person’s yes, with a link; after it, done', async () => {
-    const out = await call('post', { market: 'clothing', role: 'seller', kind: 'offer', id: 'coat', body: { description: 'A wool coat.' } })
-    assert.equal(out.status, 'needs approval')
-    assert.match(out.link, /^https:\/\/app\.forest\.test\/approve\/\d+$/)
+  test('outside the permissions: a profile no permission covers waits; after the yes, done', async () => {
+    const out = await call('write', { label: 'clothing/seller', path: 'offer/coat', body: { description: 'A wool coat.' } })
+    assert.equal(out.status, 'waiting')
     assert.equal(await at('clothing/seller', 'offer/coat'), null, 'nothing written before the yes')
     assert.equal((await w.person.approve(out.link)).status, 'done')
     assert.equal((await at('clothing/seller', 'offer/coat'))?.description, 'A wool coat.')
   })
 
-  test('what the mcp checks is refused before anything is relayed: a kind the market does not define, the profile record, a field that does not fit', async () => {
+  test('a label the person has no profile under waits the same, so asking maps nothing; a yes then refuses it', async () => {
+    const out = await call('write', { label: 'electronics/seller', path: 'offer/radio', body: { description: 'A radio.' } })
+    assert.equal(out.status, 'waiting')
+    assert.equal(out.why, 'write as electronics/seller is not in what this connection may do')
+    assert.deepEqual(await w.person.approve(out.link), { status: 'refused', why: 'the person has no profile as electronics/seller' })
+  })
+
+  test('the standard’s refusals come from the mcp, before anything reaches the app', async () => {
     const before = w.person.asked.length
-    const profile = await call('post', { market: 'tutoring', role: 'tutor', kind: 'profile', body: { market: 'tutoring', role: 'tutor' } })
-    assert.equal(profile.refused, 'tutoring has no kind profile: its kinds are offer, review, vouch, report')
-    const hosts = await call('post', { market: 'tutoring', role: 'tutor', kind: 'hosts', body: { urls: ['https://evil.example'] } })
-    assert.equal(hosts.refused, 'tutoring has no kind hosts: its kinds are offer, review, vouch, report')
-    const field = await call('post', { market: 'tutoring', role: 'tutor', kind: 'offer', body: { colour: 'red' } })
-    assert.equal(field.refused, 'an offer in tutoring has no field colour')
-    const role = await call('post', { market: 'tutoring', role: 'parent', kind: 'offer', body: {} })
-    assert.equal(role.refused, 'parent is not a role in tutoring: its roles are tutor, student')
-    assert.equal(w.person.asked.length, before, 'none reached the signer')
-    assert.equal(await at('tutoring/tutor', 'profile').then((b) => b?.role), 'tutor', 'the profile record is as it was')
-  })
-
-  test('the signer refuses to write or remove the profile record, the hosts record or a rule, whatever the rule says', async () => {
-    for (const kind of ['profile', 'hosts', 'rule']) {
-      for (const tool of ['post', 'remove']) {
-        const out = await w.person.handle(w.mcp.origin, connection, tool, { ...TUTOR, kind, id: 'x', ...(tool === 'post' && { body: {} }) })
-        assert.deepEqual(out, { status: 'refused', why: `the ${kind} record is the person's own to write, in Forest` }, `${tool} ${kind}`)
-      }
+    for (const [args, why] of [
+      [{ label: TUTOR, path: 'Offer/x', body: {} }, 'a write names a path, or `to` for a message'],
+      [{ label: TUTOR, path: 'offer/x', to: w.stranger.address, body: {} }, 'no field path'],
+      [{ label: TUTOR, to: w.stranger.address, body: null }, 'a body is an object'],
+    ] as const) {
+      assert.equal((await call('write', args)).refused, `not an ask the person's app takes: ${why}`, JSON.stringify(args))
     }
-    assert.equal(await at('tutoring/tutor', `${RULE_PREFIX}x`), null, 'nothing written')
-    const rule = { who: { connector: 'https://mcp.example', connection: 'x' }, can: ['post'] }
-    assert.equal(permits(rule, 'post'), true)
-    assert.equal(permits({ ...rule, spend: 'any' } as never, 'post'), false, 'a rule it does not know whole')
-    assert.equal(permits({ ...rule, until: Date.now() - 1 }, 'post'), false, 'a rule that ended')
+    assert.match((await call('pay', { label: STUDENT, to: w.stranger.offer, amount: '1.0000001', currency: 'USD' })).refused, /an amount is decimal text/)
+    assert.match((await call('read', { path: 'offer/x' })).refused, /a read names nothing, or a label/)
+    assert.equal((await call('write', { label: TUTOR, path: 'offer/x' })).refused, 'write needs body')
+    assert.equal(w.person.asked.length, before, 'none reached the app')
   })
 
-  test('remove: done, and the record is gone', async () => {
-    assert.deepEqual(await call('remove', { market: 'tutoring', role: 'tutor', kind: 'offer', id: 'maths' }), { status: 'done', kind: 'offer', id: 'maths' })
-    assert.equal(await at('tutoring/tutor', 'offer/maths'), null)
-    assert.match((await call('remove', { market: 'tutoring', role: 'tutor', kind: 'offer', id: 'maths' })).refused, /nothing at offer maths/)
+  test('what the app checks against the market, it refuses naming why: a kind the market does not define, a field that does not fit, a role the market lacks', async () => {
+    const write = (label: string, path: string, body: object) => call('write', { label, path, body })
+    assert.deepEqual(await write(TUTOR, 'notes/x', {}), { status: 'refused', why: 'tutoring has no kind notes: its kinds are offer, review, vouch, report' })
+    assert.deepEqual(await write(TUTOR, 'offer/x', { colour: 'red' }), { status: 'refused', why: 'an offer in tutoring has no field colour' })
+    assert.deepEqual(await write(TUTOR, 'offer/x', { price: 30 }), { status: 'refused', why: 'price takes { amount, currency, per }: amount as decimal text, currency a code such as USD, per if wanted' })
+    assert.deepEqual(await write('tutoring/parent', 'offer/x', {}), { status: 'refused', why: 'parent is not a role in tutoring: its roles are tutor, student' })
+    assert.equal(await at(TUTOR, 'offer/x'), null, 'nothing written')
   })
 
-  test('message: done; the stranger pulls it and opens it', async () => {
-    assert.deepEqual(await call('message', { market: 'tutoring', role: 'student', to: w.stranger.address, text: 'Is Tuesday at six free?' }), { status: 'done' })
+  test('the hosts record and a permission are the person’s to write, and a permission’s to read, in Forest', async () => {
+    const id = [...(await readProfile([w.host], w.own[TUTOR]!, Date.now(), { post: true })).current.keys()].find((p) => p.startsWith(PERMISSION_PREFIX))!
+    assert.deepEqual(await call('write', { label: TUTOR, path: 'hosts', body: { urls: ['https://elsewhere.example'] } }), { status: 'refused', why: "the hosts record is the person's to write, in Forest" })
+    assert.deepEqual(await call('write', { label: TUTOR, path: id, body: null }), { status: 'refused', why: "a permission is the person's to write, in Forest" })
+    assert.deepEqual(await call('read', { label: TUTOR, path: id }), { status: 'refused', why: "a permission is the person's to read, in Forest" })
+    assert.equal((await w.person.permissions(TUTOR)).length, 1, 'the permission is as it was')
+  })
+
+  test('a write of the profile record always asks the person; on a yes the app keeps its own fields, and takes only the market’s, none in tutoring', async () => {
+    const was = await at(TUTOR, 'profile')
+    assert.deepEqual(await call('write', { label: TUTOR, path: 'profile', body: { colour: 'red' } }), { status: 'refused', why: 'a profile record in tutoring has no field colour' })
+    const out = await call('write', { label: TUTOR, path: 'profile', body: { market: 'clothing', role: 'seller', inboxKey: 'age1pq1x', pay: { solana: 'x' } } })
+    assert.equal(out.status, 'waiting')
+    assert.equal(out.why, 'write as tutoring/tutor at profile always asks the person')
+    assert.deepEqual(await w.person.approve(out.link), { status: 'done' })
+    assert.deepEqual(await at(TUTOR, 'profile'), was, 'its market, role, inbox key, inbox and pay addresses, as they were')
+  })
+
+  test('making a profile: a write of profile under a new label asks the person; on a yes the app makes it, with a stamp proof from the stamp the device holds', async () => {
+    const key = new Uint8Array(randomBytes(32))
+    const verifierName = 'verifier.test.example'
+    w.person.keep(signStamp(key, { stampNumber: stampNumberOf(await seedScalar(w.seed), verifierName), facts: 1n }), verifierName)
+    const out = await call('write', { label: 'clothing/buyer', path: 'profile', body: {} })
+    assert.equal(out.status, 'waiting')
+    assert.deepEqual(await w.person.approve(out.link), { status: 'done' })
+    assert.ok(w.person.labels().includes('clothing/buyer'))
+    const address = (await mainKey(w.seed, 'clothing/buyer')).address
+    const body = (await readProfile([w.host], address, Date.now())).current.get('profile')!.record.body!
+    assert.deepEqual([body.market, body.role, body.inbox, Object.keys(body.pay as object).sort(), typeof body.inboxKey], ['clothing', 'buyer', {}, ['evm', 'solana'], 'string'])
+    const proof = proofsOf(body).find((p) => p.circuit === 'stamp')!
+    assert.equal(proof.verifier, verifierKeyOf(key))
+    assert.ok(await checkStamp(stampCheck(proof, address)!), 'its stamp proof checks')
+    assert.deepEqual((await call('read')).profiles.map((p: { label: string }) => p.label), [TUTOR, STUDENT], 'the AI app sees it only once the person picks it')
+  })
+
+  test('remove: a null body; done, and the record is gone; a remove of nothing is refused', async () => {
+    assert.deepEqual(await call('write', { label: TUTOR, path: 'offer/maths', body: null }), { status: 'done' })
+    assert.equal(await at(TUTOR, 'offer/maths'), null)
+    assert.deepEqual(await call('write', { label: TUTOR, path: 'offer/maths', body: null }), { status: 'refused', why: 'nothing at offer/maths' })
+  })
+
+  test('message: a write to another profile’s address; the stranger pulls it and opens it', async () => {
+    assert.deepEqual(await call('write', { label: STUDENT, to: w.stranger.address, body: { text: 'Is Tuesday at six free?' } }), { status: 'done' })
     const { identity } = await inboxKey(w.stranger.tutor.secret)
     const page = await pull(w.host, pullRequest(w.stranger.tutor, 0, Date.now()))
     const texts = await Promise.all(page.messages.map(async (m) => (await openMessage(m.message, identity)).body.text))
     assert.ok(texts.includes('Is Tuesday at six free?'))
   })
 
-  test('inbox: the messages, opened by the signer, each with a number', async () => {
-    const out = await call('inbox', { market: 'tutoring', role: 'tutor' })
+  test('read the inbox: each message from an address, or from another of the person’s profiles by its label, with its time and body', async () => {
+    assert.deepEqual(await call('write', { label: STUDENT, to: w.own[TUTOR]!, body: { text: 'A note from myself.' } }), { status: 'done' }, 'a write to an address of the person’s own, which it never gets back')
+    const out = await call('read', { label: TUTOR, inbox: true })
     assert.equal(out.status, 'done')
-    assert.deepEqual(out.messages.map((m: { number: number; from: string; text: string }) => [m.number, m.from, m.text]), [[1, w.stranger.address, 'Hello from a stranger: do you teach physics too?']])
-    assert.deepEqual((await call('inbox', { market: 'tutoring', role: 'tutor' })).messages[0].number, 1, 'a message keeps its number')
+    assert.deepEqual(
+      out.messages.map((m: { from?: string; fromLabel?: string; body: { text: string } }) => [m.from ?? m.fromLabel, m.body.text]),
+      [[w.stranger.address, 'Hello from a stranger: do you teach physics too?'], [STUDENT, 'A note from myself.']],
+    )
+    assert.ok(out.messages.every((m: { time: number }) => Number.isSafeInteger(m.time)))
   })
 
-  test('reply: by number, from the profile the message came to', async () => {
-    assert.deepEqual(await call('reply', { number: 1, text: 'Yes, physics too.' }), { status: 'done' })
+  test('reply: a write to the address the message came from, as the profile it came to', async () => {
+    assert.deepEqual(await call('write', { label: TUTOR, to: w.stranger.address, body: { text: 'Yes, physics too.' } }), { status: 'done' })
     const { identity } = await inboxKey(w.stranger.tutor.secret)
     const page = await pull(w.host, pullRequest(w.stranger.tutor, 0, Date.now()))
     const opened = await Promise.all(page.messages.map((m) => openMessage(m.message, identity)))
-    const reply = opened.find((m) => m.body.text === 'Yes, physics too.')!
-    assert.equal(reply.from, w.own['tutoring/tutor'])
-    assert.match((await call('reply', { number: 99, text: 'x' })).refused, /no message numbered 99/)
+    assert.equal(opened.find((m) => m.body.text === 'Yes, physics too.')!.from, w.own[TUTOR])
   })
 
-  test('pay: done, and the answer says only that; each profile’s limit counted on its own', async () => {
+  test('pay: to a post’s full address, done, and the answer says only that; each profile’s limit counted on its own', async () => {
     const { physics, chemistry } = w.stranger.offers
-    assert.deepEqual(await call('pay', { offer: physics, role: 'student', amount: '30' }), { status: 'done' })
+    const pay = (label: string, to: string, amount: string, currency = 'USD') => call('pay', { label, to, amount, currency })
+    assert.deepEqual(await pay(STUDENT, physics!, '30'), { status: 'done' })
     assert.deepEqual(w.paid.map((p) => p.amount), ['30'])
-    const over = await call('pay', { offer: chemistry, role: 'student', amount: '30' })
-    assert.equal(over.status, 'needs approval')
+    const over = await pay(STUDENT, chemistry!, '30')
+    assert.equal(over.status, 'waiting')
     assert.match(over.why, /beyond a limit/)
-    assert.deepEqual(await call('pay', { offer: chemistry, role: 'tutor', amount: '30' }), { status: 'done' }, 'the tutor’s limit is its own')
+    assert.deepEqual(await pay(TUTOR, chemistry!, '30'), { status: 'done' }, 'the tutor’s limit is its own')
     assert.deepEqual(w.paid.map((p) => p.amount), ['30', '30'])
-    const missing = await call('pay', { offer: `${w.stranger.address}/offer/nothing`, role: 'student', amount: '5' })
-    assert.equal(missing.refused, `there is no post at ${w.stranger.address}/offer/nothing`)
+    assert.deepEqual(await pay(STUDENT, `${w.stranger.address}/offer/nothing`, '5'), { status: 'refused', why: `there is no post at ${w.stranger.address}/offer/nothing` })
+    assert.deepEqual(await pay(STUDENT, physics!, '5', 'EUR'), { status: 'refused', why: 'this app pays in USD' })
   })
 
-  test('pay asked again for the same post and amount within the hour pays nothing; any other payment for it needs the person’s yes', async () => {
+  test('pay asked again for the same post and amount within the hour pays nothing; any other payment for it waits for the person’s yes', async () => {
     const { physics } = w.stranger.offers
     const paid = w.paid.length
-    assert.deepEqual(await call('pay', { offer: physics, role: 'student', amount: '30' }), { status: 'done' })
-    assert.deepEqual(await call('pay', { offer: physics, role: 'student', amount: '30.00' }), { status: 'done' }, 'the same amount, written another way')
+    const pay = (amount: string) => call('pay', { label: STUDENT, to: physics, amount, currency: 'USD' })
+    assert.deepEqual(await pay('30'), { status: 'done' })
+    assert.deepEqual(await pay('30.00'), { status: 'done' }, 'the same amount, written another way')
     assert.equal(w.paid.length, paid, 'nothing paid again')
-    const more = await call('pay', { offer: physics, role: 'student', amount: '5' })
-    assert.equal(more.status, 'needs approval')
+    const more = await pay('5')
+    assert.equal(more.status, 'waiting')
     assert.match(more.why, /paid already/)
     assert.equal(w.paid.length, paid, 'nothing paid before the yes')
-    assert.deepEqual(await w.person.approve(more.link), { status: 'done', result: {} })
+    assert.deepEqual(await w.person.approve(more.link), { status: 'done' })
     assert.deepEqual(w.paid.slice(paid).map((p) => p.amount), ['5'])
-    assert.deepEqual(await w.person.approve(more.link), { status: 'done', result: {} }, 'a yes given twice pays once')
+    assert.deepEqual(await w.person.approve(more.link), { status: 'done' }, 'a yes given twice pays once')
     assert.equal(w.paid.length, paid + 1)
     mock.timers.enable({ apis: ['Date'], now: Date.now() + REPEAT_MS })
     try {
-      const later = await call('pay', { offer: physics, role: 'student', amount: '30' })
-      assert.equal(later.status, 'needs approval', 'an hour on, the same payment is another one')
+      assert.equal((await pay('30')).status, 'waiting', 'an hour on, the same payment is another one')
     } finally {
       mock.timers.reset()
     }
     assert.equal(w.paid.length, paid + 1)
   })
 
-  test('a review’s evidence is the signer’s: refused from the AI, naming the field; filled in from the payment for the post it names', async () => {
+  test('a review’s evidence is the app’s: refused from the AI, naming the field; filled in from the payment for the post it names', async () => {
     const { physics, biology } = w.stranger.offers
-    const review = (offer: string, more = {}) => ({ ...STUDENT, kind: 'review', body: { subject: w.stranger.address, score: '9', text: 'Clear and patient.', offer, ...more } })
-    const asked = w.person.asked.length
-    const named = await call('post', review(physics, { evidence: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:made-up' }))
-    assert.equal(named.refused, "evidence is the person's signer's to fill, from the payment it made for the review's offer: leave evidence out")
-    assert.equal(w.person.asked.length, asked, 'it never reached the signer')
-    const out = await call('post', review(physics))
-    assert.equal(out.status, 'done')
+    const review = (offer: string, more = {}) => ({ subject: w.stranger.address, score: '9', text: 'Clear and patient.', offer, ...more })
+    const write = (label: string, id: string, body: object) => call('write', { label, path: `review/${id}`, body })
+    const named = await write(STUDENT, 'named', review(physics!, { evidence: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:made-up' }))
+    assert.deepEqual(named, { status: 'refused', why: "evidence is the person's app's to fill, from the payment it made for the review's offer: leave evidence out" })
+    assert.deepEqual(await write(STUDENT, 'physics', review(physics!)), { status: 'done' })
     const latest = w.paid.filter((p) => p.amount === '5').at(-1)!.evidence
-    assert.deepEqual(await at('tutoring/student', `review/${out.id}`), review(physics, { evidence: latest }).body, 'the latest payment the student made for it')
-    const unpaid = await call('post', review(biology))
-    assert.equal((await at('tutoring/student', `review/${unpaid.id}`))?.evidence, undefined, 'none for a post it never paid')
-    const asTutor = await call('post', { ...review(physics), ...TUTOR })
-    assert.equal((await at('tutoring/tutor', `review/${asTutor.id}`))?.evidence, undefined, 'none from a profile that did not pay it')
-    assert.equal((await call('post', { ...STUDENT, kind: 'review', body: { score: '9' } })).refused, 'a review names its subject: the address of the profile it is about')
+    assert.deepEqual(await at(STUDENT, 'review/physics'), review(physics!, { evidence: latest }), 'the latest payment the student made for it')
+    assert.deepEqual(await write(STUDENT, 'biology', review(biology!)), { status: 'done' })
+    assert.equal((await at(STUDENT, 'review/biology'))?.evidence, undefined, 'none for a post it never paid')
+    assert.deepEqual(await write(TUTOR, 'physics', review(physics!)), { status: 'done' })
+    assert.equal((await at(TUTOR, 'review/physics'))?.evidence, undefined, 'none from a profile that did not pay it')
+    assert.deepEqual(await write(STUDENT, 'x', { score: '9' }), { status: 'refused', why: 'a review names its subject: the address of the profile it is about' })
   })
 
-  test('pay by a rule with no limit: no money cap, done without asking', async () => {
-    const request = `${b64u.encode(Buffer.from(JSON.stringify({ name: 'Another AI app' })))}.x`
-    const back = new URL(await w.person.connect(w.mcp.origin, request, { profiles: ['tutoring/student'], can: ['pay'] }))
-    const another = back.searchParams.get('connection')!
-    for (const [offer, amount] of [[w.stranger.offers.biology!, '1000'], [w.stranger.offers.chemistry!, '1000000']]) {
-      const out = await w.person.handle(w.mcp.origin, another, 'pay', { offer, ...STUDENT, amount })
+  test('pay by a permission with no limit: no money cap, done without asking', async () => {
+    const request = `${Buffer.from(JSON.stringify({ name: 'Another AI app', redirect: 'https://ai-app.example/callback' })).toString('base64url')}.x`
+    const another = new URL(await w.person.connect(w.mcp.origin, request, { profiles: [STUDENT] })).searchParams.get('connection')!
+    await w.person.allow(STUDENT, another, { can: ['pay'] })
+    for (const [to, amount] of [[w.stranger.offers.biology!, '1000'], [w.stranger.offers.chemistry!, '1000000']]) {
+      const out = await w.person.handle(w.mcp.origin, another, { ask: 'pay', label: STUDENT, to, amount, currency: 'USD' })
       assert.equal(out.status, 'done', JSON.stringify(out))
     }
     assert.deepEqual(w.paid.slice(-2).map((p) => p.amount), ['1000', '1000000'])
+    const permission = { who: { connector: 'https://mcp.example', connection: 'x' }, can: ['write'] }
+    assert.equal(live(permission), true)
+    assert.equal(live({ ...permission, spend: 'any' } as never), false, 'a permission it does not know whole')
+    assert.equal(live({ ...permission, until: Date.now() - 1 }), false, 'a permission that ended')
   })
 
-  test('with no signer open, it says so plainly', async () => {
+  test('with no app open, it says so plainly', async () => {
     w.person.close()
     try {
       await closed()
-      assert.deepEqual(await call('profiles'), { refused: NO_SIGNER })
-      assert.match(NO_SIGNER, /open Forest on one of their devices/)
+      assert.deepEqual(await call('read'), { refused: NO_SIGNER })
+      assert.match(NO_SIGNER, /^Forest is not open on any of the person's devices/)
     } finally {
       await w.person.open(w.mcp.origin)
     }
   })
 
-  test('a rule removed on another device is gone at the next ask; with none left, the login has ended', async () => {
+  test('a permission removed on another device is gone at the next ask; with none left, the login has ended', async () => {
     const other = otherDevice()
-    await other.removeRule('tutoring/tutor', connection)
-    assert.deepEqual(await call('profiles'), { status: 'done', profiles: [STUDENT] })
-    const out = await call('post', { ...TUTOR, kind: 'offer', id: 'after', body: lesson('After the rule went.') })
-    assert.equal(out.status, 'needs approval')
-    assert.equal(await at('tutoring/tutor', 'offer/after'), null)
-    await other.removeRule('tutoring/student', connection)
-    assert.match((await call('profiles')).refused, /this connection was removed/)
+    await other.removePermission(TUTOR, connection)
+    assert.deepEqual((await call('read')).profiles.map((p: { label: string }) => p.label), [STUDENT])
+    const out = await call('write', { label: TUTOR, path: 'offer/after', body: lesson('After the permission went.') })
+    assert.equal(out.status, 'waiting')
+    assert.equal(await at(TUTOR, 'offer/after'), null)
+    await other.removePermission(STUDENT, connection)
+    assert.deepEqual(await call('read'), { status: 'refused', why: 'this connection was removed' })
   })
 })
 
 test('no answer in this file holds one of the person’s own addresses', async () => {
   const theirs = await w.person.addresses()
-  assert.ok(answers.length > 20)
+  assert.ok(answers.length > 30)
   for (const answer of answers) for (const address of theirs) assert.ok(!answer.includes(address), `an answer holds ${address}: ${answer}`)
 })

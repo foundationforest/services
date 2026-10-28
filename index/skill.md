@@ -83,7 +83,7 @@ result's `ratings` is as it is.
     GET https://index.forest.foundation/profiles/<address>.json
 
 - `profile`: its profile record, as the hosts serve it: `market`, `role`, `pay` (its pay addresses,
-  `{ "solana", "evm" }`), `inboxKey` and `inbox` (how to message it), `proofs`.
+  any of `{ "solana", "evm" }`), `inboxKey` and `inbox` (how to message it), `proofs`.
 - `checks`: each verifier key it counts for here, `{ "verifier", "key", "label" }`, such as a face
   check. Its uniqueness comes from these.
 - `ratings`, `trust`, `uniqueness`, `pickiness`: what it shows, as above. A profile that does not

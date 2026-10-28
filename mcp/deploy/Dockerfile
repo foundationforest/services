@@ -3,9 +3,9 @@
 # builds it, and fetches the markets at the commit in MARKETS, which the mcp reads its markets from;
 # it needs git.
 #
-# It serves the MCP door at its root and at /mcp, the login, the signers' door at /signer, and the
-# icon at /favicon.ico and /icon.svg, on the port Railway gives (PORT), on every address. Its key is
-# kept in DATA_DIR, a volume. It reads the foundation's host and index, its defaults; APP_URL, the
+# It serves the MCP door at its root and at /mcp, the login, the live link at /signer, and the icon
+# at /favicon.ico and /icon.svg, on the port Railway gives (PORT), on every address. Its key is kept
+# in DATA_DIR, a volume. It reads the foundation's index, its default, and no host; APP_URL, the
 # Forest app's connect page, is a variable of the deploy, and until it is set, logins wait.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
 FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim

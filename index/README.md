@@ -136,11 +136,12 @@ A counted review's `evidence` is `<chain>:<id>`, the chain in CAIP-2 form (a sta
 chain), as the markets manual writes it; the chain holds a colon itself, so the text splits at its
 last colon. `config/chains.json` names each chain this index reads, with its reader and the setting
 that holds its RPC's URL. A reader reads one type of chain and matches the two profiles' pay
-addresses of that type, from each profile record's `pay`, `{ solana, evm }`. A pay address counts
-only when its signature in the profile record's `paySig` holds: its pay key signed that profile's
-address (the standard's `checkPay`), so a profile cannot borrow someone else's payments. This index
-has one reader, `solana`, which matches the `solana` pay addresses and has two kinds of evidence,
-each one file in `src/evidence/`, with its name, how it recognizes an id, and its check:
+addresses of that type, from each profile record's `pay`, which lists any of `solana` and `evm`. A
+pay address counts only when its signature in the profile record's `paySig` holds: its pay key
+signed that profile's address (the standard's `checkPay`), so a profile cannot borrow someone else's
+payments. This index has one reader, `solana`, which matches the `solana` pay addresses and has two
+kinds of evidence, each one file in `src/evidence/`, with its name, how it recognizes an id, and its
+check:
 
 - **`escrow`**, an address of 32 bytes, on the chain the escrow runs on: the escrow's receipt, from
   what this index read on chain. It counts when the receipt's payer and recipient are the two
@@ -384,15 +385,16 @@ Node 22.18 or later. From the repo root:
 ```
 ./standard.sh                                              # the standard at STANDARD, built; the markets at MARKETS
 (cd standard/proofs/reputation/circuit && npm run fetch)   # the reputation circuit's proving files, for the tests
+(cd host && npm ci)                                        # this repo's host, which the tests run
 cd index && npm ci                                         # the standard's packages, linked by name from ../standard/
 npm run check                                              # type-check
 npm test                                                   # everything below, on loopback
 DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 ```
 
-The tests run the standard's reference host on loopback, make real stamp proofs from the stamp
-circuit's committed proving files for a stand-in verifier key their lists name, and answer the chain
-from a stand-in RPC:
+The tests run this repo's host on loopback (its plug, `host/src/plug.ts`), make real stamp proofs
+from the stamp circuit's committed proving files for a stand-in verifier key their lists name, and
+answer the chain from a stand-in RPC:
 
 - **filter:** a stamp proof that checks for a listed key counts; a changed byte, an unlisted key, a
   wrong name, a label other than the profile's market and role, a market not in the directory, a role

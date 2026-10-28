@@ -8,7 +8,7 @@ export const name = 'markets'
 export const description =
   "Every market in the markets directory this copy reads: its name, what the dealing is, and its roles, each with what it posts (offers, requests, or just posts). A profile is one market and one role. No login."
 export const params: Param[] = []
-export const relayed = false
+export const toApp = false
 
 export async function run() {
   return { markets: directory() }
