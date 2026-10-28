@@ -3,7 +3,8 @@
 // disk or in an S3-compatible bucket. None of it is the standard: the eight requests answer the
 // same whatever the storage. Here: where things land, the feed across
 // folders, removing a folder, a malformed address, rebuilding host.sqlite, a folder file of an
-// older version, migrated, and one in another layout, refused, and the S3 driver.
+// older version, migrated, and one in another layout, refused and left out of the feed and the
+// prune, and the S3 driver.
 
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
@@ -384,7 +385,7 @@ describe('a folder file in another layout', () => {
     assert.deepEqual([shapeOf(aliceFile), shapeOf(bobFile)], [[1, [], false], [1, ['sha256', 'type', 'size', 'by', 'arrived'], true]])
   })
 
-  test('a read of it answers 500, the folder’s own and the feed’s, and each logs one line: the path and the error, its address taken out', async () => {
+  test('its own read answers 500 and logs one line: the path and the error, its address taken out', async () => {
     const dir = scratch()
     let h = await startPlug({ dir, now: () => T0 })
     await publish([h.url], [ownerRecord(alice, 'profile', aliceProfile, T0)])
@@ -396,14 +397,54 @@ describe('a folder file in another layout', () => {
     const logged = mock.method(console, 'error', () => {})
     try {
       const one = await fetch(`${h.url}/v1/records?profile=${alice.address}`)
-      const feed = await fetch(`${h.url}/v1/records/read`, { method: 'POST', body: '{}' })
-      assert.deepEqual([one.status, await one.text(), feed.status, await feed.text()], [500, '', 500, ''])
+      assert.deepEqual([one.status, await one.text()], [500, ''])
       const why = `${join(dir, 'folders', '<address>.sqlite')} is not a folder file in this host's layout`
-      assert.deepEqual(logged.mock.calls.map((c) => c.arguments), [[`500 /v1/records: ${why}`], [`500 /v1/records/read: ${why}`]])
+      assert.deepEqual(logged.mock.calls.map((c) => c.arguments), [[`500 /v1/records: ${why}`]])
     } finally {
       logged.mock.restore()
       await h.close()
     }
+  })
+
+  test('the feed and the prune skip it among good folders, each logging one line, and go on with the rest', async () => {
+    const dir = scratch()
+    const clock = new Clock(T0)
+    let h = await startPlug({ dir, now: clock.now })
+    const keys = [alice, bob, aliceBuyer]
+    // Each folder's offer is replaced once, so each good folder has a record the prune deletes.
+    await publish([h.url], keys.flatMap((key) => [ownerRecord(key, 'profile', profileBody('calculus'), T0), ownerRecord(key, 'offer/a', offerBody('1'), T0)]))
+    await publish([h.url], keys.map((key) => ownerRecord(key, 'offer/a', offerBody('2'), T0 + MINUTE)))
+    const ids = async (profile?: string) => (await readPage(h.url, { after: 0, ...(profile && { profile }) })).records.map((c) => c.id)
+    const bobs = new Set(await ids(bob.address))
+    const good = (await ids()).filter((id) => !bobs.has(id))
+    await h.close()
+    const bobFile = join(dir, 'folders', `${bob.address}.sqlite`)
+    const db = new DatabaseSync(bobFile)
+    db.exec('DROP TABLE blobs; PRAGMA user_version = 1')
+    db.close()
+    h = await startPlug({ dir, now: clock.now })
+    const logged = mock.method(console, 'error', () => {})
+    const skipped = [`folder skipped: ${join(dir, 'folders', '<address>.sqlite')} is not a folder file in this host's layout`]
+    try {
+      // One read of the feed: 200, every good folder's records, and one line for Bob's three.
+      const feed = await fetch(`${h.url}/v1/records/read`, { method: 'POST', body: '{}' })
+      assert.equal(feed.status, 200)
+      assert.equal((await feed.text()).split('\n').filter(Boolean).length, good.length)
+      assert.deepEqual(await ids(), good)
+      assert.deepEqual(logged.mock.calls.map((c) => c.arguments), [skipped, skipped])
+      // The prune: Alice's and her buyer's replaced offers go, whichever side of Bob's file each is on.
+      clock.advance(31 * DAY)
+      assert.equal(await h.prune(), 2)
+      assert.equal(logged.mock.calls.length, 3)
+      assert.deepEqual(logged.mock.calls[2]!.arguments, skipped)
+      assert.equal((await ids()).length, good.length - 2)
+    } finally {
+      logged.mock.restore()
+      await h.close()
+    }
+    // Bob's file is left as it was, and so is what host.sqlite says of it.
+    assert.deepEqual(shapeOf(bobFile), [1, [], false])
+    assert.equal(query<{ n: number }>(join(dir, 'host.sqlite'), `SELECT COUNT(*) AS n FROM log WHERE folder = '${bob.address}'`)[0]!.n, 3)
   })
 })
 

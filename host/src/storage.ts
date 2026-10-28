@@ -29,6 +29,13 @@ const OPEN_FOLDERS = 128
 const HASH = /^[0-9a-f]{64}$/
 /** Milliseconds an S3 request may take. */
 const S3_TIMEOUT_MS = 60_000
+/** An address as text: base58 of 32 bytes, 32 to 44 characters, a word of its own. */
+const ADDRESS = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g
+
+/** One line in the log, any address in it taken out: a folder's file is named by its address. */
+export function logLine(text: string): void {
+  console.error(text.replace(/\s+/g, ' ').replace(ADDRESS, '<address>'))
+}
 
 export type Row = { seq: number; text: string; bytes: number }
 export type Stored = { sha256: string; type: string }
@@ -311,6 +318,20 @@ export class Storage {
     return folder
   }
 
+  /**
+   * A folder's file for the feed and the prune, which go on without one that cannot be opened (a
+   * layout no step brings here, a broken file): it is logged and left out. A host may withhold a
+   * record, never forge one (the standard's records), so one bad file stops nothing else.
+   */
+  private folderOrSkip(address: string): Db | undefined {
+    try {
+      return this.folder(address)
+    } catch (err) {
+      logLine(`folder skipped: ${(err as Error).message}`)
+      return undefined
+    }
+  }
+
   /** The addresses with a folder file. */
   folders(): string[] {
     return foldersIn(this.dir)
@@ -360,7 +381,8 @@ export class Storage {
 
   /**
    * Records after a cursor, in the order taken: one folder's, from its file; or every folder's,
-   * by the log, skipping a number whose folder or record is gone.
+   * by the log, skipping a number whose folder or record is gone, and a folder whose file cannot be
+   * opened, once each.
    */
   *recordsAfter(after: number, folder?: string): Generator<Row> {
     if (folder !== undefined) {
@@ -368,8 +390,15 @@ export class Storage {
       if (db) yield* db.fresh('SELECT seq, text, bytes FROM records WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
       return
     }
+    const skipped = new Set<string>()
     for (const entry of this.host.fresh('SELECT seq, folder FROM log WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<{ seq: number; folder: string }>) {
-      const row = this.folder(entry.folder)?.q('SELECT text, bytes FROM records WHERE seq = ?').get(entry.seq) as { text: string; bytes: number } | undefined
+      if (skipped.has(entry.folder)) continue
+      const db = this.folderOrSkip(entry.folder)
+      if (!db) {
+        skipped.add(entry.folder)
+        continue
+      }
+      const row = db.q('SELECT text, bytes FROM records WHERE seq = ?').get(entry.seq) as { text: string; bytes: number } | undefined
       if (row) yield { seq: entry.seq, ...row }
     }
   }
@@ -480,7 +509,10 @@ export class Storage {
     let deleted = 0
     const onDisk = new Set(this.folders())
     for (const address of onDisk) {
-      const folder = this.folder(address)!
+      // One that cannot be opened is skipped: its file is still here, so what host.sqlite says of
+      // it stays, and no bytes it may hold are deleted.
+      const folder = this.folderOrSkip(address)
+      if (!folder) continue
       const old = folder.q('SELECT seq FROM records WHERE older_since IS NOT NULL AND older_since <= ?').all(before) as Array<{ seq: number }>
       // The log first: a crash in between leaves old records the next prune deletes, never a
       // number that points to nothing.

@@ -94,6 +94,9 @@ bytes at a time, so a second put of them by the same folder finds them kept and 
 - the blobs: in `blobs/`, or with `BLOBS=s3` in a bucket of any S3-compatible service.
 - A folder file of an older layout is brought to this one when it opens; one in a layout no step
   brings here is refused and left as it was.
+- A folder file it cannot open is left out of the feed and the prune, which go on with the rest
+  and log one line for it: its error, any address taken out. Its own read answers 500. A host may
+  withhold a record, never forge one.
 
 The credits keep their own two files in `credits/`:
 
@@ -269,7 +272,8 @@ in this directory, so nothing outside it changes one.
 - **Who may read:** anyone can read any folder here, for free; the main way is an index reading
   every page, or an app reading one profile.
 - **No request logs.** Neither the plug nor the front logs a request or keeps an address. A request
-  it answers 500 logs one line: its path and the error's message, any address in them taken out.
+  it answers 500 logs one line: its path and the error's message, any address in them taken out. A
+  folder file the feed or the prune cannot open logs one line too: its error, any address taken out.
 - **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with
   the buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of
   each record and message it took a price for. Nothing ties a credit to the folder it went into.
@@ -337,7 +341,8 @@ The tests, on loopback:
   only by the main key, within ten minutes, by POST; and the storage: a file per folder, the feed
   across them, removing a folder, `rebuild`, a folder file of an older layout migrated (version 1
   with `by` and without it, which the feed and a rebuild then read) and one of another refused, a
-  read of it answering 500 and logging one line with no address, and the S3 driver.
+  read of it answering 500 and logging one line with no address, and the feed and the prune
+  skipping it among good folders, one line each; and the S3 driver.
 - `test/credits.test.ts`, through the whole host, buying with `test/buyer.ts`, which blinds with
   privacypass-ts as an app does:
   - the price of a 1 kB record (0.02), a 200 kB blob (2.01), and taking each down (0.01); the same
@@ -418,6 +423,9 @@ The tests, on loopback:
   collects it again.
 - **Slow for a busy folder.** The plug checks each record against everything it stores for that
   profile, and checks signatures in JavaScript: about 260 records a second on one core.
+- **A folder file it cannot open is withheld from the feed.** A reader whose cursor passes its
+  records while it is left out gets them, once it opens, from that folder's own read or by reading
+  the feed from the start.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
   change to `src/storage.ts` first.
 

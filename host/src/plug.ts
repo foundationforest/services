@@ -56,7 +56,7 @@ import {
   readMessage,
   viewProfile,
 } from '@foundationforest/records'
-import { type BlobDriver, type Row, Storage } from './storage.ts'
+import { type BlobDriver, type Row, Storage, logLine } from './storage.ts'
 
 export { type BlobDriver, type S3Options, rebuild } from './storage.ts'
 
@@ -100,16 +100,12 @@ export type BlobChoice = (blob: { sha256: string; type: string; size: number; pr
 
 export const defaultBlobChoice: BlobChoice = (blob) => (DEFAULT_BLOB_TYPES.includes(blob.type) ? null : `this host takes ${DEFAULT_BLOB_TYPES.join(', ')}`)
 
-/** An address as text: base58 of 32 bytes, 32 to 44 characters, a word of its own. */
-const ADDRESS = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g
-
 /**
  * The one line a request answered 500 leaves in the log: its path and the error's message, any
- * address in them taken out (a folder's file is named by its address). No query, no body, no IP.
+ * address in them taken out (logLine). No query, no body, no IP.
  */
 export function logFailure(path: string, err: unknown): void {
-  const said = err instanceof Error ? err.message : String(err)
-  console.error(`500 ${path}: ${said}`.replace(/\s+/g, ' ').replace(ADDRESS, '<address>'))
+  logLine(`500 ${path}: ${err instanceof Error ? err.message : String(err)}`)
 }
 
 export type HostOptions = {
