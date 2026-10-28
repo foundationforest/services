@@ -11,65 +11,67 @@ that profile's main key signs here), and serves the offers and reviews in it to 
 only carries:
 
 - the stamp proofs on a profile record, which a verifier's stamp (its signature saying it checked
-  the person) made possible and readers check (this host checks one only for an inbox that asks
-  for it);
+  the person) made possible and readers check;
 - the records an index reads to rank profiles;
 - no money but its own credits.
 
 This is one copy, run by the Open Forest Foundation. Anyone can run another; the main way is this
-code, or the standard's reference host alone, or one of their own that answers the same requests
-([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)).
+code, or one of their own that answers the same requests, the plug, and passes the standard's host
+check ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)).
 
 Of the person's, it keeps copies: the records each of their profiles' main keys signed, a private
-one encrypted, each of a profile's rules among them (who may ask the person's signers, the devices
-of theirs that hold the seed, to act as that profile); the messages to each inbox, encrypted; and
-the blobs each folder put. Anyone can copy a folder out of it; the main way is the person's app
-reading every record (`GET /v1/records?profile=<address>`) and every blob
+one encrypted, each of a profile's permissions among them (who may ask the person's signers, the
+devices of theirs that hold the seed, to act as that profile); the messages to each inbox,
+encrypted; and the blobs each folder put. Anyone can copy a folder out of it; the main way is the
+person's app reading every record (`GET /v1/records?profile=<address>`) and every blob
 (`GET /v1/blobs/<sha256>`), and posting them to another host. The only thing here about a folder
 that no key signed is its balance of credits.
 
 ## How it works
 
-The standard's reference host (`@foundationforest/records/host`), unchanged, listens on loopback. In
-front of it is one small front. It does three things:
+Two parts, in one process:
 
-- answers `GET /` with one line saying what this is;
-- answers the credit routes ([Credits](#credits));
-- passes every other request, untouched, to the reference host.
+- **The plug** (`src/plug.ts`, over `src/storage.ts`): the eight requests every host answers
+  ([records](https://github.com/foundationforest/standard/blob/main/records/README.md#hosts)),
+  records in and out, read by GET or POST, messages in and pulled, blobs in, out and deleted. It
+  checks every record, message and blob as the standard says before it keeps anything, and listens
+  on loopback. It came from the standard's reference host, which left the standard when the
+  standard kept only what everyone must share; it is this host's own now.
+- **The front** (`src/host.ts`), the only part the internet reaches. It does three things:
+  - answers `GET /` with one line saying what this is;
+  - answers the credit routes ([Credits](#credits));
+  - passes every other request, untouched, to the plug.
 
-So the routes are the standard's eight (records in and out, read by GET or POST, messages in and
-pulled, blobs in, out and deleted), the four credit routes, and `/`. The reference host checks every
-record, message and blob, as the standard says, before it keeps anything.
+So the routes are the standard's eight, the four credit routes, and `/`. The standard's host check
+(`@foundationforest/records/check`) shows the whole host fits the plug: its tests run it, and anyone
+runs it against the deployed copy ([Run it](#run-it)).
 
-`src/host.ts` hands the reference host this host's numbers ([How we run it](#how-we-run-it)), three
-hooks that charge for writes, and two of the standard's pieces:
+`src/host.ts` hands the plug this host's numbers ([How we run it](#how-we-run-it)) and three hooks
+that charge for writes:
 
 - **`recordChoice`** charges a record to its own folder's balance, or refuses it (`refused`, with
-  what it costs and what the folder holds). The reference host asks it about every content record,
-  and about a hosts record only while the folder holds no record yet, so a folder's first record
-  costs a write, whatever it is; it never asks about a hosts record after that, so leaving and
-  updating are free.
-- **`blobChoice`** takes the standard's blob types, then reserves the bytes' price on the folder
-  that puts them. The front takes the price once the reference host answers that it kept them, or
-  releases it.
+  what it costs and what the folder holds). The plug asks it about every content record, and about
+  a hosts record only while the folder holds no record yet, so a folder's first record costs a
+  write, whatever it is; it never asks about a hosts record after that, so leaving and updating are
+  free.
+- **`blobChoice`** takes the plug's blob types, then reserves the bytes' price on the folder that
+  puts them. The front takes the price once the plug answers that it kept them, or releases it.
 - **`messageChoice`** charges a message whose `from` is its `to` (a profile writing to its own
   inbox, its devices passing things to each other) to that folder's balance, as a record of the
   same size, or refuses it. Others' messages are free, and an inbox takes 1,000 of them a day,
   counted from midnight UTC; past that it refuses them (`refused`) until the next day.
-- **`readSender`** reads a sender's records, for a message to an inbox that takes messages only
-  from a verifier's stamp holders. It uses the standard's client
-  (`readPage`, every page) through the standard's `publicFetch`, so it reaches only public
-  addresses and follows no redirect. It keeps what it read for a while, per sender and host. A
-  read that fails is not kept: the reference host answers `lookup`, and the sender tries again.
-- **`checkStamp`**, the stamp client's (`@foundationforest/stamp`), checks the stamp proof on that
-  sender's profile record, as the standard's `stampCheck` gives it. Its key is in the stamp client,
-  so the check reads no file and asks no network.
+
+**Inboxes.** The plug takes a message for any profile whose profile record here declares an inbox
+it can read: anyone may write to it, up to its largest size (`maxBytes`), which a message from the
+profile itself skips. An inbox with a field or a value the plug does not know takes nothing
+(`no_inbox`), since what it skipped could be a limit the profile set. It reads no sender's records
+and checks no proof.
 
 **Taking your own things down is never blocked by money.**
 
 - A record with a null body at a path where a live record stands costs the floor. When the
   balance cannot pay, it goes through free.
-- A blob delete that the reference host carries out costs the floor too. The front checks the
+- A blob delete that the plug carries out costs the floor too. The front checks the
   signed delete with the standard's `checkBlobRequest` to find the folder, and reserves the floor
   if the balance holds it. It passes the delete on either way, and takes the floor only if the
   bytes were deleted.
@@ -79,12 +81,19 @@ hooks that charge for writes, and two of the standard's pieces:
 **One request for the same bytes at a time.** The front sends on one put or delete of the same
 bytes at a time, so a second put of them by the same folder finds them kept and pays nothing.
 
-**Where it keeps things** is the standard's storage, in the data directory (`DATA_DIR`):
+**Where it keeps things** is `src/storage.ts`'s, in the data directory (`DATA_DIR`):
 
-- `folders/<address>.sqlite`: one SQLite file per folder, with its records, its inbox and its
-  blobs' names;
-- `host.sqlite`: the log across them;
-- the blobs: in `blobs/`, or in an S3-compatible bucket with `BLOBS=s3`.
+- `folders/<address>.sqlite`: one SQLite file per folder, with its records, the messages to its
+  inbox and the blobs it holds. With the host stopped, deleting a folder's file removes that folder,
+  and the next prune deletes the bytes no other folder holds.
+- `host.sqlite`: the log, which numbers every folder's records in the order taken, and which
+  folders hold which blobs. It holds nothing that exists only there: `rebuild(dir)` makes it again.
+  A new number, a record's or a message's, is the larger of the last one plus 1 and the clock in
+  microseconds, so a rebuilt `host.sqlite`, or a folder's file made again, never reuses one, unless
+  the clock is set back.
+- the blobs: in `blobs/`, or with `BLOBS=s3` in a bucket of any S3-compatible service.
+- A folder file of an older layout is brought to this one when it opens; one in a layout no step
+  brings here is refused and left as it was.
 
 The credits keep their own two files in `credits/`:
 
@@ -208,10 +217,9 @@ costs add up.
 
 ## How we run it
 
-Every number here is set in `src/host.ts` (`choice`, `SENDER_READ_MS`, `MESSAGES_A_DAY`),
-`src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting, so moving the standard's
-pin cannot change it without a pull request here. Two are the standard's defaults, not set here: the
-largest record or message, and the blob types.
+Every number here is set in `src/host.ts` (`choice`, `MESSAGES_A_DAY`), `src/plug.ts` (its
+`DEFAULT_*` numbers), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting, all
+in this directory, so nothing outside it changes one.
 
 - **One credit is one US cent** (`CREDIT_PRICE_CENTS`). Paid on Solana, it is 0.01 of the dollar
   `CREDIT_MINT` names, at face value. On Railway that dollar is Circle's USDC on Solana's devnet,
@@ -240,26 +248,27 @@ largest record or message, and the blob types.
   Tickets from the sponsors in `SPONSORS`; we list the verifier's sponsor address, whose tickets are
   a person's first credits. A payment on Solana counts once it is finalized, and only when
   `CREDIT_MINT`, `CREDIT_PAY_TO` and `RPC_URL` are set.
-- **Sizes:** records and messages up to **65,536 bytes** each (the standard's default); **100** of
-  them a request; **1,000** a page, and at most **4,194,304 bytes** a page, though always one line.
-- **Blobs:** png, jpeg and mp4 (the standard's default), up to **50,000,000 bytes** each, kept until
-  their folder deletes them.
-- **Keeps** a replaced record and a message for **30 days**, by its own clock. A current record stays.
-- **Inboxes:** it takes a message for any profile whose profile record here declares an inbox. It
-  follows each of the standard's `senders` kinds: anyone, or the holders of a stamp from one
-  verifier, checked by the stamp proof on the sender's profile record. It also follows a largest
-  size (`maxBytes`).
-- **Senders' records:** to take a message for a verifier's stamp holders, it reads the sender's
-  records from the host the message names. The read takes at most **5 seconds**, goes only to a
-  public address, and follows no redirect. What it read is kept for **60 seconds**
-  (`SENDER_CACHE_SECONDS`): at most one read a minute for each sender at each host. A read that
-  fails is not kept.
+- **Sizes:** records and messages up to **65,536 bytes** each in UTF-8 (`DEFAULT_MAX_LINE_BYTES`);
+  **100** of them a request; **1,000** a page, and at most **4,194,304 bytes** a page, though always
+  one line. A pull or a read request is at most 1,024 bytes, and so is a blob request.
+- **Blobs:** png, jpeg and mp4 (`DEFAULT_BLOB_TYPES`), up to **50,000,000 bytes** each, kept until
+  their folder deletes them. A declared size over that is answered 413, unread.
+- **Keeps** a replaced record and a message for **30 days**, by its own clock, and prunes every
+  hour. A current record stays.
+- **Inboxes:** it takes a message for any profile whose profile record here declares an inbox it
+  can read, `{ maxBytes? }`, from anyone; an inbox with any other field takes nothing.
+- **A request** has **60 seconds** to arrive in full; past that it gets 408.
+- **Its speed:** on one core of the machine this was written on, it checks and stores about **260
+  records a second**, and serves about 17,000 (`npm run bench`). Pure JavaScript checks about 430
+  signatures a second there.
+- **Its storage:** one process, a SQLite file per folder and `host.sqlite` beside them, in the data
+  directory on its volume; blobs in the bucket ([How it works](#how-it-works)).
 - **Who may write:** anyone can, who pays; the main way is the person's app, posting each record to
   every host its hosts record names. It refuses no write by its own choice but its price, and no
   message but its price and an inbox's day of others' messages; it has no other rate limit.
 - **Who may read:** anyone can read any folder here, for free; the main way is an index reading
   every page, or an app reading one profile.
-- **No request logs.** Neither the reference host nor the front logs a request or keeps an address.
+- **No request logs.** Neither the plug nor the front logs a request or keeps an address.
 - **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with
   the buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of
   each record and message it took a price for. Nothing ties a credit to the folder it went into.
@@ -288,7 +297,6 @@ only the bucket's key, the RPC's address and this host's choices.
 | `MAX_BUY` | `1000` | The most credits one buy may ask for |
 | `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
 | `CREDIT_MINT`, `CREDIT_PAY_TO`, `RPC_URL` | none: only tickets buy | The dollar a credit is paid in, by its mint; the address it is paid to; the Solana RPC that checks the payment. All three, or none |
-| `SENDER_CACHE_SECONDS` | `60` | How long a sender's records are kept once read; `0`: not kept |
 
 A setting that cannot be read stops the start: a partial bucket, a partial payment, a price that is
 not decimal text.
@@ -300,45 +308,69 @@ not decimal text.
 cd host && npm ci                     # the standard's packages by name, linked into standard/
 npm run check && npm test
 DATA_DIR=./data PUBLIC_ORIGIN=http://127.0.0.1:8080 npm start
+npm run bench                         # its speed on this machine
+SEED=<64 hex characters> npm run check-host -- https://host.forest.foundation
 ```
 
-Node 22.18 or later. The tests (`test/credits.test.ts`) run the real reference host on loopback,
-and buy with `test/buyer.ts`, which blinds with privacypass-ts as an app does:
+Node 22.18 or later.
 
-- the price of a 1 kB record (0.02), a 200 kB blob (2.01), and taking each down (0.01); the same
-  record or bytes again for nothing; a blob delete that finds nothing, for nothing;
-- joining: a folder's first hosts record at its price, and refused with no balance; a later one, an
-  update or leaving, taken with none;
-- a write refused with no balance, bytes too. With no balance, a live record and a blob are still
-  taken down, for nothing, and a null body where nothing stands is refused;
-- a message to its own inbox charged as a record, at a flat one credit a write, and refused with
-  no balance; someone else's taken free; on the cap's own code, with a cap of 2 and a stand-in
-  clock, an inbox taking a day's cap of others' messages, the next refused, another inbox counted
-  on its own, and the next UTC day counted again;
-- a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
-  not listed, for another count, or for another buy, and a credit is spent once;
-- a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or naming
-  another buy; with no payment set, only tickets buy and the directory names no address;
-- the credit key made at the first start, readable only by the host's user, and the same at the
-  next start;
-- end to end: a folder's hosts record, profile record and offer, and a photo, written with credits
-  and read back with the standard's client, the balance down by exactly their prices.
+**The host check against the deployed copy.** `npm run check-host -- <origin>` runs the
+standard's own host check (`standard/records/scripts/check-host.ts`, unchanged) against a host. It
+writes from two profiles of one seed, under `check/a` and `check/b`, and prints each check: ok,
+unchecked, or FAILED, exiting 1 if any failed. This host charges every write, so with a new seed it
+refuses the first one by its own choice, and the check says the rest is unchecked. To check it all,
+give it `SEED`, 64 hex characters, whose two folders hold credits here: buy a few credits
+([Credits](#credits)) and spend some into each folder's balance (`POST /credits/spend`) first. A run
+costs `check/a` about 0.1 credit and `check/b` about 0.2, at this host's prices.
 
-What every host must do, and its tests, are the standard's.
+The tests, on loopback:
+
+- `test/check.test.ts`: the standard's host check against the plug alone, every check ok; and
+  against the whole host with credits: a new seed stops at its first write, refused for credits,
+  with nothing failed, and a seed whose two folders hold credits passes every check.
+- `test/plug.test.ts`, `test/blobs.test.ts`, `test/inbox.test.ts` and `test/storage.test.ts`: the
+  plug's own tests, as they came from the standard's reference host. Keep days and the prune; the
+  socket (404, 405, a cursor that is no whole number, a target that is no path, 408); what it
+  refuses; its sizes, batches and pages; a host's own choice for records, blobs and messages;
+  deliveries in the plug's order, an inbox it cannot read refused as `no_inbox`, `maxBytes`; pulls
+  only by the main key, within ten minutes, by POST; and the storage: a file per folder, the feed
+  across them, removing a folder, `rebuild`, a folder file of an older layout migrated and one of
+  another refused, and the S3 driver.
+- `test/credits.test.ts`, through the whole host, buying with `test/buyer.ts`, which blinds with
+  privacypass-ts as an app does:
+  - the price of a 1 kB record (0.02), a 200 kB blob (2.01), and taking each down (0.01); the same
+    record or bytes again for nothing; a blob delete that finds nothing, for nothing;
+  - joining: a folder's first hosts record at its price, and refused with no balance; a later one,
+    an update or leaving, taken with none;
+  - a write refused with no balance, bytes too. With no balance, a live record and a blob are still
+    taken down, for nothing, and a null body where nothing stands is refused;
+  - a message to its own inbox charged as a record, at a flat one credit a write, and refused with
+    no balance; someone else's taken free; on the cap's own code, with a cap of 2 and a stand-in
+    clock, an inbox taking a day's cap of others' messages, the next refused, another inbox counted
+    on its own, and the next UTC day counted again;
+  - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
+    not listed, for another count, or for another buy, and a credit is spent once;
+  - a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or
+    naming another buy; with no payment set, only tickets buy and the directory names no address;
+  - the credit key made at the first start, readable only by the host's user, and the same at the
+    next start;
+  - end to end: a folder's hosts record, profile record and offer, and a photo, written with credits
+    and read back with the standard's client, the balance down by exactly their prices.
 
 ## Promises
 
-- **The standard's host, unchanged.** The front adds the line at `/`, the credit routes and the
-  price of each write, and nothing else.
+- **It fits the standard's plug.** The standard's host check passes against it, and anyone can run
+  it against the deployed copy. The front adds the line at `/`, the credit routes and the price of
+  each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live record, or of a
   blob the folder holds, goes through when the balance cannot pay its floor.
 - **A person can always leave; joining costs a write.** A folder's first record here costs a write,
-  whatever it is. Later hosts records, which leave this host or update the list, the reference host
-  never asks about, so they are free.
+  whatever it is. Later hosts records, which leave this host or update the list, the plug never asks
+  about, so they are free.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: a
   record's signature is its only proof, and a pull's is the profile's main key's.
-- **No address logs.** Neither the reference host nor the front logs a request or keeps an
-  address. On Railway, Railway's own request logs exist.
+- **No address logs.** Neither the plug nor the front logs a request or keeps an address. On
+  Railway, Railway's own request logs exist.
 - **It cannot tell which buy a credit came from, as long as it gave everyone the same key.** It
   signed the credit blind and never saw its nonce.
 - **A credit is spent once, and a buy's credits are signed once.** A second payment for the same
@@ -349,10 +381,10 @@ What every host must do, and its tests, are the standard's.
 
 ## Limits
 
-- **Anyone who pays can write here** anything the reference host accepts.
-- **Others' messages are free, so an inbox open to anyone can be filled.** 1,000 a day reach it,
-  and past them the inbox's own friends wait for the next day. The inbox's own fields (a verifier's
-  stamp holders only, a largest size) are what limit who may write.
+- **Anyone who pays can write here** anything the plug accepts.
+- **Others' messages are free, so any inbox can be filled.** 1,000 a day reach it, and past them
+  the inbox's own friends wait for the next day. An inbox limits only the size of what it takes
+  (`maxBytes`), never who may write: filtering is the recipient's app's.
 - **Others' messages are free, so they can keep bytes here for free.** A message from any key but
   the profile's own costs nothing: up to 64 KB each, 1,000 an inbox a day, each kept for 30 days, in
   any number of inboxes. The day's count is kept in memory, so a restart counts it again from none.
@@ -379,35 +411,41 @@ What every host must do, and its tests, are the standard's.
   memory, in this one process.
 - **It trusts its RPC** for payments. A payment check that fails refuses the buy (503), and the app
   collects it again.
-- **Taking a message for a verifier's stamp holders tells the sender's host something:** this host
-  asks it for the sender's records, so it sees that this host asked, and when.
+- **Slow for a busy folder.** The plug checks each record against everything it stores for that
+  profile, and checks signatures in JavaScript: about 260 records a second on one core.
 - **One machine, one replica.** The folders are files on one volume; more than one machine is a
-  change to the standard's storage first.
+  change to `src/storage.ts` first.
 
 ## Who decides what
 
 - **The standard:** the eight requests, what makes a record, a message and a blob valid, an inbox's
-  fields, and the stamp proof.
+  fields, and the host check.
 - **This host, by its own choice:**
   - the numbers above: its prices, what one credit costs, and what is free;
   - which sponsors it takes, and which dollar and RPC a payment is checked in;
-  - how long it keeps a sender's records;
   - its logs and its storage;
   - its credit's format: type 2, its challenge, its id, the directory's `forest-credit` entry, the
     buy and its reference, the pay link, the ticket, the headers.
 - **Anyone holding a credit:** which folder it goes into.
 - **A buyer or a sponsor:** whom it pays for.
-- **The person, through their app:** which hosts their hosts record names, and who may send to
-  their inbox.
+- **The person, through their app:** which hosts their hosts record names, and the largest message
+  their inbox takes.
 
 ## FAQ
 
-**Why run the standard's host, and not one written here?**
-The standard's host is the reference for what a host does. A host written here could drift from it.
+**Why is the host's code here, and not in the standard?**
+The standard holds only what two strangers' programs must agree on: for a host, the eight requests
+and the check that shows a host answers them. A host is a program someone runs, with its own
+storage and its own numbers, so its code lives with whoever runs it, and the check keeps it honest.
+
+**Why does the front pass requests to the plug on loopback, and not answer them in one server?**
+The plug came from the standard as it was, with its tests, and the credits stand in front of it,
+never inside it: the plug knows only the three hooks it asks. Each is tested on its own, and a
+change to one leaves the other as it was.
 
 **Why a balance per folder, and not a credit shown with each write?**
 A write costs a fraction of a credit, and an app should not have to show credits on every write.
-The reference host also takes records in batches. A balance takes credits once, through one route,
+The plug also takes records in batches. A balance takes credits once, through one route,
 and every write after draws from it.
 
 **Why are others' messages free, and yours priced?**

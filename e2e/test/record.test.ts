@@ -19,7 +19,7 @@ const paid = () => ({ signature: signature(), charge: '3698080', bytes: 700 })
 function passed(): RunRecord {
   const person = () => ({ label: 'tutoring/tutor', profile: address(), pay: { solana: address(), evm: '0x1900f9C5c30615F3a5f6a0887D2DeF5bA4C7b437' } })
   const evidence = (id: string) => `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:${id}`
-  const login = { profiles: ['tutoring/tutor'], can: ['post', 'message', 'read', 'pay'], limit: '5 USD a day' }
+  const login = { profiles: ['tutoring/tutor'], can: ['read', 'write', 'pay'], limit: '5 USD a day' }
   return {
     started: '2026-10-22T10:00:00.000Z',
     ended: '2026-10-22T10:04:00.000Z',
@@ -41,8 +41,8 @@ function passed(): RunRecord {
         tutor: { profile: address(), tag: hex(), spent: 6, stampProof: 'checks' },
         student: { profile: address(), tag: hex(), spent: 10, stampProof: 'checks' },
       },
-      logins: { tutor: login, student: { ...login, profiles: ['tutoring/student'], can: ['post', 'message', 'pay'] } },
-      mcp: { offer: 'x/offer/maths', found: { profile: address() }, message: { number: 1 }, reply: 'done', approval: { tool: 'inbox', why: 'read is not in what this connection may do', approved: 'done' } },
+      logins: { tutor: login, student: { ...login, profiles: ['tutoring/student'], can: ['write', 'pay'] } },
+      mcp: { offer: 'x/offer/maths', found: { profile: address() }, message: 'done', reply: 'done', approval: { ask: 'read', why: 'read as tutoring/student is not in what this connection may do', approved: 'done' } },
       deal: {
         payment: { ...paid(), evidence: evidence(signature()) },
         escrow: { address: address(), version: 4, open: paid(), pay: paid(), outcome: 'pay', sponsor: address(), evidence: evidence(address()) },

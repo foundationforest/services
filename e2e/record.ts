@@ -77,7 +77,7 @@ const SHAPES: { [step in Step]: { [path: string]: Check } } = {
   credits: each(BOTH, { signature, amount: text, credits: count, reference: address }),
   profiles: each(BOTH, { profile: address, tag: hex32, spent: count, stampProof: is('checks') }),
   logins: each(BOTH, { profiles: words, can: words, limit: text }),
-  mcp: { offer: text, 'found.profile': address, 'message.number': count, reply: is('done'), 'approval.tool': is('inbox'), 'approval.why': text, 'approval.approved': is('done') },
+  mcp: { offer: text, 'found.profile': address, message: is('done'), reply: is('done'), 'approval.ask': is('read'), 'approval.why': text, 'approval.approved': is('done') },
   deal: { ...prefixed('payment', paid), 'payment.evidence': evidence, 'escrow.address': address, 'escrow.version': is(4), ...prefixed('escrow.open', paid), ...prefixed('escrow.pay', paid), 'escrow.outcome': is('pay'), 'escrow.sponsor': address, 'escrow.evidence': evidence },
   reviews: { ...each(BOTH, { id: text, evidence }), 'student.postedBy': is('ai'), 'tutor.postedBy': is('app') },
   index: { ...each(BOTH, { rating, count: is(1), trust: hundred, uniqueness: hundred, pickiness }), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },

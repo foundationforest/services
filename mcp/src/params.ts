@@ -1,7 +1,8 @@
 // What a tool is: a file in src/tools/ exporting its name, its description, its parameters, whether
-// it goes to the person's signer, and its work. A tool that goes to the signer needs a login; one
-// that reads what is public does not.
+// it goes to the person's app, and its work. A tool that goes to the person's app needs a login;
+// one that reads what is public does not.
 
+import { type Answer, type Ask, checkAsk } from '@foundationforest/signers'
 import { type Context, refuse } from './forest.ts'
 
 export type Param = {
@@ -9,6 +10,8 @@ export type Param = {
   type: 'string' | 'object' | 'integer' | 'number' | 'boolean'
   description: string
   required?: boolean
+  /** Whether it may also be null. */
+  nullable?: boolean
   /** The only values it takes. */
   values?: string[]
   /** The least an integer takes; 0 when omitted. */
@@ -17,10 +20,10 @@ export type Param = {
 
 export type Args = { [name: string]: unknown }
 
-/** What a tool works with: the hosts and index it reads, and, for a call with a login, the person's signer. */
+/** What a tool works with: the index it reads, and, for a call with a login, the person's app. */
 export type Ctx = Context & {
-  /** Passes `args` to the signer of the call's connection, and gives back what it may pass on. */
-  ask: (tool: string, args: Args) => Promise<unknown>
+  /** Sends the ask to the person's app over the live link, and gives back its answer, checked. */
+  ask: (ask: Ask) => Promise<Answer>
 }
 
 export type Tool = {
@@ -28,14 +31,10 @@ export type Tool = {
   /** What it does, in plain words. */
   description: string
   params: Param[]
-  /** Whether it goes to the person's signer, and so needs a login. */
-  relayed: boolean
+  /** Whether it goes to the person's app, and so needs a login. */
+  toApp: boolean
   run: (args: Args, ctx: Ctx) => Promise<unknown>
 }
-
-/** The market and role of the person's profile a relayed tool acts as. */
-export const MARKET: Param = { name: 'market', type: 'string', required: true, description: 'The market of the person\'s profile it acts as, such as tutoring.' }
-export const ROLE: Param = { name: 'role', type: 'string', required: true, description: 'The role of the person\'s profile it acts as, such as tutor.' }
 
 const KINDS: { [type in Param['type']]: string } = { string: 'text', object: 'an object', integer: 'a whole number', number: 'a number', boolean: 'true or false' }
 
@@ -48,6 +47,7 @@ export function checkArgs(tool: Pick<Tool, 'name' | 'params'>, args: Args): Args
       if (p.required) refuse(`${tool.name} needs ${p.name}`)
       continue
     }
+    if (value === null && p.nullable) continue
     const least = p.minimum ?? 0
     const ok =
       p.type === 'string'
@@ -59,8 +59,17 @@ export function checkArgs(tool: Pick<Tool, 'name' | 'params'>, args: Args): Args
             : p.type === 'boolean'
               ? typeof value === 'boolean'
               : value !== null && typeof value === 'object' && !Array.isArray(value)
-    if (!ok) refuse(`${p.name} is ${KINDS[p.type]}${p.type === 'integer' ? `, from ${least}` : ''}`)
+    if (!ok) refuse(`${p.name} is ${KINDS[p.type]}${p.type === 'integer' ? `, from ${least}` : ''}${p.nullable ? ', or null' : ''}`)
     if (p.values && !p.values.includes(value as string)) refuse(`${p.name} is one of ${p.values.join(', ')}`)
   }
   return args
+}
+
+/** A tool's arguments as the standard's ask of the tool's name, checked (checkAsk), or a refusal naming what does not fit. */
+export function askOf(name: Ask['ask'], args: Args): Ask {
+  try {
+    return checkAsk({ ask: name, ...args })
+  } catch (err) {
+    return refuse(`not an ask the person's app takes: ${(err as Error).message}`)
+  }
 }

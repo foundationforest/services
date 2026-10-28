@@ -2,7 +2,7 @@
 // when it starts, and nothing for a request.
 
 import { normalizeOrigin } from '@foundationforest/records'
-import { HOST, INDEX, hostsFrom, refuse } from './forest.ts'
+import { INDEX, refuse } from './forest.ts'
 import { serve } from './server.ts'
 
 /** A variable, or undefined when it is not set or empty. */
@@ -10,7 +10,7 @@ const env = (name: string) => process.env[name] || undefined
 
 function settings() {
   const origin = env('PUBLIC_URL') ?? 'https://mcp.forest.foundation'
-  if (normalizeOrigin(origin) !== origin) refuse(`PUBLIC_URL is an origin, https://host[:port], as a person's rules name it: not ${origin}`)
+  if (normalizeOrigin(origin) !== origin) refuse(`PUBLIC_URL is an origin, https://host[:port], as a person's permissions name it: not ${origin}`)
   const appUrl = env('APP_URL')
   if (appUrl !== undefined && !(URL.canParse(appUrl) && normalizeOrigin(new URL(appUrl).origin))) refuse(`APP_URL is the app's connect page, an https address (http only on loopback): not ${appUrl}`)
   const port = Number(env('PORT') ?? 8080)
@@ -19,7 +19,7 @@ function settings() {
     origin,
     ...(appUrl && { appUrl }),
     dataDir: env('DATA_DIR') ?? refuse('DATA_DIR is where this copy keeps its key, on a volume'),
-    read: { hosts: hostsFrom(env('HOST_URLS')?.split(',').map((h) => h.trim()).filter(Boolean) ?? [HOST]), index: env('INDEX_URL') ?? INDEX },
+    read: { index: env('INDEX_URL') ?? INDEX },
     // Loopback unless told otherwise: the image says 0.0.0.0.
     hostname: env('BIND') ?? '127.0.0.1',
     port,

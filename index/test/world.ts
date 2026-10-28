@@ -1,7 +1,7 @@
-// A small Forest on loopback for the tests: the standard's reference host, a stand-in verifier whose
-// key the test's lists name, people with seeds, profiles with real stamp proofs made from the stamp
-// circuit's committed proving files, records signed with their main keys, a stand-in Solana RPC,
-// and the index itself, with lists written to a directory of its own.
+// A small Forest on loopback for the tests: this repo's host (its plug, host/src/plug.ts), a
+// stand-in verifier whose key the test's lists name, people with seeds, profiles with real stamp
+// proofs made from the stamp circuit's committed proving files, records signed with their main
+// keys, a stand-in Solana RPC, and the index itself, with lists written to a directory of its own.
 
 import { randomBytes } from 'node:crypto'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -11,9 +11,9 @@ import { join } from 'node:path'
 
 import { mainKey, type MainKey, type PayAddresses, payAddresses, payKey, seedScalar, signPay } from '@foundationforest/keys'
 import { b64u, hex, hostsRecord, ownerRecord, publish, type SignedRecord } from '@foundationforest/records'
-import { Host } from '@foundationforest/records/host'
 import { proofBytes, proveStamp, signStamp, stampNumberOf, toBytes32, verifierKeyOf } from '@foundationforest/stamp'
 
+import { Host } from '../../host/src/plug.ts'
 import { ESCROW_CHAIN } from '../src/chain.ts'
 import { type Index, ROOT, startIndex } from '../src/index.ts'
 
@@ -70,7 +70,7 @@ let clock = Date.now()
 /** A record time later than every one before, so a newer record always wins. */
 export const later = () => (clock = Math.max(clock + 1, Date.now()))
 
-/** The standard's reference host on loopback. */
+/** This repo's host on loopback: its plug alone, which takes every write; the credits stand in front of it. */
 export async function startHost(): Promise<{ url: string; close(): Promise<void> }> {
   const host = new Host()
   const url = await host.listen(0, '127.0.0.1')

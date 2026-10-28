@@ -1,15 +1,15 @@
-// The login: reading with none; the challenge a relayed tool's call gets; the metadata an AI app
-// discovers; the login end to end through the stand-in connect page, by registration and by a client
-// document, and its end when the person removes the connection; and every way a login is refused: a
-// connection whose key did not sign, a login changed on the way, a person who says no, a code with
-// the wrong verifier or for another client, a token this copy did not give, and a copy with no
-// connect page.
+// The login: reading with none; the challenge a call to a tool that goes to the person's app gets;
+// the metadata an AI app discovers; the login end to end through the stand-in connect page, by
+// registration and by a client document, and its end when the person removes the connection; and
+// every way a login is refused: a connection whose key did not sign, a login changed on the way, a
+// person who says no, a code with the wrong verifier or for another client, a token this copy did
+// not give, and a copy with no connect page. A login is signed as the standard's signers/ says:
+// 0xff, then forest/v1/login and a newline, then the request.
 
 import assert from 'node:assert/strict'
-import { generateKeyPairSync, sign } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { b64u } from '@foundationforest/records'
-import { LOGIN } from '../src/connection.ts'
+import { newConnection, signLogin } from '@foundationforest/signers'
 import { AiApp, CHOICE, REDIRECT, type World, aiApp, browse, logIn, world } from './setup.ts'
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
@@ -31,11 +31,11 @@ describe('discovery', () => {
     await client.close()
   })
 
-  test('a relayed tool with no token gets the 401 challenge naming the metadata', async () => {
+  test('a tool that goes to the person’s app, with no token, gets the 401 challenge naming the metadata', async () => {
     const res = await fetch(w.mcp.origin, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'post', arguments: {} } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'write', arguments: {} } }),
     })
     assert.equal(res.status, 401)
     assert.equal(res.headers.get('www-authenticate'), `Bearer resource_metadata="${w.mcp.origin}/.well-known/oauth-protected-resource"`)
@@ -54,14 +54,14 @@ describe('discovery', () => {
 })
 
 describe('the login, end to end', () => {
-  test('by registration (DCR): the challenge, the connect page, the signer, the code, the token; then the signer answers', async () => {
+  test('by registration (DCR): the challenge, the connect page, the person’s app, the code, the token; then the app answers', async () => {
     const c = await aiApp(w.mcp.origin)
     const back = await logIn(c)
     assert.equal(back.get('iss'), w.mcp.origin, 'the response names this copy, as RFC 9207 asks')
     assert.ok(!(c.app.clientInformation()!.client_id).startsWith('https://'), 'registered')
-    const profiles = (await c.client.callTool({ name: 'profiles', arguments: {} })) as Result
+    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
     assert.notEqual(profiles.isError, true, text(profiles))
-    assert.deepEqual(JSON.parse(text(profiles)), { status: 'done', profiles: [{ market: 'tutoring', role: 'tutor' }, { market: 'tutoring', role: 'student' }] })
+    assert.deepEqual(JSON.parse(text(profiles)), { status: 'done', profiles: [{ label: 'tutoring/tutor', can: [] }, { label: 'tutoring/student', can: [] }] })
     await c.client.close()
   })
 
@@ -69,13 +69,13 @@ describe('the login, end to end', () => {
     const c = await aiApp(w.mcp.origin, new AiApp('cimd'))
     await logIn(c)
     assert.equal(c.app.clientInformation()!.client_id, 'https://ai-app.example/client.json')
-    const profiles = (await c.client.callTool({ name: 'profiles', arguments: {} })) as Result
+    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
     assert.equal(JSON.parse(text(profiles)).status, 'done')
     await c.client.close()
   })
 
-  test('each login is its own connection, saved in a rule on each profile chosen, with the AI app’s name', async () => {
-    const entries = (await w.person.rules('tutoring/tutor')) as Array<{ who: { connector: string; connection: string; name: string } }>
+  test('each login is its own connection, saved in a permission on each profile picked, with the AI app’s name', async () => {
+    const entries = (await w.person.permissions('tutoring/tutor')) as Array<{ who: { connector: string; connection: string; name: string } }>
     assert.ok(entries.length >= 2)
     for (const e of entries) {
       assert.equal(e.who.connector, w.mcp.origin)
@@ -85,19 +85,18 @@ describe('the login, end to end', () => {
     assert.equal(new Set(entries.map((e) => e.who.connection)).size, entries.length)
   })
 
-  test('a login ends when the person removes its connection’s rules, at their signer', async () => {
-    const connections = async () => (await w.person.rules('tutoring/tutor')).map((e) => (e.who as { connection: string }).connection)
+  test('a login ends when the person removes its connection’s permissions, in their app', async () => {
+    const connections = async () => (await w.person.permissions('tutoring/tutor')).map((e) => (e.who as { connection: string }).connection)
     const before = await connections()
     const c = await aiApp(w.mcp.origin)
     await logIn(c)
     const connection = (await connections()).find((x) => !before.includes(x))!
     await w.person.disconnect(connection)
     for (const label of ['tutoring/tutor', 'tutoring/student']) {
-      assert.ok(!(await w.person.rules(label)).some((e) => (e.who as { connection: string }).connection === connection), `gone from ${label}'s rules`)
+      assert.ok(!(await w.person.permissions(label)).some((e) => (e.who as { connection: string }).connection === connection), `gone from ${label}'s permissions`)
     }
-    const profiles = (await c.client.callTool({ name: 'profiles', arguments: {} })) as Result
-    assert.equal(profiles.isError, true)
-    assert.match(text(profiles), /this connection was removed/)
+    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
+    assert.deepEqual(JSON.parse(text(profiles)), { status: 'refused', why: 'this connection was removed' })
     await c.client.close()
   })
 })
@@ -116,9 +115,8 @@ async function request(): Promise<string> {
 describe('refused', () => {
   test('a login signed by a key that is not the connection’s gives no code', async () => {
     const req = await request()
-    const theirs = generateKeyPairSync('ed25519').publicKey.export({ format: 'jwk' }).x!
-    const other = generateKeyPairSync('ed25519').privateKey
-    const q = new URLSearchParams({ request: req, connection: theirs, sig: b64u.encode(sign(null, Buffer.from(LOGIN + req), other)) })
+    const theirs = newConnection().connection
+    const q = new URLSearchParams({ request: req, connection: theirs, sig: signLogin(newConnection().key, req) })
     const res = await fetch(`${w.mcp.origin}/connected?${q}`, { redirect: 'manual' })
     assert.equal(res.status, 400)
     assert.equal(res.headers.get('location'), null, 'no code goes anywhere')

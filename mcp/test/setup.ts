@@ -1,8 +1,9 @@
-// What the tests act on, all on loopback: the standard's reference host; a stand-in index serving
-// its skill.md and four answers, in the index's JSON as it is now, each with a field this copy has
-// never seen, and a search that answers with what it was asked; a stand-in for the app's
-// connect page, where the reference signer (signer.ts) makes the connection with the person's
-// choice; and this copy, started in-process, reading the host and the index.
+// What the tests act on, all on loopback: this repo's host (its plug, host/src/plug.ts), which the
+// person's app and the stranger write to; a stand-in index serving its skill.md and four answers,
+// in the index's JSON as it is now, each with a field this copy has never seen, and a search that
+// answers with what it was asked; a stand-in for the app's connect page, where the reference
+// signer (signer.ts) makes the connection with the profiles the person picks; and this copy,
+// started in-process, reading the index.
 //
 // Two people:
 // - the person, whose signer holds three profiles, tutoring/tutor, tutoring/student and
@@ -23,10 +24,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type OAuthClientProvider, UnauthorizedError } from '@modelcontextprotocol/sdk/client/auth.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
-import { inboxKey, mainKey, newSeed, payAddresses } from '@foundationforest/keys'
+import { inboxKey, mainKey, newSeed, payAddresses, payKey, signPay } from '@foundationforest/keys'
 import { type Body, deliver, hostsRecord, ownerRecord, publish, readProfile } from '@foundationforest/records'
-import { Host } from '@foundationforest/records/host'
 import { message } from '@foundationforest/records/private'
+import { Host } from '../../host/src/plug.ts'
 import { type Served, serve } from '../src/server.ts'
 import { type Choice, type PayWith, Signer } from './signer.ts'
 
@@ -43,8 +44,8 @@ export const lesson = (description: string): Body => ({
   hours: { zone: 'Europe/Madrid', slots: [{ days: ['tuesday', 'thursday'], from: '18:00', to: '20:00' }] },
 })
 
-/** What the person chooses on the connect page, unless a test says otherwise: their two tutoring profiles, everything, $50 a day. */
-export const CHOICE: Choice = { profiles: ['tutoring/tutor', 'tutoring/student'], can: ['post', 'message', 'read', 'pay'], limit: { amount: '50', currency: 'USD', per: 'day' } }
+/** What the person picks on the connect page, unless a test says otherwise: the profiles this AI app sees, their two tutoring ones. */
+export const CHOICE: Choice = { profiles: ['tutoring/tutor', 'tutoring/student'] }
 
 /** Where the AI app is sent back to, and where it keeps its client document: never fetched over the network. */
 export const REDIRECT = 'https://ai-app.example/callback'
@@ -168,9 +169,9 @@ export async function aiApp(mcp: string, app = new AiApp()): Promise<{ client: C
   return { client, transport, app }
 }
 
-/** The login, as an AI app goes through it: a relayed tool's call gets the challenge, the person goes through the connect page, the code becomes a token. Gives back the code's query. */
+/** The login, as an AI app goes through it: a call to a tool that goes to the person's app gets the challenge, the person goes through the connect page, the code becomes a token. Gives back the code's query. */
 export async function logIn(c: { client: Client; transport: StreamableHTTPClientTransport; app: AiApp }): Promise<URLSearchParams> {
-  await assert.rejects(c.client.callTool({ name: 'profiles', arguments: {} }), UnauthorizedError)
+  await assert.rejects(c.client.callTool({ name: 'read', arguments: {} }), UnauthorizedError)
   const back = await browse(c.app.authorization!)
   await c.transport.finishAuth(back.get('code')!)
   return back
@@ -215,9 +216,13 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   for (const label of ['tutoring/tutor', 'tutoring/student', 'clothing/seller']) own[label] = await person.addProfile(label)
   const personTutor = own['tutoring/tutor']!
 
-  const tutor = await mainKey(newSeed(), 'tutoring/tutor')
+  const strangerSeed = newSeed()
+  const tutor = await mainKey(strangerSeed, 'tutoring/tutor')
   const now = Date.now()
-  const profile = { market: 'tutoring', role: 'tutor', inboxKey: (await inboxKey(tutor.secret)).encryptTo, inbox: { senders: 'anyone' }, pay: { ...(await payAddresses(newSeed(), 'tutoring/tutor')) } }
+  // Only its Solana pay address, signed by its pay key: a profile's pay may list any of the types.
+  const pay = { solana: (await payAddresses(strangerSeed, 'tutoring/tutor')).solana }
+  const paySig = { solana: signPay(await payKey(strangerSeed, 'tutoring/tutor', 'solana'), tutor.address) }
+  const profile = { market: 'tutoring', role: 'tutor', inboxKey: (await inboxKey(tutor.secret)).encryptTo, inbox: {}, pay, paySig }
   const subjects = ['physics', 'chemistry', 'biology']
   const offered = subjects.map((s) => ownerRecord(tutor, `offer/${s}`, lesson(`${s[0]!.toUpperCase()}${s.slice(1)}, from the stranger.`), now))
   await publish(hosts, [hostsRecord(tutor, hosts, now), ownerRecord(tutor, 'profile', profile, now), ...offered])
@@ -228,7 +233,7 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const index = await standIn(tutor.address, offer)
   const page = await connectPage(person, CHOICE)
   const dataDir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
-  const mcp = await serve({ ...(!options.noApp && { appUrl: page.url }), dataDir, read: { hosts, index: index.url }, clientFetch }, '127.0.0.1', 0)
+  const mcp = await serve({ ...(!options.noApp && { appUrl: page.url }), dataDir, read: { index: index.url }, clientFetch }, '127.0.0.1', 0)
 
   return {
     mcp,

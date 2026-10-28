@@ -2,25 +2,26 @@
 // server the AI app calls and the authorization server that logs it in, kept stateless. An AI app
 // finds the flow from a 401 (Protected Resource Metadata, then Authorization Server Metadata),
 // registers by a client document (CIMD) or by registration (DCR), and sends the person to
-// /authorize. From there the person goes to the app's connect page (APP_URL), where their signer
-// makes the connection and signs the login with the connection's key; back at /connected, this copy
-// checks that signature and gives the AI app a code, which /token turns into an access token naming
-// the connection.
+// /authorize. From there the person goes to the app's connect page (APP_URL), where their app makes
+// the connection and signs the login with the connection's key, as the standard's signers/ says
+// (README.md, Connecting an AI app); back at /connected, this copy checks that signature
+// (checkLogin) and gives the AI app a code, which /token turns into an access token naming the
+// connection.
 //
 // Nothing is stored: a registered client's id, a login request, a code and a token are each a body
 // this copy wrote, with an HMAC-SHA256 under its own 32-byte key, kept in DATA_DIR. Only this copy
 // checks them, so a MAC is enough: no public half is needed. The MAC covers the kind, so a code is
 // never a token. What one cannot hold without a store: a code works more than once in its 60
 // seconds (only the AI app holding its PKCE verifier can use it). A token carries no expiry, so
-// there is no refresh token: a login ends when the person removes its rules, at their signer, which
-// then serves it no more.
+// there is no refresh token: a login ends when the person removes its permissions, in their app,
+// which then serves it no more.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { b64u } from '@foundationforest/records'
-import { LOGIN, isConnection, signedBy } from './connection.ts'
+import { checkLogin, isConnection } from '@foundationforest/signers'
 import { isObject, readJson } from './forest.ts'
 import { json, page, readBody } from './http.ts'
 
@@ -70,7 +71,7 @@ type Body = { [key: string]: unknown }
 type Client = { id: string; name: string; redirects: string[] }
 
 export type LoginSettings = {
-  /** This copy's origin: the authorization server, the resource, and the connector in a person's rules. */
+  /** This copy's origin: the authorization server, the resource, and the connector in a person's permissions. */
   origin: string
   /** The app's connect page; without it, logins wait. */
   appUrl?: string
@@ -225,7 +226,11 @@ export class Login {
     res.writeHead(302, { location: url.href, 'cache-control': 'no-store' }).end()
   }
 
-  /** The authorization request: checked, then on to the app's connect page with a login request only this copy can write. */
+  /**
+   * The authorization request: checked, then on to the app's connect page with a login request only
+   * this copy can write: base64url of a JSON object holding `name` and `redirect`, as the standard's
+   * connect step reads them, a dot, then this copy's MAC.
+   */
   async authorize(url: URL, res: ServerResponse): Promise<void> {
     if (!this.settings.appUrl) return page(res, 503, "Logins here wait for the Forest app's connect page, which is not set up yet. Reading works without a login.")
     const q = url.searchParams
@@ -255,7 +260,7 @@ export class Login {
     const after = { ...(typeof request.state === 'string' && { state: request.state }), iss: this.origin }
     if (q.has('error')) return this.back(res, redirect, { error: 'access_denied', error_description: 'the person said no', ...after })
     const connection = q.get('connection')
-    if (!isConnection(connection) || !signedBy(connection, LOGIN + text, q.get('sig'))) return page(res, 400, "The connection's key did not sign this login, so it gives no access.")
+    if (!isConnection(connection) || !checkLogin(connection, text, q.get('sig'))) return page(res, 400, "The connection's key did not sign this login, so it gives no access.")
     const code = this.sign('code', { connection, client: request.client, redirect, challenge: request.challenge, resource: request.resource, exp: Date.now() + CODE_MS })
     this.back(res, redirect, { code, ...after })
   }

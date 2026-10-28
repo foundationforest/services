@@ -148,7 +148,7 @@ test('a message to its own inbox is priced like a record from its folder; others
     const me = await folder()
     await fund(running, me.address, 3)
     const now = Date.now()
-    const profile = { market: 'tutoring', role: 'seller', inboxKey: (await inboxKey(me.secret)).encryptTo, inbox: { senders: 'anyone' } }
+    const profile = { market: 'tutoring', role: 'seller', inboxKey: (await inboxKey(me.secret)).encryptTo, inbox: {} }
     assert.ok((await results(running, [hostsRecord(me, [running.url], now), ownerRecord(me, 'profile', profile, now)])).every((r) => r.ok))
     const send = async (from: Folder, text: string) => (await deliver([running.url], [await message(from, me.address, { text }, Date.now(), profile)]))[0]!.results[0]!
     assert.ok((await send(me, 'A note to my other devices.')).ok)

@@ -14,9 +14,8 @@
 //
 // A record, or a message to its own inbox, is claimed once, by its id, in the same transaction that
 // takes its price: a second copy in flight, or the same one sent again, costs nothing. Bytes are
-// stored first and charged after: their price is reserved from the balance before the standard's
-// host stores them, taken once they are stored, released if they are not; a blob delete's floor the
-// same way.
+// stored first and charged after: their price is reserved from the balance before the plug stores
+// them, taken once they are stored, released if they are not; a blob delete's floor the same way.
 //
 // One SQLite file, its seller's: the spent list, the proofs, the bill, each folder's balance in
 // millionths of a credit and each record's and message's id it took a price for. A spend marks its

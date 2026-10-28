@@ -1,9 +1,11 @@
 // The hosted copy: the MCP door over Streamable HTTP at its root (and at /mcp, where connectors
-// added before point), the login (login.ts), the signers' door (relay.ts), and the icon. Stateless:
-// each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept.
+// added before point), the login (login.ts), the live link at /signer (link.ts), and the icon.
+// Stateless: each MCP request gets a fresh server, gone when it ends, and nothing about a call is
+// kept.
 //
-// Reading needs no login. A call to a relayed tool with no token gets a 401 whose challenge starts
-// the AI app's login, and a token this copy did not give gets a 401 on any request. The request's
+// Reading needs no login. A call to a tool that goes to the person's app with no token gets a 401
+// whose challenge starts the AI app's login, and a token this copy did not give gets a 401 on any
+// request. The request's
 // Origin is not checked: the transport's check guards a server on a person's own computer from a
 // web page's requests, and here every act needs a token no web page holds, while reading is open
 // to anyone. TLS is the operator's.
@@ -18,17 +20,17 @@ import { type Context, isObject, refuse } from './forest.ts'
 import { TooLarge, json, readBody } from './http.ts'
 import { ICO, ICON, SVG } from './icon.ts'
 import { Login, loadKey } from './login.ts'
+import { Link, MAX_FRAME } from './link.ts'
 import { type Ctx, type Tool, checkArgs } from './params.ts'
-import { MAX_FRAME, Relay } from './relay.ts'
 import { HOW, TOOLS } from './tools.ts'
 
 const VERSION = '0.0.0'
 
 /** A tool's input: its parameters, as a JSON Schema. */
 export function inputSchema(tool: Tool) {
-  const properties: { [name: string]: { type: string; description: string; enum?: string[]; minimum?: number } } = {}
+  const properties: { [name: string]: { type: string | string[]; description: string; enum?: string[]; minimum?: number } } = {}
   for (const p of tool.params) {
-    properties[p.name] = { type: p.type, description: p.description, ...(p.values && { enum: p.values }), ...(p.type === 'integer' && { minimum: p.minimum ?? 0 }) }
+    properties[p.name] = { type: p.nullable ? [p.type, 'null'] : p.type, description: p.description, ...(p.values && { enum: p.values }), ...(p.type === 'integer' && { minimum: p.minimum ?? 0 }) }
   }
   const required = tool.params.filter((p) => p.required).map((p) => p.name)
   return { type: 'object' as const, properties, ...(required.length > 0 && { required }) }
@@ -58,7 +60,7 @@ const FILES: { [path: string]: { type: string; body: string | Buffer } } = {
   '/icon.svg': { type: 'image/svg+xml', body: SVG },
 }
 
-const RELAYED = new Set(TOOLS.filter((t) => t.relayed).map((t) => t.name))
+const TO_APP = new Set(TOOLS.filter((t) => t.toApp).map((t) => t.name))
 
 export type Settings = {
   /** This copy's origin, as people and AI apps reach it; the address it listens on when left out. */
@@ -67,21 +69,21 @@ export type Settings = {
   appUrl?: string
   /** Where its key is kept. */
   dataDir: string
-  /** The hosts and the index it reads. */
+  /** The index it reads. */
   read: Context
   /** How a client document is fetched: the standard's publicFetch unless told otherwise. */
   clientFetch?: typeof fetch
 }
 
 /** A copy serving: its origin, where it listens, and its live sockets. */
-export type Served = { http: HttpServer; origin: string; url: string; relay: Relay; close: () => Promise<void> }
+export type Served = { http: HttpServer; origin: string; url: string; link: Link; close: () => Promise<void> }
 
 /** Serve on `hostname`:`port` until closed. */
 export async function serve(settings: Settings, hostname: string, port: number): Promise<Served> {
   const key = loadKey(settings.dataDir)
   const known = { origin: settings.origin ?? '', ...(settings.appUrl && { appUrl: settings.appUrl }), clientFetch: settings.clientFetch ?? publicFetch }
   const login = new Login(key, known)
-  const relay = new Relay(() => known.origin)
+  const link = new Link(() => known.origin)
 
   async function mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const connection = login.bearer(req)
@@ -98,8 +100,8 @@ export async function serve(settings: Settings, hostname: string, port: number):
       return json(res, err instanceof TooLarge ? 413 : 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })
     }
     const calls = (Array.isArray(body) ? body : [body]).filter((m) => isObject(m) && m.method === 'tools/call' && isObject(m.params))
-    if (connection === null && calls.some((m) => RELAYED.has((m as { params: { name?: unknown } }).params.name as string))) return login.challenge(res, false)
-    const ctx: Ctx = { ...settings.read, ask: (tool, args) => (connection ? relay.ask(connection, tool, args) : refuse('Acting for the person needs a login.')) }
+    if (connection === null && calls.some((m) => TO_APP.has((m as { params: { name?: unknown } }).params.name as string))) return login.challenge(res, false)
+    const ctx: Ctx = { ...settings.read, ask: (ask) => (connection ? link.ask(connection, ask) : refuse('Acting for the person needs a login.')) }
     const server = mcpServer(ctx)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     res.on('close', () => {
@@ -159,7 +161,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
     })
   })
   http.on('upgrade', (req, stream, head) => {
-    if (URL.parse(req.url ?? '/', 'http://localhost')?.pathname === '/signer') relay.upgrade(req, stream, head)
+    if (URL.parse(req.url ?? '/', 'http://localhost')?.pathname === '/signer') link.upgrade(req, stream, head)
     else stream.destroy()
   })
   await new Promise<void>((resolve) => http.listen(port, hostname, resolve))
@@ -169,9 +171,9 @@ export async function serve(settings: Settings, hostname: string, port: number):
     http,
     origin: known.origin,
     url,
-    relay,
+    link,
     close: async () => {
-      relay.close()
+      link.close()
       http.closeAllConnections()
       await new Promise((resolve) => http.close(resolve))
     },

@@ -1,5 +1,5 @@
-# The foundation's host (host/): the standard's reference host with this service's choices, and its
-# own credits (host/credits/). The build context is the repo root: the host depends on the standard's
+# The foundation's host (host/): the plug and its storage, with this service's choices, and its own
+# credits (host/credits/). The build context is the repo root: the host depends on the standard's
 # packages by name, through file: links into standard/, which standard.sh fetches at the commit in
 # STANDARD, installs and builds; it needs git.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
