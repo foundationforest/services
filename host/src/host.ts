@@ -341,7 +341,8 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
       send(res, await credits.spend(body))
     })
     .catch((err: unknown) => {
-      if (!res.headersSent) {
+      // A request dropped while it arrived gets no 500, so it logs none.
+      if (!res.headersSent && !res.destroyed) {
         logFailure(path, err)
         res.writeHead(500, CORS)
       }
