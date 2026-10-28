@@ -46,7 +46,6 @@ import {
   PERMISSION_PREFIX,
   allows,
   answerFrame,
-  isOwnPath,
   leaveOut,
   linkUrl,
   newConnection,
@@ -378,7 +377,7 @@ export class Signer {
     const asking = `${ask.ask} as ${label}`
     // An ask as a profile the person does not hold waits like one no permission covers.
     if (!permission) return this.wait(pending, `${asking} is not in what this connection may do`)
-    if (ask.ask === 'write' && 'path' in ask && isOwnPath(ask.path)) return this.wait(pending, `${asking} at ${ask.path} always asks the person`)
+    if (ask.ask === 'write' && 'path' in ask && ask.path === 'profile') return this.wait(pending, `${asking} at profile always asks the person`)
     const options = { now: Date.now(), currencies: CURRENCIES }
     if (ask.ask !== 'pay') return allows(permission, ask, options) ? this.act(pending) : this.wait(pending, `${asking} is not in what this connection may do`)
     if (!allows(permission, { ...ask, amount: '0' }, options)) return this.wait(pending, `${asking} is not in what this connection may do`)
