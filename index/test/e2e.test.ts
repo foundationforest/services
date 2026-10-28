@@ -2,16 +2,20 @@
 // from a stand-in verifier key the index lists; an offer and a review; the index reading the host
 // on its own schedule, counting the review, and serving the rating and the trust it gives. Then
 // `rebuild`: every table dropped but when each proof and review was first seen and the signed
-// roots, read again, the same rating and trust; and on a file from before tags were called tags,
-// the kept table's column renamed, what it held kept.
+// roots, read again, the same rating and trust; on a file from before tags were called tags, the
+// kept table's column renamed, what it held kept; and in a process of its own, as `npm run rebuild`
+// runs it, the process ends once it is done.
 
 import assert from 'node:assert/strict'
+import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
+import { pathToFileURL } from 'node:url'
 
+import { ROOT } from '../src/index.ts'
 import { FILE, openStore } from '../src/store.ts'
-import { at, cleanup, index, verifier, post, profile, publishProfile, startHost, startRpc, tmp } from './world.ts'
+import { MARKETS, at, cleanup, index, listsDir, verifier, post, profile, publishProfile, startHost, startRpc, tmp } from './world.ts'
 
 test('a review between two checked profiles, read from a host, counted, and served', async () => {
   const host = await startHost()
@@ -93,4 +97,38 @@ test('rebuild, on a file from before tags were called tags: seen keeps its rows 
   assert.ok(columns('profiles').includes('tags') && !columns('profiles').includes('pay'))
   store.close()
   cleanup(dir)
+})
+
+test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a stamp proof checked', async () => {
+  const host = await startHost()
+  const rpc = await startRpc()
+  const by = verifier()
+  const tutor = await profile('tutoring/tutor', [by])
+  await publishProfile(host.url, tutor)
+  const dataDir = tmp('rebuild')
+  const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
+  const options = { dataDir, publicUrl: 'https://index.test.example', settings: { RPC_URL: rpc.url }, listsRoot: listsDir({ hosts: [host.url], keys }), marketsDir: MARKETS }
+  const run = `import { rebuild } from ${JSON.stringify(pathToFileURL(join(ROOT, 'src/index.ts')).href)}; await rebuild(JSON.parse(process.argv[1]))`
+  const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', run, JSON.stringify(options)], { stdio: 'ignore' })
+  // A rebuild of one profile takes a second or two; one that is done and still running never ends.
+  const ended = await new Promise<number | null | 'still running'>((resolve) => {
+    const timer = setTimeout(() => {
+      child.kill()
+      resolve('still running')
+    }, 30_000)
+    child.on('exit', (code) => {
+      clearTimeout(timer)
+      resolve(code)
+    })
+  })
+  try {
+    assert.equal(ended, 0)
+    const store = openStore(dataDir)
+    assert.equal(store.db.prepare('select count(*) n from profiles').get()!.n, 1, 'it read the profile, its stamp proof checked')
+    store.close()
+  } finally {
+    await host.close()
+    await rpc.close()
+    cleanup(dataDir)
+  }
 })

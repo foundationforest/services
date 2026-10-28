@@ -49,6 +49,25 @@ export type Index = {
   close(): Promise<void>
 }
 
+/**
+ * `npm run rebuild`: drops every table but when each proof and each review was first seen and the
+ * signed roots (store.ts), reads the hosts and the chain again in one pass, ranks, and closes, so
+ * the process ends; the next start serves what it read.
+ */
+export async function rebuild(o: Omit<Options, 'readSeconds' | 'port'>): Promise<void> {
+  mkdirSync(o.dataDir, { recursive: true })
+  const store = openStore(o.dataDir)
+  store.drop()
+  store.close()
+  const index = await startIndex({ ...o, readSeconds: 0, port: null })
+  await index.pass()
+  await index.close()
+  // snarkjs checks each proof on ffjavascript's one bn128 curve, whose worker threads start at the
+  // first check, are kept in globalThis.curve_bn128 and are never stopped: while they run, the
+  // process does not end.
+  await (globalThis as { curve_bn128?: { terminate(): Promise<void> } | null }).curve_bn128?.terminate()
+}
+
 export async function startIndex(o: Options): Promise<Index> {
   const log = o.log ?? ((line: string) => console.log(line))
   const lists = loadLists(o.listsRoot ?? ROOT)

@@ -5,10 +5,7 @@
 //                               and the signed roots (store.ts), reads the hosts and the chain
 //                               again, ranks, and exits; the next start serves what it read
 
-import { mkdirSync } from 'node:fs'
-
-import { startIndex } from './index.ts'
-import { openStore } from './store.ts'
+import { rebuild, startIndex } from './index.ts'
 
 const env = process.env
 function setting(name: string, fallback?: string): string {
@@ -29,13 +26,7 @@ const settings = { ...env, RPC_URL: setting('RPC_URL', 'https://api.devnet.solan
 if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an origin, such as https://index.forest.foundation')
 
 if (process.argv[2] === 'rebuild') {
-  mkdirSync(dataDir, { recursive: true })
-  const store = openStore(dataDir)
-  store.drop()
-  store.close()
-  const index = await startIndex({ dataDir, publicUrl, settings, readSeconds: 0, port: null })
-  await index.pass()
-  await index.close()
+  await rebuild({ dataDir, publicUrl, settings })
   console.log('rebuilt: read the hosts and the chain again, and ranked')
 } else {
   const port = Number(setting('PORT', '8080'))
