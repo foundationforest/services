@@ -1,0 +1,249 @@
+{
+  "started": "2026-10-28T06:47:38.553Z",
+  "ended": "2026-10-28T06:48:31.161Z",
+  "passed": true,
+  "commits": {
+    "services": "e53797aab620a8dfe306c7e44bd4b2c9dfaac318",
+    "standard": "fc1ce88725c698e9d12ec9d0cd841aa286be7d1e",
+    "markets": "c06d195b360cdd284f7cdd9926853ea49d9089d9"
+  },
+  "services": {
+    "verifier": "loopback",
+    "host": "loopback",
+    "feePayer": "loopback",
+    "index": "loopback",
+    "mcp": "loopback"
+  },
+  "checked": [],
+  "chain": {
+    "rpc": "RPC_URL",
+    "escrow": "38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J",
+    "testDollar": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
+    "market": "tutoring"
+  },
+  "steps": {
+    "keys": {
+      "tutor": {
+        "label": "tutoring/tutor",
+        "profile": "2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4",
+        "pay": {
+          "solana": "6Ad729xpS25xw98r3m8KTYkfaQBz9iVuh81qdC9yF5Dw",
+          "evm": "0x24779b264A09b03abbb635496e8E52f8dE5f5160"
+        }
+      },
+      "student": {
+        "label": "tutoring/student",
+        "profile": "6zCwZFbxz6THWH4iRraeXXwGx9RAZjcHPk8CesCSKB3G",
+        "pay": {
+          "solana": "31qNc8icz7SzvpNSmmkJvmyVwoudzZQt9t6zpstxeiWm",
+          "evm": "0x677c64fe9B44c7F06e781C61aBEB3eee641103AB"
+        }
+      },
+      "coach": {
+        "label": "sports-coaching/coach",
+        "profile": "7naW2LDzCUq2CFQpPQCCcsPvHHJjGVmEV964Qw1a2tUA",
+        "pay": {
+          "solana": "CNHZMiZLjydHywWvT2D9fPr7MNMUUWDHQvQw4FCLhgRG",
+          "evm": "0xb2410Ab2b6A3D3123DF7EFD5025345854DB8B40B"
+        }
+      }
+    },
+    "funding": {
+      "accounts": "4BPcGd9i5g8AKt9dNJQhwDHrUnp2xmeSANZUwTmQUKHStuCRWq3GAoUMzZC8tdQ68GoqLu1phNdKDyEyw5GEvjN",
+      "money": "2BuKyAKQeBx2CgQSqCTfRxDeTtxXettqmwtrRCrN3vM5bbavJdDG7hJbodEFHdHzGzsczSzzhf2FJDx2Cne52tt5",
+      "wallets": {
+        "tutor": "HumqoAmjhddcFfLuupUMp6gRfy6fkPPk4HpDenszVBub",
+        "student": "45U1kFftZCrK3895vDfgUwqV1FaGRqQ355aqAAH7B5uz"
+      },
+      "feePayer": "4ERNxz9NGXNjaYfwYcJhYiwt6U2bBX1jJeUamvSYLQKv"
+    },
+    "stamps": {
+      "tutor": {
+        "verifier": "8vFsBJnSG2RX8kENwk45nYzmwryDR1MMdSH3vY1ALhk7",
+        "model": "stand-in",
+        "askedBack": "same"
+      },
+      "student": {
+        "verifier": "8vFsBJnSG2RX8kENwk45nYzmwryDR1MMdSH3vY1ALhk7",
+        "model": "stand-in",
+        "askedBack": "same"
+      }
+    },
+    "credits": {
+      "tutor": {
+        "signature": "43R7LxvFYRSbxHGmrEd3VioWjNP746tMdQTzSdAL7FagJgN8EaFFBf4iCwP2cjrswZmSsPkbbsiorM2fqrZ1YNJV",
+        "amount": "0.1",
+        "credits": 10,
+        "reference": "GLV5WfYReHVs1EexCYDtkz2GVTRoPvXZTB1FPjJW6V75"
+      },
+      "student": {
+        "signature": "5kzGpLPsufPXECzQBTQGgmsHN6eW3aRqcDmG9suSMXQYrSFj4iFmKvufPxEwvCsuaWB6U2671ZrGe4TRHtbVvWgS",
+        "amount": "0.1",
+        "credits": 10,
+        "reference": "BGKEJbCrsDpWsLpMArDYuTwiSuL6Wn2UhXvofQEBn8re"
+      }
+    },
+    "profiles": {
+      "tutor": {
+        "profile": "2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4",
+        "tag": "1550bf3975fd8d2b317edf013dbddb48b4a89f6274b23dc8bc7270b6ce640d80",
+        "spent": 6,
+        "stampProof": "checks"
+      },
+      "student": {
+        "profile": "6zCwZFbxz6THWH4iRraeXXwGx9RAZjcHPk8CesCSKB3G",
+        "tag": "055de7065733ee8dc41519d59265f70216513f9be1e2d5394a024466899a5bc3",
+        "spent": 10,
+        "stampProof": "checks"
+      }
+    },
+    "logins": {
+      "tutor": {
+        "profiles": [
+          "tutoring/tutor"
+        ],
+        "can": [
+          "read",
+          "write",
+          "pay"
+        ],
+        "limit": "5 USD a day"
+      },
+      "student": {
+        "profiles": [
+          "tutoring/student"
+        ],
+        "can": [
+          "write",
+          "pay"
+        ],
+        "limit": "5 USD a day"
+      }
+    },
+    "mcp": {
+      "offer": "2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4/offer/maths",
+      "found": {
+        "profile": "2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4"
+      },
+      "message": "done",
+      "reply": "done",
+      "approval": {
+        "ask": "read",
+        "why": "read as tutoring/student is not in what this connection may do",
+        "approved": "done"
+      }
+    },
+    "deal": {
+      "payment": {
+        "signature": "4fstn9drKpxyapgBBUUv2wsq2ARDsE1autpJ5M8PxUVDthyxpF9RyzaPEn4TfuhvXuBbeZVL1TSRSBq3XLcZMmr4",
+        "charge": "100000",
+        "bytes": 426,
+        "evidence": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:4fstn9drKpxyapgBBUUv2wsq2ARDsE1autpJ5M8PxUVDthyxpF9RyzaPEn4TfuhvXuBbeZVL1TSRSBq3XLcZMmr4"
+      },
+      "escrow": {
+        "address": "7VFvnx3WwGri6JRU38BFDyLfkhtXubXZEz83W671hRm7",
+        "version": 4,
+        "open": {
+          "signature": "5uoL2sfSWxxa2scjkRSdYyxXaHoJgNHzTLpbJC54EoSiRP5mmyGi1W2mMC2VPfBzmK5354FwAqAjhUVqgoiB8h1B",
+          "charge": "37336400",
+          "bytes": 693
+        },
+        "pay": {
+          "signature": "5mSsMwryNFjCVdHqTSQQNoDVkKgBdnnJpLvkEx4t57QZa8ryf2HXGAsi6MqBM3Ur8RK3CvwAWHHQsGMSEitRJkn7",
+          "charge": "100000",
+          "bytes": 523
+        },
+        "outcome": "pay",
+        "sponsor": "4ERNxz9NGXNjaYfwYcJhYiwt6U2bBX1jJeUamvSYLQKv",
+        "schedule": {
+          "windows": [
+            {
+              "until": 1793774884,
+              "payerShare": 0
+            }
+          ],
+          "end": "pay"
+        },
+        "evidence": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:7VFvnx3WwGri6JRU38BFDyLfkhtXubXZEz83W671hRm7"
+      }
+    },
+    "reviews": {
+      "student": {
+        "id": "maths",
+        "evidence": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:4fstn9drKpxyapgBBUUv2wsq2ARDsE1autpJ5M8PxUVDthyxpF9RyzaPEn4TfuhvXuBbeZVL1TSRSBq3XLcZMmr4",
+        "postedBy": "ai"
+      },
+      "tutor": {
+        "id": "c1341e1702608c59",
+        "evidence": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:7VFvnx3WwGri6JRU38BFDyLfkhtXubXZEz83W671hRm7",
+        "postedBy": "app"
+      }
+    },
+    "index": {
+      "tutor": {
+        "url": "http://127.0.0.1:39273/profiles/2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4",
+        "rating": 10,
+        "count": 1,
+        "trust": 45,
+        "uniqueness": 75,
+        "pickiness": "average",
+        "statement": "{\"index\":\"3BxFKx9RMZTKwCgWZB8ZbhjLmkc39RUitSoQeoVwsETV\",\"pickiness\":\"average\",\"profile\":\"2iwUKH4t7u4QKQQ3fXX9bpty74Yt89c9AoZYEknJAgL4\",\"ratings\":{\"count\":1,\"value\":\"10.0\"},\"time\":1793170092209,\"trust\":45,\"uniqueness\":75}"
+      },
+      "student": {
+        "url": "http://127.0.0.1:39273/profiles/6zCwZFbxz6THWH4iRraeXXwGx9RAZjcHPk8CesCSKB3G",
+        "rating": 9,
+        "count": 1,
+        "trust": 45,
+        "uniqueness": 75,
+        "pickiness": "average",
+        "statement": "{\"index\":\"3BxFKx9RMZTKwCgWZB8ZbhjLmkc39RUitSoQeoVwsETV\",\"pickiness\":\"average\",\"profile\":\"6zCwZFbxz6THWH4iRraeXXwGx9RAZjcHPk8CesCSKB3G\",\"ratings\":{\"count\":1,\"value\":\"9.0\"},\"time\":1793170092209,\"trust\":45,\"uniqueness\":75}"
+      },
+      "deal": {
+        "url": "http://127.0.0.1:39273/deals/7VFvnx3WwGri6JRU38BFDyLfkhtXubXZEz83W671hRm7",
+        "outcome": "pay",
+        "amount": "2000000",
+        "reviews": 1
+      }
+    },
+    "reputation": {
+      "profile": "7naW2LDzCUq2CFQpPQCCcsPvHHJjGVmEV964Qw1a2tUA",
+      "url": "http://127.0.0.1:39273/profiles/7naW2LDzCUq2CFQpPQCCcsPvHHJjGVmEV964Qw1a2tUA",
+      "tag": "1550bf3975fd8d2b317edf013dbddb48b4a89f6274b23dc8bc7270b6ce640d80",
+      "root": "0715c4903f8dc6d3b94024f0c6d48a06bb331f055cc63148dfa256fda9f95ed9",
+      "time": 1793170092209,
+      "leaves": 2,
+      "score": 45,
+      "result": "shown"
+    },
+    "addresses": {
+      "tutor": {
+        "answers": 7,
+        "addresses": 6,
+        "held": 0
+      },
+      "student": {
+        "answers": 8,
+        "addresses": 3,
+        "held": 0
+      }
+    },
+    "balances": {
+      "tutor": 5.84201,
+      "student": 9.85582,
+      "coach": 3.9398
+    }
+  },
+  "loop": {
+    "verifier": {
+      "name": "verifier.e2e-loop.invalid",
+      "face": "8vFsBJnSG2RX8kENwk45nYzmwryDR1MMdSH3vY1ALhk7",
+      "id": "FUnButeYW9SRmte7kTuDSuLuabJS3DSyC8n6f6kggC4g"
+    },
+    "index": "3BxFKx9RMZTKwCgWZB8ZbhjLmkc39RUitSoQeoVwsETV"
+  },
+  "sweep": {
+    "signature": "4SDZoR4JEH31M1BCNiVfKMC6FuviDSUAZFtCYUvM5EncEvv5m5AhRVx9ecqjY7GeEx6gcwrML2PkUdmiMGHWUUeF",
+    "dollars": "37536400",
+    "lamports": 49223240
+  }
+}

@@ -249,8 +249,8 @@ describe('host.sqlite holds nothing that exists only there', () => {
 
 /**
  * Make a folder file version 1 again, its blobs table as version 1 had it: `by` said which key put
- * each blob, here another key than the main key; and with the table of senders versions 1 and 2 kept for inboxes that took
- * one message from each. `more` runs after.
+ * each blob, here another key than the main key; and with the table of senders versions 1 and 2
+ * kept for inboxes that took one message from each. `more` runs after.
  */
 function toVersion1(file: string, more = '') {
   const db = new DatabaseSync(file)

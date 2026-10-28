@@ -15,8 +15,8 @@ Forest is one seed and its profiles, verified once, with offers and reviews in p
 rank. A profile is one of the person's identities, one for each market and role, such as a tutor in
 tutoring. The person holds the seed on their own devices, their signers, and everything that acts
 for them asks a signer. A signer acts by the person's permissions, which say who may ask it to act
-as which profile, and for what, and it asks the person about the rest; no key is ever handed out. Each
-service here helps with one part, and holds none of it for the person:
+as which profile, and for what, and it asks the person about the rest; no key is ever handed out.
+Each service here helps with one part, and holds none of it for the person:
 
 | The part | What the person holds | How anyone checks it | The service that helps |
 |---|---|---|---|

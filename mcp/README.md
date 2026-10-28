@@ -85,15 +85,15 @@ anything is sent, so an ask that does not fit is refused, saying why, and never 
 | `pay` | `label`, `to`, `amount`, `currency` | pays `amount` of `currency` to a profile, or to a post's full address |
 
 Each answer is the app's, the tool's result as the app gave it, with only the fields the standard
-names for it: `done`, with what the ask returns; `waiting`, with a link and why, when the person must
-approve it in their Forest app; `refused`, with why. This copy checks no body against its market: the
-person's app does, and its refusal names the field.
+names for it: `done`, with what the ask returns; `waiting`, with a link and why, when the person
+must approve it in their Forest app; `refused`, with why. This copy checks no body against its
+market: the person's app does, and its refusal names the field.
 
 What this copy says itself is an error, in plain words: an ask the standard does not take; and, with
 no device of the person's keeping the live link open for the connection, "Forest is not open on any
 of the person's devices, or it no longer serves this connection: ask them to open Forest on one of
-their devices, then try again." An ask with no answer in 45 seconds, or whose socket closes first, is
-told it may still be done, and to read before asking again.
+their devices, then try again." An ask with no answer in 45 seconds, or whose socket closes first,
+is told it may still be done, and to read before asking again.
 
 An AI app first gets how Forest works, as the server's instructions (`HOW` in `src/tools.ts`): start
 with `read` with nothing named, to learn the person's profiles by label and what it may do on each;
@@ -149,9 +149,9 @@ copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under this copy'
    connection's key, and sends the browser to `/connected`.
 6. **`/connected`** checks `request` is this copy's and less than 10 minutes old, then the
    connection's signature on it (`checkLogin`). A login signed by any other key is a page saying so,
-   and no code. It sends the browser to the AI app's redirect address with `code`, `state` and `iss`;
-   `code` names the connection, the client, the redirect, the challenge and the resource, for 60
-   seconds. On a no, the AI app gets `access_denied`.
+   and no code. It sends the browser to the AI app's redirect address with `code`, `state` and
+   `iss`; `code` names the connection, the client, the redirect, the challenge and the resource, for
+   60 seconds. On a no, the AI app gets `access_denied`.
 7. **`/token`** (`grant_type=authorization_code`) checks the code, the client (and its secret, if it
    has one), the redirect, `code_verifier` against the challenge, and `resource`, and gives an
    access token naming the connection, the client and this copy. It carries no expiry, so there is
@@ -357,11 +357,11 @@ acts.
 - **An answer that comes after 45 seconds is lost,** though what was asked may be done.
 - **A write that does not fit its market reaches the person's device,** which refuses it: this copy
   checks no body.
-- **A login does not expire.** Its access token works for as long as a permission for the
-  connection stays in one of the person's profiles' folders and has not ended. The AI's maker holds
-  it all that time, and whoever takes it from them acts as that connection, within its permissions,
-  while the person's app serves it. This copy cannot end one token alone: only a new key ends a login
-  here, and it ends every one.
+- **A login does not expire.** Its access token works for as long as a permission for the connection
+  stays in one of the person's profiles' folders and has not ended. The AI's maker holds it all that
+  time, and whoever takes it from them acts as that connection, within its permissions, while the
+  person's app serves it. This copy cannot end one token alone: only a new key ends a login here,
+  and it ends every one.
 - **A code works more than once in its 60 seconds,** since nothing is kept; only the AI app holding
   the login's PKCE verifier can use it.
 - **One replica.** The sockets live in one process; when it restarts, each of the person's devices
