@@ -42,6 +42,12 @@ test("each market's check reads its file: fields, choices, lists, roles", () => 
   assert.match(m.checkPost('tutoring', 'tutor', { price: { amount: 30, currency: 'USD' } })!, /its price is not a money/)
   assert.match(m.checkPost('electronics', 'buyer', { photos: [] })!, /photos is a field for seller/)
   assert.equal(m.checkPost('electronics', 'seller', { photos: [] }), null)
+  // A file field names one of the body's files, which is the standard's field and no market's.
+  const photo = { sha256: '04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', type: 'image/jpeg', size: 48213 }
+  assert.equal(m.checkPost('clothing', 'seller', { description: 'A wool coat.', photos: [photo.sha256], files: [photo] }), null)
+  assert.equal(m.checkPost('tutoring', 'tutor', { description: 'Maths', files: [photo] }), null)
+  assert.match(m.checkPost('clothing', 'seller', { photos: [photo.sha256] })!, /its photos names a file its files do not list/)
+  assert.match(m.checkPost('clothing', 'seller', { photos: [photo], files: [photo] })!, /its photos is not a list of file/)
   assert.match(m.checkPost('tutoring', 'seller', {})!, /seller is not a role in the tutoring market/)
   assert.match(m.checkPost('knitting', 'maker', {})!, /knitting is not a market/)
   assert.equal(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)

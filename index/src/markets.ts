@@ -5,13 +5,14 @@
 // A market's check, for a post and for a review, a vouch or a report, reads its file as the markets
 // manual says (build/README.md there), and as the mcp checks a body before it signs one: each field
 // is one the market names, for the role, of its type in types.json; a choice takes only its values;
-// `many` holds a list of the type, each different. `required` is for apps to ask for, and nothing
-// enforces it, so neither does this.
+// `many` holds a list of the type, each different; a `file` names one of the body's `files`.
+// `files` itself is the standard's, checked with the entry, and no market's field. `required` is for
+// apps to ask for, and nothing enforces it, so neither does this.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { PATH, publicKeyFromAddress } from '@foundationforest/folders'
+import { type Body, PATH, filesOf, publicKeyFromAddress } from '@foundationforest/folders'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
@@ -58,6 +59,9 @@ export function postAddress(text: unknown): { profile: string; path: string } | 
 
 const isObject = (v: unknown): v is { [key: string]: unknown } => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/** The hashes of the files a body lists in `files`, the standard's field, which the entry's own check took. */
+const namedFiles = (body: unknown): string[] => (isObject(body) ? filesOf(body as Body).map((f) => f.sha256) : [])
+
 /** The fields every market shares on a review, a vouch and a report, each by its meaning (build/README.md, Shared names). */
 const SHARED: { [name: string]: (value: unknown) => string | null } = {
   subject: (v) => (publicKeyFromAddress(v) ? null : 'its subject is not an address'),
@@ -91,13 +95,15 @@ export function loadMarkets(dir: string): Markets {
   }
 
   /** Why `body` does not fit `fields` for `role` (null: any role), or null. */
-  const fit = (body: unknown, fields: { [name: string]: Field }, role: string | null, market: string): string | null => {
+  const fit = (body: unknown, fields: { [name: string]: Field }, role: string | null, market: string, files: string[]): string | null => {
     if (!isObject(body)) return 'it is not an object'
     for (const [name, value] of Object.entries(body)) {
+      if (name === 'files') continue
       const field = fields[name]
       if (!field) return `it has a field the ${market} market does not name: ${name}`
       if (field.roles && role !== null && !field.roles.includes(role)) return `${name} is a field for ${field.roles.join(' or ')} in the ${market} market`
       if (!validator(field)(value)) return `its ${name} is not a ${field.many ? `list of ${field.type}` : field.type} as the ${market} market takes it`
+      if (field.type === 'file' && !(field.many ? (value as string[]) : [value as string]).every((sha256) => files.includes(sha256))) return `its ${name} names a file its files do not list`
     }
     return null
   }
@@ -110,7 +116,7 @@ export function loadMarkets(dir: string): Markets {
       const market = markets.get(name)
       if (!market) return `${name} is not a market in the directory`
       if (!market.roles.some((r) => r.role === role)) return `${role} is not a role in the ${name} market`
-      return fit(body, market.offer, role, name)
+      return fit(body, market.offer, role, name, namedFiles(body))
     },
     checkAbout(kind, name, subjectRole, body) {
       const market = markets.get(name)
@@ -124,7 +130,7 @@ export function loadMarkets(dir: string): Markets {
         if (wrong) return wrong
       }
       if (!('subject' in body)) return 'it names no subject'
-      return fit(added, market[kind].fields ?? {}, subjectRole, name)
+      return fit(added, market[kind].fields ?? {}, subjectRole, name, namedFiles(body))
     },
   }
 }
