@@ -1,6 +1,6 @@
 // The verifier end to end, in one process: a stand-in Didit, an embedder that knows people by name, a
-// real SQLite file, real HTTP, and stamps checked the way the standard checks them, a stamp proof made
-// and checked against the key `GET /` publishes. One test runs the stand-in Didit the e2e loop runs
+// real SQLite file, real HTTP, and stamps checked the way the standard checks them, a verification
+// made and checked against the key `GET /` publishes. One test runs the stand-in Didit the e2e loop runs
 // (test/fake-didit.ts) itself, with the stand-in embedding.
 //
 //   npm test
@@ -15,8 +15,8 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { hkdf, seedScalar, serviceKey, verifierSecret } from '@foundationforest/keys'
-import { checkStamp, proveStamp, stampFromJson, stampSigned } from '@foundationforest/stamp'
-import { b64u, canonical, parseCanonical } from '@foundationforest/records'
+import { checkVerification, proveVerification, stampFromJson, stampSigned } from '@foundationforest/verification'
+import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
@@ -45,9 +45,9 @@ import {
 } from './fakes.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-/** The stamp circuit's setup files, committed in the standard. */
-const setup = join(here, '../../standard/proofs/stamp/circuit/setup')
-const ARTIFACTS = { wasm: join(setup, 'note.wasm'), zkey: join(setup, 'note.zkey') }
+/** The verification circuit's setup files, committed in the standard. */
+const setup = join(here, '../../standard/proofs/verification/circuit/setup')
+const ARTIFACTS = { wasm: join(setup, 'verification.wasm'), zkey: join(setup, 'verification.zkey') }
 
 const dirs: string[] = []
 after(() => {
@@ -168,7 +168,7 @@ test('GET /: the name, and for each check the key that signs its stamps, as an a
   }
 })
 
-test('a face stamp: signed by the face key, its facts the face recipe, and a stamp proof from it holds for that key only', async () => {
+test('a face stamp: signed by the face key, its facts the face recipe, and a verification from it holds for that key only', async () => {
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
@@ -184,10 +184,10 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a sta
     assert.equal(json.model, 'test-model')
     assert.equal(stamp.facts, faceFacts('test-model', faceOf('alice')), 'Poseidon([h(model), h(embedding)])')
 
-    // The stamp does what it is for: a stamp proof, made with the standard's own code, that its verifier takes.
+    // The stamp does what it is for: a verification, made with the standard's own code, that holds for its verifier.
     const label = 'tutoring/seller'
-    const proof = await proveStamp({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
-    const check = (verifier: string) => checkStamp({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address, tag: proof.tag })
+    const proof = await proveVerification({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
+    const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.face.key), true)
     assert.equal(await check(published.id.key), false, 'a face stamp is no ID stamp')
     assert.deepEqual(h.logs, [], 'nothing is logged')
@@ -196,7 +196,7 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a sta
   }
 })
 
-test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields beside it, and a stamp proof for that key only', async () => {
+test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields beside it, and a verification for that key only', async () => {
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
@@ -213,8 +213,8 @@ test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields bes
     assert.equal(stamp.facts, idFacts('test-model', faceOf('ada'), { name: 'ada lovelace', birth: '1990-04-01', country: 826 }))
 
     const label = 'tutoring/buyer'
-    const proof = await proveStamp({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
-    const check = (verifier: string) => checkStamp({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address, tag: proof.tag })
+    const proof = await proveVerification({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
+    const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.id.key), true)
     assert.equal(await check(published.face.key), false, 'an ID stamp is no face stamp')
 
@@ -583,7 +583,7 @@ test('the ID check opens once a payment naming its reference has landed, and eac
     assert.equal(twice.status, 201)
     assert.notEqual(twice.body.sessionId, opened.body.sessionId, 'a second payment naming the same reference opens a second')
     assert.deepEqual(await h.post('/id/session', { payment: payment.id }), twice, 'and its answer, lost, is the newest session')
-    assert.ok(!JSON.stringify(h.ids.tags).includes(payment.id), 'Didit never holds the payment id, only its tag')
+    assert.ok(!JSON.stringify(h.ids.marks).includes(payment.id), 'Didit never holds the payment id, only its mark')
 
     // Didit opened a session and its answer was lost, or Didit did not answer at all: the payment is
     // never given back, and the next ask finds the session, or opens it.
@@ -592,7 +592,7 @@ test('the ID check opens once a payment naming its reference has landed, and eac
     h.ids.lost = true
     assert.deepEqual(await h.post('/id/session', { payment: third.id }), { status: 502, body: { error: 'face_check_unavailable' } })
     const found = await h.post('/id/session', { payment: third.id })
-    assert.deepEqual([found.status, found.body.sessionId], [201, h.ids.tags.at(-1)!.sessionId], 'the session Didit opened, found by its tag')
+    assert.deepEqual([found.status, found.body.sessionId], [201, h.ids.marks.at(-1)!.sessionId], 'the session Didit opened, found by its mark')
     const fourth = (await h.post('/id/session')).body.payment
     h.payments.paid.set(fourth.reference, [randomSignature()])
     h.ids.down = true

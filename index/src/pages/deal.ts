@@ -3,7 +3,7 @@
 // the profile (the standard's checkPay), and the reviews that name it, as
 // `<the escrow's chain>:<escrow>`.
 
-import { type Body, checkPay } from '@foundationforest/records'
+import { type Body, checkPay } from '@foundationforest/folders'
 
 import { ESCROW_CHAIN, type Move, type Receipt } from '../chain.ts'
 import type { Currency } from '../lists.ts'

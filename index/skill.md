@@ -3,7 +3,7 @@
 Forest is open software for people to offer, pay and review each other through profiles they own. A
 profile is one person's identity in one market and role, its label, such as `tutoring/tutor`; its
 address is its name. This index ranks what is public: it reads the hosts it lists, keeps the
-profiles whose profile record carries a stamp proof that checks for a verifier key it lists (a
+profiles whose profile entry carries a verification that checks for a verifier key it lists (a
 verifier checked that a real person holds the seed behind the profile), ranks them, and serves what
 it finds. A profile that does not count here still has a page, with what this index made of each of
 its proofs.
@@ -15,7 +15,7 @@ its proofs.
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
   new one. The index reads its hosts and the chain again 30 seconds after each pass ends.
-- In records, money and decimals are text: a price `{ "amount": "30", "currency": "USD", "per": "hour" }`,
+- In entries, money and decimals are text: a price `{ "amount": "30", "currency": "USD", "per": "hour" }`,
   a score `"8.5"`, a point's degrees `"40.42"`. In this index's JSON, a rating, a trust and a
   uniqueness are plain numbers; in its signed `statement`, a rating is text.
 
@@ -34,7 +34,7 @@ Every profile this index counts shows four things, each ranked inside its own ma
   (the rater dealt with it), and falls with each report; each counts by its giver's uniqueness and
   trust. It never passes the profile's uniqueness.
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
-  the checks its stamp proofs count for: 75 with a face check, 99 with a face check and an ID check.
+  the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
 - **Pickiness,** a word: `tough` (it scores below the ratings others give), `average`, or `easy` (it
   scores above them). A profile that has scored no one is average.
 
@@ -82,8 +82,10 @@ result's `ratings` is as it is.
 
     GET https://index.forest.foundation/profiles/<address>.json
 
-- `profile`: its profile record, as the hosts serve it: `market`, `role`, `pay` (its pay addresses,
-  any of `{ "solana", "evm" }`), `inboxKey` and `inbox` (how to message it), `proofs`.
+- `profile`: its profile entry, as the hosts serve it: `market`, `role`, `hosts` (where its folder
+  is), `openKey` (what an inbox entry to it is locked to; with none, it takes no inbox entries),
+  `pay` (its pay addresses, any of `{ "solana", "evm" }`), `keys` (the access keys it hands out,
+  each with what it `can` do), `proofs`.
 - `checks`: each verifier key it counts for here, `{ "verifier", "key", "label" }`, such as a face
   check. Its uniqueness comes from these.
 - `ratings`, `trust`, `uniqueness`, `pickiness`: what it shows, as above. A profile that does not
@@ -111,9 +113,9 @@ result's `ratings` is as it is.
   fake or a scam"; each body holds its `subject` and any `text`. `counted` and `why` as for a review;
   one vouch and one report count per writer and profile, the latest.
 - `words`: `received` and `given`, each `{ "writer", "subject", "word", "weight" }`: each writer's
-  one word about a profile, `report` if its latest counted record about it is a report, otherwise
+  one word about a profile, `report` if its latest counted entry about it is a report, otherwise
   `vouch`, and its weight, the writer's uniqueness times trust, from 0 to 1. Trust comes from these.
-- `proofs`: each proof on the profile record, with what this index made of it: a stamp proof's
+- `proofs`: each proof on the profile entry, with what this index made of it: a verification's
   `result` is `counts` or why not; a reputation proof's shows the `trust` it carries.
 
 ## A deal
@@ -131,14 +133,16 @@ whose `solana` pay address is either side, and the reviews that name it.
 
 The root of this index's tree of trusts, its time and signature, and every leaf, in the standard's
 format: a person proves a trust from their own profiles on their device, naming none of them, and
-carries it to another of their profiles. A leaf is one counted profile's: its score is the profile's
-trust, from 0 to 100, and its count is 1, so a proof carrying several profiles shows their average.
+carries it to another of their profiles. A leaf is one counted profile's, `{ "profile", "score" }`:
+its address, and its trust, from 0 to 100, as its score, so a proof carrying several profiles shows
+their average.
 A proof shows here against this index's newest root, or one it signed within `maxAgeDays`, in
 `/index.json`'s `lists`.
 
 ## To act
 
-This index only reads. To post, review, vouch, report or message, the person's signer, a device
-that holds their seed, signs with the profile's main key and writes to the profile's hosts; a payment
-is made with the profile's pay key, from its pay address. An AI asks one of the person's signers to
-act for them.
+This index only reads. To post, review, vouch, report or message, the person's app signs with the
+profile's main key, or whoever holds an access key the profile entry lists signs with that key, within
+what the listing says it `can` do, and writes to the profile's hosts; a payment is made with the
+profile's pay key, from its pay address. An AI acts for the person with an access key their app hands
+it.

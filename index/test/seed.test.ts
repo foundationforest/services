@@ -5,7 +5,7 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { publicKeyFromAddress } from '@foundationforest/records'
+import { publicKeyFromAddress } from '@foundationforest/folders'
 
 import { loadOrMakeKey, SEED_FILE } from '../src/seed.ts'
 import { cleanup, tmp } from './world.ts'

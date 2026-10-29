@@ -1,4 +1,4 @@
-// Which reviews, vouches and reports count. Each is a record in its writer's folder, at
+// Which reviews, vouches and reports count. Each is an entry in its writer's folder, at
 // review/<id>, vouch/<id> or report/<id>, with the fields the markets manual names: a review's
 // subject, score ("1" to "10"), text, offer (the post's full address) and evidence; a vouch's and a
 // report's subject and text. One counts when, in this order:
@@ -7,10 +7,10 @@
 //   2. it fits its writer's market's fields for its kind (markets.ts);
 //   3. a review gives a score;
 //   4. it is about another profile, not its writer;
-//   5. its writer and the profile it is about have the same market in their profile records, so
+//   5. its writer and the profile it is about have the same market in their profile entries, so
 //      each market is ranked on its own (rank.ts);
 //   6. the profile it is about counts here;
-//   7. it is the latest of its kind by its writer about that profile, by its record's time: for a
+//   7. it is the latest of its kind by its writer about that profile, by its entry's time: for a
 //      review, the latest of that profile and that post (or of no post), one per writer, subject
 //      and offer; for a vouch or a report, one per writer and subject.
 //
@@ -23,7 +23,7 @@ export type Written = { address: string; writer: string; body: { [key: string]: 
 export type Author = { counted: boolean; market: string | null; role: string | null }
 export type Judged = { counted: boolean; why?: string }
 
-/** Why a record of `kind` does not count, in words. */
+/** Why an entry of `kind` does not count, in words. */
 export const whyOf = (kind: About) => ({
   writer: 'its writer does not count here',
   score: 'it gives no score',
@@ -34,11 +34,11 @@ export const whyOf = (kind: About) => ({
 })
 export const WHY = whyOf('review')
 
-export function judge(kind: About, records: Written[], profiles: Map<string, Author>, markets: Markets): Map<string, Judged> {
+export function judge(kind: About, written: Written[], profiles: Map<string, Author>, markets: Markets): Map<string, Judged> {
   const why = whyOf(kind)
   const out = new Map<string, Judged>()
   const latest = new Map<string, Written>()
-  for (const r of records) {
+  for (const r of written) {
     const writer = profiles.get(r.writer)
     const subject = typeof r.body.subject === 'string' ? profiles.get(r.body.subject) : undefined
     let not: string | null = null
@@ -46,7 +46,7 @@ export function judge(kind: About, records: Written[], profiles: Map<string, Aut
     else not = markets.checkAbout(kind, writer.market!, subject && subject.market === writer.market ? subject.role : null, r.body)
     if (!not && kind === 'review' && r.body.score === undefined) not = why.score
     if (!not && r.body.subject === r.writer) not = why.itself
-    // Only a subject with a profile record here has a market to compare; one without does not count here.
+    // Only a subject with a profile entry here has a market to compare; one without does not count here.
     if (!not && subject && subject.market !== writer!.market) not = why.market
     if (!not && !subject?.counted) not = why.subject
     if (not) {
@@ -58,6 +58,6 @@ export function judge(kind: About, records: Written[], profiles: Map<string, Aut
     if (!held || r.time > held.time || (r.time === held.time && r.address > held.address)) latest.set(pair, r)
   }
   const winners = new Set(latest.values())
-  for (const r of records) if (!out.has(r.address)) out.set(r.address, winners.has(r) ? { counted: true } : { counted: false, why: why.later })
+  for (const r of written) if (!out.has(r.address)) out.set(r.address, winners.has(r) ? { counted: true } : { counted: false, why: why.later })
   return out
 }

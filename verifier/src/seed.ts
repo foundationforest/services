@@ -3,7 +3,7 @@
 //
 // It is made on the verifier's own machine, the first time the verifier starts without one (the
 // standard's `newSeed`), and kept in one file beside its database (`verifier-seed.json` in
-// DATABASE_PATH's directory), on the same volume: the seed and the record of which checks it signed
+// DATABASE_PATH's directory), on the same volume: the seed and what it keeps of which checks it signed
 // for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the verifier's own
 // user only. Nothing prints or logs it.
 //
@@ -26,7 +26,7 @@ import { createPrivateKey, createPublicKey, sign } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 
 import { hkdf, newSeed } from '@foundationforest/keys'
-import { base58, hex } from '@foundationforest/records'
+import { base58, hex } from '@foundationforest/folders'
 
 /** The seed file's name, in the database's directory. */
 export const SEED_FILE = 'verifier-seed.json'

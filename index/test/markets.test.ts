@@ -1,5 +1,5 @@
 // The markets: read from the pinned checkout; a post that does not fit its market is kept, not
-// listed, and says why; the escrow this index reads is the one the pinned standard records, on a
+// listed, and says why; the escrow this index reads is the one the pinned standard names, on a
 // chain config/chains.json lists.
 
 import assert from 'node:assert/strict'
@@ -17,13 +17,13 @@ import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
 
-test('the escrow this index reads is the program the pinned standard records, of the version its client reads, on a chain this index reads', () => {
-  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
-  assert.equal(ESCROW_PROGRAM, record.escrow.programId)
-  assert.equal(record.escrow.version, VERSION)
+test('the escrow this index reads is the program the pinned standard names, of the version its client reads, on a chain this index reads', () => {
+  const deployed = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
+  assert.equal(ESCROW_PROGRAM, deployed.escrow.programId)
+  assert.equal(deployed.escrow.version, VERSION)
   assert.equal(VERSION, 4)
   // Solana's devnet in CAIP-2 form, as the markets manual writes it.
-  assert.equal(record.cluster, 'devnet')
+  assert.equal(deployed.cluster, 'devnet')
   assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
   assert.deepEqual(loadLists(ROOT).chains.get(ESCROW_CHAIN), { reader: 'solana', rpc: 'RPC_URL' })
 })
@@ -42,6 +42,12 @@ test("each market's check reads its file: fields, choices, lists, roles", () => 
   assert.match(m.checkPost('tutoring', 'tutor', { price: { amount: 30, currency: 'USD' } })!, /its price is not a money/)
   assert.match(m.checkPost('electronics', 'buyer', { photos: [] })!, /photos is a field for seller/)
   assert.equal(m.checkPost('electronics', 'seller', { photos: [] }), null)
+  // A file field names one of the body's files, which is the standard's field and no market's.
+  const photo = { sha256: '04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', type: 'image/jpeg', size: 48213 }
+  assert.equal(m.checkPost('clothing', 'seller', { description: 'A wool coat.', photos: [photo.sha256], files: [photo] }), null)
+  assert.equal(m.checkPost('tutoring', 'tutor', { description: 'Maths', files: [photo] }), null)
+  assert.match(m.checkPost('clothing', 'seller', { photos: [photo.sha256] })!, /its photos names a file its files do not list/)
+  assert.match(m.checkPost('clothing', 'seller', { photos: [photo], files: [photo] })!, /its photos is not a list of file/)
   assert.match(m.checkPost('tutoring', 'seller', {})!, /seller is not a role in the tutoring market/)
   assert.match(m.checkPost('knitting', 'maker', {})!, /knitting is not a market/)
   assert.equal(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)

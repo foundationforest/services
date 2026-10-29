@@ -34,7 +34,7 @@ function addressBytes(text: unknown, what: string): Uint8Array {
   throw new Error(`${what} is a Solana address`)
 }
 
-/** An origin as a hosts record writes it, and its host, the name its credits' challenge carries. */
+/** An origin as a profile entry's `hosts` writes it, and its host, the name its credits' challenge carries. */
 function originOf(origin: string): { origin: string; host: string } {
   const url = new URL(origin)
   if (url.origin !== origin || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) {

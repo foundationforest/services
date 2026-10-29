@@ -8,10 +8,10 @@
 // An app writes the review seconds after paying, before the chain holds the payment as final, so a
 // signature the RPC holds no transaction for is asked again on each pass until WAIT_MS after this
 // index first saw the review name it, by this index's own clock; only then does it count for
-// nothing, and that answer is kept. The review's record time is its writer's word, and a review
+// nothing, and that answer is kept. The review's entry time is its writer's word, and a review
 // read late, after a host or this index was down, would have no day left by it.
 
-import { base58 } from '@foundationforest/records'
+import { base58 } from '@foundationforest/folders'
 
 import { type TokenBalance, transaction } from '../rpc.ts'
 import type { Between, Context } from './index.ts'

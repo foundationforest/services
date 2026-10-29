@@ -3,7 +3,7 @@
 // the tree. Everything after the reading is computed again on every pass, from what the store
 // holds.
 
-import { b64u, canonical, type Key, proofsOf } from '@foundationforest/records'
+import { b64u, canonical, type Key, proofsOf } from '@foundationforest/folders'
 import { packSignature, signBytes } from '@foundationforest/keys'
 
 import { ESCROW_CHAIN, readChain } from './chain.ts'
@@ -32,9 +32,9 @@ export type Shown = { ratings: { value: number | null; count: number }; trust: n
 
 /**
  * The statement a profile's ratings, trust, uniqueness and pickiness are signed as: canonical JSON,
- * by the standard's records' `canonical`, signed with the index's key over its UTF-8 bytes (the
- * standard's keys' `signBytes`). It begins with `{`, never with the 0xff every record, message,
- * pull, blob request and root begins with, so it is never one of those. The rating's value is text,
+ * by the standard's folders' `canonical`, signed with the index's key over its UTF-8 bytes (the
+ * standard's keys' `signBytes`). It begins with `{`, never with the 0xff every entry, message,
+ * inbox delete and root begins with, so it is never one of those. The rating's value is text,
  * since canonical JSON's numbers are whole.
  */
 export function statementOf(index: string, profile: string, shown: Shown, time: number): string {
@@ -89,7 +89,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     const sides = { a: { address: r.writer, body: filtered.get(r.writer)?.body }, b: { address: subject, body: filtered.get(subject)?.body }, seen }
     evidence.set(r.address, await evidenceOf(r.body.evidence, sides, { store, chains, mints: lists.currencies, now }))
   }
-  // One payment or escrow backs one review: the earliest of the reviews it backs, by record time,
+  // One payment or escrow backs one review: the earliest of the reviews it backs, by entry time,
   // then address; each later one is invalid. Only reviews between its two pay addresses can be
   // backed by it, so a review by anyone else that names it, dated as early as its writer likes,
   // takes nothing from them.
@@ -104,14 +104,14 @@ export async function runPass(ctx: Context, before: number | null, now: number):
   // Vouches and reports, judged as reviews are.
   const said = (['vouch', 'report'] as const).map((kind) => {
     const table = MANY[kind]
-    const records = (db.prepare(`select address, writer, body, time from ${table}`).all() as Array<{ address: string; writer: string; body: string; time: number }>).map(
+    const written = (db.prepare(`select address, writer, body, time from ${table}`).all() as Array<{ address: string; writer: string; body: string; time: number }>).map(
       (r): Written => ({ ...r, body: parse(r.body) }),
     )
-    return { kind, table, records, judged: judge(kind, records, filtered, markets) }
+    return { kind, table, written, judged: judge(kind, written, filtered, markets) }
   })
 
   // Rank, one market at a time: a review, a vouch or a report counts only between two profiles of
-  // one market. Each counted review is a rating, and with each counted vouch and report, a record
+  // one market. Each counted review is a rating, and with each counted vouch and report, an entry
   // its writer's word is drawn from.
   const counted = [...filtered].filter(([, f]) => f.counted)
   const countedReviews = reviews.filter((r) => judged.get(r.address)!.counted)
@@ -125,7 +125,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     const marketReviews = countedReviews.filter(inMarket)
     const saidHere: Said[] = [
       ...marketReviews.map((r) => ({ writer: r.writer, subject: r.body.subject as string, kind: 'rating' as const, time: r.time, address: r.address })),
-      ...said.flatMap((k) => k.records.filter((r) => k.judged.get(r.address)!.counted && inMarket(r)).map((r) => ({ writer: r.writer, subject: r.body.subject as string, kind: k.kind, time: r.time, address: r.address }))),
+      ...said.flatMap((k) => k.written.filter((r) => k.judged.get(r.address)!.counted && inMarket(r)).map((r) => ({ writer: r.writer, subject: r.body.subject as string, kind: k.kind, time: r.time, address: r.address }))),
     ]
     const profiles = counted.filter(([, f]) => f.market === market).map(([address, f]) => ({ address, uniqueness: f.uniqueness }))
     const ranked = rank(
@@ -151,8 +151,8 @@ export async function runPass(ctx: Context, before: number | null, now: number):
   // Write what this pass found, signing each profile's statement when what it shows moved.
   const heldRating = db.prepare('select value, count, trust, uniqueness, pickiness, statement, signature from ratings where profile = ?')
   store.tx(() => {
-    const setProfile = db.prepare('update profiles set counted = ?, checks = ?, tags = ? where address = ?')
-    for (const [address, f] of filtered) setProfile.run(f.counted ? 1 : 0, JSON.stringify(f.checks), JSON.stringify(f.tags), address)
+    const setProfile = db.prepare('update profiles set counted = ?, checks = ? where address = ?')
+    for (const [address, f] of filtered) setProfile.run(f.counted ? 1 : 0, JSON.stringify(f.checks), address)
 
     const posts = db.prepare('select address, profile, body, deleted from posts').all() as Array<{ address: string; profile: string; body: string; deleted: number }>
     const setPost = db.prepare('update posts set listed = ?, why = ? where address = ?')
@@ -161,7 +161,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
       const why = p.deleted
         ? 'deleted'
         : !author
-          ? 'its profile has no profile record here'
+          ? 'its profile has no profile entry here'
           : !author.counted
             ? 'its profile does not count here'
             : markets.checkPost(author.market!, author.role!, parse(p.body))
@@ -176,7 +176,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     }
     for (const k of said) {
       const set = db.prepare(`update ${k.table} set counted = ?, why = ? where address = ?`)
-      for (const r of k.records) {
+      for (const r of k.written) {
         const j = k.judged.get(r.address)!
         set.run(j.counted ? 1 : 0, j.why ?? null, r.address)
       }
@@ -204,14 +204,14 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     }
   })
 
-  // The tree, then the proofs each profile record shows, against the roots as they are now.
+  // The tree, then the proofs each profile entry shows, against the roots as they are now.
   const signed = new Map((db.prepare('select profile, trust from ratings').all() as Array<{ profile: string; trust: number }>).map((r) => [r.profile, r.trust]))
-  updateTree(store, key, leavesOf(counted.map(([address, f]) => ({ tags: f.tags, trust: signed.get(address)! }))), now)
+  updateTree(store, key, leavesOf(counted.map(([address]) => ({ address, trust: signed.get(address)! }))), now)
   const setProofs = db.prepare('update profiles set proofs = ? where address = ?')
   for (const [address, f] of filtered) {
     const shown = await reputationProofs(store, address, f.body, lists.indexes, key.address, lists.maxAgeDays, now)
     // By each proof's place among proofsOf's, as filter.ts and tree.ts number them.
-    const results = proofsOf(f.body as never).map((p, i) => f.stampProofs.get(i) ?? shown.get(i) ?? { circuit: p.circuit, result: 'this index does not read this kind of proof' })
+    const results = proofsOf(f.body as never).map((p, i) => f.verifications.get(i) ?? shown.get(i) ?? { circuit: p.circuit, result: 'this index does not read this kind of proof' })
     setProofs.run(JSON.stringify(results), address)
   }
 }

@@ -2,30 +2,29 @@
 // server the AI app calls and the authorization server that logs it in, kept stateless. An AI app
 // finds the flow from a 401 (Protected Resource Metadata, then Authorization Server Metadata),
 // registers by a client document (CIMD) or by registration (DCR), and sends the person to
-// /authorize. From there the person goes to the app's connect page (APP_URL), where their app makes
-// the connection and signs the login with the connection's key, as the standard's signers/ says
-// (README.md, Connecting an AI app); back at /connected, this copy checks that signature
-// (checkLogin) and gives the AI app a code, which /token turns into an access token naming the
-// connection.
+// /authorize. From there the person goes to the app's connect page (APP_URL), where, on their yes,
+// their app makes an access key for each profile they ticked, lists it in that profile's entry, and
+// hands back a pack locked to this copy's open key (pack.ts); back at /connected, this copy opens
+// the pack, checks it is for this login, and gives the AI app a code, which /token turns into an
+// access token carrying the pack.
 //
 // Nothing is stored: a registered client's id, a login request, a code and a token are each a body
 // this copy wrote, with an HMAC-SHA256 under its own 32-byte key, kept in DATA_DIR. Only this copy
 // checks them, so a MAC is enough: no public half is needed. The MAC covers the kind, so a code is
 // never a token. What one cannot hold without a store: a code works more than once in its 60
 // seconds (only the AI app holding its PKCE verifier can use it). A token carries no expiry, so
-// there is no refresh token: a login ends when the person removes its permissions, in their app,
-// which then serves it no more.
+// there is no refresh token: what it can do ends when the person removes its access keys from
+// their profile entries, which every host and reader then counts for nothing.
 
-import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { join } from 'node:path'
-import { b64u } from '@foundationforest/records'
-import { checkLogin, isConnection } from '@foundationforest/signers'
+import { b64u } from '@foundationforest/folders'
+import type { OpeningHalf } from '@foundationforest/keys'
 import { isObject, readJson } from './forest.ts'
 import { json, page, readBody } from './http.ts'
+import { type Pack, openPack, requestHash } from './pack.ts'
 
-/** How long the person has on the connect page: to unlock their device and choose what the AI app may do. */
+/** How long the person has on the connect page: to unlock their device and tick the profiles the AI app acts in. */
 export const REQUEST_MS = 10 * 60_000
 /** How long a code lasts: the AI app redeems it as soon as the person is sent back to it. */
 export const CODE_MS = 60_000
@@ -38,21 +37,6 @@ const MAX_REDIRECT = 512
 const MAX_FORM = 65_536
 
 const AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic']
-const KEY_FILE = 'mcp-key.json'
-
-/** This copy's key, from `dir`; made at the first start, readable by its own user only. */
-export function loadKey(dir: string): Buffer {
-  const path = join(dir, KEY_FILE)
-  mkdirSync(dir, { recursive: true })
-  try {
-    writeFileSync(path, `${JSON.stringify({ key: b64u.encode(randomBytes(32)) })}\n`, { mode: 0o600, flag: 'wx' })
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
-  }
-  const key = b64u.decode((JSON.parse(readFileSync(path, 'utf8')) as { key: string }).key)
-  if (key.length !== 32) throw new Error(`${path} holds no key of 32 bytes`)
-  return Buffer.from(key)
-}
 
 /** A redirect address the login takes: https, or http on loopback, with no fragment. */
 function isRedirect(value: unknown): value is string {
@@ -71,7 +55,7 @@ type Body = { [key: string]: unknown }
 type Client = { id: string; name: string; redirects: string[] }
 
 export type LoginSettings = {
-  /** This copy's origin: the authorization server, the resource, and the connector in a person's permissions. */
+  /** This copy's origin: the authorization server and the resource. */
   origin: string
   /** The app's connect page; without it, logins wait. */
   appUrl?: string
@@ -81,10 +65,12 @@ export type LoginSettings = {
 
 export class Login {
   private readonly key: Buffer
+  private readonly opening: OpeningHalf
   private readonly settings: LoginSettings
 
-  constructor(key: Buffer, settings: LoginSettings) {
+  constructor(key: Buffer, opening: OpeningHalf, settings: LoginSettings) {
     this.key = key
+    this.opening = opening
     this.settings = settings
   }
 
@@ -151,13 +137,23 @@ export class Login {
     res.end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32001, message: invalid ? 'Log in again: this login is not one this server gave.' : 'Acting for the person needs a login.' } }))
   }
 
-  /** The connection a request's token names; null with no token; 'bad' for one this copy did not give. */
+  /** The pack a request's token carries, still locked; null with no token; 'bad' for one this copy did not give, or one from before packs. */
   bearer(req: IncomingMessage): string | null | 'bad' {
     const header = req.headers.authorization
     if (header === undefined) return null
     const token = this.read('access', /^Bearer (\S+)$/i.exec(header)?.[1])
-    if (!token || !sameResource(token.aud, this.origin) || !isConnection(token.connection)) return 'bad'
-    return token.connection
+    if (!token || !sameResource(token.aud, this.origin) || typeof token.pack !== 'string') return 'bad'
+    return token.pack
+  }
+
+  /** What /open-key answers: the open key a person's app locks the pack to, readable from the app's own page. */
+  openKey(res: ServerResponse): void {
+    json(res, 200, { openKey: this.opening.openKey }, { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=300' })
+  }
+
+  /** A pack a token carries, opened for one request with this copy's identity. */
+  open(pack: unknown) {
+    return openPack(pack, this.opening.identity)
   }
 
   /** A client secret, for a registered client that asked for one: made from its id, so nothing is kept. */
@@ -228,8 +224,8 @@ export class Login {
 
   /**
    * The authorization request: checked, then on to the app's connect page with a login request only
-   * this copy can write: base64url of a JSON object holding `name` and `redirect`, as the standard's
-   * connect step reads them, a dot, then this copy's MAC.
+   * this copy can write: base64url of a JSON object holding the AI app's `name` and `redirect`,
+   * which the page shows the person, a dot, then this copy's MAC.
    */
   async authorize(url: URL, res: ServerResponse): Promise<void> {
     if (!this.settings.appUrl) return page(res, 503, "Logins here wait for the Forest app's connect page, which is not set up yet. Reading works without a login.")
@@ -249,8 +245,8 @@ export class Login {
     this.back(res, this.settings.appUrl, { connector: this.origin, request })
   }
 
-  /** Back from the connect page: the connection's signature on the login request, then a code for the AI app. */
-  connected(url: URL, res: ServerResponse): void {
+  /** Back from the connect page: the pack, opened and checked to be for this login, then a code for the AI app carrying it. */
+  async connected(url: URL, res: ServerResponse): Promise<void> {
     const q = url.searchParams
     const text = q.get('request') ?? ''
     const request = this.read('request', text)
@@ -259,9 +255,15 @@ export class Login {
     const redirect = request.redirect as string
     const after = { ...(typeof request.state === 'string' && { state: request.state }), iss: this.origin }
     if (q.has('error')) return this.back(res, redirect, { error: 'access_denied', error_description: 'the person said no', ...after })
-    const connection = q.get('connection')
-    if (!isConnection(connection) || !checkLogin(connection, text, q.get('sig'))) return page(res, 400, "The connection's key did not sign this login, so it gives no access.")
-    const code = this.sign('code', { connection, client: request.client, redirect, challenge: request.challenge, resource: request.resource, exp: Date.now() + CODE_MS })
+    const pack = q.get('pack')
+    let opened: Pack
+    try {
+      opened = await this.open(pack)
+    } catch (err) {
+      return page(res, 400, `The app's answer gives no access: ${(err as Error).message}.`)
+    }
+    if (opened.request !== requestHash(text)) return page(res, 400, "The app's answer is for another login, so it gives no access here.")
+    const code = this.sign('code', { pack, client: request.client, redirect, challenge: request.challenge, resource: request.resource, exp: Date.now() + CODE_MS })
     this.back(res, redirect, { code, ...after })
   }
 
@@ -299,7 +301,7 @@ export class Login {
     if (!verifier || b64u.encode(createHash('sha256').update(verifier).digest()) !== code.challenge) return deny(400, 'invalid_grant', 'code_verifier does not match the code challenge')
     const resource = form.get('resource')
     if (resource !== null && !sameResource(resource, code.resource as string)) return deny(400, 'invalid_target', `the code was made for ${code.resource as string}`)
-    const access = this.sign('access', { connection: code.connection, client: code.client, aud: code.resource })
+    const access = this.sign('access', { pack: code.pack, client: code.client, aud: code.resource })
     json(res, 200, { access_token: access, token_type: 'Bearer' }, { 'cache-control': 'no-store' })
   }
 }

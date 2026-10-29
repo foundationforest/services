@@ -5,8 +5,8 @@
 // A review, a vouch or a report counts only between two profiles of one market (reviews.ts), so
 // each market is ranked on its own. Each part is its own function, with its own knobs:
 //
-//   uniqueness   u = 1 - prod(1 - c), over the keys a profile's stamp proofs count for (filter.ts)
-//   words        each writer has one word per subject: a report if its latest counted record about
+//   uniqueness   u = 1 - prod(1 - c), over the keys a profile's verifications count for (filter.ts)
+//   words        each writer has one word per subject: a report if its latest counted entry about
 //                it is a report, otherwise a vouch (it rated or vouched); a word weighs its giver's
 //                u times trust
 //   vouch part   V = 1 - 0.5 vouchStep^v, v the sum of the vouches' weights: 0.5 with none, never 1
@@ -32,7 +32,7 @@
 export type RankProfile = { address: string; uniqueness: number }
 /** A counted review with a score, from 1 to 10. */
 export type RankRating = { writer: string; subject: string; score: number; evidence: number }
-/** A counted review, vouch or report, for its writer's word: by its record's time, then its address. */
+/** A counted review, vouch or report, for its writer's word: by its entry's time, then its address. */
 export type Said = { writer: string; subject: string; kind: 'rating' | 'vouch' | 'report'; time: number; address: string }
 export type Word = { writer: string; subject: string; word: 'vouch' | 'report' }
 export type Pickiness = 'tough' | 'average' | 'easy'
@@ -65,7 +65,7 @@ export function uniqueness(confidences: number[]): number {
   return 1 - confidences.reduce((left, c) => left * (1 - c), 1)
 }
 
-/** Each writer's one word about each subject, from its latest counted record about it. */
+/** Each writer's one word about each subject, from its latest counted entry about it. */
 export function wordsOf(said: Said[]): Word[] {
   const latest = new Map<string, Said>()
   for (const s of said) {

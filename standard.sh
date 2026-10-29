@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Fetches foundationforest/standard at the commit in STANDARD into standard/ (not committed), then
 # installs and builds it at its root: the standard is one npm workspace, and `npm run build` there
-# builds each of its packages to its dist/. A service depends on a standard package by the name in
+# builds each of its packages to its dist/. The circuits' setup files, the proving keys among them,
+# are committed there and pinned by SHA-256, so they come with it and nothing else downloads them.
+# A service depends on a standard package by the name in
 # that package's package.json, through a file: link into standard/. Then, when MARKETS is beside
 # it, fetches foundationforest/markets at that commit into markets/ (not committed), the same way:
 # a service reads directory.json and market files from there, never over the network at run time.

@@ -1,14 +1,15 @@
-// The loop: Forest end to end. Two people from two seeds, a tutor and a student. Each one's device is
-// the reference signer (mcp/test/signer.ts), unchanged: it holds the seed and the stamp, keeps each
-// profile's permissions, makes each profile with its stamp proof, signs, publishes, and answers what
-// the mcp carries over the live link. What it has no method for, the device does here with the
-// standard's pieces: the stamp asked for, the reputation proof, the escrow. Each person's AI is the
-// MCP SDK's own client (mcp/test/setup.ts), logging in through the loop's connect page and calling
-// the mcp's tools. Against the host and fee payer services.json names, or the loop's own copies on
-// loopback, with the loop's own verifier, index and mcp (services.ts); the chain is remote, through
-// RPC_URL, or services.json's rpc.
+// The loop: Forest end to end. Two people from two seeds, a tutor who sells and a student who buys.
+// Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds the seed and the
+// stamp, keeps the Profiles folder, makes each profile with its verification, and at the connect
+// page hands the mcp an access key for the profile ticked. What it has no method for, the device
+// does here with the standard's pieces: the stamp asked for, the payment, the reputation proof. Each
+// person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in through the loop's connect
+// page and calling the mcp's tools, which act in the person's folder with that access key. Against
+// the host and fee payer services.json names, or the loop's own copies on loopback, with the loop's
+// own verifier, index and mcp (services.ts); the chain is remote, through RPC_URL, or
+// services.json's rpc.
 //
-//   ../standard.sh && (cd ../standard/proofs/reputation/circuit && npm run fetch)
+//   ../standard.sh
 //   (cd ../verifier && npm ci) && (cd ../host && npm ci) && (cd ../index && npm ci) && (cd ../mcp && npm ci)
 //   ../fee-payer/build.sh                    # Kora, for the loop's own fee payer
 //   npm ci && FOREST_DEVNET_SEED='<the phrase>' [RPC_URL=<an RPC>] npm run e2e [-- <services.json>]
@@ -20,27 +21,28 @@
 //    3. stamps: the loop verifier's face check (its stand-in Didit passes it), a stamp for each,
 //       kept on the person's device, then asked back from the verifier by its stamp number;
 //    4. credits: each wallet app buys 10 of the host's credits for USDC;
-//    5. profiles: credits into the folder, and the signer adds the profile, its profile record with
-//       a real stamp proof made on the device;
-//    6. logins: each AI logs in through the connect page, where the person picks the profile it sees
-//       and their signer writes a permission into its folder, `can` empty; then, in their app, the
-//       person lets it write and pay within $5 a day, and for the tutor read;
-//    7. mcp: the tutor's AI writes an offer; the student's finds it and messages; the tutor's reads
-//       the inbox and replies to the address it came from; the student's reads its inbox, outside its
-//       permission, so it waits for the person's yes, which the loop gives;
-//    8. the deal, paid twice through the fee payer at cost: a direct payment, a plain transfer asked
-//       for by the student's AI, whose answer says only done; and an escrow, version 4, on the
-//       market's session schedule, paid out early;
-//    9. reviews, each naming its evidence as <CAIP-2 chain>:<id>: the student's AI names the offer,
-//       and its signer fills in the direct payment; the tutor's AI may not name the escrow, so the
-//       tutor's app writes that review;
-//   10. the loop index counts it all: both profiles, the offer, both reviews with their payments,
-//       and what each profile shows (ratings, trust, uniqueness, pickiness) as its own ranking
-//       makes them, signed, the deal; no message anywhere;
-//   11. the trust carried: the tutor's device finds its leaf by its tag, proves its trust onto its
-//       coach profile, and the index shows the proof;
-//   12. addresses: no answer either AI received holds one of its own person's addresses;
-//   13. balances: what each folder's credits came to.
+//    5. profiles: credits into each folder, the stamp kept in the Profiles folder, and the profile,
+//       its profile entry with a verification made on the device, listed there too;
+//    6. logins: each AI logs in through the connect page, where the person ticks their profile and
+//       their app lists an access key in its profile entry with every switch, writes its note, and
+//       hands the mcp the pack;
+//    7. mcp: the tutor's AI writes an offer; the student's finds it through the index's search and
+//       messages the tutor; the tutor's reads the inbox, the student's market, role and checks as the
+//       index shows them, and replies; the student's reads the reply;
+//    8. the payment: the student's app pays the tutor's pay address directly, a plain transfer through
+//       the fee payer at cost;
+//    9. the review: the student's AI reviews the tutor, naming the offer and the payment as evidence;
+//   10. the loop index counts it all: both profiles, the offer, the review with its payment, and what
+//       each profile shows (ratings, trust, uniqueness, pickiness) as its own ranking makes them,
+//       signed; no message anywhere;
+//   11. the trust carried: the tutor's device finds its leaf by its profile, proves its trust onto
+//       its coach profile, and the index shows the proof;
+//   12. removed: the tutor's app takes the access key out of the profile entry; the host refuses its
+//       AI's next write, and the offer it wrote counts for nothing;
+//   13. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
+//       stamp;
+//   14. addresses: no answer either AI received holds one of its own person's addresses;
+//   15. balances: what each folder's credits came to.
 // Then, passed or failed, what the loop started stops, and the loop's own fee payer's USDC and SOL go
 // back to the deploy key. Everything it did goes to runs/<time>.json, whether it passed or not.
 
@@ -53,20 +55,19 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import * as escrow from '@foundationforest/escrow-client'
-import { type PayAddresses, checkBytes, mainKey, newSeed, payAddresses, payKey, seedScalar, tagOf, unpackSignature, verifierScalarOf, verifierSecret } from '@foundationforest/keys'
-import { type Body, b64u, hex, nextTime, ownerRecord, proofsOf, publish, readProfile, stampCheck } from '@foundationforest/records'
-import { readerCount } from '@foundationforest/records/private'
+import { type Body, b64u, checkPay, hex, notePath, proofsOf, readFolder, verificationCheck } from '@foundationforest/folders'
+import { lockCount, openLocked } from '@foundationforest/folders/locked'
+import { type PayAddresses, checkBytes, mainKey, newSeed, openingHalf, payAddresses, payKey, pointOf, profilesKey, seedScalar, unpackSignature, verifierSecret } from '@foundationforest/keys'
 import { buildTree, checkReputation, proofBytes as reputationBytes, proveReputation, signedBytes } from '@foundationforest/reputation'
-import { PERMISSION_PREFIX } from '@foundationforest/signers'
-import { type SignedStamp, checkStamp, stampFromJson, stampSigned, toBytes32 } from '@foundationforest/stamp'
+import { type SignedStamp, checkVerification, stampFromJson, stampSigned, toBytes32 } from '@foundationforest/verification'
 import { Connection, Keypair, PublicKey } from '@solana/web3.js'
 
 import { type Credit, DIRECTORY_PATH, PAYMENT_HEADER, amountOf, buy, creditList, finish, serviceOf } from '../host/client/client.ts'
 import { hundredth, tenth } from '../index/src/pass.ts'
 import { type Numbers, pickinessWord, rank, uniqueness } from '../index/src/rank.ts'
+import { App } from '../mcp/test/app.ts'
 import { aiApp, logIn } from '../mcp/test/setup.ts'
-import { type Allowed, type PayWith, Signer } from '../mcp/test/signer.ts'
-import { DOLLAR, type Paid, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, kora, payReferenceIxs, scheduleOf, send, sweepIxs, throughFeePayer, unitsOf } from './chain.ts'
+import { DOLLAR, type Paid, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, send, sweepIxs, throughFeePayer, unitsOf } from './chain.ts'
 import { type RunRecord, checkRecord, holdsNone } from './record.ts'
 import { FACE_CONFIDENCE, type Running, VERIFIER_NAME, readServices, startServices } from './services.ts'
 
@@ -76,20 +77,14 @@ const servicesFile = process.argv[2] ? resolve(process.argv[2]) : join(here, 'se
 const cfg = readServices(servicesFile)
 const rpcUrl = process.env.RPC_URL || cfg.rpc
 const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/circuit/setup/reputation.wasm'), zkey: join(repo, 'standard/proofs/reputation/circuit/setup/reputation.zkey') }
-/** The market the two people deal in, as the directory at MARKETS holds it. */
-const MARKET = JSON.parse(readFileSync(join(repo, 'markets/markets', `${cfg.market}.json`), 'utf8')) as { payment: { [name: string]: Template } }
-/** The market's schedule the escrow runs on. */
-const SCHEDULE = 'session'
 /** The tutor's second profile, where it carries its trust: another market, from the same seed. */
 const COACH = 'sports-coaching/coach'
 /** How many of the host's credits each person buys: about a dollar of writes a hundred times over. */
 const CREDITS = 10
-/** What the tutor's offer asks an hour, and what each payment of the deal is. */
+/** What the tutor's offer asks an hour, and what the student pays. */
 const PRICE = 2n * DOLLAR
-/** What each person lets their AI pay: the direct payment is within it. */
-const LIMIT = { amount: '5', currency: 'USD', per: 'day' }
-/** Where each signer's approval links point: the person's app, which the loop stands in for, so nothing fetches it. */
-const APP = 'https://app.e2e-loop.invalid'
+/** What the person's app lets each AI do in the profile ticked, unless the person chooses fewer: every switch. */
+const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 /** How long to wait for the index to show what was done. */
 const INDEX_WAIT = 15 * 60_000
 /** The numbers the loop index ranks by: its own, from index/config. */
@@ -112,7 +107,7 @@ const record = {
   commits: { services: git('rev-parse', 'HEAD'), standard: pin('STANDARD'), markets: pin('MARKETS') },
   services: { verifier: 'loopback', host: where(cfg.host), feePayer: where(cfg.feePayer), index: 'loopback', mcp: 'loopback' },
   checked: [],
-  chain: { rpc: process.env.RPC_URL ? 'RPC_URL' : cfg.rpc, escrow: cfg.escrow, testDollar: cfg.testDollar, market: cfg.market },
+  chain: { rpc: process.env.RPC_URL ? 'RPC_URL' : cfg.rpc, testDollar: cfg.testDollar, market: cfg.market },
   steps: {},
 } as RunRecord
 const steps = record.steps as { [step: string]: { [key: string]: unknown } }
@@ -160,27 +155,20 @@ class AI {
     return JSON.parse(text)
   }
 
-  /** One ask the person's signer did. */
-  async done(name: string, args: Record<string, unknown> = {}): Promise<any> {
-    const out = await this.call(name, args)
-    assert.equal(out.status, 'done', `${name}: ${JSON.stringify(out)}`)
-    return out
-  }
-
   close = () => this.c.client.close()
 }
 
 /**
- * The connect page: a stand-in for the Forest app's, where the person whose turn it is picks the
- * profiles their AI sees, and their signer makes the connection and sends the browser back. One mcp
- * sends every login to one page, and the two people log in one after the other.
+ * The connect page: a stand-in for the Forest app's, where the person whose turn it is ticks the
+ * profiles their AI acts in, and their app hands back the pack. One mcp sends every login to one
+ * page, and the two people log in one after the other.
  */
-async function connectPage(): Promise<{ url: string; at: { signer: Signer; profiles: string[] } | null; close: () => void }> {
-  const page: { url: string; at: { signer: Signer; profiles: string[] } | null; close: () => void } = { url: '', at: null, close: () => server.close() }
+async function connectPage(): Promise<{ url: string; at: { app: App; profiles: string[] } | null; close: () => void }> {
+  const page: { url: string; at: { app: App; profiles: string[] } | null; close: () => void } = { url: '', at: null, close: () => server.close() }
   const server = createServer((req, res) => {
     const q = new URL(req.url ?? '/', 'http://x').searchParams
     if (!page.at) return void res.writeHead(409).end('nobody is at the connect page')
-    page.at.signer.connect(q.get('connector')!, q.get('request')!, { profiles: page.at.profiles }).then(
+    page.at.app.connect(q.get('connector')!, q.get('request')!, { profiles: page.at.profiles }).then(
       (to) => res.writeHead(302, { location: to }).end(),
       (err: Error) => res.writeHead(500).end(err.message),
     )
@@ -201,15 +189,17 @@ type Person = {
   /** The profile's address, and its pay addresses. */
   address: string
   pay: PayAddresses
-  /** The profile's Solana pay key: what pays the escrow. */
+  /** The profile's Solana pay key: what pays. */
   payKey: Keypair
   stampNumber: bigint
   /** An address of its own apart from its profiles, as a wallet app holds one: what buys credits. */
   wallet: Keypair
   stamp?: SignedStamp
   credits: Credit[]
-  signer?: Signer
+  app?: App
   ai?: AI
+  /** The address of the access key the person's app handed the mcp for the profile. */
+  key?: string
 }
 
 async function person(role: Person['role']): Promise<Person> {
@@ -231,6 +221,13 @@ async function person(role: Person['role']): Promise<Person> {
     wallet,
     credits: [],
   }
+}
+
+/** Every address of one person's: each profile's, and its pay addresses, and the Profiles folder's. What no answer to their AI holds. */
+async function addressesOf(p: Person, labels: string[]): Promise<string[]> {
+  const out = [(await profilesKey(p.seed)).address]
+  for (const label of labels) out.push((await mainKey(p.seed, label)).address, ...Object.values(await payAddresses(p.seed, label)))
+  return out
 }
 
 // ---- The steps ----
@@ -300,36 +297,41 @@ async function spend(p: Person, folder: string, n: number): Promise<number> {
   return got.body.credits
 }
 
+/** A folder's current profile entry's body, as any reader reads it from the host. */
+async function profileEntry(address: string): Promise<Body | null> {
+  return (await readFolder([services!.host], address, Date.now())).current.get('profile')?.entry.body ?? null
+}
+
 /**
- * A profile of the person's, as their device makes it: the signer adds it, its hosts record and its
- * profile record with a stamp proof made on the device from the stamp it keeps, and `more` proofs
- * after it. Read back as any reader reads it, its stamp proof checked as any reader checks it. Its
- * folder holds credits first: the signer does not ask whether the host took what it published.
+ * A profile of the person's, as their device makes it: the app adds it, its profile entry with a
+ * verification made on the device from the stamp it keeps and `more` proofs after it, and lists it
+ * in the Profiles folder. Read back as any reader reads it, its verification checked as any reader
+ * checks it. Its folder holds credits first: the app writes only where the host takes it.
  */
 async function profile(p: Person, label: string, more: Body[] = []) {
-  const address = await p.signer!.addProfile(label, { proofs: more })
-  const shown = (await readProfile([services!.host], address, Date.now(), { post: true })).current.get('profile')?.record.body
-  assert.ok(shown, `the host took ${label}'s profile record`)
+  const address = await p.app!.addProfile(label, { proofs: more })
+  const shown = await profileEntry(address)
+  assert.ok(shown, `the host took ${label}'s profile entry`)
   assert.deepEqual(shown.pay, { ...(await payAddresses(p.seed, label)) }, 'its pay addresses, solana and evm')
-  assert.ok(typeof shown.inboxKey === 'string' && shown.inbox, 'its inbox key and its inbox')
-  const stamp = proofsOf(shown).find((x) => x.circuit === 'stamp')
-  const check = stampCheck(stamp, address)
-  assert.ok(check && (await checkStamp(check)), 'its stamp proof checks')
-  assert.equal(stamp!.verifier, p.stamp!.verifier, 'from the stamp the device keeps')
-  return { address, tag: stamp!.tag as string }
+  assert.deepEqual(checkPay(shown, address), ['solana', 'evm'], 'each signed by its pay key')
+  assert.ok(typeof shown.openKey === 'string', 'its open key, so it takes messages')
+  const verification = proofsOf(shown).find((x) => x.circuit === 'verification')
+  const check = verificationCheck(verification, address)
+  assert.ok(check && (await checkVerification(check)), 'its verification checks')
+  assert.equal(verification!.verifier, p.stamp!.verifier, 'from the stamp the device keeps')
+  return address
 }
 
 /**
  * A person's AI logs in: its first call to act gets the challenge, the person's browser goes
- * through the connect page, where they pick the profile it sees, and the code becomes a login. Their
- * signer is open on the mcp, so the connection is registered as it is made. The connect step's
- * permission has `can` empty; then, in their app, the person lets the AI do what `allowed` says.
+ * through the connect page, where they tick their profile, and their app lists an access key in its
+ * profile entry with every switch, writes its note, and hands the mcp the pack; the code becomes a
+ * login. Read back from the host: one access key listed, and its note locked to the main key alone.
  */
-async function logInAs(p: Person, allowed: Allowed) {
+async function logInAs(p: Person) {
   const mcp = services!.mcp
-  await p.signer!.open(mcp)
   const c = await aiApp(mcp)
-  page!.at = { signer: p.signer!, profiles: [p.label] }
+  page!.at = { app: p.app!, profiles: [p.label] }
   try {
     await logIn(c)
   } finally {
@@ -338,22 +340,18 @@ async function logInAs(p: Person, allowed: Allowed) {
   const token = c.app.tokens()?.access_token
   if (token) secrets.push(token)
   p.ai = new AI(c)
-  assert.deepEqual((await p.ai.done('read')).profiles, [{ label: p.label, can: [] }], 'it sees this profile, by its label, and may do nothing there without asking')
-  const [first] = await p.signer!.permissions(p.label)
-  const who = first!.who as { connector: string; connection: string; key: string }
-  secrets.push(who.key)
-  assert.equal(who.connector, mcp, 'for this mcp')
-  await p.signer!.allow(p.label, who.connection, allowed)
-  assert.deepEqual((await p.ai.done('read')).profiles, [{ label: p.label, ...allowed }], 'what the person allowed, in their app')
-  // The permission, read back from the host as any of the person's signers reads it: one, in the
-  // profile's folder, encrypted to the profile's own inbox key alone, with what they allowed.
-  const view = await readProfile([services!.host], p.address, Date.now(), { post: true })
-  const held = [...view.current].filter(([path, { record }]) => path.startsWith(PERMISSION_PREFIX) && record.body)
-  assert.deepEqual(held.map(([, { record }]) => readerCount(record.body as { private: string })), [1], 'one permission in the folder, for the profile alone')
-  const [permission] = await p.signer!.permissions(p.label)
-  assert.deepEqual([permission!.can, permission!.limit], [allowed.can, allowed.limit], 'what the person allowed')
-  say(`${p.role}: its AI logged in, sees ${p.label}, and may ${allowed.can.join(', ')} there, paying up to ${LIMIT.amount} ${LIMIT.currency} a ${LIMIT.per}`)
-  return { profiles: [p.label], can: allowed.can, limit: `${LIMIT.amount} ${LIMIT.currency} a ${LIMIT.per}` }
+  assert.deepEqual((await p.ai.call('my_profiles')).profiles, [{ label: p.label, can: SWITCHES }], 'it acts in this profile, by its label, with every switch')
+  const keys = await p.app!.keys(p.label)
+  assert.equal(keys.length, 1, 'one access key in the profile entry')
+  assert.deepEqual(keys[0]!.can, SWITCHES)
+  p.key = keys[0]!.key
+  const main = await mainKey(p.seed, p.label)
+  const note = (await readFolder([services!.host], p.address, Date.now())).current.get(notePath(main.secret, p.key))?.entry.body as { private: string } | undefined
+  assert.ok(note && lockCount(note) === 1, 'its note, at its keyed path, locked to one key')
+  const opened = await openLocked(note, (await openingHalf(main.secret)).identity)
+  assert.equal(opened.connector, mcp, 'which the main key opens, naming this mcp')
+  say(`${p.role}: its AI logged in, and acts in ${p.label} with the access key ${p.key}: ${SWITCHES.join(', ')}`)
+  return { profiles: [p.label], can: keys[0]!.can, key: p.key, note: 'locked to the main key' }
 }
 
 async function main() {
@@ -362,7 +360,6 @@ async function main() {
   const connection = new Connection(rpcUrl, 'confirmed')
   const deploy = keyFromPhrase(phrase, 'deploy')
   const mint = new PublicKey(cfg.testDollar)
-  const ESCROW = new PublicKey(cfg.escrow)
   const token = escrow.tokenOf(mint, (await connection.getAccountInfo(mint))!)
   const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
   // The chain in CAIP-2 form, as a review's evidence names it: Solana's is the first 32 characters of its genesis hash.
@@ -391,16 +388,6 @@ async function main() {
       const ixs = sweepIxs({ from: key.publicKey, to: deploy.publicKey, dollars, lamports, token })
       return ixs.length ? { signature: (await send(connection, ixs, [deploy, key])).signature, ...back } : back
     }
-  }
-
-  // A payment the signer makes when the person's AI asks it to pay: a direct payment, a plain
-  // transfer from the profile's pay key, through the fee payer at cost.
-  const payments: Paid[] = []
-  const payWith: PayWith = async ({ from, to, amount }) => {
-    const signer = Keypair.fromSeed(from.privateKey)
-    const paid = await throughFeePayer(connection, s.feePayer, signer, directPaymentIxs({ from: signer.publicKey, to: new PublicKey(to), units: unitsOf(amount, token.decimals), token }), token)
-    payments.push(paid)
-    return `${chain}:${paid.signature}`
   }
 
   // 1. Keys.
@@ -436,38 +423,41 @@ async function main() {
   // 4. Credits.
   steps.credits = { tutor: await buyCredits(tutor, token, connection), student: await buyCredits(student, token, connection) }
 
-  // 5. Profiles. The tutor keeps four credits for its coach profile.
+  // 5. Profiles: credits into the Profiles folder, where the app keeps the stamp, and into the
+  // profile's folder, then the profile. The tutor keeps three credits for its coach profile.
   const profiles: { [role: string]: unknown } = {}
-  for (const [p, n] of [[tutor, CREDITS - 4], [student, CREDITS]] as const) {
-    p.signer = new Signer({ seed: p.seed, hosts: [s.host], appUrl: APP, payWith })
-    p.signer.keep(p.stamp!, VERIFIER_NAME)
+  for (const [p, n] of [[tutor, CREDITS - 5], [student, CREDITS - 2]] as const) {
+    p.app = new App({ seed: p.seed, hosts: [s.host] })
+    const folder = (await profilesKey(p.seed)).address
+    await spend(p, folder, 2)
+    await p.app.keep(p.stamp!, VERIFIER_NAME)
     const spent = await spend(p, p.address, n)
     const made = await profile(p, p.label)
-    profiles[p.role] = { profile: made.address, tag: made.tag, spent, stampProof: 'checks' }
-    say(`${p.role}: its profile on the host, ${made.address}, with a stamp proof and pay { solana, evm }`)
+    profiles[p.role] = { profile: made, profilesFolder: folder, spent, verification: 'checks' }
+    say(`${p.role}: its profile on the host, ${made}, with a verification and pay { solana, evm }, listed in its Profiles folder`)
   }
   steps.profiles = profiles
 
-  // 6. Logins: what each person lets their AI do. The tutor's AI reads the tutor's inbox; the
-  // student's may not read, so its one read waits for the student's yes.
-  steps.logins = { tutor: await logInAs(tutor, { can: ['read', 'write', 'pay'], limit: LIMIT }), student: await logInAs(student, { can: ['write', 'pay'], limit: LIMIT }) }
+  // 6. Logins: each AI acts in its person's profile, with every switch.
+  steps.logins = { tutor: await logInAs(tutor), student: await logInAs(student) }
 
   // 7. mcp: every call through the AI's own client.
   const [market, tutorRole] = tutor.label.split('/') as [string, string]
-  const read = await tutor.ai!.call('market', { market })
+  const read = await tutor.ai!.call('markets', { name: market })
   assert.ok(read.kinds.includes('offer') && read.market.offer.price, 'the tutor’s AI reads what an offer holds')
   const offer = {
     description: 'Maths for secondary school, one hour online. A test offer, posted by an AI through mcp by e2e.',
     price: { amount: (PRICE / DOLLAR).toString(), currency: 'USD', per: 'hour' },
-    payment: ['direct', SCHEDULE],
+    payment: ['direct'],
     subjects: ['maths'],
     levels: ['secondary'],
     place: { online: true },
   }
-  assert.deepEqual(await tutor.ai!.done('write', { label: tutor.label, path: 'offer/maths', body: offer }), { status: 'done' })
+  assert.equal((await tutor.ai!.call('write', { label: tutor.label, path: 'offer/maths', body: offer })).written, 'offer/maths')
   const offerAddress = `${tutor.address}/offer/maths`
-  // A record is in a reader's view only when the profile's main key signed it.
-  assert.equal((await readProfile([s.host], tutor.address, Date.now())).current.get('offer/maths')?.record.body?.description, offer.description, 'on the host, signed by the tutor’s main key')
+  const onHost = (await readFolder([s.host], tutor.address, Date.now())).current.get('offer/maths')?.entry
+  assert.equal(onHost?.body?.description, offer.description, 'on the host, and current')
+  assert.equal(onHost?.key, tutor.key, 'signed by the access key the tutor’s app handed over')
   say(`mcp: the tutor's AI wrote ${offerAddress}`)
 
   const found = await waitFor('the offer in the index’s search, through the mcp', INDEX_WAIT, async () => {
@@ -475,166 +465,110 @@ async function main() {
     return (out.index.answer.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === offerAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
-  await student.ai!.done('write', { label: student.label, to: found.profile, body: { text } })
+  assert.deepEqual(await student.ai!.call('message', { label: student.label, to: found.profile, body: { text } }), { sent: true, hosts: 1 })
   say('mcp: the student’s AI found the offer in the index’s search, and messaged the tutor')
 
-  type Message = { from?: string; fromLabel?: string; time: number; body: { text?: string } }
-  const box = await tutor.ai!.done('read', { label: tutor.label, inbox: true })
-  const asked = (box.messages as Message[]).find((m) => m.body.text === text)
-  assert.ok(asked, 'the tutor’s AI reads the message')
+  type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
+  const asked = await waitFor('the index to show the student, beside its message', INDEX_WAIT, async () => {
+    const m = ((await tutor.ai!.call('read', { label: tutor.label, inbox: true })).messages as Message[]).find((x) => x.body.text === text)
+    return m?.index?.checks?.some((c) => c.key === s.verifier.keys.face) ? m : null
+  })
   assert.equal(asked.from, student.address, 'from the student’s profile')
+  assert.equal(asked.counts, true, 'whose profile entry lists the key that signed it with message')
+  assert.deepEqual([asked.index!.market, asked.index!.role], [cfg.market, 'student'], 'the student’s market and role, as the index shows them')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
-  await tutor.ai!.done('write', { label: tutor.label, to: asked.from, body: { text: replyText } })
-  say('mcp: the tutor’s AI read it, and replied to the address it came from')
+  await tutor.ai!.call('message', { label: tutor.label, to: asked.from, body: { text: replyText } })
+  say('mcp: the tutor’s AI read it, with the student’s market, role and face check as the index shows them, and replied')
+  const replied = ((await student.ai!.call('read', { label: student.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
+  assert.deepEqual([replied?.from, replied?.counts], [tutor.address, true], 'the student’s AI reads the tutor’s reply')
+  steps.mcp = { offer: offerAddress, offerKey: tutor.key, found: found.profile, message: 'sent', inbox: { from: asked.from, counts: asked.counts, market: asked.index!.market, role: asked.index!.role }, reply: 'sent', replyRead: true }
 
-  const outside = await student.ai!.call('read', { label: student.label, inbox: true })
-  assert.equal(outside.status, 'waiting', 'reading is not in what the student let its AI do')
-  assert.match(outside.link, /^https:\/\//)
-  const yes = await student.signer!.approve(outside.link)
-  assert.equal(yes.status, 'done', 'the student said yes')
-  const replied = ((yes as { messages: Message[] }).messages).find((m) => m.body.text === replyText)
-  assert.equal(replied?.from, tutor.address, 'and the tutor’s reply is there')
-  steps.mcp = { offer: offerAddress, found: { profile: found.profile }, message: 'done', reply: 'done', approval: { ask: 'read', why: outside.why, approved: yes.status } }
-  say('mcp: the student’s AI asked to read its inbox, outside its permission; it waited for the student’s yes, and the loop gave it')
-
-  // 8. The deal, paid twice, each through the fee payer at cost. The AI's answer says only done: the
-  // payment is the signer's to know, and to name in a review.
+  // 8. The payment, as the student's app makes it: to the pay address the tutor's profile entry
+  // lists, signed by its pay key, a plain transfer from the student's own, through the fee payer at
+  // cost. The AI pays nothing.
   const balance = async (owner: PublicKey) => BigInt((await connection.getTokenAccountBalance(ata(owner))).value.amount)
-  const before = await balance(tutorPay)
-  const pay = await student.ai!.done('pay', { label: student.label, to: offerAddress, amount: (PRICE / DOLLAR).toString(), currency: 'USD' })
-  assert.deepEqual(pay, { status: 'done' }, 'the AI is told only that it is done')
-  assert.equal(payments.length, 1, 'one payment, made by the student’s signer')
-  const direct = payments[0]!
-  const directEvidence = `${chain}:${direct.signature}`
-  assert.equal(await balance(tutorPay), before + PRICE, 'the tutor got the direct payment')
-  say(`deal: the student's AI paid ${PRICE / DOLLAR} USDC directly, within its limit, ${direct.signature}, charged ${direct.charge} base units`)
+  const theirs = (await profileEntry(found.profile))!
+  assert.ok(checkPay(theirs, found.profile).includes('solana'), 'its Solana pay address, signed by its pay key')
+  const to = new PublicKey(String((theirs.pay as { solana: string }).solana))
+  assert.ok(to.equals(tutorPay))
+  const before = await balance(to)
+  const paid: Paid = await throughFeePayer(connection, s.feePayer, student.payKey, directPaymentIxs({ from: studentPay, to, units: PRICE, token }), token)
+  assert.equal(await balance(to), before + PRICE, 'the tutor got it')
+  const evidence = `${chain}:${paid.signature}`
+  steps.payment = { ...paid, to: to.toBase58(), evidence }
+  say(`the payment: the student's app paid ${PRICE / DOLLAR} USDC to the tutor's pay address, ${paid.signature}, charged ${paid.charge} base units`)
 
-  const sponsor = new PublicKey((await kora<{ signer_address: string }>(s.feePayer, 'getPayerSigner')).signer_address)
-  const schedule = scheduleOf(MARKET.payment[SCHEDULE]!, Math.floor(Date.now() / 1000))
-  const terms = escrow.termsFor({ schedule }, { recipient: tutorPay, amount: PRICE })
-  const keys = escrow.keysFor({ payer: studentPay, sponsor, mint, terms, tokenProgram: token.program, programId: ESCROW })
-  const receipt = async () => escrow.decodeEscrow(new Uint8Array((await connection.getAccountInfo(keys.escrow))!.data))
-  const opened = await throughFeePayer(connection, s.feePayer, student.payKey, escrow.createAndFund({ payer: studentPay, sponsor, token, terms, programId: ESCROW }), token)
-  const open = await receipt()
-  assert.equal(open.status, 'funded', 'opened, paid into and marked')
-  assert.equal(open.version, 4, 'by the escrow’s version 4')
-  assert.deepEqual(open.schedule, terms.schedule, `on the market's ${SCHEDULE} schedule`)
-  const early = await throughFeePayer(connection, s.feePayer, student.payKey, [escrow.payIx({ keys, programId: ESCROW })], token)
-  const ended = await receipt()
-  assert.deepEqual([ended.status, ended.outcome, ended.toRecipient], ['ended', 'pay', PRICE], 'paid out to the tutor, early')
-  assert.ok(ended.payer.equals(studentPay) && ended.recipient.equals(tutorPay), 'between the two pay addresses')
-  assert.ok(ended.sponsor.equals(sponsor), 'its rent back to the fee payer, which fronted it')
-  assert.ok(escrow.escrowAddress(escrow.termsOf(ended), ESCROW).equals(keys.escrow), 'its address is its terms’')
-  const escrowEvidence = `${chain}:${keys.escrow.toBase58()}`
-  steps.deal = {
-    payment: { ...direct, evidence: directEvidence },
-    escrow: { address: keys.escrow.toBase58(), version: open.version, open: opened, pay: early, outcome: ended.outcome, sponsor: sponsor.toBase58(), schedule, evidence: escrowEvidence },
-  }
-  say(`deal: an escrow, version ${open.version}, on the ${SCHEDULE} schedule, ${keys.escrow.toBase58()}, opened and paid in, then paid out early`)
-
-  // 9. Reviews, each naming its evidence. The student's AI names the offer, and the student's signer
-  // fills in the payment it made for it. Evidence is never an AI's to write, and the tutor's signer
-  // paid nothing, so the tutor's AI may not name the escrow: the tutor's app writes that review
-  // itself, naming the escrow, which it saw pay the tutor's pay address.
-  const byStudent = { id: 'maths' }
-  await student.ai!.done('write', { label: student.label, path: `review/${byStudent.id}`, body: { subject: found.profile, score: '10', text: 'Clear and patient. A test review.', offer: offerAddress } })
-  const studentReview = (await readProfile([s.host], student.address, Date.now())).current.get(`review/${byStudent.id}`)?.record.body
-  assert.equal(studentReview?.evidence, directEvidence, 'its evidence, filled in by the student’s signer: the direct payment')
-  const tutorReview = { subject: asked.from!, score: '9', text: 'On time, paid at once. A test review.', evidence: escrowEvidence }
-  const named = await tutor.ai!.call('write', { label: tutor.label, path: 'review/escrow', body: tutorReview })
-  assert.equal(named.status, 'refused', 'the tutor’s AI may not name the escrow')
-  assert.match(named.why, /evidence is the person's app's to fill/)
-  const tutorMain = await mainKey(tutor.seed, tutor.label)
-  const tutorView = await readProfile([s.host], tutor.address, Date.now(), { post: true })
-  const tutorReviewId = hex.encode(crypto.getRandomValues(new Uint8Array(8)))
-  const [took] = await publish([s.host], [ownerRecord(tutorMain, `review/${tutorReviewId}`, tutorReview, nextTime(Date.now(), tutorView, `review/${tutorReviewId}`))])
-  assert.ok(took!.results[0]?.ok, `the host takes the tutor’s review: ${JSON.stringify(took)}`)
-  steps.reviews = { student: { id: byStudent.id, evidence: directEvidence, postedBy: 'ai' }, tutor: { id: tutorReviewId, evidence: escrowEvidence, postedBy: 'app' } }
-  say('two reviews: the student’s AI named the offer and its signer the direct payment; the tutor’s AI was refused the escrow, and the tutor’s app named it')
+  // 9. The review, written by the student's AI, naming the offer and that payment as evidence.
+  const review = { subject: found.profile, score: '10', text: 'Clear and patient. A test review.', offer: offerAddress, evidence }
+  assert.equal((await student.ai!.call('write', { label: student.label, path: 'review/maths', body: review })).written, 'review/maths')
+  const reviewed = (await readFolder([s.host], student.address, Date.now())).current.get('review/maths')?.entry
+  assert.deepEqual([reviewed?.body?.evidence, reviewed?.key], [evidence, student.key], 'on the host, naming the payment, signed by the student’s access key')
+  steps.review = { id: 'maths', evidence, writtenBy: 'ai', key: student.key }
+  say('the review: the student’s AI named the offer and the payment')
 
   // 10. The loop index counts it all. What each profile shows is what the index's own ranking makes
-  // of these two reviews, with its own numbers: each profile's face check counted, each review a
-  // rating backed by a payment and its writer's word about the other, a vouch; a rating to one
-  // decimal, trust and uniqueness from 0 to 100, as the index shows them.
+  // of this one review, with its own numbers: each profile's face check counted, the review a rating
+  // backed by a payment and its writer's word about the tutor, a vouch; the student, whom no one
+  // rated, a newcomer.
   const index = s.index
   const profilePage = (address: string) => json(`${index.url}/profiles/${address}.json`)
   const face = uniqueness([FACE_CONFIDENCE])
   const ranked = rank(
     [{ address: tutor.address, uniqueness: face }, { address: student.address, uniqueness: face }],
-    [
-      { writer: student.address, subject: tutor.address, score: 10, evidence: SCORING.evidence.payment! },
-      { writer: tutor.address, subject: student.address, score: 9, evidence: SCORING.evidence.escrow! },
-    ],
-    [
-      { writer: student.address, subject: tutor.address, kind: 'rating', time: 0, address: `${student.address}/review/${byStudent.id}` },
-      { writer: tutor.address, subject: student.address, kind: 'rating', time: 0, address: `${tutor.address}/review/${tutorReviewId}` },
-    ],
+    [{ writer: student.address, subject: tutor.address, score: 10, evidence: SCORING.evidence.payment! }],
+    [{ writer: student.address, subject: tutor.address, kind: 'rating', time: 0, address: `${student.address}/review/maths` }],
     SCORING,
   )
   const want = (address: string) => ({
-    ratings: { value: tenth(ranked.ratings.get(address)!.value), count: 1 },
+    ratings: { value: tenth(ranked.ratings.get(address)!.value), count: ranked.ratings.get(address)!.count },
     trust: hundredth(ranked.trust.get(address)!),
     uniqueness: hundredth(face),
     pickiness: pickinessWord(ranked.pickiness.get(address)!, SCORING),
   })
-  type Shown = { ratings: { value: number; count: number }; trust: number; uniqueness: number; pickiness: string; statement: string; signature: string }
+  type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: string; statement: string; signature: string }
   const shownOf = (v: Shown) => ({ ratings: v.ratings, trust: v.trust, uniqueness: v.uniqueness, pickiness: v.pickiness })
-  const describe = (w: { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: string }) => `rated ${w.ratings.value} by ${w.ratings.count}, trust ${w.trust}, uniqueness ${w.uniqueness}, pickiness ${w.pickiness}`
-  say(`the index: waiting for both profiles, the offer, both reviews with their payments, the tutor ${describe(want(tutor.address))}, the student ${describe(want(student.address))}, and the deal`)
+  const describe = (w: ReturnType<typeof shownOf>) => `rated ${w.ratings.value} by ${w.ratings.count}, trust ${w.trust}, uniqueness ${w.uniqueness}, pickiness ${w.pickiness}`
+  say(`the index: waiting for both profiles, the offer, the review with its payment, the tutor ${describe(want(tutor.address))}, the student ${describe(want(student.address))}`)
   const shown = await waitFor('the index to show it all', INDEX_WAIT, async () => {
     const [t, st] = await Promise.all([profilePage(tutor.address), profilePage(student.address)])
     if (t.status !== 200 || st.status !== 200) return null
     for (const [v, w] of [[t.body, want(tutor.address)], [st.body, want(student.address)]] as const) {
       if (!v.checks.some((c: { key: string }) => c.key === s.verifier.keys.face)) return null
       if (JSON.stringify(shownOf(v)) !== JSON.stringify(w)) return null
-      if (!v.reviews.received.every((r: { counted: boolean; evidence: string }) => r.counted && r.evidence === 'with')) return null
     }
+    const got = t.body.reviews.received.find((r: { address: string }) => r.address === `${student.address}/review/maths`)
+    if (!got?.counted || got.evidence !== 'with') return null
     if (!t.body.posts.some((p: { address: string; listed: boolean }) => p.address === offerAddress && p.listed)) return null
-    const d = await json(`${index.url}/deals/${keys.escrow.toBase58()}.json`)
-    if (d.status !== 200 || d.body.receipt?.outcome !== 'pay' || d.body.reviews.length !== 1 || !d.body.reviews[0].counted) return null
-    return { tutor: t.body as Shown, student: st.body as Shown, deal: d.body }
+    return { tutor: t.body as Shown, student: st.body as Shown, review: got as { evidence: string } }
   })
   for (const v of [shown.tutor, shown.student]) {
     const signature = unpackSignature(b64u.decode(v.signature))
     assert.ok(signature && checkBytes(index.address, new TextEncoder().encode(v.statement), signature), 'what each profile shows, signed by the index')
   }
   assert.equal(JSON.stringify(shown).includes(text) || JSON.stringify(shown).includes(replyText), false, 'no message is anywhere in the index')
-  const rated = (v: Shown, address: string) => ({
-    url: `${index.url}/profiles/${address}`,
-    rating: v.ratings.value,
-    count: v.ratings.count,
-    trust: v.trust,
-    uniqueness: v.uniqueness,
-    pickiness: v.pickiness,
-    statement: v.statement,
-  })
-  steps.index = {
-    tutor: rated(shown.tutor, tutor.address),
-    student: rated(shown.student, student.address),
-    deal: { url: `${index.url}/deals/${keys.escrow.toBase58()}`, outcome: shown.deal.receipt.outcome, amount: shown.deal.receipt.amount, reviews: shown.deal.reviews.length },
-  }
-  say(`the index counts it all: the tutor ${describe(shownOf(shown.tutor))}, the student ${describe(shownOf(shown.student))}, each from one review with a payment, signed; the deal paid`)
+  const rated = (v: Shown, address: string) => ({ url: `${index.url}/profiles/${address}`, rating: v.ratings.value, count: v.ratings.count, trust: v.trust, uniqueness: v.uniqueness, pickiness: v.pickiness, statement: v.statement })
+  steps.index = { tutor: rated(shown.tutor, tutor.address), student: rated(shown.student, student.address), review: { evidence: shown.review.evidence } }
+  say(`the index counts it all: the tutor ${describe(shownOf(shown.tutor))}, the student ${describe(shownOf(shown.student))}, signed; the review with its payment`)
 
   // 11. The trust carried to the coach profile, proven on the device. The tutor's leaf holds its
-  // trust, with a count of 1: the index's tree, as its README says.
-  const tag = hex.encode(toBytes32(tagOf(verifierScalarOf(tutor.scalar, VERIFIER_NAME), tutor.label)))
+  // trust, by its profile: the index's tree, as its README says.
   const tree = await waitFor('the tutor’s leaf in the index’s tree', INDEX_WAIT, async () => {
     const [t, l] = await Promise.all([json(`${index.url}/v1/reputation`), json(`${index.url}/v1/reputation/leaves`)])
     if (t.status !== 200 || l.status !== 200 || t.body.root !== l.body.root) return null
-    const mine = l.body.leaves.find((x: { tag: string }) => x.tag === tag)
-    return mine?.score === shown.tutor.trust && mine.count === 1 ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { tag: string; scope: string; score: number; count: number }[] } : null
+    const mine = l.body.leaves.find((x: { profile: string }) => x.profile === tutor.address)
+    return mine?.score === shown.tutor.trust ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { profile: string; score: number }[] } : null
   })
-  const leaves = tree.leaves.map((l) => ({ tag: BigInt(`0x${l.tag}`), scope: BigInt(`0x${l.scope}`), score: BigInt(l.score), count: BigInt(l.count) }))
+  const leaves = tree.leaves.map((l) => ({ profile: pointOf(l.profile), score: BigInt(l.score) }))
   const root = buildTree(leaves).root
   const rootSignature = b64u.decode(tree.served.signature)
   assert.equal(hex.encode(toBytes32(root)), tree.served.root, 'the leaves served make the root served')
   assert.ok(checkBytes(index.address, signedBytes(root, tree.served.time), unpackSignature(rootSignature)!), 'signed by the index')
-  const carried = await proveReputation({ seedScalar: tutor.scalar, sources: [{ label: tutor.label, verifierName: VERIFIER_NAME }], leaves, profileLabel: COACH, artifacts: REPUTATION_FILES })
+  const carried = await proveReputation({ seedScalar: tutor.scalar, labels: [tutor.label], leaves, profileLabel: COACH, artifacts: REPUTATION_FILES })
   assert.equal(carried.address, coach.address, 'proven onto the coach profile')
   assert.equal(Number(carried.score), shown.tutor.trust, 'carrying the tutor’s trust')
   assert.ok(await checkReputation({ proof: carried.proof, root, score: carried.score, profile: coach.address, index: index.address, time: tree.served.time, signature: rootSignature }), 'it checks')
   const reputation = { circuit: 'reputation', index: tree.served.index, root: tree.served.root, time: tree.served.time, signature: tree.served.signature, score: Number(carried.score), proof: b64u.encode(reputationBytes(carried.proof)) }
-  await spend(tutor, coach.address, 4)
+  await spend(tutor, coach.address, 3)
   await profile(tutor, COACH, [reputation])
   say(`tutor: its trust, ${carried.score}, proven onto ${coach.address}`)
   const proofShown = await waitFor('the index to show the proof on the coach profile', INDEX_WAIT, async () => {
@@ -642,15 +576,38 @@ async function main() {
     const x = v.status === 200 ? v.body.proofs?.find((p: { circuit: string }) => p.circuit === 'reputation') : null
     return x?.result === 'shown' && x.trust === shown.tutor.trust ? x : null
   })
-  steps.reputation = { profile: coach.address, url: `${index.url}/profiles/${coach.address}`, tag, root: tree.served.root, time: tree.served.time, leaves: leaves.length, score: Number(carried.score), result: proofShown.result }
+  steps.reputation = { profile: coach.address, url: `${index.url}/profiles/${coach.address}`, root: tree.served.root, time: tree.served.time, leaves: leaves.length, score: Number(carried.score), result: proofShown.result }
   say('the index shows the carried trust on the coach profile')
 
-  // 12. No answer either AI received holds one of its own person's addresses: each profile's, the
-  // coach's included, and each pay address. An AI acting for one person reads the
-  // other's addresses, as it must to message them and review them.
+  // 12. The tutor's app takes the access key out of the profile entry. The host refuses the AI's
+  // next write, and the offer the key wrote counts for nothing: the newest entry that still counts
+  // at its path is current, and there is none.
+  await tutor.app!.removeKey(tutor.label, tutor.key!)
+  assert.deepEqual(await tutor.app!.keys(tutor.label), [], 'no access key listed')
+  const refused = await tutor.ai!.call('write', { label: tutor.label, path: 'offer/physics', body: { ...offer, description: 'Physics. A test offer after the key was removed.' } }).then(
+    () => assert.fail('the host took a write by a removed key'),
+    (err: Error) => err.message,
+  )
+  assert.match(refused, /no host took it: .*\(unlisted: /, 'refused by the host, as unlisted')
+  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('offer/maths'), undefined, 'the offer it wrote counts for nothing')
+  steps.removed = { key: tutor.key, refused, offer: 'gone' }
+  say(`removed: the tutor's app took its AI's key out; the host refused its next write (${refused})`)
+
+  // 13. A new device: the tutor's seed alone gives its Profiles folder, its two profiles and its stamp.
+  const device = await App.find(tutor.seed, [s.host])
+  assert.deepEqual(device.labels, [COACH, tutor.label].sort(), 'both its profiles')
+  for (const label of device.labels) assert.ok(await profileEntry((await mainKey(tutor.seed, label)).address), `${label}'s folder, on the host`)
+  assert.equal(device.stamps.length, 1)
+  assert.equal(stampFromJson(JSON.parse(device.stamps[0]!)).signature.S, tutor.stamp!.signature.S, 'its stamp, the one signed')
+  steps.device = { labels: device.labels, stamps: device.stamps.length }
+  say(`a new device found ${device.labels.join(' and ')}, and the stamp, from the tutor's seed alone`)
+
+  // 14. No answer either AI received holds one of its own person's addresses: each profile's, the
+  // coach's included, each pay address, and the Profiles folder's. An AI acting for one person reads
+  // the other's addresses, as it must to message and review them.
   const addresses: { [role: string]: unknown } = {}
-  for (const p of people) {
-    const own = (await p.signer!.addresses()).map((a) => a.toLowerCase())
+  for (const [p, labels] of [[tutor, [tutor.label, COACH]], [student, [student.label]]] as const) {
+    const own = (await addressesOf(p, [...labels])).map((a) => a.toLowerCase())
     const answers = p.ai!.answers.map((a) => a.toLowerCase())
     const held = own.filter((a) => answers.some((answer) => answer.includes(a)))
     assert.deepEqual(held, [], `an answer ${p.role}'s AI got holds one of ${p.role}'s own addresses`)
@@ -659,9 +616,14 @@ async function main() {
   steps.addresses = addresses
   say(`no answer holds the person's own addresses: ${tutor.ai!.answers.length} answers to the tutor's AI, ${student.ai!.answers.length} to the student's`)
 
-  // 13. Balances.
+  // 15. Balances.
   const left = async (folder: string) => (await json(`${s.host}/credits/balance/${folder}`)).body.credits as number
-  steps.balances = { tutor: await left(tutor.address), student: await left(student.address), coach: await left(coach.address) }
+  steps.balances = {
+    tutor: await left(tutor.address),
+    student: await left(student.address),
+    coach: await left(coach.address),
+    profilesFolders: { tutor: await left((await profilesKey(tutor.seed)).address), student: await left((await profilesKey(student.seed)).address) },
+  }
 }
 
 try {
@@ -671,10 +633,7 @@ try {
   record.error = redact((err as Error).stack ?? String(err))
   console.error(record.error)
 } finally {
-  for (const p of people) {
-    await p.ai?.close().catch(() => {})
-    p.signer?.close()
-  }
+  for (const p of people) await p.ai?.close().catch(() => {})
   await services?.stop().catch((err) => console.error(redact(String(err))))
   page?.close()
   if (sweepBack) {

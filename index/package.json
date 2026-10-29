@@ -2,7 +2,7 @@
   "name": "@forest/index",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's index: reads the hosts it lists, keeps the profiles whose stamp proof checks for a verifier key it lists, ranks them by one ranking, and serves what it finds as JSON and as pages, each page drawn from its JSON. One process over one SQLite file.",
+  "description": "The Forest Foundation's index: reads the hosts it lists, keeps the profiles whose verification checks for a verifier key it lists, ranks them by one ranking, and serves what it finds as JSON and as pages, each page drawn from its JSON. One process over one SQLite file.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -16,10 +16,10 @@
   },
   "dependencies": {
     "@foundationforest/escrow-client": "file:../standard/escrows/solana/client",
+    "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/records": "file:../standard/records",
     "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
-    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
+    "@foundationforest/verification": "file:../standard/proofs/verification/client",
     "@solana/web3.js": "1.99.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"

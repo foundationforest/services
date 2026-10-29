@@ -10,7 +10,7 @@
 
 import { createHash } from 'node:crypto'
 
-import { base58 } from '@foundationforest/records'
+import { base58 } from '@foundationforest/folders'
 
 import type { Ed25519Key } from './seed.ts'
 import { ticket, ticketMessage } from './ticket.ts'

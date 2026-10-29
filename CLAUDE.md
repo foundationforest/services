@@ -5,37 +5,42 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 ## Words
 
-Use these words: seed, seed scalar, main key, profile, profile record, address, label, scope, tag,
-verifier, verified, stamp, stamp number, facts, stamp proof, reputation proof, check, record,
-folder, host, service key, signer, connection, connector, permission, permissions, private,
-envelope, encrypted (an envelope), message, inbox key, inbox, pull, blob, pay address, pay key,
-escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, ticket, review,
-evidence, index, fee payer, app, market, role, ramp. Plain words, no em-dashes.
+Use these words: seed, seed scalar, main key, access key, note, profile, profile entry, entry,
+address, label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation
+proof, check, folder, file, host, service key, connection, connector, private, envelope, encrypted
+(an envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer,
+recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, fee payer, app, market,
+role, ramp. Plain words, no em-dashes.
 
 - A verifier is anyone who signs stamps; a person it signed a stamp to is verified. A stamp is what
-  a verifier signs to a person's seed: their stamp number and its facts. A tag is the number an
-  index's tree knows one profile by, at one verifier: the standard's `keys/`, Tags.
+  a verifier signs to a person's seed: their stamp number and its facts. A verification is what a
+  profile shows: the proof that its seed holds a stamp from that verifier.
 - The verifier has two keys: its face key, which signs the face check's stamps, and its ID key,
   which signs the ID check's.
-- A signer is a device the person owns that holds their seed. An AI app reaches it through its
-  connection, carried by a connector such as mcp; a person or a business, by a message to the
-  person's inbox. The signer acts by the permissions in each of the person's profiles' folders, and
-  asks the person about the rest. No key is ever handed out.
-- A profile record is the record at `profile`, never a card. A pay address is one of a profile's
-  `pay` addresses, `{ solana, evm }`, each from its pay key.
+- An access key is a key a profile hands out, to an AI app, a service or another person: its profile
+  entry lists each one with what it can do (`read`, `read-inbox`, `write`, `message`), and every
+  host and reader checks that. The seed and the main keys stay on the person's devices. A note is
+  an access key's private note, as the standard names it: the entry at `key/<id>`, locked to the
+  main key alone, saying who holds the key, since when, and whatever the app keeps; never anything
+  else.
+- A profile entry is the entry at `profile`, never a card: it holds the folder's hosts, its open key
+  and its access keys. A pay address is one of a profile's `pay` addresses, `{ solana, evm }`, each
+  from its pay key.
 - Check, never verify: a reader checks a proof or a signature. Fee payer, never relayer; main key,
   never profile key; address, never wallet, for a key ("a wallet app" is fine).
-- Never: issuer, note, attributes, sealed, access key, write key, read key, account for a person,
-  card, registry, row, tier, standing, policy. A string baked into a recipe, a circuit or a key's
-  text keeps its bytes even when its words are old (`forest/v1/issuer`, `forest/v1/note`,
-  the circuits' signal names and files, the verifier's `issuer/...` texts): rename the code around
-  it, never the string, and say why in a comment beside it. Another standard's own names stay too
-  (Privacy Pass's `issuer_name`, snarkjs's verifier).
-- encrypted is for an envelope: what is encrypted to an inbox key.
+- Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
+  sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy. A
+  string baked into a recipe, a circuit or a key's text keeps its bytes even when its words are old
+  (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits' signal names and files,
+  the verifier's `issuer/...` texts): rename the code around it, never the string, and say why in a
+  comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's
+  verifier, Kora's and Solana's signers).
+- encrypted is for an envelope: what is locked to a key's open key.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent. The fee
   payer pays the chain's fees, at cost: Kora, configured.
 - Whoever makes a token is "the dollar's maker", never its issuer.
-- A folder is what one main key signs on a host; this repo's folders are directories.
+- A folder is a profile's entries on a host, signed by its main key or an access key its profile
+  entry lists; this repo's folders are directories.
 - The foundation runs every service here, never Soil; the app is the Forest app.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".

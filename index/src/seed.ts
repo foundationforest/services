@@ -15,7 +15,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { hkdf, newSeed, serviceKey } from '@foundationforest/keys'
-import { hex, type Key } from '@foundationforest/records'
+import { hex, type Key } from '@foundationforest/folders'
 
 export const SEED_FILE = 'index-seed.json'
 export const KEY_INFO = 'index/key'

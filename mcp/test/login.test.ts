@@ -1,26 +1,54 @@
-// The login: reading with none; the challenge a call to a tool that goes to the person's app gets;
-// the metadata an AI app discovers; the login end to end through the stand-in connect page, by
-// registration and by a client document, and its end when the person removes the connection; and
-// every way a login is refused: a connection whose key did not sign, a login changed on the way, a
-// person who says no, a code with the wrong verifier or for another client, a token this copy did
-// not give, and a copy with no connect page. A login is signed as the standard's signers/ says:
-// 0xff, then forest/v1/login and a newline, then the request.
+// The login: reading with none; the challenge a call to a tool that acts for the person gets; the
+// metadata an AI app discovers, and the open key the connect page locks the pack to; the login end
+// to end through the stand-in connect page, by registration and by a client document, each login
+// its own access keys, listed and noted in each profile ticked; and every way a login is refused: a
+// pack not locked to this copy, a pack for another login, a pack too long, a login changed on the
+// way, a person who says no, a code with the wrong verifier or for another client, a token this copy
+// did not give, a token from before packs, a token whose pack no longer opens, and a copy with no
+// connect page. Nothing is kept: a token works on another copy with the same two keys, and the data
+// directory holds only them.
 
 import assert from 'node:assert/strict'
+import { createHash, createHmac } from 'node:crypto'
+import { copyFileSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { b64u } from '@foundationforest/records'
-import { newConnection, signLogin } from '@foundationforest/signers'
-import { AiApp, CHOICE, REDIRECT, type World, aiApp, browse, logIn, world } from './setup.ts'
+import { b64u, notePath, readFolder } from '@foundationforest/folders'
+import { lock, lockCount, openLocked } from '@foundationforest/folders/locked'
+import { mainKey, newAccessKey, openingHalf } from '@foundationforest/keys'
+import { MAX_PACK } from '../src/pack.ts'
+import { serve } from '../src/server.ts'
+import { AiApp, CHOICE, REDIRECT, type World, aiApp, browse, clientFetch, logIn, world } from './setup.ts'
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
 const text = (r: unknown) => (r as Result).content[0]!.text
+const OPEN_KEY = /^age1pq1[02-9ac-hj-np-z]{1952}$/
 
 let w: World
 before(async () => {
   w = await world()
-  await w.person.open(w.mcp.origin)
 })
 after(() => w.close())
+
+/** A login request, as /authorize sends it to the connect page, for a client registered by `name`; and its PKCE verifier. */
+async function request(name = 'An AI app'): Promise<{ request: string; clientId: string; verifier: string }> {
+  const reg = (await (await fetch(`${w.mcp.origin}/register`, { method: 'POST', body: JSON.stringify({ client_name: name, redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' }) })).json()) as { client_id: string }
+  const verifier = b64u.encode(crypto.getRandomValues(new Uint8Array(32)))
+  const challenge = b64u.encode(createHash('sha256').update(verifier).digest())
+  const res = await fetch(`${w.mcp.origin}/authorize?${new URLSearchParams({ response_type: 'code', client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256', state: 's' })}`, { redirect: 'manual' })
+  assert.equal(res.status, 302)
+  const to = new URL(res.headers.get('location')!)
+  assert.equal(to.origin + to.pathname, new URL(w.appUrl).origin + '/', 'on to the connect page')
+  assert.equal(to.searchParams.get('connector'), w.mcp.origin)
+  return { request: to.searchParams.get('request')!, clientId: reg.client_id, verifier }
+}
+
+/** What /connected answers for this query: its status and its body or where it sends the browser. */
+async function connected(query: { [name: string]: string }): Promise<{ status: number; text: string; location: string | null }> {
+  const res = await fetch(`${w.mcp.origin}/connected?${new URLSearchParams(query)}`, { redirect: 'manual' })
+  return { status: res.status, text: await res.text(), location: res.headers.get('location') }
+}
 
 describe('discovery', () => {
   test('reading needs no login', async () => {
@@ -31,14 +59,16 @@ describe('discovery', () => {
     await client.close()
   })
 
-  test('a tool that goes to the person’s app, with no token, gets the 401 challenge naming the metadata', async () => {
-    const res = await fetch(w.mcp.origin, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'write', arguments: {} } }),
-    })
-    assert.equal(res.status, 401)
-    assert.equal(res.headers.get('www-authenticate'), `Bearer resource_metadata="${w.mcp.origin}/.well-known/oauth-protected-resource"`)
+  test('a tool that acts for the person, with no token, gets the 401 challenge naming the metadata', async () => {
+    for (const name of ['my_profiles', 'read', 'write', 'message']) {
+      const res = await fetch(w.mcp.origin, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: {} } }),
+      })
+      assert.equal(res.status, 401, name)
+      assert.equal(res.headers.get('www-authenticate'), `Bearer resource_metadata="${w.mcp.origin}/.well-known/oauth-protected-resource"`)
+    }
   })
 
   test('the metadata: this copy is the resource and its own authorization server, with PKCE, CIMD, DCR and iss', async () => {
@@ -51,141 +81,207 @@ describe('discovery', () => {
     assert.equal(server.registration_endpoint, `${w.mcp.origin}/register`)
     assert.equal(server.authorization_response_iss_parameter_supported, true)
   })
+
+  test('its open key, at /open-key, for any page to read; the same after a restart on the same volume', async () => {
+    const res = await fetch(`${w.mcp.origin}/open-key`)
+    assert.equal(res.headers.get('access-control-allow-origin'), '*')
+    const { openKey } = (await res.json()) as { openKey: string }
+    assert.match(openKey, OPEN_KEY)
+    const again = await serve({ dataDir: w.dataDir, read: { index: w.index } }, '127.0.0.1', 0)
+    try {
+      assert.deepEqual(await (await fetch(`${again.url}/open-key`)).json(), { openKey })
+    } finally {
+      await again.close()
+    }
+  })
 })
 
 describe('the login, end to end', () => {
-  test('by registration (DCR): the challenge, the connect page, the person’s app, the code, the token; then the app answers', async () => {
+  test('by registration (DCR): the challenge, the connect page, the pack, the code, the token; then it acts in the profiles ticked', async () => {
+    const before = await w.app.keys('tutoring/tutor')
     const c = await aiApp(w.mcp.origin)
     const back = await logIn(c)
     assert.equal(back.get('iss'), w.mcp.origin, 'the response names this copy, as RFC 9207 asks')
-    assert.ok(!(c.app.clientInformation()!.client_id).startsWith('https://'), 'registered')
-    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
-    assert.notEqual(profiles.isError, true, text(profiles))
-    assert.deepEqual(JSON.parse(text(profiles)), { status: 'done', profiles: [{ label: 'tutoring/tutor', can: [] }, { label: 'tutoring/student', can: [] }] })
+    const mine = (await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result
+    assert.deepEqual(JSON.parse(text(mine)), { profiles: CHOICE !== 'no' ? CHOICE.profiles.map((label) => ({ label, can: ['read-inbox', 'read', 'write', 'message'] })) : [] })
+    // The token carries the pack locked: no label, address or key of the person's is in it.
+    const token = c.app.tokens()!.access_token
+    const plain = Buffer.from(b64u.decode(token.split('.')[0]!)).toString('utf8')
+    for (const secret of ['tutoring/tutor', ...Object.values(w.own)]) assert.equal(plain.includes(secret), false, `the token holds ${secret} only locked`)
+    // One new access key in each profile ticked, with every switch, and none in the third.
+    const after = await w.app.keys('tutoring/tutor')
+    assert.equal(after.length, before.length + 1)
+    assert.deepEqual(after.at(-1)!.can, ['read-inbox', 'read', 'write', 'message'])
+    assert.match(after.at(-1)!.open!, OPEN_KEY, 'with its open key, since it may read')
+    assert.deepEqual(await w.app.keys('clothing/seller'), [])
+    // Its note, at its keyed path, locked to the main key alone, naming the AI app and this copy.
+    const main = await mainKey(w.seed, 'tutoring/tutor')
+    const view = await readFolder([w.host], main.address, Date.now())
+    const note = view.current.get(notePath(main.secret, after.at(-1)!.key))!.entry.body as { private: string }
+    assert.equal(lockCount(note), 1, 'locked to one key')
+    const opened = await openLocked(note, (await openingHalf(main.secret)).identity)
+    assert.deepEqual([opened.name, opened.connector], ['An AI app', w.mcp.origin])
     await c.client.close()
   })
 
-  test('by a client document (CIMD): the AI app’s https address is its client id', async () => {
+  test('by a client document (CIMD), each login its own access keys', async () => {
+    const before = (await w.app.keys('tutoring/student')).length
     const c = await aiApp(w.mcp.origin, new AiApp('cimd'))
     await logIn(c)
-    assert.equal(c.app.clientInformation()!.client_id, 'https://ai-app.example/client.json')
-    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
-    assert.equal(JSON.parse(text(profiles)).status, 'done')
+    assert.ok(c.app.authorization!.searchParams.get('client_id')!.startsWith('https://'))
+    assert.equal((await w.app.keys('tutoring/student')).length, before + 1)
+    assert.equal(((await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result).isError, undefined)
     await c.client.close()
   })
 
-  test('each login is its own connection, saved in a permission on each profile picked, with the AI app’s name', async () => {
-    const entries = (await w.person.permissions('tutoring/tutor')) as Array<{ who: { connector: string; connection: string; name: string } }>
-    assert.ok(entries.length >= 2)
-    for (const e of entries) {
-      assert.equal(e.who.connector, w.mcp.origin)
-      assert.equal(e.who.name, 'An AI app')
-      assert.match(e.who.connection, /^[A-Za-z0-9_-]{43}$/)
+  test('the person chooses fewer switches, and which profiles', async () => {
+    w.choose({ profiles: ['clothing/seller'], can: ['write'] })
+    try {
+      const c = await aiApp(w.mcp.origin)
+      await logIn(c)
+      assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [{ label: 'clothing/seller', can: ['write'] }] })
+      const [listed] = await w.app.keys('clothing/seller')
+      assert.deepEqual(listed!.can, ['write'])
+      assert.equal(listed!.open, undefined, 'a key that may not read gives no open key')
+      await c.client.close()
+    } finally {
+      w.choose(CHOICE)
     }
-    assert.equal(new Set(entries.map((e) => e.who.connection)).size, entries.length)
-  })
-
-  test('a login ends when the person removes its connection’s permissions, in their app', async () => {
-    const connections = async () => (await w.person.permissions('tutoring/tutor')).map((e) => (e.who as { connection: string }).connection)
-    const before = await connections()
-    const c = await aiApp(w.mcp.origin)
-    await logIn(c)
-    const connection = (await connections()).find((x) => !before.includes(x))!
-    await w.person.disconnect(connection)
-    for (const label of ['tutoring/tutor', 'tutoring/student']) {
-      assert.ok(!(await w.person.permissions(label)).some((e) => (e.who as { connection: string }).connection === connection), `gone from ${label}'s permissions`)
-    }
-    const profiles = (await c.client.callTool({ name: 'read', arguments: {} })) as Result
-    assert.deepEqual(JSON.parse(text(profiles)), { status: 'refused', why: 'this connection was removed' })
-    await c.client.close()
   })
 })
-
-/** A login request, as /authorize writes it for the connect page, for a fresh registered AI app. */
-async function request(): Promise<string> {
-  const reg = (await (await fetch(`${w.mcp.origin}/register`, { method: 'POST', body: JSON.stringify({ redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none', client_name: 'An AI app' }) })).json()) as { client_id: string }
-  const q = new URLSearchParams({ response_type: 'code', client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', code_challenge_method: 'S256', state: 's1' })
-  const res = await fetch(`${w.mcp.origin}/authorize?${q}`, { redirect: 'manual' })
-  assert.equal(res.status, 302)
-  const to = new URL(res.headers.get('location')!)
-  assert.equal(to.searchParams.get('connector'), w.mcp.origin)
-  return to.searchParams.get('request')!
-}
 
 describe('refused', () => {
-  test('a login signed by a key that is not the connection’s gives no code', async () => {
-    const req = await request()
-    const theirs = newConnection().connection
-    const q = new URLSearchParams({ request: req, connection: theirs, sig: signLogin(newConnection().key, req) })
-    const res = await fetch(`${w.mcp.origin}/connected?${q}`, { redirect: 'manual' })
-    assert.equal(res.status, 400)
-    assert.equal(res.headers.get('location'), null, 'no code goes anywhere')
-    assert.match(await res.text(), /The connection's key did not sign this login/)
+  test('a pack locked to a key that is not this copy’s', async () => {
+    const { request: r } = await request()
+    const other = await newAccessKey()
+    const pack = (await lock({ request: createHash('sha256').update(r).digest('hex'), profiles: [] }, [other.openKey])).private
+    const got = await connected({ request: r, pack })
+    assert.equal(got.status, 400)
+    assert.match(got.text, /not locked to this server's open key/)
   })
 
-  test('a login request changed on the way is refused', async () => {
-    const req = await request()
-    const changed = `${b64u.encode(Buffer.from(JSON.stringify({ client: 'x', redirect: 'https://evil.example/', exp: Date.now() + 60_000 })))}.${req.split('.')[1]}`
-    const res = await fetch(`${w.mcp.origin}/connected?${new URLSearchParams({ request: changed, error: 'x' })}`, { redirect: 'manual' })
-    assert.equal(res.status, 400)
-    assert.match(await res.text(), /not made here, or was changed/)
+  test('a pack for another login: seen on its way back, it opens no other', async () => {
+    const first = await request()
+    const back = new URL(await w.app.connect(w.mcp.origin, first.request, CHOICE))
+    const second = await request()
+    const got = await connected({ request: second.request, pack: back.searchParams.get('pack')! })
+    assert.equal(got.status, 400)
+    assert.match(got.text, /for another login/)
+    // And with its own request, it goes through.
+    const ok = await connected({ request: first.request, pack: back.searchParams.get('pack')! })
+    assert.equal(ok.status, 302)
+    assert.ok(new URL(ok.location!).searchParams.get('code'))
   })
 
-  test('an AI app this copy does not know gets a page, never a redirect', async () => {
-    const res = await fetch(`${w.mcp.origin}/authorize?${new URLSearchParams({ response_type: 'code', client_id: 'made-up', redirect_uri: REDIRECT })}`, { redirect: 'manual' })
-    assert.equal(res.status, 400)
-    assert.equal(res.headers.get('location'), null)
+  test('a pack that is not one, or longer than this copy takes', async () => {
+    const { request: r } = await request()
+    const { openKey } = (await (await fetch(`${w.mcp.origin}/open-key`)).json()) as { openKey: string }
+    const hash = createHash('sha256').update(r).digest('hex')
+    const odd = (await lock({ request: hash, profiles: [{ label: 'tutoring/tutor' }] }, [openKey])).private
+    assert.match((await connected({ request: r, pack: odd })).text, /not a pack: each profile is \{ label, address, hosts, key, can \}/)
+    const none = (await lock({ request: hash, profiles: [] }, [openKey])).private
+    assert.match((await connected({ request: r, pack: none })).text, /one profile or more/)
+    assert.match((await connected({ request: r, pack: 'A'.repeat(MAX_PACK + 1) })).text, new RegExp(`at most ${MAX_PACK} characters`))
   })
 
-  test('a person who says no sends the AI app access_denied, with its state, and no code', async () => {
-    const sent = await browse(await w.person.connect(w.mcp.origin, await request(), 'no'))
-    assert.equal(sent.get('error'), 'access_denied')
-    assert.equal(sent.get('state'), 's1')
-    assert.equal(sent.get('code'), null)
+  test('a login changed on the way, a person who says no', async () => {
+    const { request: r } = await request()
+    const changed = connected({ request: r.replace(/^./, (c) => (c === 'e' ? 'f' : 'e')), pack: 'x' })
+    assert.match((await changed).text, /not made here, or was changed/)
+    const no = await connected({ request: r, error: 'access_denied' })
+    assert.equal(no.status, 302)
+    const q = new URL(no.location!).searchParams
+    assert.deepEqual([q.get('error'), q.get('state'), q.get('iss')], ['access_denied', 's', w.mcp.origin])
   })
 
-  test('a code with the wrong verifier, or for another client, gives no token', async () => {
-    const req = await request()
-    const back = await browse(await w.person.connect(w.mcp.origin, req, CHOICE))
-    const code = back.get('code')!
-    const client = JSON.parse(Buffer.from(b64u.decode(req.split('.')[0]!)).toString()).client as string
-    const token = (form: { [key: string]: string }) => fetch(`${w.mcp.origin}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) })
-    const wrong = await token({ grant_type: 'authorization_code', code, client_id: client, redirect_uri: REDIRECT, code_verifier: 'not-the-verifier-not-the-verifier-not-the-verifier' })
+  test('a code with the wrong verifier, or for another client', async () => {
+    const first = await request()
+    const ok = await connected({ request: first.request, pack: new URL(await w.app.connect(w.mcp.origin, first.request, CHOICE)).searchParams.get('pack')! })
+    const code = new URL(ok.location!).searchParams.get('code')!
+    const token = (form: { [name: string]: string }) => fetch(`${w.mcp.origin}/token`, { method: 'POST', body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: REDIRECT, ...form }) })
+    const wrong = await token({ client_id: first.clientId, code_verifier: 'x'.repeat(43) })
     assert.equal(wrong.status, 400)
-    assert.equal(((await wrong.json()) as { error: string }).error, 'invalid_grant')
-    const other = await token({ grant_type: 'authorization_code', code, client_id: 'someone-else', redirect_uri: REDIRECT, code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk' })
-    assert.equal(other.status, 400)
-    // The verifier RFC 7636 pairs with the challenge above: the right one gives a token.
-    const right = await token({ grant_type: 'authorization_code', code, client_id: client, redirect_uri: REDIRECT, code_verifier: 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk' })
-    assert.equal(right.status, 200, await right.clone().text())
-    const got = (await right.json()) as { access_token: string; token_type: string; expires_in?: number }
-    assert.equal(got.token_type, 'Bearer')
-    assert.equal(got.expires_in, undefined, 'a login does not expire')
-    assert.deepEqual(Object.keys(JSON.parse(Buffer.from(b64u.decode(got.access_token.split('.')[0]!)).toString())).sort(), ['aud', 'client', 'connection'], 'the token names the connection, the client and this copy, and no expiry')
+    assert.match(JSON.stringify(await wrong.json()), /code_verifier does not match/)
+    const other = await request('Another AI app')
+    const theirs = await token({ client_id: other.clientId, code_verifier: first.verifier })
+    assert.match(JSON.stringify(await theirs.json()), /given to another client/)
+    const right = await token({ client_id: first.clientId, code_verifier: first.verifier })
+    assert.equal(right.status, 200)
   })
 
-  test('a token this copy did not give gets the challenge again, on any request', async () => {
-    const res = await fetch(w.mcp.origin, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: 'Bearer made.up' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-    })
-    assert.equal(res.status, 401)
-    assert.match(res.headers.get('www-authenticate')!, /error="invalid_token"/)
+  test('a token this copy did not give, and one from before packs, on any request', async () => {
+    const call = (token: string) =>
+      fetch(w.mcp.origin, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+      })
+    const foreign = await call('e30.bm90LW1pbmU')
+    assert.equal(foreign.status, 401)
+    assert.match(foreign.headers.get('www-authenticate')!, /error="invalid_token"/)
+    // One this copy signed before packs, naming a connection: signed with its own key, it still gives nothing.
+    const key = b64u.decode((JSON.parse(readFileSync(`${w.dataDir}/mcp-key.json`, 'utf8')) as { key: string }).key)
+    const body = b64u.encode(Buffer.from(JSON.stringify({ connection: 'c'.repeat(43), client: 'x', aud: w.mcp.origin })))
+    const old = `${body}.${b64u.encode(createHmac('sha256', key).update(`forest-mcp/v1/access\n${body}`).digest())}`
+    const before = await call(old)
+    assert.equal(before.status, 401)
+    assert.match(before.headers.get('www-authenticate')!, /error="invalid_token"/)
+  })
+
+  test("a token whose pack no longer opens, once this copy's opening half changed: a login to make again", async () => {
+    const c = await aiApp(w.mcp.origin)
+    await logIn(c)
+    const token = c.app.tokens()!.access_token
+    await c.client.close()
+    // The same key that signs logins, a new opening half.
+    const dir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
+    copyFileSync(join(w.dataDir, 'mcp-key.json'), join(dir, 'mcp-key.json'))
+    const other = await serve({ origin: w.mcp.origin, dataDir: dir, read: { index: w.index }, hostFetch: fetch }, '127.0.0.1', 0)
+    try {
+      const res = await fetch(other.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
+      })
+      assert.equal(res.status, 401)
+      assert.match(res.headers.get('www-authenticate')!, /error="invalid_token"/)
+    } finally {
+      await other.close()
+    }
+  })
+
+  test('with no connect page, logins wait and reading works', async () => {
+    const waiting = await world({ noApp: true })
+    try {
+      const reg = (await (await fetch(`${waiting.mcp.origin}/register`, { method: 'POST', body: JSON.stringify({ redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' }) })).json()) as { client_id: string }
+      const res = await fetch(`${waiting.mcp.origin}/authorize?${new URLSearchParams({ response_type: 'code', client_id: reg.client_id, redirect_uri: REDIRECT, code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM', code_challenge_method: 'S256' })}`, { redirect: 'manual' })
+      assert.equal(res.status, 503)
+      assert.match(await res.text(), /wait for the Forest app's connect page/)
+      const { client } = await aiApp(waiting.mcp.origin)
+      assert.notEqual(((await client.callTool({ name: 'markets', arguments: {} })) as Result).isError, true)
+      await client.close()
+    } finally {
+      await waiting.close()
+    }
   })
 })
 
-test('with no connect page, reading works and logins wait', async () => {
-  const waiting = await world({ noApp: true })
+test('nothing kept: a token one copy gave works on another with the same two keys, and the data directory holds only them', async () => {
+  const c = await aiApp(w.mcp.origin)
+  await logIn(c)
+  const token = c.app.tokens()!.access_token
+  await c.client.close()
+  const other = await serve({ origin: w.mcp.origin, dataDir: w.dataDir, read: { index: w.index }, clientFetch, hostFetch: fetch }, '127.0.0.1', 0)
   try {
-    const { client } = await aiApp(waiting.mcp.origin)
-    const read = (await client.callTool({ name: 'market', arguments: { market: 'tutoring' } })) as Result
-    assert.notEqual(read.isError, true, text(read))
-    await client.close()
-    const res = await fetch(`${waiting.mcp.origin}/authorize?client_id=x`)
-    assert.equal(res.status, 503)
-    assert.match(await res.text(), /Logins here wait for the Forest app's connect page/)
+    const res = await fetch(other.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
+    })
+    assert.equal(res.status, 200)
+    assert.match(await res.text(), /tutoring\/tutor/)
   } finally {
-    await waiting.close()
+    await other.close()
   }
+  assert.deepEqual(readdirSync(w.dataDir).sort(), ['mcp-key.json', 'mcp-opening.json'])
 })

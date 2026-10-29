@@ -7,8 +7,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 import { verifierSecret } from '@foundationforest/keys'
-import { fromBytes32 } from '@foundationforest/stamp'
-import { base58, hex } from '@foundationforest/records'
+import { fromBytes32 } from '@foundationforest/verification'
+import { base58, hex } from '@foundationforest/folders'
 
 import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
@@ -109,8 +109,8 @@ export class FakeFaceCheck implements FaceCheck {
   /** How many sessions Didit was asked to open; with `lost`, the next one is opened and its answer lost. */
   created = 0
   lost = false
-  /** Each session opened with a tag, newest last. */
-  readonly tags: { tag: string; sessionId: string; url: string }[] = []
+  /** Each session opened with a mark, newest last. */
+  readonly marks: { mark: string; sessionId: string; url: string }[] = []
   /** The callback each session was opened with, by session id. */
   readonly callbacks = new Map<string, string | undefined>()
   /** Each session deleted, in order; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with the face. */
@@ -119,13 +119,13 @@ export class FakeFaceCheck implements FaceCheck {
   outcome = 'retained_with_user'
   #gate: Promise<void> | undefined
 
-  async createSession({ tag, callback }: { tag?: string; callback?: string } = {}) {
+  async createSession({ mark, callback }: { mark?: string; callback?: string } = {}) {
     if (this.down) throw new Error('down')
     this.created++
     const sessionId = randomUUID()
     const opened = { sessionId, url: `https://verify.example/session/${sessionId}` }
     this.callbacks.set(sessionId, callback)
-    if (tag) this.tags.push({ tag, ...opened })
+    if (mark) this.marks.push({ mark, ...opened })
     if (this.lost) {
       this.lost = false
       throw new Error('opened, and the answer lost')
@@ -133,10 +133,10 @@ export class FakeFaceCheck implements FaceCheck {
     return opened
   }
 
-  async tagged(tag: string) {
+  async marked(mark: string) {
     if (this.down) throw new Error('down')
     // Didit's list no longer shows a deleted session.
-    const found = this.tags.findLast((t) => t.tag === tag && !this.deleted.includes(t.sessionId))
+    const found = this.marks.findLast((t) => t.mark === mark && !this.deleted.includes(t.sessionId))
     return found ? { sessionId: found.sessionId, url: found.url } : null
   }
 

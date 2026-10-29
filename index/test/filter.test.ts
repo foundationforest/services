@@ -1,6 +1,6 @@
-// Which profiles count: a stamp proof that checks, for a key the lists name, under that key's verifier
-// name, for the profile's own market and role, first seen no later than the key's until; and each
-// counted profile's uniqueness, from the keys it counts for.
+// Which profiles count: a verification that checks, for a key the lists name, under that key's
+// verifier name, for the profile's own market and role, first seen no later than the key's until; and
+// each counted profile's uniqueness, from the keys it counts for.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -31,7 +31,7 @@ const keys = () => [
   { key: id.key, verifier: id.name, label: 'ID check', confidence: 0.95 },
 ]
 
-test('a profile counts only with a stamp proof that checks, for a listed key, under its name, for its own market and role', async () => {
+test('a profile counts only with a verification that checks, for a listed key, under its name, for its own market and role', async () => {
   const good = await profile('tutoring/tutor', [listed])
   const changed = await profile('tutoring/tutor', [listed])
   changed.proofs[0]!.proof = changed.proofs[0]!.proof.slice(0, 40) + (changed.proofs[0]!.proof[40] === 'A' ? 'B' : 'A') + changed.proofs[0]!.proof.slice(41)
@@ -74,9 +74,11 @@ test('a profile counts only with a stamp proof that checks, for a listed key, un
   assert.match(await why(noRole), /tutoring\/seller, are not a market and one of its roles/)
   assert.match(await why(afterUntil), /^this index first saw it after 2020-01-01T00:00:00.000Z/)
 
-  // When it first saw each proof is kept, with its tag.
-  const seenRow = i.store.db.prepare('select tag, first from seen where profile = ? and key = ?').get(good.key.address, listed.key)!
-  assert.equal(seenRow.tag, good.proofs[0]!.tag)
-  assert.ok(Number(seenRow.first) <= Date.now())
+  // When it first saw each is kept by the profile's key and the verifier's: one row for the pair,
+  // however many of its verifications show that key.
+  const seenRows = (p: typeof good, key: string) => i.store.db.prepare('select first from seen where profile = ? and key = ?').all(p.key.address, key)
+  assert.ok(Number(seenRows(good, listed.key)[0]!.first) <= Date.now())
+  assert.equal(seenRows(twice, listed.key).length, 1)
+  assert.deepEqual(i.store.db.prepare('select key from seen where profile = ? order by key').all(both.key.address).map((r) => r.key), [listed.key, id.key].sort())
   await i.close()
 })

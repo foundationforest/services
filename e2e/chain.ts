@@ -1,7 +1,7 @@
 // The loop's money on the chain: the key it takes from the phrase, what it funds before two people
 // can act and sweeps back from its own fee payer when the run ends, a plain transfer from a wallet
-// app, a direct payment, a market's schedule as the escrow takes it, and a transaction sent through
-// the fee payer at cost, as a person's app sends one. The dollar is Circle's USDC on the loop's
+// app, a direct payment, and a transaction sent through the fee payer at cost, as a person's app
+// sends one. The dollar is Circle's USDC on the loop's
 // chain, which the phrase's deploy key holds, filled from Circle's faucet; the loop mints nothing.
 // Nothing a profile does goes through the phrase's key: it funds, and takes back.
 
@@ -37,38 +37,19 @@ export function directPaymentIxs(p: { from: PublicKey; to: PublicKey; units: big
   return [escrow.transferIx({ from: ata(p.from), to: ata(p.to), owner: p.from, mint: p.token.mint, amount: p.units, decimals: p.token.decimals, tokenProgram: p.token.program })]
 }
 
-/** A market's schedule, as its file writes it (the markets manual, Payment): windows relative to the deal. */
-export type Template = { windows: { from: string; offset: string; payerShare: number }[]; end: 'pay' | 'refund'; arbiter: boolean }
-
-/**
- * A market's schedule as the escrow takes it, for money that goes in at `paidAt` (unix seconds):
- * each window's `until`, its `offset` in hours or days after or before the payment. The loop's deal
- * names no start or end of its own, so a window from `dealStart` or `dealEnd` is refused, and so is
- * a schedule with an arbiter: the loop names none.
- */
-export function scheduleOf(template: Template, paidAt: number): { windows: { until: number; payerShare: number }[]; end: 'pay' | 'refund' } {
-  if (template.arbiter) throw new Error('this schedule names an arbiter, and the loop names none')
-  const windows = template.windows.map((w) => {
-    const m = /^([+-])([0-9]+)([hd])$/.exec(w.offset)
-    if (w.from !== 'payment' || !m) throw new Error(`a window from ${w.from} at ${w.offset}: the loop takes only windows from payment, offset in hours or days`)
-    return { until: paidAt + (m[1] === '-' ? -1 : 1) * Number(m[2]) * (m[3] === 'h' ? 3600 : 86_400), payerShare: w.payerShare }
-  })
-  return { windows, end: template.end }
-}
-
-/** What the loop gives before anyone acts: 44 dollars in all, and SOL. */
+/** What the loop gives before anyone acts: 5 dollars in all, and SOL. */
 export const FUNDING = {
   /**
-   * To the student's pay address: two payments of 2 and the fee payer's charges, 37.5364. Kora's
-   * mock prices Circle's devnet USDC at ten base units a lamport (fee-payer/README.md), and opening
-   * the escrow costs the fee payer 3,733,640 lamports: 37.3364 of the charges.
+   * To the student's pay address: its payment of 2 and the fee payer's charge for it, 0.10 at
+   * Kora's mock price of ten base units a lamport (fee-payer/README.md), with room for that price
+   * to move.
    */
-  studentDollars: 42n * DOLLAR,
+  studentDollars: 3n * DOLLAR,
   /** To each wallet app's address: ten host credits at a cent each, and more. */
   walletDollars: DOLLAR,
   /** To each wallet app's address: its fees for buying credits. */
   walletLamports: 10_000_000,
-  /** To the loop's own fee payer: the deposits it fronts, about 0.004 SOL an escrow, and fees. */
+  /** To the loop's own fee payer: the fees it pays, swept back when the run ends. */
   feePayerLamports: 50_000_000,
 } as const
 

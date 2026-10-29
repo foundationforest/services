@@ -2,7 +2,7 @@
   "name": "@forest/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "The mcp, the AI's door to Forest: passes on what the index says and reads the markets, and sends what an AI app asks to the person's app over the standard's live link, after a login by the MCP specification's authorization flow; and the foundation's hosted copy (deploy/Dockerfile). It keeps nothing but live sockets. test/signer.ts is a reference signer; smoke.ts checks a copy through the MCP SDK's own client.",
+  "description": "The mcp, the AI's door to Forest: reads the markets and passes on what the index says, and acts in the person's own folders with the access keys their app hands it at login, in a pack locked to its open key that the access token carries; after a login by the MCP specification's authorization flow. It keeps nothing between calls; and the foundation's hosted copy (deploy/Dockerfile). test/app.ts is a reference app's connect step; smoke.ts checks a copy through the MCP SDK's own client.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -15,18 +15,15 @@
     "smoke": "node smoke.ts"
   },
   "dependencies": {
-    "@foundationforest/records": "file:../standard/records",
-    "@foundationforest/signers": "file:../standard/signers",
+    "@foundationforest/folders": "file:../standard/folders",
+    "@foundationforest/keys": "file:../standard/keys",
     "@modelcontextprotocol/sdk": "1.32.1",
-    "ws": "8.21.3"
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
   },
   "devDependencies": {
-    "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
+    "@foundationforest/verification": "file:../standard/proofs/verification/client",
     "@types/node": "22.20.2",
-    "@types/ws": "8.18.1",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1",
     "typescript": "5.9.3"
   }
 }

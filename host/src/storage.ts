@@ -1,18 +1,18 @@
 // The host's storage, all of it in this one module: a SQLite file per folder, one shared SQLite file
-// for what crosses folders, and a blob store with two drivers. It came from the standard's
-// reference host (records/src/storage.ts at 7b1c937), as it was.
+// for what crosses folders, and a file store with two drivers.
 //
-//   <dir>/folders/<address>.sqlite   one folder: its records (current, and replaced within keep
-//                                    days), the messages to its inbox, and the blobs it holds
-//   <dir>/host.sqlite                the log, numbering every record across folders in the order
-//                                    taken, and the blob index: which folders hold which bytes,
-//                                    and which bytes are stored
-//   <dir>/blobs/<sha256>             the bytes, with <sha256>.type beside them (the disk driver);
+//   <dir>/folders/<address>.sqlite   one folder: its entries (current, and the ones that stopped
+//                                    being current or counting, within keep days) and its inbox
+//   <dir>/host.sqlite                the log, numbering every entry across folders in the order
+//                                    taken; which current entries name which files; and which
+//                                    files are stored
+//   <dir>/files/<sha256>             the bytes, with <sha256>.type beside them (the disk driver);
 //                                    or <sha256> in an S3-compatible bucket, typed by content-type
 //
-// host.sqlite holds nothing that exists only there: rebuild(dir) makes it again from the folder
-// files and the blob store. A folder is its file: with the host stopped, deleting the file removes
-// the folder, and the host drops what host.sqlite says of it at its next prune.
+// host.sqlite holds nothing that exists only there but when each stored file stopped being named:
+// rebuild(dir) makes it again from the folder files and the file store. A folder is its file: with
+// the host stopped, deleting the file removes the folder, and the host drops what host.sqlite says
+// of it at its next prune.
 
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
@@ -20,6 +20,7 @@ import { readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
+import { type Body, filesOf } from '@foundationforest/folders'
 import { base58 } from '@scure/base'
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
@@ -39,10 +40,12 @@ export function logLine(text: string): void {
 
 export type Row = { seq: number; text: string; bytes: number }
 export type Stored = { sha256: string; type: string }
-export type Blob = { type: string; bytes: Uint8Array }
+export type FileBytes = { type: string; bytes: Uint8Array }
+/** A folder whose current entries name a file: with the type and size they name it with, and the newest such entry's number. */
+export type Named = { folder: string; type: string; size: number; seq: number }
 
-/** Where blob bytes go: the one setting. */
-export type BlobDriver = { kind: 'disk' } | ({ kind: 's3' } & S3Options)
+/** Where file bytes go: the one setting. */
+export type FileDriver = { kind: 'disk' } | ({ kind: 's3' } & S3Options)
 
 export type S3Options = {
   /** The service's origin, such as `https://s3.example.com`. */
@@ -60,9 +63,9 @@ export type S3Options = {
 }
 
 /** Bytes by SHA-256, each with the type it came in as. */
-export interface BlobStore {
+export interface FileStore {
   put(sha256: string, type: string, bytes: Uint8Array): Promise<void>
-  get(sha256: string): Promise<Blob | undefined>
+  get(sha256: string): Promise<FileBytes | undefined>
   delete(sha256: string): Promise<void>
   /** Every hash held, with its type. */
   list(): AsyncIterable<Stored>
@@ -105,50 +108,29 @@ class Db {
 }
 
 /**
- * The version of the layout FOLDER_SCHEMA makes. A change to that layout raises it, and adds to
- * STEPS what turns a file of the version before into this one.
+ * The version of the layout FOLDER_SCHEMA makes. Versions 1 to 3 were this host's layout before the
+ * standard's folders, with the tables `records`, `messages` and `blobs`; a file in it is refused.
  */
-const VERSION = 3
-
-/**
- * What turns a folder file of each older version into the next. Version 1's blobs said which key
- * put each one; only the main key puts a folder's blobs now, so every blob is the folder's like any
- * other. The standard's host at d1958a4 dropped that column and still wrote version 1, so a version
- * 1 file may have it or not, and the step drops it where it is. Version 2 kept who had written to
- * an inbox that took one message from each sender; no inbox says that now, so the table goes.
- */
-const STEPS: Record<number, (db: DatabaseSync) => void> = {
-  1: (db) => {
-    if (db.prepare(`SELECT 1 FROM pragma_table_info('blobs') WHERE name = 'by'`).get()) db.exec('ALTER TABLE blobs DROP COLUMN by')
-  },
-  2: (db) => db.exec('DROP TABLE once'),
-}
+const VERSION = 4
 
 // A folder file keeps SQLite's default rollback journal, not WAL: no -wal file is left beside it
 // that could come back into a new file after the folder is deleted.
 const FOLDER_SCHEMA = `
-  CREATE TABLE records (
+  CREATE TABLE entries (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,   -- the log's number; AUTOINCREMENT keeps the highest it ever took
     id TEXT NOT NULL UNIQUE,
     text TEXT NOT NULL,
     bytes INTEGER NOT NULL,
     arrived INTEGER NOT NULL,   -- this host's clock
-    older_since INTEGER         -- this host's clock when it stopped being the newest at its path
+    older_since INTEGER         -- this host's clock when it stopped being current at its path, or stopped counting
   );
-  CREATE TABLE messages (
+  CREATE TABLE inbox (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,
     id TEXT NOT NULL UNIQUE,
     text TEXT NOT NULL,
     bytes INTEGER NOT NULL,
     arrived INTEGER NOT NULL   -- this host's clock
   );
-  -- The bytes this folder holds, by hash: put by its main key, and kept until it deletes them.
-  CREATE TABLE blobs (
-    sha256 TEXT PRIMARY KEY,
-    type TEXT NOT NULL,
-    size INTEGER NOT NULL,
-    arrived INTEGER NOT NULL   -- this host's clock
-  ) WITHOUT ROWID;
   PRAGMA user_version = ${VERSION};
 `
 
@@ -161,15 +143,19 @@ const HOST_SCHEMA = `
     arrived INTEGER NOT NULL   -- this host's clock
   );
   CREATE INDEX IF NOT EXISTS log_by_folder ON log (folder);
-  CREATE TABLE IF NOT EXISTS owners (   -- which folders hold which bytes, as their files say
+  CREATE TABLE IF NOT EXISTS names (   -- which files each folder's current entries name, as its file says
     sha256 TEXT NOT NULL,
     folder TEXT NOT NULL,
-    PRIMARY KEY (sha256, folder)
+    type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    seq INTEGER NOT NULL,   -- the newest of those entries
+    PRIMARY KEY (sha256, folder, type, size)
   ) WITHOUT ROWID;
-  CREATE INDEX IF NOT EXISTS owners_by_folder ON owners (folder);
-  CREATE TABLE IF NOT EXISTS blobs (   -- the bytes stored; the store keeps them and their type
+  CREATE INDEX IF NOT EXISTS names_by_folder ON names (folder);
+  CREATE TABLE IF NOT EXISTS files (   -- the bytes stored; the store keeps them and their type
     sha256 TEXT PRIMARY KEY,
-    type TEXT NOT NULL
+    type TEXT NOT NULL,
+    unnamed_since INTEGER   -- this host's clock when no current entry named them any more
   ) WITHOUT ROWID;
 `
 
@@ -225,32 +211,15 @@ const [NEW_LAYOUT, FOLDER_LAYOUT] = ['', FOLDER_SCHEMA].map((schema) => {
 })
 
 /**
- * A folder's file, its tables made the first time it opens. A file of an older version is migrated
- * in one transaction, by each step from its version to this one. A file with no step for its
- * version, a step that fails, or a result in any layout but this host's is refused and left as it
- * was, so a file from a newer host is never changed.
+ * A folder's file, its tables made the first time it opens. A file in any layout but this host's
+ * is refused and left as it was, so a file from another host's version is never changed.
  */
 function openFolder(file: string): Db {
   const folder = new Db(file)
   try {
     const layout = layoutOf(folder.db)
     if (layout === NEW_LAYOUT) folder.db.exec(FOLDER_SCHEMA)
-    else if (layout !== FOLDER_LAYOUT) {
-      const refused = (cause?: unknown) => new Error(`${file} is not a folder file in this host's layout`, { cause })
-      folder.tx(() => {
-        for (let version = versionOf(folder.db); version < VERSION; version++) {
-          const step = STEPS[version]
-          if (step === undefined) throw refused()
-          try {
-            step(folder.db)
-            folder.db.exec(`PRAGMA user_version = ${version + 1}`)
-          } catch (cause) {
-            throw refused(cause)
-          }
-        }
-        if (layoutOf(folder.db) !== FOLDER_LAYOUT) throw refused()
-      })
-    }
+    else if (layout !== FOLDER_LAYOUT) throw new Error(`${file} is not a folder file in this host's layout`)
     return folder
   } catch (err) {
     folder.close()
@@ -267,31 +236,43 @@ function foldersIn(dir: string): string[] {
     .map((f) => f.slice(0, -'.sqlite'.length))
 }
 
+/** What a folder's current entries name: each file, with the newest naming entry's number. The current ones are those not marked older. */
+function namesIn(folder: Db): Array<{ sha256: string; type: string; size: number; seq: number }> {
+  const out = new Map<string, { sha256: string; type: string; size: number; seq: number }>()
+  for (const row of folder.q('SELECT seq, text FROM entries WHERE older_since IS NULL').all() as Array<{ seq: number; text: string }>) {
+    for (const f of filesOf((JSON.parse(row.text) as { body: Body | null }).body)) {
+      const key = `${f.sha256} ${f.type} ${f.size}`
+      if ((out.get(key)?.seq ?? 0) < row.seq) out.set(key, { sha256: f.sha256, type: f.type, size: f.size, seq: row.seq })
+    }
+  }
+  return [...out.values()]
+}
+
 // ------------------------------------------------------------------------------------------
 // Storage
 
 export class Storage {
   readonly dir: string
   private readonly host: Db
-  private readonly blobs: BlobStore
+  private readonly files: FileStore
   private readonly temporary: boolean
   /** Open folder files, least recently used first. */
   private readonly open = new Map<string, Db>()
-  /** One blob operation at a time per hash, so a delete or a prune never deletes bytes a put is adding. */
-  private readonly blobQueue = new Map<string, Promise<unknown>>()
+  /** One file operation at a time per hash, so a prune never deletes bytes a put is adding. */
+  private readonly fileQueue = new Map<string, Promise<unknown>>()
 
   /** `dir` omitted: a fresh temporary directory, removed on close. */
-  constructor(dir: string | undefined, driver: BlobDriver = { kind: 'disk' }) {
+  constructor(dir: string | undefined, driver: FileDriver = { kind: 'disk' }) {
     this.temporary = dir === undefined
     this.dir = dir ?? mkdtempSync(join(tmpdir(), 'forest-host-'))
     try {
       const file = join(this.dir, 'host.sqlite')
-      // Without host.sqlite, new records would take numbers the folders already hold.
+      // Without host.sqlite, new entries would take numbers the folders already hold.
       if (!existsSync(file) && foldersIn(this.dir).length) throw new Error(`${file} is missing: rebuild(dir) makes it again from the folder files`)
       mkdirSync(join(this.dir, 'folders'), { recursive: true })
       this.host = new Db(file)
       this.host.db.exec(HOST_SCHEMA)
-      this.blobs = blobStore(this.dir, driver)
+      this.files = fileStore(this.dir, driver)
     } catch (err) {
       if (this.temporary) rmSync(this.dir, { recursive: true, force: true })
       throw err
@@ -320,8 +301,8 @@ export class Storage {
 
   /**
    * A folder's file for the feed and the prune, which go on without one that cannot be opened (a
-   * layout no step brings here, a broken file): it is logged and left out. A host may withhold a
-   * record, never forge one (the standard's records), so one bad file stops nothing else.
+   * layout not this host's, a broken file): it is logged and left out. A host may withhold an
+   * entry, never forge one (the standard's folders), so one bad file stops nothing else.
    */
   private folderOrSkip(address: string): Db | undefined {
     try {
@@ -345,154 +326,173 @@ export class Storage {
   }
 
   // ----------------------------------------------------------------------------------------
-  // Records
+  // Entries
 
-  hasRecord(folder: string, id: string): boolean {
-    return this.folder(folder)?.q('SELECT 1 FROM records WHERE id = ?').get(id) !== undefined
+  hasEntry(folder: string, id: string): boolean {
+    return this.folder(folder)?.q('SELECT 1 FROM entries WHERE id = ?').get(id) !== undefined
   }
 
-  /** A folder's records in the order taken. */
-  records(folder: string): Array<{ id: string; text: string }> {
-    return (this.folder(folder)?.q('SELECT id, text FROM records ORDER BY seq').all() ?? []) as Array<{ id: string; text: string }>
+  /** A folder's entries in the order taken. */
+  entries(folder: string): Array<{ id: string; text: string }> {
+    return (this.folder(folder)?.q('SELECT id, text FROM entries ORDER BY seq').all() ?? []) as Array<{ id: string; text: string }>
   }
 
-  recordTotals(folder: string): { records: number; bytes: number } {
-    return (this.folder(folder)?.q('SELECT COUNT(*) AS records, COALESCE(SUM(bytes), 0) AS bytes FROM records').get() ?? { records: 0, bytes: 0 }) as { records: number; bytes: number }
+  entryTotals(folder: string): { entries: number; bytes: number } {
+    return (this.folder(folder)?.q('SELECT COUNT(*) AS entries, COALESCE(SUM(bytes), 0) AS bytes FROM entries').get() ?? { entries: 0, bytes: 0 }) as { entries: number; bytes: number }
   }
 
   /**
-   * Store a record, then mark which of the folder's records are current: those in `current`.
-   * What stopped being current gets a date, and goes keep days later. The log takes it first, under
-   * a number from the clock, so a crash in between leaves a number that points to nothing, which
-   * reads skip; never a record the log does not list.
+   * Store an entry, then mark which of the folder's entries are current: those in `current`. What
+   * stopped being current, or counting, gets a date, and goes keep days later; what is current
+   * again loses it. The log takes it first, under a number from the clock, so a crash in between
+   * leaves a number that points to nothing, which reads skip; never an entry the log does not
+   * list. Then which files the folder's current entries name: a crash before that leaves them as
+   * they were, until the folder's next entry or a rebuild.
    */
-  addRecord(address: string, id: string, text: string, now: number, current: Set<string>) {
+  addEntry(address: string, id: string, text: string, now: number, current: Set<string>) {
     const seq = nextNumber(this.host, 'log', now)
     this.host.q('INSERT INTO log (seq, folder, id, arrived) VALUES (?, ?, ?, ?)').run(seq, address, id, now)
     const folder = this.folder(address, true)!
     folder.tx(() => {
-      folder.q('INSERT INTO records (seq, id, text, bytes, arrived) VALUES (?, ?, ?, ?, ?)').run(seq, id, text, utf8(text).length, now)
-      for (const row of folder.q('SELECT id, older_since FROM records').all() as Array<{ id: string; older_since: number | null }>) {
-        if (current.has(row.id) && row.older_since !== null) folder.q('UPDATE records SET older_since = NULL WHERE id = ?').run(row.id)
-        else if (!current.has(row.id) && row.older_since === null) folder.q('UPDATE records SET older_since = ? WHERE id = ?').run(now, row.id)
+      folder.q('INSERT INTO entries (seq, id, text, bytes, arrived) VALUES (?, ?, ?, ?, ?)').run(seq, id, text, utf8(text).length, now)
+      for (const row of folder.q('SELECT id, older_since FROM entries').all() as Array<{ id: string; older_since: number | null }>) {
+        if (current.has(row.id) && row.older_since !== null) folder.q('UPDATE entries SET older_since = NULL WHERE id = ?').run(row.id)
+        else if (!current.has(row.id) && row.older_since === null) folder.q('UPDATE entries SET older_since = ? WHERE id = ?').run(now, row.id)
       }
+    })
+    this.name(address, namesIn(folder), now)
+  }
+
+  /** The files a folder's current entries name, in place of what host.sqlite said of it; each stored file named by none any more is dated. */
+  private name(address: string, names: Array<{ sha256: string; type: string; size: number; seq: number }>, now: number) {
+    this.host.tx(() => {
+      const touched = new Set((this.host.q('SELECT sha256 FROM names WHERE folder = ?').all(address) as Array<{ sha256: string }>).map((r) => r.sha256))
+      this.host.q('DELETE FROM names WHERE folder = ?').run(address)
+      for (const n of names) {
+        this.host.q('INSERT INTO names (sha256, folder, type, size, seq) VALUES (?, ?, ?, ?, ?)').run(n.sha256, address, n.type, n.size, n.seq)
+        touched.add(n.sha256)
+      }
+      for (const sha256 of touched) this.dateFile(sha256, now)
     })
   }
 
+  /** A stored file's date: none while a current entry names it, else when it stopped being named. */
+  private dateFile(sha256: string, now: number) {
+    const named = this.host.q('SELECT 1 FROM names WHERE sha256 = ?').get(sha256) !== undefined
+    if (named) this.host.q('UPDATE files SET unnamed_since = NULL WHERE sha256 = ? AND unnamed_since IS NOT NULL').run(sha256)
+    else this.host.q('UPDATE files SET unnamed_since = ? WHERE sha256 = ? AND unnamed_since IS NULL').run(now, sha256)
+  }
+
   /**
-   * Records after a cursor, in the order taken: one folder's, from its file; or every folder's,
-   * by the log, skipping a number whose folder or record is gone, and a folder whose file cannot be
+   * Entries after a cursor, in the order taken: one folder's, from its file; or every folder's,
+   * by the log, skipping a number whose folder or entry is gone, and a folder whose file cannot be
    * opened, once each.
    */
-  *recordsAfter(after: number, folder?: string): Generator<Row> {
+  *entriesAfter(after: number, folder?: string): Generator<Row> {
     if (folder !== undefined) {
       const db = this.folder(folder)
-      if (db) yield* db.fresh('SELECT seq, text, bytes FROM records WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
+      if (db) yield* db.fresh('SELECT seq, text, bytes FROM entries WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
       return
     }
     const skipped = new Set<string>()
-    for (const entry of this.host.fresh('SELECT seq, folder FROM log WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<{ seq: number; folder: string }>) {
-      if (skipped.has(entry.folder)) continue
-      const db = this.folderOrSkip(entry.folder)
+    for (const line of this.host.fresh('SELECT seq, folder FROM log WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<{ seq: number; folder: string }>) {
+      if (skipped.has(line.folder)) continue
+      const db = this.folderOrSkip(line.folder)
       if (!db) {
-        skipped.add(entry.folder)
+        skipped.add(line.folder)
         continue
       }
-      const row = db.q('SELECT text, bytes FROM records WHERE seq = ?').get(entry.seq) as { text: string; bytes: number } | undefined
-      if (row) yield { seq: entry.seq, ...row }
+      const row = db.q('SELECT text, bytes FROM entries WHERE seq = ?').get(line.seq) as { text: string; bytes: number } | undefined
+      if (row) yield { seq: line.seq, ...row }
     }
   }
 
   count(folder?: string): number {
-    const one = (address: string) => (this.folder(address)?.q('SELECT COUNT(*) AS n FROM records').get() as { n: number } | undefined)?.n ?? 0
+    const one = (address: string) => (this.folder(address)?.q('SELECT COUNT(*) AS n FROM entries').get() as { n: number } | undefined)?.n ?? 0
     return folder === undefined ? this.folders().reduce((n, address) => n + one(address), 0) : one(folder)
   }
 
-  /** Every stored record's and message's text. */
+  /** Every stored entry's and inbox entry's text. */
   dump(): string[] {
-    return this.folders().flatMap((address) => (this.folder(address)!.q('SELECT text FROM records UNION ALL SELECT text FROM messages').all() as Array<{ text: string }>).map((r) => r.text))
+    return this.folders().flatMap((address) => (this.folder(address)!.q('SELECT text FROM entries UNION ALL SELECT text FROM inbox').all() as Array<{ text: string }>).map((r) => r.text))
   }
 
   // ----------------------------------------------------------------------------------------
-  // Messages
+  // The inbox
 
-  hasMessage(folder: string, id: string): boolean {
-    return this.folder(folder)?.q('SELECT 1 FROM messages WHERE id = ?').get(id) !== undefined
+  hasInbox(folder: string, id: string): boolean {
+    return this.folder(folder)?.q('SELECT 1 FROM inbox WHERE id = ?').get(id) !== undefined
   }
 
-  messageTotals(folder: string): { messages: number; bytes: number } {
-    return (this.folder(folder)?.q('SELECT COUNT(*) AS messages, COALESCE(SUM(bytes), 0) AS bytes FROM messages').get() ?? { messages: 0, bytes: 0 }) as { messages: number; bytes: number }
+  inboxTotals(folder: string): { entries: number; bytes: number } {
+    return (this.folder(folder)?.q('SELECT COUNT(*) AS entries, COALESCE(SUM(bytes), 0) AS bytes FROM inbox').get() ?? { entries: 0, bytes: 0 }) as { entries: number; bytes: number }
   }
 
-  /** False when that id is here already. Its number comes from the clock, as a record's does. */
-  addMessage(folder: string, id: string, text: string, now: number): boolean {
+  /** False when that id is here already. Its number comes from the clock, as an entry's does. */
+  addInbox(folder: string, id: string, text: string, now: number): boolean {
     const db = this.folder(folder, true)!
-    return db.q('INSERT OR IGNORE INTO messages (seq, id, text, bytes, arrived) VALUES (?, ?, ?, ?, ?)').run(nextNumber(db, 'messages', now), id, text, utf8(text).length, now).changes > 0
+    return db.q('INSERT OR IGNORE INTO inbox (seq, id, text, bytes, arrived) VALUES (?, ?, ?, ?, ?)').run(nextNumber(db, 'inbox', now), id, text, utf8(text).length, now).changes > 0
   }
 
-  /** A folder's messages after a cursor, in arrival order. */
-  *messagesAfter(folder: string, after: number): Generator<Row> {
+  /** A folder's inbox entries after a cursor, in arrival order. */
+  *inboxAfter(folder: string, after: number): Generator<Row> {
     const db = this.folder(folder)
-    if (db) yield* db.fresh('SELECT seq, text, bytes FROM messages WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
+    if (db) yield* db.fresh('SELECT seq, text, bytes FROM inbox WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
+  }
+
+  /** False when the folder holds no inbox entry with that id. */
+  deleteInbox(folder: string, id: string): boolean {
+    return (this.folder(folder)?.q('DELETE FROM inbox WHERE id = ?').run(id).changes ?? 0) > 0
   }
 
   // ----------------------------------------------------------------------------------------
-  // Blobs
+  // Files
 
-  /** Whether a folder holds these bytes. */
-  holdsBlob(folder: string, sha256: string): boolean {
-    return this.folder(folder)?.q('SELECT 1 FROM blobs WHERE sha256 = ?').get(sha256) !== undefined
+  /** The folders whose current entries name these bytes, the newest naming entry first. */
+  namedBy(sha256: string): Named[] {
+    return this.host.q('SELECT folder, type, size, seq FROM names WHERE sha256 = ? ORDER BY seq DESC').all(sha256) as Named[]
   }
 
-  blobTotals(folder: string): { blobs: number; bytes: number } {
-    return (this.folder(folder)?.q('SELECT COUNT(*) AS blobs, COALESCE(SUM(size), 0) AS bytes FROM blobs').get() ?? { blobs: 0, bytes: 0 }) as { blobs: number; bytes: number }
+  /** Whether these bytes are stored. */
+  holdsFile(sha256: string): boolean {
+    return this.host.q('SELECT 1 FROM files WHERE sha256 = ?').get(sha256) !== undefined
   }
 
-  /**
-   * Put bytes in a folder. The bytes are stored once, whichever folders hold them. host.sqlite's
-   * index first: a crash in between keeps bytes until the next prune puts the index right, and
-   * never deletes bytes a folder holds.
-   */
-  putBlob(folder: string, sha256: string, type: string, size: number, bytes: Uint8Array, now: number): Promise<void> {
-    return this.oneAtATime(sha256, async () => {
-      if (this.host.q('SELECT 1 FROM blobs WHERE sha256 = ?').get(sha256) === undefined) {
-        await this.blobs.put(sha256, type, bytes)
-        this.host.q('INSERT OR IGNORE INTO blobs (sha256, type) VALUES (?, ?)').run(sha256, type)
-      }
-      this.host.q('INSERT OR IGNORE INTO owners (sha256, folder) VALUES (?, ?)').run(sha256, folder)
-      this.folder(folder, true)!.q('INSERT OR IGNORE INTO blobs (sha256, type, size, arrived) VALUES (?, ?, ?, ?)').run(sha256, type, size, now)
-    })
+  /** The stored files a folder's current entries name, and their bytes, as the entries give their sizes. */
+  fileTotals(folder: string): { files: number; bytes: number } {
+    const sql = 'SELECT COUNT(*) AS files, COALESCE(SUM(size), 0) AS bytes FROM (SELECT n.sha256, MAX(n.size) AS size FROM names n JOIN files f ON f.sha256 = n.sha256 WHERE n.folder = ? GROUP BY n.sha256)'
+    return this.host.q(sql).get(folder) as { files: number; bytes: number }
   }
 
   /**
-   * Delete bytes from a folder; once no folder holds them, from the store. The folder's file first,
-   * then the index, then the store: a crash in between leaves bytes the next prune deletes.
+   * Store bytes, once, whichever folders name them. The store first, then host.sqlite: a crash in
+   * between leaves bytes the store holds and host.sqlite does not list, which are never served,
+   * and are stored again by the next put.
    */
-  deleteBlob(folder: string, sha256: string): Promise<'deleted' | 'not here'> {
+  putFile(sha256: string, type: string, bytes: Uint8Array, now: number): Promise<void> {
     return this.oneAtATime(sha256, async () => {
-      if (!this.holdsBlob(folder, sha256)) return 'not here'
-      this.folder(folder)!.q('DELETE FROM blobs WHERE sha256 = ?').run(sha256)
-      this.host.q('DELETE FROM owners WHERE sha256 = ? AND folder = ?').run(sha256, folder)
-      if (this.host.q('SELECT 1 FROM owners WHERE sha256 = ?').get(sha256) !== undefined) return 'deleted'
-      this.host.q('DELETE FROM blobs WHERE sha256 = ?').run(sha256)
-      await this.blobs.delete(sha256)
-      return 'deleted'
+      if (this.holdsFile(sha256)) return
+      await this.files.put(sha256, type, bytes)
+      this.host.q('INSERT OR IGNORE INTO files (sha256, type) VALUES (?, ?)').run(sha256, type)
+      this.dateFile(sha256, now)
     })
   }
 
-  getBlob(sha256: string): Promise<Blob | undefined> {
-    return this.blobs.get(sha256)
+  /** Stored bytes and their type, or undefined: only bytes host.sqlite lists. */
+  async getFile(sha256: string): Promise<FileBytes | undefined> {
+    if (!this.holdsFile(sha256)) return undefined
+    return this.files.get(sha256)
   }
 
   private oneAtATime<T>(sha256: string, run: () => Promise<T>): Promise<T> {
-    const out = (this.blobQueue.get(sha256) ?? Promise.resolve()).then(run, run)
+    const out = (this.fileQueue.get(sha256) ?? Promise.resolve()).then(run, run)
     const settled = out.then(
       () => undefined,
       () => undefined,
     )
-    this.blobQueue.set(sha256, settled)
+    this.fileQueue.set(sha256, settled)
     void settled.then(() => {
-      if (this.blobQueue.get(sha256) === settled) this.blobQueue.delete(sha256)
+      if (this.fileQueue.get(sha256) === settled) this.fileQueue.delete(sha256)
     })
     return out
   }
@@ -501,45 +501,38 @@ export class Storage {
   // Keeping
 
   /**
-   * Delete what stopped being current and the messages that arrived, at or before `before`; what
-   * host.sqlite says of folders whose file is gone; and the bytes no folder holds any more. Returns
-   * how many records, messages and blobs it deleted.
+   * Delete what stopped being current or counting, and the inbox entries that arrived, at or
+   * before `before`; what host.sqlite says of folders whose file is gone; and the files no current
+   * entry has named since `before`. Returns how many entries, inbox entries and files it deleted.
+   * `now` dates the files a gone folder named.
    */
-  async prune(before: number): Promise<number> {
+  async prune(before: number, now: number): Promise<number> {
     let deleted = 0
     const onDisk = new Set(this.folders())
     for (const address of onDisk) {
       // One that cannot be opened is skipped: its file is still here, so what host.sqlite says of
-      // it stays, and no bytes it may hold are deleted.
+      // it stays, and no file it names is deleted.
       const folder = this.folderOrSkip(address)
       if (!folder) continue
-      const old = folder.q('SELECT seq FROM records WHERE older_since IS NOT NULL AND older_since <= ?').all(before) as Array<{ seq: number }>
-      // The log first: a crash in between leaves old records the next prune deletes, never a
+      const old = folder.q('SELECT seq FROM entries WHERE older_since IS NOT NULL AND older_since <= ?').all(before) as Array<{ seq: number }>
+      // The log first: a crash in between leaves old entries the next prune deletes, never a
       // number that points to nothing.
       if (old.length) this.host.tx(() => old.forEach((r) => this.host.q('DELETE FROM log WHERE seq = ?').run(r.seq)))
-      deleted += Number(folder.q('DELETE FROM records WHERE older_since IS NOT NULL AND older_since <= ?').run(before).changes)
-      deleted += Number(folder.q('DELETE FROM messages WHERE arrived <= ?').run(before).changes)
-      // The index follows the folder's file, which is the truth of what it holds.
-      const holds = folder.q('SELECT sha256 FROM blobs').all() as Array<{ sha256: string }>
-      this.host.tx(() => {
-        this.host.q('DELETE FROM owners WHERE folder = ?').run(address)
-        for (const { sha256 } of holds) this.host.q('INSERT INTO owners (sha256, folder) VALUES (?, ?)').run(sha256, address)
-      })
+      deleted += Number(folder.q('DELETE FROM entries WHERE older_since IS NOT NULL AND older_since <= ?').run(before).changes)
+      deleted += Number(folder.q('DELETE FROM inbox WHERE arrived <= ?').run(before).changes)
     }
-    const listed = this.host.q('SELECT folder FROM log UNION SELECT folder FROM owners').all() as Array<{ folder: string }>
+    const listed = this.host.q('SELECT folder FROM log UNION SELECT folder FROM names').all() as Array<{ folder: string }>
     for (const { folder } of listed.filter((f) => !onDisk.has(f.folder))) {
-      this.host.tx(() => {
-        this.host.q('DELETE FROM log WHERE folder = ?').run(folder)
-        this.host.q('DELETE FROM owners WHERE folder = ?').run(folder)
-      })
+      this.host.q('DELETE FROM log WHERE folder = ?').run(folder)
+      this.name(folder, [], now)
     }
-    const unheld = 'SELECT sha256 FROM blobs WHERE NOT EXISTS (SELECT 1 FROM owners o WHERE o.sha256 = blobs.sha256)'
-    for (const { sha256 } of this.host.q(unheld).all() as Array<{ sha256: string }>) {
+    const unnamed = this.host.q('SELECT sha256 FROM files WHERE unnamed_since IS NOT NULL AND unnamed_since <= ?').all(before) as Array<{ sha256: string }>
+    for (const { sha256 } of unnamed) {
       await this.oneAtATime(sha256, async () => {
-        // Put again while waiting its turn: kept.
-        if (this.host.q('SELECT 1 FROM owners WHERE sha256 = ?').get(sha256) !== undefined) return
-        this.host.q('DELETE FROM blobs WHERE sha256 = ?').run(sha256)
-        await this.blobs.delete(sha256)
+        // Named again while waiting its turn: kept.
+        if (this.host.q('SELECT 1 FROM names WHERE sha256 = ?').get(sha256) !== undefined) return
+        this.host.q('DELETE FROM files WHERE sha256 = ?').run(sha256)
+        await this.files.delete(sha256)
         deleted++
       })
     }
@@ -548,16 +541,16 @@ export class Storage {
 }
 
 // ------------------------------------------------------------------------------------------
-// Rebuild and import
+// Rebuild
 
 /**
- * Make host.sqlite again from what is outside it: the log from each folder's records and their
- * numbers, which folders hold which bytes from each folder's blobs, the stored bytes from the
- * store. Bytes no folder holds stay listed, and go at the next prune. The log goes on from the
- * highest number any folder file ever took, and a new number is never below the clock
- * (nextNumber), so one held only by a folder whose file was deleted is not given again.
+ * Make host.sqlite again from what is outside it: the log from each folder's entries and their
+ * numbers, which files the current entries name from each folder's file, the stored files from the
+ * store. A stored file no current entry names is dated `now`, and goes keep days later. The log
+ * goes on from the highest number any folder file ever took, and a new number is never below the
+ * clock (nextNumber), so one held only by a folder whose file was deleted is not given again.
  */
-export async function rebuild(dir: string, driver: BlobDriver = { kind: 'disk' }): Promise<void> {
+export async function rebuild(dir: string, driver: FileDriver = { kind: 'disk' }, now = Date.now()): Promise<void> {
   for (const suffix of ['', '-wal', '-shm']) rmSync(join(dir, `host.sqlite${suffix}`), { force: true })
   const host = new Db(join(dir, 'host.sqlite'))
   try {
@@ -567,13 +560,11 @@ export async function rebuild(dir: string, driver: BlobDriver = { kind: 'disk' }
       for (const address of foldersIn(dir)) {
         const folder = openFolder(folderFile(dir, address))
         try {
-          for (const r of folder.q('SELECT seq, id, arrived FROM records ORDER BY seq').all() as Array<{ seq: number; id: string; arrived: number }>) {
+          for (const r of folder.q('SELECT seq, id, arrived FROM entries ORDER BY seq').all() as Array<{ seq: number; id: string; arrived: number }>) {
             host.q('INSERT INTO log (seq, folder, id, arrived) VALUES (?, ?, ?, ?)').run(r.seq, address, r.id, r.arrived)
           }
-          for (const b of folder.q('SELECT sha256 FROM blobs').all() as Array<{ sha256: string }>) {
-            host.q('INSERT INTO owners (sha256, folder) VALUES (?, ?)').run(b.sha256, address)
-          }
-          const taken = folder.q("SELECT seq FROM sqlite_sequence WHERE name = 'records'").get() as { seq: number } | undefined
+          for (const n of namesIn(folder)) host.q('INSERT INTO names (sha256, folder, type, size, seq) VALUES (?, ?, ?, ?, ?)').run(n.sha256, address, n.type, n.size, n.seq)
+          const taken = folder.q("SELECT seq FROM sqlite_sequence WHERE name = 'entries'").get() as { seq: number } | undefined
           top = Math.max(top, taken?.seq ?? 0)
         } finally {
           folder.close()
@@ -582,23 +573,24 @@ export async function rebuild(dir: string, driver: BlobDriver = { kind: 'disk' }
       host.q("DELETE FROM sqlite_sequence WHERE name = 'log'").run()
       host.q("INSERT INTO sqlite_sequence (name, seq) VALUES ('log', ?)").run(top)
     })
-    for await (const blob of blobStore(dir, driver).list()) {
-      host.q('INSERT OR IGNORE INTO blobs (sha256, type) VALUES (?, ?)').run(blob.sha256, blob.type)
+    for await (const file of fileStore(dir, driver).list()) {
+      const named = host.q('SELECT 1 FROM names WHERE sha256 = ?').get(file.sha256) !== undefined
+      host.q('INSERT OR IGNORE INTO files (sha256, type, unnamed_since) VALUES (?, ?, ?)').run(file.sha256, file.type, named ? null : now)
     }
   } finally {
     host.close()
   }
 }
 
-export function blobStore(dir: string, driver: BlobDriver): BlobStore {
-  return driver.kind === 's3' ? s3Blobs(driver) : diskBlobs(join(dir, 'blobs'))
+export function fileStore(dir: string, driver: FileDriver): FileStore {
+  return driver.kind === 's3' ? s3Files(driver) : diskFiles(join(dir, 'files'))
 }
 
 // ------------------------------------------------------------------------------------------
 // Disk: <dir>/<sha256> holds the bytes, <dir>/<sha256>.type their type. Each is written to a
 // temporary name, then renamed, so a reader never sees half a file.
 
-function diskBlobs(dir: string): BlobStore {
+function diskFiles(dir: string): FileStore {
   mkdirSync(dir, { recursive: true })
   const at = (sha256: string) => {
     if (!HASH.test(sha256)) throw new Error('not a SHA-256')
@@ -676,7 +668,7 @@ export function signS3(request: { method: string; url: URL; headers: Record<stri
   return { ...headers, authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` }
 }
 
-function s3Blobs(options: S3Options): BlobStore {
+function s3Files(options: S3Options): FileStore {
   const send = async (method: string, url: URL, body?: Uint8Array, headers: Record<string, string> = {}) => {
     const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
     const signed = signS3({ method, url, headers, payloadHash: sha256Hex(body ?? new Uint8Array()), amzDate }, options)
