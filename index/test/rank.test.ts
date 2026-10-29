@@ -8,7 +8,6 @@ import { test } from 'node:test'
 
 import {
   type Numbers,
-  pickinessWord,
   rank,
   type RankProfile,
   type RankRating,
@@ -29,7 +28,7 @@ const face = (address: string): RankProfile => ({ address, uniqueness: FACE })
 const near = (a: number, b: number, within = 1e-9) => Math.abs(a - b) <= within
 
 let clock = 0
-const rating = (writer: string, subject: string, score: number, evidence = 1): RankRating => ({ writer, subject, score, evidence })
+const rating = (writer: string, subject: string, score: number): RankRating => ({ writer, subject, score })
 const said = (writer: string, subject: string, kind: Said['kind']): Said => ({ writer, subject, kind, time: ++clock, address: `${writer}/${kind}/${clock}` })
 /** Ratings, each also said as a rating, for its writer's word. */
 const rated = (...ratings: RankRating[]) => ({ ratings, said: ratings.map((r) => said(r.writer, r.subject, 'rating')) })
@@ -45,7 +44,6 @@ test("a newcomer's trust is half its uniqueness", () => {
   assert.equal(r.trust.get('new'), FACE / 2)
   assert.ok(near(r.trust.get('both')!, uniqueness([FACE, ID]) / 2))
   assert.equal(r.pickiness.get('new'), 0.5)
-  assert.equal(pickinessWord(r.pickiness.get('new')!, numbers), 'average')
 })
 
 test('one full vouch closes half the gap to uniqueness, and each more closes half of what is left; never all of it', () => {
@@ -141,8 +139,7 @@ test("a rater who gives 1s to well-rated places counts less on low scores than a
   )
   const r = rank([...places, ...fans, 'harsh', 'neutral', 'target'].map(face), ratings, words, numbers)
   assert.equal(r.trust.get('harsh'), r.trust.get('neutral'))
-  assert.ok(r.pickiness.get('harsh')! > 0.5)
-  assert.equal(pickinessWord(r.pickiness.get('harsh')!, numbers), 'tough')
+  assert.ok(r.pickiness.get('harsh')! > 0.5, 'tough')
   assert.equal(r.pickiness.get('neutral'), 0.5)
   const weightOf = (writer: string) => r.weights[ratings.findIndex((x) => x.writer === writer && x.subject === 'target')]!
   assert.ok(weightOf('harsh') < weightOf('neutral'), `${weightOf('harsh')} against ${weightOf('neutral')}`)
@@ -181,10 +178,6 @@ test('ratings: the weighted average of their scores, shown as it is, with how ma
   const ten = rated(rating('w', 's', 10))
   const one = rank([face('w'), face('s')], ten.ratings, ten.said, numbers)
   assert.deepEqual({ ...one.ratings.get('s'), order: undefined }, { value: 10, count: 1, order: undefined })
-  // The evidence factor scales a score's weight; a writer takes the largest of its reviews'.
-  const full = rank([face('w'), face('s')], [rating('w', 's', 9, 1)], [], numbers).weights[0]!
-  assert.ok(near(rank([face('w'), face('s')], [rating('w', 's', 9, 0.5)], [], numbers).weights[0]!, full / 2))
-  assert.ok(near(rank([face('w'), face('s')], [rating('w', 's', 9, 0.5), rating('w', 's', 9, 1)], [], numbers).weights[1]! * 2, full))
 })
 
 test("search's order: each profile's ratings with marketWeight of the market's average added; an unrated one at the average", () => {

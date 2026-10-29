@@ -43,8 +43,9 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
 - devnet, devnet USDC and mainnet are named only where something is configured for them: in a
-  README's How we run it, as a setting of the service configured for them (the index's chain
-  list), and in `e2e/`. Every intro says what its service does, chain-free. A name is a name: `FOREST_DEVNET_SEED`, a file's path, here or in the standard.
+  README's How we run it, as a setting of the service configured for them, and in `e2e/`. Every
+  intro says what its service does, chain-free. A name is a name: `FOREST_DEVNET_SEED`, a file's
+  path, here or in the standard.
 - Never "replace every app".
 
 ## How to work in this repo

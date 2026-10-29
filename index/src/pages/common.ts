@@ -1,31 +1,30 @@
-// What several pages share: what a profile shows (its ratings, trust, uniqueness, pickiness and
-// checks) as the JSON gives it, a search or market result, and how the HTML draws each from the
+// What several pages share: what a profile shows (its ratings, trust, uniqueness and checks) as the
+// JSON gives it, a search or market result, and how the HTML draws each from the
 // object.
 
 import type { Check } from '../filter.ts'
-import type { Pickiness } from '../rank.ts'
 import { parse, type Store } from '../store.ts'
 import { html, type Raw, short, urls } from './template.ts'
 
 /**
  * What a profile shows: its ratings, from 1 to 10 to one decimal, with how many raters scored it;
- * its trust and uniqueness, whole numbers from 0 to 100; and its pickiness as a word. A profile
- * that does not count shows no rating, 0, 0 and no pickiness.
+ * and its trust and uniqueness, whole numbers from 0 to 100. A profile that does not count shows no
+ * rating, 0 and 0.
  */
-export type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: Pickiness | null }
+export type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number }
 export type Post = { address: string; body: { [key: string]: unknown } }
 export type Result = { profile: string; market: string; role: string; post: Post } & Shown & { checks: Check[] }
 
-type ShownColumns = { value: number | null; count: number | null; trust: number | null; uniqueness: number | null; pickiness: Pickiness | null }
+type ShownColumns = { value: number | null; count: number | null; trust: number | null; uniqueness: number | null }
 
 export function shownOf(held: Partial<ShownColumns> | undefined): Shown {
-  if (!held || held.count === null || held.count === undefined) return { ratings: { value: null, count: 0 }, trust: 0, uniqueness: 0, pickiness: null }
-  return { ratings: { value: held.value ?? null, count: held.count }, trust: held.trust ?? 0, uniqueness: held.uniqueness ?? 0, pickiness: held.pickiness ?? null }
+  if (!held || held.count === null || held.count === undefined) return { ratings: { value: null, count: 0 }, trust: 0, uniqueness: 0 }
+  return { ratings: { value: held.value ?? null, count: held.count }, trust: held.trust ?? 0, uniqueness: held.uniqueness ?? 0 }
 }
 
 /** What a profile shows, as the ratings table holds it, with its statement and signature; a profile that does not count has neither. */
 export function shownFor(store: Store, address: string): Shown & { statement?: string; signature?: string } {
-  const held = store.db.prepare('select value, count, trust, uniqueness, pickiness, statement, signature from ratings where profile = ?').get(address) as
+  const held = store.db.prepare('select value, count, trust, uniqueness, statement, signature from ratings where profile = ?').get(address) as
     | (ShownColumns & { statement: string; signature: string })
     | undefined
   return { ...shownOf(held), ...(held && { statement: held.statement, signature: held.signature }) }
@@ -38,7 +37,7 @@ export function shownFor(store: Store, address: string): Shown & { statement?: s
 export function results(store: Store, where = '', params: Array<string | number> = []): Array<Result & { time: number }> {
   const found = store.db
     .prepare(
-      `select p.address, p.profile, p.body, p.time, f.market, f.role, f.checks, r.value, r.count, r.trust, r.uniqueness, r.pickiness
+      `select p.address, p.profile, p.body, p.time, f.market, f.role, f.checks, r.value, r.count, r.trust, r.uniqueness
        from posts p join profiles f on f.address = p.profile left join ratings r on r.profile = p.profile
        where p.listed = 1 ${where}
        order by r.sort is null, r.sort desc, p.time desc, p.address`,
@@ -55,10 +54,10 @@ export function results(store: Store, where = '', params: Array<string | number>
   }))
 }
 
-/** "Rated 9.2 by 14 · trust 42 · uniqueness 99", its checks as badges, "· pickiness average". */
+/** "Rated 9.2 by 14 · trust 42 · uniqueness 99", and its checks as badges. */
 export function shownHtml(s: Shown, checks: Check[]): Raw {
   const rated = s.ratings.value === null ? 'No ratings yet' : `Rated ${s.ratings.value.toFixed(1)} by ${s.ratings.count}`
-  return html`${rated} · trust ${s.trust} · uniqueness ${s.uniqueness} ${checksHtml(checks)}${s.pickiness ? ` · pickiness ${s.pickiness}` : ''}`
+  return html`${rated} · trust ${s.trust} · uniqueness ${s.uniqueness} ${checksHtml(checks)}`
 }
 
 /** Each check, as a badge. */

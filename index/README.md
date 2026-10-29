@@ -2,22 +2,21 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The foundation's index ranks what is public: it reads the hosts it lists and the chains it lists,
-keeps the profiles whose verification (a profile's proof that a verifier checked the person behind
-it) checks for a verifier key it lists, ranks them, and serves what it finds as pages and as JSON.
+The foundation's index ranks what is public: it reads the hosts it lists, keeps the profiles whose
+verification (a profile's proof that a verifier checked the person behind it) checks for a verifier
+key it lists, ranks them, and serves what it finds as pages and as JSON.
 Every index ranks what is public, each by its own opinions.
 
 This is one copy, run by the Open Forest Foundation at https://index.forest.foundation. Anyone can
 run another index; the main way is this code with lists of its own. It holds opinions and nothing of
-the person's: which hosts and chains to read, which verifier keys count and how much, and every
-number it ranks by are files in this directory, and everything it ranks is public on a host or on
-chain. It holds no key of anyone's but its own.
+the person's: which hosts to read, which verifier keys count and how much, and every number it ranks
+by are files in this directory, and everything it ranks is public on a host. It holds no key of
+anyone's but its own.
 
 Of Forest's four jobs (who you are, that you are real, what you have done, your money), it does one:
-what you have done. It reads the offers, reviews, vouches and reports profiles publish and the
-receipts the escrow, the standard's program that holds a deal's money, leaves on chain, and gives
-each profile its ratings and a trust. The other three it only reads: a profile entry on a host, a
-verification a verifier's stamp made possible, a payment.
+what you have done. It reads the offers, reviews, vouches and reports profiles publish, and gives
+each profile its ratings and a trust. Of the other three it only reads two, a profile entry on a host
+and a verification a verifier's stamp made possible, and money not at all.
 
 For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
@@ -25,12 +24,12 @@ For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
 ```
 the hosts in lists/hosts.json ── entries ──────┐
-the escrow, on chain ── its events: receipts ──┼──▶ filter ──▶ rank ──▶ pages, JSON, the tree
+                                               ├──▶ filter ──▶ rank ──▶ pages, JSON, the tree
 the markets, at MARKETS ── what a post holds ──┘
 ```
 
-One process. Every `READ_SECONDS` it makes one pass: it reads what is new on each host and on chain,
-then filters, ranks, signs what changed and builds its tree again, from everything it holds. Between
+One process. Every `READ_SECONDS` it makes one pass: it reads what is new on each host, then
+filters, ranks, signs what changed and builds its tree again, from everything it holds. Between
 passes it serves the pages. Three verbs, each one place in the code:
 
 - **filter** (`src/filter.ts`): which profiles count;
@@ -62,16 +61,8 @@ passes it serves the pages. Three verbs, each one place in the code:
 - **The markets** (`src/markets.ts`): `directory.json`, each market's file and `build/types.json`,
   from the checkout of [foundationforest/markets](https://github.com/foundationforest/markets) that
   `../standard.sh` makes at the commit in `../MARKETS`. Never over the network at run time.
-- **The escrow's receipts** (`src/chain.ts`): every transaction that named the standard's escrow
-  program, oldest first, from a cursor (the newest signature read), at `finalized`, through the RPC
-  (the access point it reads a chain through) `config/chains.json` names for the chain the escrow
-  runs on. A failed transaction is skipped, and only events the program itself wrote are read (the
-  escrow client's `decodeEvents`). From them it keeps each escrow's receipt (payer, recipient, mint,
-  amount, arbiter, schedule, when it was funded and stopped, how and when it ended, what each side
-  got) and every move, with who made it and when. An event the client cannot read was written by an
-  earlier version of the program, whose escrows this version refuses: it is skipped.
-- **The payments reviews name** (`src/evidence/payment.ts`): one `getTransaction` each (Evidence,
-  below). Nothing else is read from any chain.
+
+It reads nothing else.
 
 ### Which profiles count
 
@@ -121,7 +112,8 @@ deal went and gives a score; a vouch says "I know this profile is real and hones
 1. its writer counts here;
 2. it fits its writer's market's fields for its kind: the shared ones it lists (`subject` an
    address, `score` "1" to "10" with at most one decimal, `text`, `offer` a post's full address
-   `<profile>/offer/<id>`, `evidence`; a vouch and a report hold only `subject` and `text`) and the
+   `<profile>/offer/<id>`, `evidence` text, which nothing here reads; a vouch and a report hold only
+   `subject` and `text`) and the
    fields the market adds, a `file` among them naming one of the body's `files`;
 3. a review gives a score;
 4. it is about another profile, not its writer;
@@ -133,55 +125,6 @@ deal went and gives a score; a vouch says "I know this profile is real and hones
    subject.
 
 One that does not count says why, on both profiles' pages, and changes nothing in the ranking.
-
-### Evidence
-
-A counted review's `evidence` is `<chain>:<id>`, the chain in CAIP-2 form (a standard way to name a
-chain), as the markets manual writes it; the chain holds a colon itself, so the text splits at its
-last colon. `config/chains.json` names each chain this index reads, with its reader and the setting
-that holds its RPC's URL. A reader reads one type of chain and matches the two profiles' pay
-addresses of that type, from each profile entry's `pay`, which lists any of `solana` and `evm`. A
-pay address counts only when its signature in the profile entry's `paySig` holds: its pay key
-signed that profile's address (the standard's `checkPay`), so a profile cannot borrow someone else's
-payments. This index has one reader, `solana`, which matches the `solana` pay addresses and has two
-kinds of evidence, each one file in `src/evidence/`, with its name, how it recognizes an id, and its
-check:
-
-- **`escrow`**, an address of 32 bytes, on the chain the escrow runs on: the escrow's receipt, from
-  what this index read on chain. It counts when the receipt's payer and recipient are the two
-  profiles' pay addresses, in either order, its mint is one `config/currencies.json` lists, and it
-  ended with money to the recipient.
-- **`payment`**, a transaction's signature of 64 bytes: one `getTransaction` at `finalized`, through
-  the chain's RPC, its answer kept once the chain has one. It counts when the transaction succeeded
-  and, in a mint `config/currencies.json` lists, one of the two pay addresses lost and the other
-  gained, in either direction: a buyer reviewing the seller they paid, or the seller reviewing them.
-  An app writes the review seconds after paying, before the chain holds the payment as final, so a
-  signature the RPC holds no transaction for is asked again on each pass until a day after this
-  index first saw the review name it, by its own clock; only then is it kept as invalid. An entry's
-  time is its writer's word, and a review read late, after a host or this index was down, would
-  have no day left by it.
-
-**One payment, one review.** An escrow or a payment backs one review: the earliest of the reviews it
-backs, by entry time, then by address. A later review that names it is `invalid`, with
-`evidenceWhy` "already used". Only a review between its two pay addresses can be backed by it, so a
-review by anyone else that names it takes nothing from them, however early its writer dates it.
-
-A review is shown:
-
-- `with` a payment: its evidence counts;
-- `without`: it names none, or one of the two profiles' pay addresses of the chain's type is
-  unsigned (`evidenceWhy` says "pay address unsigned");
-- `unchecked`: it names a chain `config/chains.json` does not list, so this index cannot tell
-  whether it holds; `evidenceWhy` names the chain, and it weighs as a review without;
-- `invalid`: it names no chain (the text before its last colon is no CAIP-2 chain), an id its
-  chain's reader does not recognize, or one that does not count, or one an earlier review used
-  (`evidenceWhy` says "already used"), or one of the two profiles has no pay address of the chain's
-  type.
-
-When the RPC does not answer, or does not hold the payment yet, the review counts as without for that
-pass and is checked again on the next. A review that does not count is not checked, and shows
-without. Evidence weighs nothing in the ranking today (How it scores): it says what the review rests
-on.
 
 ### How it scores
 
@@ -215,21 +158,15 @@ and the report part each move without touching the other.
 `P = 0.5 + 0.5 × Σ(Rt − s) / (1 + n)`, over the `n` profiles it scored, `s` its score and `Rt` that
 profile's current rating, on the same scale. A rater who scores below the ratings others give is
 tough, and one who scores above them easy; with few scores it stays near 0.5, and one that scored no
-one is 0.5. It is shown as a word: tough at `toughFrom` 0.55 or more, easy at `easyTo` 0.45 or less,
-average between.
+one is 0.5. It only weighs the rater's scores: this index shows it nowhere.
 
-**Ratings.** Each score weighs its rater's `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, times
-its evidence factor. The middle part is what a score means from this rater: a tough rater's high
-scores count more and its low ones less, an easy rater's the other way, and from an average rater
-every score weighs half. A rater's reviews of one profile, one per post, are one score, their mean,
-with the largest evidence factor among them. A profile's rating is the weighted average of its
-scores, from 1 to 10, shown as it is, to one decimal, with how many raters scored it. A profile no
+**Ratings.** Each score weighs its rater's `uniqueness × trust × (s × P + (1 − s) × (1 − P))`. The
+last part is what a score means from this rater: a tough rater's high scores count more and its low
+ones less, an easy rater's the other way, and from an average rater every score weighs half. A
+rater's reviews of one profile, one per post, are one score, their mean. A profile's rating is the
+weighted average of its scores, from 1 to 10, shown as it is, to one decimal, with how many raters scored it. A profile no
 counted review is about has no rating. Each review's `weight` is its score's weight, split equally
 among its rater's reviews of that profile.
-
-**Evidence weighs nothing today.** Each kind of evidence has a factor (`evidence`), and today every
-one is 1, so a review with a payment weighs what one without does; it shows what it rests on. A
-review backed by a deal may count more later.
 
 **Settling.** Trust, pickiness and ratings each depend on the others, so this index works them out in
 rounds, from each trust at half its uniqueness and each pickiness at 0.5. Each round reads only the
@@ -259,15 +196,14 @@ At today's numbers, trust from 0 to 100, as the pages show it:
 What each counted profile shows is signed with the index's key, as a statement: canonical JSON (the
 standard's folders' `canonical`) of
 
-    {"index":"<this index>","profile":"<the profile>","ratings":{"value":"9.2" or null,"count":14},"trust":42,"uniqueness":75,"pickiness":"average","time":<ms>}
+    {"index":"<this index>","profile":"<the profile>","ratings":{"value":"9.2" or null,"count":14},"trust":42,"uniqueness":75,"time":<ms>}
 
 signed over its UTF-8 bytes with EdDSA-Poseidon (the standard's keys' `signBytes`), and served on the
 profile's page as `statement` and `signature` (64 bytes, base64url). The rating's `value` is text, to
 one decimal, since canonical JSON's numbers are whole; `count` is how many raters scored the profile;
-`trust` and `uniqueness` are whole numbers from 0 to 100; `pickiness` is `tough`, `average` or `easy`.
-Anyone checks it with the standard's keys' `checkBytes`, against the index's address. The statement
-begins with `{`, never with the `0xff` every entry, message, inbox delete and root begins
-with, so the signature is never one of those. `time` is when those values were first what they are:
+and `trust` and `uniqueness` are whole numbers from 0 to 100. Anyone checks it with the standard's
+keys' `checkBytes`, against the index's address. The statement begins with `{`, never with the
+`0xff` every entry, message, inbox delete and root begins with, so the signature is never one of those. `time` is when those values were first what they are:
 while none of them moves, the statement and signature stay.
 
 ### The tree
@@ -319,36 +255,30 @@ HTML runs no script; each page carries schema.org JSON-LD. GET and HEAD only, op
   (scored by at least this many raters), `limit` (20 unless given, at most 100) and `offset`; sorted
   by search's order (How it scores), then the newest post.
 - **`/profiles/<address>`**: `{ "index", "address", "profile", "checks", "ratings", "trust",
-  "uniqueness", "pickiness", "statement", "signature", "posts", "reviews", "vouches", "reports",
-  "words", "proofs" }`:
+  "uniqueness", "statement", "signature", "posts", "reviews", "vouches", "reports", "words",
+  "proofs" }`:
   - `profile`: the profile entry's body;
   - `checks`: `[{ "verifier", "key", "label" }]`;
   - `ratings`: `{ "value", "count" }`, the rating from 1 to 10 to one decimal, or null, and how many
     raters scored it;
-  - `trust` and `uniqueness`: whole numbers from 0 to 100; `pickiness`: `tough`, `average` or `easy`.
-    A profile that does not count has no rating, 0, 0, a null pickiness, and no `statement` or
-    `signature`;
-  - drawn as "Rated 9.2 by 14 · trust 42 · uniqueness 99", each check as a badge, "· pickiness
-    average";
+  - `trust` and `uniqueness`: whole numbers from 0 to 100. A profile that does not count has no
+    rating, 0, 0, and no `statement` or `signature`;
+  - drawn as "Rated 9.2 by 14 · trust 42 · uniqueness 99", each check as a badge;
   - `posts`: `[{ "address", "body", "listed", "why" }]`, `why` only when not listed;
   - `reviews`: `{ "received", "given" }`, each `{ "reviewer", "address", "body", "counted", "why",
-    "evidence", "evidenceWhy", "weight" }`, `why` only when it does not count, `evidenceWhy` only when
-    its evidence is `unchecked`, already used, or a pay address it is between is unsigned, and
-    `weight` its share of its score's weight (How it scores);
+    "weight" }`, `why` only when it does not count, and `weight` its share of its score's weight (How
+    it scores);
   - `vouches` and `reports`: `{ "received", "given" }`, each `{ "writer", "address", "body",
     "counted", "why" }`;
   - `words`: `{ "received", "given" }`, each `{ "writer", "subject", "word", "weight" }`: each
     writer's one word about the profile, `vouch` or `report`, and its weight;
   - `proofs`: each proof on the profile entry with its `result`.
-- **`/deals/<escrow>`**: the receipt, every move, the profiles whose `solana` pay address is either
-  side, signed for that profile (`checkPay`), and the reviews that name it as
-  `<the escrow's chain>:<escrow>`.
 - `/v1/reputation`, `/v1/reputation/leaves`, `/sitemap.xml` (the home page, each market, each counted
-  profile, each deal with a receipt), `/robots.txt`, and `/llms.txt` and `/skill.md`, files in this
+  profile), `/robots.txt`, and `/llms.txt` and `/skill.md`, files in this
   directory written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place.
 
 A `<result>` is `{ "profile", "market", "role", "post": { "address", "body" }, "ratings", "trust",
-"uniqueness", "pickiness", "checks" }`.
+"uniqueness", "checks" }`.
 
 ### Its key
 
@@ -361,10 +291,9 @@ signs the statements and the roots.
 ### Where it keeps things
 
 One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of posts; `src/store.ts`),
-a fresh schema, beside the seed. Everything in it comes back from the hosts and the chain, but three
-tables: when each verification was first seen, when each review was first seen naming its evidence,
-and every root it signed. `npm run rebuild` drops every other table, makes each again with the
-schema of this code, reads the hosts and the chain again, ranks, and exits; the seed is never
+a fresh schema, beside the seed. Everything in it comes back from the hosts, but two tables: when
+each verification was first seen, and every root it signed. `npm run rebuild` drops every other
+table, makes each again with the schema of this code, reads the hosts again, ranks, and exits; the seed is never
 touched. A file from before the standard's folders needs one `npm run rebuild` before this code
 starts on it: the rebuild also drops its old tables, and the column `seen` kept for each proof's old
 number, keeping each row's profile, key and time.
@@ -375,13 +304,11 @@ number, keeping each row's profile, key and time.
 |---|---|---|
 | `DATA_DIR` | required | The seed and the one file, on a volume |
 | `PUBLIC_URL` | `https://index.forest.foundation` | Where the pages are published: an origin |
-| `RPC_URL` | Solana's public endpoint for the chain it reads (How we run it) | The RPC of each chain `config/chains.json` reads through `RPC_URL` |
 | `READ_SECONDS` | `30` | Seconds between the end of one pass and the start of the next |
 | `PORT` | `8080` | |
 
-A chain in `config/chains.json` names the setting that holds its RPC's URL; today each names
-`RPC_URL`. A setting that cannot be read, a chain whose setting is not set, a list or a config file
-that does not read, or a seed file that is not a seed, stops the start, naming what is wrong.
+A setting that cannot be read, a list or the config file that does not read, or a seed file that is
+not a seed, stops the start, naming what is wrong.
 
 ### Run it
 
@@ -396,9 +323,9 @@ npm test                                                   # everything below, o
 DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 ```
 
-The tests run this repo's host on loopback (its plug, `host/src/plug.ts`), make real verifications
-from the verification circuit's committed proving files for a stand-in verifier key their lists
-name, and answer the chain from a stand-in RPC:
+The tests run this repo's host on loopback (its plug, `host/src/plug.ts`), and make real
+verifications from the verification circuit's committed proving files for a stand-in verifier key
+their lists name:
 
 - **filter:** a verification that checks for a listed key counts; a changed byte, an unlisted key, a
   wrong name, a label other than the profile's market and role, a market not in the directory, a role
@@ -418,32 +345,16 @@ name, and answer the chain from a stand-in RPC:
     rater;
   - each writer's word is its latest counted entry's, a rating of 1 a vouch;
   - a rating is its scores' weighted average, shown as it is, with how many raters; a writer's
-    reviews of one profile are one score, each review weighing its share; evidence factors scale a
-    score's weight;
+    reviews of one profile are one score, each review weighing its share;
   - search's order adds the market's average, and a profile no one rated sorts at it;
 - **reviews, vouches and reports:** one from a profile that does not count, with no score (a
   review), of itself, from another market, about a profile that does not count, or with a field its
   market does not name is skipped and says why; the latest per writer, subject and post counts for a
   review, and per writer and subject for a vouch and a report; each writer's word, and its weight; a
-  report taken down turns its writer's word back to a vouch, and the trust rises; a deleted post
-  keeps its body;
-- **evidence:**
-  - escrows and payments in either direction count, and the wrong parties, a refund, an open escrow,
-    another mint, a failed transaction do not;
-  - one used by an earlier review is invalid, "already used", and a stranger's earlier review naming
-    it takes nothing;
-  - a payment the chain answers for is asked once for each pair of pay addresses, and one not on
-    chain yet is asked again on the next pass and counts once it is;
-  - one seen late, in a review written two days before, is still asked for 23 hours after this
-    index first saw it, and is invalid for good 25 hours after;
-  - evidence on a chain the lists do not name is unchecked, says which chain, and is never asked
-    for, and evidence with no chain is invalid;
-  - a profile that lists another's pay addresses, with that profile's signatures, gives no evidence,
-    "pay address unsigned", takes nothing from the real one's review, and is no side of the deal;
-  - a deal's page finds the reviews that name it on its chain;
+  report taken down turns its writer's word back to a vouch, and the trust rises; a review's
+  `evidence` taken as any other field; a deleted post keeps its body;
 - **markets:** the checks of fields, choices, lists, roles and files, for a post, a review, a vouch
-  and a report; a post that does not fit is kept and not listed; the escrow program is the one the
-  pinned standard names, of the version its client reads, on a chain `config/chains.json` lists;
+  and a report; a post that does not fit is kept and not listed;
 - **tree:** a leaf for each counted profile, in order of address, its score the profile's trust, one
   leaf for a profile two verifiers checked, and the served leaves rebuild the served root, whose signature checks; a reputation proof made
   from the leaves shows on its profile with the trust it carries, and not with a byte changed or on
@@ -477,40 +388,22 @@ Another index holds its own.
   optional `until`. Today it lists the two keys of the foundation's verifier, under its name
   `verifier.forest.foundation`, neither with an `until`: its face key `9Kvr71eh…`, the face check at
   0.75, and its ID key `G6hYSXZU…`, the ID check at 0.95.
-- **Which chains it reads** (`config/chains.json`): one, Solana's devnet
-  (`solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`), the chain the escrow runs on today, with the reader
-  `solana`, through `RPC_URL`, which unless set is Solana's public endpoint for it,
-  `https://api.devnet.solana.com`.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **How it weighs** (`config/scoring.json`, How it scores):
   - `vouchStep` 0.5: each full vouch keeps half of what the vouch part has left to 1;
   - `reportCut` 0.25: each full report leaves a quarter of the report part;
-  - `toughFrom` 0.55 and `easyTo` 0.45: the pickiness at or above which a rater is tough, and at or
-    below which it is easy;
   - `marketWeight` 1: how much of the market's average search's order adds, as one rater of weight 1;
   - `tolerance` 1e-9 and `maxRounds` 1000: the ranking has settled when nothing moves by more than a
-    billionth, or after 1000 rounds;
-  - the evidence factors `escrow` 1, `payment` 1 and `none` 1: evidence weighs nothing today.
-- **How long a payment may take to be final:** a day from when this index first saw its review name
-  it, by its own clock (`WAIT_MS` in `src/evidence/payment.ts`). Until then, a payment the RPC does
-  not hold is asked for again on each pass.
-- **Which money counts** (`config/currencies.json`): USDC, USDT, Open USD and EURC, the dollars and
-  the euro the fee payer takes, kept for when money is real, and Circle's USDC on Solana's devnet,
-  the chain it reads, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, each with its code and six
-  decimals.
-- **Which escrow:** the standard's, version 4, its program at
-  `38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J`.
+    billionth, or after 1000 rounds.
 - **Which reputation proofs it shows, and how old a signed root may be** (`lists/indexes.json`): its
   own (`self`), against its newest root, or one it signed in the last 30 days (`maxAgeDays`).
 - **How often:** a pass every 30 seconds after the last ends (`READ_SECONDS`). A host that takes more
-  than 60 seconds to serve a page fails that read, and the next pass tries again; an RPC request
-  times out after 30 seconds.
-- **What it keeps:** every entry its hosts served that checks, the escrow's receipts and moves, each
-  answer of a proof or payment check, every root, when each proof was first seen, and when each
-  review was first seen naming its evidence. Never a network address.
-- **No request logs.** It logs its address at start, that it made a seed, a host failing, a failed
-  read of the escrow's history, how many entries a host served that did not check, a pass that
-  failed, and a failed request's path and error.
+  than 60 seconds to serve a page fails that read, and the next pass tries again.
+- **What it keeps:** every entry its hosts served that checks, each answer of a proof check, every
+  root, and when each proof was first seen. Never a network address.
+- **No request logs.** It logs its address at start, that it made a seed, a host failing, how many
+  entries a host served that did not check, a pass that failed, and a failed request's path and
+  error.
 - **Where:** one replica built from `deploy/Dockerfile`, with this repo's root as the build context,
   and `DATA_DIR` on a volume.
 
@@ -519,11 +412,11 @@ Another index holds its own.
 - **It holds no key of anyone's but its own,** and has no sign-up: everything it serves is open to
   anyone, with no login.
 - **It keeps no network address** and logs no request but a failed one's path and error.
-- **What it reads and how it weighs are files:** the hosts and the keys in `lists/`, its chains, its
-  numbers and its money in `config/`, its markets the directory at `MARKETS`. A change to one is a
+- **What it reads and how it weighs are files:** the hosts and the keys in `lists/`, its numbers in
+  `config/`, its markets the directory at `MARKETS`. A change to one is a
   change anyone sees.
-- **What it shows is signed.** Every counted profile's ratings, trust, uniqueness and pickiness are
-  signed with the key whose address is on every page, and so is every root.
+- **What it shows is signed.** Every counted profile's ratings, trust and uniqueness are signed with
+  the key whose address is on every page, and so is every root.
 - **Every page is drawn from its JSON twin,** so a person and a machine read the same facts.
 - **Nothing here links two profiles of one person, but what a small tree can show.** It ranks each
   profile on its own, and nothing it serves ties a profile to a person; in a small tree, a trust a
@@ -533,13 +426,6 @@ Another index holds its own.
 ## Limits
 
 - **It trusts the verifiers it lists** to sign stamps only for the people they say. It cannot tell.
-- **It trusts its RPC** for receipts and payments; no second source checks it.
-- **The public RPC answers a few requests at a time.** The first read of the escrow's history takes
-  many passes there; a keyed RPC in `RPC_URL` reads it at once.
-- **It reads evidence only on the chains it lists.** A review backed on another chain is shown
-  unchecked, and weighs as a review without.
-- **A payment not final within a day counts for nothing, for good.** The day runs from when this
-  index first saw the review name it.
 - **Two of one person's profiles can rate or vouch for each other,** as a tutor and a student in one
   market. Nothing here links them, so nothing here can tell. What it buys is bounded: each word
   weighs its giver's uniqueness times trust, two faces lift each other from 38 to 45, and no ring of
@@ -554,12 +440,10 @@ Another index holds its own.
 - **Only its own roots.** A reputation proof against another index's tree shows nothing here.
 - **It reads only the hosts it lists.** A profile whose folder lives elsewhere is not here.
 - **Losing the volume loses the key,** and with it the address every statement and root was signed
-  with, every root, and when each proof and each review was first seen. A new start makes a new key,
-  and every proof and review is first seen again.
-- **Escrows of earlier versions of the program are not read.**
+  with, every root, and when each proof was first seen. A new start makes a new key, and every proof
+  is first seen again.
 - **Everything after the reading is computed again on every pass,** in one process; each proof is
-  checked once, and each payment once for each pair of pay addresses, once the chain holds it. The
-  ranking settles in rounds, up to `maxRounds`, each reading every rating and word in a market. One
+  checked once. The ranking settles in rounds, up to `maxRounds`, each reading every rating and word in a market. One
   sitemap file; a profile's page lists every review, vouch, report and word; search reads every
   listed post that matches before it pages.
 - **Pages in English only.**
@@ -569,12 +453,12 @@ Another index holds its own.
 ## Who decides what
 
 - **The standard:** the entry and the profile entry, which keys count for a folder, the
-  verification, the tree and the reputation proof, the escrow and its receipt.
-- **The markets directory, at `MARKETS`:** the markets, their roles, what a post, a review, a vouch
-  and a report hold, and how evidence is written.
+  verification, the tree and the reputation proof.
+- **The markets directory, at `MARKETS`:** the markets, their roles, and what a post, a review, a
+  vouch and a report hold.
 - **This index, by its own choice:** which hosts it reads; which verifier keys count, under which
-  names, with what confidence, and until when; how a rating counts as a vouch; which chains it reads
-  evidence on, and through which RPC; which money counts; every number in `config/scoring.json`;
+  names, with what confidence, and until when; how a rating counts as a vouch; every number in
+  `config/scoring.json`;
   which indexes' reputation proofs it shows, and how old a root may be; what its pages show.
 - **A person, through their app:** where their folders live, which proofs their profile entry shows,
   and which index they read.
@@ -587,14 +471,10 @@ that at least one of them holds, `1 − Π(1 − c)`: a second check closes part
 open, 0.75 becoming 0.9875 with an ID check. A key counts once, however many of its proofs a profile
 shows.
 
-**Why does a rebuild keep when each proof and each review was first seen, and the roots?**
-None of them comes back from the hosts or the chain. Without the first, every proof would be first
-seen at the rebuild, after any key's `until`. Without the second, every payment still missing would be
-asked for another day. Without the roots, every reputation proof people show would stop showing.
-
-**Why does evidence count only in a mint this index lists, for an escrow too?**
-Anyone can make a mint. A receipt in a token its maker mints at will would show "with a payment" for
-nothing.
+**Why does a rebuild keep when each proof was first seen, and the roots?**
+Neither comes back from the hosts. Without the first, every proof would be first seen at the
+rebuild, after any key's `until`. Without the roots, every reputation proof people show would stop
+showing.
 
 **Why does a profile no one rated sort at its market's average, and not last?**
 Search's order adds the market's average to every profile's ratings, as one more rater; with no other
@@ -607,11 +487,6 @@ Reports can make whole moves flip for ever: thirty profiles that all report each
 trust, so heavy reports, to low trust, so light reports, and back, every round. Moving half as far
 settles them where trust is what the reports leave of it, 6 each for thirty faces. Where whole moves
 settle on their own, the result is the same, within `tolerance`.
-
-**Why is a rater tough from a pickiness of 0.55?**
-Over many profiles, 0.55 is a rater who scores about a point below their ratings on the 1 to 10
-scale, on average. The `1 + n` keeps a rater of few scores nearer 0.5: one score makes a rater tough
-only when it is 1.8 points or more below the profile's rating.
 
 **Why serve every leaf, and no URL for one leaf and its path?**
 A path asked for one leaf tells the index, and whoever logs its requests, which profile is the

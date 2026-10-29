@@ -66,7 +66,7 @@ export const SKILL = '# A stand-in index\n\nEach answer here holds badge, a fiel
  */
 async function standIn(stranger: string, offer: string): Promise<{ url: string; server: Server; said: World['said'] }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face check' }]
-  const shown = { ratings: { value: 9.2, count: 14 }, trust: 42, uniqueness: 75, pickiness: 'average' }
+  const shown = { ratings: { value: 9.2, count: 14 }, trust: 42, uniqueness: 75 }
   const result = { profile: stranger, market: 'tutoring', role: 'tutor', post: { address: offer, body: lesson('Physics, from the stranger.') }, ...shown, checks }
   const badge = 'early'
   const said: World['said'] = {

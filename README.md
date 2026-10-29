@@ -48,7 +48,7 @@ calls.
 |---|---|---|
 | [`verifier`](verifier/README.md) | Checks that you are one real person, by face, through Didit, and signs you a stamp with its face key; its ID check signs with its ID key | https://verifier.forest.foundation |
 | [`host`](host/README.md) | Keeps profiles' folders, their entries, inboxes and photos, serves the entries and photos to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
-| [`index`](index/README.md) | Reads the hosts it lists and the chains it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
+| [`index`](index/README.md) | Reads the hosts it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
 | [`mcp`](mcp/README.md) | The AI's door: reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app hands it at login | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all four, each with a stand-in for their app and an AI, end to end. Not a service | |
 

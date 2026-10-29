@@ -12,20 +12,17 @@ import { buildTree, proofBytes, proveReputation, signedBytes } from '@foundation
 import { toBytes32 } from '@foundationforest/verification'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { at, index, verifier, post, profile, publishProfile, REPUTATION_FILES, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, post, profile, publishProfile, REPUTATION_FILES, startHost, twin } from './world.ts'
 
 const first = verifier('first.test.example')
 const second = verifier('second.test.example')
 const DAY = 24 * 60 * 60 * 1000
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
   host = await startHost()
-  rpc = await startRpc()
 })
 after(async () => {
   await host.close()
-  await rpc.close()
 })
 
 type Served = { index: string; root: string; time: number; signature: string; leaves: number }
@@ -40,7 +37,7 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
 
   const keys = [first, second].map((v) => ({ key: v.key, verifier: v.name, label: 'face check', confidence: 0.75 }))
   let clock = Date.now()
-  const i = await index({ hosts: [host.url], keys }, rpc.url, { now: () => clock })
+  const i = await index({ hosts: [host.url], keys }, { now: () => clock })
   assert.equal((await twin(i, '/v1/reputation')).status, 404)
   await i.pass()
 

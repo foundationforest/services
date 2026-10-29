@@ -7,18 +7,15 @@ import { after, before, test } from 'node:test'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { WHY, whyOf } from '../src/reviews.ts'
-import { at, index, verifier, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, post, profile, publishProfile, startHost, twin } from './world.ts'
 
 const by = verifier()
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
   host = await startHost()
-  rpc = await startRpc()
 })
 after(async () => {
   await host.close()
-  await rpc.close()
 })
 
 test('reviews: who counts, the latest per writer, subject and post, and why the rest do not', async () => {
@@ -35,7 +32,8 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   await post(host.url, [
     at(student, 'review/first', review(tutor.key.address, '4', { offer: maths })),
     at(student, 'review/second', review(tutor.key.address, '9', { offer: maths, text: 'Clear and patient.' })),
-    at(student, 'review/general', review(tutor.key.address, '8')),
+    // Evidence, a field the market names, is taken as any other: nothing here reads it.
+    at(student, 'review/general', review(tutor.key.address, '8', { evidence: 'not read here' })),
     at(another, 'review/maths', review(tutor.key.address, '10', { offer: maths })),
     at(another, 'review/bare', review(tutor.key.address, undefined)),
     at(another, 'review/odd', review(tutor.key.address, '7', { stars: '5' })),
@@ -47,7 +45,7 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   // The tutor takes the post down; it stays here with its last body.
   await post(host.url, [at(tutor, 'offer/maths', null)])
 
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
   await i.pass()
   const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
   const received = new Map(t.reviews.received.map((r) => [r.address, r]))
@@ -62,10 +60,7 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   assert.deepEqual([got(stranger, 'maths').counted, got(stranger, 'maths').why], [false, WHY.writer])
   assert.deepEqual([got(tutor, 'me').counted, got(tutor, 'me').why], [false, WHY.itself])
   assert.deepEqual([got(coach, 'tutor').counted, got(coach, 'tutor').why], [false, WHY.market])
-  for (const r of t.reviews.received) {
-    assert.equal(r.evidence, 'without')
-    if (!r.counted) assert.equal(r.weight, 0)
-  }
+  for (const r of t.reviews.received) if (!r.counted) assert.equal(r.weight, 0)
 
   const s = (await twin<ProfilePage>(i, `/profiles/${student.key.address}.json`)).body
   assert.equal(s.reviews.given.find((r) => r.address.endsWith('/review/stranger'))!.why, WHY.subject)
@@ -106,7 +101,7 @@ test("vouches and reports: who counts, the latest per writer and subject, why th
     at(tutor, 'vouch/me', about()),
   ])
 
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
   await i.pass()
   const page = async () => (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
   let t = await page()

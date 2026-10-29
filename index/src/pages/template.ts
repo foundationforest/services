@@ -56,7 +56,6 @@ export const urls = (base: string) => ({
   home: `${base}/`,
   market: (name: string) => `${base}/markets/${encodeURIComponent(name)}`,
   profile: (address: string) => `${base}/profiles/${encodeURIComponent(address)}`,
-  deal: (escrow: string) => `${base}/deals/${encodeURIComponent(escrow)}`,
   search: (q: Record<string, string>) => `${base}/search${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ''}`,
 })
 

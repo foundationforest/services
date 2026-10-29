@@ -1,9 +1,9 @@
 // The index, from its settings (README.md, Settings):
 //
 //   node src/main.ts            reads every READ_SECONDS and serves the pages
-//   node src/main.ts rebuild    drops everything but when each proof and each review was first seen
-//                               and the signed roots (store.ts), reads the hosts and the chain
-//                               again, ranks, and exits; the next start serves what it read
+//   node src/main.ts rebuild    drops everything but when each proof was first seen and the signed
+//                               roots (store.ts), reads the hosts again, ranks, and exits; the next
+//                               start serves what it read
 
 import { rebuild, startIndex } from './index.ts'
 
@@ -21,21 +21,19 @@ function seconds(name: string, fallback: string): number {
 
 const dataDir = setting('DATA_DIR')
 const publicUrl = setting('PUBLIC_URL', 'https://index.forest.foundation')
-// The settings config/chains.json names for its chains' RPCs; RPC_URL has a default.
-const settings = { ...env, RPC_URL: setting('RPC_URL', 'https://api.devnet.solana.com') }
 if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an origin, such as https://index.forest.foundation')
 
 if (process.argv[2] === 'rebuild') {
-  await rebuild({ dataDir, publicUrl, settings })
+  await rebuild({ dataDir, publicUrl })
   // Exits once the line is out, whatever is still open: a deploy's next command waits on it. Every
   // rebuild of the foundation's copy printed this and its deploy went no further, though none
   // checked a proof, so the curve's threads that index.ts stops never started; what held it is not
   // known.
-  process.stdout.write('rebuilt: read the hosts and the chain again, and ranked\n', () => process.exit(0))
+  process.stdout.write('rebuilt: read the hosts again, and ranked\n', () => process.exit(0))
 } else {
   const port = Number(setting('PORT', '8080'))
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('PORT is a port number')
-  const index = await startIndex({ dataDir, publicUrl, settings, readSeconds: seconds('READ_SECONDS', '30'), port })
+  const index = await startIndex({ dataDir, publicUrl, readSeconds: seconds('READ_SECONDS', '30'), port })
   console.log(`index ${index.address}, listening on ${port}`)
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => void index.close().then(() => process.exit(0)))
 }
