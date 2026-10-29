@@ -9,7 +9,7 @@ import { after, before, test } from 'node:test'
 
 import { VERSION, discriminator } from '@foundationforest/escrow-client'
 import { checkBytes, unpackSignature } from '@foundationforest/keys'
-import { b64u, base58 } from '@foundationforest/records'
+import { b64u, base58 } from '@foundationforest/folders'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
 import { ROOT } from '../src/index.ts'

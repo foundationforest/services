@@ -1,16 +1,15 @@
-// The tree: the served leaves, one per counted profile's tag, each carrying that profile's trust
-// with a count of 1, rebuild the served root, which the index's key signed as the reputation client
-// expects; a reputation proof made from those leaves shows on the profile that carries it, with the
-// trust it carries, and not on another, nor against a root this index signed more than maxAgeDays
-// ago, unless it is the newest.
+// The tree: the served leaves, one per counted profile, its key and its trust, rebuild the served
+// root, which the index's key signed as the reputation client expects; a reputation proof made from
+// those leaves shows on the profile that carries it, with the trust it carries, and not on another,
+// nor against a root this index signed more than maxAgeDays ago, unless it is the newest.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 
-import { checkBytes, seedScalar, unpackSignature } from '@foundationforest/keys'
-import { b64u, hex } from '@foundationforest/records'
+import { checkBytes, pointOf, seedScalar, unpackSignature } from '@foundationforest/keys'
+import { b64u, hex } from '@foundationforest/folders'
 import { buildTree, proofBytes, proveReputation, signedBytes } from '@foundationforest/reputation'
-import { toBytes32 } from '@foundationforest/stamp'
+import { toBytes32 } from '@foundationforest/verification'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, index, verifier, post, profile, publishProfile, REPUTATION_FILES, startHost, startRpc, twin } from './world.ts'
@@ -30,7 +29,7 @@ after(async () => {
 })
 
 type Served = { index: string; root: string; time: number; signature: string; leaves: number }
-type Leaves = { root: string; leaves: Array<{ tag: string; scope: string; score: number; count: number }> }
+type Leaves = { root: string; leaves: Array<{ profile: string; score: number }> }
 
 test('the tree, its signed root, and a reputation proof on a profile, by its root\'s age', async () => {
   const tutor = await profile('tutoring/tutor', [first, second])
@@ -48,18 +47,16 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const served = (await twin<Served>(i, '/v1/reputation')).body
   const { leaves } = (await twin<Leaves>(i, '/v1/reputation/leaves')).body
   assert.equal(served.index, i.address)
-  // One leaf per tag of every counted profile: the tutor's two, one for each verifier, and each
-  // student's. A leaf's score is its profile's trust, as its page shows it, and its count is 1.
+  // One leaf per counted profile, in order of address, the tutor's one though two verifiers
+  // checked it. A leaf's score is its profile's trust, as its page shows it.
   const people = [tutor, ...students, later]
-  assert.deepEqual(leaves.map((l) => l.tag).sort(), people.flatMap((p) => p.proofs.map((x) => x.tag)).sort())
+  assert.deepEqual(leaves.map((l) => l.profile), people.map((p) => p.key.address).sort())
   const trustOf = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.trust
-  for (const p of people) {
-    for (const proof of p.proofs) assert.deepEqual([leaves.find((l) => l.tag === proof.tag)!.score, leaves.find((l) => l.tag === proof.tag)!.count], [await trustOf(p), 1])
-  }
+  for (const p of people) assert.equal(leaves.find((l) => l.profile === p.key.address)!.score, await trustOf(p))
   const value = await trustOf(tutor)
   // Three students' ratings are three vouches: more than a newcomer's half of its uniqueness.
   assert.ok(value > Math.round(100 * (1 - 0.25 * 0.25) / 2), `${value}`)
-  const asLeaves = (ls: Leaves['leaves']) => ls.map((l) => ({ tag: BigInt('0x' + l.tag), scope: BigInt('0x' + l.scope), score: BigInt(l.score), count: BigInt(l.count) }))
+  const asLeaves = (ls: Leaves['leaves']) => ls.map((l) => ({ profile: pointOf(l.profile), score: BigInt(l.score) }))
   const root = buildTree(asLeaves(leaves)).root
   assert.equal(hex.encode(toBytes32(root)), served.root)
   assert.ok(checkBytes(i.address, signedBytes(root, served.time), unpackSignature(b64u.decode(served.signature))!))
@@ -72,13 +69,12 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const prove = async (ls: Leaves['leaves'], against: Served) => {
     const r = await proveReputation({
       seedScalar: await seedScalar(tutor.seed),
-      sources: [{ label: 'tutoring/tutor', verifierName: first.name }],
+      labels: ['tutoring/tutor'],
       leaves: asLeaves(ls),
       profileLabel: 'tutoring/tutor',
-      show: true,
       artifacts: REPUTATION_FILES,
     })
-    return { circuit: 'reputation', index: i.address, root: against.root, time: against.time, signature: against.signature, score: Number(r.score), label: 'tutoring/tutor', proof: b64u.encode(proofBytes(r.proof)) }
+    return { circuit: 'reputation', index: i.address, root: against.root, time: against.time, signature: against.signature, score: Number(r.score), proof: b64u.encode(proofBytes(r.proof)) }
   }
   const shown = await prove(leaves, served)
   const bytes = b64u.decode(shown.proof)
@@ -91,7 +87,7 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const results = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.proofs
   const t = await results(tutor)
   assert.deepEqual(t.map((x) => x.result), ['counts', 'counts', 'shown', 'it does not check'])
-  assert.deepEqual({ ...t[2] }, { circuit: 'reputation', index: i.address, trust: value, label: 'tutoring/tutor', time: served.time, result: 'shown' })
+  assert.deepEqual({ ...t[2] }, { circuit: 'reputation', index: i.address, trust: value, time: served.time, result: 'shown' })
   assert.equal((await results(students[0]!))[1]!.result, 'it does not check')
   assert.deepEqual((await twin<Served>(i, '/v1/reputation')).body, served)
 

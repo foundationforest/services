@@ -1,5 +1,5 @@
 // The markets: read from the pinned checkout; a post that does not fit its market is kept, not
-// listed, and says why; the escrow this index reads is the one the pinned standard records, on a
+// listed, and says why; the escrow this index reads is the one the pinned standard names, on a
 // chain config/chains.json lists.
 
 import assert from 'node:assert/strict'
@@ -17,13 +17,13 @@ import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
 
-test('the escrow this index reads is the program the pinned standard records, of the version its client reads, on a chain this index reads', () => {
-  const record = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
-  assert.equal(ESCROW_PROGRAM, record.escrow.programId)
-  assert.equal(record.escrow.version, VERSION)
+test('the escrow this index reads is the program the pinned standard names, of the version its client reads, on a chain this index reads', () => {
+  const deployed = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
+  assert.equal(ESCROW_PROGRAM, deployed.escrow.programId)
+  assert.equal(deployed.escrow.version, VERSION)
   assert.equal(VERSION, 4)
   // Solana's devnet in CAIP-2 form, as the markets manual writes it.
-  assert.equal(record.cluster, 'devnet')
+  assert.equal(deployed.cluster, 'devnet')
   assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
   assert.deepEqual(loadLists(ROOT).chains.get(ESCROW_CHAIN), { reader: 'solana', rpc: 'RPC_URL' })
 })

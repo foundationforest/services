@@ -10,7 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { after, before, test } from 'node:test'
 
 import { VERSION, discriminator } from '@foundationforest/escrow-client'
-import { base58, ownerRecord } from '@foundationforest/records'
+import { base58, entry } from '@foundationforest/folders'
 
 import { ESCROW_PROGRAM } from '../src/chain.ts'
 import { UNSIGNED, USED } from '../src/evidence/index.ts'
@@ -143,12 +143,12 @@ test('evidence: an escrow or a payment between the two profiles, in either direc
   // A review written two days ago, which this index first sees now, naming a payment the chain
   // still does not hold: its day runs from now.
   const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000
-  await post(host.url, [ownerRecord(student.key, 'review/payment-old', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/old`, evidence: on(payments.old!.signature) }, twoDaysAgo)])
+  await post(host.url, [entry(student.key, 'review/payment-old', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/old`, evidence: on(payments.old!.signature) }, twoDaysAgo)])
   reviews.push(['payment-old', payments.old!.signature, 'without'])
   // The tutor names the escrow the student's review already used; and a stranger names the
   // student's payment in a review dated before it, which takes nothing from the student's.
   await post(host.url, [at(tutor, 'review/escrow-paid', { subject: student.key.address, score: '9', evidence: on(escrows.paid) })])
-  await post(host.url, [ownerRecord(stranger.key, 'review/grief', { subject: tutor.key.address, score: '1', evidence: on(payments.paid!.signature) }, Date.now() - 60_000)])
+  await post(host.url, [entry(stranger.key, 'review/grief', { subject: tutor.key.address, score: '1', evidence: on(payments.paid!.signature) }, Date.now() - 60_000)])
 
   let clock = Date.now()
   const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url, { now: () => clock })
@@ -231,7 +231,7 @@ test('evidence: a pay address its pay key did not sign for the profile gives non
   // take it from the tutor's if the impostor's address counted.
   const evidence = `${CHAIN}:${escrow}`
   await post(host.url, [
-    ownerRecord(student.key, 'review/impostor', { subject: impostor.key.address, score: '9', offer: `${impostor.key.address}/offer/maths`, evidence }, Date.now() - 60_000),
+    entry(student.key, 'review/impostor', { subject: impostor.key.address, score: '9', offer: `${impostor.key.address}/offer/maths`, evidence }, Date.now() - 60_000),
     at(student, 'review/tutor', { subject: tutor.key.address, score: '9', offer: `${tutor.key.address}/offer/maths`, evidence }),
   ])
   const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)

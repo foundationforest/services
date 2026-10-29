@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { normalizeOrigin, publicKeyFromAddress } from '@foundationforest/records'
+import { normalizeOrigin, publicKeyFromAddress } from '@foundationforest/folders'
 
 import type { Numbers } from './rank.ts'
 
@@ -13,7 +13,7 @@ import type { Numbers } from './rank.ts'
 export type ListedKey = {
   /** The key's address. */
   key: string
-  /** The verifier name its stamp proofs must carry. */
+  /** The verifier name its verifications must carry. */
   verifier: string
   /** What the pages call its check, such as "face check". */
   label: string

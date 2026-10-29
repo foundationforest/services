@@ -1,4 +1,4 @@
-// `/profiles/<address>`: a profile this index holds a profile record for. Its profile record; each
+// `/profiles/<address>`: a profile this index holds a profile entry for. Its profile entry; each
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
 // ratings, trust, uniqueness and pickiness) and the statement that signs them; its posts, listed or
 // not and why; the reviews, vouches and reports it received and gave, each with whether it counts
@@ -128,7 +128,7 @@ ${listOf([...o.vouches.received.map((r) => saidHtml('vouch', r, r.writer, base))
 <h2>Vouches and reports given</h2>
 ${listOf([...o.vouches.given.map((r) => saidHtml('vouch', r, subjectOf(r), base)), ...o.reports.given.map((r) => saidHtml('report', r, subjectOf(r), base))], (x) => x)}
 <h2>Words</h2>
-<p>Each writer's one word about a profile: a report if its latest record about it is a report, otherwise a vouch.</p>
+<p>Each writer's one word about a profile: a report if its latest counted entry about it is a report, otherwise a vouch.</p>
 <h3>Received</h3>
 ${o.words.received.length ? html`<ul>${o.words.received.map((w) => wordHtml(w, w.writer))}</ul>` : none}
 <h3>Given</h3>
