@@ -99,12 +99,14 @@ nothing.
 
 A post is listed when its profile counts and it fits its market, read as the markets manual says.
 The mcp, the foundation's door for AI apps over MCP (the Model Context Protocol, the way AI apps
-call outside tools), checks a post the same way before it passes the post on to be written:
+call outside tools), checks a post the same way before it signs one:
 
 - each field is one its market names for the profile's role;
 - each field is of its type in `types.json`;
 - a choice takes only its values;
-- a field marked `many` holds a list of its type, each value different.
+- a field marked `many` holds a list of its type, each value different;
+- a field of type `file` names one of the files the body lists in `files`. `files` is the
+  standard's own field, which the entry's check reads, and no market's.
 
 A market's `required` is for apps to ask for, and nothing enforces it, so neither does this. A post
 that is not listed is kept and shown on its profile's page with `why`: it does not fit (naming the
@@ -120,7 +122,7 @@ deal went and gives a score; a vouch says "I know this profile is real and hones
 2. it fits its writer's market's fields for its kind: the shared ones it lists (`subject` an
    address, `score` "1" to "10" with at most one decimal, `text`, `offer` a post's full address
    `<profile>/offer/<id>`, `evidence`; a vouch and a report hold only `subject` and `text`) and the
-   fields the market adds;
+   fields the market adds, a `file` among them naming one of the body's `files`;
 3. a review gives a score;
 4. it is about another profile, not its writer;
 5. its writer and the profile it is about have the same `market` in their profile entries, so each
@@ -439,9 +441,9 @@ name, and answer the chain from a stand-in RPC:
   - a profile that lists another's pay addresses, with that profile's signatures, gives no evidence,
     "pay address unsigned", takes nothing from the real one's review, and is no side of the deal;
   - a deal's page finds the reviews that name it on its chain;
-- **markets:** the checks of fields, choices, lists and roles, for a post, a review, a vouch and a
-  report; a post that does not fit is kept and not listed; the escrow program is the one the pinned
-  standard names, of the version its client reads, on a chain `config/chains.json` lists;
+- **markets:** the checks of fields, choices, lists, roles and files, for a post, a review, a vouch
+  and a report; a post that does not fit is kept and not listed; the escrow program is the one the
+  pinned standard names, of the version its client reads, on a chain `config/chains.json` lists;
 - **tree:** a leaf for each counted profile, in order of address, its score the profile's trust, one
   leaf for a profile two verifiers checked, and the served leaves rebuild the served root, whose signature checks; a reputation proof made
   from the leaves shows on its profile with the trust it carries, and not with a byte changed or on

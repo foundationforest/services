@@ -76,7 +76,7 @@ export function valueText(v: unknown): string {
     if ('amount' in o && 'currency' in o) return `${o.amount} ${o.currency}${o.per ? ` per ${o.per}` : ''}`
     if ('area' in o) return `${o.area}${o.online ? ', and online' : ''}${o.reachKm !== undefined ? `, up to ${o.reachKm} km away` : ''}`
     if (o.online === true) return 'online'
-    if ('sha256' in o) return `a file (${o.mimeType}, ${o.size} bytes)`
+    if ('sha256' in o) return `a file (${o.type}, ${o.size} bytes)`
     if ('from' in o && 'to' in o) return `${o.from} to ${o.to}`
     if ('zone' in o && Array.isArray(o.slots)) return `${(o.slots as Array<{ days: string[]; from: string; to: string }>).map((s) => `${s.days.join(', ')} ${s.from} to ${s.to}`).join('; ')} (${o.zone})`
     return Object.entries(o)

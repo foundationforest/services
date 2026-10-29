@@ -1,11 +1,12 @@
-// What the read tools do with an index: read what it says, and pass it on whole, as its own word.
-// Nothing is kept between calls: every call reads again what it needs. No tool here signs, and none
-// reads a host: what acts for a person goes to their app, over the live link (link.ts).
+// What the tools do with an index: read what it says, and pass it on whole, as its own word.
+// Nothing is kept between calls: every call reads again what it needs.
 //
-// Nothing here checks what an index says, and nothing here names a field of it, so an index can
-// change what it shows, or another index show other things, and this copy passes it on the same.
+// Nothing here checks what an index says, so an index can change what it shows, or another index
+// show other things, and this copy passes it on the same. One tool names three of its fields: read
+// gives, for each message's sender, the market and role of its `profile` and its `checks`, as the
+// index shows them (tools/read.ts).
 
-import { type Body, READ_TIMEOUT_MS } from '@foundationforest/records'
+import { type Body, READ_TIMEOUT_MS } from '@foundationforest/folders'
 
 /** A plain refusal: what could not be done, and why, in words a person reads. */
 export class Refusal extends Error {
@@ -60,11 +61,11 @@ export type Said = { url: string; word: string } & ({ answer: unknown } | { unre
 
 const at = (ctx: Context, path: string) => `${ctx.index.replace(/\/+$/, '')}/${path}`
 
-/** What the index says at `path`, untouched, as JSON or as text, with where it was read; refused when it says nothing. */
-export async function fromIndex(ctx: Context, path: string, as: 'json' | 'text' = 'json'): Promise<Said> {
+/** What the index says at `path`, untouched, as JSON or as text, with where it was read, within `timeout` ms; refused when it says nothing. */
+export async function fromIndex(ctx: Context, path: string, as: 'json' | 'text' = 'json', timeout = READ_TIMEOUT_MS): Promise<Said> {
   const url = at(ctx, path)
   try {
-    const answer = as === 'json' ? await readJson(url) : (await readBytes(url, fetch, MAX_ANSWER_BYTES, READ_TIMEOUT_MS)).toString('utf8')
+    const answer = as === 'json' ? await readJson(url, fetch, MAX_ANSWER_BYTES, timeout) : (await readBytes(url, fetch, MAX_ANSWER_BYTES, timeout)).toString('utf8')
     return { url, word: WORD, answer }
   } catch (err) {
     return refuse(`the index gave nothing for ${url}: ${(err as Error).message}`)
@@ -72,9 +73,9 @@ export async function fromIndex(ctx: Context, path: string, as: 'json' | 'text' 
 }
 
 /** The same, or why the index said nothing, so a down index never hides what the markets gave. */
-export async function indexSays(ctx: Context, path: string, as: 'json' | 'text' = 'json'): Promise<Said> {
+export async function indexSays(ctx: Context, path: string, as: 'json' | 'text' = 'json', timeout = READ_TIMEOUT_MS): Promise<Said> {
   try {
-    return await fromIndex(ctx, path, as)
+    return await fromIndex(ctx, path, as, timeout)
   } catch (err) {
     return { url: at(ctx, path), word: WORD, unread: (err as Error).message }
   }

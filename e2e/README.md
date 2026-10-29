@@ -2,39 +2,37 @@
 
 Part of Forest's services: [the top README](../README.md).
 
-The loop: Forest end to end, two people doing everything a person does, each with a signer (a
-device of their own that holds their seed) and an AI acting for them, with every service this repo
-runs.
+The loop: Forest end to end, two people doing what a person does, each with their app (on a device
+of their own, holding their seed) and an AI acting for them, with every service this repo runs.
 
 It is not a service. The foundation runs it by hand, and anyone can; the main way is
-`npm run e2e` with the phrase that funds it. Each run writes one record to `runs/`.
+`npm run e2e` with the phrase that funds it. Each run writes its result to `runs/`.
 
 ## How it works
 
 ### Who is who
 
-- **Each person's device** is the reference signer, [`mcp/test/signer.ts`](../mcp/test/signer.ts),
+- **Each person's device** is the reference app, [`mcp/test/app.ts`](../mcp/test/app.ts),
   unchanged. It holds the seed and the person's stamp (the verifier's signature that it checked the
-  person), keeps each profile's permissions (what the person lets their AI ask for) in that
-  profile's folder (what its main key signs on the host), makes each profile with its stamp proof,
-  signs with each profile's main key, publishes straight to the host, and answers by those
-  permissions what the mcp carries to it over the live link from an AI app, over MCP (the Model
-  Context Protocol, the way AI apps call outside tools). What it has no method for, the device does
-  in `e2e.ts`, with the standard's pieces:
-  - the stamp, asked of the verifier, which the device hands its signer to keep;
-  - the reputation proof, made on the device;
-  - the escrow (money held on the chain by a program, and paid out as the deal says);
-  - the review only the person's app can write, one naming the escrow it was paid through.
+  person), keeps the person's Profiles folder (the folder, locked to a key only the seed gives, that
+  lists their profiles and stamps), makes each profile with a verification (the proof, made on the
+  device, that its seed holds a stamp), signs with each profile's main key, writes straight to the
+  host, and, at the connect page, hands the mcp an access key for the profile ticked. What it has no
+  method for, the device does in `e2e.ts`, with the standard's pieces:
+  - the stamp, asked of the verifier, which the device hands its app to keep;
+  - the payment, a plain transfer from the profile's pay key;
+  - the reputation proof, made on the device.
 - **Each person's AI** is the MCP SDK's own client, through mcp's own test helpers (`aiApp`,
   `logIn`, in [`mcp/test/setup.ts`](../mcp/test/setup.ts)). It logs in as an AI app does, and calls
-  the mcp's tools as a chat calls them. It holds no key and is told no address of its own person's.
+  the mcp's tools as a chat calls them, over MCP (the Model Context Protocol, the way AI apps call
+  outside tools). It holds no key and is told no address of its own person's.
 - **The connect page** is the loop's stand-in for the Forest app's, in `e2e.ts`: the person whose
-  turn it is picks the profile their AI sees, and their signer makes the connection.
+  turn it is ticks the profile their AI acts in, and their app hands back the pack.
 
 ### What one run does
 
-Two people, a tutor and a student, each from a seed of their own, in the market `tutoring`. Every
-step checks what it did, and the run passes only if every step does.
+Two people, a tutor who sells and a student who buys, each from a seed of their own, in the market
+`tutoring`. Every step checks what it did, and the run passes only if every step does.
 
 1. **Keys.** From each seed:
    - the profile `tutoring/tutor` or `tutoring/student`: its address, and its pay addresses,
@@ -44,12 +42,12 @@ step checks what it did, and the run passes only if every step does.
    From the tutor's seed, a second profile too: `sports-coaching/coach`.
 2. **Funding.** The phrase's `deploy` key makes a USDC account for both Solana pay addresses and for
    each person's wallet app (an address of its own, apart from any profile), and sends each wallet
-   0.01 SOL (the chain's own coin) for its fees. From its own USDC it sends 42 to the student's pay
-   address and 1 to each wallet: 44 in all, by plain transfers; nothing is minted. The student's 42
-   cover its two payments of 2 and the fee payer's charges, 37.5364 at Kora's mock price, ten base
+   0.01 SOL (the chain's own coin) for its fees. From its own USDC it sends 3 to the student's pay
+   address and 1 to each wallet: 5 in all, by plain transfers; nothing is minted. The student's 3
+   cover its payment of 2 and the fee payer's charge for it, 0.10 at Kora's mock price, ten base
    units a lamport, a billionth of a SOL ([fee-payer](../fee-payer/README.md)). When the fee payer
    is the loop's own, it gets 0.05 SOL and its USDC account, where it is paid. A deploy key holding
-   less than 44 stops the run, saying so.
+   less than 5 stops the run, saying so.
 3. **Stamps.** Each person takes the loop verifier's face check: its stand-in Didit passes everyone.
    Each gets a stamp for their stamp number, checked:
    - its signature;
@@ -63,85 +61,72 @@ step checks what it did, and the run passes only if every step does.
    finds it final, and finished with the host's credits client (`host/client/`). A host that sells
    only for its sponsors' tickets (signed by the keys it lets pay for others' buys) stops the run,
    saying so.
-5. **Profiles.** Each person's device spends credits into the profile's folder, then the signer adds
-   the profile: its hosts record, and its profile record with each pay address signed by its pay
-   key and a real stamp proof, made on the device from the stamp it keeps and the stamp circuit's
-   committed proving files. Read back from the host as any reader reads it, the record holds the
-   market, the role and an inbox anyone may write to, and the run checks:
-   - its pay addresses, `pay { solana, evm }`;
-   - its inbox key and its inbox;
-   - the stamp proof, which checks.
-
-   The tutor keeps 4 credits for the coach profile.
+5. **Profiles.** Each person's device spends 2 credits into their Profiles folder, where the app
+   keeps the stamp, then the rest into the profile's folder (the tutor keeps 3 for the coach
+   profile), and the app adds the profile and lists it in the Profiles folder. Read back from the
+   host as any reader reads it, the profile entry holds the market, the role and the profile's open
+   key, so it takes messages, and the run checks:
+   - its pay addresses, `pay { solana, evm }`, each signed by its pay key;
+   - its verification, made on the device from the stamp it keeps and the verification circuit's
+     committed proving files, which checks.
 6. **Logins.** Each AI's first call to act gets the mcp's challenge. The person's browser goes
-   through the connect page, where they pick their tutoring profile for it to see, and their signer
-   makes the connection and writes one permission into the profile's folder, `can` empty, with the
-   connection's key inside; the AI gets its login, and its `read` with nothing named shows that
-   profile, by its label, with nothing it may do there yet. Then, in their app, the person allows
-   more, each up to 5 US dollars a day:
-   - the tutor: read, write and pay;
-   - the student: write and pay.
-
-   Read back from the host, the folder holds that one permission, encrypted to the profile's own
-   inbox key alone, for this mcp, with what the person allowed.
+   through the connect page, where they tick their tutoring profile, and their app makes an access
+   key, lists it in the profile entry with all four switches (`read-inbox`, `read`, `write`,
+   `message`), writes its note, and hands the mcp the pack; the AI gets its login, and
+   `my_profiles` shows that profile, by its label, with those switches. Read back from the host:
+   - the profile entry lists that one access key;
+   - its note, at its keyed path, is locked to one key, and opens for the main key, naming this mcp.
 7. **mcp.** Every call goes through the AI's own client:
-   - the tutor's AI reads the market, then writes an offer (`write`, at `offer/maths`): maths, 2 USD
-     an hour, paid `direct` or by `session`. On the host it is signed by the tutor's main key;
+   - the tutor's AI reads the market (`markets`, `tutoring`), then writes an offer (`write`, at
+     `offer/maths`): maths, 2 USD an hour, paid `direct`. On the host it is current, signed by the
+     tutor's access key;
    - the student's AI finds it with `search`, the loop index's search through the mcp, and messages
-     the tutor at the post's profile (`write`, `to` its address);
-   - the tutor's AI reads its inbox (`read`, `inbox`) and replies to the address the message came
-     from (`write`, `to` that address);
-   - the student's AI asks to read its inbox. Reading is not in the student's permission, so the
-     answer is *waiting*, with a link for the student. The loop says yes on the student's signer,
-     and the student's own answer holds the tutor's reply.
-8. **The deal, paid twice.** Both go through the fee payer at cost: the price asked, paid exactly in
-   USDC, and co-signed.
-   - **A direct payment** of 2 USDC, which the student's AI asks for (`pay`, to the offer's full
-     address). It is within the student's limit, so the signer pays at once: a plain transfer from
-     the student's pay address to the tutor's. The AI's answer says only done; the signer keeps the
-     payment, under the offer.
-   - **An escrow,** version 4, on the market's `session` schedule, read from the market file at
-     `MARKETS`: one window until seven days after payment, in which the student takes nothing back,
-     then `pay`. The student's device opens and pays into it in one transaction, then pays it out
-     early (`pay`). The run checks the receipt:
-     - version 4, paid between the two pay addresses, on the schedule;
-     - its rent going back to the fee payer that fronted it.
-9. **Reviews.** Each names its evidence as `<CAIP-2 chain>:<id>` (CAIP-2: a standard way to name a
-   chain), the chain worked out from the genesis hash its RPC, the access point to the chain, gives:
-   - the student's AI writes one through mcp (`write`, at `review/maths`): it scores the tutor 10
-     and names the offer, and the student's signer fills in its evidence, the direct payment it
-     made;
-   - the tutor's AI tries to write one naming the escrow, and the tutor's signer refuses it, naming
-     `evidence`: evidence is never an AI's to write, and the tutor's signer paid nothing. So the
-     tutor's app writes that review itself, scoring the student 9, at the address its inbox showed,
-     naming the escrow it saw pay the tutor's pay address.
+     the tutor at the post's profile (`message`);
+   - the tutor's AI reads its inbox (`read`, `inbox`): the message, from the student's address,
+     counted (the student's profile entry lists the key that signed it with `message`), with the
+     student's market, role and face check as the index shows them; and replies to the address it
+     came from (`message`);
+   - the student's AI reads the reply in its own inbox.
+8. **The payment,** as the student's app makes it, not the AI: to the Solana pay address the tutor's
+   profile entry lists, signed by its pay key, a plain transfer of 2 USDC from the student's pay
+   address, through the fee payer at cost: the price asked, paid exactly in USDC, and co-signed.
+9. **The review.** The student's AI writes one (`write`, at `review/maths`): it scores the tutor 10,
+   names the offer, and names the payment as its evidence, `<CAIP-2 chain>:<signature>` (CAIP-2: a
+   standard way to name a chain), the chain worked out from the genesis hash its RPC, the access
+   point to the chain, gives. On the host it is signed by the student's access key.
 10. **The index.** The loop's index shows:
     - both profiles counted under the loop verifier's face key;
     - the offer listed;
-    - both reviews counted, each with its payment;
-    - what each profile shows as the index's own ranking makes it from these two reviews, each a
-      rating and its writer's word about the other, a vouch, with the index's numbers in
+    - the review counted, with its payment;
+    - what each profile shows as the index's own ranking makes it from this one review, a rating
+      and its writer's word about the tutor, a vouch, with the index's numbers in
       `index/config/scoring.json`. The loop works them out with the same code: today the tutor rated
-      10.0 and the student 9.0, each by one rater, each with trust 45, uniqueness 75 and pickiness
-      average. Each statement is signed by the index and checked;
-    - the deal paid out, with the review that names it.
+      10.0 by one rater, trust 44, the student no rating, trust 38, each uniqueness 75 and pickiness
+      average. Each statement is signed by the index and checked.
 
     No message appears anywhere in its JSON.
 11. **The trust, carried.** The tutor's device finds its own leaf among the index's leaves by its
-    tag, without asking for it: its trust, with a count of 1. It checks the root the index signed,
-    and proves its tutoring trust on the device onto its coach profile (the standard's reputation
-    circuit), naming none of its profiles. The signer adds the coach profile, paid with the tutor's
-    last four credits, and its profile record carries a stamp proof of its own and that reputation
-    proof. The index shows the proof on the coach's page, with the tutor's trust.
-12. **Addresses.** No answer either AI received holds one of its own person's addresses: each of
-    their profiles, the coach's included, and each pay address. An AI reads the other person's
-    addresses, as it must to message and review them.
-13. **Balances.** What each folder's credits came to.
+    profile, with its trust. It checks the root the index signed, and proves its tutoring trust on
+    the device onto its coach profile (the standard's reputation circuit), naming none of its
+    profiles. The app adds the coach profile, paid with the tutor's last three credits, its profile
+    entry carrying a verification of its own and that reputation proof. The index shows the proof on
+    the coach's page, with the tutor's trust.
+12. **Removed.** The tutor's app takes the access key out of the tutor's profile entry. The tutor's
+    AI's next write is refused by the host, as `unlisted`, and the offer the key wrote counts for
+    nothing on the host: the newest entry that still counts at its path is current, and there is
+    none.
+13. **A new device.** From the tutor's seed alone, the Profiles folder on the host gives its two
+    profiles, `tutoring/tutor` and `sports-coaching/coach`, each with its folder there, and its
+    stamp, the one signed.
+14. **Addresses.** No answer either AI received holds one of its own person's addresses: each of
+    their profiles, the coach's included, each pay address, and their Profiles folder. An AI reads
+    the other person's addresses, as it must to message and review them.
+15. **Balances.** What each folder's credits came to.
 
 Then, passed or failed, the services stop, and when the fee payer is the loop's own, what its key
 holds goes back to the deploy key, which gave it: all its USDC, its USDC account closed with that
 account's rent, and all its SOL, in one transaction its key signs, as its operator's would, and the
-deploy key pays for. The record says how much came back (`sweep`). A sweep that fails fails the run,
+deploy key pays for. The result says how much came back (`sweep`). A sweep that fails fails the run,
 saying so.
 
 ### Two ways to run, one loop
@@ -150,7 +135,6 @@ saying so.
 - each service's address (`verifier`, `host`, `feePayer`, `index`, `mcp`), where `null` means the
   loop's own copy;
 - the chain's public RPC;
-- the escrow program;
 - the dollar the loop pays in, `testDollar`;
 - the market.
 
@@ -166,7 +150,7 @@ the dollar is Circle's USDC there, which the deploy key holds: fill it from
 | host | `host/`'s code, as `npm start` runs it, the plug and the credits, selling credits for USDC, paid to the deploy key's address and checked through the RPC |
 | fee payer | `fee-payer/run.sh`: Kora with the `kora.toml` its image runs (`deploy/devnet-config.sh`), and a new key made at its first start, which the loop funds and, when the run ends, sweeps back |
 | index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check at confidence 0.75, ID check at 0.95, as the index's own lists give the foundation's); its own reputation proofs, against a root up to 30 days old. Its numbers, money and chains are `index/config/`'s: `config/chains.json` reads the chain above |
-| mcp | `mcp/`'s code, reading the loop's index and the markets, with the loop's connect page as its `APP_URL` |
+| mcp | `mcp/`'s code, reading the loop's index and the markets, with the loop's connect page as its `APP_URL`, and reaching hosts with a plain fetch, since the loop's host is on loopback |
 
 A `services.json` that names a host or a fee payer runs the same loop against it, as it is
 deployed. The verifier, the index and the mcp are always the loop's own; one named is only checked
@@ -197,11 +181,10 @@ prints comes to the console with `RPC_URL` taken out.
   - what it funds, all from that key's own USDC, and what it sweeps back from its own fee payer;
   - a wallet's transfer for a credit buy;
   - a direct payment, a plain transfer;
-  - a market's schedule as the escrow takes it;
   - a transaction sent through the fee payer at cost.
-- `record.ts`: a run's record, `checkRecord` (its shape), and `holdsNone`, which refuses a record
+- `record.ts`: a run's result, `checkRecord` (its shape), and `holdsNone`, which refuses a result
   holding a secret.
-- `runs/`: one record per run.
+- `runs/`: one result per run.
 
 The loop buys its credits with the host's credits client,
 [`host/client/`](../host/client/client.ts), as the verifier's tests do.
@@ -212,7 +195,6 @@ Node 22.18 or later. From the repo root:
 
 ```sh
 ./standard.sh                                             # the standard and the markets, at their pins
-(cd standard/proofs/reputation/circuit && npm run fetch)  # the reputation circuit's proving files
 (cd verifier && npm ci) && (cd host && npm ci) && (cd index && npm ci) && (cd mcp && npm ci)
 fee-payer/build.sh                                        # Kora, for the loop's own fee payer
 cd e2e && npm ci
@@ -223,11 +205,11 @@ FOREST_DEVNET_SEED='<the phrase>' npm run e2e -- deployed.json   # against what 
 
 - **`FOREST_DEVNET_SEED`** (required): the phrase. Its `deploy` key comes by the recipe in the
   standard's `escrows/solana/devnet/deploy.sh`, and pays the setup: the accounts' rent, the SOL, and
-  the 44 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. With the
-  loop's own host and fee payer, 37.7364 of it comes back by the run's end: the host's 0.20 for
-  credits, and the sweep. Never in this repo, and never given to a service.
+  the 5 USDC a run moves, from its own USDC: fill it from Circle's faucet before a run. With the
+  loop's own host and fee payer, 0.30 of it comes back by the run's end: the host's 0.20 for
+  credits, and the sweep's 0.10. Never in this repo, and never given to a service.
 - **`RPC_URL`** (optional): the RPC everything uses, in place of `services.json`'s `rpc`. It may
-  hold a key, so a run's record says only `RPC_URL`. Kora needs an RPC that returns inner
+  hold a key, so a run's result says only `RPC_URL`. Kora needs an RPC that returns inner
   instructions from `simulateTransaction`.
 
 The tests, which CI runs:
@@ -241,131 +223,123 @@ The tests, which CI runs:
 - `test/chain.test.ts`:
   - the phrase's key, against PBKDF2 made by Web Crypto;
   - every funding instruction, decoded by the token program's own decoders: with the loop's own
-    fee payer, plain transfers from the deploy key's own dollars, 44 in all; with a deployed one,
+    fee payer, plain transfers from the deploy key's own dollars, 5 in all; with a deployed one,
     nothing for it;
   - the sweep: all the fee payer's USDC, its USDC account closed, and all its SOL, each to the
     deploy key; nothing sent when it holds nothing;
   - a wallet's transfer naming a buy's reference;
   - a direct payment: one plain transfer, and nothing else;
-  - dollars as base units, and what is refused;
-  - tutoring's `session` schedule, from the market file at `MARKETS`, as the escrow's client takes
-    it, and the schedules the loop refuses.
-- `test/record.test.ts`: a passed run's and a failed run's records, what is refused, `holdsNone`,
-  and every record in `runs/`.
+  - dollars as base units, and what is refused.
+- `test/record.test.ts`: a passed run's and a failed run's results, what is refused, `holdsNone`,
+  and every result in `runs/`.
 
 ### The latest run
 
-2026-10-28, 06:47:38 to 06:48:31 UTC, with this repo at `e53797a` (standard at `fc1ce88`, markets at
-`c06d195`), with every service the loop's own on loopback and the chain through `RPC_URL`:
-**passed** in 53 seconds. Its record is
-[`runs/2026-10-28T06-47-38-553Z.json`](runs/2026-10-28T06-47-38-553Z.json). The records of earlier
-runs, made before the standard's asks and permissions, are in this repo's history.
+2026-10-29, 05:48:10 to 05:48:51 UTC, with this repo at `4b4d717` (standard at `63e7da7`, markets at
+`54fd323`), with every service the loop's own on loopback and the chain through `RPC_URL`:
+**passed** in 41 seconds. Its result is
+[`runs/2026-10-29T05-48-10-229Z.json`](runs/2026-10-29T05-48-10-229Z.json). The results of earlier
+runs, made before access keys, are in this repo's history.
 
 - **The services,** all the loop's own: the verifier `verifier.e2e-loop.invalid`, face key
-  `8vFsBJnS…`, ID key `FUnButeY…`; the host, paid at the deploy key; the fee payer, its new key
-  `4ERNxz9N…`; the index `3BxFKx9R…`; the mcp.
+  `BmqtnkZX…`, ID key `4QK9pAah…`; the host, paid at the deploy key; the fee payer, its new key
+  `Fc6uDzaQ…`; the index `39M8gAmC…`; the mcp.
 - **The dollar:** Circle's USDC, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`.
-- **People:** tutor `2iwUKH4t…`, student `6zCwZFbx…`, and the tutor's coach profile `7naW2LDz…`.
-- **Funding:** 42 USDC to the student's pay address; 1 USDC and 0.01 SOL to each wallet; 0.05 SOL
+- **People:** tutor `8szPNUn3…`, student `84EsothK…`, and the tutor's coach profile `Hdc4rXsX…`.
+- **Funding:** 3 USDC to the student's pay address; 1 USDC and 0.01 SOL to each wallet; 0.05 SOL
   to the loop's fee payer.
-- **Stamps:** one each from the loop verifier's face check, model `stand-in`, kept on each device,
-  and the same asked back by its stamp number.
-- **Credits:** each wallet paid the loop's host 0.10 USDC for 10 credits; the tutor spent 6 into its
-  folder, the student 10.
-- **Logins:** each AI sees its person's tutoring profile; then the tutor's may read, write and pay,
-  the student's write and pay, each up to 5 USD a day, one permission in each profile's folder.
+- **Stamps:** one each from the loop verifier's face check, model `stand-in`, kept in each Profiles
+  folder, and the same asked back by its stamp number.
+- **Credits:** each wallet paid the loop's host 0.10 USDC for 10 credits; the tutor spent 2 into its
+  Profiles folder, 5 into its folder and 3 into the coach's, the student 2 and 8.
+- **Profiles:** each with a verification that checks, and pay `{ solana, evm }`, each signed.
+- **Logins:** each AI acts in its person's tutoring profile with one access key, `D312WCLu…` and
+  `G87Mf6rZ…`, every switch, its note locked to the main key.
 - **mcp:**
-  - the offer `offer/maths`, written by the tutor's AI;
+  - the offer `offer/maths`, written by the tutor's AI, signed by its access key;
   - found by the student's AI through the index's search, which messaged the tutor;
-  - read by the tutor's AI, which replied to the address it came from;
-  - the student's AI's read of its inbox waited for the student's yes ("read as tutoring/student
-    is not in what this connection may do"), and got it.
-- **The deal:**
-  - the direct payment of 2 USDC, a plain transfer asked for by the student's AI, charged 0.10;
-  - the escrow `7VFvnx3W…`, version 4, opened and paid in, charged 37.3364, then paid out early,
-    charged 0.10, its outcome `pay`, its deposit address's rent back to the fee payer.
-- **Reviews:** the student's, written by its AI, its evidence the direct payment, filled in by its
-  signer; the tutor's AI refused naming the escrow, and the tutor's app wrote that review.
-- **The index:** the tutor rated 10.0 and the student 9.0, each by one rater with its payment, each
-  with trust 45, uniqueness 75 and pickiness average, each statement signed; the deal paid, 2 USDC,
-  with its review.
-- **The trust, carried:** the tutor's leaf found by its tag among 2 leaves, its trust 45, proven
-  onto the coach profile with the tutor's last 4 credits; the index shows it.
-- **Addresses:** none of its own person's in any of the 7 answers to the tutor's AI or the 8 to the
+  - read by the tutor's AI, counted, with the student's market, role and face check as the index
+    shows them, which replied; the student's AI read the reply.
+- **The payment:** 2 USDC from the student's pay address to the tutor's, a plain transfer made by
+  the student's app, charged 0.10.
+- **The review:** written by the student's AI, naming the offer and the payment, signed by its
+  access key.
+- **The index:** the tutor rated 10.0 by one rater, trust 44, the student no rating, trust 38, each
+  uniqueness 75 and pickiness average, each statement signed; the review counted with its payment.
+- **The trust, carried:** the tutor's leaf found by its profile among 2 leaves, its trust 44, proven
+  onto the coach profile with the tutor's last 3 credits; the index shows it.
+- **Removed:** the tutor's access key taken out of its profile entry; its AI's next write refused by
+  the host, "unlisted: the profile entry here lists no such key with write"; the offer it wrote
+  gone from the host's view.
+- **A new device:** from the tutor's seed alone, `sports-coaching/coach` and `tutoring/tutor`, and
+  the stamp.
+- **Addresses:** none of its own person's in any of the 6 answers to the tutor's AI or the 6 to the
   student's.
-- **Balances:** the tutor's folder 5.84201 credits, the student's 9.85582, the coach's 3.9398.
-- **The sweep:** the fee payer gave back everything it held, 37.5364 USDC and 49,223,240 lamports
-  with its USDC account's rent. It spent 2,265,200: 30,000 in fees and the escrow receipt's
-  2,235,200.
-- **What it cost the deploy key:** 6.2636 USDC (44 out; 0.20 back from the host and 37.5364 from the
-  sweep) and 28,238,960 lamports, as its three transactions' balances on chain say.
+- **Balances:** the tutor's folder 4.89835 credits, the student's 7.90761, the coach's 2.95261; the
+  Profiles folders 1.86551 and 1.90087.
+- **The sweep:** the fee payer gave back everything it held, 0.10 USDC and 51,478,440 lamports with
+  its USDC account's rent. It spent 10,000: the payment's fee.
+- **What it cost the deploy key:** 4.70 USDC (5 out; 0.20 back from the host and 0.10 from the
+  sweep) and 25,983,760 lamports, as its three transactions' balances on chain say.
 
-The loop's own services stopped with the run, so their pages and the three profiles' records are
-gone. What the run did on chain is on Solana's explorer: [the escrow][e], [the direct payment][p]
-and [the sweep][s].
+The loop's own services stopped with the run, so their pages and the three profiles' entries are
+gone. What the run did on chain is on Solana's explorer: [the payment][p] and [the sweep][s].
 
-[e]: https://explorer.solana.com/address/7VFvnx3WwGri6JRU38BFDyLfkhtXubXZEz83W671hRm7?cluster=devnet
-[p]: https://explorer.solana.com/tx/4fstn9drKpxyapgBBUUv2wsq2ARDsE1autpJ5M8PxUVDthyxpF9RyzaPEn4TfuhvXuBbeZVL1TSRSBq3XLcZMmr4?cluster=devnet
-[s]: https://explorer.solana.com/tx/4SDZoR4JEH31M1BCNiVfKMC6FuviDSUAZFtCYUvM5EncEvv5m5AhRVx9ecqjY7GeEx6gcwrML2PkUdmiMGHWUUeF?cluster=devnet
+[p]: https://explorer.solana.com/tx/3pAozKr4psR8e454TeKJcpdKT9XbgMkVbqvwgpcBqPycLsvmiACJf51Zbuw2vd1scnjMr1wMX4p2mgTXQusRmHCo?cluster=devnet
+[s]: https://explorer.solana.com/tx/4wmWFP68YpFNhWqzLwdwk1fA1MRL7N7KKGwuxFaVZYLbXTNbDmdgd9pmgAYE7qywFbjLXn6uLRgJKr8oKBFxRNfA?cluster=devnet
 
 ## Promises
 
 - **No key, phrase or keyed URL (a web address with a key inside) in this directory.** The phrase
-  and `RPC_URL` come from the environment. A run's record holds only public things: addresses,
-  signatures, amounts, counts, commits, times, labels, signed statements, tags, a root, a refusal's
-  text, and the loop's own page addresses on loopback. The run will not write one that holds the
-  phrase, the RPC's URL, a login, or any key or credit it made.
+  and `RPC_URL` come from the environment. A run's result holds only public things: addresses,
+  signatures, amounts, counts, commits, times, labels, signed statements, a root, a refusal's text,
+  and the loop's own page addresses on loopback. The run will not write one that holds the phrase,
+  the RPC's URL, a login, or any key or credit it made.
 - **It does what a person's device and their AI would,** with stand-ins only for Didit, the face
-  model and the Forest app's connect page, and with the standard's own pieces, the reference signer,
-  the MCP SDK's client and the credits client: keys, records, signers and each profile's
-  permissions, the stamp and reputation proofs, and the escrow client. Nothing in it reaches around
-  a service.
-- **No credit in a run's record.** A credit is a bearer credit. The record holds how many were
+  model and the Forest app's connect page, and with the standard's own pieces, the reference app,
+  the MCP SDK's client and the credits client: keys and access keys, folders and the Profiles
+  folder, the verification and the reputation proof. Nothing in it reaches around a service.
+- **No credit in a run's result.** A credit is a bearer credit. The result holds how many were
   bought, spent and left, and the buys' references.
-- **A run passes only if every step passed.** A failed run's record holds the steps it finished
+- **A run passes only if every step passed.** A failed run's result holds the steps it finished
   and the error.
 
 ## Limits
 
 - **CI does not run it.** It needs the phrase and the chain. CI type-checks it and runs its tests.
-  It runs by hand, and its records in `runs/` say when it last passed.
-- **Every run leaves its people on the chain for good:** their payments, their escrow's receipt, and
-  the USDC left with them, about 6.26 a run (the tutor's 4, the student's 0.4636 and each wallet's
-  0.90), since the run keeps no seed. On the loop's own host and index, the rest goes when the run
-  ends. On a deployed host, their records, their permissions among them (encrypted), stay until it
-  is wiped.
+  It runs by hand, and its results in `runs/` say when it last passed.
+- **Every run leaves its people on the chain for good:** their payment, and the USDC left with them,
+  about 4.70 a run (the tutor's 2, the student's 0.90 and each wallet's 0.90), since the run keeps
+  no seed. On the loop's own host and index, the rest goes when the run ends. On a deployed host,
+  their entries, their notes and Profiles folders among them (locked), stay until it is wiped.
 - **The checks are stand-ins.** The stand-in Didit passes everyone, and the stand-in face model
   gives everyone one embedding, so a run says nothing about Didit or the face model. Only the face
   check: the loop verifier offers no ID check, since it sets no price.
-- **The connect page is a stand-in.** The loop chooses for each person, so a run says nothing about
-  the Forest app's own page. Against the deployed mcp, which has none yet, it only checks that the
-  mcp answers.
-- **One person's yes, given at once.** The one ask outside a person's permission is approved on
-  their signer right away; nothing waits as a person would.
+- **The connect page is a stand-in.** The loop ticks the profile for each person, with every switch,
+  so a run says nothing about the Forest app's own page. Against the deployed mcp, which has none
+  yet, it only checks that the mcp answers.
 - **No welcome gift.** A deployed host takes only its own sponsors' tickets, so the loop pays for
   every credit in USDC. Tickets are tested in `test/credits.test.ts` and in the verifier's tests.
-- **One escrow, paid out early.** One schedule, the market's `session`, in USDC. No stop,
-  take-back, default, split or refund: those are the standard's escrow tests.
-- **One review written by an app.** The tutor's review names the escrow it was paid through, which
-  no AI may name and no signer of the tutor's paid, so the loop's app writes it.
-- **One host, inboxes of any size.** Both people are on the same host, and each inbox takes
-  messages from anyone, with no `maxBytes`.
+- **One payment, direct, and one review.** No escrow: the standard's escrow tests and the index's
+  cover it. Only the student rates.
+- **One host, inboxes of any size.** Both people are on the same host, so each finds the other's
+  folder there.
 - **The loop's own fee payer gets a new key each run,** and the sweep gives back only what that key
-  still holds when the run ends. What it spent stays spent: the network fees, and the escrow
-  receipt's rent, 2,235,200 lamports, which stays in the receipt for good.
+  still holds when the run ends. What it spent stays spent: the network fees.
 - **Each wait on the index is up to 15 minutes.** The loop index reads the escrow's whole history
   from its first transaction, which a public RPC serves slowly.
 
 ## Who decides what
 
-- **The standard:** what each step makes and checks: keys, records, signers and each profile's
-  permissions, messages, proofs, the escrow.
-- **The markets directory, at `MARKETS`:** what the offer and the reviews hold, how evidence is
-  written, and the session schedule.
+- **The standard:** what each step makes and checks: keys and access keys, entries, folders and the
+  Profiles folder, messages, the verification and the reputation proof.
+- **The markets directory, at `MARKETS`:** what the offer and the review hold, and how evidence is
+  written.
+- **The mcp, as this repo writes it:** its tools, the login and the pack.
 - **Each service, by its own choice:** what it takes and what it charges. The loop checks it as it
   runs.
 - **The index, by its own numbers:** each rating, trust, uniqueness and pickiness. The loop expects
-  what those numbers make of its two reviews.
+  what those numbers make of its one review.
 - **The foundation:** when to run it, what `services.json` names, what the loop's own copies are set
   to (`services.ts`), and what each person in it lets their AI do (`e2e.ts`).
 
@@ -375,26 +349,27 @@ and [the sweep][s].
 A deployed verifier is real: every stamp it signs needs a face that passed Didit, and a script has
 none. A deployed index trusts only that verifier. The deployed mcp has no connect page yet, so no
 AI can log in there. So the loop runs all three from this repo's code, the verifier with a stand-in
-Didit and a seed of its own. The host and the fee payer take anyone's records and anyone's USDC, so
+Didit and a seed of its own. The host and the fee payer take anyone's entries and anyone's USDC, so
 the loop can use them as deployed.
 
 **Why does the loop start the verifier, host, index and mcp in its own process?**
-The index takes lists of its own only from its start function, not from a setting. The others are
-started the same way, each from its own folder's start function and code, unchanged, so one place
-starts and stops them all.
+The index takes lists of its own only from its start function, not from a setting, and the mcp
+reaches a loopback host only through a setting its start function takes. The others are started the
+same way, each from its own folder's start function and code, unchanged, so one place starts and
+stops them all.
 
-**Why is each trust 45, and not the 75 a face check gives as uniqueness?**
-A newcomer's trust is half its uniqueness, 38. Each review is also its writer's vouch for the other,
-weighing the writer's uniqueness times trust, so each lifts the other to 45, and no further: two
-faces vouching for each other never pass 75. The loop works out what the index's own ranking and
-numbers make of its two reviews, and checks the index shows exactly that.
+**Why is the tutor's trust 44, and the student's 38?**
+A newcomer's trust is half its uniqueness, 38: the student, whom no one rated. The student's review
+is also its word about the tutor, a vouch, weighing the student's uniqueness times trust, 0.75 times
+0.375; one such vouch lifts the tutor to 44. The loop works out what the index's own ranking and
+numbers make of its one review, and checks the index shows exactly that.
 
 **Why does the phrase pay for setup?**
 A new person has no dollars. The phrase's `deploy` key makes the accounts and sends them USDC from
 its own. After setup, a profile never touches SOL: the fee payer pays the chain's fees, and each
 wallet pays its own fee for its credit buy, as a wallet app would.
 
-**Why keep every run's record in the repo?**
+**Why keep every run's result in the repo?**
 So anyone can check, on the chain itself, what a run did: every address and signature in it is
-public. A change to what a run does can change its record's shape; the records of earlier runs then
+public. A change to what a run does can change its result's shape; the results of earlier runs then
 stay in the repo's history.

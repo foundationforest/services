@@ -1,19 +1,17 @@
 // What the loop funds before anyone acts and sweeps back from its own fee payer, the key it takes
-// from the phrase, the direct payment and the market's schedule (chain.ts), checked with no chain:
-// the recipe against PBKDF2 made by Web Crypto and the ed25519 key made by node:crypto, each
-// instruction decoded by the token program's own decoders, and the schedule from the market file at
-// MARKETS, as the escrow's client takes it.
+// from the phrase, and the direct payment (chain.ts), checked with no chain: the recipe against
+// PBKDF2 made by Web Crypto and the ed25519 key made by node:crypto, and each instruction decoded by
+// the token program's own decoders.
 
 import assert from 'node:assert/strict'
 import { createPrivateKey, createPublicKey } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import * as escrow from '@foundationforest/escrow-client'
 import { decodeCloseAccountInstruction, decodeTransferCheckedInstruction } from '@solana/spl-token'
 import { Keypair, PublicKey, SystemInstruction, SystemProgram, type TransactionInstruction } from '@solana/web3.js'
 
-import { DOLLAR, FUNDING, type Template, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, scheduleOf, sweepIxs, unitsOf } from '../chain.ts'
+import { DOLLAR, FUNDING, directPaymentIxs, dollarsOf, fundingFor, fundingIxs, keyFromPhrase, payReferenceIxs, sweepIxs, unitsOf } from '../chain.ts'
 
 const token: escrow.Token = { mint: new PublicKey('J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa'), program: escrow.TOKEN_PROGRAM_ID, decimals: 6 }
 const ata = (owner: PublicKey) => escrow.associatedTokenAddress(owner, token.mint, token.program)
@@ -65,13 +63,13 @@ test('with the loop’s own fee payer: each dollar account, the student’s doll
   assert.deepEqual(
     got.dollars,
     [
-      { to: ata(studentPay).toBase58(), units: 42n * DOLLAR },
+      { to: ata(studentPay).toBase58(), units: 3n * DOLLAR },
       { to: ata(w1).toBase58(), units: DOLLAR },
       { to: ata(w2).toBase58(), units: DOLLAR },
     ].map((m) => ({ from: ata(payer).toBase58(), ...m, owner: payer.toBase58(), mint: token.mint.toBase58(), decimals: 6 })),
-    'plain transfers from the deploy key’s own dollars: 42 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
+    'plain transfers from the deploy key’s own dollars: 3 to the student, 1 to each wallet; the tutor gets paid, not funded; nothing minted',
   )
-  assert.equal(dollarsOf(plan), 44n * DOLLAR, 'a run moves 44 dollars')
+  assert.equal(dollarsOf(plan), 5n * DOLLAR, 'a run moves 5 dollars')
   assert.deepEqual(got.sol, [
     { from: payer.toBase58(), to: w1.toBase58(), lamports: FUNDING.walletLamports },
     { from: payer.toBase58(), to: w2.toBase58(), lamports: FUNDING.walletLamports },
@@ -126,18 +124,4 @@ test('dollars as base units: whole and decimal text, never more places than the 
   assert.equal(unitsOf('0.1', 6), 100_000n)
   assert.equal(unitsOf('12.000001', 6), 12_000_001n)
   for (const bad of ['0.0000001', '-1', '1e3', '01', '', '2.']) assert.throws(() => unitsOf(bad, 6), /not an amount/, bad)
-})
-
-test("the market's session schedule as the escrow takes it: one window, seven days from payment, then pay", () => {
-  const tutoring = JSON.parse(readFileSync(new URL('../../markets/markets/tutoring.json', import.meta.url), 'utf8')) as { payment: { session: Template } }
-  const paidAt = 1_790_000_000
-  const schedule = scheduleOf(tutoring.payment.session, paidAt)
-  assert.deepEqual(schedule, { windows: [{ until: paidAt + 7 * 86_400, payerShare: 0 }], end: 'pay' })
-  const terms = escrow.termsFor({ schedule }, { recipient: key(), amount: 2n * DOLLAR })
-  assert.deepEqual(terms.schedule, { windows: [{ until: BigInt(paidAt + 7 * 86_400), payerShare: 0 }], end: 'pay' }, 'the escrow client takes it')
-  assert.equal(terms.arbiter, null)
-  assert.deepEqual(scheduleOf({ windows: [{ from: 'payment', offset: '-24h', payerShare: 10_000 }], end: 'refund', arbiter: false }, paidAt).windows, [{ until: paidAt - 86_400, payerShare: 10_000 }])
-  assert.throws(() => scheduleOf({ windows: [{ from: 'dealStart', offset: '-24h', payerShare: 10_000 }], end: 'pay', arbiter: false }, paidAt), /only windows from payment/)
-  assert.throws(() => scheduleOf({ windows: [{ from: 'payment', offset: '+3w', payerShare: 0 }], end: 'pay', arbiter: false }, paidAt), /hours or days/)
-  assert.throws(() => scheduleOf({ ...tutoring.payment.session, arbiter: true }, paidAt), /arbiter/)
 })

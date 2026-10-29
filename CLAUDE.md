@@ -5,12 +5,12 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 ## Words
 
-Use these words: seed, seed scalar, main key, access key, profile, profile entry, entry, address,
-label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation proof,
-check, folder, file, host, service key, connection, connector, private, envelope, encrypted (an
-envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer, recipient,
-sponsor, receipt, deal, credit, ticket, review, evidence, index, fee payer, app, market, role, ramp.
-Plain words, no em-dashes.
+Use these words: seed, seed scalar, main key, access key, note, profile, profile entry, entry,
+address, label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation
+proof, check, folder, file, host, service key, connection, connector, private, envelope, encrypted
+(an envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer,
+recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, fee payer, app, market,
+role, ramp. Plain words, no em-dashes.
 
 - A verifier is anyone who signs stamps; a person it signed a stamp to is verified. A stamp is what
   a verifier signs to a person's seed: their stamp number and its facts. A verification is what a
@@ -19,19 +19,22 @@ Plain words, no em-dashes.
   which signs the ID check's.
 - An access key is a key a profile hands out, to an AI app, a service or another person: its profile
   entry lists each one with what it can do (`read`, `read-inbox`, `write`, `message`), and every
-  host and reader checks that. The seed and the main keys stay on the person's devices.
+  host and reader checks that. The seed and the main keys stay on the person's devices. A note is
+  an access key's private note, as the standard names it: the entry at `key/<id>`, locked to the
+  main key alone, saying who holds the key, since when, and whatever the app keeps; never anything
+  else.
 - A profile entry is the entry at `profile`, never a card: it holds the folder's hosts, its open key
   and its access keys. A pay address is one of a profile's `pay` addresses, `{ solana, evm }`, each
   from its pay key.
 - Check, never verify: a reader checks a proof or a signature. Fee payer, never relayer; main key,
   never profile key; address, never wallet, for a key ("a wallet app" is fine).
-- Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, note,
-  attributes, sealed, write key, read key, account for a person, card, registry, row, tier,
-  standing, policy. A string baked into a recipe, a circuit or a key's text keeps its bytes even
-  when its words are old (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits'
-  signal names and files, the verifier's `issuer/...` texts): rename the code around it, never the
-  string, and say why in a comment beside it. Other projects' own words stay too (Privacy Pass's
-  `issuer_name`, snarkjs's verifier, Kora's and Solana's signers).
+- Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
+  sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy. A
+  string baked into a recipe, a circuit or a key's text keeps its bytes even when its words are old
+  (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits' signal names and files,
+  the verifier's `issuer/...` texts): rename the code around it, never the string, and say why in a
+  comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's
+  verifier, Kora's and Solana's signers).
 - encrypted is for an envelope: what is locked to a key's open key.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent. The fee
   payer pays the chain's fees, at cost: Kora, configured.

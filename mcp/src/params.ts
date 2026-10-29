@@ -1,9 +1,10 @@
-// What a tool is: a file in src/tools/ exporting its name, its description, its parameters, whether
-// it goes to the person's app, and its work. A tool that goes to the person's app needs a login;
-// one that reads what is public does not.
+// What a tool is: a file in src/tools/ exporting its name, its title, its description, its
+// parameters, whether it acts for the person, the hints AI apps group tools by, and its work. A
+// tool that acts for the person needs a login; one that reads what is public does not.
 
-import { type Answer, type Ask, checkAsk } from '@foundationforest/signers'
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { type Context, refuse } from './forest.ts'
+import type { Pack } from './pack.ts'
 
 export type Param = {
   name: string
@@ -20,19 +21,27 @@ export type Param = {
 
 export type Args = { [name: string]: unknown }
 
-/** What a tool works with: the index it reads, and, for a call with a login, the person's app. */
+/** What a tool works with: the index it reads, how it reaches hosts, and, for a call with a login, the person's pack. */
 export type Ctx = Context & {
-  /** Sends the ask to the person's app over the live link, and gives back its answer, checked. */
-  ask: (ask: Ask) => Promise<Answer>
+  /** The fetch every host is reached with: one that reaches only public addresses, unless told otherwise. */
+  hostFetch: typeof fetch
+  /** The pack the call's token carries, opened in memory for this request; refused with no login. */
+  pack: () => Promise<Pack>
+  /** The person's own addresses this request has seen, each with what an answer says instead: its profiles' by their labels, and the pay addresses of each profile entry it read. */
+  own: Map<string, string>
 }
 
 export type Tool = {
   name: string
+  /** Its name for people, in an AI app's list of tools. */
+  title: string
   /** What it does, in plain words. */
   description: string
   params: Param[]
-  /** Whether it goes to the person's app, and so needs a login. */
-  toApp: boolean
+  /** Whether it acts for the person, and so needs a login. */
+  login: boolean
+  /** The MCP specification's hints: whether it only reads, may destroy, and reaches outside this copy. */
+  annotations: ToolAnnotations
   run: (args: Args, ctx: Ctx) => Promise<unknown>
 }
 
@@ -63,13 +72,4 @@ export function checkArgs(tool: Pick<Tool, 'name' | 'params'>, args: Args): Args
     if (p.values && !p.values.includes(value as string)) refuse(`${p.name} is one of ${p.values.join(', ')}`)
   }
   return args
-}
-
-/** A tool's arguments as the standard's ask of the tool's name, checked (checkAsk), or a refusal naming what does not fit. */
-export function askOf(name: Ask['ask'], args: Args): Ask {
-  try {
-    return checkAsk({ ask: name, ...args })
-  } catch (err) {
-    return refuse(`not an ask the person's app takes: ${(err as Error).message}`)
-  }
 }

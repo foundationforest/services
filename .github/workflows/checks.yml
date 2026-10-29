@@ -15,13 +15,13 @@
 #   host         its type-check and its tests: the standard's host check against the plug and against
 #                the whole host, the plug's own tests and its storage's, and its credits'
 #   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
-#                starts, and mcp's reference signer and test client it acts through; and its tests:
+#                starts, and mcp's reference app and test client it acts through; and its tests:
 #                the credits client against the host's own code selling for tickets and for a dollar,
-#                the funding and minting it does, a direct payment, the market's schedule as the
-#                escrow takes it, and a run's record
+#                the funding it does, a direct payment, and a run's result
 #   mcp          its type-check and tests, on loopback: this repo's host (its plug), a stand-in index
-#                and connect page, and its reference signer; the login end to end through the MCP
-#                SDK's client, every tool, the live link, and the image's own command
+#                and connect page, and its reference app; the login end to end through the MCP
+#                SDK's client and the pack, every tool in the person's folders, and the image's own
+#                command
 #
 # Not here, and in each directory's README: the fee payer's local run, which needs a local validator
 # and Kora built; the loop itself, which needs the phrase and the chain; and mcp's smoke test against

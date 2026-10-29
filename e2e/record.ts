@@ -5,7 +5,7 @@
 // writing it, and the tests check every record in runs/ with it.
 
 /** The steps of a run, in order. A failed run's record holds the ones it finished. */
-export const STEPS = ['keys', 'funding', 'stamps', 'credits', 'profiles', 'logins', 'mcp', 'deal', 'reviews', 'index', 'reputation', 'addresses', 'balances'] as const
+export const STEPS = ['keys', 'funding', 'stamps', 'credits', 'profiles', 'logins', 'mcp', 'payment', 'review', 'index', 'reputation', 'removed', 'device', 'addresses', 'balances'] as const
 export type Step = (typeof STEPS)[number]
 
 /** Where each service was: `loopback`, the loop's own copy on this machine, or the deployed one's origin. */
@@ -23,8 +23,8 @@ export type RunRecord = {
   services: { verifier: Where; host: Where; feePayer: Where; index: Where; mcp: Where }
   /** The deployed verifier, index or mcp services.json names, which the run only checked to answer. */
   checked: string[]
-  /** The chain: the RPC (`RPC_URL` when that setting gave it), the escrow program, the dollar the loop pays in, and the market. */
-  chain: { rpc: string; escrow: string; testDollar: string; market: string }
+  /** The chain: the RPC (`RPC_URL` when that setting gave it), the dollar the loop pays in, and the market. */
+  chain: { rpc: string; testDollar: string; market: string }
   /** The loop's own verifier (its name and two keys) and index (its address); a run that failed before they started has none. */
   loop?: { verifier: { name: string; face: string; id: string }; index: string }
   steps: { [step in Step]?: { [key: string]: unknown } }
@@ -75,13 +75,15 @@ const SHAPES: { [step in Step]: { [path: string]: Check } } = {
   funding: { accounts: signature, money: signature, 'wallets.tutor': address, 'wallets.student': address },
   stamps: each(BOTH, { verifier: address, model: text, askedBack: is('same') }),
   credits: each(BOTH, { signature, amount: text, credits: count, reference: address }),
-  profiles: each(BOTH, { profile: address, tag: hex32, spent: count, stampProof: is('checks') }),
-  logins: each(BOTH, { profiles: words, can: words, limit: text }),
-  mcp: { offer: text, 'found.profile': address, message: is('done'), reply: is('done'), 'approval.ask': is('read'), 'approval.why': text, 'approval.approved': is('done') },
-  deal: { ...prefixed('payment', paid), 'payment.evidence': evidence, 'escrow.address': address, 'escrow.version': is(4), ...prefixed('escrow.open', paid), ...prefixed('escrow.pay', paid), 'escrow.outcome': is('pay'), 'escrow.sponsor': address, 'escrow.evidence': evidence },
-  reviews: { ...each(BOTH, { id: text, evidence }), 'student.postedBy': is('ai'), 'tutor.postedBy': is('app') },
-  index: { ...each(BOTH, { rating, count: is(1), trust: hundred, uniqueness: hundred, pickiness }), 'deal.outcome': is('pay'), 'deal.reviews': is(1) },
-  reputation: { profile: address, tag: hex32, root: hex32, time: count, score: hundred, result: is('shown') },
+  profiles: each(BOTH, { profile: address, profilesFolder: address, spent: count, verification: is('checks') }),
+  logins: each(BOTH, { profiles: words, can: words, key: address, note: is('locked to the main key') }),
+  mcp: { offer: text, offerKey: address, found: address, message: is('sent'), 'inbox.from': address, 'inbox.counts': is(true), 'inbox.market': text, 'inbox.role': text, reply: is('sent'), replyRead: is(true) },
+  payment: { ...paid, to: address, evidence },
+  review: { id: text, evidence, writtenBy: is('ai'), key: address },
+  index: { ...prefixed('tutor', { rating, count: is(1), trust: hundred, uniqueness: hundred, pickiness }), ...prefixed('student', { rating: is(null), count: is(0), trust: hundred, uniqueness: hundred, pickiness }), 'review.evidence': is('with') },
+  reputation: { profile: address, root: hex32, time: count, leaves: count, score: hundred, result: is('shown') },
+  removed: { key: address, refused: (v) => typeof v === 'string' && v.includes('unlisted'), offer: is('gone') },
+  device: { labels: words, stamps: is(1) },
   addresses: each(BOTH, { answers: count, addresses: count, held: is(0) }),
   balances: { tutor: (v) => typeof v === 'number', student: (v) => typeof v === 'number', coach: (v) => typeof v === 'number' },
 }
@@ -108,7 +110,7 @@ export function checkRecord(r: unknown): asserts r is RunRecord {
   if (!Array.isArray(rec.checked) || !rec.checked.every(isOrigin)) fail('checked is a list of origins')
   const rpc = at(rec, 'chain.rpc')
   if (rpc !== 'RPC_URL' && !(typeof rpc === 'string' && URL.canParse(rpc) && !new URL(rpc).search && !new URL(rpc).password)) fail('chain.rpc is RPC_URL, or a URL with nothing secret in it')
-  for (const k of ['escrow', 'testDollar']) if (!address(at(rec, `chain.${k}`))) fail(`chain.${k} is an address`)
+  if (!address(at(rec, 'chain.testDollar'))) fail('chain.testDollar is an address')
   if (!text(at(rec, 'chain.market'))) fail('chain.market is a name')
   if ((rec.passed || rec.loop !== undefined) && (!text(at(rec, 'loop.verifier.name')) || !address(at(rec, 'loop.verifier.face')) || !address(at(rec, 'loop.verifier.id')) || !address(at(rec, 'loop.index')))) {
     fail('loop names its verifier, its two keys, and its index')
