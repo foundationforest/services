@@ -2,8 +2,8 @@
 // person's app, the stranger and this copy write to; a stand-in index serving its skill.md and three
 // answers in the index's JSON as it is now, each with a field this copy has never seen, and a search
 // that answers with what it was asked; a stand-in for the app's connect page, where the reference
-// app (app.ts) hands back the pack for the profiles the person ticks; and this copy, started
-// in-process, reading the index, reaching the loopback host.
+// app (app.ts) makes the connection for the profiles the person ticks and hands back its pointer;
+// and this copy, started in-process, reading the index, reaching the loopback host.
 //
 // Two people:
 // - the person, whose app holds three profiles, tutoring/tutor, tutoring/student and

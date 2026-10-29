@@ -3,8 +3,9 @@
 //
 // - mcp-key.json: the key whose HMAC-SHA256 signs what this copy writes for a login (login.ts);
 // - mcp-opening.json: the secret of its opening half, as keys/'s openingHalf makes one from any
-//   key's 32-byte secret. Its open key, published at /open-key, is what a person's app locks the
-//   pack to (pack.ts); its identity opens the pack, in memory, for each call.
+//   key's 32-byte secret. Its open key, published at /open-key, is what a person's app locks a
+//   connection's pointer and entries to (connection.ts); its identity opens them, in memory, for
+//   each call.
 
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -34,7 +35,7 @@ export function loadKey(dir: string): Buffer {
   return Buffer.from(kept(dir, KEY_FILE, 'key'))
 }
 
-/** This copy's opening half, from `dir`: its identity, which opens packs, and its open key, which they are locked to. */
+/** This copy's opening half, from `dir`: its identity, which opens connections, and its open key, which they are locked to. */
 export async function loadOpening(dir: string): Promise<OpeningHalf> {
   return openingHalf(kept(dir, OPENING_FILE, 'secret'))
 }

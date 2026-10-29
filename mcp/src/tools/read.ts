@@ -83,7 +83,7 @@ async function inboxAt(ctx: Ctx, address: string, hosts: string[]): Promise<Chec
 async function inbox(ctx: Ctx, me: Own) {
   const { view } = await ownFolder(ctx, me)
   const all = await inboxAt(ctx, me.address, view.hosts)
-  const labels = new Map((await ctx.pack()).profiles.map((p) => [p.address, p.label]))
+  const labels = new Map((await ctx.connection()).profiles.map((p) => [p.address, p.label]))
   // Each sender's profile entry, and the index's word for it, read once a call.
   const senders = new Map<string, Promise<{ profile: Body | null; index: unknown }>>()
   const sender = (from: string, host: string | undefined) => {

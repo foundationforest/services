@@ -1,7 +1,8 @@
 // The hosted copy: MCP over Streamable HTTP at its root (and at /mcp, where connectors
 // added before point), the login (login.ts), its open key at /open-key, and the icon. Stateless:
 // each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept; the
-// pack a token carries is opened for the request that needs it, and forgotten with it.
+// connection a token points to is read and opened for the request that needs it, and forgotten
+// with it.
 //
 // Reading needs no login. A call to a tool that acts for the person with no token gets a 401 whose
 // challenge starts the AI app's login, and a token this copy did not give gets a 401 on any
@@ -20,7 +21,7 @@ import { TooLarge, json, readBody } from './http.ts'
 import { ICO, ICON, SVG } from './icon.ts'
 import { loadKey, loadOpening } from './keys.ts'
 import { Login } from './login.ts'
-import type { Pack } from './pack.ts'
+import type { Connection } from './connection.ts'
 import { type Ctx, type Tool, checkArgs } from './params.ts'
 import { publicFetch } from './public.ts'
 import { HOW, TOOLS } from './tools.ts'
@@ -105,8 +106,8 @@ export async function serve(settings: Settings, hostname: string, port: number):
   const hostFetch = settings.hostFetch ?? publicFetch
 
   async function mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const pack = login.bearer(req)
-    if (pack === 'bad') return login.challenge(res, true)
+    const pointer = login.bearer(req)
+    if (pointer === 'bad') return login.challenge(res, 'this login is not one this server gave')
     // No session and no stream of the server's own: only POST.
     if (req.method !== 'POST') {
       res.writeHead(405, { allow: 'POST' }).end()
@@ -120,24 +121,25 @@ export async function serve(settings: Settings, hostname: string, port: number):
     }
     const messages = (Array.isArray(body) ? body : [body]).filter(isObject)
     const acts = messages.some((m) => m.method === 'tools/call' && isObject(m.params) && LOGIN.has(m.params.name as string))
-    if (pack === null && acts) return login.challenge(res, false)
-    // The pack, opened only for a request that acts for the person, and forgotten with it. A token
-    // whose pack no longer opens, once this copy's opening half changed, is a login to make again.
+    if (pointer === null && acts) return login.challenge(res)
+    // The connection, read and opened only for a request that acts for the person, and forgotten
+    // with it. A token whose pointer no longer opens, once this copy's opening half changed, or
+    // whose connection is gone, is a login to make again; hosts that do not answer now are not.
     const own = new Map<string, string>()
-    let opened: Pack | null = null
-    if (pack !== null && acts) {
-      try {
-        opened = await login.open(pack)
-      } catch {
-        return login.challenge(res, true)
-      }
-      for (const profile of opened.profiles) own.set(profile.address, profile.label)
+    let connection: Connection | null = null
+    let why = 'Acting for the person needs a login.'
+    if (pointer !== null && acts) {
+      const got = await login.connection(pointer, { fetch: hostFetch, redirect: 'error' })
+      if (got === 'gone') return login.challenge(res, 'the connection this login points to is gone')
+      if ('unreached' in got) why = got.unreached
+      else connection = got
+      for (const profile of connection?.profiles ?? []) own.set(profile.address, profile.label)
     }
     const ctx: Ctx = {
       ...settings.read,
       hostFetch,
       own,
-      pack: async () => opened ?? refuse('Acting for the person needs a login.'),
+      connection: async () => connection ?? refuse(why),
     }
     const server = mcpServer(ctx, messages.some((m) => m.method === 'initialize') ? await instructions(settings.read) : HOW)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

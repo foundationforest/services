@@ -4,8 +4,8 @@
 //   1. the MCP SDK's client finds the mcp there (../smoke.ts): its instructions and icon, every
 //      tool, no session, reading with no login, the challenge and the metadata, its open key, the
 //      same tools at /mcp, the icon's two files, and a login through the stand-in connect page, then
-//      the profiles it acts in; a request whose URL is no path (`//`) gets 400, and it goes on
-//      answering;
+//      my_profiles, which says it did not reach the connection's loopback host; a request whose URL
+//      is no path (`//`) gets 400, and it goes on answering;
 //   2. with no APP_URL, reading works and logins wait;
 //   3. with no DATA_DIR, it refuses to start.
 //
@@ -80,8 +80,9 @@ const settings = (port: number) => ({ PORT: String(port), PUBLIC_URL: `http://12
 
 test('1. the MCP SDK’s client finds the mcp, with every tool, reading with no login, and a login through the connect page', async () => {
   const port = await freePort()
-  // The image's copy reaches hosts only on the public internet, so the person's profiles in this
-  // world, on the loopback host, are found through the login only.
+  // The image's copy reaches hosts only on the public internet, so the connection in this world, on
+  // the loopback host, is not reached: the login goes through, and my_profiles says why it read
+  // nothing. The tools' tests read it, in-process.
   const { child, started } = run({ ...settings(port), APP_URL: w.appUrl })
   try {
     assert.deepEqual(await started, { listening: true })
@@ -89,7 +90,7 @@ test('1. the MCP SDK’s client finds the mcp, with every tool, reading with no 
     const seen = await smoke(url, { provider: new AiApp(), browse })
     assert.deepEqual(seen.tools, ['markets', 'message', 'my_profiles', 'read', 'search', 'write'])
     assert.equal(seen.logins, `to ${new URL(w.appUrl).origin}`)
-    assert.deepEqual(seen.login, ['tutoring/tutor', 'tutoring/student'])
+    assert.match((seen.login as { refused: string }).refused, new RegExp(`^the connection's hosts did not answer: ${w.host.replace(/[.:/]/g, '\\$&')} \\(`))
     assert.equal(await raw(port, 'GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n'), 400, '`//` is the asker’s mistake')
     assert.deepEqual((await smoke(url)).tools, seen.tools, 'and it goes on answering')
   } finally {

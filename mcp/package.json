@@ -2,7 +2,7 @@
   "name": "@forest/mcp",
   "version": "0.0.0",
   "private": true,
-  "description": "The mcp, a connector to Forest over MCP: reads the markets and passes on what the index says, and acts in the person's own folders with the access keys their app hands it at login, in a pack locked to its open key that the access token carries; after a login by the MCP specification's authorization flow. It keeps nothing between calls; and the foundation's hosted copy (deploy/Dockerfile). test/app.ts is a reference app's connect step; smoke.ts checks a copy through the MCP SDK's own client.",
+  "description": "The mcp, a connector to Forest over MCP: reads the markets and passes on what the index says, and acts in the person's own folders with the access keys their app keeps for it in a connection folder of the person's, locked to its open key, which the access token points to; after a login by the MCP specification's authorization flow. It keeps nothing between calls; and the foundation's hosted copy (deploy/Dockerfile). test/app.ts is a reference app's connect step; smoke.ts checks a copy through the MCP SDK's own client.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

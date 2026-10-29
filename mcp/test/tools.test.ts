@@ -1,19 +1,20 @@
 // Every tool, through the MCP SDK's own client, as an AI app calls it after the person logged in:
 // the six and their marks; how Forest works first, then the index's guide; the markets; the index's
 // answers whole, a field and a filter this copy has never seen among them. Then, in the person's
-// two tutoring profiles, with the access keys their app handed over: my_profiles by label; read of
-// an entry, public and locked, and of the inbox, each message opened and its sender checked, one
-// from before the login left unopened; write, public against the market (the markets package's
-// checkEntry), refused naming the field, a file named and not, a delete, locked anywhere but profile
-// and key/…; message, which the recipient opens, signed by the access key; and, once the person
-// removes the key and its note, the host refusing its next write and its entries counting for
-// nothing. No answer, in the whole run, holds
-// one of the person's own addresses.
+// two tutoring profiles, with the access keys their app keeps in the connection: my_profiles by
+// label, with the switches each profile entry lists; read of an entry, public and locked, and of
+// the inbox, each message opened and its sender checked, one from before the login left unopened;
+// write, public against the market (the markets package's checkEntry), refused naming the field, a
+// file named and not, a delete, locked anywhere but profile and key/…; message, which the recipient
+// opens, signed by the access key; once the profile entry no longer lists the key, the host
+// refusing its next write and its entries counting for nothing; and once the person's app removes
+// it, its note and access entry gone with it. No answer, in the whole run, holds one of the
+// person's own addresses.
 
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { type Body, entry, leave, readFolder, readInbox, senderCounts, write } from '@foundationforest/folders'
+import { type Body, entry, leave, nextTime, readFolder, readInbox, senderCounts, write } from '@foundationforest/folders'
 import { inboxEntry, lock, lockCount, openInbox, openLocked } from '@foundationforest/folders/locked'
 import { mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
 import { WORD } from '../src/forest.ts'
@@ -132,8 +133,8 @@ describe('reading, with no login', () => {
 })
 
 describe('acting for the person', () => {
-  test('my_profiles: the two tutoring profiles, by label, with every switch; no address', async () => {
-    assert.deepEqual(await call('my_profiles'), { profiles: [{ label: TUTOR, can: SWITCHES }, { label: STUDENT, can: SWITCHES }] })
+  test('my_profiles: the two tutoring profiles, by label, with every switch their profile entries list; no address', async () => {
+    assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: SWITCHES }] })
   })
 
   test('read of an entry: the profile entry, its pay addresses by label; one missing; a path that is none; a profile this login does not hold', async () => {
@@ -240,14 +241,25 @@ describe('acting for the person', () => {
     }
   })
 
-  test("the key removed from the tutor's profile entry: the host refuses its next write, and what it wrote counts for nothing", async () => {
+  test("the key taken out of the tutor's profile entry alone: my_profiles shows no switch, the host refuses its next write, and what it wrote counts for nothing", async () => {
     await call('write', { label: TUTOR, path: 'post/physics', body: lesson('Physics, from the AI.') })
     assert.equal((await at(TUTOR, 'post/physics'))?.key, tutorKey)
-    await w.app.removeKey(TUTOR, tutorKey)
-    assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted with it')
+    // A profile entry by the main key that no longer lists it, while the connection still holds it.
+    const main = await mainKey(w.seed, TUTOR)
+    const view = await readFolder([w.host], w.own[TUTOR]!, Date.now())
+    const body = view.current.get('profile')!.entry.body!
+    await write([w.host], [entry(main, 'profile', { ...body, keys: (body.keys as Body[]).filter((k) => k.key !== tutorKey) }, nextTime(Date.now(), view, 'profile'))])
+    assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: [] }] })
     assert.match((await call('write', { label: TUTOR, path: 'post/chemistry', body: lesson('Chemistry.') })).refused, /no host took it: .*\(unlisted: /)
     assert.equal(await at(TUTOR, 'post/physics'), null, 'its post no longer counts')
     assert.equal(await at(TUTOR, 'post/maths'), null)
+  })
+
+  test("the key removed by the person's app: its note and its access entry go with it, and the login acts as the tutor no more", async () => {
+    await w.app.removeKey(TUTOR, tutorKey)
+    assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted with it')
+    assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }] })
+    assert.match((await call('write', { label: TUTOR, path: 'post/chemistry', body: lesson('Chemistry.') })).refused, /tutoring\/tutor is not a profile this login acts in/)
   })
 
   test("no answer in this file holds one of the person's own addresses", async () => {

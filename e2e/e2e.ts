@@ -1,10 +1,11 @@
 // The loop: Forest end to end. Two people from two seeds, a tutor who sells and a student who buys.
 // Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds the seed and the
 // stamp, keeps the Profiles folder, makes each profile with its verification, and at the connect
-// page hands the mcp an access key for the profile ticked. What it has no method for, the device
-// does here with the standard's pieces: the stamp and the welcome gift asked for, the credits, the
-// reputation proof. Each person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in
-// through the loop's connect page and calling the mcp's tools, which act in the person's folder with
+// page makes the AI's connection folder, with an access key for the profile ticked, and hands the
+// mcp the pointer to it. What it has no method for, the device does here with the standard's
+// pieces: the stamp and the welcome gift asked for, the credits, the reputation proof. Each
+// person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in through the loop's connect
+// page and calling the mcp's tools, which read the connection and act in the person's folder with
 // that access key. Against the loop's own verifier, host, index and mcp, on loopback (services.ts),
 // with no chain and no secret.
 //
@@ -23,8 +24,9 @@
 //    4. profiles: credits into each folder, the stamp kept in the Profiles folder, and the profile,
 //       its profile entry with a verification made on the device, listed there too;
 //    5. logins: each AI logs in through the connect page, where the person ticks their profile and
-//       their app lists an access key in its profile entry with every switch, writes its note, and
-//       hands the mcp the pack;
+//       their app makes the connection folder, paid with one credit, lists an access key in the
+//       profile entry with every switch, writes its note and its access entry, and hands the mcp the
+//       pointer;
 //    6. mcp: the tutor's AI writes a post; the student's finds it through the index's search and
 //       messages the tutor; the tutor's reads the inbox, the student's market, role and checks as the
 //       index shows them, and replies; the student's reads the reply;
@@ -34,12 +36,14 @@
 //       anywhere;
 //    9. the trust carried: the tutor's device finds its leaf by its profile, proves its trust onto
 //       its coach profile, and the index shows the proof;
-//   10. removed: the tutor's app takes the access key out of the profile entry, and its note; the
-//       host refuses its AI's next write, and the post it wrote counts for nothing;
-//   11. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
+//   10. added: the tutor's app, from the seed alone, adds the coach profile to its AI's connection;
+//       with no new login, the AI acts as both, and writes a locked note as the coach;
+//   11. ended: the tutor's app ends the connection, its entry and both keys gone; the mcp refuses
+//       the AI's next call, 401, and what the keys wrote counts for nothing;
+//   12. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
 //       stamp;
-//   12. addresses: no answer either AI received holds one of its own person's addresses;
-//   13. balances: what each folder's credits came to.
+//   13. addresses: no answer either AI received holds one of its own person's addresses;
+//   14. balances: what each folder's credits came to.
 // Then, passed or failed, what the loop started stops, and the run exits 0 or 1. What it did is in
 // what it prints.
 
@@ -52,7 +56,7 @@ import { readFileSync } from 'node:fs'
 
 import { type Body, b64u, hex, proofsOf, readFolder, verificationCheck } from '@foundationforest/folders'
 import { lockCount, openLocked } from '@foundationforest/folders/locked'
-import { type PayAddresses, checkBytes, mainKey, newSeed, openingHalf, payAddresses, pointOf, seedNumber, stampNumberOf, unpackSignature } from '@foundationforest/keys'
+import { type PayAddresses, accessKey, checkBytes, mainKey, newSeed, openingHalf, payAddresses, pointOf, seedNumber, stampNumberOf, unpackSignature } from '@foundationforest/keys'
 import {
   type SignedStamp,
   buildTree,
@@ -136,13 +140,16 @@ class AI {
     return JSON.parse(text)
   }
 
+  /** The access token its login got: for the loop to ask the mcp with it directly. */
+  token = () => this.c.app.tokens()!.access_token
+
   close = () => this.c.client.close()
 }
 
 /**
  * The connect page: a stand-in for the Forest app's, where the person whose turn it is ticks the
- * profiles their AI acts in, and their app hands back the pack. One mcp sends every login to one
- * page, and the two people log in one after the other.
+ * profiles their AI acts in, and their app makes the connection and hands back its pointer. One mcp
+ * sends every login to one page, and the two people log in one after the other.
  */
 async function connectPage(): Promise<{ url: string; at: { app: App; profiles: string[] } | null; close: () => void }> {
   const page: { url: string; at: { app: App; profiles: string[] } | null; close: () => void } = { url: '', at: null, close: () => server.close() }
@@ -178,6 +185,8 @@ type Person = {
   ai?: AI
   /** The address of the access key the person's app handed the mcp for the profile. */
   key?: string
+  /** The address of their AI's connection folder. */
+  connection?: string
 }
 
 async function person(role: Person['role']): Promise<Person> {
@@ -194,9 +203,9 @@ async function person(role: Person['role']): Promise<Person> {
   }
 }
 
-/** Every address of one person's: each profile's, and its pay addresses, and the Profiles folder's. What no answer to their AI holds. */
+/** Every address of one person's: each profile's, and its pay addresses, the Profiles folder's, and their AI's connection folder's. What no answer to their AI holds. */
 async function addressesOf(p: Person, labels: string[]): Promise<string[]> {
-  const out = [(await mainKey(p.seed, '')).address]
+  const out = [(await mainKey(p.seed, '')).address, p.connection!]
   for (const label of labels) out.push((await mainKey(p.seed, label)).address, ...Object.values(await payAddresses(p.seed, label)))
   return out
 }
@@ -284,10 +293,12 @@ async function profile(p: Person, label: string, more: Body[] = []) {
 
 /**
  * A person's AI logs in: its first call to act gets the challenge, the person's browser goes
- * through the connect page, where they tick their profile, and their app lists an access key in its
- * profile entry with every switch, writes its note, and hands the mcp the pack; the code becomes a
- * login. Read back from the host: one access key listed, and its note, at a random id, locked to the
- * main key alone, found by opening the folder's notes.
+ * through the connect page, where they tick their profile, and their app makes the connection
+ * folder, paid with one credit, lists an access key in the profile entry with every switch, writes
+ * its note and its access entry, and hands the mcp the pointer; the code becomes a login. Read back
+ * from the host: one access key listed; its note, at a random id, locked to the main key alone,
+ * found by opening the folder's notes, holding the connection folder's key; and the connection
+ * folder, found from the seed, its entries locked to two keys, with one access entry, for that key.
  */
 async function logInAs(p: Person) {
   const mcp = services!.mcp
@@ -309,7 +320,16 @@ async function logInAs(p: Person) {
   assert.ok(note && lockCount(note.locked) === 1, 'its note, at key/<id>, locked to one key')
   const opened = await openLocked(note.locked, (await openingHalf(main.secret)).identity)
   assert.deepEqual([opened.key, opened.connector], [p.key, mcp], 'which the main key opens, naming the key and this mcp')
-  say(`${p.role}: its AI logged in, and acts in ${p.label} with the access key ${p.key}: ${SWITCHES.join(', ')}, its note locked to the main key`)
+  const found = await p.app!.connections()
+  assert.equal(found.length, 1, 'one connection, found from the seed')
+  const conn = found[0]!
+  assert.equal(opened.connection, b64u.encode(conn.key.secret), 'the note holds the connection folder’s key')
+  assert.deepEqual(conn.view.current.get('profile')?.entry.body, { hosts: [services!.host] }, 'the connection folder’s profile entry holds only its hosts')
+  assert.equal(lockCount(conn.view.current.get('connection')!.entry.body as { private: string }), 2, 'its connection entry locked to two keys: its own and the mcp’s')
+  assert.equal(conn.access.length, 1, 'one access entry')
+  assert.deepEqual([conn.access[0]!.body.label, (await accessKey(b64u.decode(conn.access[0]!.body.key as string))).address], [p.label, p.key], 'for this profile and this key')
+  p.connection = conn.address
+  say(`${p.role}: its AI logged in, and acts in ${p.label} with the access key ${p.key}: ${SWITCHES.join(', ')}, its note locked to the main key; its connection folder ${conn.address}, paid with one credit`)
 }
 
 async function main() {
@@ -333,9 +353,10 @@ async function main() {
   for (const p of [tutor, student]) await collectGift(p)
 
   // 4. Profiles: credits into the Profiles folder, where the app keeps the stamp, and into the
-  // profile's folder, then the profile. The tutor keeps three credits for its coach profile.
-  for (const [p, n] of [[tutor, CREDITS - 5], [student, CREDITS - 2]] as const) {
-    p.app = new App({ seed: p.seed, hosts: [s.host] })
+  // profile's folder, then the profile. Each keeps one credit for its AI's connection folder, which
+  // the app asks for as it makes it (pay), and the tutor three for its coach profile.
+  for (const [p, n] of [[tutor, CREDITS - 6], [student, CREDITS - 3]] as const) {
+    p.app = new App({ seed: p.seed, hosts: [s.host], pay: (folder) => spend(p, folder, 1) })
     const folder = (await mainKey(p.seed, '')).address
     await spend(p, folder, 2)
     await p.app.keep(p.stamp!)
@@ -463,21 +484,44 @@ async function main() {
   })
   say('the index shows the carried trust on the coach profile')
 
-  // 10. The tutor's app takes the access key out of the profile entry, and its note. The host
-  // refuses the AI's next write, and the post the key wrote counts for nothing: the newest entry that
-  // still counts at its path is current, and there is none.
-  await tutor.app!.removeKey(tutor.label, tutor.key!)
-  assert.deepEqual(await tutor.app!.keys(tutor.label), [], 'no access key listed')
-  assert.equal(await tutor.app!.note(tutor.label, tutor.key!), undefined, 'and no note about it')
-  const refused = await tutor.ai!.call('write', { label: tutor.label, path: 'post/physics', body: { ...maths, description: 'Physics. A test post after the key was removed.' } }).then(
-    () => assert.fail('the host took a write by a removed key'),
-    (err: Error) => err.message,
-  )
-  assert.match(refused, /no host took it: .*\(unlisted: /, 'refused by the host, as unlisted')
-  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('post/maths'), undefined, 'the post it wrote counts for nothing')
-  say(`removed: the tutor's app took its AI's key and its note out; the host refused its next write (${refused}), and the post it wrote is gone from the host's view`)
+  // 10. Added: the tutor's app, finding the connection from the seed alone, adds the coach profile
+  // to it, with every switch: one access key more, its note, its access entry. With no new login,
+  // the tutor's AI acts as both, and writes a locked note as the coach.
+  await new App({ seed: tutor.seed, hosts: [s.host] }).addToConnection(tutor.connection!, COACH)
+  assert.deepEqual((await tutor.ai!.call('my_profiles')).profiles, [COACH, tutor.label].map((label) => ({ label, can: SWITCHES })), 'with no new login, both, by their labels')
+  const coachKey = (await tutor.app!.keys(COACH))[0]!.key
+  const plan = { text: 'Football on Saturdays. A test note, locked, written by an AI through mcp by e2e.' }
+  assert.equal((await tutor.ai!.call('write', { label: COACH, path: 'notes/plan', body: plan, locked: true })).locked, true)
+  assert.deepEqual((await tutor.ai!.call('read', { label: COACH, path: 'notes/plan' })).body, plan, 'and reads it back')
+  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan')?.entry.key, coachKey, 'on the host, signed by the coach’s access key')
+  say(`added: the tutor's app added ${COACH} to its AI's connection, from the seed alone; with no new login, the AI wrote a locked note as the coach, signed by its access key ${coachKey}`)
 
-  // 11. A new device: the tutor's seed alone gives its Profiles folder, its two profiles and its stamp.
+  // 11. Ended: the tutor's app ends the connection: its connection entry deleted, then each key it
+  // holds taken out of its profile entry, with its note and its access entry. The mcp answers the
+  // AI's next call 401, so it must log in again, and what the keys wrote counts for nothing: the
+  // newest entry that still counts at each path is current, and there is none.
+  await tutor.app!.endConnection(tutor.connection!)
+  for (const label of [tutor.label, COACH]) assert.deepEqual(await tutor.app!.keys(label), [], `no access key listed in ${label}`)
+  assert.equal(await tutor.app!.note(tutor.label, tutor.key!), undefined, 'and no note about it')
+  assert.deepEqual(await tutor.app!.connections(), [], 'and no connection')
+  const ended = await fetch(s.mcp, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${tutor.ai!.token()}` },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
+  })
+  assert.equal(ended.status, 401, 'the mcp refuses the ended connection’s token')
+  const why = ended.headers.get('www-authenticate') ?? ''
+  assert.match(why, /error="invalid_token", error_description="the connection this login points to is gone"/)
+  const next = await tutor.ai!.call('write', { label: tutor.label, path: 'post/physics', body: { ...maths, description: 'Physics. A test post after the connection ended.' } }).then(
+    () => assert.fail('the mcp acted for an ended connection'),
+    (err: Error) => err,
+  )
+  assert.ok(!(next instanceof Refused), `the AI's next call is refused before any tool, so it must log in again: ${next.message}`)
+  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('post/maths'), undefined, 'the post its key wrote counts for nothing')
+  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan'), undefined, 'nor the coach’s note')
+  say(`ended: the tutor's app ended its AI's connection; the mcp answered its next call 401 (${why.split('error_description=')[1]}), and the post and the note its keys wrote are gone from the host's view`)
+
+  // 12. A new device: the tutor's seed alone gives its Profiles folder, its two profiles and its stamp.
   const device = await App.find(tutor.seed, [s.host])
   assert.deepEqual(device.labels, [COACH, tutor.label].sort(), 'both its profiles')
   for (const label of device.labels) assert.ok(await profileEntry((await mainKey(tutor.seed, label)).address), `${label}'s folder, on the host`)
@@ -485,8 +529,8 @@ async function main() {
   assert.equal(stampFromJson(JSON.parse(device.stamps[0]!)).signature.S, tutor.stamp!.signature.S, 'its stamp, the one signed')
   say(`a new device found ${device.labels.join(' and ')}, and the stamp, from the tutor's seed alone`)
 
-  // 12. No answer either AI received holds one of its own person's addresses: each profile's, the
-  // coach's included, each pay address, and the Profiles folder's. An AI acting for one person reads
+  // 13. No answer either AI received holds one of its own person's addresses: each profile's, the
+  // coach's included, each pay address, the Profiles folder's, and their connection folder's. An AI acting for one person reads
   // the other's addresses, as it must to message and review them.
   for (const [p, labels] of [[tutor, [tutor.label, COACH]], [student, [student.label]]] as const) {
     const own = (await addressesOf(p, [...labels])).map((a) => a.toLowerCase())
@@ -496,11 +540,12 @@ async function main() {
   }
   say(`no answer holds the person's own addresses: ${tutor.ai!.answers.length} answers to the tutor's AI, ${student.ai!.answers.length} to the student's`)
 
-  // 13. Balances.
+  // 14. Balances.
   const left = async (folder: string) => (await json(`${s.host}/credits/balance/${folder}`)).body.credits as number
   say(
     `balances: the tutor's folder ${await left(tutor.address)} credits, the student's ${await left(student.address)}, the coach's ${await left(coach.address)}; ` +
-      `the Profiles folders ${await left((await mainKey(tutor.seed, '')).address)} and ${await left((await mainKey(student.seed, '')).address)}`,
+      `the Profiles folders ${await left((await mainKey(tutor.seed, '')).address)} and ${await left((await mainKey(student.seed, '')).address)}; ` +
+      `the connection folders ${await left(tutor.connection!)} and ${await left(student.connection!)}`,
   )
 }
 
