@@ -388,8 +388,8 @@ Another index holds its own.
 - **Which verifier keys count, and how much** (`lists/verifiers.json`): each key by its address, with
   the verifier name its verifications must carry, the name of its check, its confidence, and an
   optional `until`. Today it lists the two keys of the foundation's verifier, under its name
-  `verifier.forest.foundation`, neither with an `until`: its face key `9Kvr71eh…`, the face check at
-  0.75, and its ID key `G6hYSXZU…`, the ID check at 0.95.
+  `verifier.forest.foundation`, neither with an `until`: its face key `4H5vL1ym…`, the face check at
+  0.75, and its ID key `H1SJ6Fxn…`, the ID check at 0.95.
 - **Which markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **How it weighs** (`config/scoring.json`, How it scores):
   - `vouchStep` 0.5: each full vouch keeps half of what the vouch part has left to 1;
