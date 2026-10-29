@@ -2,14 +2,14 @@
 # to main. Each job first fetches the standard and the markets at their pins and builds the standard
 # (standard.sh), then installs what it uses.
 #
-#   verifier     its type-check (the stand-in Didit for tests included) and its tests: stamp proofs made
-#                from its stamps and checked against its published keys, the facts vectors, the
+#   verifier     its type-check (the stand-in Didit for tests included) and its tests: verifications
+#                made from its stamps and checked against its published keys, the facts vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its welcome gift's ticket taken by the host's own seller, bought with
 #                the host's credits client
-#   index        its type-check and its tests, on loopback: this repo's host (its plug), real stamp
-#                proofs from the stamp circuit's committed proving files, a real reputation proof (the
-#                reputation circuit's proving files, fetched), a stand-in RPC, and the index end to end
+#   index        its type-check and its tests, on loopback: this repo's host (its plug), real
+#                verifications and a real reputation proof from the circuits' committed proving files,
+#                a stand-in RPC, and the index end to end
 #   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
 #                its Dockerfile makes with deploy/devnet-config.sh
 #   host         its type-check and its tests: the standard's host check against the plug and against
@@ -81,7 +81,6 @@ jobs:
       - name: Install
         run: |
           ./standard.sh
-          (cd standard/proofs/reputation/circuit && npm run fetch)
           (cd host && npm ci --no-audit --no-fund)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
