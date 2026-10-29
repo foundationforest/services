@@ -459,7 +459,10 @@ name, and answer the chain from a stand-in RPC:
   gives the same;
   and a rebuild of a file from before the standard's folders keeps when each proof was first seen,
   without the old column, and makes the rest fresh; and a rebuild in a process of its own, as `npm
-  run rebuild` runs it, ends that process once it is done, a verification checked.
+  run rebuild` runs it, ends that process once it is done, a verification checked; and `node
+  src/main.ts rebuild`, on a file from before the standard's folders and with a timer that never
+  ends in its process, says it rebuilt and exits, keeping when the proof was first seen and the old
+  root.
 
 ## How we run it
 

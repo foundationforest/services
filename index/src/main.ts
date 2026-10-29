@@ -27,7 +27,11 @@ if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an ori
 
 if (process.argv[2] === 'rebuild') {
   await rebuild({ dataDir, publicUrl, settings })
-  console.log('rebuilt: read the hosts and the chain again, and ranked')
+  // Exits once the line is out, whatever is still open: a deploy's next command waits on it. Every
+  // rebuild of the foundation's copy printed this and its deploy went no further, though none
+  // checked a proof, so the curve's threads that index.ts stops never started; what held it is not
+  // known.
+  process.stdout.write('rebuilt: read the hosts and the chain again, and ranked\n', () => process.exit(0))
 } else {
   const port = Number(setting('PORT', '8080'))
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('PORT is a port number')
