@@ -60,12 +60,12 @@ export type Decision = {
 
 export interface FaceCheck {
   /**
-   * Open a session on the check's workflow: the page the person does the check on. With a tag, it
+   * Open a session on the check's workflow: the page the person does the check on. With a mark, it
    * carries it, to be found by; with a callback, Didit sends the person there when the check is done.
    */
-  createSession(options?: { tag?: string; callback?: string }): Promise<{ sessionId: string; url: string }>
-  /** The newest session on the check's workflow that carries this tag, or null. Throws if Didit can't answer. */
-  tagged(tag: string): Promise<{ sessionId: string; url: string } | null>
+  createSession(options?: { mark?: string; callback?: string }): Promise<{ sessionId: string; url: string }>
+  /** The newest session on the check's workflow that carries this mark, or null. Throws if Didit can't answer. */
+  marked(mark: string): Promise<{ sessionId: string; url: string } | null>
   /** What the session decided, or null if Didit has no such session. Throws if Didit can't answer. */
   decision(sessionId: string): Promise<Decision | null>
   /** The bytes of a photo a decision named (`faceImage`). Throws if they can't be had. */
@@ -92,8 +92,8 @@ export type Refusal =
   | 'no_face_match'
   | 'face_match_not_passed'
 
-/** A session's `vendor_data`: its check's name, then a random id, or the tag it is to be found by. */
-export const vendorData = (check: Check, tag?: string) => `${check}-${tag ?? randomUUID()}`
+/** A session's `vendor_data`: its check's name, then a random id, or the mark it is to be found by. */
+export const vendorData = (check: Check, mark?: string) => `${check}-${mark ?? randomUUID()}`
 
 // Didit's own documents write a status both as `Approved` and as `APPROVED`, and `In Review` as `IN_REVIEW`.
 const is = (status: string, want: string) => status.toLowerCase().replace(/[\s_]+/g, ' ') === want
@@ -201,15 +201,15 @@ export class DiditClient implements FaceCheck {
    * Each session gets its own `vendor_data`: its check's name and a fresh random id, which names
    * nobody. Didit's duplicate check compares a face against faces checked under a different
    * `vendor_data`; its documents don't say what it does when there is none, so every session carries
-   * one that no other session shares, but the sessions one payment opens, which share its tag.
+   * one that no other session shares, but the sessions one payment opens, which share its mark.
    */
-  async createSession({ tag, callback }: { tag?: string; callback?: string } = {}): Promise<{ sessionId: string; url: string }> {
+  async createSession({ mark, callback }: { mark?: string; callback?: string } = {}): Promise<{ sessionId: string; url: string }> {
     const res = await this.#fetch('/v3/session/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflow_id: this.#workflowId,
-        vendor_data: vendorData(this.#check, tag),
+        vendor_data: vendorData(this.#check, mark),
         ...(callback && { callback }),
         ...(this.#scenario && { sandbox_scenario: this.#scenario }),
       }),
@@ -223,8 +223,8 @@ export class DiditClient implements FaceCheck {
   }
 
   /** Didit's list of sessions, by exact `vendor_data` on this workflow, newest first: the first. */
-  async tagged(tag: string): Promise<{ sessionId: string; url: string } | null> {
-    const query = new URLSearchParams({ vendor_data: vendorData(this.#check, tag), workflow_id: this.#workflowId, limit: '1' })
+  async marked(mark: string): Promise<{ sessionId: string; url: string } | null> {
+    const query = new URLSearchParams({ vendor_data: vendorData(this.#check, mark), workflow_id: this.#workflowId, limit: '1' })
     const res = await this.#fetch(`/v3/sessions/?${query}`, { method: 'GET' })
     if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a list of sessions`)
     const first = ((await body(res)) as { results?: { session_id?: unknown; session_url?: unknown }[] } | null)?.results?.[0]

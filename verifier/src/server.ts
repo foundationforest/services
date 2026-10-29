@@ -37,9 +37,9 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { signStamp, stampToJson } from '@foundationforest/stamp'
+import { signStamp, stampToJson } from '@foundationforest/verification'
 import type { ServiceKey } from '@foundationforest/keys'
-import { b64u } from '@foundationforest/records'
+import { b64u } from '@foundationforest/folders'
 
 import { type Check, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
@@ -342,7 +342,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
    * The ID check's session, once paid. `{}` answers 402 with a new payment: its id, the reference
    * the transfer must name, where to pay, in which dollar, how much. `{payment}` then opens a session
    * once a payment naming that reference has landed; until then it answers 402 `not_paid`, and the
-   * app asks again. A payment is never given back. Each session a payment id opens carries its tag in
+   * app asks again. A payment is never given back. Each session a payment id opens carries its mark in
    * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
    * found, or opened, on the next ask. A payment whose session Didit answered it opened, and no longer
    * lists, gave its stamp and was deleted since: it is used.
@@ -381,7 +381,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     }
     if (landed.length === 0) throw new HttpError(402, 'not_paid')
     // What Didit knows the payment by: never the id itself, which claims it.
-    const tag = createHash('sha256').update(`payment/${paymentId}`).digest('hex')
+    const mark = createHash('sha256').update(`payment/${paymentId}`).digest('hex')
     const unused = landed.find((signature) => store.paymentFor(signature) === undefined)
     let paid = unused
     if (!unused) {
@@ -391,7 +391,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       if (mine.length === 0) throw new HttpError(409, 'payment_used')
       let found
       try {
-        found = await id.check.tagged(tag)
+        found = await id.check.marked(mark)
       } catch {
         throw new HttpError(502, 'face_check_unavailable')
       }
@@ -404,9 +404,9 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     if (unused && !store.usePayment(unused, reference)) throw new HttpError(409, 'payment_used')
     let session
     try {
-      session = await id.check.createSession({ tag })
+      session = await id.check.createSession({ mark })
     } catch {
-      // Opened or not, the payment stays used: the next ask finds the session by its tag, or opens it.
+      // Opened or not, the payment stays used: the next ask finds the session by its mark, or opens it.
       throw new HttpError(502, 'face_check_unavailable')
     }
     store.markOpened(paid!)

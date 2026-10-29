@@ -97,21 +97,21 @@ test("a session is opened on the workflow, each with its own vendor_data: its ch
   assert.equal(sandboxed.sandbox_scenario, 'review_duplicated_face')
 })
 
-test('a session opened with a tag carries it, and is found again by it: GET /v3/sessions/, newest first', async () => {
+test('a session opened with a mark carries it, and is found again by it: GET /v3/sessions/, newest first', async () => {
   seen.length = 0
-  const tag = 'ab'.repeat(32)
+  const mark = 'ab'.repeat(32)
   reply = () => [201, { session_id: SESSION, url: 'https://verify.didit.me/session/abc' }]
-  await client('id').createSession({ tag })
-  assert.equal(JSON.parse(seen[0]!.body).vendor_data, `id-${tag}`)
-  reply = () => [200, { count: 2, next: null, previous: null, results: [{ session_id: SESSION, session_kind: 'user', session_url: 'https://verify.didit.me/session/abc', status: 'Not Started', vendor_data: `id-${tag}` }] }]
-  assert.deepEqual(await client('id').tagged(tag), { sessionId: SESSION, url: 'https://verify.didit.me/session/abc' })
+  await client('id').createSession({ mark })
+  assert.equal(JSON.parse(seen[0]!.body).vendor_data, `id-${mark}`)
+  reply = () => [200, { count: 2, next: null, previous: null, results: [{ session_id: SESSION, session_kind: 'user', session_url: 'https://verify.didit.me/session/abc', status: 'Not Started', vendor_data: `id-${mark}` }] }]
+  assert.deepEqual(await client('id').marked(mark), { sessionId: SESSION, url: 'https://verify.didit.me/session/abc' })
   const asked = new URL(seen[1]!.url, base)
-  assert.deepEqual([seen[1]!.method, asked.pathname, asked.searchParams.get('vendor_data'), asked.searchParams.get('workflow_id'), seen[1]!.key], ['GET', '/v3/sessions/', `id-${tag}`, WORKFLOW, KEY])
+  assert.deepEqual([seen[1]!.method, asked.pathname, asked.searchParams.get('vendor_data'), asked.searchParams.get('workflow_id'), seen[1]!.key], ['GET', '/v3/sessions/', `id-${mark}`, WORKFLOW, KEY])
   reply = () => [200, { count: 0, next: null, previous: null, results: [] }]
-  assert.equal(await client('id').tagged(tag), null, 'none yet')
+  assert.equal(await client('id').marked(mark), null, 'none yet')
   for (const answer of [[500, {}], [200, { results: [{ session_id: SESSION }] }]] as [number, unknown][]) {
     reply = () => answer
-    await assert.rejects(client('id').tagged(tag), DiditUnavailable)
+    await assert.rejects(client('id').marked(mark), DiditUnavailable)
   }
 })
 

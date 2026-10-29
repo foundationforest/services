@@ -47,9 +47,9 @@ delete the check at Didit, which keeps only a template of your face
 ([Once a stamp is signed](#once-a-stamp-is-signed)).
 
 The stamp is the standard's
-([proofs/stamp](https://github.com/foundationforest/standard/blob/main/proofs/stamp/README.md#the-stamp-and-the-stamp-proof)).
-From it, your device makes a stamp proof for any of your profiles, which shows that we signed you a
-stamp without showing the stamp, your seed or who you are.
+([proofs/verification](https://github.com/foundationforest/standard/blob/main/proofs/verification/README.md#the-stamp-and-the-verification)).
+From it, your device makes a verification for any of your profiles, which shows that we signed you
+a stamp without showing the stamp, your seed or who you are.
 
 ### Who it is
 
@@ -68,8 +68,8 @@ With a welcome gift (credits at a host, prepaid units of its writes:
 `"gift":{"credits":<n>,"host":"<origin>","sponsor":"<address>"}`, `sponsor` being the key that
 signs the gift's tickets. It is canonical JSON (one exact way of writing it), with its keys sorted.
 
-- **The name** is `VERIFIER_NAME`, `verifier.forest.foundation` unless set. Everyone's stamp number and
-  tags at this verifier are mixed from it
+- **The name** is `VERIFIER_NAME`, `verifier.forest.foundation` unless set. Everyone's stamp number
+  at this verifier is mixed from it
   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-verifier-secret)),
   so it never changes.
 - **Two keys, one for each check.** The face key signs face stamps and the ID key signs ID stamps, so
@@ -78,7 +78,7 @@ signs the gift's tickets. It is canonical JSON (one exact way of writing it), wi
 - **Its seed.** Every key the verifier keeps is mixed from one seed: 32 random bytes, made on its
   own machine the first time it starts and finds none (the standard's `newSeed`), and kept in one
   file, `verifier-seed.json`, beside its database, readable by its own user only. So the seed and
-  the record of what it signed are kept, or lost, together. No variable holds it, and nothing prints
+  what it keeps of what it signed are kept, or lost, together. No variable holds it, and nothing prints
   or logs it.
 - **What is mixed from the seed,** with the standard's `hkdf` (a standard way to make many keys
   from one secret):
@@ -194,15 +194,15 @@ mod BN254's scalar order (the size of the numbers the proofs work in):
   ISO 3166-1 numeric code, or 0 when it has none, as for Kosovo, or when Didit read none.
 
 The fields beside the stamp are for the person: anyone they show them to can make the facts again
-and see they are the stamp's. Nothing in the standard reads them, and the stamp proof keeps the facts
-private.
+and see they are the stamp's. Nothing in the standard reads them, and the verification keeps the
+facts private.
 
 **Asked back.** The verifier keeps each stamp without the fields beside it. `POST /stamp` with a
 stamp number answers the stamps kept for it, one for each key, `null` for a key that signed none:
 the stamp's own fields only (`stampNumber`, `facts`, `verifier`, `signature`). Each is the first that
 key signed for that number. A later check for the same number answers its own new stamp, and the
 first stays the one handed back, so a check by anyone else who knows the number never changes it;
-either gives the same tag. The fields beside a stamp come back only in the answer that signed it,
+either gives the same verification. The fields beside a stamp come back only in the answer that signed it,
 and from the same session within its hour.
 
 ### What it keeps
@@ -225,7 +225,7 @@ birth date can be tested against them. A session id
 is kept as its hash; in clear, and with a time, only in `to_delete`, for the hour or so until Didit
 has deleted the session. After that the file names no Didit session and holds no time. Deleted bytes
 are overwritten (`secure_delete`). The stamp number links the tables: a fingerprint sits next to the same
-stamp number as the sessions signed for it, so whoever also holds Didit's records of those sessions
+stamp number as the sessions signed for it, so whoever also holds what Didit keeps of those sessions
 can tell which face went with which name.
 
 ### The face model
@@ -340,7 +340,7 @@ Errors are `{"error": "<code>"}`:
 
 | Variable | Required | Default | What |
 |---|---|---|---|
-| `VERIFIER_NAME` | no | `verifier.forest.foundation` | The verifier's name, as `GET /` gives it. Everyone's stamp number and tags at this verifier are mixed from it: it never changes |
+| `VERIFIER_NAME` | no | `verifier.forest.foundation` | The verifier's name, as `GET /` gives it. Everyone's stamp number at this verifier is mixed from it: it never changes |
 | `DIDIT_API_KEY` | yes | | The verifier's Didit API key, from the application that owns both workflows. A secret |
 | `DIDIT_FACE_WORKFLOW_ID` | yes | | The face check's workflow; a session on any other is refused for a face stamp |
 | `DIDIT_ID_WORKFLOW_ID` | yes | | The ID check's workflow (document, liveness, face match); a session on any other is refused for an ID stamp |
@@ -372,7 +372,7 @@ Node 22.18 or later. From the repo root:
 cd verifier && npm ci             # the standard's packages, linked by name from ../standard/
 npm run fetch                     # the face models, and the three test portraits, each checked by SHA-256
 npm run check                     # type-check
-npm test                          # a stand-in Didit and RPC, a real SQLite file, real HTTP; stamp proofs
+npm test                          # a stand-in Didit and RPC, a real SQLite file, real HTTP; verifications
                                   # made from both stamps and checked against the published keys; the
                                   # facts vectors (test/vectors.json); each stamp asked back by its
                                   # number; the seed made, kept and read again; each session deleted
@@ -383,8 +383,8 @@ npm test                          # a stand-in Didit and RPC, a real SQLite file
 npm start                         # the service, with the variables above
 ```
 
-The verifier depends on the standard's packages by name (`@foundationforest/keys`, `/stamp`,
-`/records`) through `file:` links into `standard/`; moving `STANDARD` can change what they depend on,
+The verifier depends on the standard's packages by name (`@foundationforest/keys`,
+`/verification`, `/folders`) through `file:` links into `standard/`; moving `STANDARD` can change what they depend on,
 so `npm install` in `verifier/` writes the lockfile again. Run by hand, it makes its seed in `data/`,
 beside its file; `.gitignore` covers both.
 
@@ -520,8 +520,8 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   with a JSON body, since hosting platforms log paths.
 - **It takes no key of the person's.** An app sends it a session and a stamp number, never a key.
 - **No sign-ups.**
-- **Nothing it keeps ties a person to a profile.** No request names a profile: the stamp proof that
-  ties a stamp to a profile is made on the person's device.
+- **Nothing it keeps ties a person to a profile.** No request names a profile: the verification
+  that ties a stamp to a profile is made on the person's device.
 - **It never signs for anyone.** Its face key and its ID key sign stamps, and its sponsor key signs
   tickets, nothing else.
 - **A key's recipe never changes.** What a key's stamps' `facts` are made from is fixed for good;
@@ -529,8 +529,8 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 - **It deletes every session in Didit an hour after its stamp is first signed, or at the first sweep
   after that which Didit answers, and no other.** Never one In Review. Each deletion asks Didit to
   keep only a template of the face, so its search still sees a face that comes back.
-- **It never puts a stamp on chain.** A stamp stays with the person; a profile record carries only the
-  stamp proof.
+- **It never puts a stamp on chain.** A stamp stays with the person; a profile entry carries only the
+  verification.
 
 ## Limits
 
@@ -590,7 +590,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 - **Losing the volume means new keys and new checks.** The seed and the file live only there: a start
   without them makes a new seed, whose keys readers must trust anew, with no signed handover, and
   which session and which person were signed for which stamp number is gone too, so a person could
-  get a second stamp number's ID stamp. The name stays, so a person's tags do not change.
+  get a second stamp number's ID stamp. The name stays, so a person's stamp numbers do not change.
 - **The face model's training data is not ours to vouch for.** SFace's weights are Apache 2.0, but
   its paper trains it on CASIA-WebFace, VGGFace2 and MS-Celeb-1M, whose own terms are for research. No
   widely used face model is trained on data with cleaner terms.
@@ -602,7 +602,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 
 ## Who decides what
 
-- **The standard:** the stamp, the verifier secret and the stamp number, the tag, and the stamp proof.
+- **The standard:** the stamp, the verifier secret and the stamp number, and the verification.
 - **This verifier, by its own choice:** whom it signs stamps for (a face Didit approves, by its search
   and its reviews; one stamp number for each name and birth date), its two keys and their recipes,
   the face model, the ID check's price and where it is paid, the welcome gift, its limits, and its
@@ -617,12 +617,12 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 **Can you tell which profile is mine?**
 No. We hold your stamp number, made from your seed and our name. Your profiles' keys are made from
 your seed and their labels. Nothing we hold connects the two: only your seed does, and it never
-leaves your device. A stamp proof on a profile shows that we signed a stamp to the seed behind it,
+leaves your device. A verification on a profile shows that we signed a stamp to the seed behind it,
 never which stamp number.
 
 **What if I lose my stamp?**
 Ask for it by its stamp number, `POST /stamp` ([The stamp](#the-stamp)); your device makes the number
-again from your seed and our name. The stamp is useless without the seed: a stamp proof needs the
+again from your seed and our name. The stamp is useless without the seed: a verification needs the
 seed behind its number, so handing it back is safe. The fields beside it, the embedding and the ID's
 name, birth date and country, are not kept and do not come back.
 

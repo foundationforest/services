@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { PREFIX, nameHashOf, seedScalar, verifierSecret } from '@foundationforest/keys'
-import { b64u, hex } from '@foundationforest/records'
+import { b64u, hex } from '@foundationforest/folders'
 import { poseidon1 } from 'poseidon-lite/poseidon1'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
 import { poseidon3 } from 'poseidon-lite/poseidon3'

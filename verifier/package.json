@@ -16,9 +16,9 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
+    "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/records": "file:../standard/records",
-    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
+    "@foundationforest/verification": "file:../standard/proofs/verification/client",
     "i18n-iso-countries": "7.14.0",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.30.0",

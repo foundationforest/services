@@ -1,8 +1,9 @@
 // What a stamp's facts are made from, and the ID check's fingerprint.
 //
-// A stamp is the standard's (proofs/stamp/README.md, "The stamp and the stamp proof"): the person's stamp
-// number and one field element, `facts`, signed with the standard's `signStamp`. This verifier
-// makes facts by a recipe fixed for each of its two keys, for good (a new recipe is a new key):
+// A stamp is the standard's (proofs/verification/README.md, "The stamp and the verification"): the
+// person's stamp number and one field element, `facts`, signed with the standard's `signStamp`.
+// This verifier makes facts by a recipe fixed for each of its two keys, for good (a new recipe is a
+// new key):
 //
 //   face key   Poseidon([h(model), h(embedding)])
 //   ID key     Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])
@@ -32,7 +33,7 @@
 import { createHash, createHmac } from 'node:crypto'
 
 import { BN254_R, isFieldElement } from '@foundationforest/keys'
-import { canonical } from '@foundationforest/records'
+import { canonical } from '@foundationforest/folders'
 import countries from 'i18n-iso-countries'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
 import { poseidon5 } from 'poseidon-lite/poseidon5'

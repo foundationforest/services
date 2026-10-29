@@ -2,7 +2,7 @@
 // sponsor key. The verifier is a client of credits here, not a seller: it never sees a credit, only
 // the buy's reference. The wire format is the one the host checks (host/credits/).
 
-import { b64u, base58 } from '@foundationforest/records'
+import { b64u, base58 } from '@foundationforest/folders'
 
 function addressBytes(text: unknown, what: string): Uint8Array {
   try {
@@ -14,7 +14,7 @@ function addressBytes(text: unknown, what: string): Uint8Array {
   throw new Error(`${what} is a Solana address`)
 }
 
-/** A service's origin, as a hosts record writes it: https, or http on loopback for tests. */
+/** A service's origin, as a profile entry's `hosts` writes it: https, or http on loopback for tests. */
 function checkOrigin(origin: string): void {
   const url = new URL(origin)
   if (url.origin !== origin || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) {

@@ -28,8 +28,8 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/stamp'
-import { base58 } from '@foundationforest/records'
+import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/verification'
+import { base58 } from '@foundationforest/folders'
 
 import type { Check } from './didit.ts'
 
@@ -128,7 +128,7 @@ export class Store {
         const number = toBytes32(input.stampNumber)
         this.#addSession.run(sessionHash(input.sessionId), number, input.kind)
         // The first stamp a key signs for a stamp number stays: a later check for that number, by
-        // anyone who knows it, never changes the stamp handed back. Any of them gives the same tag.
+        // anyone who knows it, never changes the stamp handed back. Any of them gives the same verification.
         const { facts, signature } = input.stamp
         this.#addStamp.run(number, input.kind, toBytes32(facts), Buffer.concat([toBytes32(signature.R8[0]), toBytes32(signature.R8[1])]), toBytes32(signature.S))
         // The first signing's time stays: a session signed again within its hour gets no more time.
