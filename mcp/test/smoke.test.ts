@@ -1,7 +1,7 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
 // in this directory, on loopback, with Railway's PORT set to a free port and the settings a deploy
 // gives it in the environment, here pointing at the test world.
-//   1. the MCP SDK's client finds the door there (../smoke.ts): its instructions and icon, every
+//   1. the MCP SDK's client finds the mcp there (../smoke.ts): its instructions and icon, every
 //      tool, no session, reading with no login, the challenge and the metadata, its open key, the
 //      same tools at /mcp, the icon's two files, and a login through the stand-in connect page, then
 //      the profiles it acts in; a request whose URL is no path (`//`) gets 400, and it goes on
@@ -78,7 +78,7 @@ function raw(port: number, request: string): Promise<number | null> {
 /** The settings a deploy gives, pointing at the test world, on `port`. */
 const settings = (port: number) => ({ PORT: String(port), PUBLIC_URL: `http://127.0.0.1:${port}`, DATA_DIR: mkdtempSync(join(tmpdir(), 'forest-mcp-smoke-')), INDEX_URL: w.index })
 
-test('1. the MCP SDK’s client finds the door, with every tool, reading with no login, and a login through the connect page', async () => {
+test('1. the MCP SDK’s client finds the mcp, with every tool, reading with no login, and a login through the connect page', async () => {
   const port = await freePort()
   // The image's copy reaches hosts only on the public internet, so the person's profiles in this
   // world, on the loopback host, are found through the login only.

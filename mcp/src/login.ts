@@ -59,7 +59,7 @@ export type LoginSettings = {
   origin: string
   /** The app's connect page; without it, logins wait. */
   appUrl?: string
-  /** How a client document is fetched: the standard's publicFetch, which reaches only public addresses. */
+  /** How a client document is fetched: publicFetch (public.ts), which reaches only public addresses. */
   clientFetch: typeof fetch
 }
 

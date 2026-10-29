@@ -14,7 +14,7 @@ import { copyFileSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { b64u, notePath, readFolder } from '@foundationforest/folders'
+import { b64u } from '@foundationforest/folders'
 import { lock, lockCount, openLocked } from '@foundationforest/folders/locked'
 import { mainKey, newAccessKey, openingHalf } from '@foundationforest/keys'
 import { MAX_PACK } from '../src/pack.ts'
@@ -114,13 +114,14 @@ describe('the login, end to end', () => {
     assert.deepEqual(after.at(-1)!.can, ['read-inbox', 'read', 'write', 'message'])
     assert.match(after.at(-1)!.open!, OPEN_KEY, 'with its open key, since it may read')
     assert.deepEqual(await w.app.keys('clothing/seller'), [])
-    // Its note, at its keyed path, locked to the main key alone, naming the AI app and this copy.
+    // Its note, at key/<id>, a random id, locked to the main key alone, naming the key, the AI app
+    // and this copy: found by opening the folder's notes.
     const main = await mainKey(w.seed, 'tutoring/tutor')
-    const view = await readFolder([w.host], main.address, Date.now())
-    const note = view.current.get(notePath(main.secret, after.at(-1)!.key))!.entry.body as { private: string }
-    assert.equal(lockCount(note), 1, 'locked to one key')
-    const opened = await openLocked(note, (await openingHalf(main.secret)).identity)
-    assert.deepEqual([opened.name, opened.connector], ['An AI app', w.mcp.origin])
+    const note = (await w.app.note('tutoring/tutor', after.at(-1)!.key))!
+    assert.match(note.path, /^key\/[0-9a-f]{32}$/)
+    assert.equal(lockCount(note.locked), 1, 'locked to one key')
+    const opened = await openLocked(note.locked, (await openingHalf(main.secret)).identity)
+    assert.deepEqual([opened.key, opened.name, opened.connector], [after.at(-1)!.key, 'An AI app', w.mcp.origin])
     await c.client.close()
   })
 
