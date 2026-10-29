@@ -1,10 +1,9 @@
 // The host's credits, through the whole host on loopback, its plug and its front: what joining, a
 // 1 kB entry, a 200 kB file and a delete cost; a write refused with no balance, joining too, and
 // leaving and taking down never blocked by it; a file paid by a folder that names it; inbox entries
-// free up to the day's cap; a ticket collected; a payment checked against a stand-in RPC; the credit
-// key made at the first start; and one end to end, a folder, an entry and a file, read back. The
-// plug's own tests are plug.test.ts and its neighbours, and the standard's host check is
-// check.test.ts.
+// free up to the day's cap; a ticket collected, and no other proof; the credit key made at the first
+// start; and one end to end, a folder, an entry and a file, read back. The plug's own tests are
+// plug.test.ts and its neighbours, and the standard's host check is check.test.ts.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'
@@ -16,7 +15,6 @@ import { mainKey, newSeed, openingHalf } from '@foundationforest/keys'
 import { type Body, type InboxEntry, type SignedEntry, base58, deleteInbox, encodeEntry, entry, fetchFile, fileOf, inboxDelete, inboxId, leave, readFolder, upload, write } from '@foundationforest/folders'
 import { inboxEntry } from '@foundationforest/folders/locked'
 
-import type { Rpc } from '../credits/seller.ts'
 import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
 import { INBOX_A_DAY, type RunningHost, cappedInbox, readConfig, startHost } from '../src/host.ts'
 import { buy, collect, keyOf, spend, sponsor } from './buyer.ts'
@@ -29,9 +27,9 @@ after(() => {
 })
 
 /** A host on loopback with a new data directory, or `dir`, taking `gift`'s tickets, and these settings. */
-async function start(env: Record<string, string> = {}, stand: { rpc?: Rpc } = {}, dir?: string): Promise<RunningHost> {
+async function start(env: Record<string, string> = {}, dir?: string): Promise<RunningHost> {
   if (!dir) dirs.push((dir = mkdtempSync(join(tmpdir(), 'host-'))))
-  return startHost(readConfig({ DATA_DIR: dir, PUBLIC_ORIGIN: ORIGIN, PORT: '0', SPONSORS: gift.address, ...env }), stand)
+  return startHost(readConfig({ DATA_DIR: dir, PUBLIC_ORIGIN: ORIGIN, PORT: '0', SPONSORS: gift.address, ...env }))
 }
 
 /** `count` credits bought with a ticket from `gift`, and spent into `folder`. */
@@ -229,45 +227,16 @@ test('a ticket is collected, once, and only from a sponsor this host lists', asy
   }
 })
 
-test('a payment on Solana is checked against the RPC', async () => {
-  const MINT = base58.encode(new Uint8Array(32).fill(1))
-  const PAY_TO = base58.encode(new Uint8Array(32).fill(2))
-  const paid = new Map<string, unknown>()
-  const rpc: Rpc = async (method, params) => {
-    assert.equal(method, 'getTransaction')
-    return paid.get(params[0] as string) ?? null
-  }
-  /** A transaction naming `reference`, in which `owner` gains `units` millionths of a dollar of `mint`. */
-  const pay = (reference: string, units: number, mint = MINT, owner = PAY_TO) => {
-    const signature = base58.encode(crypto.getRandomValues(new Uint8Array(64)))
-    const balance = (amount: number) => [{ accountIndex: 1, mint, owner, uiTokenAmount: { amount: String(amount), decimals: 6 } }]
-    paid.set(signature, { meta: { err: null, preTokenBalances: balance(0), postTokenBalances: balance(units) }, transaction: { message: { accountKeys: ['payer', 'account', reference] } } })
-    return `solana ${signature}`
-  }
-
-  const tickets = await start()
-  try {
-    const forest = ((await (await fetch(`${tickets.url}${DIRECTORY_PATH}`)).json()) as { 'forest-credit': Record<string, unknown> })['forest-credit']
-    assert.deepEqual(forest, { unit: 'writes at this host', price: '0.01', write: '0.01', kilobyte: '0.01' }, 'with no payment set, the directory names no address')
-    const b = await buy(ORIGIN, await keyOf(tickets.url), 1)
-    assert.equal((await collect(tickets.url, b.bytes, pay(b.reference, 10_000))).status, 503, 'only tickets buy')
-  } finally {
-    await tickets.close()
-  }
-
-  const running = await start({ CREDIT_MINT: MINT, CREDIT_PAY_TO: PAY_TO, RPC_URL: 'http://127.0.0.1:9' }, { rpc })
+test('only tickets buy: the directory names no address, and any other proof is refused', async () => {
+  const running = await start()
   try {
     const forest = ((await (await fetch(`${running.url}${DIRECTORY_PATH}`)).json()) as { 'forest-credit': Record<string, unknown> })['forest-credit']
-    assert.deepEqual([forest.address, forest.mint, forest.price], [PAY_TO, MINT, '0.01'])
-    const b = await buy(ORIGIN, await keyOf(running.url), 2)
-    assert.equal((await collect(running.url, b.bytes, pay(b.reference, 19_999))).status, 402, 'short by one unit')
-    assert.equal((await collect(running.url, b.bytes, pay(b.reference, 20_000, base58.encode(new Uint8Array(32).fill(3))))).status, 402, 'another mint')
-    assert.equal((await collect(running.url, b.bytes, pay(base58.encode(new Uint8Array(32).fill(4)), 20_000))).status, 402, 'another buy')
-    const proof = pay(b.reference, 20_000)
-    const got = await collect(running.url, b.bytes, proof)
-    assert.equal(got.status, 200, 'two credits at a cent each, at face value')
-    const me = await folder()
-    assert.equal((await spend(running.url, me.address, await b.finish(got.body))).body.credits, 2)
+    assert.deepEqual(forest, { unit: 'writes at this host', price: '0.01', write: '0.01', kilobyte: '0.01' }, 'what a credit buys, and its price')
+    const b = await buy(ORIGIN, await keyOf(running.url), 1)
+    const signature = base58.encode(crypto.getRandomValues(new Uint8Array(64)))
+    for (const proof of [`solana ${signature}`, 'ticket', `ticket ${gift.ticket(ORIGIN, b.reference, 1)} more`]) {
+      assert.deepEqual([(await collect(running.url, b.bytes, proof)).status], [400], proof.slice(0, 12))
+    }
   } finally {
     await running.close()
   }
@@ -276,11 +245,11 @@ test('a payment on Solana is checked against the RPC', async () => {
 test('the credit key is made on the volume at the first start, and kept', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'host-'))
   dirs.push(dir)
-  const first = await start({}, {}, dir)
+  const first = await start({}, dir)
   const key = await keyOf(first.url)
   await first.close()
   assert.equal(statSync(join(dir, 'credits', 'key.der')).mode & 0o777, 0o600)
-  const again = await start({}, {}, dir)
+  const again = await start({}, dir)
   try {
     assert.deepEqual(await keyOf(again.url), key)
   } finally {

@@ -146,15 +146,12 @@ directory as RFC 9578 writes it, with one more field:
 { "issuer-request-uri": "/credits/buy",
   "token-keys": [{ "token-type": 2, "token-key": <base64url> }],
   "forest-credit": { "unit": "writes at this host", "price": <decimal text>,
-                     "write": <decimal text>, "kilobyte": <decimal text>,
-                     "address"?: <Solana address>, "mint"?: <mint address> } }
+                     "write": <decimal text>, "kilobyte": <decimal text> } }
 ```
 
 - `price` is one credit's price in dollars.
 - `write` and `kilobyte` are what a write costs here, in credits: `write` for each write, and
   `kilobyte` for each 1,000 bytes it stores.
-- `address` and `mint` are there only when the host takes a payment on Solana: where it is paid,
-  and in which dollar.
 - An app takes the latest type 2 key whose `not-before` has passed. This host lists one key, with
   no `not-before`.
 
@@ -162,9 +159,8 @@ directory as RFC 9578 writes it, with one more field:
 
 1. **The buy.** The app makes `n` requests, each the blinded first 98 bytes of a credit to be, in
    one batch, as `draft-ietf-privacypass-batched-tokens` writes it. It keeps each nonce and each
-   blinding's inverse to finish later. The buy's reference is SHA-256 of its bytes, written as a
-   Solana address.
-2. **Pay.** Someone pays for the buy, in one of the ways below.
+   blinding's inverse to finish later. The buy's reference is SHA-256 of its bytes, in base58.
+2. **Pay.** A sponsor pays for the buy with a ticket (below).
 3. **Get signed.** Anyone holding the buy collects it: its bytes to `POST /credits/buy`, as
    `application/private-token-generic-batch-request`, with the proof in the `Forest-Payment`
    header. The host checks that the proof pays for this buy and answers the `n` blind signatures.
@@ -173,8 +169,9 @@ directory as RFC 9578 writes it, with one more field:
 4. **Finish.** The app unblinds each signature, checks it against the host's key, and keeps the
    credits.
 
-**The ways to pay.** A proof pays for one buy: the host keeps which proof paid which reference.
-Anyone can buy credits for any folder; the main way is a sponsor's ticket.
+**How a buy is paid.** A proof pays for one buy: the host keeps which proof paid which reference.
+Anyone can buy credits for any folder; the main way is a sponsor's ticket, the only way this host
+takes today. Other ways to pay for credits are this host's to add.
 
 - **A sponsor's ticket,** `Forest-Payment: ticket <ticket>`.
   - A sponsor is an Ed25519 key listed in `SPONSORS`: the verifier's sponsor address, whose tickets
@@ -184,22 +181,14 @@ Anyone can buy credits for any folder; the main way is a sponsor's ticket.
     this host, of `n` credits, and no other. The ticket is
     `<sponsor's address>.<n>.<signature in base64url>`.
   - The host keeps a bill: how many credits each sponsor's tickets paid for.
-- **A dollar payment on Solana,** `Forest-Payment: solana <transaction signature>`, when
-  `CREDIT_MINT`, `CREDIT_PAY_TO` and `RPC_URL` are set.
-  - Anyone pays it from any wallet app that reads Solana Pay:
-    `solana:<address>?amount=<n × price>&spl-token=<mint>&reference=<reference>&label=<host>`.
-  - The host checks that one transaction, at finalized, in one `getTransaction` over `RPC_URL`, its
-    RPC (the access point it reads the chain through): no error, the buy's reference among its
-    accounts, and `address` gained at least `n` × `price` of the dollar, at face value.
-  - Unset, only tickets buy, and a Solana proof is answered 503.
 
-The buyer or the sponsor sees the reference, never the credits; the host sees who paid, or which
-sponsor, and the blinded buy, never which spends they become.
+The buyer or the sponsor sees the reference, never the credits; the host sees which sponsor paid,
+and the blinded buy, never which spends they become.
 
 | Route | What |
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its directory, above |
-| `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Answers its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`; `too_many` (over `MAX_BUY`); `bad_payment` (a header it cannot read); `not_paid` (402, with what to pay); `proof_used` (409, the proof paid for another buy); `payment_check_unavailable` (503: no payment on Solana here, or the RPC did not answer) |
+| `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Answers its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`; `too_many` (over `MAX_BUY`); `bad_payment` (a header that is no ticket); `not_paid` (402, with what to pay); `proof_used` (409, the proof paid for another buy) |
 | `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, each in base64url. All go into that folder's balance, or none. The answer is `{ folder, credits }`, the balance, a number with up to six decimals. Refused: `bad_request`; `credit` (402: one does not hold, or one is there twice); `spent` (409: one was spent) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }`. Refused: `bad_request` (not a folder's address) |
 
@@ -232,10 +221,7 @@ Every number here is set in `src/host.ts` (`choice`, `INBOX_A_DAY`), `src/plug.t
 numbers), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`) or by a setting, all in this
 directory, so nothing outside it changes one.
 
-- **One credit is one US cent** (`CREDIT_PRICE_CENTS`). Paid on Solana, it is 0.01 of the dollar
-  `CREDIT_MINT` names, at face value. On Railway that dollar is Circle's USDC on Solana's devnet,
-  the chain things run on today, `4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU`, six decimals,
-  which anyone gets from [Circle's faucet](https://faucet.circle.com).
+- **One credit is one US cent** (`CREDIT_PRICE_CENTS`).
 - **A write costs 0.01 credit** (`WRITE_FLOOR`), **plus 0.01 credit for each kilobyte** (1,000 bytes)
   **it stores** (`PER_KB`), rounded up to a millionth of a credit.
   - A 1 kB entry costs 0.02 credit, a 200 kB photo 2.01, and a 50 MB video 500.01: five dollars.
@@ -256,9 +242,9 @@ directory, so nothing outside it changes one.
     a GB out.
   - The floor is the price of one kilobyte: a small write is checked and logged like a large one.
 - **Buying:** at most **1,000** credits a buy (`MAX_BUY`), and **100** a spend (`SPEND_MAX`).
-  Tickets from the sponsors in `SPONSORS`; we list the verifier's sponsor address, whose tickets are
-  a person's first credits. A payment on Solana counts once it is finalized, and only when
-  `CREDIT_MINT`, `CREDIT_PAY_TO` and `RPC_URL` are set.
+  Tickets from the sponsors in `SPONSORS`, the only way this host takes today; we list the
+  verifier's sponsor address, whose tickets are a person's first credits. Other ways to pay for
+  credits are this host's to add.
 - **Sizes:** entries, inbox entries and inbox deletes up to **65,536 bytes** each in UTF-8
   (`DEFAULT_MAX_LINE_BYTES`); **100** of them a request; **1,000** a page, and at most **4,194,304
   bytes** a page, though always one line. A read request is at most 1,024 bytes.
@@ -294,7 +280,7 @@ directory, so nothing outside it changes one.
 ### Settings
 
 The host's own key, the credit key, is a file on the volume, never a setting. The settings hold
-only the bucket's key, the RPC's address and this host's choices.
+only the bucket's key and this host's choices.
 
 | Setting | Default | What |
 |---|---|---|
@@ -311,10 +297,8 @@ only the bucket's key, the RPC's address and this host's choices.
 | `PER_KB` | `0.01` | What each 1,000 bytes a write stores add, in credits: decimal text, at most six decimals |
 | `MAX_BUY` | `1000` | The most credits one buy may ask for |
 | `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
-| `CREDIT_MINT`, `CREDIT_PAY_TO`, `RPC_URL` | none: only tickets buy | The dollar a credit is paid in, by its mint; the address it is paid to; the Solana RPC that checks the payment. All three, or none |
 
-A setting that cannot be read stops the start: a partial bucket, a partial payment, a price that is
-not decimal text.
+A setting that cannot be read stops the start: a partial bucket, a price that is not decimal text.
 
 ### Run it
 
@@ -380,8 +364,7 @@ The tests, on loopback:
     next UTC day counted again;
   - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
     not listed, for another count, or for another buy, and a credit is spent once;
-  - a payment checked against a stand-in RPC: refused short by one unit, in another dollar, or
-    naming another buy; with no payment set, only tickets buy and the directory names no address;
+  - only tickets buy: the directory names no address, and a proof of any other kind is refused;
   - the credit key made at the first start, readable only by the host's user, and the same at the
     next start;
   - a credit route that fails answering 500 and logging one line, its path and the error, with no
@@ -407,7 +390,7 @@ The tests, on loopback:
   out. On Railway, Railway's own request logs exist.
 - **It cannot tell which buy a credit came from, as long as it gave everyone the same key.** It
   signed the credit blind and never saw its nonce.
-- **A credit is spent once, and a buy's credits are signed once.** A second payment for the same
+- **A credit is spent once, and a buy's credits are signed once.** A second ticket for the same
   buy is taken and gives nothing more; collecting a buy again gives the same credits, never more.
 - **A write is paid once.** The same entry, or the same bytes, sent again cost nothing.
 - **Credits are never refunded, and once in a folder never move to another.** One credit is a cent
@@ -446,8 +429,6 @@ The tests, on loopback:
   keeps them here for the price of its entry alone.
 - **A stop between storing bytes and taking their price** leaves them stored and unpaid. A
   reservation is held in memory, in this one process.
-- **It trusts its RPC** for payments. A payment check that fails refuses the buy (503), and the app
-  collects it again.
 - **Slow for a busy folder.** The plug checks each entry against everything it stores for that
   folder, and checks signatures in JavaScript: about 175 entries a second on one core.
 - **A folder file it cannot open is withheld from the feed.** A reader whose cursor passes its
@@ -462,10 +443,10 @@ The tests, on loopback:
   file valid; the profile entry's fields and what each access key can do; and the host check.
 - **This host, by its own choice:**
   - the numbers above: its prices, what one credit costs, and what is free;
-  - which sponsors it takes, and which dollar and RPC a payment is checked in;
+  - which sponsors it takes, and any other way it takes to pay for credits;
   - its logs and its storage;
   - its credit's format: type 2, its challenge, its id, the directory's `forest-credit` entry, the
-    buy and its reference, the pay link, the ticket, the headers.
+    buy and its reference, the ticket, the headers.
 - **Anyone holding a credit:** which folder it goes into.
 - **A buyer or a sponsor:** whom it pays for.
 - **The person, through their app:** which hosts their profile entry names, which access keys it

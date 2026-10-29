@@ -131,8 +131,8 @@ Everything but its secrets and what it keeps private for people:
     which travel locked to the mcp's open key inside the AI app's token, and are opened only for a
     call.
 - **Kept, not published:**
-  - the host's list of spent credits, the payment proofs it took, the bill for its sponsors (the
-    keys whose tickets pay for someone's credits), each folder's balance, and the id of each entry it
+  - the host's list of spent credits, the tickets it took, the bill for its sponsors (the keys
+    whose tickets pay for someone's credits), each folder's balance, and the id of each entry it
     took a price for;
   - the verifier's list of stamp numbers given a gift;
   - the hosting provider's own request logs.

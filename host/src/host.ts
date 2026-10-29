@@ -30,10 +30,9 @@ import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
 import { encodeEntry, entryId, unsignedOf } from '@foundationforest/folders'
-import { base58 } from '@scure/base'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
-import { type Rpc, keyAt } from '../credits/seller.ts'
+import { keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
 import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
@@ -71,8 +70,6 @@ export type Config = {
   origin: string
   /** One credit's price, in US cents. */
   priceCents: number
-  /** Where a credit is paid on Solana, in which dollar, and the RPC that checks it; null: only tickets buy. */
-  payment: { address: string; mint: string; rpcUrl: string } | null
   /** The most credits one buy may ask for. */
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
@@ -83,8 +80,6 @@ export type Config = {
 
 /** The bucket's settings, with FILES=s3; the first four are needed. */
 const BUCKET_NEEDED = ['FILES_ENDPOINT', 'FILES_BUCKET', 'FILES_ACCESS_KEY_ID', 'FILES_SECRET_ACCESS_KEY']
-/** A payment on Solana takes all three, or none: then only tickets buy. */
-const PAYMENT = ['CREDIT_MINT', 'CREDIT_PAY_TO', 'RPC_URL']
 
 function fileDriver(env: Record<string, string | undefined>): FileDriver {
   const kind = env.FILES || 'disk'
@@ -113,15 +108,6 @@ function whole(name: string, value: string, least = 0): number {
   return n
 }
 
-function solanaAddress(name: string, value: string): string {
-  try {
-    if (base58.decode(value).length === 32 && base58.encode(base58.decode(value)) === value) return value
-  } catch {
-    // Refused below.
-  }
-  throw new Error(`${name} is a Solana address`)
-}
-
 /** Reads the settings README.md lists. */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
   const dir = env.DATA_DIR?.trim()
@@ -133,10 +119,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   } catch {
     throw new Error('PUBLIC_ORIGIN is https, or http only on loopback')
   }
-  const paid = PAYMENT.filter((name) => env[name]?.trim())
-  if (paid.length && paid.length < PAYMENT.length) throw new Error(`a payment on Solana needs ${PAYMENT.join(', ')}, or none of them`)
-  const rpcUrl = env.RPC_URL?.trim()
-  if (rpcUrl) new URL(rpcUrl)
   const cost = { floor: (env.WRITE_FLOOR || '0.01').trim(), perKb: (env.PER_KB || '0.01').trim() }
   millionthsOf('WRITE_FLOOR', cost.floor)
   millionthsOf('PER_KB', cost.perKb)
@@ -146,25 +128,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     port: whole('PORT', env.PORT || '8080'),
     origin,
     priceCents: whole('CREDIT_PRICE_CENTS', env.CREDIT_PRICE_CENTS || '1', 1),
-    payment: rpcUrl ? { address: solanaAddress('CREDIT_PAY_TO', env.CREDIT_PAY_TO!.trim()), mint: solanaAddress('CREDIT_MINT', env.CREDIT_MINT!.trim()), rpcUrl } : null,
     maxBuy: whole('MAX_BUY', env.MAX_BUY || '1000', 1),
     sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     cost,
-  }
-}
-
-/** A JSON-RPC call through `url`, for the payment check. Its errors never carry the URL, which may carry the RPC's key. */
-function rpcAt(url: string): Rpc {
-  return async (method, params) => {
-    let answered: { result?: unknown; error?: unknown }
-    try {
-      const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), signal: AbortSignal.timeout(20_000) })
-      answered = (await res.json()) as typeof answered
-    } catch {
-      throw new Error('the RPC could not be reached')
-    }
-    if (answered.error !== undefined || !('result' in answered)) throw new Error(`the RPC refused ${method}`)
-    return answered.result
   }
 }
 
@@ -362,13 +328,11 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   return true
 }
 
-/** In tests, `rpc` stands in for the RPC the payment check asks, otherwise made from the payment's `rpcUrl`. */
-export async function startHost(config: Config, stand: { rpc?: Rpc } = {}): Promise<RunningHost> {
+export async function startHost(config: Config): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
   mkdirSync(creditsDir, { recursive: true })
   const creditKey = await keyAt(join(creditsDir, 'key.der'))
-  const payment = config.payment && { address: config.payment.address, mint: config.payment.mint, rpc: stand.rpc ?? rpcAt(config.payment.rpcUrl) }
-  const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, payment, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost })
+  const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost })
   const host: Host = new Host({
     dir: config.dir,
     files: config.files,
