@@ -5,7 +5,7 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 ## Words
 
-Use these words: seed, seed scalar, main key, access key, note, profile, profile entry, entry,
+Use these words: seed, the seed's number, main key, access key, note, profile, profile entry, entry,
 address, label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation
 proof, check, folder, file, host, service key, connection, connector, private, envelope, encrypted
 (an envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer,
@@ -28,12 +28,13 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
 - Check, never verify: a reader checks a proof or a signature. Main key, never profile key;
   address, never wallet, for a key ("a wallet app" is fine).
 - Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
-  sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy. A
-  string baked into a recipe, a circuit or a key's text keeps its bytes even when its words are old
-  (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits' signal names and files,
-  the verifier's `issuer/...` texts): rename the code around it, never the string, and say why in a
-  comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's
-  verifier).
+  sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy,
+  seed scalar, keyed path, a signature's prefix. A string baked into a recipe, a circuit or a key's
+  text keeps its bytes even when its words grow old (the standard's three texts, `forest/profile/`,
+  `forest/verifier/` and `forest/pay/`, the circuits' signal names and files, the verifier's `face`,
+  `id`, `fingerprint` and `sponsor` texts): rename the code around it, never the string, and say
+  why in a comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`,
+  snarkjs's verifier).
 - encrypted is for an envelope: what is locked to a key's open key.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
