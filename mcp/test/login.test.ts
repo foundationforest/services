@@ -6,10 +6,10 @@
 // and every way a login is refused: a pointer not locked to this copy, a pointer for another login,
 // one that is not one or too long, a login changed on the way, a person who says no, a code with the
 // wrong verifier or for another client, a pointer naming the person's connection folder without its
-// secret, one naming a folder with no connection, a token this copy did not give, a token from
-// before connections, a token whose pointer no longer opens, and a copy with no connect page. Hosts
-// that do not answer are a refusal, not a new login. Nothing is kept: a token works on another copy
-// with the same two keys, and the data directory holds only them.
+// secret, one naming a folder with no connection, access entries past the first 100, a token this
+// copy did not give, a token from before connections, a token whose pointer no longer opens, and a
+// copy with no connect page. Hosts that do not answer are a refusal, not a new login. Nothing is
+// kept: a token works on another copy with the same two keys, and the data directory holds only them.
 
 import assert from 'node:assert/strict'
 import { createHash, createHmac } from 'node:crypto'
@@ -20,7 +20,7 @@ import { after, before, describe, test } from 'node:test'
 import { type Body, b64u, entry, liveContent, readFolder, write } from '@foundationforest/folders'
 import { lock, lockCount, openLocked } from '@foundationforest/folders/locked'
 import { accessKey, mainKey, newAccessKey, openingHalf } from '@foundationforest/keys'
-import { MAX_POINTER } from '../src/connection.ts'
+import { MAX_ACCESS, MAX_POINTER } from '../src/connection.ts'
 import { serve } from '../src/server.ts'
 import { App } from './app.ts'
 import { AiApp, CHOICE, REDIRECT, type World, aiApp, browse, clientFetch, logIn, world } from './setup.ts'
@@ -364,6 +364,18 @@ describe('refused', () => {
     ])
     const mine = JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} })))
     assert.deepEqual(mine.profiles.map((p: { label: string }) => p.label), [STUDENT, TUTOR])
+    await c.client.close()
+  })
+
+  test(`past its first ${MAX_ACCESS} access entries by path, a connection's others count for nothing`, async () => {
+    const c = await aiApp(w.mcp.origin)
+    await logIn(c)
+    const folder = await connectionOf(TUTOR)
+    // The first 100 paths, none of them an access entry that fits; the login's own two, at random
+    // ids, sort after them.
+    const stray = await lock({ text: 'not an access entry' }, [folder.key.openKey, await openKey()])
+    await write([w.host], Array.from({ length: MAX_ACCESS }, (_, i) => entry(folder.key, `access/${i.toString(16).padStart(32, '0')}`, stray, Date.now())))
+    assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [] })
     await c.client.close()
   })
 

@@ -192,7 +192,7 @@ key alone, at most 4,096 characters: exactly `{ request: <SHA-256 of the request
 hex>, folder: <the folder's address>, hosts: <its 1 to 8>, secret: <the connection entry's> }`.
 
 **Each call that acts for the person** opens the pointer, reads the folder from its hosts, opens
-`connection` and checks that its secret is the pointer's, then opens each `access/` entry and acts
+`connection` and checks that its secret is the pointer's, then opens the `access/` entries and acts
 with their keys, keeping none after the call. No `connection` entry, one that does not open, or
 another secret: a 401, a login to make again. An access entry that does not open or fit, or names a
 profile already named, counts for nothing. **Adding a profile** is one more key and access entry;
@@ -252,8 +252,9 @@ profiles, the page ticking their two tutoring ones:
   way, a no, a code with the wrong verifier or client; a 401 for a pointer naming the person's folder
   with a secret of its own, or a folder with no connection, a token this copy did not give, one from
   before connections, one whose pointer no longer opens; an access entry that does not open or fit,
-  counted for nothing; hosts that do not answer, a refusal; with no `APP_URL`, logins wait. Nothing
-  kept: a token works on another copy with the same two keys, the data directory holds only them.
+  or past the first 100, counted for nothing; hosts that do not answer, a refusal; with no
+  `APP_URL`, logins wait. Nothing kept: a token works on another copy with the same two keys, the
+  data directory holds only them.
 - `test/tools.test.ts`: the six tools and their marks; the instructions, then the index's guide, or
   a line saying it gave none; the markets; the index's search and a profile's page, each whole,
   `badge` in it and among the filters; `my_profiles`, the switches as listed; `read` of the profile
@@ -305,8 +306,9 @@ The foundation's copy, at https://mcp.forest.foundation:
     the AI app redeems at once; no end for a login, which does what its access keys may until the
     person ends its connection;
   - at most 4,096 characters for a pointer, one envelope to one key holding up to 8 hosts, so the
-    access token, which carries it, stays well under the 16 KB of headers Node takes; no limit on
-    the profiles a connection holds, one entry each;
+    access token, which carries it, stays well under the 16 KB of headers Node takes;
+  - at most 100 access entries opened a call, the first by path, as each takes a post-quantum
+    opening: any beyond count for nothing;
   - the newest 100 inbox entries a read opens: each takes a post-quantum opening, and anyone can
     leave entries in an inbox;
   - 10 seconds for the index's guide as a chat starts, so a slow index does not hold the chat; 60

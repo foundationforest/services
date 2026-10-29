@@ -11,8 +11,8 @@
 //   key alone: { request: <SHA-256 of the login request>, folder: <its address>, hosts, secret }.
 //
 // Each call that acts for the person opens the pointer, reads the folder from its hosts, opens its
-// connection entry and checks that its secret is the pointer's, then opens each access entry; it
-// keeps none of it after the call. The secret is what ties a pointer to the folder's own app: this
+// connection entry and checks that its secret is the pointer's, then opens the access entries, at
+// most MAX_ACCESS; it keeps none of it after the call. The secret is what ties a pointer to the folder's own app: this
 // copy's open key is public, so anyone can lock a pointer naming someone's folder, and only the
 // keys the entry is locked to read the secret in it.
 //
@@ -26,6 +26,9 @@ import { isObject } from './forest.ts'
 
 /** The longest pointer taken, in characters: one envelope, to one key, holding up to 8 hosts, so the access token stays under Node's 16 KB of headers. */
 export const MAX_POINTER = 4096
+
+/** The most access entries a call opens, the first by path: each takes a post-quantum opening, so no connection folder costs a call more. Any beyond count for nothing. */
+export const MAX_ACCESS = 100
 
 /** What the token carries, opened. */
 export type Pointer = { request: string; folder: string; hosts: string[]; secret: string }
@@ -106,9 +109,10 @@ export async function readConnection(pointer: Pointer, identity: string, how: Re
   if (view.current.size === 0 && view.failed.length) return { unreached: `the connection's hosts did not answer: ${view.failed.map((f) => `${f.host} (${f.error})`).join('; ')}` }
   const head = await opened(view.current.get('connection')?.entry.body, identity)
   if (!isHead(head) || !same(head.secret, pointer.secret)) return 'gone'
-  // In path order, so every call counts the same ones. One that does not open or fit, or names a
-  // profile already named, counts for nothing: one bad entry from an app does not end the rest.
-  const paths = [...view.current.keys()].filter((p) => p.startsWith('access/')).sort()
+  // In path order, so every call counts the same ones, and at most MAX_ACCESS. One that does not
+  // open or fit, or names a profile already named, counts for nothing: one bad entry from an app
+  // does not end the rest.
+  const paths = [...view.current.keys()].filter((p) => p.startsWith('access/')).sort().slice(0, MAX_ACCESS)
   const bodies = await Promise.all(paths.map((p) => opened(view.current.get(p)!.entry.body, identity)))
   const profiles: ConnectionProfile[] = []
   for (const p of bodies) if (isAccess(p) && !profiles.some((q) => q.label === p.label || q.address === p.address)) profiles.push(p)
