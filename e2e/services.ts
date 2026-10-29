@@ -72,7 +72,7 @@ export type Running = {
   verifier: { url: string; name: string; keys: { face: string; id: string }; sponsor: string }
   host: string
   index: { url: string; address: string }
-  /** The loop's own mcp: its origin, the connector a person's app locks the pack for. */
+  /** The loop's own mcp: its origin, the connector a person's app locks the connection for. */
   mcp: string
   stop(): Promise<void>
 }

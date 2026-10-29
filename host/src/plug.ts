@@ -22,8 +22,8 @@
 //   GET  /v1/files/<sha256>        the bytes, with the type they came in with
 //
 // How large an entry, an inbox entry or a file it takes, and how many lines a request or a page
-// holds, is this host's own choice (maxLineBytes, maxFileBytes, maxBatch, maxPageLines,
-// maxPageBytes); a client handles any size. It logs nothing about who asks. Where it keeps things is
+// holds, is this host's own choice (maxEntryBytes, maxInboxBytes, maxFileBytes, maxBatch,
+// maxPageLines, maxPageBytes); a client handles any size. It logs nothing about who asks. Where it keeps things is
 // storage.ts's business, and only storage.ts's.
 
 import { createHash } from 'node:crypto'
@@ -58,8 +58,10 @@ const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
 const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 export const DAY = 86_400_000
-/** The largest entry or inbox entry it takes, as canonical text in bytes, unless the operator says otherwise. */
-export const DEFAULT_MAX_LINE_BYTES = 65_536
+/** The largest entry it takes, as canonical text in bytes, unless the operator says otherwise. */
+export const DEFAULT_MAX_ENTRY_BYTES = 65_536
+/** The largest inbox entry it takes, as canonical text in bytes, unless the operator says otherwise. */
+export const DEFAULT_MAX_INBOX_BYTES = 65_536
 /** Lines a request carries, unless the operator says otherwise. */
 export const DEFAULT_MAX_BATCH = 100
 /** Lines a page holds, unless the operator says otherwise. */
@@ -114,8 +116,10 @@ export type HostOptions = {
   now?: () => number
   /** The operator's choice; DEFAULT_KEEP_DAYS when omitted. */
   keepDays?: number
-  /** The largest line it takes, as canonical text in bytes; DEFAULT_MAX_LINE_BYTES when omitted. */
-  maxLineBytes?: number
+  /** The largest entry it takes, as canonical text in bytes; DEFAULT_MAX_ENTRY_BYTES when omitted. */
+  maxEntryBytes?: number
+  /** The largest inbox entry it takes, as canonical text in bytes; DEFAULT_MAX_INBOX_BYTES when omitted. */
+  maxInboxBytes?: number
   entryChoice?: EntryChoice
   /** Milliseconds a request may take to arrive in full; past that it gets 408. READ_TIMEOUT_MS when omitted. */
   timeout?: number
@@ -142,7 +146,8 @@ export class Host {
   /** Where it listens, once it does. */
   url = ''
   readonly keepDays: number
-  readonly maxLineBytes: number
+  readonly maxEntryBytes: number
+  readonly maxInboxBytes: number
   readonly maxBatch: number
   readonly maxPageLines: number
   readonly maxPageBytes: number
@@ -159,7 +164,8 @@ export class Host {
   constructor(options: HostOptions = {}) {
     this.now = options.now ?? Date.now
     this.keepDays = options.keepDays ?? DEFAULT_KEEP_DAYS
-    this.maxLineBytes = options.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES
+    this.maxEntryBytes = options.maxEntryBytes ?? DEFAULT_MAX_ENTRY_BYTES
+    this.maxInboxBytes = options.maxInboxBytes ?? DEFAULT_MAX_INBOX_BYTES
     this.maxBatch = options.maxBatch ?? DEFAULT_MAX_BATCH
     this.maxPageLines = options.maxPageLines ?? DEFAULT_MAX_PAGE_LINES
     this.maxPageBytes = options.maxPageBytes ?? DEFAULT_MAX_PAGE_BYTES
@@ -182,7 +188,7 @@ export class Host {
     const decoded: Array<{ i: number; checked: Checked }> = []
     lines.forEach((line, i) => {
       try {
-        if (this.tooBig(line)) throw new FolderError('size', `this host takes entries of at most ${this.maxLineBytes} bytes`)
+        if (this.tooBig(line, this.maxEntryBytes)) throw new FolderError('size', `this host takes entries of at most ${this.maxEntryBytes} bytes`)
         const checked = decodeEntry(line)
         if (checked.entry.time > now + MAX_FUTURE_MS) results.push({ i, id: checked.id, ok: false, error: 'future', message: 'dated more than ten minutes ahead' })
         else decoded.push({ i, checked })
@@ -251,9 +257,20 @@ export class Host {
     return { lines, cursor }
   }
 
-  /** Whether a line is larger than this host takes. Its length in UTF-16 units is never more than its bytes, so huge text is refused unencoded. */
-  private tooBig(line: string): boolean {
-    return line.length > this.maxLineBytes || utf8(line).length > this.maxLineBytes
+  /** Whether a line is larger than `max` bytes. Its length in UTF-16 units is never more than its bytes, so huge text is refused unencoded. */
+  private tooBig(line: string, max: number): boolean {
+    return line.length > max || utf8(line).length > max
+  }
+
+  /**
+   * The most a request's body holds: for inbox entries, a full batch of the largest; for entries, as
+   * much, or one largest entry and its newline when that is more. Never a full batch of the largest
+   * entries: a host that takes large ones would read it all into memory before any price is asked.
+   * A larger batch gets 413, and the client sends it again in halves.
+   */
+  private maxBody(inbox: boolean): number {
+    const batch = this.maxBatch * (this.maxInboxBytes + 1)
+    return inbox ? batch : Math.max(batch, this.maxEntryBytes + 1)
   }
 
   /** This host's view of a folder, from what it stores. */
@@ -294,7 +311,7 @@ export class Host {
   }
 
   private async leaveOne(line: string, now: number, open: Map<string, boolean>): Promise<Answer> {
-    if (this.tooBig(line)) return { ok: false, error: 'size', message: `this host takes inbox entries of at most ${this.maxLineBytes} bytes` }
+    if (this.tooBig(line, this.maxInboxBytes)) return { ok: false, error: 'size', message: `this host takes inbox entries of at most ${this.maxInboxBytes} bytes` }
     let c: CheckedInbox
     try {
       c = decodeInbox(line)
@@ -445,7 +462,7 @@ export class Host {
     }
 
     // POST /v1/entries or /v1/inbox: NDJSON in, one NDJSON result a line out.
-    const body = await readBody(req, this.maxBatch * (this.maxLineBytes + 1))
+    const body = await readBody(req, this.maxBody(url.pathname === '/v1/inbox'), true)
     if (body === null) {
       res.writeHead(413).end()
       return
@@ -483,14 +500,20 @@ function sendLines(res: ServerResponse, out: Page) {
 /** A body as text: bytes that are not UTF-8 become U+FFFD and a byte order mark stays, so a line that has one is refused. */
 const bodyText = new TextDecoder('utf-8', { ignoreBOM: true })
 
-async function readBody(req: IncomingMessage, max: number): Promise<Uint8Array | null> {
+/**
+ * A request's body, or null past `max` bytes. With `drain`, the rest past `max` is still read, and
+ * none of it kept, so the client reads the 413 that follows and can send its batch again in halves;
+ * the request's timeout bounds how long that takes.
+ */
+async function readBody(req: IncomingMessage, max: number, drain = false): Promise<Uint8Array | null> {
   const chunks: Uint8Array[] = []
   let size = 0
   for await (const chunk of req) {
     size += (chunk as Uint8Array).length
-    if (size > max) return null
-    chunks.push(chunk as Uint8Array)
+    if (size > max && !drain) return null
+    if (size <= max) chunks.push(chunk as Uint8Array)
   }
+  if (size > max) return null
   // Copied here, not concat(...chunks): a slow client can send more pieces than a call takes arguments.
   const body = new Uint8Array(size)
   let at = 0

@@ -20,8 +20,8 @@
 #                index and mcp on loopback, with no chain and no secret; it passes or fails the job
 #   mcp          its type-check and tests, on loopback: this repo's host (its plug), a stand-in index
 #                and connect page, and its reference app; the login end to end through the MCP
-#                SDK's client and the pack, every tool in the person's folders, and the image's own
-#                command
+#                SDK's client and the connection, every tool in the person's folders, and the
+#                image's own command
 #
 # Not here, and in mcp's README: its smoke test against the deployed copy.
 #

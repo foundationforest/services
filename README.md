@@ -28,7 +28,7 @@ reader checks that. Each service here helps with one part, and holds none of it 
 
 **The mcp** is a connector over MCP (the Model Context Protocol, the way AI apps call outside
 tools): it passes on what indexes say and what the markets hold, and acts in the person's own
-profiles with the access keys their app hands it at login, holding none between calls.
+profiles with the access keys their app keeps for it, holding none between calls.
 
 ### The sort
 
@@ -49,7 +49,7 @@ profiles with the access keys their app hands it at login, holding none between 
 | [`verifier`](verifier/README.md) | Checks that you are one real person, by face or by a government ID, through Didit, and signs you a stamp with its face key or its ID key | https://verifier.forest.foundation |
 | [`host`](host/README.md) | Keeps profiles' folders, their entries, inboxes and photos, serves the entries and photos to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
 | [`index`](index/README.md) | Reads the hosts it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
-| [`mcp`](mcp/README.md) | Reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app hands it at login | https://mcp.forest.foundation |
+| [`mcp`](mcp/README.md) | Reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app keeps for it | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all four, each with a stand-in for their app and an AI, end to end. Not a service | |
 
 ## Run a copy
@@ -118,7 +118,7 @@ Everything but its secrets and what it keeps private for people:
 - **Secret:**
   - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the
     host's credit key, and the mcp's two keys, one that signs its logins and one whose opening
-    half opens the packs of access keys a person's app hands it;
+    half opens the connections a person's app makes for it;
   - Didit's API key;
   - the keys to the host's bucket, the storage its photos and videos live in.
 - **Private by design:**
@@ -126,9 +126,9 @@ Everything but its secrets and what it keeps private for people:
   - the inbox entries, which anyone can list, and only the keys they were locked to open: the
     profile's main key's opening half, and each access key its profile entry lists with
     `read-inbox`;
-  - what an AI does through the mcp, which it never writes down, and the access keys in each login,
-    which travel locked to the mcp's open key inside the AI app's token, and are opened only for a
-    call.
+  - what an AI does through the mcp, which it never writes down, and the access keys of each
+    connection, in a folder of the person's, locked to its own key and the mcp's open key, and
+    opened only for a call.
 - **Kept, not published:**
   - the host's list of spent credits, the tickets it took, the bill for its sponsors (the keys
     whose tickets pay for someone's credits), each folder's balance, and the id of each entry it

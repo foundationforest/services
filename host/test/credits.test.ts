@@ -1,5 +1,6 @@
 // The host's credits, through the whole host on loopback, its plug and its front: what joining, a
-// 1 kB entry, a 200 kB file and a delete cost; a write refused with no balance, joining too, and
+// 1 kB entry, a 200 kB file and a delete cost; an entry larger than any inbox entry, paid by the
+// byte, as entries up to a file's size are; a write refused with no balance, joining too, and
 // leaving and taking down never blocked by it; a file paid by a folder that names it; inbox entries
 // free up to the day's cap; a ticket collected, and no other proof; the credit key made at the first
 // start; and one end to end, a folder, an entry and a file, read back. The plug's own tests are
@@ -100,6 +101,23 @@ test('the price of joining, of a 1 kB entry, of a 200 kB file, and of a delete',
 
     assert.ok((await results(running, [entry(me, 'post/maths', null, now + 1)]))[0]!.ok)
     assert.equal(spent(), 10_000, 'taking an entry down: the floor')
+  } finally {
+    await running.close()
+  }
+})
+
+test('entries up to 50,000,000 bytes, as a file, each paid by the byte; inbox entries up to 65,536', async () => {
+  const running = await start()
+  try {
+    assert.deepEqual([running.host.maxEntryBytes, running.host.maxInboxBytes], [50_000_000, 65_536])
+    const me = await folder()
+    await fund(running, me.address, 5)
+    const now = Date.now()
+    assert.ok((await results(running, [entry(me, 'profile', profileOf(running), now)]))[0]!.ok)
+    const spent = spending(running, me.address)
+    const big = offerOf(me, 200_000, now)
+    assert.ok((await results(running, [big]))[0]!.ok, 'more than an inbox entry may hold')
+    assert.equal(spent(), 2_010_000, 'a 200 kB entry: 0.01, and 0.01 for each of its 200 kilobytes')
   } finally {
     await running.close()
   }

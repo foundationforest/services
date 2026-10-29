@@ -9,23 +9,30 @@
 // - makes a profile: its profile entry with its market and role, its hosts, its main key's open key
 //   (so it takes inbox entries), both pay addresses, a verification made on the device for each
 //   stamp it keeps, and any more proofs;
-// - at the connect page, on the person's yes: makes one access key for each profile they ticked
-//   (keys/'s newAccessKey), lists it in that profile's entry with its switches (all four unless the
-//   person chose fewer), writes its note at `key/<id>`, a random id, locked to the main key alone and
-//   naming the key, and hands back the pack, locked to this copy's open key, which it reads at the
-//   connector's /open-key;
-// - removes an access key from a profile's entry, and its note, found by opening the folder's notes;
+// - at the connect page, on the person's yes: makes the AI app's connection folder, named by a key
+//   made at random, its first write paid as the device chooses (`pay`): its profile entry, which
+//   holds only its hosts, and its `connection` entry, the AI app's name and a random secret. Then,
+//   for each profile ticked, one access key (keys/'s newAccessKey), listed in that profile's entry
+//   with its switches (all four unless the person chose fewer); its note at `key/<id>`, a random id,
+//   locked to the main key alone, naming the key and holding the connection folder's key; and its
+//   `access/<id>` entry in the connection folder. The connection folder's entries are locked to its
+//   own key and the connector's open key, which it reads at the connector's /open-key. Then it hands
+//   back the pointer to the folder, locked to that open key alone;
+// - adds a profile to a connection, and ends one, each found from the seed alone, by opening the
+//   notes of every profile its Profiles folder lists;
+// - removes an access key from a profile's entry, its entry in the connection its note names, and
+//   its note, each found by opening them;
 // - on a new device, finds the person's profiles and stamps from the seed alone, by opening every
 //   entry its Profiles folder holds.
 //
-// It signs with each profile's main key and writes straight to its hosts. It keeps nothing but the
-// stamps, in memory.
+// It signs with each profile's main key, and the connection folder's own, and writes straight to
+// their hosts. It keeps nothing but the stamps, in memory.
 
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { CAN, type Body, type View, b64u, entry, hex, liveContent, nextTime, readFolder, write } from '@foundationforest/folders'
+import { CAN, type Body, type SignedEntry, type View, b64u, entry, hex, liveContent, nextTime, readFolder, write } from '@foundationforest/folders'
 import { isLocked, lock, openLocked } from '@foundationforest/folders/locked'
-import { mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
+import { type AccessKey, accessKey, mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
 import { type SignedStamp, proofBytes, proveVerification, stampToJson } from '@foundationforest/proofs'
 
 /** What the person chose at the connect page: the profiles they ticked, and what the AI app may do there; or no. */
@@ -50,6 +57,12 @@ async function opened(view: View, kind: string, identity: string): Promise<Array
   return out
 }
 
+/** A connection the person's notes name: its folder's address and key, the connector it is for, the AI app's name, and its folder with each access entry, opened. */
+export type Found = { address: string; key: AccessKey; connector: string; name: string; view: View; access: Array<{ path: string; body: Body }> }
+
+/** The open key a connector publishes at /open-key. */
+const openKeyOf = async (connector: string) => ((await (await fetch(new URL('/open-key', connector))).json()) as { openKey: string }).openKey
+
 /** A written batch, checked: every host took every entry, or why not. */
 async function wrote(hosts: string[], entries: Parameters<typeof write>[1]): Promise<void> {
   for (const o of await write(hosts, entries)) {
@@ -61,12 +74,15 @@ async function wrote(hosts: string[], entries: Parameters<typeof write>[1]): Pro
 export class App {
   private readonly seed: Uint8Array
   private readonly hosts: string[]
+  /** What pays for a connection folder's first write, at its hosts, before it: the device's credits, where a host charges. */
+  private readonly pay: ((folder: string) => Promise<unknown>) | undefined
   /** The stamps this device holds, each naming its verifier. */
   private readonly stamps: SignedStamp[] = []
 
-  constructor(options: { seed: Uint8Array; hosts: string[] }) {
+  constructor(options: { seed: Uint8Array; hosts: string[]; pay?: (folder: string) => Promise<unknown> }) {
     this.seed = options.seed
     this.hosts = options.hosts
+    this.pay = options.pay
   }
 
   /** The Profiles folder's main key, the empty label's, and its folder as its hosts serve it. */
@@ -143,9 +159,10 @@ export class App {
 
   /**
    * The connect page: the person saw the AI app's name, from the request, and the connector, and
-   * chose. On a yes, for each profile ticked: a new access key, listed in its profile entry with
-   * what the person lets it do, and its note; then the pack, locked to the connector's open key.
-   * Gives back where the browser goes: the connector's /connected, with the request and the pack.
+   * chose. On a yes: the connection folder, its key made at random, and for each profile ticked a
+   * new access key, listed in its profile entry with what the person lets it do, its note, and its
+   * access entry; then the pointer, locked to the connector's open key. Gives back where the browser
+   * goes: the connector's /connected, with the request and the pointer.
    */
   async connect(connector: string, request: string, choice: Choice): Promise<string> {
     const back = new URL('/connected', connector)
@@ -154,29 +171,96 @@ export class App {
       back.searchParams.set('error', 'access_denied')
       return back.href
     }
-    const { openKey } = (await (await fetch(new URL('/open-key', connector))).json()) as { openKey: string }
+    const openKey = await openKeyOf(connector)
     const name = (JSON.parse(Buffer.from(b64u.decode(request.split('.')[0]!)).toString('utf8')) as { name: string }).name
     const can = choice.can ?? [...CAN]
-    const profiles: Body[] = []
-    for (const label of choice.profiles) {
-      const key = await newAccessKey()
-      const { main } = await this.folder(label)
-      await this.changeProfile(label, (body) => ({ ...body, keys: [...((body.keys as Body[] | undefined) ?? []), { key: key.address, ...(can.some((c) => c === 'read' || c === 'read-inbox') && { open: key.openKey }), can }] }))
-      const { view } = await this.folder(label)
-      const mine = (await openingHalf(main.secret)).openKey
-      await wrote(view.hosts, [entry(main, `key/${randomId()}`, await lock({ key: key.address, name, connector, time: Date.now() }, [mine]), Date.now())])
-      profiles.push({ label, address: main.address, hosts: view.hosts, key: b64u.encode(key.secret), can })
-    }
+    // The connection folder's own key: made at random as an access key is (keys/'s newAccessKey),
+    // both halves from 64 random bytes, though it is listed nowhere and handed to no one.
+    const folder = await newAccessKey()
+    const secret = b64u.encode(crypto.getRandomValues(new Uint8Array(32)))
+    const now = Date.now()
+    const entries = [entry(folder, 'profile', { hosts: this.hosts }, now), entry(folder, 'connection', await lock({ name, secret }, [folder.openKey, openKey]), now)]
+    for (const label of choice.profiles) entries.push(await this.grant({ key: folder, connector, name }, label, can, openKey))
+    await this.pay?.(folder.address)
+    await wrote(this.hosts, entries)
     const request256 = createHash('sha256').update(request, 'utf8').digest('hex')
-    back.searchParams.set('pack', (await lock({ request: request256, profiles }, [openKey])).private)
+    back.searchParams.set('pointer', (await lock({ request: request256, folder: folder.address, hosts: this.hosts, secret }, [openKey])).private)
     return back.href
   }
 
-  /** The access key at `address` taken out of `label`'s profile entry, and its note deleted. */
+  /**
+   * A new access key for `label`, for a connection: listed in its profile entry with `can`, and its
+   * note, holding the connection folder's key. Gives back its access entry, for the connection
+   * folder, locked to the folder's key and the connector's `openKey`.
+   */
+  private async grant(conn: { key: AccessKey; connector: string; name: string }, label: string, can: string[], openKey: string): Promise<SignedEntry> {
+    const key = await newAccessKey()
+    const { main } = await this.folder(label)
+    await this.changeProfile(label, (body) => ({ ...body, keys: [...((body.keys as Body[] | undefined) ?? []), { key: key.address, ...(can.some((c) => c === 'read' || c === 'read-inbox') && { open: key.openKey }), can }] }))
+    const { view } = await this.folder(label)
+    const mine = (await openingHalf(main.secret)).openKey
+    await wrote(view.hosts, [entry(main, `key/${randomId()}`, await lock({ key: key.address, name: conn.name, connector: conn.connector, time: Date.now(), connection: b64u.encode(conn.key.secret) }, [mine]), Date.now())])
+    return entry(conn.key, `access/${randomId()}`, await lock({ label, address: main.address, hosts: view.hosts, key: b64u.encode(key.secret) }, [conn.key.openKey, openKey]), Date.now())
+  }
+
+  /**
+   * Every connection the person's notes name, found from the seed alone: the labels in the Profiles
+   * folder, each profile's notes opened with its main key, and each connection folder they name,
+   * its entries opened with its own key. An ended one, whose connection entry is gone, is left out.
+   */
+  async connections(): Promise<Found[]> {
+    const named = new Map<string, { key: AccessKey; connector: string }>()
+    for (const label of (await App.find(this.seed, this.hosts)).labels) {
+      const { main, view } = await this.folder(label)
+      for (const n of await opened(view, 'key', (await openingHalf(main.secret)).identity)) {
+        if (typeof n.body.connection !== 'string') continue
+        const key = await accessKey(b64u.decode(n.body.connection))
+        named.set(key.address, { key, connector: n.body.connector as string })
+      }
+    }
+    const found: Found[] = []
+    for (const [address, { key, connector }] of named) {
+      const view = await readFolder(this.hosts, address, Date.now())
+      const head = view.current.get('connection')?.entry.body
+      if (!isLocked(head)) continue
+      const { name } = await openLocked(head, key.identity)
+      found.push({ address, key, connector, name: name as string, view, access: await opened(view, 'access', key.identity) })
+    }
+    return found
+  }
+
+  /** The connection whose folder is at `address`, found from the seed. */
+  private async connection(address: string): Promise<Found> {
+    const c = (await this.connections()).find((x) => x.address === address)
+    if (!c) throw new Error(`no connection of the person's is at ${address}`)
+    return c
+  }
+
+  /** `label` added to the connection at `address`, with no new login: a new access key, listed with `can`, its note, and one more access entry. */
+  async addToConnection(address: string, label: string, can: string[] = [...CAN]): Promise<void> {
+    const c = await this.connection(address)
+    await wrote(c.view.hosts, [await this.grant(c, label, can, await openKeyOf(c.connector))])
+  }
+
+  /** The connection at `address` ended: its connection entry deleted first, then each access key it holds removed (removeKey). */
+  async endConnection(address: string): Promise<void> {
+    const c = await this.connection(address)
+    await wrote(c.view.hosts, [entry(c.key, 'connection', null, nextTime(Date.now(), c.view, 'connection'))])
+    for (const a of c.access) await this.removeKey(a.body.label as string, (await accessKey(b64u.decode(a.body.key as string))).address)
+  }
+
+  /** The access key at `address` taken out of `label`'s profile entry; its entry in the connection its note names, and its note, deleted. */
   async removeKey(label: string, address: string): Promise<void> {
     await this.changeProfile(label, (body) => ({ ...body, keys: ((body.keys as Body[] | undefined) ?? []).filter((k) => k.key !== address) }))
     const note = await this.note(label, address)
     if (!note) return
+    if (typeof note.body.connection === 'string') {
+      const key = await accessKey(b64u.decode(note.body.connection))
+      const view = await readFolder(this.hosts, key.address, Date.now())
+      for (const a of await opened(view, 'access', key.identity)) {
+        if ((await accessKey(b64u.decode(a.body.key as string))).address === address) await wrote(view.hosts, [entry(key, a.path, null, nextTime(Date.now(), view, a.path))])
+      }
+    }
     const { main, view } = await this.folder(label)
     await wrote(view.hosts, [entry(main, note.path, null, nextTime(Date.now(), view, note.path))])
   }

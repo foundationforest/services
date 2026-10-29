@@ -9,7 +9,8 @@
 // metadata names this copy as the resource and its own authorization server; its open key is at
 // /open-key; an AI app can register; /authorize sends the person to the app's connect page, or says
 // logins wait; the same tools answer at /mcp; the icon is at /favicon.ico and /icon.svg. Given a way
-// through the connect page, also: the login, and my_profiles answering with the profiles ticked.
+// through the connect page, also: the login, and my_profiles answering, with the profiles ticked or
+// with why the connection's hosts were not reached.
 
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -62,7 +63,7 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     const server = (await (await fetch(`${origin}/.well-known/oauth-authorization-server`)).json()) as { issuer: string; code_challenge_methods_supported: string[] }
     assert.deepEqual([server.issuer, server.code_challenge_methods_supported], [origin, ['S256']])
     const { openKey } = (await (await fetch(`${origin}/open-key`)).json()) as { openKey: string }
-    assert.match(openKey, /^age1pq1[02-9ac-hj-np-z]{1952}$/, 'its open key, which the connect page locks the pack to')
+    assert.match(openKey, /^age1pq1[02-9ac-hj-np-z]{1952}$/, 'its open key, which the connect page locks the connection to')
     const registered = await fetch(`${origin}/register`, { method: 'POST', body: JSON.stringify({ redirect_uris: ['https://smoke.invalid/callback'], token_endpoint_auth_method: 'none' }) })
     assert.equal(registered.status, 201, 'an AI app can register')
     const { client_id } = (await registered.json()) as { client_id: string }
@@ -83,9 +84,10 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     if (login) {
       await assert.rejects(client.callTool({ name: 'my_profiles', arguments: {} }), UnauthorizedError, 'a tool that acts for the person starts the login')
       await transport.finishAuth((await login.browse(login.provider.authorization!)).get('code')!)
+      // The login is taken: my_profiles answers, with the profiles' labels, or with why the
+      // connection's hosts were not reached from this copy.
       const mine = (await client.callTool({ name: 'my_profiles', arguments: {} })) as Result
-      assert.notEqual(mine.isError, true, text(mine))
-      seen.login = (JSON.parse(text(mine)) as { profiles: Array<{ label: string }> }).profiles.map((p) => p.label)
+      seen.login = mine.isError ? { refused: text(mine) } : (JSON.parse(text(mine)) as { profiles: Array<{ label: string }> }).profiles.map((p) => p.label)
     }
     return seen
   } finally {

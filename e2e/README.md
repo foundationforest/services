@@ -17,8 +17,9 @@ It is not a service. CI runs it on every pull request, and anyone can; the main 
   person), keeps the person's Profiles folder (the empty label's folder, locked to a key only the
   seed gives, that lists their profiles and stamps at random ids), makes each profile with a verification (the proof, made on the
   device, that its seed holds a stamp), signs with each profile's main key, writes straight to the
-  host, and, at the connect page, hands the mcp an access key for the profile ticked. What it has no
-  method for, the device does in `e2e.ts`, with the standard's pieces:
+  host, and, at the connect page, makes the AI's connection folder, with an access key for the
+  profile ticked, and hands the mcp the pointer to it. What it has no method for, the device does in
+  `e2e.ts`, with the standard's pieces:
   - the stamp, asked of the verifier with its welcome gift, which the device hands its app to keep;
   - the gift's credits, collected at the host with the gift's ticket;
   - the reputation proof, made on the device.
@@ -27,7 +28,7 @@ It is not a service. CI runs it on every pull request, and anyone can; the main 
   the mcp's tools as a chat calls them, over MCP (the Model Context Protocol, the way AI apps call
   outside tools). It holds no key and is told no address of its own person's.
 - **The connect page** is the loop's stand-in for the Forest app's, in `e2e.ts`: the person whose
-  turn it is ticks the profile their AI acts in, and their app hands back the pack.
+  turn it is ticks the profile their AI acts in, and their app makes the connection.
 
 ### What one run does
 
@@ -56,21 +57,25 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    (`Forest-Payment: ticket <ticket>`), the host taking the tickets of the loop verifier's sponsor,
    and finishes its 10 credits.
 4. **Profiles.** Each person's device spends 2 credits into their Profiles folder, where the app
-   keeps the stamp, then the rest into the profile's folder (the tutor keeps 3 for the coach
-   profile), and the app adds the profile and lists it in the Profiles folder. Read back from the
-   host as any reader reads it, the profile entry holds the market, the role and the profile's open
-   key, so it takes messages, and the run checks:
+   keeps the stamp, then all but one into the profile's folder, keeping one for the connection
+   folder (the tutor 3 more, for the coach profile), and the app adds the profile and lists it in
+   the Profiles folder. Read back from the host as any reader reads it, the profile entry holds the
+   market, the role and the profile's open key, so it takes messages, and the run checks:
    - its pay addresses, `pay { solana, evm }`;
    - its verification, made on the device from the stamp it keeps and the verification circuit's
      committed proving files, which checks.
 5. **Logins.** Each AI's first call to act gets the mcp's challenge. The person's browser goes
-   through the connect page, where they tick their tutoring profile, and their app makes an access
+   through the connect page, where they tick their tutoring profile, and their app makes the AI's
+   connection folder, its first write paid with the credit kept for it (`pay`), makes an access
    key, lists it in the profile entry with all four switches (`read-inbox`, `read`, `write`,
-   `message`), writes its note, and hands the mcp the pack; the AI gets its login, and
-   `my_profiles` shows that profile, by its label, with those switches. Read back from the host:
+   `message`), writes its note and its access entry, and hands the mcp the pointer; the AI gets its
+   login, and `my_profiles` shows that profile, by its label, with those switches. Read back:
    - the profile entry lists that one access key;
    - its note, at `key/<id>`, a random id, found by opening the folder's notes, is locked to one
-     key, and opens for the main key, naming the access key and this mcp.
+     key, and opens for the main key, naming the access key and this mcp, and holding the
+     connection folder's key;
+   - the connection folder, found from the seed: its profile entry only its hosts, its connection
+     entry locked to two keys, its own and the mcp's, and one access entry, for that key.
 6. **mcp.** Every call goes through the AI's own client:
    - the tutor's AI reads the market (`markets`, `tutoring`), what a post and a review hold, then
      writes a post (`write`, at `post/maths`): maths, 2 USD an hour. On the host it is current,
@@ -101,17 +106,22 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    profiles. The app adds the coach profile, paid with the tutor's last three credits, its profile
    entry carrying a verification of its own and that reputation proof. The index shows the proof on
    the coach's page, with the tutor's trust.
-10. **Removed.** The tutor's app takes the access key out of the tutor's profile entry, and deletes
-    its note. The tutor's AI's next write is refused by the host, as `unlisted`, and the post the key
-    wrote counts for nothing on the host: the newest entry that still counts at its path is current, and there is
-    none.
-11. **A new device.** From the tutor's seed alone, the Profiles folder on the host gives its two
+10. **Added.** The tutor's app, from the seed alone, adds the coach profile to its AI's connection,
+    with every switch: one more access key, listed and noted, and one more access entry. With no
+    new login, `my_profiles` shows both, and the AI writes a locked note as the coach and reads it
+    back; on the host it is signed by the coach's access key.
+11. **Ended.** The tutor's app deletes the connection entry, then takes each key out of its profile
+    entry, with its note and access entry. The mcp answers the AI's token 401, the connection gone,
+    so it must log in again; what the keys wrote counts for nothing on the host: the newest entry
+    that still counts at each path is current, and there is none.
+12. **A new device.** From the tutor's seed alone, the Profiles folder on the host gives its two
     profiles, `tutoring/tutor` and `sports-coaching/coach`, each with its folder there, and its
     stamp, the one signed.
-12. **Addresses.** No answer either AI received holds one of its own person's addresses: each of
-    their profiles, the coach's included, each pay address, and their Profiles folder. An AI reads
+13. **Addresses.** No answer either AI received holds one of its own person's addresses: each of
+    their profiles, the coach's included, each pay address, their Profiles folder, and their
+    connection folder. An AI reads
     the other person's addresses, as it must to message and review them.
-13. **Balances.** What each folder's credits came to.
+14. **Balances.** What each folder's credits came to.
 
 Then, passed or failed, the services stop, and the run exits 0 or 1.
 
@@ -216,7 +226,7 @@ own services stop with the run, so their pages and the three profiles' entries a
 - **The standard:** what each step makes and checks: keys and access keys, entries, folders and the
   Profiles folder, messages, the verification and the reputation proof.
 - **The markets directory, at `MARKETS`:** what the post and the review hold.
-- **The mcp, as this repo writes it:** its tools, the login and the pack.
+- **The mcp, as this repo writes it:** its tools, the login and the connection.
 - **Each service, by its own choice:** what it takes and what it charges. The loop checks it as it
   runs.
 - **The index, by its own numbers:** each rating, trust and uniqueness. The loop expects what those

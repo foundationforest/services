@@ -8,7 +8,7 @@ import { connect } from 'node:net'
 import { describe, test } from 'node:test'
 import { serviceKey } from '@foundationforest/keys'
 import { type SignedEntry, canonical, encodeEntry, entry, nextTime, readAll, readFolder, readPage, signAs, signingInput, write } from '@foundationforest/folders'
-import { DAY, DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_PAGE_BYTES, type EntryChoice, type Host } from '../src/plug.ts'
+import { DAY, DEFAULT_MAX_ENTRY_BYTES, DEFAULT_MAX_INBOX_BYTES, DEFAULT_MAX_PAGE_BYTES, type EntryChoice, type Host } from '../src/plug.ts'
 import { MINUTE, T0, alice, aliceWith, bob, helper, offerBody, profileBody, sizedEntry, stranger } from './fixtures.ts'
 import { Clock, startPlug } from './helpers.ts'
 
@@ -211,12 +211,12 @@ describe('limits: each host’s own size, batch and page', () => {
   test('a page ends before 4 MB; a reader still gets every entry, page by page', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
-      const full = Array.from({ length: 66 }, (_, i) => sizedEntry(alice, `big/${i}`, DEFAULT_MAX_LINE_BYTES))
+      const full = Array.from({ length: 66 }, (_, i) => sizedEntry(alice, `big/${i}`, DEFAULT_MAX_ENTRY_BYTES))
       const [outcome] = await write([h.url], full)
       assert.ok(outcome!.results.every((r) => r.ok), JSON.stringify(outcome!.results.filter((r) => !r.ok)))
       const first = h.read()
       assert.ok(bytes(first.lines) <= DEFAULT_MAX_PAGE_BYTES)
-      assert.ok(bytes(first.lines) + DEFAULT_MAX_LINE_BYTES + 1 > DEFAULT_MAX_PAGE_BYTES, 'the next entry would not have fit')
+      assert.ok(bytes(first.lines) + DEFAULT_MAX_ENTRY_BYTES + 1 > DEFAULT_MAX_PAGE_BYTES, 'the next entry would not have fit')
       assert.ok(first.lines.length < 66)
       assert.equal((await readAll(h.url)).entries.length, 66)
     } finally {
@@ -253,18 +253,34 @@ describe('limits: each host’s own size, batch and page', () => {
   })
 
   test('size is a host’s own choice: entries of up to 65,536 bytes in UTF-8, unless its operator says otherwise', async () => {
-    const atCap = sizedEntry(alice, 'big/a', DEFAULT_MAX_LINE_BYTES)
+    const atCap = sizedEntry(alice, 'big/a', DEFAULT_MAX_ENTRY_BYTES)
     // One more byte, from one two-byte character: still 65,536 characters, now 65,537 bytes.
-    const over = sizedEntry(alice, 'big/b', DEFAULT_MAX_LINE_BYTES + 1, 1)
-    assert.deepEqual([encodeEntry(over).length, Buffer.byteLength(encodeEntry(over))], [DEFAULT_MAX_LINE_BYTES, DEFAULT_MAX_LINE_BYTES + 1])
+    const over = sizedEntry(alice, 'big/b', DEFAULT_MAX_ENTRY_BYTES + 1, 1)
+    assert.deepEqual([encodeEntry(over).length, Buffer.byteLength(encodeEntry(over))], [DEFAULT_MAX_ENTRY_BYTES, DEFAULT_MAX_ENTRY_BYTES + 1])
     const h = await startPlug({ now: () => T0 })
-    const roomy = await startPlug({ now: () => T0, maxLineBytes: 200_000 })
+    const roomy = await startPlug({ now: () => T0, maxEntryBytes: 200_000 })
     try {
       assert.deepEqual(await errors(h, [atCap, over]), ['ok', 'size'])
       assert.deepEqual(await errors(roomy, [over]), ['ok'])
     } finally {
       await h.close()
       await roomy.close()
+    }
+  })
+
+  test('a request holds a full batch of the largest inbox entries, or one largest entry when that is more: a client sends a larger batch again in halves', async () => {
+    // Two lines a request: a batch of inbox entries is 131,074 bytes, and one entry of up to 300,000 is more.
+    const h = await startPlug({ now: () => T0, maxBatch: 2, maxEntryBytes: 300_000 })
+    try {
+      const two = [sizedEntry(alice, 'big/a', 200_000), sizedEntry(alice, 'big/b', 200_000)]
+      const posted = await fetch(`${h.url}/v1/entries`, { method: 'POST', body: two.map((e) => `${encodeEntry(e)}\n`).join('') })
+      assert.equal(posted.status, 413, 'never a full batch of the largest entries, read before any price is asked')
+      const [outcome] = await write([h.url], two)
+      assert.deepEqual(outcome!.results.map((r) => r.error ?? 'ok'), ['ok', 'ok'], 'sent again in halves, each lands')
+      const inbox = await fetch(`${h.url}/v1/inbox`, { method: 'POST', body: 'x'.repeat(2 * (DEFAULT_MAX_INBOX_BYTES + 1) + 1) })
+      assert.equal(inbox.status, 413, 'an inbox request holds no more than its batch, whatever entries the host takes')
+    } finally {
+      await h.close()
     }
   })
 })

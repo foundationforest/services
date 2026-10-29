@@ -245,9 +245,12 @@ directory, so nothing outside it changes one.
   Tickets from the sponsors in `SPONSORS`, the only way this host takes today; we list the
   verifier's sponsor address, whose tickets are a person's first credits. Other ways to pay for
   credits are this host's to add.
-- **Sizes:** entries and inbox entries up to **65,536 bytes** each in UTF-8
-  (`DEFAULT_MAX_LINE_BYTES`); **100** of them a request; **1,000** a page, and at most **4,194,304
-  bytes** a page, though always one line. A read request is at most 1,024 bytes.
+- **Sizes:** entries up to **50,000,000 bytes** each in UTF-8, as a file (`choice`): each write is
+  paid by the byte. Inbox entries up to **65,536 bytes** (`DEFAULT_MAX_INBOX_BYTES`): they are free,
+  and others leave them in your folder. **100** lines a request, its body at most a full batch of
+  the largest inbox entries, or one largest entry, so a batch of large entries gets 413 and the
+  client sends it again in halves; **1,000** a page, and at most **4,194,304 bytes** a page, though
+  always one line. A read request is at most 1,024 bytes.
 - **Files:** png, jpeg and mp4 (`DEFAULT_FILE_TYPES`), up to **50,000,000 bytes** each, kept while a
   current entry here names them. A declared size over that is answered 413, unread.
 - **Keeps** an entry that stopped being current or counting, an inbox entry, and a file no current
@@ -397,6 +400,8 @@ The tests, on loopback:
 ## Limits
 
 - **Anyone who pays can write here** anything the plug accepts.
+- **An entry is read and checked before its price is asked,** so anyone can make the host read up to
+  50 MB a request that it then refuses.
 - **Inbox entries are free, so any inbox can be filled.** 1,000 a day reach it, and past them the
   inbox's own friends wait for the next day. Who may leave one is never limited here: choosing what
   to show is the recipient's app's.

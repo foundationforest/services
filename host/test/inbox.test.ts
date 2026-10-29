@@ -6,7 +6,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { type Body, type InboxEntry, type Writer, canonical, encodeInbox, entry, inboxId, leave, readInbox, write } from '@foundationforest/folders'
 import { inboxEntry, openInbox } from '@foundationforest/folders/locked'
-import { DEFAULT_MAX_LINE_BYTES, type Host, type HostOptions } from '../src/plug.ts'
+import { DEFAULT_MAX_INBOX_BYTES, type Host, type HostOptions } from '../src/plug.ts'
 import { T0, alice, aliceBuyer, aliceOpening, aliceWith, bob, profileBody, stranger } from './fixtures.ts'
 import { startPlug } from './helpers.ts'
 
@@ -49,10 +49,10 @@ describe('leaving', () => {
     }
   })
 
-  test('size is the host’s own choice, checked first: 65,536 bytes here unless its operator says otherwise', async () => {
-    const big = await letter(bob, 'x'.repeat(DEFAULT_MAX_LINE_BYTES))
-    assert.ok(encodeInbox(big).length > DEFAULT_MAX_LINE_BYTES)
-    for (const [options, want] of [[{}, 'size'], [{ maxLineBytes: 200_000 }, 'ok']] as const) {
+  test('size is the host’s own choice, checked first: 65,536 bytes here unless its operator says otherwise, however large the entries it takes', async () => {
+    const big = await letter(bob, 'x'.repeat(DEFAULT_MAX_INBOX_BYTES))
+    assert.ok(encodeInbox(big).length > DEFAULT_MAX_INBOX_BYTES)
+    for (const [options, want] of [[{}, 'size'], [{ maxEntryBytes: 200_000 }, 'size'], [{ maxInboxBytes: 200_000 }, 'ok']] as const) {
       const h = await hostWith(ALICE, options)
       try {
         assert.deepEqual(await errors(h, [big]), [want])

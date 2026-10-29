@@ -4,7 +4,7 @@
 
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { type Context, refuse } from './forest.ts'
-import type { Pack } from './pack.ts'
+import type { Connection } from './connection.ts'
 
 export type Param = {
   name: string
@@ -21,12 +21,12 @@ export type Param = {
 
 export type Args = { [name: string]: unknown }
 
-/** What a tool works with: the index it reads, how it reaches hosts, and, for a call with a login, the person's pack. */
+/** What a tool works with: the index it reads, how it reaches hosts, and, for a call with a login, the person's connection. */
 export type Ctx = Context & {
   /** The fetch every host is reached with: one that reaches only public addresses, unless told otherwise. */
   hostFetch: typeof fetch
-  /** The pack the call's token carries, opened in memory for this request; refused with no login. */
-  pack: () => Promise<Pack>
+  /** The connection the call's token points to, read and opened in memory for this request; refused with no login, or when its hosts did not answer. */
+  connection: () => Promise<Connection>
   /** The person's own addresses this request has seen, each with what an answer says instead: its profiles' by their labels, and the pay addresses of each profile entry it read. */
   own: Map<string, string>
 }
