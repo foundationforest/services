@@ -440,11 +440,6 @@ export class Storage {
     if (db) yield* db.fresh('SELECT seq, text, bytes FROM inbox WHERE seq > ? ORDER BY seq').iterate(after) as Iterable<Row>
   }
 
-  /** False when the folder holds no inbox entry with that id. */
-  deleteInbox(folder: string, id: string): boolean {
-    return (this.folder(folder)?.q('DELETE FROM inbox WHERE id = ?').run(id).changes ?? 0) > 0
-  }
-
   // ----------------------------------------------------------------------------------------
   // Files
 

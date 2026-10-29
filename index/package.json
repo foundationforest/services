@@ -17,10 +17,8 @@
   "dependencies": {
     "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
-    "@foundationforest/verification": "file:../standard/proofs/verification/client",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "@foundationforest/markets": "file:../markets/build",
+    "@foundationforest/proofs": "file:../standard/proofs"
   },
   "devDependencies": {
     "@types/node": "22.20.2",

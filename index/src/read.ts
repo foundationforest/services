@@ -8,7 +8,7 @@
 //
 //   profile      the current profile entry, if it has one: its market, role, hosts, open key, pay
 //                addresses, access keys and proofs
-//   offer/<id>   a post; a delete keeps its last body here for good, marked deleted, so a review
+//   post/<id>    a post; a delete keeps its last body here for good, marked deleted, so a review
 //                that names it still finds it
 //   review/<id>  a review; a delete removes it
 //   vouch/<id>   a vouch; a delete removes it
@@ -21,7 +21,7 @@ import { type Checked, encodeEntry, isLocked, MAX_FUTURE_MS, readPage, type Sign
 
 import type { Store } from './store.ts'
 
-const POST = /^offer\/[^/]+$/
+const POST = /^post\/[^/]+$/
 const REVIEW = /^review\/[^/]+$/
 /** Vouches and reports, each kind into its own table, as reviews are. */
 const SAID = [

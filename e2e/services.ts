@@ -224,7 +224,8 @@ export async function startServices(o: { appUrl: string; say: (line: string) => 
     closers.push(() => index.close())
 
     // The mcp: reading the loop's index, its logins through the loop's connect page, and reaching
-    // hosts with a plain fetch, since the loop's own host is on loopback, which publicFetch refuses.
+    // hosts with a plain fetch, since the loop's own host is on loopback, which the mcp's publicFetch
+    // refuses.
     const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { index: indexUrl }, hostFetch: fetch }, '127.0.0.1', 0)
     closers.push(() => mcp.close())
 

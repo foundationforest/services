@@ -11,14 +11,13 @@ import { canonical } from '@foundationforest/folders'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
-import { RateLimit } from './limit.ts'
 import { RECIPES } from './facts.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
 import { SWEEP_EVERY_MS, errorKind, handler, sweep } from './server.ts'
 import { Store } from './store.ts'
 
 export type Config = {
-  /** The verifier's name: what a person's secret for it is mixed from (the standard's `verifierSecret`). */
+  /** The verifier's name: what a person's stamp number at it is mixed from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
   verifierName: string
   diditApiKey: string
   /** The face check's workflow: liveness, with Didit's face search. */
@@ -34,10 +33,6 @@ export type Config = {
   appOrigins: string[]
   /** The one file; the verifier's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
-  /** How many sessions one address may open in an hour. */
-  sessionLimitPerHour: number
-  /** The header a proxy in front puts the client's address in (`x-real-ip` on Railway); unset, the connection's. */
-  clientAddressHeader?: string
   port: number
 }
 
@@ -101,8 +96,6 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     gift,
     appOrigins,
     databasePath: env.DATABASE_PATH || './data/verifier.sqlite',
-    sessionLimitPerHour: whole('SESSION_LIMIT_PER_HOUR', env.SESSION_LIMIT_PER_HOUR || '5', 1),
-    clientAddressHeader: env.CLIENT_ADDRESS_HEADER?.toLowerCase() || undefined,
     port: whole('PORT', env.PORT || '8080', 0),
   }
 }
@@ -159,9 +152,9 @@ export async function startVerifier(
     ...(gift && { gift: { host: gift.gift.origin, credits: gift.gift.credits, sponsor: sponsor.address } }),
   })
 
-  const limit = new RateLimit({ max: config.sessionLimitPerHour, windowMs: 3_600_000 })
   const server = createServer(
     handler({
+      verifierName: config.verifierName,
       face: { kind: 'face', check: faceCheck, workflowId: config.diditFaceWorkflowId },
       id: { kind: 'id', check: idCheck, workflowId: config.diditIdWorkflowId },
       store,
@@ -171,8 +164,6 @@ export async function startVerifier(
       about,
       gift,
       appOrigins: config.appOrigins,
-      limit,
-      clientAddressHeader: config.clientAddressHeader,
       log: overrides.log,
       now: overrides.now,
     }),

@@ -1,15 +1,14 @@
 // The tree: the served leaves, one per counted profile, its key and its trust, rebuild the served
-// root, which the index's key signed as the reputation client expects; a reputation proof made from
+// root, which the index's key signed as the proofs package expects; a reputation proof made from
 // those leaves shows on the profile that carries it, with the trust it carries, and not on another,
 // nor against a root this index signed more than maxAgeDays ago, unless it is the newest.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 
-import { checkBytes, pointOf, seedScalar, unpackSignature } from '@foundationforest/keys'
+import { checkBytes, pointOf, unpackSignature } from '@foundationforest/keys'
 import { b64u, hex } from '@foundationforest/folders'
-import { buildTree, proofBytes, proveReputation, signedBytes } from '@foundationforest/reputation'
-import { toBytes32 } from '@foundationforest/verification'
+import { buildTree, proofBytes, proveReputation, signedBytes, toBytes32 } from '@foundationforest/proofs'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
 import { at, index, verifier, post, profile, publishProfile, REPUTATION_FILES, startHost, twin } from './world.ts'
@@ -65,7 +64,7 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   // The tutor proves its rating from the tree, on its own profile, and shows it; a student shows a copy.
   const prove = async (ls: Leaves['leaves'], against: Served) => {
     const r = await proveReputation({
-      seedScalar: await seedScalar(tutor.seed),
+      seed: tutor.seed,
       labels: ['tutoring/tutor'],
       leaves: asLeaves(ls),
       profileLabel: 'tutoring/tutor',

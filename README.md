@@ -12,7 +12,7 @@ How we run it.
 
 ### What Forest is, and what each service does for it
 
-Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+Forest is one seed and its profiles, verified, with offers and reviews in public that indexes
 rank. A profile is one of the person's identities, one for each market and role, such as a tutor in
 tutoring. The person holds the seed on their own devices, in their app, and the main key of each
 profile never leaves them. What acts for the person holds an access key their app hands it: each
@@ -22,14 +22,13 @@ reader checks that. Each service here helps with one part, and holds none of it 
 | The part | What the person holds | How anyone checks it | The service that helps |
 |---|---|---|---|
 | One seed and its profiles | A main key from the seed for each profile's label (its market and role, such as `tutoring/tutor`), the entries signed for it, and the access keys its profile entry lists | Each entry's signature, against the profile's address or an access key its profile entry lists | The **host** keeps each profile's folder (its profile entry, every entry signed for it there, the files they name, and its inbox), and serves the entries to anyone |
-| Verified once | A stamp, a verifier's signature to their seed saying it checked them, which any of their profiles shows as a verification | The verification, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
+| Verified | A stamp, a verifier's signature to their seed saying it checked them, which any of their profiles shows as a verification | The verification, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
 | Offers and reviews in public | The offers and reviews each profile signs | Each entry's signature | The **host** keeps them |
 | Indexes rank them | Ratings and a trust, and a reputation proof that carries the trust to another of their profiles without linking them | Each signed statement, and the root of the index's tree (one number that stands for all its trusts), against the index's key; the proof, against the root | The **index** reads the hosts, ranks each profile, and signs what it says |
 
-**The mcp** is the AI's door to all of it, over MCP (the Model Context Protocol, the way AI apps
-call outside tools): it passes on what indexes say and what the markets hold, and acts in the
-person's own profiles with the access keys their app hands it at login, holding none between
-calls.
+**The mcp** is a connector over MCP (the Model Context Protocol, the way AI apps call outside
+tools): it passes on what indexes say and what the markets hold, and acts in the person's own
+profiles with the access keys their app hands it at login, holding none between calls.
 
 ### The sort
 
@@ -50,7 +49,7 @@ calls.
 | [`verifier`](verifier/README.md) | Checks that you are one real person, by face or by a government ID, through Didit, and signs you a stamp with its face key or its ID key | https://verifier.forest.foundation |
 | [`host`](host/README.md) | Keeps profiles' folders, their entries, inboxes and photos, serves the entries and photos to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
 | [`index`](index/README.md) | Reads the hosts it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
-| [`mcp`](mcp/README.md) | The AI's door: reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app hands it at login | https://mcp.forest.foundation |
+| [`mcp`](mcp/README.md) | Reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app hands it at login | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all four, each with a stand-in for their app and an AI, end to end. Not a service | |
 
 ## Run a copy
@@ -86,9 +85,11 @@ run it.
 
 - `STANDARD` holds one commit of the standard, and `MARKETS` one commit of the markets.
 - `./standard.sh` fetches each at its commit into `standard/` and `markets/` (neither committed),
-  then installs and builds the standard's packages.
+  then installs and builds the standard's packages and the markets package, `markets/build`.
 - Each service depends on the standard's packages by name, through `file:` links into `standard/`.
-  The index and the mcp read the markets from `markets/`, never over the network while they run.
+  The index and the mcp read the markets through the markets package, `@foundationforest/markets`,
+  linked the same way from `markets/build`, and check every post, review, vouch and report with its
+  one check, never over the network while they run.
 - Moving a pin is a one-line change, in a pull request of its own that fixes every service the move
   touches and keeps every README true. A change one of the standard's pieces needs is made in the
   standard first.

@@ -18,7 +18,7 @@
   "dependencies": {
     "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/verification": "file:../standard/proofs/verification/client",
+    "@foundationforest/proofs": "file:../standard/proofs",
     "i18n-iso-countries": "7.14.0",
     "jpeg-js": "0.4.4",
     "onnxruntime-web": "1.30.0",

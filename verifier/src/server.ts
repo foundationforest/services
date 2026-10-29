@@ -20,28 +20,25 @@
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
 // in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
 // 403 a check that does not count (the code says why), 404 `not_found`, 409 a session already used
-// for another stamp number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
-// share of sessions this hour, on either check, 502 Didit not answering. A refused or failed request
-// uses nothing up: the same session can be sent again.
+// for another stamp number, 413 a body over 4 KB, 502 Didit not answering. A refused or failed
+// request uses nothing up: the same session can be sent again.
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
 // `session_used`, and the sweep (`sweep`) deletes it in Didit, keeping only its face template
 // (didit.ts).
 //
-// No request is logged. The client's address is read for one thing only, counting the sessions it
-// opens against the limit (`limit.ts`), and is never written anywhere.
+// No request is logged, and the client's address is never read.
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { signStamp, stampToJson } from '@foundationforest/verification'
+import { signStamp, stampToJson } from '@foundationforest/proofs'
 import type { ServiceKey } from '@foundationforest/keys'
 import { b64u } from '@foundationforest/folders'
 
 import { type Check, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
-import type { RateLimit } from './limit.ts'
 import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
 import type { Ed25519Key } from './seed.ts'
 import type { Store } from './store.ts'
@@ -134,6 +131,8 @@ export type CheckDeps = {
 }
 
 export type VerifierDeps = {
+  /** The verifier's name, which every stamp it signs carries. */
+  verifierName: string
   face: CheckDeps
   id: CheckDeps
   store: Store
@@ -148,10 +147,6 @@ export type VerifierDeps = {
   gift?: { gift: Gift; sponsor: Ed25519Key }
   /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
   appOrigins?: string[]
-  /** How often one address may open a session, on either check. */
-  limit: RateLimit
-  /** The header a proxy puts the client's address in; unset, the connection's own address. */
-  clientAddressHeader?: string
   log?: (line: string) => void
   /** The clock, in ms; unset, the system's. */
   now?: () => number
@@ -188,31 +183,23 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
   if (failed) log(`verifier: ${failed} signed session${failed === 1 ? '' : 's'} could not be deleted in Didit, kept for the next sweep (${kind})`)
 }
 
-/** The address a request came from: the proxy's header when one is named, else the connection's. */
-function clientAddress(req: IncomingMessage, header: string | undefined): string {
-  const value = header ? req.headers[header] : undefined
-  const first = (Array.isArray(value) ? value[0] : value)?.split(',')[0].trim()
-  return first || req.socket.remoteAddress || ''
-}
-
 export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerResponse) => void {
-  const { face, id, store, embedder, limit } = deps
+  const { face, id, store, embedder } = deps
   const log = deps.log ?? ((line) => console.log(line))
   const now = deps.now ?? Date.now
   /** The earliest first signing a session may have to be signed again now. */
   const since = () => now() - SIGNED_FOR_MS
 
-  type Route = (body: Record<string, unknown>, req: IncomingMessage) => Promise<[number, unknown]>
+  type Route = (body: Record<string, unknown>) => Promise<[number, unknown]>
 
   /**
-   * A session on the check's workflow, counted against the address's share of the hour, both checks
-   * together: `{}`, or `{returnUrl}` on an app's origin, where Didit sends the person when it is done.
+   * A session on the check's workflow: `{}`, or `{returnUrl}` on an app's origin, where Didit sends
+   * the person when it is done.
    */
-  async function open(c: CheckDeps, body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
+  async function open(c: CheckDeps, body: Record<string, unknown>): Promise<[number, unknown]> {
     let callback: string | undefined
     if ('returnUrl' in body) callback = returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!)
     else fields(body)
-    if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
     try {
       return [201, await c.check.createSession({ callback })]
     } catch {
@@ -282,7 +269,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const embedded = await embedding(face, decision.faceImage)
     const model = embedder.model
     // Signed, with the fields its facts were made from beside it, and kept without them.
-    const stamp = signStamp(deps.stampKeys.face.secret, { stampNumber, facts: faceFacts(model, embedded), model, embedding: b64u.encode(embedded) })
+    const stamp = signStamp(deps.stampKeys.face.secret, { stampNumber, facts: faceFacts(model, embedded), verifierName: deps.verifierName, model, embedding: b64u.encode(embedded) })
     // Checked again, for good, inside one transaction: the session may have given a stamp for another
     // stamp number while this request waited for Didit.
     kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now(), stamp }))
@@ -307,7 +294,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const embedded = await embedding(id, decision.faceImage)
     const model = embedder.model
     const facts = idFacts(model, embedded, who)
-    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
+    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
     kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print }))
     return [200, { stamp: stampToJson(stamp) }]
   }
@@ -323,15 +310,15 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     if (!kept.face && !kept.id) throw new HttpError(404, 'not_found')
     const back = (check: Check) => {
       const stamp = kept[check]
-      return stamp ? stampToJson({ stampNumber, ...stamp, verifier: deps.stampKeys[check].address }) : null
+      return stamp ? stampToJson({ stampNumber, ...stamp, verifierName: deps.verifierName, verifier: deps.stampKeys[check].address }) : null
     }
     return [200, { face: back('face'), id: back('id') }]
   }
 
   const routes: Record<string, Route> = {
-    '/face/session': (body, req) => open(face, body, req),
+    '/face/session': (body) => open(face, body),
     '/face/stamp': faceStamp,
-    '/id/session': (body, req) => open(id, body, req),
+    '/id/session': (body) => open(id, body),
     '/id/stamp': idStamp,
     '/stamp': stampBack,
   }
@@ -349,7 +336,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
         if (!Object.hasOwn(routes, path)) throw new HttpError(404, 'not_found')
         const route = routes[path]!
         if (req.method !== 'POST') throw new HttpError(405, 'post_only')
-        const [status, body] = await route(await readBody(req), req)
+        const [status, body] = await route(await readBody(req))
         send(res, status, body)
       } catch (error) {
         if (error instanceof Waiting) return send(res, 202, { waiting: 'review' })

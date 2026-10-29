@@ -14,8 +14,8 @@ It is not a service. CI runs it on every pull request, and anyone can; the main 
 
 - **Each person's device** is the reference app, [`mcp/test/app.ts`](../mcp/test/app.ts),
   unchanged. It holds the seed and the person's stamp (the verifier's signature that it checked the
-  person), keeps the person's Profiles folder (the folder, locked to a key only the seed gives, that
-  lists their profiles and stamps), makes each profile with a verification (the proof, made on the
+  person), keeps the person's Profiles folder (the empty label's folder, locked to a key only the
+  seed gives, that lists their profiles and stamps at random ids), makes each profile with a verification (the proof, made on the
   device, that its seed holds a stamp), signs with each profile's main key, writes straight to the
   host, and, at the connect page, hands the mcp an access key for the profile ticked. What it has no
   method for, the device does in `e2e.ts`, with the standard's pieces:
@@ -37,7 +37,7 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
 1. **Keys.** From each seed:
    - the profile `tutoring/tutor` or `tutoring/student`: its address, and its pay addresses,
      `{ solana, evm }`;
-   - the stamp number at the loop verifier's name.
+   - the stamp number at the loop verifier's name (the standard's `stampNumberOf`).
 
    From the tutor's seed, a second profile too: `sports-coaching/coach`.
 2. **Stamps.** Each person takes the loop verifier's face check: its stand-in Didit passes everyone.
@@ -47,7 +47,7 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    the buy's reference. Each gets a stamp for their stamp number, checked:
    - its signature;
    - the face key;
-   - the stamp number;
+   - the stamp number, and the loop verifier's name;
 
    and the gift's ticket, signed by the verifier's sponsor key. The device keeps the stamp. Then it
    asks the verifier for it again by its stamp number (`POST /stamp`), as a device that lost it
@@ -60,7 +60,7 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    profile), and the app adds the profile and lists it in the Profiles folder. Read back from the
    host as any reader reads it, the profile entry holds the market, the role and the profile's open
    key, so it takes messages, and the run checks:
-   - its pay addresses, `pay { solana, evm }`, each signed by its pay key;
+   - its pay addresses, `pay { solana, evm }`;
    - its verification, made on the device from the stamp it keeps and the verification circuit's
      committed proving files, which checks.
 5. **Logins.** Each AI's first call to act gets the mcp's challenge. The person's browser goes
@@ -69,11 +69,12 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    `message`), writes its note, and hands the mcp the pack; the AI gets its login, and
    `my_profiles` shows that profile, by its label, with those switches. Read back from the host:
    - the profile entry lists that one access key;
-   - its note, at its keyed path, is locked to one key, and opens for the main key, naming this mcp.
+   - its note, at `key/<id>`, a random id, found by opening the folder's notes, is locked to one
+     key, and opens for the main key, naming the access key and this mcp.
 6. **mcp.** Every call goes through the AI's own client:
-   - the tutor's AI reads the market (`markets`, `tutoring`), then writes an offer (`write`, at
-     `offer/maths`): maths, 2 USD an hour, paid `direct`. On the host it is current, signed by the
-     tutor's access key;
+   - the tutor's AI reads the market (`markets`, `tutoring`), what a post and a review hold, then
+     writes a post (`write`, at `post/maths`): maths, 2 USD an hour. On the host it is current,
+     signed by the tutor's access key;
    - the student's AI finds it with `search`, the loop index's search through the mcp, and messages
      the tutor at the post's profile (`message`);
    - the tutor's AI reads its inbox (`read`, `inbox`): the message, from the student's address,
@@ -82,10 +83,10 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
      came from (`message`);
    - the student's AI reads the reply in its own inbox.
 7. **The review.** The student's AI writes one (`write`, at `review/maths`): it scores the tutor 10
-   and names the offer. On the host it is signed by the student's access key.
+   and names the post. On the host it is signed by the student's access key.
 8. **The index.** The loop's index shows:
    - both profiles counted under the loop verifier's face key;
-   - the offer listed;
+   - the post listed;
    - the review counted;
    - what each profile shows as the index's own ranking makes it from this one review, a rating
      and its writer's word about the tutor, a vouch, with the index's numbers in
@@ -100,9 +101,9 @@ Two people, a tutor who sells and a student who buys, each from a seed of their 
    profiles. The app adds the coach profile, paid with the tutor's last three credits, its profile
    entry carrying a verification of its own and that reputation proof. The index shows the proof on
    the coach's page, with the tutor's trust.
-10. **Removed.** The tutor's app takes the access key out of the tutor's profile entry. The tutor's
-    AI's next write is refused by the host, as `unlisted`, and the offer the key wrote counts for
-    nothing on the host: the newest entry that still counts at its path is current, and there is
+10. **Removed.** The tutor's app takes the access key out of the tutor's profile entry, and deletes
+    its note. The tutor's AI's next write is refused by the host, as `unlisted`, and the post the key
+    wrote counts for nothing on the host: the newest entry that still counts at its path is current, and there is
     none.
 11. **A new device.** From the tutor's seed alone, the Profiles folder on the host gives its two
     profiles, `tutoring/tutor` and `sports-coaching/coach`, each with its folder there, and its
@@ -129,7 +130,7 @@ repo's folders (`services.ts`), and runs.
 | verifier | `verifier/`'s code, with the stand-in Didit its tests run (`verifier/test/fake-didit.ts`) and the stand-in face model. Its own name, `verifier.e2e-loop.invalid`, and its own seed. Its welcome gift, `HOST_CREDITS` unset so 10, at the loop's host |
 | host | `host/`'s code, as `npm start` runs it, the plug and the credits, its `SPONSORS` the loop verifier's sponsor key, so the gift's tickets buy its credits. Its port is picked first, so the verifier's gift can name it |
 | index | `index/`'s code, with lists of its own: the host; the loop verifier's two keys in `lists/verifiers.json` (face check at confidence 0.75, ID check at 0.95, as the index's own lists give the foundation's); its own reputation proofs, against a root up to 30 days old. Its numbers are `index/config/`'s |
-| mcp | `mcp/`'s code, reading the loop's index and the markets, with the loop's connect page as its `APP_URL`, and reaching hosts with a plain fetch, since the loop's host is on loopback |
+| mcp | `mcp/`'s code, reading the loop's index and the markets, with the loop's connect page as its `APP_URL`, and reaching hosts with a plain fetch, since the loop's host is on loopback, which the mcp's `publicFetch` refuses |
 
 A `services.json` that names any service by its origin is the deployed check instead: each one
 named is checked to answer, and no loop runs. The loop never runs against a deployed service:
@@ -204,7 +205,7 @@ own services stop with the run, so their pages and the three profiles' entries a
   so a run says nothing about the Forest app's own page. Against the deployed mcp, which has none
   yet, the deployed check only checks that the mcp answers.
 - **The deployed check runs no loop.** It says each deployed service answers, nothing more.
-- **No payment, and one review.** No money moves: the review names the offer and nothing else. Only
+- **No payment, and one review.** No money moves: the review names the post and nothing else. Only
   the student rates.
 - **One host, inboxes of any size.** Both people are on the same host, so each finds the other's
   folder there.
@@ -214,7 +215,7 @@ own services stop with the run, so their pages and the three profiles' entries a
 
 - **The standard:** what each step makes and checks: keys and access keys, entries, folders and the
   Profiles folder, messages, the verification and the reputation proof.
-- **The markets directory, at `MARKETS`:** what the offer and the review hold.
+- **The markets directory, at `MARKETS`:** what the post and the review hold.
 - **The mcp, as this repo writes it:** its tools, the login and the pack.
 - **Each service, by its own choice:** what it takes and what it charges. The loop checks it as it
   runs.

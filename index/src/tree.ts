@@ -1,4 +1,4 @@
-// The tree this index publishes in the standard's format (proofs/reputation), so a person proves a
+// The tree this index publishes in the standard's format (proofs/), so a person proves a
 // trust from their own profiles on their device, naming none of them.
 //
 //   - One leaf per counted profile: its key, the point its address names, with its trust, from 0
@@ -6,20 +6,20 @@
 //     scores of the profiles it counts, so a trust carried from several profiles is their average.
 //   - In order of address. A leaf names its profile, as the profile's page does; what a proof
 //     hides is which of them it counts.
-//   - Built with the reputation client's `buildTree`; its root signed with the index's key over the
-//     client's `signedBytes(root, time)`, the time in ms. A new root only when the leaves change, so
-//     a proof goes stale only when a trust in the tree moves. Every root is kept (store.ts).
+//   - Built with the proofs package's `buildTree`; its root signed with the index's key over its
+//     `signedBytes(root, time)`, the canonical text of `{ root, time }`, the time in ms. A new root
+//     only when the leaves change, so a proof goes stale only when a trust in the tree moves. Every
+//     root is kept (store.ts).
 //
 // A reputation proof on a profile entry shows when its index is one lists/indexes.json names, its
-// root is that index's newest or one it signed within `maxAgeDays`, and it checks (the client's
+// root is that index's newest or one it signed within `maxAgeDays`, and it checks (the package's
 // `checkReputation`). The newest always counts: a tree that does not move for a month still says
 // exactly what its proofs say. A root's age is from when this index last signed it, since a root
 // that comes back is signed again. This index knows only its own roots.
 
 import { packSignature, pointOf, signBytes } from '@foundationforest/keys'
 import { b64u, hex, type Key, proofsOf, reputationCheck } from '@foundationforest/folders'
-import { buildTree, checkReputation, signedBytes } from '@foundationforest/reputation'
-import { toBytes32 } from '@foundationforest/verification'
+import { buildTree, checkReputation, signedBytes, toBytes32 } from '@foundationforest/proofs'
 
 import { checkedOnce } from './filter.ts'
 import type { ListedIndex } from './lists.ts'

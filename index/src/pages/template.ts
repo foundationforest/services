@@ -5,8 +5,9 @@
 // Everything interpolated is escaped unless it is already built HTML (`Raw`). No page runs any
 // JavaScript; the only script element is the JSON-LD block, which browsers never execute.
 
+import type { Markets } from '@foundationforest/markets'
+
 import type { Lists } from '../lists.ts'
-import type { Markets } from '../markets.ts'
 import type { Store } from '../store.ts'
 
 export class Raw {

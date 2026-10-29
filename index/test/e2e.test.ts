@@ -52,9 +52,9 @@ test('a review between two checked profiles, read from a host, counted, and serv
   const student = await profile('tutoring/student', [by])
   await publishProfile(host.url, tutor)
   await publishProfile(host.url, student)
-  const offer = `${tutor.key.address}/offer/maths`
-  await post(host.url, [at(tutor, 'offer/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], place: { online: true }, price: { amount: '25', currency: 'USD', per: 'hour' } })])
-  await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', offer })])
+  const offer = `${tutor.key.address}/post/maths`
+  await post(host.url, [at(tutor, 'post/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], place: { online: true }, price: { amount: '25', currency: 'USD', per: 'hour' } })])
+  await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', post: offer })])
 
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
   // On its own schedule, a pass every second, as main.ts runs one every READ_SECONDS.

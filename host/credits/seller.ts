@@ -193,15 +193,15 @@ export type Seller = {
 
 /**
  * The host's seller of credits, in one SQLite file: its directory; each buy collected once a
- * sponsor's ticket pays for it (`ticket <ticket>`, in the PAYMENT_HEADER); the proofs it took, each
- * for one buy's reference only; how many credits each sponsor's tickets paid for (its bill, counted,
- * never capped); and the spent list. Other ways to pay are this host's to add.
+ * sponsor's ticket pays for it (`ticket <ticket>`, in the PAYMENT_HEADER); the proofs it took, so a
+ * buy collected again is billed once; how many credits each sponsor's tickets paid for (its bill,
+ * counted, never capped); and the spent list. Other ways to pay are this host's to add.
  */
 export function seller(config: SellerConfig): Seller {
   for (const s of config.sponsors) if (!bytesOf(s, 'base58', 32)) throw new Error('a sponsor is an address: an Ed25519 key, 32 bytes in base58')
   const sponsors = new Set(config.sponsors)
   const db = new DatabaseSync(config.path)
-  db.exec('CREATE TABLE IF NOT EXISTS proofs (proof TEXT PRIMARY KEY, reference TEXT NOT NULL) WITHOUT ROWID')
+  db.exec('CREATE TABLE IF NOT EXISTS proofs (proof TEXT PRIMARY KEY) WITHOUT ROWID')
   db.exec('CREATE TABLE IF NOT EXISTS bill (sponsor TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID')
   const spent = new SpentList(db)
   const { origin, key, price, maxBuy } = config
@@ -224,16 +224,12 @@ export function seller(config: SellerConfig): Seller {
     if (!sponsors.has(t.sponsor) || t.credits !== count || !signed) return refuse('not_paid', 402, owed)
     const proof = `ticket ${t.sponsor} ${value.split('.')[2]}`
     const sponsor = t.sponsor
-    // A proof pays for one buy: taken by another, it is refused; for this one again, the same answer,
-    // and the bill counts it once.
-    const usedElsewhere = together(db, () => {
-      const taken = db.prepare('SELECT reference FROM proofs WHERE proof = ?').get(proof) as { reference: string } | undefined
-      if (taken) return taken.reference !== reference
-      db.prepare('INSERT INTO proofs (proof, reference) VALUES (?, ?)').run(proof, reference)
+    // A ticket signs its buy's reference, so it pays for that buy alone. Collected again, the same
+    // answer, and the bill counts it once.
+    together(db, () => {
+      if (db.prepare('INSERT OR IGNORE INTO proofs (proof) VALUES (?)').run(proof).changes === 0) return
       db.prepare('INSERT INTO bill (sponsor, credits) VALUES (?, ?) ON CONFLICT (sponsor) DO UPDATE SET credits = credits + excluded.credits').run(sponsor, count)
-      return false
     })
-    if (usedElsewhere) return refuse('proof_used', 409)
     return { status: 200, body: await answer(buy, key), type: 'application/private-token-generic-batch-response' }
   }
 

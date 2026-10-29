@@ -3,10 +3,11 @@
 // answers whole, a field and a filter this copy has never seen among them. Then, in the person's
 // two tutoring profiles, with the access keys their app handed over: my_profiles by label; read of
 // an entry, public and locked, and of the inbox, each message opened and its sender checked, one
-// from before the login left unopened; write, public against the market, refused naming the field,
-// a file named and not, a delete, locked anywhere but profile and key/…; message, which the
-// recipient opens, signed by the access key; and, once the person removes the key, the host
-// refusing its next write and its entries counting for nothing. No answer, in the whole run, holds
+// from before the login left unopened; write, public against the market (the markets package's
+// checkEntry), refused naming the field, a file named and not, a delete, locked anywhere but profile
+// and key/…; message, which the recipient opens, signed by the access key; and, once the person
+// removes the key and its note, the host refusing its next write and its entries counting for
+// nothing. No answer, in the whole run, holds
 // one of the person's own addresses.
 
 import assert from 'node:assert/strict'
@@ -32,7 +33,6 @@ const answers: string[] = []
 const TUTOR = 'tutoring/tutor'
 const STUDENT = 'tutoring/student'
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
-const EVIDENCE = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:5wHu1qwD7q5ifaN5nwdcDqNFo53GJqa7nLp2BeeEpcHCusb4GzARz4GjgzsEHMkBMgCJMGa6GSQ4WAF4LhQNX9LX'
 
 /** A message from the stranger to the person's tutor, signed by `key` when given, else its main key. */
 async function strangerWrites(text: string, key?: Awaited<ReturnType<typeof newAccessKey>>) {
@@ -103,13 +103,16 @@ describe('reading, with no login', () => {
     }
   })
 
-  test('markets: every market, or one market’s file with its preview and kinds; a market not in the directory refused', async () => {
+  test('markets: every market, or one market’s file with its preview and kinds, each with its fields; a market not in the directory refused', async () => {
     const all = await call('markets')
     assert.ok(all.markets.some((m: { name: string; roles: unknown[] }) => m.name === 'tutoring' && m.roles.length === 2))
     const one = await call('markets', { name: 'tutoring' })
-    assert.deepEqual(one.kinds, ['offer', 'review', 'vouch', 'report'])
+    assert.deepEqual(Object.keys(one.kinds), ['post', 'review', 'vouch', 'report'])
+    assert.deepEqual(one.kinds.post, TUTORING.post, "a post's fields are the file's")
+    assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'post'], 'the fields every review holds, the file adding none')
+    assert.deepEqual(Object.keys(one.kinds.vouch), ['subject', 'text'])
     assert.deepEqual(one.market.preview, TUTORING.preview)
-    assert.ok(one.market.offer.price)
+    assert.ok(one.market.post.price)
     assert.match((await call('markets', { name: 'knitting' })).refused, /knitting is not a market in the directory/)
   })
 
@@ -137,39 +140,42 @@ describe('acting for the person', () => {
     const shown = await call('read', { label: TUTOR, path: 'profile' })
     assert.equal(shown.body.market, 'tutoring')
     assert.deepEqual(shown.body.pay, { solana: `${TUTOR}'s solana pay address`, evm: `${TUTOR}'s evm pay address` })
-    assert.deepEqual(await call('read', { label: TUTOR, path: 'offer/none' }), { path: 'offer/none', found: false })
-    assert.match((await call('read', { label: TUTOR, path: 'Offer/x' })).refused, /Offer\/x is no path/)
+    assert.deepEqual(await call('read', { label: TUTOR, path: 'post/none' }), { path: 'post/none', found: false })
+    assert.match((await call('read', { label: TUTOR, path: 'Post/x' })).refused, /Post\/x is no path/)
     assert.match((await call('read', { label: 'clothing/seller', path: 'profile' })).refused, /clothing\/seller is not a profile this login acts in/)
     assert.match((await call('read', { label: TUTOR })).refused, /a path, or inbox: true/)
   })
 
-  test('write, public: an offer, checked against the market, signed by the access key; refused naming the field', async () => {
-    assert.deepEqual(Object.keys(await call('write', { label: TUTOR, path: 'offer/maths', body: lesson('Maths, from the AI.') })), ['written', 'time', 'hosts'])
-    const e = await at(TUTOR, 'offer/maths')
+  test('write, public: a post, checked against the market, signed by the access key; refused naming the field', async () => {
+    assert.deepEqual(Object.keys(await call('write', { label: TUTOR, path: 'post/maths', body: lesson('Maths, from the AI.') })), ['written', 'time', 'hosts'])
+    const e = await at(TUTOR, 'post/maths')
     assert.equal(e?.key, tutorKey, 'signed by this login’s access key, and current')
-    assert.equal((await call('read', { label: TUTOR, path: 'offer/maths' })).body.description, 'Maths, from the AI.')
+    assert.equal((await call('read', { label: TUTOR, path: 'post/maths' })).body.description, 'Maths, from the AI.')
     const refusals: Array<[string, Body | null, RegExp]> = [
-      ['offer/x', { ...lesson('x'), colour: 'red' }, /an offer in tutoring has no field colour/],
-      ['offer/x', { price: 30 }, /price takes \{ amount, currency, per \}/],
-      ['offer/x', { subjects: ['knitting'] }, /subjects takes a list, each different, each one of /],
-      ['photo/x', { text: 'x' }, /tutoring has no kind photo: its kinds are offer, review, vouch, report/],
-      ['offer/a/b', lesson('x'), /one segment after the kind/],
+      ['post/x', { ...lesson('x'), colour: 'red' }, /a post in tutoring has no field colour/],
+      ['post/x', { price: 30 }, /price takes \{ amount, currency, per \}/],
+      ['post/x', { subjects: ['knitting'] }, /subjects takes a list, each different, each one of /],
+      ['photo/x', { text: 'x' }, /photo is no kind of entry: the kinds are post, review, vouch, report/],
+      ['post/a/b', lesson('x'), /one segment after the kind/],
       ['profile', { hosts: [w.host] }, /no access key writes profile/],
       ['review/x', { score: '9' }, /a review names its subject/],
-      ['review/x', { subject: w.stranger.address, score: '11' }, /score is "1" to "10"/],
-      ['review/x', { subject: w.stranger.address, offer: 'physics' }, /offer is a post's address/],
+      ['review/x', { subject: 'nobody', score: '9' }, /subject is the address of the profile the review is about/],
+      ['review/x', { subject: w.stranger.address, score: '11' }, /score takes a number from "1" to "10"/],
+      ['review/x', { subject: w.stranger.address, post: 'physics' }, /post takes a post's address/],
+      ['review/x', { subject: w.stranger.address, post: 'nobody/post/physics' }, /post is a post's address: <profile address>\/post\/<id>/],
+      ['vouch/x', { subject: w.stranger.address, score: '9' }, /a vouch in tutoring has no field score/],
     ]
     for (const [path, body, why] of refusals) assert.match((await call('write', { label: TUTOR, path, body })).refused, why, path)
-    assert.equal(await at(TUTOR, 'offer/x'), null, 'nothing written')
+    assert.equal(await at(TUTOR, 'post/x'), null, 'nothing written')
   })
 
-  test('write, public: a review naming its offer and its evidence; a delete', async () => {
-    const review = { subject: w.stranger.address, score: '9', text: 'Clear.', offer: w.stranger.offer, evidence: EVIDENCE }
+  test('write, public: a review naming its post; a delete', async () => {
+    const review = { subject: w.stranger.address, score: '9', text: 'Clear.', post: w.stranger.post }
     assert.equal((await call('write', { label: STUDENT, path: 'review/physics', body: review })).written, 'review/physics')
     assert.deepEqual((await at(STUDENT, 'review/physics'))?.body, review)
-    await call('write', { label: TUTOR, path: 'offer/gone', body: lesson('Gone soon.') })
-    assert.equal((await call('write', { label: TUTOR, path: 'offer/gone', body: null })).deleted, true)
-    assert.deepEqual(Object.keys(await call('read', { label: TUTOR, path: 'offer/gone' })), ['path', 'time', 'deleted'])
+    await call('write', { label: TUTOR, path: 'post/gone', body: lesson('Gone soon.') })
+    assert.equal((await call('write', { label: TUTOR, path: 'post/gone', body: null })).deleted, true)
+    assert.deepEqual(Object.keys(await call('read', { label: TUTOR, path: 'post/gone' })), ['path', 'time', 'deleted'])
   })
 
   test('write, locked: any path but profile and key/…, the body unchecked, locked to the main key and each key that may read; no files', async () => {
@@ -225,8 +231,8 @@ describe('acting for the person', () => {
       await logIn(c)
       const photo = { sha256: '04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', type: 'image/jpeg', size: 48213 }
       const coat = { description: 'A wool coat.', photos: [photo.sha256] }
-      assert.match((await call('write', { label: 'clothing/seller', path: 'offer/coat', body: coat }, c.client)).refused, /photos names a file the body's files do not list/)
-      assert.equal((await call('write', { label: 'clothing/seller', path: 'offer/coat', body: { ...coat, files: [photo] } }, c.client)).written, 'offer/coat')
+      assert.match((await call('write', { label: 'clothing/seller', path: 'post/coat', body: coat }, c.client)).refused, /photos names a file the body's files do not list/)
+      assert.equal((await call('write', { label: 'clothing/seller', path: 'post/coat', body: { ...coat, files: [photo] } }, c.client)).written, 'post/coat')
       assert.match((await call('message', { label: 'clothing/seller', to: w.stranger.address, body: { text: 'x' } }, c.client)).refused, /may not message as clothing\/seller/)
     } finally {
       w.choose({ profiles: [TUTOR, STUDENT] })
@@ -235,12 +241,13 @@ describe('acting for the person', () => {
   })
 
   test("the key removed from the tutor's profile entry: the host refuses its next write, and what it wrote counts for nothing", async () => {
-    await call('write', { label: TUTOR, path: 'offer/physics', body: lesson('Physics, from the AI.') })
-    assert.equal((await at(TUTOR, 'offer/physics'))?.key, tutorKey)
+    await call('write', { label: TUTOR, path: 'post/physics', body: lesson('Physics, from the AI.') })
+    assert.equal((await at(TUTOR, 'post/physics'))?.key, tutorKey)
     await w.app.removeKey(TUTOR, tutorKey)
-    assert.match((await call('write', { label: TUTOR, path: 'offer/chemistry', body: lesson('Chemistry.') })).refused, /no host took it: .*\(unlisted: /)
-    assert.equal(await at(TUTOR, 'offer/physics'), null, 'its offer no longer counts')
-    assert.equal(await at(TUTOR, 'offer/maths'), null)
+    assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted with it')
+    assert.match((await call('write', { label: TUTOR, path: 'post/chemistry', body: lesson('Chemistry.') })).refused, /no host took it: .*\(unlisted: /)
+    assert.equal(await at(TUTOR, 'post/physics'), null, 'its post no longer counts')
+    assert.equal(await at(TUTOR, 'post/maths'), null)
   })
 
   test("no answer in this file holds one of the person's own addresses", async () => {

@@ -14,7 +14,7 @@ by are files in this directory, and everything it ranks is public on a host. It 
 anyone's but its own.
 
 Of Forest's four jobs (who you are, that you are real, what you have done, your money), it does one:
-what you have done. It reads the offers, reviews, vouches and reports profiles publish, and gives
+what you have done. It reads the posts, reviews, vouches and reports profiles publish, and gives
 each profile its ratings and a trust. Of the other three it only reads two, a profile entry on a host
 and a verification a verifier's stamp made possible, and money not at all.
 
@@ -50,7 +50,7 @@ passes it serves the pages. Three verbs, each one place in the code:
   these paths:
   - `profile`: the profile entry: its market and role, its hosts, its open key, its pay addresses,
     its access keys and its proofs;
-  - `offer/<id>`: a post. A delete keeps its last body here for good, marked deleted, so a review
+  - `post/<id>`: a post. A delete keeps its last body here for good, marked deleted, so a review
     that names it still finds it. A post deleted before this index first read it keeps the last
     version a host still serves;
   - `review/<id>`: a review. A delete removes it;
@@ -58,8 +58,8 @@ passes it serves the pages. Three verbs, each one place in the code:
 
   A locked entry, which only the keys it was locked to open, is left alone at any path. An entry
   dated ahead of the clock waits until it is due.
-- **The markets** (`src/markets.ts`): `directory.json`, each market's file and `build/types.json`,
-  from the checkout of [foundationforest/markets](https://github.com/foundationforest/markets) that
+- **The markets,** through the markets package, `@foundationforest/markets`: `directory.json` and
+  each market's file, from the checkout of [foundationforest/markets](https://github.com/foundationforest/markets) that
   `../standard.sh` makes at the commit in `../MARKETS`. Never over the network at run time.
 
 It reads nothing else.
@@ -73,7 +73,7 @@ roles, and carries a verification that:
 2. names a verifier key `lists/verifiers.json` lists;
 3. carries the verifier name that list gives the key;
 4. is for the label `<market>/<role>`, the profile entry's own;
-5. checks (the verification client's `checkVerification`), checked once and its answer kept;
+5. checks (the proofs package's `checkVerification`), checked once and its answer kept;
 6. was first seen by this index no later than the key's `until`, when the list gives one.
 
 This index keeps, for each profile and each verifier key, when it first saw a verification of that
@@ -88,9 +88,10 @@ nothing.
 
 ### Posts
 
-A post is listed when its profile counts and it fits its market, read as the markets manual says.
-The mcp, the foundation's door for AI apps over MCP (the Model Context Protocol, the way AI apps
-call outside tools), checks a post the same way before it signs one:
+A post is listed when its profile counts and it fits its market, by the markets package's
+`checkEntry`, the markets manual's own check. The mcp, the foundation's connector over MCP (the Model
+Context Protocol, the way AI apps call outside tools), checks a post with the same code before it
+signs one:
 
 - each field is one its market names for the profile's role;
 - each field is of its type in `types.json`;
@@ -110,18 +111,18 @@ deal went and gives a score; a vouch says "I know this profile is real and hones
 "this profile is fake or a scam". Each may add text. One counts when, in this order:
 
 1. its writer counts here;
-2. it fits its writer's market's fields for its kind: the shared ones it lists (`subject` an
-   address, `score` "1" to "10" with at most one decimal, `text`, `offer` a post's full address
-   `<profile>/offer/<id>`, `evidence` text, which nothing here reads; a vouch and a report hold only
-   `subject` and `text`) and the
-   fields the market adds, a `file` among them naming one of the body's `files`;
+2. it fits its writer's market for its kind, by the markets package's `checkEntry`: the fields
+   every market's hold (`subject` an address, `score` "1" to "10" with at most one decimal, `text`,
+   `post` a post's full address `<profile>/post/<id>`, its profile an address; a vouch and a report
+   hold only `subject` and `text`) and the fields the market adds to its reviews, a `file` among
+   them naming one of the body's `files`;
 3. a review gives a score;
 4. it is about another profile, not its writer;
 5. its writer and the profile it is about have the same `market` in their profile entries, so each
    market is ranked on its own;
 6. the profile it is about counts here;
 7. it is the latest of its kind by its writer about that profile, by its entry's time: one review
-   counts per writer, subject and offer (or no offer), and one vouch and one report per writer and
+   counts per writer, subject and post (or no post), and one vouch and one report per writer and
    subject.
 
 One that does not count says why, on both profiles' pages, and changes nothing in the ranking.
@@ -202,14 +203,15 @@ signed over its UTF-8 bytes with EdDSA-Poseidon (the standard's keys' `signBytes
 profile's page as `statement` and `signature` (64 bytes, base64url). The rating's `value` is text, to
 one decimal, since canonical JSON's numbers are whole; `count` is how many raters scored the profile;
 and `trust` and `uniqueness` are whole numbers from 0 to 100. Anyone checks it with the standard's
-keys' `checkBytes`, against the index's address. The statement begins with `{`, never with the
-`0xff` every entry, message, inbox delete and root begins with, so the signature is never one of those. `time` is when those values were first what they are:
+keys' `checkBytes`, against the index's address. Its own fields, `index` and `ratings` among them,
+say what it is, as every signed thing in the standard does, so the signature is never an entry's, a
+message's or a root's. `time` is when those values were first what they are:
 while none of them moves, the statement and signature stay.
 
 ### The tree
 
 After each pass, the index builds its trusts into a tree in the standard's format
-([proofs/reputation](https://github.com/foundationforest/standard/blob/main/proofs/reputation/README.md)),
+([proofs](https://github.com/foundationforest/standard/blob/main/proofs/README.md#the-tree-an-index-publishes)),
 so a person proves a trust from their own profiles on their device, naming none of them
 (`src/tree.ts`):
 
@@ -218,8 +220,8 @@ so a person proves a trust from their own profiles on their device, naming none 
   of the profiles it counts, so a trust carried from several profiles is their average;
 - **in order of address:** a leaf names its profile, as the profile's page does; what a proof hides
   is which of them it counts;
-- **its root** is the reputation client's `buildTree`, signed with the index's key over the client's
-  `signedBytes(root, time)`, the time in ms. A new root only when the leaves change. Every root is
+- **its root** is the proofs package's `buildTree`, signed with the index's key over its
+  `signedBytes(root, time)`, the canonical text of `{ root, time }`, the time in ms. A new root only when the leaves change. Every root is
   kept.
 
 `/v1/reputation` serves `{ index, root, time, signature, leaves }` (`leaves`: how many), and
@@ -230,7 +232,7 @@ A reputation proof on a profile entry carries the trust it proves, its `score`, 
 that `trust`, when:
 - its index is one `lists/indexes.json` names;
 - its root is that index's newest, or one the index signed within `maxAgeDays` days;
-- it checks (the client's `checkReputation`, its answer kept).
+- it checks (the proofs package's `checkReputation`, its answer kept).
 
 The newest root always counts: a tree that has not moved still says exactly what its proofs say. A
 root's age runs from when this index last signed it, since a root that comes back is signed again.
@@ -282,11 +284,11 @@ A `<result>` is `{ "profile", "market", "role", "post": { "address", "body" }, "
 
 ### Its key
 
-The index's key is made from its seed (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes
-at its first start, kept in `DATA_DIR/index-seed.json`, readable by its own user only, never printed
-or logged. The key is `hkdf(seed, "index/key")`, the standard's keys' `hkdf`, made into a service
-key, the standard's keys' `serviceKey`. Its address is the index's name: every page shows it, and it
-signs the statements and the roots.
+The index's key is its seed (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes at its
+first start, kept in `DATA_DIR/index-seed.json`, readable by its own user only, never printed or
+logged. The seed itself, with no text, is made into a service key, the standard's keys'
+`serviceKey`. Its address is the index's name: every page shows it, and it signs the statements and
+the roots.
 
 ### Where it keeps things
 
@@ -351,10 +353,10 @@ their lists name:
   review), of itself, from another market, about a profile that does not count, or with a field its
   market does not name is skipped and says why; the latest per writer, subject and post counts for a
   review, and per writer and subject for a vouch and a report; each writer's word, and its weight; a
-  report taken down turns its writer's word back to a vouch, and the trust rises; a review's
-  `evidence` taken as any other field; a deleted post keeps its body;
-- **markets:** the checks of fields, choices, lists, roles and files, for a post, a review, a vouch
-  and a report; a post that does not fit is kept and not listed;
+  report taken down turns its writer's word back to a vouch, and the trust rises; a review whose
+  subject, or the profile its post names, is no address; a deleted post keeps its body;
+- **markets:** a post that does not fit its market, by the markets package's check, kept, not listed,
+  and saying why;
 - **tree:** a leaf for each counted profile, in order of address, its score the profile's trust, one
   leaf for a profile two verifiers checked, and the served leaves rebuild the served root, whose signature checks; a reputation proof made
   from the leaves shows on its profile with the trust it carries, and not with a byte changed or on
@@ -364,7 +366,7 @@ their lists name:
   page drawn from its twin's object; every JSON-LD block passes schema.org's vocabulary
   (`test/schemaorg/`); search's filters and its order, a profile no one rated at its market's
   average; every URL of this index that `llms.txt` and `skill.md` name answers;
-- **seed:** made at the first start, readable by its user only, the same key after;
+- **seed:** made at the first start, readable by its user only, itself the key, the same after;
 - **end to end,** over HTTP: two profiles with real verifications, an offer, a review, the index
   reading on its own schedule and serving the rating and the trust its vouch gives; then a rebuild
   gives the same;
@@ -421,7 +423,7 @@ Another index holds its own.
 - **Nothing here links two profiles of one person, but what a small tree can show.** It ranks each
   profile on its own, and nothing it serves ties a profile to a person; in a small tree, a trust a
   person carries to another of their profiles can point at the one leaf it came from
-  ([the standard's reputation](https://github.com/foundationforest/standard/blob/main/proofs/reputation/README.md#limits)).
+  ([the standard's proofs](https://github.com/foundationforest/standard/blob/main/proofs/README.md#limits)).
 
 ## Limits
 

@@ -33,7 +33,7 @@ export function web(ctx: Context, base: string, root: string): Web {
     const u = urls(base)
     const list = [
       u.home,
-      ...ctx.markets.list.map((m) => u.market(m.name)),
+      ...ctx.markets.directory.markets.map((m) => u.market(m.name)),
       ...(ctx.store.db.prepare('select address from profiles where counted = 1 order by address').all() as Array<{ address: string }>).map((p) => u.profile(p.address)),
     ]
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${list.map((l) => `<url><loc>${esc(l)}</loc></url>\n`).join('')}</urlset>\n`
