@@ -11,13 +11,13 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { PATH, publicKeyFromAddress } from '@foundationforest/records'
+import { PATH, publicKeyFromAddress } from '@foundationforest/folders'
 import { Ajv2020, type ValidateFunction } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
 
 export type Field = { type: string; description?: string; values?: string[]; many?: true; required?: true; roles?: string[] }
 export type Role = { role: string; posts: 'offers' | 'requests' | 'posts' }
-/** The kinds of record about a profile, each naming it as its subject: review/<id>, vouch/<id>, report/<id>. */
+/** The kinds of entry about a profile, each naming it as its subject: review/<id>, vouch/<id>, report/<id>. */
 export type About = 'review' | 'vouch' | 'report'
 /** Each kind's plural, as its words say it and its table is named. */
 export const MANY: { [kind in About]: string } = { review: 'reviews', vouch: 'vouches', report: 'reports' }

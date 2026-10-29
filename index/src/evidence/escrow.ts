@@ -3,7 +3,7 @@
 // profiles' solana pay addresses, in either order; its mint is one config/currencies.json lists; and
 // it ended with money to the recipient.
 
-import { base58 } from '@foundationforest/records'
+import { base58 } from '@foundationforest/folders'
 
 import { ESCROW_CHAIN, type Receipt } from '../chain.ts'
 import type { Between, Context } from './index.ts'

@@ -8,7 +8,7 @@
 // its reader, and one factor.
 
 import type { PayType } from '@foundationforest/keys'
-import { type Body, checkPay } from '@foundationforest/records'
+import { type Body, checkPay } from '@foundationforest/folders'
 
 import { CHAIN, type Currency } from '../lists.ts'
 import type { Rpc } from '../rpc.ts'
@@ -51,7 +51,7 @@ export const USED = 'already used'
 /** Why a review counts as without when a profile it is between lists a pay address its pay key did not sign for it. */
 export const UNSIGNED = 'pay address unsigned'
 
-/** One profile a review is between: its address, and its profile record's body. */
+/** One profile a review is between: its address, and its profile entry's body. */
 export type Side = { address: string; body: { [key: string]: unknown } | undefined }
 
 /** An evidence value's chain and id, split at its last colon; null when the text before it is no CAIP-2 chain. */
@@ -66,7 +66,7 @@ export function split(value: unknown): { chain: string; id: string } | null {
 const uncheckedWhy = (value: unknown) => `this index reads no evidence on ${split(value)?.chain}`
 
 /**
- * A profile's pay address of one type, from its profile record's `pay`, and whether its pay key
+ * A profile's pay address of one type, from its profile entry's `pay`, and whether its pay key
  * signed the profile's address in `paySig` (checkPay); a type it does not hold is null.
  */
 const payOf = (side: Side, type: PayType): { address: string; signed: boolean } | null => {
@@ -76,7 +76,7 @@ const payOf = (side: Side, type: PayType): { address: string; signed: boolean } 
 }
 
 /**
- * A review's evidence, between the two profiles' pay addresses (each as its profile record holds
+ * A review's evidence, between the two profiles' pay addresses (each as its profile entry holds
  * it, and signed), on the chains this index reads. When a check cannot tell yet, the review counts
  * as without, and the check runs again on the next pass.
  */

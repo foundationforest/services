@@ -150,7 +150,7 @@ test("a rater who gives 1s to well-rated places counts less on low scores than a
   assert.ok(near(weightOf('harsh') / weightOf('neutral'), scoreWeight(0, r.pickiness.get('harsh')!) / scoreWeight(0, 0.5)))
 })
 
-test("words: each writer's one word, by its latest counted record: a report, or else a vouch, a rating of 1 among them", () => {
+test("words: each writer's one word, by its latest counted entry: a report, or else a vouch, a rating of 1 among them", () => {
   const word = (...kinds: Said['kind'][]) => wordsOf(kinds.map((k) => said('w', 's', k)))[0]!.word
   assert.equal(word('rating', 'report'), 'report')
   assert.equal(word('report', 'rating'), 'vouch')

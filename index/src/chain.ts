@@ -1,5 +1,5 @@
 // The escrow's reader: the standard's escrow, its program at ESCROW_PROGRAM on ESCROW_CHAIN, as the
-// standard at the pin records the program it deployed (a test checks they match), read through the
+// standard at the pin names the program it deployed (a test checks they match), read through the
 // RPC config/chains.json names for that chain, when it lists it.
 // Every transaction that named the program, oldest first, from a cursor (the newest signature read):
 // a failed one is skipped, and only events the program itself wrote are read (the escrow client's
@@ -12,7 +12,7 @@ import { PublicKey } from '@solana/web3.js'
 import { type Rpc, transaction } from './rpc.ts'
 import type { Store } from './store.ts'
 
-/** Version 4 of the escrow, as the pinned standard records it. */
+/** Version 4 of the escrow, as the pinned standard names it. */
 export const ESCROW_PROGRAM = '38vLV7TMvJ9bvXT3cbRLEfHUy8WbvHWfjmiUALUyCm5J'
 /** The chain the standard deployed it to, in CAIP-2 form: Solana's devnet. */
 export const ESCROW_CHAIN = 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'
@@ -71,7 +71,7 @@ export async function readChain(store: Store, rpc: Rpc): Promise<number> {
       if (tx && !tx.meta?.err) events = decodeEvents(tx.meta?.logMessages ?? [], PROGRAM as never)
     } catch {
       // An event this client cannot read was written by an earlier version of the program, whose
-      // escrows this version refuses (the standard's record calls them beforeSchedules): no receipt here.
+      // escrows this version refuses (the standard calls them beforeSchedules): no receipt here.
       events = []
     }
     store.tx(() => {

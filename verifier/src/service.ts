@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net'
 import { dirname, join } from 'node:path'
 
 import { serviceKey } from '@foundationforest/keys'
-import { base58, canonical } from '@foundationforest/records'
+import { base58, canonical } from '@foundationforest/folders'
 
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
@@ -46,7 +46,7 @@ export type Config = {
   port: number
 }
 
-/** The name this verifier has unless told otherwise: every person's stamp number and tags hang off it. */
+/** The name this verifier has unless told otherwise: every person's stamp number hangs off it. */
 export const VERIFIER_NAME = 'verifier.forest.foundation'
 
 /** A Solana address in its one spelling: 32 bytes in base58. */

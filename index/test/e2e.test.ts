@@ -1,10 +1,10 @@
-// End to end, on loopback, over real HTTP: this repo's host; two profiles with real stamp proofs
+// End to end, on loopback, over real HTTP: this repo's host; two profiles with real verifications
 // from a stand-in verifier key the index lists; an offer and a review; the index reading the host
 // on its own schedule, counting the review, and serving the rating and the trust it gives. Then
 // `rebuild`: every table dropped but when each proof and review was first seen and the signed
-// roots, read again, the same rating and trust; on a file from before tags were called tags, the
-// kept table's column renamed, what it held kept; and in a process of its own, as `npm run rebuild`
-// runs it, the process ends once it is done.
+// roots, read again, the same rating and trust; on a file from before the standard's folders, the
+// kept table's old column dropped, its rows kept, and the rest made fresh; and in a process of its
+// own, as `npm run rebuild` runs it, the process ends once it is done.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -68,7 +68,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   // rebuild: drops what the hosts and the chain give back, keeps when each proof was first seen and every root.
   const store = openStore(i.dataDir)
   store.drop()
-  assert.equal(store.db.prepare('select count(*) n from records').get()!.n, 0)
+  assert.equal(store.db.prepare('select count(*) n from entries').get()!.n, 0)
   store.close()
   const again = await index({ hosts: [host.url], keys }, rpc.url, { dataDir: i.dataDir })
   assert.equal(again.address, i.address)
@@ -81,25 +81,30 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await rpc.close()
 })
 
-test('rebuild, on a file from before tags were called tags: seen keeps its rows under tag, the rest made fresh', () => {
-  const dir = tmp('old')
-  const old = new DatabaseSync(join(dir, FILE))
-  old.exec(`create table seen (profile text not null, key text not null, stamp text not null, first integer not null, primary key (profile, key));
-    insert into seen values ('a profile', 'a key', 'ab', 1);
-    create table leaves (n integer primary key, stamp text not null, scope text not null, score integer not null, count integer not null);
-    create table profiles (address text primary key, body text not null, market text, role text, pay text, time integer not null, stamps text not null default '[]')`)
-  old.close()
-  const store = openStore(dir)
-  store.drop()
-  assert.deepEqual({ ...store.db.prepare('select profile, key, tag, first from seen').get() }, { profile: 'a profile', key: 'a key', tag: 'ab', first: 1 })
-  const columns = (table: string) => store.db.prepare(`select name from pragma_table_info('${table}')`).all().map((c) => c.name)
-  assert.ok(columns('leaves').includes('tag') && !columns('leaves').includes('stamp'))
-  assert.ok(columns('profiles').includes('tags') && !columns('profiles').includes('pay'))
-  store.close()
-  cleanup(dir)
+test('rebuild, on a file from before the standard\'s folders: seen keeps its rows without the old column, the rest made fresh', () => {
+  for (const column of ['tag', 'stamp']) {
+    const dir = tmp('old')
+    const old = new DatabaseSync(join(dir, FILE))
+    old.exec(`create table seen (profile text not null, key text not null, ${column} text not null, first integer not null, primary key (profile, key));
+      insert into seen values ('a profile', 'a key', 'ab', 1);
+      create table records (id text primary key, profile text not null, path text not null, time integer not null, text text not null);
+      create table leaves (n integer primary key, ${column} text not null, scope text not null, score integer not null, count integer not null);
+      create table profiles (address text primary key, body text not null, market text, role text, time integer not null, counted integer not null default 0, checks text not null default '[]', proofs text not null default '[]', tags text not null default '[]')`)
+    old.close()
+    const store = openStore(dir)
+    store.drop()
+    assert.deepEqual({ ...store.db.prepare('select * from seen').get() }, { profile: 'a profile', key: 'a key', first: 1 }, column)
+    const columns = (table: string) => store.db.prepare(`select name from pragma_table_info('${table}')`).all().map((c) => c.name)
+    assert.deepEqual(columns('leaves'), ['n', 'profile', 'score'])
+    assert.ok(!columns('profiles').includes('tags'))
+    assert.deepEqual(columns('records'), [], 'the old table of entries is gone')
+    assert.ok(columns('entries').includes('text'))
+    store.close()
+    cleanup(dir)
+  }
 })
 
-test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a stamp proof checked', async () => {
+test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a verification checked', async () => {
   const host = await startHost()
   const rpc = await startRpc()
   const by = verifier()
@@ -124,7 +129,7 @@ test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the pr
   try {
     assert.equal(ended, 0)
     const store = openStore(dataDir)
-    assert.equal(store.db.prepare('select count(*) n from profiles').get()!.n, 1, 'it read the profile, its stamp proof checked')
+    assert.equal(store.db.prepare('select count(*) n from profiles').get()!.n, 1, 'it read the profile, its verification checked')
     store.close()
   } finally {
     await host.close()

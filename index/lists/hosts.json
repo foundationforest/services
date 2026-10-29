@@ -1,4 +1,4 @@
 {
-  "about": "The hosts this index reads, each in full: every record on the host, for every profile, page by page. It reads no other host, and follows no profile's hosts record. This is this index's opinion: another index reads other hosts.",
+  "about": "The hosts this index reads, each in full: every entry on the host, for every folder, page by page. It reads no other host, and follows no hosts a profile entry names. This is this index's opinion: another index reads other hosts.",
   "hosts": ["https://host.forest.foundation"]
 }
