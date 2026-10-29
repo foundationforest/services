@@ -1,4 +1,4 @@
-// The index's opinions: the three lists in lists/ and the three files in config/, read once at start.
+// The index's opinions: the three lists in lists/ and the one file in config/, read once at start.
 // Each is a file anyone can read; README.md, How we run it, says what each holds today. A file that
 // does not read stops the start, naming the file and what is wrong.
 
@@ -26,31 +26,14 @@ export type ListedKey = {
 /** An index whose reputation proofs this index shows. `self` is this index's own key. */
 export type ListedIndex = { index: string; name: string }
 
-/** The numbers the ranking takes (config/scoring.json), each explained in README.md, How it scores. */
-export type Scoring = Numbers & {
-  /** One factor per kind of evidence, and `none`. */
-  evidence: { [kind: string]: number; none: number }
-}
-
-/** A mint this index takes as money. */
-export type Currency = { name: string; code: string; decimals: number }
-
-/** A chain this index reads evidence on: the reader that reads it, and the setting that holds its RPC's URL. */
-export type Chain = { reader: string; rpc: string }
-
-/** A chain id in CAIP-2 form, such as solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1: a namespace and a reference. */
-export const CHAIN = /^[-a-z0-9]{3,8}:[-_a-zA-Z0-9]{1,32}$/
-
 export type Lists = {
   hosts: string[]
   keys: ListedKey[]
   /** How many days old a root, not the newest, may be for a reputation proof to show. */
   maxAgeDays: number
   indexes: ListedIndex[]
-  scoring: Scoring
-  currencies: Map<string, Currency>
-  /** By CAIP-2 id. */
-  chains: Map<string, Chain>
+  /** The numbers the ranking takes (config/scoring.json), each explained in README.md, How it scores. */
+  scoring: Numbers
 }
 
 const isObject = (v: unknown): v is { [key: string]: unknown } => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -101,47 +84,18 @@ export function loadLists(root: string): Lists {
   })
 
   const scoringFile = read(root, 'config/scoring.json')
-  const { vouchStep, reportCut, toughFrom, easyTo, marketWeight, tolerance, maxRounds, evidence } = scoringFile
+  const { vouchStep, reportCut, marketWeight, tolerance, maxRounds } = scoringFile
   if (!isNumber(vouchStep) || vouchStep < 0 || vouchStep > 1) fail('config/scoring.json', 'vouchStep is from 0 to 1')
   if (!isNumber(reportCut) || reportCut < 0 || reportCut > 1) fail('config/scoring.json', 'reportCut is from 0 to 1')
-  if (!isNumber(toughFrom) || toughFrom <= 0.5 || toughFrom > 1) fail('config/scoring.json', 'toughFrom is above 0.5, up to 1')
-  if (!isNumber(easyTo) || easyTo < 0 || easyTo >= 0.5) fail('config/scoring.json', 'easyTo is from 0 to below 0.5')
   if (!isNumber(marketWeight) || marketWeight <= 0) fail('config/scoring.json', 'marketWeight is above 0')
   if (!isNumber(tolerance) || tolerance <= 0) fail('config/scoring.json', 'tolerance is above 0')
   if (!Number.isSafeInteger(maxRounds) || (maxRounds as number) < 1) fail('config/scoring.json', 'maxRounds is a whole number from 1')
-  if (!isObject(evidence) || !Object.values(evidence).every((w) => isNumber(w) && w >= 0) || !isNumber(evidence.none)) {
-    fail('config/scoring.json', 'evidence holds a factor from 0 for each kind, and none')
-  }
-
-  const currenciesFile = read(root, 'config/currencies.json')
-  if (!isObject(currenciesFile.mints)) fail('config/currencies.json', 'mints is an object')
-  const currencies = new Map<string, Currency>()
-  for (const [mint, c] of Object.entries(currenciesFile.mints)) {
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) fail('config/currencies.json', `${mint} is not a mint's address`)
-    if (!isObject(c) || typeof c.name !== 'string' || typeof c.code !== 'string' || !/^[A-Z]{3}$/.test(c.code) || !Number.isSafeInteger(c.decimals) || (c.decimals as number) < 0) {
-      fail('config/currencies.json', `${mint}: { name, code (three capitals), decimals }`)
-    }
-    currencies.set(mint, { name: c.name, code: c.code, decimals: c.decimals as number })
-  }
-
-  const chainsFile = read(root, 'config/chains.json')
-  if (!isObject(chainsFile.chains)) fail('config/chains.json', 'chains is an object')
-  const chains = new Map<string, Chain>()
-  for (const [chain, c] of Object.entries(chainsFile.chains)) {
-    if (!CHAIN.test(chain)) fail('config/chains.json', `${chain} is not a CAIP-2 chain id, such as solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1`)
-    if (!isObject(c) || typeof c.reader !== 'string' || typeof c.rpc !== 'string' || !/^[A-Z][A-Z0-9_]*$/.test(c.rpc)) {
-      fail('config/chains.json', `${chain}: { reader, rpc: the name of the setting that holds its RPC's URL }`)
-    }
-    chains.set(chain, { reader: c.reader, rpc: c.rpc })
-  }
 
   return {
     hosts,
     keys,
     maxAgeDays: indexesFile.maxAgeDays as number,
     indexes,
-    scoring: { vouchStep, reportCut, toughFrom, easyTo, marketWeight, tolerance, maxRounds: maxRounds as number, evidence: evidence as Scoring['evidence'] },
-    currencies,
-    chains,
+    scoring: { vouchStep, reportCut, marketWeight, tolerance, maxRounds: maxRounds as number },
   }
 }

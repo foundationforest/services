@@ -14,7 +14,6 @@
 //   issuer/id               the ID key, a service key the same way, which signs every ID stamp
 //   issuer/fingerprint      the key of the ID check's fingerprints (facts.ts)
 //   issuer/sponsor          the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
-//   issuer/reference/<id>   an Ed25519 key whose address a payment for one ID check names (payment.ts)
 //
 // Each stamp key's facts recipe is fixed for good (facts.ts): a new recipe is a new key, under a
 // new text here. None of these keys holds money.
@@ -37,7 +36,6 @@ export const INFO = {
   id: 'issuer/id',
   fingerprint: 'issuer/fingerprint',
   sponsor: 'issuer/sponsor',
-  reference: (paymentId: string) => `issuer/reference/${paymentId}`,
 } as const
 
 /** An Ed25519 key: its address (the public key in base58), and its signature of a message. */

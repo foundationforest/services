@@ -1,5 +1,5 @@
-// `/search`: listed posts, each with what its profile shows (its ratings, trust, uniqueness,
-// pickiness and checks), sorted by its ratings with one unit of its market's average added
+// `/search`: listed posts, each with what its profile shows (its ratings, trust, uniqueness and
+// checks), sorted by its ratings with one unit of its market's average added
 // (README.md, How it scores), then the newest post.
 //
 //   q            words in the post, each a word's start, all of them (FTS5)

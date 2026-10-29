@@ -14,14 +14,14 @@ its proofs.
 - Every page has a JSON twin at the same address with `.json` on its path; the home page's is
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
-  new one. The index reads its hosts and the chain again 30 seconds after each pass ends.
+  new one. The index reads its hosts again 30 seconds after each pass ends.
 - In entries, money and decimals are text: a price `{ "amount": "30", "currency": "USD", "per": "hour" }`,
   a score `"8.5"`, a point's degrees `"40.42"`. In this index's JSON, a rating, a trust and a
   uniqueness are plain numbers; in its signed `statement`, a rating is text.
 
 ## What each profile shows
 
-Every profile this index counts shows four things, each ranked inside its own market only:
+Every profile this index counts shows three things, each ranked inside its own market only:
 
 - **Ratings,** `{ "value", "count" }`: `value` is the profile's rating from 1 to 10, to one decimal,
   and `count` is how many raters scored it. The rating is the plain weighted average of its scores,
@@ -35,11 +35,6 @@ Every profile this index counts shows four things, each ranked inside its own ma
   trust. It never passes the profile's uniqueness.
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
-- **Pickiness,** a word: `tough` (it scores below the ratings others give), `average`, or `easy` (it
-  scores above them). A profile that has scored no one is average.
-
-Evidence weighs nothing today: a review backed by a payment counts as one without does, and says
-what it rests on. A review backed by a deal may count more later.
 
 ## The markets
 
@@ -72,7 +67,7 @@ payment schedules, how deals go), and its listed posts by role, in search's orde
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
 
 A result is `{ "profile", "market", "role", "post": { "address", "body" }, "ratings", "trust",
-"uniqueness", "pickiness", "checks" }`: the post, with what its profile shows and its checks. The
+"uniqueness", "checks" }`: the post, with what its profile shows and its checks. The
 post's body holds its market's fields. Results are sorted by each profile's rating with one rater's
 worth of its market's average added, so a profile with few scores sits near the average; then by the
 newest post. A profile no one has rated sorts at its market's average. That is the order only: each
@@ -88,26 +83,22 @@ result's `ratings` is as it is.
   each with what it `can` do), `proofs`.
 - `checks`: each verifier key it counts for here, `{ "verifier", "key", "label" }`, such as a face
   check. Its uniqueness comes from these.
-- `ratings`, `trust`, `uniqueness`, `pickiness`: what it shows, as above. A profile that does not
-  count has no rating, a trust and uniqueness of 0, and a null pickiness.
+- `ratings`, `trust`, `uniqueness`: what it shows, as above. A profile that does not count has no
+  rating, and a trust and uniqueness of 0.
 - `statement` and `signature`, for a profile that counts: `statement` is what this index signed,
-  canonical JSON of `{ index, profile, ratings: { value, count }, trust, uniqueness, pickiness, time }`,
+  canonical JSON of `{ index, profile, ratings: { value, count }, trust, uniqueness, time }`,
   the rating's value as text; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
   bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
 - `posts`: each post, `{ "address", "body", "listed" }`, with `why` when it is not listed (it does
   not fit its market, its profile does not count, or it was deleted: a deleted post keeps its last
   body here, so a review that names it still finds it).
 - `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "counted", "why",
-  "evidence", "evidenceWhy", "weight" }`. A review's body holds its `subject`, its `score`, any
-  `text`, the `offer` it is about, its `evidence`, and its market's own fields. `counted` says
-  whether it counts here; `why`, only when it does not, says why (its writer does not count, it gives
-  no score, it is about another market or its own writer, or a later one by the same writer about the
-  same profile and post counts instead). `evidence` is `with` (a payment between the two backs it),
-  `without`, `unchecked` (it names a chain this index does not read; `evidenceWhy` says which), or
-  `invalid` (it names one that does not count, or no chain, or one an earlier review used, when
-  `evidenceWhy` says "already used": one payment backs one review). Evidence is written
-  `<chain>:<id>`, such as `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:<signature>`. `weight` is how much
-  its score weighs in the rating, split equally across that rater's reviews of the profile.
+  "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `offer` it is about,
+  and the fields its market adds. `counted` says whether it counts here; `why`, only when it does
+  not, says why (its writer does not count, it gives no score, it is about another market or its
+  own writer, or a later one by the same writer about the same profile and post counts instead).
+  `weight` is how much its score weighs in the rating, split equally across that rater's reviews of
+  the profile.
 - `vouches` and `reports`: `received` and `given`, each `{ "writer", "address", "body", "counted",
   "why" }`. A vouch says "I know this profile is real and honest"; a report says "this profile is
   fake or a scam"; each body holds its `subject` and any `text`. `counted` and `why` as for a review;
@@ -117,14 +108,6 @@ result's `ratings` is as it is.
   `vouch`, and its weight, the writer's uniqueness times trust, from 0 to 1. Trust comes from these.
 - `proofs`: each proof on the profile entry, with what this index made of it: a verification's
   `result` is `counts` or why not; a reputation proof's shows the `trust` it carries.
-
-## A deal
-
-    GET https://index.forest.foundation/deals/<escrow address>.json
-
-The escrow's receipt as the chain holds it (payer, recipient, mint, amount in base units, schedule,
-how and when it ended, what each side got), every move with who made it and when, the profiles
-whose `solana` pay address is either side, and the reviews that name it.
 
 ## The tree
 
@@ -143,6 +126,5 @@ A proof shows here against this index's newest root, or one it signed within `ma
 
 This index only reads. To post, review, vouch, report or message, the person's app signs with the
 profile's main key, or whoever holds an access key the profile entry lists signs with that key, within
-what the listing says it `can` do, and writes to the profile's hosts; a payment is made with the
-profile's pay key, from its pay address. An AI acts for the person with an access key their app hands
-it.
+what the listing says it `can` do, and writes to the profile's hosts. An AI acts for the person
+with an access key their app hands it.

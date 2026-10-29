@@ -1,32 +1,15 @@
 // The markets: read from the pinned checkout; a post that does not fit its market is kept, not
-// listed, and says why; the escrow this index reads is the one the pinned standard names, on a
-// chain config/chains.json lists.
+// listed, and says why.
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
-import { VERSION } from '@foundationforest/escrow-client'
-
-import { ESCROW_CHAIN, ESCROW_PROGRAM } from '../src/chain.ts'
-import { ROOT } from '../src/index.ts'
-import { loadLists } from '../src/lists.ts'
 import { loadMarkets } from '../src/markets.ts'
 import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
-
-test('the escrow this index reads is the program the pinned standard names, of the version its client reads, on a chain this index reads', () => {
-  const deployed = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
-  assert.equal(ESCROW_PROGRAM, deployed.escrow.programId)
-  assert.equal(deployed.escrow.version, VERSION)
-  assert.equal(VERSION, 4)
-  // Solana's devnet in CAIP-2 form, as the markets manual writes it.
-  assert.equal(deployed.cluster, 'devnet')
-  assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
-  assert.deepEqual(loadLists(ROOT).chains.get(ESCROW_CHAIN), { reader: 'solana', rpc: 'RPC_URL' })
-})
+import { at, index, verifier, MARKETS, post, profile, publishProfile, startHost, twin } from './world.ts'
 
 test("each market's check reads its file: fields, choices, lists, roles", () => {
   const m = loadMarkets(MARKETS)
@@ -63,14 +46,11 @@ test("each market's check reads its file: fields, choices, lists, roles", () => 
 
 const by = verifier()
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
   host = await startHost()
-  rpc = await startRpc()
 })
 after(async () => {
   await host.close()
-  await rpc.close()
 })
 
 test('a post that does not fit its market is kept, not listed, and its profile page says why', async () => {
@@ -82,7 +62,7 @@ test('a post that does not fit its market is kept, not listed, and its profile p
     at(tutor, 'offer/odd', { description: 'Maths.', colour: 'red' }),
     at(student, 'offer/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
   await i.pass()
 
   const m = (await twin<MarketPage>(i, '/markets/tutoring.json')).body

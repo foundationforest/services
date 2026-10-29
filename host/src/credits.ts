@@ -28,7 +28,7 @@ import { join } from 'node:path'
 import { base58 } from '@scure/base'
 
 import { amountOf, checkCredits } from '../credits/credit.ts'
-import { type CreditKey, DIRECTORY_PATH, type Payment, type Seller, type SpentList, UNIT, seller } from '../credits/seller.ts'
+import { type CreditKey, DIRECTORY_PATH, type Seller, type SpentList, UNIT, seller } from '../credits/seller.ts'
 
 export { DIRECTORY_PATH, UNIT }
 
@@ -62,8 +62,6 @@ export type CreditConfig = {
   creditKey: CreditKey
   /** One credit's price, in US cents: at face value, `cents / 100` of a dollar. */
   priceCents: number
-  /** Where a credit is paid on Solana; null: only tickets buy. */
-  payment: Payment | null
   /** The most credits one buy may ask for. */
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
@@ -100,7 +98,7 @@ export class Credits {
   constructor(dir: string, config: CreditConfig) {
     mkdirSync(dir, { recursive: true })
     const price = amountOf('0.01', config.priceCents)
-    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, price, payment: config.payment, maxBuy: config.maxBuy, sponsors: config.sponsors, path: join(dir, 'credits.sqlite') })
+    this.seller = seller({ origin: config.origin, key: config.creditKey, requestUri: BUY_PATH, price, maxBuy: config.maxBuy, sponsors: config.sponsors, path: join(dir, 'credits.sqlite') })
     this.spent = this.seller.spent
     const db = this.seller.db
     db.exec('CREATE TABLE IF NOT EXISTS balances (folder TEXT PRIMARY KEY, millionths INTEGER NOT NULL) WITHOUT ROWID')

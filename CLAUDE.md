@@ -9,8 +9,7 @@ Use these words: seed, seed scalar, main key, access key, note, profile, profile
 address, label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation
 proof, check, folder, file, host, service key, connection, connector, private, envelope, encrypted
 (an envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer,
-recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, fee payer, app, market,
-role, ramp. Plain words, no em-dashes.
+recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
 
 - A verifier is anyone who signs stamps; a person it signed a stamp to is verified. A stamp is what
   a verifier signs to a person's seed: their stamp number and its facts. A verification is what a
@@ -26,18 +25,17 @@ role, ramp. Plain words, no em-dashes.
 - A profile entry is the entry at `profile`, never a card: it holds the folder's hosts, its open key
   and its access keys. A pay address is one of a profile's `pay` addresses, `{ solana, evm }`, each
   from its pay key.
-- Check, never verify: a reader checks a proof or a signature. Fee payer, never relayer; main key,
-  never profile key; address, never wallet, for a key ("a wallet app" is fine).
+- Check, never verify: a reader checks a proof or a signature. Main key, never profile key;
+  address, never wallet, for a key ("a wallet app" is fine).
 - Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
   sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy. A
   string baked into a recipe, a circuit or a key's text keeps its bytes even when its words are old
   (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits' signal names and files,
   the verifier's `issuer/...` texts): rename the code around it, never the string, and say why in a
   comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's
-  verifier, Kora's and Solana's signers).
+  verifier).
 - encrypted is for an envelope: what is locked to a key's open key.
-- A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent. The fee
-  payer pays the chain's fees, at cost: Kora, configured.
+- A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
 - A folder is a profile's entries on a host, signed by its main key or an access key its profile
   entry lists; this repo's folders are directories.
@@ -45,10 +43,8 @@ role, ramp. Plain words, no em-dashes.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
 - devnet, devnet USDC and mainnet are named only where something is configured for them: in a
-  README's How we run it, as a setting of the service configured for them (the fee payer's chain
-  and dollar, the host's credit dollar, the index's chain list), and in `e2e/`. Every intro says
-  what its service does, chain-free. A name is a name: `FOREST_DEVNET_SEED`, a file's path, here
-  or in the standard.
+  README's How we run it, and as a setting of the service configured for them. Every intro says what
+  its service does, chain-free. A name is a name: a file's path, here or in the standard.
 - Never "replace every app".
 
 ## How to work in this repo
@@ -76,8 +72,7 @@ role, ramp. Plain words, no em-dashes.
   its reason down: as a question in the FAQ of the directory it belongs to (the top README's for the
   whole repo) if it shapes these services, otherwise in a comment beside the code. Ask only when the
   choice spends money.
-- No private key, no phrase and no keyed URL ever goes in the repo. The loop's keys come from the
-  phrase by the recipe in the standard's `escrows/solana/devnet/deploy.sh`.
+- No private key, no phrase and no keyed URL ever goes in the repo.
 - Run what `.github/workflows/checks.yml` runs before you push (Node 22.18 or later). A test that
-  skips fails CI: the summary must say `# skipped 0`. The slower checks (the fee payer's local run,
-  the loop, mcp's smoke test against the deployed copy) are in each directory's README.
+  skips fails CI: the summary must say `# skipped 0`. The slower check, mcp's smoke test against
+  the deployed copy, is in its README.

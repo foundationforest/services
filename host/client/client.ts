@@ -4,9 +4,8 @@
 // be spent the host sees a good signature and nothing that ties it to the buy. See the host's
 // README.md, "Credits".
 //
-// The service, from its directory, which takes a payment on Solana or sells only for sponsors'
-// tickets; the buy, and its pay link when there is a payment to make; finishing the credits from the
-// service's answer; listing them for a spend. It talks to no network of its own. The blinding and
+// The service, from its directory; the buy, and the reference a sponsor's ticket names it by;
+// finishing the credits from the service's answer; listing them for a spend. It talks to no network of its own. The blinding and
 // the signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
 // memory only, so the buy here keeps it as bytes, to finish later, from what the app keeps. The
 // host checks and sells credits with its own code (../credits/), on the same wire format. The e2e
@@ -21,7 +20,7 @@ const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicV
 export const CREDIT_TYPE = 0x0002
 /** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
 export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
-/** The header a buy is collected with, naming what paid it: `solana <signature>` or `ticket <ticket>`. */
+/** The header a buy is collected with, naming what paid it, such as `ticket <ticket>`. */
 export const PAYMENT_HEADER = 'forest-payment'
 
 const suite = () => BLIND_RSA.suite[BlindRSAMode.PSS]()
@@ -38,10 +37,6 @@ export type Service = {
   requestUri: string
   /** What one credit buys, in the service's own words: its unit is its own. */
   unit: string
-  /** The Solana address a buy is paid to; absent when only sponsors' tickets buy. */
-  address?: string
-  /** What it is paid in: a dollar's mint address, or SOL; absent with the address. */
-  mint?: string
   /** The price of one credit, in whole dollars, decimal text. */
   price: string
 }
@@ -63,16 +58,6 @@ export type Pending = {
 const isObject = (v: unknown): v is { [key: string]: unknown } => v !== null && typeof v === 'object' && !Array.isArray(v)
 const DECIMAL = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/
 
-function addressBytes(text: unknown, what: string): Uint8Array {
-  try {
-    const bytes = base58.decode(text as string)
-    if (bytes.length === 32 && base58.encode(bytes) === text) return bytes
-  } catch {
-    // Refused below.
-  }
-  throw new Error(`${what} is a Solana address`)
-}
-
 /** An origin as a profile entry's `hosts` writes it, and its host, the name its credits' challenge carries. */
 function originOf(origin: string): { origin: string; host: string } {
   const url = new URL(origin)
@@ -85,8 +70,7 @@ function originOf(origin: string): { origin: string; host: string } {
 /**
  * The service, from its Privacy Pass issuer directory (RFC 9578 §4) read at `origin`: the type 2
  * key that counts at `now` (the latest whose not-before has passed), where a buy goes, and the
- * directory's `forest-credit` entry: what one credit buys and its price, and, when it takes a
- * payment on Solana, where it is paid and in which dollar. Without them, only tickets buy.
+ * directory's `forest-credit` entry: what one credit buys and its price.
  */
 export function serviceOf(origin: string, directory: unknown, now: number = Date.now()): Service {
   originOf(origin)
@@ -102,18 +86,12 @@ export function serviceOf(origin: string, directory: unknown, now: number = Date
   const forest = directory['forest-credit']
   if (!isObject(forest)) throw new Error('the directory has no forest-credit entry')
   if (typeof forest.unit !== 'string' || !forest.unit) throw new Error('a service says what one credit buys')
-  if ((forest.address === undefined) !== (forest.mint === undefined)) throw new Error('a payment names its address and its mint, or neither')
-  if (forest.address !== undefined) {
-    addressBytes(forest.address, 'address')
-    if (forest.mint !== 'SOL') addressBytes(forest.mint, 'mint')
-  }
   if (typeof forest.price !== 'string' || !DECIMAL.test(forest.price) || !/[1-9]/.test(forest.price)) throw new Error('price is decimal text above 0')
   return {
     origin,
     key: b64u.decode((current['token-key'] as string).replace(/=+$/, '')),
     requestUri: new URL(uri, origin).href,
     unit: forest.unit,
-    ...(forest.address !== undefined && { address: forest.address as string, mint: forest.mint as string }),
     price: forest.price,
   }
 }
@@ -130,27 +108,18 @@ async function tokenInput(origin: string, key: Uint8Array, nonce: Uint8Array): P
 
 const importKey = (key: Uint8Array) => crypto.subtle.importKey('spki', convertRSASSAPSSToEnc(key) as Uint8Array<ArrayBuffer>, BLIND_RSA.rsaParams, true, ['verify'])
 
-/** The payment's reference for a buy: SHA-256 of its bytes, written as a Solana address. */
+/** A buy's reference, which a sponsor's ticket names: SHA-256 of its bytes, in base58. */
 export async function referenceOf(buy: Uint8Array): Promise<string> {
   return base58.encode(await sha256(own(buy)))
 }
 
-/** What `count` credits cost: `count` times `price`, exactly, in decimal text. A buy's pay link asks for it, and a service checks the payment against it. */
-export function amountOf(price: string, count: number): string {
-  const [whole, fraction = ''] = price.split('.')
-  const total = (BigInt(whole + fraction) * BigInt(count)).toString().padStart(fraction.length + 1, '0')
-  const cut = total.length - fraction.length
-  const out = fraction.length ? `${total.slice(0, cut)}.${total.slice(cut)}` : total
-  return out.includes('.') ? out.replace(/0+$/, '').replace(/\.$/, '') : out
-}
-
 /**
  * A buy of `count` credits: the requests, blinded so the service never sees what it signs; the
- * reference a payment or a sponsor's ticket names this buy by; when the service takes a payment, the
- * pay link anyone pays it with; and what the app keeps to finish the credits. Whoever
- * holds the buy can collect it, once paid; only the app holding `pending` can finish the credits.
+ * reference a sponsor's ticket names this buy by; and what the app keeps to finish the credits.
+ * Whoever holds the buy can collect it, once paid; only the app holding `pending` can finish the
+ * credits.
  */
-export async function buy(service: Service, count: number): Promise<{ buy: Uint8Array; reference: string; payLink?: string; pending: Pending }> {
+export async function buy(service: Service, count: number): Promise<{ buy: Uint8Array; reference: string; pending: Pending }> {
   if (!Number.isSafeInteger(count) || count < 1) throw new RangeError('a buy is of one credit or more')
   const key = await importKey(service.key)
   const keyId = await sha256(service.key)
@@ -165,12 +134,7 @@ export async function buy(service: Service, count: number): Promise<{ buy: Uint8
   const bytes = new genericBatched.BatchedTokenRequest(requests).serialize()
   const reference = await referenceOf(bytes)
   const pending = { service: service.origin, key: b64u.encode(service.key), buy: b64u.encode(bytes), blinds }
-  if (service.address === undefined) return { buy: bytes, reference, pending }
-  const payLink =
-    `solana:${service.address}?amount=${amountOf(service.price, count)}` +
-    (service.mint === 'SOL' ? '' : `&spl-token=${service.mint}`) +
-    `&reference=${reference}&label=${encodeURIComponent(originOf(service.origin).host)}`
-  return { buy: bytes, reference, payLink, pending }
+  return { buy: bytes, reference, pending }
 }
 
 /** A pending buy's shape, as the app keeps it. Throws on any other. */

@@ -10,7 +10,7 @@ import { Host } from '../src/plug.ts'
 
 // An offer about the size of a short one. Its fields are its market's; `about` stands in for them.
 const offer = {
-  about: 'One hour of maths tutoring, online, for secondary school students preparing for exams. Thirty a session, paid in a dollar on Solana; evenings and weekends.',
+  about: 'One hour of maths tutoring, online, for secondary school students preparing for exams. Thirty a session, paid directly; evenings and weekends.',
 }
 
 function rate(label: string, n: number, run: (i: number) => void): number {

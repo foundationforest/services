@@ -16,7 +16,7 @@ const { BLIND_RSA, BlindRSAMode, convertRSASSAPSSToEnc } = publicVerif
 export const CREDIT_TYPE = 0x0002
 /** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
 export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
-/** The header a buy is collected with, naming what paid it: `solana <signature>` or `ticket <ticket>`. */
+/** The header a buy is collected with, naming what paid it: `ticket <ticket>`. */
 export const PAYMENT_HEADER = 'forest-payment'
 
 const suite = () => BLIND_RSA.suite[BlindRSAMode.PSS]()
@@ -24,14 +24,14 @@ const sha256 = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.d
 const b64u = base64urlnopad
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i])
 
-function addressBytes(text: unknown, what: string): Uint8Array {
+function base58Bytes(text: unknown, what: string): Uint8Array {
   try {
     const bytes = base58.decode(text as string)
     if (bytes.length === 32 && base58.encode(bytes) === text) return bytes
   } catch {
     // Refused below.
   }
-  throw new Error(`${what} is a Solana address`)
+  throw new Error(`${what} is 32 bytes in base58`)
 }
 
 /** An origin as a profile entry's `hosts` writes it, and its host, the name its credits' challenge carries. */
@@ -50,12 +50,12 @@ export function challengeOf(origin: string): TokenChallenge {
 
 const importKey = (key: Uint8Array) => crypto.subtle.importKey('spki', convertRSASSAPSSToEnc(key) as Uint8Array<ArrayBuffer>, BLIND_RSA.rsaParams, true, ['verify'])
 
-/** The payment's reference for a buy: SHA-256 of its bytes, written as a Solana address. */
+/** A buy's reference, which a ticket names: SHA-256 of its bytes, in base58. */
 export async function referenceOf(buy: Uint8Array): Promise<string> {
   return base58.encode(await sha256(own(buy)))
 }
 
-/** What `count` credits cost: `count` times `price`, exactly, in decimal text. A buy's pay link asks for it, and a service checks the payment against it. */
+/** What `count` credits cost: `count` times `price`, exactly, in decimal text. */
 export function amountOf(price: string, count: number): string {
   const [whole, fraction = ''] = price.split('.')
   const total = (BigInt(whole + fraction) * BigInt(count)).toString().padStart(fraction.length + 1, '0')
@@ -70,7 +70,7 @@ export function amountOf(price: string, count: number): string {
  */
 export function ticketMessage(origin: string, reference: string, credits: number): Uint8Array {
   originOf(origin)
-  addressBytes(reference, 'reference')
+  base58Bytes(reference, 'reference')
   if (!Number.isSafeInteger(credits) || credits < 1) throw new RangeError('a ticket is for one credit or more')
   return new TextEncoder().encode(`forest credit ticket\n${origin}\n${reference}\n${credits}`)
 }

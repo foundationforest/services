@@ -1,16 +1,14 @@
 // The index's one file: `index.sqlite` in DATA_DIR, through Node's own SQLite (`node:sqlite`), with
 // FTS5 for the text of posts. A fresh schema, made when the file is new; no migrations. Everything
-// in it comes back from the hosts and the chain but three tables, which `rebuild` keeps:
+// in it comes back from the hosts but two tables, which `rebuild` keeps:
 //
 //   seen          when this index first saw a verification of each verifier key on each profile, for
 //                 a key's `until`: no host can give that back, since a proof carries no date and an
 //                 entry's time is its writer's word
-//   seen_reviews  when this index first saw each review name its evidence, for the day a payment
-//                 may take to be final, for the same reason
 //   roots         every root this index signed, with its time and signature: the reputation proofs
 //                 people show are made against them
 //
-// `rebuild` (main.ts) drops every other table and reads the hosts and the chain again.
+// `rebuild` (main.ts) drops every other table and reads the hosts again.
 
 import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
@@ -25,12 +23,6 @@ create table if not exists seen (
   first integer not null,
   primary key (profile, key)
 );
-create table if not exists seen_reviews (
-  review text not null,
-  evidence text not null,
-  first integer not null,
-  primary key (review, evidence)
-);
 create table if not exists roots (
   root text primary key,
   time integer not null,
@@ -40,10 +32,10 @@ create table if not exists roots (
 `
 
 /**
- * Tables `rebuild` drops: each comes back from the hosts and the chain. `records` is the name the
- * entries' table had before the standard's folders, in a file from then.
+ * Tables `rebuild` drops: each comes back from the hosts. `records` is the name the entries' table
+ * had before the standard's folders, in a file from then.
  */
-const DROPPED = ['hosts', 'entries', 'records', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'evidence', 'receipts', 'moves', 'chain', 'ratings', 'leaves']
+const DROPPED = ['hosts', 'entries', 'records', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'ratings', 'leaves']
 
 const SCHEMA = `
 create table if not exists hosts (url text primary key, cursor integer not null);
@@ -83,8 +75,6 @@ create table if not exists reviews (
   time integer not null,
   counted integer not null default 0,
   why text,
-  evidence text not null default 'without',
-  evidence_why text,
   weight real not null default 0
 );
 create index if not exists reviews_subject on reviews (subject);
@@ -101,21 +91,13 @@ create table if not exists words (writer text not null, subject text not null, w
 create index if not exists words_subject on words (subject);
 -- A proof check's answer, by a hash of everything the check took.
 create table if not exists checked (hash text primary key, ok integer not null);
--- An evidence check's answer, once: by kind, value and the two pay addresses.
-create table if not exists evidence (kind text not null, value text not null, a text not null, b text not null, ok integer not null, primary key (kind, value, a, b));
--- Each escrow's receipt, from its events, and every move.
-create table if not exists receipts (escrow text primary key, receipt text not null);
-create table if not exists moves (signature text not null, n integer not null, escrow text not null, move text not null, primary key (signature, n));
-create index if not exists moves_escrow on moves (escrow);
-create table if not exists chain (one integer primary key check (one = 1), cursor text not null);
--- Each counted profile's ratings, trust, uniqueness and pickiness, as signed, and what search sorts it by.
+-- Each counted profile's ratings, trust and uniqueness, as signed, and what search sorts it by.
 create table if not exists ratings (
   profile text primary key,
   value real,
   count integer not null,
   trust integer not null,
   uniqueness integer not null,
-  pickiness text not null,
   sort real,
   statement text not null,
   signature text not null
@@ -128,7 +110,7 @@ export type Store = {
   db: DatabaseSync
   /** Runs `fn` in one transaction. */
   tx<T>(fn: () => T): T
-  /** Drops every table but `seen`, `seen_reviews` and `roots`, and makes them again, empty; `seen` loses a column a file from before the standard's folders has. */
+  /** Drops every table but `seen` and `roots`, and makes them again, empty; `seen` loses a column a file from before the standard's folders has. */
   drop(): void
   close(): void
 }

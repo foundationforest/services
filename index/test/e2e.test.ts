@@ -18,7 +18,7 @@ import { pathToFileURL } from 'node:url'
 import { ROOT } from '../src/index.ts'
 import { SEED_FILE } from '../src/seed.ts'
 import { FILE, openStore } from '../src/store.ts'
-import { MARKETS, at, cleanup, index, listsDir, verifier, post, profile, publishProfile, startHost, startRpc, tmp } from './world.ts'
+import { MARKETS, at, cleanup, index, listsDir, verifier, post, profile, publishProfile, startHost, tmp } from './world.ts'
 
 /** A file from before the standard's folders in `dir`, with `seen`'s old column named `column`, and one row of it. */
 function oldFile(dir: string, column: string, seen: { profile: string; key: string; first: number }): void {
@@ -47,7 +47,6 @@ function exitOf(child: ReturnType<typeof spawn>, ms: number): Promise<number | n
 
 test('a review between two checked profiles, read from a host, counted, and served', async () => {
   const host = await startHost()
-  const rpc = await startRpc()
   const by = verifier()
   const tutor = await profile('tutoring/tutor', [by])
   const student = await profile('tutoring/student', [by])
@@ -59,12 +58,12 @@ test('a review between two checked profiles, read from a host, counted, and serv
 
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
   // On its own schedule, a pass every second, as main.ts runs one every READ_SECONDS.
-  const i = await index({ hosts: [host.url], keys }, rpc.url, { port: 0, readSeconds: 1 })
+  const i = await index({ hosts: [host.url], keys }, { port: 0, readSeconds: 1 })
   const get = async <T>(path: string) => {
     const res = await fetch(`${i.url}${path}`)
     return { status: res.status, body: (await res.json()) as T }
   }
-  type Profile = { checks: unknown[]; ratings: { value: number | null; count: number }; trust: number; uniqueness: number; pickiness: string; posts: Array<{ listed: boolean }> }
+  type Profile = { checks: unknown[]; ratings: { value: number | null; count: number }; trust: number; uniqueness: number; posts: Array<{ listed: boolean }> }
   let p: Profile | undefined
   for (const until = Date.now() + 60_000; Date.now() < until; await new Promise((r) => setTimeout(r, 200))) {
     const got = await get<Profile>(`/profiles/${tutor.key.address}.json`)
@@ -78,8 +77,8 @@ test('a review between two checked profiles, read from a host, counted, and serv
   // One 8.5 is a rating of 8.5, shown as it is. It is the student's word too, a vouch weighing the
   // student's uniqueness times trust, 0.75 times 0.375: it lifts the tutor's trust from half its
   // uniqueness, 37.5, to 0.75 (1 - 0.5 x 0.5^0.28125), 44.
-  const shown = { ratings: p.ratings, trust: p.trust, uniqueness: p.uniqueness, pickiness: p.pickiness }
-  assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 44, uniqueness: 75, pickiness: 'average' })
+  const shown = { ratings: p.ratings, trust: p.trust, uniqueness: p.uniqueness }
+  assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 44, uniqueness: 75 })
   assert.equal(p.posts[0]!.listed, true)
   const found = (await get<{ total: number; results: Array<{ post: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=tutoring&role=tutor')).body
   assert.equal(found.total, 1)
@@ -93,20 +92,19 @@ test('a review between two checked profiles, read from a host, counted, and serv
   const first = i.store.db.prepare('select first from seen where profile = ?').get(tutor.key.address)!.first
   await i.close()
 
-  // rebuild: drops what the hosts and the chain give back, keeps when each proof was first seen and every root.
+  // rebuild: drops what the hosts give back, keeps when each proof was first seen and every root.
   const store = openStore(i.dataDir)
   store.drop()
   assert.equal(store.db.prepare('select count(*) n from entries').get()!.n, 0)
   store.close()
-  const again = await index({ hosts: [host.url], keys }, rpc.url, { dataDir: i.dataDir })
+  const again = await index({ hosts: [host.url], keys }, { dataDir: i.dataDir })
   assert.equal(again.address, i.address)
   await again.pass()
   assert.equal(again.store.db.prepare('select first from seen where profile = ?').get(tutor.key.address)!.first, first)
-  assert.deepEqual({ ...again.store.db.prepare('select value, count, trust, uniqueness, pickiness from ratings where profile = ?').get(tutor.key.address) }, { value: 8.5, count: 1, trust: 44, uniqueness: 75, pickiness: 'average' })
+  assert.deepEqual({ ...again.store.db.prepare('select value, count, trust, uniqueness from ratings where profile = ?').get(tutor.key.address) }, { value: 8.5, count: 1, trust: 44, uniqueness: 75 })
   assert.equal(again.store.db.prepare('select root from roots order by time desc limit 1').get()!.root, tree.root)
   await again.close()
   await host.close()
-  await rpc.close()
 })
 
 test('rebuild, on a file from before the standard\'s folders: seen keeps its rows without the old column, the rest made fresh', () => {
@@ -128,13 +126,12 @@ test('rebuild, on a file from before the standard\'s folders: seen keeps its row
 
 test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a verification checked', async () => {
   const host = await startHost()
-  const rpc = await startRpc()
   const by = verifier()
   const tutor = await profile('tutoring/tutor', [by])
   await publishProfile(host.url, tutor)
   const dataDir = tmp('rebuild')
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
-  const options = { dataDir, publicUrl: 'https://index.test.example', settings: { RPC_URL: rpc.url }, listsRoot: listsDir({ hosts: [host.url], keys }), marketsDir: MARKETS }
+  const options = { dataDir, publicUrl: 'https://index.test.example', listsRoot: listsDir({ hosts: [host.url], keys }), marketsDir: MARKETS }
   const run = `import { rebuild } from ${JSON.stringify(pathToFileURL(join(ROOT, 'src/index.ts')).href)}; await rebuild(JSON.parse(process.argv[1]))`
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--input-type=module', '-e', run, JSON.stringify(options)], { stdio: 'ignore' })
   // A rebuild of one profile takes a second or two; one that is done and still running never ends.
@@ -146,14 +143,12 @@ test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the pr
     store.close()
   } finally {
     await host.close()
-    await rpc.close()
     cleanup(dataDir)
   }
 })
 
 test('`node src/main.ts rebuild`, on a file from before the standard\'s folders and with something still open, says it rebuilt and exits, keeping when the proof was first seen', async () => {
   const host = await startHost()
-  const rpc = await startRpc()
   const by = verifier()
   const tutor = await profile('tutoring/tutor', [by])
   await publishProfile(host.url, tutor)
@@ -179,14 +174,14 @@ test('`node src/main.ts rebuild`, on a file from before the standard\'s folders 
   // As `npm run rebuild` runs it, with a timer that never ends loaded first: whatever a rebuild
   // leaves open, the deploy's next command must still start.
   const forever = 'data:text/javascript,setInterval(() => {}, 2 ** 30)'
-  const env = { ...process.env, DATA_DIR: dataDir, RPC_URL: rpc.url, PUBLIC_URL: 'https://index.test.example' }
+  const env = { ...process.env, DATA_DIR: dataDir, PUBLIC_URL: 'https://index.test.example' }
   const child = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', '--import', forever, 'src/main.ts', 'rebuild'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'ignore'] })
   let out = ''
   child.stdout!.on('data', (chunk) => (out += chunk))
   const ended = await exitOf(child, 30_000)
   try {
     assert.equal(ended, 0)
-    assert.match(out, /^rebuilt: read the hosts and the chain again, and ranked$/m)
+    assert.match(out, /^rebuilt: read the hosts again, and ranked$/m)
     const store = openStore(dataDir)
     assert.deepEqual({ ...store.db.prepare('select * from seen').get() }, { profile: tutor.key.address, key: by.key, first: 1 }, 'seen keeps its row, without the old column')
     assert.equal(store.db.prepare('select counted from profiles where address = ?').get(tutor.key.address)!.counted, 1, 'it read the profile, its verification checked')
@@ -194,7 +189,6 @@ test('`node src/main.ts rebuild`, on a file from before the standard\'s folders 
     store.close()
   } finally {
     await host.close()
-    await rpc.close()
     for (const d of [parent, lists, dataDir]) cleanup(d)
   }
 })

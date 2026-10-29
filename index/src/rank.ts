@@ -14,13 +14,12 @@
 //   trust        T = u V R, never above u
 //   pickiness    scores on 0 to 1 as (s - 1) / 9; P = 0.5 + 0.5 sum(Rt - s) / (1 + n), over the n
 //                subjects a rater scored, Rt each one's current rating on the same scale
-//   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)) times its evidence
-//                factor; a rating is the weighted average of its scores, shown as it is, with how
-//                many raters
+//   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)); a rating is the weighted
+//                average of its scores, shown as it is, with how many raters
 //   order        search sorts by the same average with marketWeight of the market's average added
 //
-// A rater's reviews of one subject (one per post) are one score, their mean, with the largest
-// evidence factor among them; each review's weight is that score's weight split equally among them.
+// A rater's reviews of one subject (one per post) are one score, their mean; each review's weight is
+// that score's weight split equally among them. P weighs each score; the index shows no pickiness.
 //
 // Settling: from T = u / 2 and P = 0.5, each round works out every trust, pickiness and rating from
 // the round before only, so the order of anything changes nothing. A round moves each trust and
@@ -31,16 +30,13 @@
 
 export type RankProfile = { address: string; uniqueness: number }
 /** A counted review with a score, from 1 to 10. */
-export type RankRating = { writer: string; subject: string; score: number; evidence: number }
+export type RankRating = { writer: string; subject: string; score: number }
 /** A counted review, vouch or report, for its writer's word: by its entry's time, then its address. */
 export type Said = { writer: string; subject: string; kind: 'rating' | 'vouch' | 'report'; time: number; address: string }
 export type Word = { writer: string; subject: string; word: 'vouch' | 'report' }
-export type Pickiness = 'tough' | 'average' | 'easy'
 export type Numbers = {
   vouchStep: number
   reportCut: number
-  toughFrom: number
-  easyTo: number
   marketWeight: number
   tolerance: number
   maxRounds: number
@@ -96,13 +92,11 @@ export function pickinessOf(scored: Array<{ score: number; rating: number | null
 /** How much a score `s`, on 0 to 1, weighs from a rater of pickiness P. */
 export const scoreWeight = (s: number, P: number) => s * P + (1 - s) * (1 - P)
 
-export const pickinessWord = (P: number, { toughFrom, easyTo }: Pick<Numbers, 'toughFrom' | 'easyTo'>): Pickiness => (P >= toughFrom ? 'tough' : P <= easyTo ? 'easy' : 'average')
-
 /** What search sorts a profile by: its scores' weighted sum and their weights, with `marketWeight` of the market's average added; null in a market with none. */
 export const searchOrder = (sum: number, weight: number, average: number | null, { marketWeight }: Pick<Numbers, 'marketWeight'>) =>
   average === null ? null : (sum + marketWeight * average) / (weight + marketWeight)
 
-type Edge = { writer: string; subject: string; score: number; evidence: number; reviews: number[] }
+type Edge = { writer: string; subject: string; score: number; reviews: number[] }
 
 /** Ratings and said things whose writer or subject is not among `profiles`, or that are about their writer, are left out: they do not count. */
 export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[], numbers: Numbers): Ranked {
@@ -113,9 +107,8 @@ export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[
   ratings.forEach((r, i) => {
     if (!counts(r.writer, r.subject)) return
     const pair = JSON.stringify([r.writer, r.subject])
-    const edge = byPair.get(pair) ?? byPair.set(pair, { writer: r.writer, subject: r.subject, score: 0, evidence: 0, reviews: [] }).get(pair)!
+    const edge = byPair.get(pair) ?? byPair.set(pair, { writer: r.writer, subject: r.subject, score: 0, reviews: [] }).get(pair)!
     edge.score += r.score
-    edge.evidence = Math.max(edge.evidence, r.evidence)
     edge.reviews.push(i)
   })
   const edges = [...byPair.values()]
@@ -124,7 +117,7 @@ export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[
   for (const e of edges) (scoredBy.get(e.writer) ?? scoredBy.set(e.writer, []).get(e.writer)!).push(e)
   const words = wordsOf(said.filter((s) => counts(s.writer, s.subject)))
 
-  const weightOf = (e: Edge, trust: Map<string, number>, picky: Map<string, number>) => u.get(e.writer)! * trust.get(e.writer)! * scoreWeight(scaled(e.score), picky.get(e.writer)!) * e.evidence
+  const weightOf = (e: Edge, trust: Map<string, number>, picky: Map<string, number>) => u.get(e.writer)! * trust.get(e.writer)! * scoreWeight(scaled(e.score), picky.get(e.writer)!)
   /** Each subject's weighted sum of scores, from 1 to 10, and their weights. */
   const sumsOf = (trust: Map<string, number>, picky: Map<string, number>) => {
     const sums = new Map<string, { sum: number; weight: number }>()

@@ -1,17 +1,15 @@
 // The index as one process: its key, its store, a read pass every READ_SECONDS with the ranking
 // after each, and the pages. main.ts starts it from the settings; the tests start it with their own
-// lists, hosts and RPC.
+// lists and hosts.
 
 import { mkdirSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { KINDS, READERS } from './evidence/index.ts'
 import { loadLists } from './lists.ts'
 import { loadMarkets } from './markets.ts'
 import { runPass } from './pass.ts'
-import { rpcAt } from './rpc.ts'
 import { loadOrMakeKey } from './seed.ts'
 import { openStore, type Store } from './store.ts'
 import { serve, web, type Web } from './web.ts'
@@ -22,8 +20,6 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 export type Options = {
   dataDir: string
   publicUrl: string
-  /** The settings config/chains.json names for its chains' RPCs, by name, such as RPC_URL. */
-  settings: { [name: string]: string | undefined }
   /** Seconds between the end of one pass and the start of the next; 0 runs no passes but those asked for. */
   readSeconds: number
   /** Where lists/ and config/ are: this directory unless given. */
@@ -50,9 +46,9 @@ export type Index = {
 }
 
 /**
- * `npm run rebuild`: drops every table but when each proof and each review was first seen and the
- * signed roots (store.ts), reads the hosts and the chain again in one pass, ranks, and closes, so
- * the process ends; the next start serves what it read.
+ * `npm run rebuild`: drops every table but when each proof was first seen and the signed roots
+ * (store.ts), reads the hosts again in one pass, ranks, and closes, so the process ends; the next
+ * start serves what it read.
  */
 export async function rebuild(o: Omit<Options, 'readSeconds' | 'port'>): Promise<void> {
   mkdirSync(o.dataDir, { recursive: true })
@@ -71,22 +67,12 @@ export async function rebuild(o: Omit<Options, 'readSeconds' | 'port'>): Promise
 export async function startIndex(o: Options): Promise<Index> {
   const log = o.log ?? ((line: string) => console.log(line))
   const lists = loadLists(o.listsRoot ?? ROOT)
-  for (const kind of KINDS) if (!(kind.name in lists.scoring.evidence)) throw new Error(`config/scoring.json: evidence holds no weight for ${kind.name}`)
-  const chains = new Map(
-    [...lists.chains].map(([chain, c]) => {
-      const reader = READERS[c.reader]
-      if (!reader) throw new Error(`config/chains.json: ${chain}: this index has no reader ${c.reader}; it has ${Object.keys(READERS).join(', ')}`)
-      const url = o.settings[c.rpc]
-      if (!url) throw new Error(`${c.rpc} is not set, and config/chains.json reads ${chain} through it`)
-      return [chain, { reader, rpc: rpcAt(url) }]
-    }),
-  )
   const markets = loadMarkets(o.marketsDir ?? join(ROOT, '../markets'))
   mkdirSync(o.dataDir, { recursive: true })
   const { key, made } = await loadOrMakeKey(o.dataDir)
   if (made) log(`no seed in ${o.dataDir}, so a new one was made and kept there`)
   const store = openStore(o.dataDir)
-  const ctx = { store, lists, markets, key, chains, log }
+  const ctx = { store, lists, markets, key, log }
   const pages = web({ store, lists, markets, self: key.address }, o.publicUrl.replace(/\/+$/, ''), ROOT)
 
   let before: number | null = null
