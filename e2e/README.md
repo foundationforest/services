@@ -6,7 +6,7 @@ The loop: Forest end to end, two people doing what a person does, each with thei
 of their own, holding their seed) and an AI acting for them, with every service this repo runs.
 
 It is not a service. CI runs it on every pull request, and anyone can; the main way is
-`npm run e2e`, with no chain and no secret. CI's log of each run is its record.
+`npm run e2e`, with no chain and no secret. CI's log of each run says what it did.
 
 ## How it works
 
@@ -177,10 +177,10 @@ The tests, which CI runs:
     once;
   - the client alone, against Cloudflare's own Privacy Pass issuer.
 
-### Its record
+### Its log
 
-CI runs the loop on every pull request, as its own job, `loop`, and its log is the record: what each
-step did, with the addresses, the keys, the index's numbers and the balances it found. The loop's
+CI runs the loop on every pull request, as its own job, `loop`, and its log says what each step did,
+with the addresses, the keys, the index's numbers and the balances it found. The loop's
 own services stop with the run, so their pages and the three profiles' entries are gone.
 
 ## Promises

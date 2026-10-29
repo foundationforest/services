@@ -33,7 +33,7 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
   (`forest/v1/issuer`, `forest/v1/note`, `forest/v1/inbox`, the circuits' signal names and files,
   the verifier's `issuer/...` texts): rename the code around it, never the string, and say why in a
   comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's
-  verifier, Solana's signers).
+  verifier).
 - encrypted is for an envelope: what is locked to a key's open key.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
