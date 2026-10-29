@@ -92,7 +92,7 @@ JSON (one exact way of writing it); with a welcome gift, also
 `"gift":{"credits":<n>,"host":"<origin>","sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is mixed from it
-  ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-stamp-number)).
+  ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-recipe)).
 - **Two keys, one per check,** so a reader can trust or weigh them apart.
 - **One seed,** 32 random bytes made on its own machine at the first start that finds none (the
   standard's `newSeed`), kept in `verifier-seed.json` beside its database, readable by its own user
