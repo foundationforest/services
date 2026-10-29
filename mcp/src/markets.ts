@@ -1,11 +1,11 @@
 // The markets, from the checkout of foundationforest/markets at the commit in MARKETS that
 // standard.sh makes beside this directory (../markets), never over the network: the directory,
-// each market file, and the market file's format (build/market.schema.json). This copy checks no
-// body against a market: the person's app does, before it writes.
+// each market file, and the market file's format (build/market.schema.json). check.ts checks a
+// public entry's body against its market before this copy signs it.
 //
-// The kinds of record a market defines are read from the format, not written here: a kind is a
+// The kinds of entry a market defines are read from the format, not written here: a kind is a
 // top-level property of a market file that is fields (`offer`) or holds fields beside shared names
-// (`review`). A record of a kind sits at `<kind>/<id>`. So a market that adds a kind needs only
+// (`review`). An entry of a kind sits at `<kind>/<id>`. So a market that adds a kind needs only
 // MARKETS to move.
 
 import { readFileSync } from 'node:fs'
