@@ -5,8 +5,8 @@ Part of Forest's services: [the top README](../README.md).
 The verifier checks that you are one real person and signs you a stamp: its signature saying it
 checked whoever holds your seed, the secret on your own devices that all your keys come from.
 
-Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
-rank. The verifier serves one of these: verified once. Once it signs you a stamp you are verified,
+Forest is one seed and its profiles, verified, with offers and reviews in public that indexes
+rank. The verifier serves one of these: verified. Once it signs you a stamp you are verified,
 and any of your profiles can prove it without saying who you are or which of your other profiles it
 goes with. This is one copy, run by the Open Forest Foundation. Anyone can run another: anyone can
 sign stamps; the main way is a verifier like this one, and each reader decides which verifiers
@@ -18,7 +18,7 @@ holds none of your money.
 
 ### What a stamp says
 
-A stamp is one signature over two numbers at once:
+A stamp is one signature over our name and two numbers at once:
 
 - **your stamp number,** made on your device from your seed and our name, the same every time;
 - **its facts,** one number made from what the check saw of you, which any change to that changes.
@@ -47,7 +47,7 @@ delete the check at Didit, which keeps only a template of your face
 ([Once a stamp is signed](#once-a-stamp-is-signed)).
 
 The stamp is the standard's
-([proofs/verification](https://github.com/foundationforest/standard/blob/main/proofs/verification/README.md#the-stamp-and-the-verification)).
+([proofs](https://github.com/foundationforest/standard/blob/main/proofs/README.md#the-stamp-and-the-verification)).
 From it, your device makes a verification for any of your profiles, which shows that we signed you
 a stamp without showing the stamp, your seed or who you are.
 
@@ -82,14 +82,13 @@ signs the gift's tickets. It is canonical JSON (one exact way of writing it), wi
   or logs it.
 - **What is mixed from the seed,** with the standard's `hkdf` (a standard way to make many keys
   from one secret):
-  - under `issuer/face`, the face key;
-  - under `issuer/id`, the ID key;
-  - under `issuer/fingerprint`, the key of the ID check's fingerprints;
-  - under `issuer/sponsor`, the sponsor key, an Ed25519 key (a common kind of signing key) that
-    signs the gift's tickets.
+  - under `face`, the face key;
+  - under `id`, the ID key;
+  - under `fingerprint`, the key of the ID check's fingerprints;
+  - under `sponsor`, the sponsor key, an Ed25519 key (a common kind of signing key) that signs the
+    gift's tickets.
 
-  None of them holds money. The texts never change, since a new text would mix a new key, so they
-  keep the words they were first written with.
+  None of them holds money. The texts never change, since a new text would mix a new key.
 
 ### The face check
 
@@ -165,12 +164,12 @@ signed (`to_delete`, [What it keeps](#what-it-keeps)).
 
 ### The stamp
 
-The verifier signs `{stampNumber, facts}` with the standard's `signStamp`, and answers the stamp in
-the standard's JSON form, with the fields its facts were made from beside it:
+The verifier signs `{stampNumber, facts, verifierName}` with the standard's `signStamp`, and answers
+the stamp in the standard's JSON form, with the fields its facts were made from beside it:
 
 ```
-face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},
-        "model":"opencv-sface-2021dec","embedding":"<base64url>"}
+face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","verifierName":"<its name>",
+        "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},"model":"opencv-sface-2021dec","embedding":"<base64url>"}
 ID:    the same, from the ID key, and "name":"ada lovelace","birth":"1815-12-10","country":826
 ```
 
@@ -198,7 +197,7 @@ facts private.
 
 **Asked back.** The verifier keeps each stamp without the fields beside it. `POST /stamp` with a
 stamp number answers the stamps kept for it, one for each key, `null` for a key that signed none:
-the stamp's own fields only (`stampNumber`, `facts`, `verifier`, `signature`). Each is the first that
+the stamp's own fields only (`stampNumber`, `facts`, `verifier`, `verifierName`, `signature`). Each is the first that
 key signed for that number. A later check for the same number answers its own new stamp, and the
 first stays the one handed back, so a check by anyone else who knows the number never changes it;
 either gives the same verification. The fields beside a stamp come back only in the answer that signed it,
@@ -288,7 +287,7 @@ its tickets paid for.
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face": <stamp>, "id": <stamp>}`, each a stamp's own fields only, or `null` ([The stamp](#the-stamp)); `404 not_found` when none was signed for that number |
 
 A session Didit holds In Review answers `202 {"waiting": "review"}`. A stamp number is decimal text,
-as the standard's `verifierSecret` gives it: no sign, no leading zero, below BN254's scalar order. A
+as the standard's `stampNumberOf` gives it: no sign, no leading zero, below BN254's scalar order. A
 body with any other field is refused. CORS is open
 to any origin: any web page may call it.
 
@@ -300,7 +299,6 @@ Errors are `{"error": "<code>"}`:
 | `403` (the check does not count) | `unknown_session`, `wrong_workflow`, `not_approved`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `no_face`, `no_document_data` (no name, or no real birth date), `duplicate_document` |
 | `404` | `not_found` (no such route, or no stamp for that stamp number) |
 | `409` | `session_used` (this session gave its stamp to another stamp number, or its hour is over) |
-| `429` | `try_later`: this address opened its share of sessions this hour, on either check |
 | other | `405 post_only`, `405 get_only`, `413 too_large` (bodies over 4 KB), `502 face_check_unavailable`, `500 internal` |
 
 ### Settings
@@ -317,8 +315,6 @@ Errors are `{"error": "<code>"}`:
 | `HOST_URL` | no | none: no gift | The host's origin, `https://<host>`, whose credits the gift's ticket pays for |
 | `HOST_CREDITS` | no | `10` | How many of the host's credits; 0 for none |
 | `DATABASE_PATH` | no | `./data/verifier.sqlite` | The one file. The seed file, `verifier-seed.json`, is in the same directory, made there at the first start |
-| `SESSION_LIMIT_PER_HOUR` | no | `5` | Sessions one address may open in an hour, both checks together |
-| `CLIENT_ADDRESS_HEADER` | no | none | The header a proxy puts the client's address in (`x-real-ip` on Railway) |
 | `PORT` | no | `8080` | |
 
 It refuses to start if a required variable is missing (so never without Didit), if the seed file is
@@ -347,7 +343,7 @@ npm start                         # the service, with the variables above
 ```
 
 The verifier depends on the standard's packages by name (`@foundationforest/keys`,
-`/verification`, `/folders`) through `file:` links into `standard/`; moving `STANDARD` can change what they depend on,
+`/proofs`, `/folders`) through `file:` links into `standard/`; moving `STANDARD` can change what they depend on,
 so `npm install` in `verifier/` writes the lockfile again. Run by hand, it makes its seed in `data/`,
 beside its file; `.gitignore` covers both.
 
@@ -403,10 +399,8 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   ticket. Once a stamp number.
 - **No money:** the verifier holds no key that holds money. The gift is a ticket, which the host
   counts.
-- **Session limits per address:** `SESSION_LIMIT_PER_HOUR` sessions an hour from one network
-  address, both checks together: 5 unless set. A cost guard: each check is paid to Didit, and the
-  limit keeps a flood of them from one place from running up the bill. Counted in memory as keyed
-  hashes, an IPv6 address by its /64. The stamp requests have no limit.
+- **No session limit:** what Didit's checks cost is capped at Didit, by the foundation's prepaid
+  balance, with no auto-refill.
 - **Where Didit sends the person back:** a page of an app in `APP_ORIGINS`, when the app asks: the
   Forest app, at https://app.forest.foundation.
 - **One replica, a volume,** the seed and the file in a directory of their own on it.
@@ -463,8 +457,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   the raw file and checks it for names, birth dates, embeddings, references and session ids.
 - **It never logs a request, an address, a session, a stamp number or a stamp.** It logs an error's
   kind, never its message.
-- **It never writes down an address.** It reads the client's address only to count sessions against
-  the limit, in memory, as a keyed hash under a key made at start.
+- **It never writes down an address.**
 - **It never puts what a person sends in a URL of its own routes.** The routes an app calls are POST
   with a JSON body, since hosting platforms log paths.
 - **It takes no key of the person's.** An app sends it a session and a stamp number, never a key.
@@ -520,12 +513,6 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   country from a document whose country Didit did not read.
 - **A lost gift is lost.** The same buy asked for again, with a new check, gets the same ticket; a
   buy the app no longer holds cannot be finished, and another buy gets `given`.
-- **A proxy's address header counts only when `CLIENT_ADDRESS_HEADER` names it;** otherwise the
-  connection's own address, since a client can write any header.
-- **The session limit is not a security boundary.** It counts an hour from an address's first
-  session. It stops one person running up the Didit bill from one place, and nothing more: someone
-  with many addresses opens many sessions, and people behind one shared address share one count. The
-  counts live in memory and reset on restart.
 - **Losing the volume means new keys and new checks.** The seed and the file live only there: a start
   without them makes a new seed, whose keys readers must trust anew, with no signed handover, and
   which session and which person were signed for which stamp number is gone too, so a person could
@@ -541,7 +528,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
 
 ## Who decides what
 
-- **The standard:** the stamp, the verifier secret and the stamp number, and the verification.
+- **The standard:** the stamp, the stamp number, and the verification.
 - **This verifier, by its own choice:** whom it signs stamps for (a face Didit approves, by its search
   and its reviews; one stamp number for each name and birth date), its two keys and their recipes,
   the face model, the ID check's price (none for now) and how it is paid, the welcome gift, its

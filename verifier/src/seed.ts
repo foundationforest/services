@@ -9,17 +9,14 @@
 //
 // What is mixed from it, with the standard's `hkdf`, the same every time:
 //
-//   issuer/face             the face key: a service key (the standard's `serviceKey`) from these 32
-//                           bytes, which `signStamp` takes, and which sign every face stamp
-//   issuer/id               the ID key, a service key the same way, which signs every ID stamp
-//   issuer/fingerprint      the key of the ID check's fingerprints (facts.ts)
-//   issuer/sponsor          the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
+//   face          the face key: a service key (the standard's `serviceKey`) from these 32 bytes,
+//                 which `signStamp` takes, and which sign every face stamp
+//   id            the ID key, a service key the same way, which signs every ID stamp
+//   fingerprint   the key of the ID check's fingerprints (facts.ts)
+//   sponsor       the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
 //
 // Each stamp key's facts recipe is fixed for good (facts.ts): a new recipe is a new key, under a
 // new text here. None of these keys holds money.
-//
-// The texts keep the word issuer, the verifier's old name: a text a recipe mixes under keeps its
-// bytes, as the standard's own do (`forest/v1/issuer`), since a new text would give new keys.
 
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -32,10 +29,10 @@ export const SEED_FILE = 'verifier-seed.json'
 
 /** The texts each key is mixed under. */
 export const INFO = {
-  face: 'issuer/face',
-  id: 'issuer/id',
-  fingerprint: 'issuer/fingerprint',
-  sponsor: 'issuer/sponsor',
+  face: 'face',
+  id: 'id',
+  fingerprint: 'fingerprint',
+  sponsor: 'sponsor',
 } as const
 
 /** An Ed25519 key: its address (the public key in base58), and its signature of a message. */

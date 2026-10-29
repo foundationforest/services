@@ -24,7 +24,7 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/verification'
+import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/proofs'
 
 import type { Check } from './didit.ts'
 

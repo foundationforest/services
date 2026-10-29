@@ -14,15 +14,14 @@ import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import { hkdf, seedScalar, serviceKey, verifierSecret } from '@foundationforest/keys'
-import { checkVerification, proveVerification, stampFromJson, stampSigned } from '@foundationforest/verification'
+import { hkdf, seedNumber, serviceKey, stampNumberOf } from '@foundationforest/keys'
+import { checkVerification, proveVerification, stampFromJson, stampSigned } from '@foundationforest/proofs'
 import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
 import { DiditClient } from '../src/didit.ts'
-import { RateLimit, addressGroup } from '../src/limit.ts'
 import { RECIPES, faceFacts, idFacts } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { SIGNED_FOR_MS } from '../src/server.ts'
@@ -44,7 +43,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url))
 /** The verification circuit's setup files, committed in the standard. */
-const setup = join(here, '../../standard/proofs/verification/circuit/setup')
+const setup = join(here, '../../standard/proofs/verification/setup')
 const ARTIFACTS = { wasm: join(setup, 'verification.wasm'), zkey: join(setup, 'verification.zkey') }
 
 const dirs: string[] = []
@@ -87,8 +86,6 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
     DIDIT_FACE_WORKFLOW_ID: FACE_WORKFLOW,
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     DATABASE_PATH: dbPath,
-    // Every request here comes from one address; the limit has its own test.
-    SESSION_LIMIT_PER_HOUR: '100000',
     PORT: '0',
     ...options.env,
   })
@@ -141,7 +138,7 @@ test('GET /: the name, and for each check the key that signs its stamps, as an a
     assert.equal(res.headers.get('access-control-allow-origin'), '*')
     const text = await res.text()
     assert.equal(canonical(parseCanonical(text)), text, 'canonical JSON')
-    const keys = { face: serviceKey(await hkdf(seed.bytes, 'issuer/face')).address, id: serviceKey(await hkdf(seed.bytes, 'issuer/id')).address }
+    const keys = { face: serviceKey(await hkdf(seed.bytes, 'face')).address, id: serviceKey(await hkdf(seed.bytes, 'id')).address }
     assert.deepEqual(JSON.parse(text), {
       name: VERIFIER_NAME,
       face: { key: keys.face, facts: 'Poseidon([h(model), h(embedding)])' },
@@ -160,12 +157,13 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a ver
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
-    const { stampNumber: n } = await verifierSecret(seed, VERIFIER_NAME)
+    const n = stampNumberOf(seedNumber(seed), VERIFIER_NAME)
     const { stamp: json } = await face(h, 'alice', n)
-    assert.deepEqual(Object.keys(json).sort(), ['embedding', 'facts', 'model', 'signature', 'stampNumber', 'verifier'])
+    assert.deepEqual(Object.keys(json).sort(), ['embedding', 'facts', 'model', 'signature', 'stampNumber', 'verifier', 'verifierName'])
     const published = await about(h)
     const stamp = stampFromJson(json)
     assert.equal(stamp.stampNumber, n)
+    assert.equal(stamp.verifierName, VERIFIER_NAME, 'under its name')
     assert.equal(stamp.verifier, published.face.key, 'the face key GET / publishes')
     assert.ok(stampSigned(stamp), "the standard's check: the verifier signed it")
     assert.deepEqual(b64u.decode(json.embedding), faceOf('alice'), "alice's face, beside the stamp")
@@ -174,7 +172,7 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a ver
 
     // The stamp does what it is for: a verification, made with the standard's own code, that holds for its verifier.
     const label = 'tutoring/seller'
-    const proof = await proveVerification({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
+    const proof = await proveVerification({ seed, stamp, label, artifacts: ARTIFACTS })
     const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.face.key), true)
     assert.equal(await check(published.id.key), false, 'a face stamp is no ID stamp')
@@ -188,11 +186,11 @@ test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields bes
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
-    const { stampNumber: n } = await verifierSecret(seed, VERIFIER_NAME)
+    const n = stampNumberOf(seedNumber(seed), VERIFIER_NAME)
     const res = await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace', { firstName: ' ADA ', lastName: 'LoveLace' }))), n)
     assert.equal(res.status, 200, JSON.stringify(res.body))
     const json = res.body.stamp
-    assert.deepEqual(Object.keys(json).sort(), ['birth', 'country', 'embedding', 'facts', 'model', 'name', 'signature', 'stampNumber', 'verifier'])
+    assert.deepEqual(Object.keys(json).sort(), ['birth', 'country', 'embedding', 'facts', 'model', 'name', 'signature', 'stampNumber', 'verifier', 'verifierName'])
     assert.deepEqual([json.name, json.birth, json.country], ['ada lovelace', '1990-04-01', 826], 'the name written one way, the birth date, the country as its ISO numeric code')
     const published = await about(h)
     const stamp = stampFromJson(json)
@@ -201,7 +199,7 @@ test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields bes
     assert.equal(stamp.facts, idFacts('test-model', faceOf('ada'), { name: 'ada lovelace', birth: '1990-04-01', country: 826 }))
 
     const label = 'tutoring/buyer'
-    const proof = await proveVerification({ seedScalar: await seedScalar(seed), verifierName: VERIFIER_NAME, stamp, label, artifacts: ARTIFACTS })
+    const proof = await proveVerification({ seed, stamp, label, artifacts: ARTIFACTS })
     const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.id.key), true)
     assert.equal(await check(published.face.key), false, 'an ID stamp is no face stamp')
@@ -475,7 +473,7 @@ test('the file keeps which session gave which stamp number and which check it wa
 })
 
 /** A stamp's own fields: what the verifier keeps of it, and hands back. */
-const own = ({ stampNumber, facts, verifier, signature }: Record<string, unknown>) => ({ stampNumber, facts, verifier, signature })
+const own = ({ stampNumber, facts, verifier, verifierName, signature }: Record<string, unknown>) => ({ stampNumber, facts, verifier, verifierName, signature })
 const stampBack = (h: Harness, n: bigint) => h.post('/stamp', { stampNumber: n.toString() })
 
 test('a stamp asked back by its stamp number is the one signed, its own fields only, for both keys, and after its session is deleted in Didit', async () => {
@@ -490,7 +488,7 @@ test('a stamp asked back by its stamp number is the one signed, its own fields o
     const back = await stampBack(h, n)
     assert.equal(back.status, 200)
     assert.deepEqual(back.body, { face: own(signedFace.stamp), id: own(signedId.body.stamp) }, 'each the one signed, without the fields beside it')
-    for (const stamp of [back.body.face, back.body.id]) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier'])
+    for (const stamp of [back.body.face, back.body.id]) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier', 'verifierName'])
     const published = await about(h)
     assert.deepEqual([back.body.face.verifier, back.body.id.verifier], [published.face.key, published.id.key])
     assert.ok(stampSigned(stampFromJson(back.body.face)) && stampSigned(stampFromJson(back.body.id)))
@@ -544,9 +542,6 @@ test('the configuration names what is missing', () => {
   assert.equal(readConfig({ ...base, VERIFIER_NAME }).verifierName, VERIFIER_NAME)
   assert.equal(config.diditBaseUrl, 'https://verification.didit.me')
   assert.equal(config.faceModel, 'sface')
-  assert.equal(config.sessionLimitPerHour, 5)
-  assert.equal(config.clientAddressHeader, undefined)
-  assert.equal(readConfig({ ...base, CLIENT_ADDRESS_HEADER: 'X-Real-IP' }).clientAddressHeader, 'x-real-ip')
 
   // The stand-in embedding is for a stand-in Didit on this machine, and nowhere else.
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'stand-in' }), /FACE_MODEL=stand-in is for a stand-in Didit on this machine only/)
@@ -647,70 +642,6 @@ test('with no gift, a stamp asked for with one is refused', async () => {
   }
 })
 
-test('opening sessions is limited per address, and a refusal says only "try later"', async () => {
-  const h = await start({ env: { SESSION_LIMIT_PER_HOUR: '3', CLIENT_ADDRESS_HEADER: 'x-real-ip' } })
-  try {
-    const from = (address: string) => h.post('/face/session', {}, { 'x-real-ip': address })
-    for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.7')).status, 201)
-    assert.deepEqual(await from('203.0.113.7'), { status: 429, body: { error: 'try_later' } })
-    assert.equal(h.faces.created, 3, 'a refused request never reaches Didit')
-    assert.equal((await from('203.0.113.8')).status, 201, 'another address has its own share')
-    for (const a of ['2001:db8:1:2::a', '2001:db8:1:2:ffff::b', '2001:0db8:0001:0002:0:0:0:c']) assert.equal((await from(a)).status, 201)
-    assert.equal((await from('2001:db8:1:2:9::d')).status, 429, 'an IPv6 address counts with the rest of its /64')
-    assert.equal((await from('2001:db8:1:3::a')).status, 201, 'the next /64 is someone else')
-    assert.equal((await h.post('/face/session', { x: 1 }, { 'x-real-ip': '203.0.113.9' })).status, 400)
-    for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.9')).status, 201, 'a malformed request is not counted')
-    // Both checks draw on one share.
-    const either = (path: string) => h.post(path, {}, { 'x-real-ip': '203.0.113.11' })
-    for (const path of ['/face/session', '/id/session', '/face/session']) assert.equal((await either(path)).status, 201, path)
-    assert.deepEqual(await either('/id/session'), { status: 429, body: { error: 'try_later' } }, 'the ID check counts with the face check')
-
-    // Stamps are not limited, and the address is never written: not in the log, not in the file.
-    const sessionId = (await from('203.0.113.10')).body.sessionId
-    h.faces.set(sessionId, passed('alice'))
-    assert.equal((await h.post('/face/stamp', { sessionId, stampNumber: (await stampNumber()).toString() }, { 'x-real-ip': '203.0.113.7' })).status, 200)
-    await h.verifier.close()
-    assert.deepEqual(h.logs, [])
-    const file = readFileSync(h.dbPath)
-    for (const a of ['203.0.113.7', '203.0.113.8', '2001:db8']) assert.equal(file.includes(Buffer.from(a)), false)
-  } finally {
-    await h.verifier.close().catch(() => {})
-  }
-
-  const direct = await start({ env: { SESSION_LIMIT_PER_HOUR: '2' } })
-  try {
-    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.1' })).status, 201)
-    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.2' })).status, 201)
-    assert.equal((await direct.post('/face/session', {}, { 'x-real-ip': '198.51.100.3' })).status, 429, 'a header nobody named is ignored')
-  } finally {
-    await direct.verifier.close()
-  }
-})
-
-test('the limit: a fresh share each hour, and nothing kept past it', () => {
-  let now = 1_000_000
-  const limit = new RateLimit({ max: 2, windowMs: 3_600_000, now: () => now })
-  assert.equal(limit.take('192.0.2.1'), true)
-  assert.equal(limit.take('192.0.2.1'), true)
-  assert.equal(limit.take('192.0.2.1'), false)
-  assert.equal(limit.take('::ffff:192.0.2.1'), false, 'the same IPv4 address, as a dual-stack socket reports it')
-  assert.equal(limit.take('192.0.2.2'), true)
-  now += 3_599_999
-  assert.equal(limit.take('192.0.2.1'), false, 'still inside the hour')
-  now += 1
-  assert.equal(limit.take('192.0.2.1'), true, 'a new hour')
-  now += 3_600_000
-  limit.take('192.0.2.3')
-  assert.equal(limit.size, 1, 'addresses whose hour has passed are forgotten')
-
-  assert.equal(addressGroup('2001:db8::1'), '2001:db8:0:0::/64')
-  assert.equal(addressGroup('2001:0DB8:0000:0000:ffff:1:2:3'), '2001:db8:0:0::/64')
-  assert.equal(addressGroup('fe80::1%eth0'), 'fe80:0:0:0::/64')
-  assert.equal(addressGroup('::1'), '0:0:0:0::/64')
-  assert.equal(addressGroup('::ffff:10.0.0.1'), '10.0.0.1')
-  assert.equal(addressGroup('not an address'), 'not an address')
-})
-
 test('the seed: made on the first start beside the database, kept there, the same on every start after', async () => {
   const dir = tempDir()
   const dbPath = join(dir, 'verifier.sqlite')
@@ -727,8 +658,8 @@ test('the seed: made on the first start beside the database, kept there, the sam
   const contents = readFileSync(seedFile, 'utf8')
   assert.match(contents, /^\{"seed":"[0-9a-f]{64}"\}$/)
   const seed = parseSeed(contents, 'the seed file')
-  assert.equal(JSON.parse(published).face.key, serviceKey(await seed.mix('issuer/face')).address, 'GET / names the face key mixed from it')
-  assert.equal(JSON.parse(published).id.key, serviceKey(await seed.mix('issuer/id')).address, 'and the ID key')
+  assert.equal(JSON.parse(published).face.key, serviceKey(await seed.mix('face')).address, 'GET / names the face key mixed from it')
+  assert.equal(JSON.parse(published).id.key, serviceKey(await seed.mix('id')).address, 'and the ID key')
   assert.deepEqual(first.logs, [], 'and the seed is never logged')
 
   const second = await start({ dbPath })

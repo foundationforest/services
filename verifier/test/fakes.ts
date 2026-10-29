@@ -5,8 +5,8 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { verifierSecret } from '@foundationforest/keys'
-import { fromBytes32 } from '@foundationforest/verification'
+import { seedNumber, stampNumberOf } from '@foundationforest/keys'
+import { fromBytes32 } from '@foundationforest/proofs'
 import { hex } from '@foundationforest/folders'
 
 import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
@@ -75,7 +75,7 @@ export function faceOf(name: string): Uint8Array {
 }
 
 /** A person's stamp number for the test verifier, as their app mixes it: from a fresh seed and the verifier's name. */
-export const stampNumber = async () => (await verifierSecret(new Uint8Array(randomBytes(32)), VERIFIER_NAME)).stampNumber
+export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(randomBytes(32))), VERIFIER_NAME)
 
 /**
  * Didit, as far as the verifier sees it. A test says what each session came to with `set`. With
