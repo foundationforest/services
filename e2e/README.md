@@ -10,9 +10,9 @@ anyone can; the main way is `npm run e2e`, with no chain and no secret.
 - **Each device** is the reference app, [`mcp/test/app.ts`](../mcp/test/app.ts), unchanged: it holds
   the seed and the stamp, keeps the Profiles folder (the empty label's folder, locked to a key only
   the seed gives, listing the person's profiles and stamps), makes each profile with a verification,
-  signs with its main key, writes straight to the host, and makes the AI's connection. What it has no
-  method for, `e2e.ts` does with the standard's pieces: asking the stamp with its welcome gift,
-  collecting the gift's credits, and making the reputation proof.
+  signs with its main key, writes straight to the host, funds each folder from its wallet, and makes
+  the AI's connection. What it has no method for, `e2e.ts` does with the standard's pieces: asking
+  the stamp with its gift, collecting the gift's credits, and making the reputation proof.
 - **Each AI** is the MCP SDK's own client, through mcp's test helpers (`aiApp`, `logIn`, in
   [`mcp/test/setup.ts`](../mcp/test/setup.ts)). It logs in as an AI app does and calls the tools as a
   chat does. It holds no key and is told no address of its own person's.
@@ -31,20 +31,22 @@ checks what it did, and the run passes only if every step does.
    with the host's credits client (`host/client/`). Each stamp is checked (signature, face key, stamp
    number, verifier name), the gift's ticket too, then asked back by its stamp number (`POST /stamp`)
    and found the same.
-3. **Credits:** each app collects its buy at the host with the ticket and finishes its 10 credits.
-4. **Profiles:** each spends 2 credits into the Profiles folder, all but one into the profile's
-   folder (the tutor 3 more, for the coach), and adds the profile. Read back, the profile entry holds
-   the market, role, open key and pay addresses, and a verification that checks.
+3. **Credits:** each app collects its buy at the host with the ticket, finishes its 10 credits, and
+   spends them into its wallet, the Profiles folder's balance.
+4. **Profiles:** each funds the profile's folder from the wallet with 3 credits, a buy paid from its
+   balance, and adds the profile. Read back, the profile entry holds the market, role, open key and
+   pay addresses, and a verification that checks.
 5. **Logins:** each AI's first act gets the challenge; the person ticks their tutoring profile, and
-   the app makes the connection folder (its first write paid with the credit kept), an access key
-   with all four switches, its note and its access entry, and hands over the pointer. Read back: one
+   the app makes the connection folder (funded from the wallet with one credit), an access key with
+   all four switches, its note and its access entry, and hands over the pointer. Read back: one
    access key listed; its note at `key/<id>`, locked to the main key alone, naming the key and this
    mcp and holding the connection folder's key; and the connection found from the seed, its entry
    locked to its own key and the mcp's.
 6. **mcp:** the tutor's AI reads `markets` and writes a post, `post/maths`, 2 USD an hour, signed by
-   its access key; the student's AI finds it with `search` and messages the tutor; the tutor's AI
-   reads its inbox (the message counted, with the student's market, role and face check as the index
-   shows them) and replies; the student's AI reads the reply.
+   its access key and paid at its price; the student's AI finds it with `search` and messages the
+   tutor with one credit, the student's balance down 1 and the tutor's up 1 less the inbox entry's
+   price; the tutor's AI reads its inbox (the message counted, with the student's market, role and
+   face check as the index shows them) and replies the same way; the student's AI reads the reply.
 7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the post.
 8. **The index** shows both profiles counted under the face key, the post listed, the review counted,
    and what its own ranking, with `index/config/scoring.json`, makes of it: today the tutor rated 10.0 by one, trust 44; the student no
@@ -52,8 +54,8 @@ checks what it did, and the run passes only if every step does.
    its JSON.
 9. **The trust, carried:** the tutor's device finds its leaf, checks the signed root, and proves its
    tutoring trust onto the coach profile (the standard's reputation circuit), naming none of its
-   profiles; the app adds the coach profile with the last three credits, and the index shows the
-   proof on the coach's page.
+   profiles; the app funds the coach profile from the wallet with 2 credits and adds it, and the
+   index shows the proof on the coach's page.
 10. **Added:** from the seed alone, the tutor's app adds the coach to the connection; with no new
     login, `my_profiles` shows both, and the AI writes and reads back a locked note as the coach.
 11. **Ended:** the app deletes the connection entry and removes each key; the mcp answers the AI
@@ -62,7 +64,7 @@ checks what it did, and the run passes only if every step does.
     its folder, and its stamp.
 13. **Addresses:** no answer either AI got holds one of its own person's addresses (profiles, pay
     addresses, Profiles folder, connection folder); each reads the other's, as it must.
-14. **Balances:** what each folder's credits came to.
+14. **Balances:** what each folder's credits came to, the wallets' included.
 
 Then, passed or failed, the services stop, and the run exits 0 or 1.
 
@@ -74,7 +76,7 @@ unchanged, with only the settings it needs:
 
 | Service | The loop's own copy |
 |---|---|
-| verifier | `verifier/`'s code, with the stand-in Didit its tests run and the stand-in face model; its own name, `verifier.e2e-loop.invalid`, and seed; its gift, 10 credits at the loop's host |
+| verifier | `verifier/`'s code, with the stand-in Didit its tests run and the stand-in face model; its own name, `verifier.e2e-loop.invalid`, and seed; its gifts, 10 credits with a face stamp, at the loop's host |
 | host | `host/`'s code as `npm start` runs it, its `SPONSORS` the loop verifier's sponsor key; its port is picked first, so the gift can name it |
 | index | `index/`'s code with lists of its own: the host, the loop verifier's keys at 0.75 and 0.95, its own proofs against a root up to 30 days old; its numbers from `index/config/` |
 | mcp | `mcp/`'s code, reading the loop's index and the markets, the loop's connect page as `APP_URL`, and a plain fetch for hosts, since `publicFetch` refuses loopback |
@@ -128,10 +130,8 @@ against Cloudflare's own Privacy Pass issuer.
 
 ## Limits
 
-- **The checks are stand-ins:** a run says nothing about Didit or the face model, and no one takes
-  the ID check.
-- **The connect page is a stand-in,** ticking every switch: a run says nothing about the Forest app's
-  own page.
+- **The checks are stand-ins:** a run says nothing of Didit or the face model, nor of the ID check.
+- **The connect page is a stand-in,** ticking every switch: a run says nothing of the Forest app's.
 - **The deployed check runs no loop:** it says each deployed service answers, nothing more.
 - **No payment, and one review:** no money moves, and only the student rates.
 - **One host:** both people are on it, so each finds the other's folder there.

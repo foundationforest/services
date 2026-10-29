@@ -9,7 +9,7 @@ Use these words: seed (the secret on your device), the seed's number, main key, 
 profile, profile entry, entry, post, address, label, scope, verifier, verified, stamp, stamp number,
 facts, verification, reputation proof, check, folder, file, host, service key, connection,
 connector, private, envelope, encrypted (an envelope), locked, message, inbox, pay address, pay key,
-escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, credits, ticket,
+escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, credits, wallet, ticket,
 review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
 
 - A verifier is anyone who signs stamps; a person it signed a stamp to is verified, never "verified
@@ -28,7 +28,8 @@ review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
   and its access keys. A pay address is one of a profile's `pay` addresses, `{ solana, evm }`, each
   from its pay key.
 - Check, never verify: a reader checks a proof or a signature. Main key, never profile key;
-  address, never wallet, for a key ("a wallet app" is fine).
+  address, never wallet, for a key ("a wallet app" is fine). The wallet is an app's Profiles
+  folder's balance at a host: gifts and buys land there, and the app funds each folder from it.
 - Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
   sealed, write key, read key, account (but in "no account"), card, registry, row, tier, standing,
   policy,

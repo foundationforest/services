@@ -37,7 +37,7 @@ read before the person connects anything; four act for the person and need one.
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, below |
 | `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
-| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder |
+| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, and at a host that sells credits one credit, bought there from the profile's balance with the access key |
 
 MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
 
@@ -164,7 +164,9 @@ Profiles folder (the empty label's, its `label/<id>` and `stamp/<id>` entries lo
 key), makes a profile with its market, role, hosts, open key, both pay addresses and a verification
 for each stamp, does the connect page's work, the connection folder's first write paid as the device
 chooses (`pay`), finds each connection from the seed by its notes, adds a profile or ends one, and on
-a new device finds the profiles and stamps from the Profiles folder.
+a new device finds the profiles and stamps from the Profiles folder. Its wallet, the Profiles
+folder's balance, takes gifts and buys, and funds a folder (`fund`): a buy paid from it by the
+Profiles folder's main key, spent into that folder.
 
 ## Its API
 
@@ -183,13 +185,12 @@ a new device finds the profiles and stamps from the Profiles folder.
 ## How we run it
 
 - **The image:** `deploy/Dockerfile`, built from the repo root: Node 22.22.2, the standard and the
-  markets at their pins (`standard.sh`), and this directory, started as `node src/main.ts` on every
-  address (`BIND=0.0.0.0`), with `DATA_DIR=/data`.
+  markets at their pins (`standard.sh`), the host's credits client (`host/client/`, with its
+  packages) and this directory, started as `node src/main.ts` on every address, `DATA_DIR=/data`.
 - **Where:** Railway, service `mcp`, `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`, one replica, a
   volume at `/data` holding its two keys, a public domain to `PORT`, and no health check, since the
   root answers only what an MCP client sends. `APP_URL` is unset until the Forest app's connect page
-  exists; until then, reading works and logins wait. Another app runs its own copy, with its own
-  page.
+  exists; until then, reading works and logins wait. Another app runs its own copy, and its page.
 - **What it reads:** the foundation's index, the markets at `MARKETS` (from the checkout, so every
   answer comes from the commit the tests ran against), and the folders each login points to and deals
   with, on public hosts only.
@@ -230,8 +231,8 @@ npm run smoke -- https://mcp.forest.foundation
 ```
 
 Built from existing pieces, unchanged: the standard's keys and folders packages (and proofs, for the
-reference app), the markets package and its one check, `@modelcontextprotocol/sdk`, `undici` for
-`publicFetch`, and Node's `crypto`. `test/` covers, on loopback, with this repo's host, a stand-in
+reference app), the markets package and its one check, the host's credits client,
+`@modelcontextprotocol/sdk`, `undici` for `publicFetch`, and Node's `crypto`. `test/` covers, on loopback, with this repo's host, a stand-in
 index whose answers carry a field this copy has never seen, and a stand-in connect page running the
 reference app: the login end to end through the MCP SDK's own client and every refusal on its way,
 every tool and its refusals, a key removed and the connection ended, `publicFetch`, and the image's
@@ -258,7 +259,8 @@ keeps working, and logs in again the first time it acts.
 - **It acts only as far as the access keys a connection holds may, and only for the token whose
   secret matches.** Every host and reader checks a key against the profile entry's listing, so a key
   the person removes stops counting; a connection folder's address alone acts for no one.
-- **It never moves money, and holds nothing that could.** No access key pays.
+- **It moves no money, and spends only the credits in the profiles the person connected, as their
+  access keys allow:** a message's one credit, from its profile's balance.
 - **The AI never gets a key, nor one of the person's own addresses,** from a tool that acts for them:
   it names each profile by its label.
 - **What an index says is passed on as the index's word, whole, and labelled so;** `read` picks only
@@ -274,22 +276,20 @@ keeps working, and logs in again the first time it acts.
 - **A key opens nothing locked before it was listed.**
 - **A stranger's folder is found only on the person's hosts or a message's own host;** one that lives
   only elsewhere can be read about through the index, not messaged.
-- **The newest 100 inbox entries a read;** older ones wait for those to leave, after the hosts' keep
-  days.
+- **The newest 100 inbox entries a read;** older ones wait for those to leave, after the keep days.
 - **Each call reads the connection from its hosts,** one post-quantum opening a profile; with none
   of the hosts answering, the tools that act refuse.
 - **A connection folder is public:** anyone can see it exists and how many profiles it holds, never
   which.
 - **The AI can still find a profile it posted for,** through the index; what this copy keeps from it
   is the map of the person's profiles.
-- **A code works more than once in its 60 seconds,** but only for the AI app holding its PKCE
-  verifier.
+- **A code works more than once in its 60 seconds,** only for the AI app holding its PKCE verifier.
 - **The markets are the directory's at one commit:** a market added since is unknown until `MARKETS`
   moves.
 - **An index's answer may hold anything.**
 - **No rate limit:** anyone can keep the copy busy.
-- **Not here:** paying, putting or deleting files, buying a host's credits, views in the AI app (MCP
-  Apps), and a copy on the person's own computer.
+- **Not here:** paying, putting or deleting files, buying a host's credits but the one each message
+  carries, views in the AI app (MCP Apps), and a copy on the person's own computer.
 - **Railway's own request logs** hold each request's client address and path.
 
 ## FAQ

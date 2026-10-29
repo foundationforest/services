@@ -7,7 +7,7 @@ The Forest Foundation runs one copy of each service so Forest works from day one
 | Service | What it does for you | Address |
 |---|---|---|
 | [verifier](verifier/README.md) | Checks that you are one real person, by your face or your ID, and signs a stamp to your seed. Your profiles then prove they're verified without saying who you are. | verifier.forest.foundation |
-| [host](host/README.md) | Keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. A small write costs a fraction of a cent, paid in credits. Your first credits are a gift from the verifier. | host.forest.foundation |
+| [host](host/README.md) | Keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, a fraction of a cent for a small one; a message carries one credit, most of it for the recipient. Your first credits are a gift from the verifier, in your app's wallet. | host.forest.foundation |
 | [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | index.forest.foundation |
 | [mcp](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you: find people, post, review, message, within the access keys you give it. It keeps nothing of yours. Until the Forest app's connect page is up, it only reads. | mcp.forest.foundation |
 

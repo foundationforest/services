@@ -549,13 +549,16 @@ test('the configuration names what is missing', () => {
   assert.equal(readConfig({ ...base, FACE_MODEL: 'stand-in', DIDIT_BASE_URL: 'http://127.0.0.1:8090' }).faceModel, 'stand-in')
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'other' }), /FACE_MODEL is sface or stand-in/)
 
-  // The welcome gift: none unless the host is named; ten credits unless set; none at 0.
+  // The gifts: none unless the host is named; ten credits with a face stamp and a hundred with an ID
+  // stamp unless set; none at 0.
+  const host = { ...base, HOST_URL: 'https://host.example' }
   assert.equal(config.gift, undefined)
-  assert.deepEqual(readConfig({ ...base, HOST_URL: 'https://host.example' }).gift, { origin: 'https://host.example', credits: 10 })
-  assert.deepEqual(readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '20' }).gift, { origin: 'https://host.example', credits: 20 })
-  assert.equal(readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '0' }).gift, undefined)
+  assert.deepEqual(readConfig(host).gift, { origin: 'https://host.example', credits: { face: 10, id: 100 } })
+  assert.deepEqual(readConfig({ ...host, FACE_CREDITS: '20', ID_CREDITS: '0' }).gift, { origin: 'https://host.example', credits: { face: 20, id: 0 } })
+  assert.equal(readConfig({ ...host, FACE_CREDITS: '0', ID_CREDITS: '0' }).gift, undefined)
   assert.throws(() => readConfig({ ...base, HOST_URL: 'https://host.example/' }), /HOST_URL is an origin/)
-  assert.throws(() => readConfig({ ...base, HOST_URL: 'https://host.example', HOST_CREDITS: '-1' }), /HOST_CREDITS/)
+  assert.throws(() => readConfig({ ...host, FACE_CREDITS: '-1' }), /FACE_CREDITS/)
+  assert.throws(() => readConfig({ ...host, ID_CREDITS: 'many' }), /ID_CREDITS/)
 
   // The apps a person may be sent back to: none unless named, each an origin.
   assert.deepEqual(config.appOrigins, [])
@@ -572,14 +575,14 @@ async function hostSeller(sponsor: string) {
   return { seller, service: serviceOf(origin, seller.directory()) }
 }
 
-test('the welcome gift: at a stamp number’s first face stamp, a sponsor’s ticket for the app’s host buy, which the host collects; the verifier pays nothing', async () => {
+test('the gifts: at a stamp number’s first stamp from each check, a sponsor’s ticket for the app’s host buy, which the host collects; the verifier pays nothing', async () => {
   const seed = seedJson()
   const sponsor = (await seedFrom(seed.bytes).ed25519(INFO.sponsor)).address
   const host = await hostSeller(sponsor)
-  const h = await start({ seed: seed.json, env: { HOST_URL: 'https://host.example', HOST_CREDITS: '5' } })
+  const h = await start({ seed: seed.json, env: { HOST_URL: 'https://host.example', FACE_CREDITS: '5', ID_CREDITS: '7' } })
   try {
-    // GET / says what the gift holds, so the app knows what to buy.
-    assert.deepEqual((await about(h)).gift, { host: 'https://host.example', credits: 5, sponsor })
+    // GET / says what each gift holds, so the app knows what to buy.
+    assert.deepEqual((await about(h)).gift, { face: 5, host: 'https://host.example', id: 7, sponsor })
     const stamp = (sessionId: string, n: bigint, gift: unknown) => h.post('/face/stamp', { sessionId, stampNumber: n.toString(), gift })
 
     const n = await stampNumber()
@@ -617,20 +620,28 @@ test('the welcome gift: at a stamp number’s first face stamp, a sponsor’s ti
     const tickets = (await bobStamp(six.reference)).gift
     assert.equal((await host.seller.collect(six.buy, `ticket ${tickets.ticket}`)).status, 402, 'a buy of more credits than the ticket gives is not paid')
 
-    // The stamp is never held back by the gift; none asked, none answered; the ID check gives none.
+    // The stamp is never held back by the gift; none asked, none answered.
     assert.equal((await bobStamp()).gift, undefined)
+
+    // The ID stamp's gift is its own: once a stamp number, though the face check gave one.
     const id = await h.idSession(passedId('bob', doc('Byron')))
-    assert.deepEqual(await h.post('/id/stamp', { sessionId: id, stampNumber: m.toString(), gift: six.reference }), { status: 400, body: { error: 'expected_exactly_sessionId_and_stampNumber' } })
+    const seven = await buy(host.service, 7)
+    const idStamp = await h.post('/id/stamp', { sessionId: id, stampNumber: m.toString(), gift: seven.reference })
+    assert.equal(idStamp.status, 200)
+    assert.equal(idStamp.body.gift.ticket.split('.')[1], '7', 'the ID check’s credits')
+    const paid = await host.seller.collect(seven.buy, `ticket ${idStamp.body.gift.ticket}`)
+    assert.equal((await finish(seven.pending, paid.body as Uint8Array)).length, 7)
+    assert.deepEqual((await h.post('/id/stamp', { sessionId: id, stampNumber: m.toString(), gift: (await buy(host.service, 7)).reference })).body.gift, { error: 'given' })
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
     await h.verifier.close()
-    assertKept(h.dbPath, { sessions: [[sessionId, n, 'face'], [bob, m, 'face']], fingerprints: [], gifts: [n, m], never: [mine.reference, six.reference, ticket] })
+    assertKept(h.dbPath, { sessions: [[sessionId, n, 'face'], [bob, m, 'face'], [id, m, 'id']], fingerprints: [[1, m]], gifts: [n, m], idGifts: [m], never: [mine.reference, six.reference, seven.reference, ticket] })
   } finally {
     await h.verifier.close().catch(() => {})
   }
 })
 
-test('with no gift, a stamp asked for with one is refused', async () => {
+test('with no gift, a stamp asked for with one is refused; so is one from a check whose gift is 0', async () => {
   const h = await start()
   try {
     const sessionId = await h.session(passed('alice'))
@@ -639,6 +650,16 @@ test('with no gift, a stamp asked for with one is refused', async () => {
     assert.equal((await about(h)).gift, undefined)
   } finally {
     await h.verifier.close()
+  }
+  // A check whose gift is 0 gives none, and refuses its stamp asked with one, the same way.
+  const faceOnly = await start({ env: { HOST_URL: 'https://host.example', ID_CREDITS: '0' } })
+  try {
+    const id = await faceOnly.idSession(passedId('ada', doc('Lovelace')))
+    const res = await faceOnly.post('/id/stamp', { sessionId: id, stampNumber: (await stampNumber()).toString(), gift: 'x' })
+    assert.deepEqual([res.status, res.body], [400, { error: 'expected_exactly_sessionId_and_stampNumber' }])
+    assert.equal((await about(faceOnly)).gift.id, 0)
+  } finally {
+    await faceOnly.verifier.close()
   }
 })
 

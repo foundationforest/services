@@ -1,59 +1,24 @@
-// The host's credits, what a credit is: its challenge, its id, and the check the host makes when a
-// list of them is spent into a folder's balance; a buy's reference and price, and what a sponsor's
-// ticket signs, as the seller (seller.ts) reads them. See README.md, "Credits".
+// The host's credits, what a credit is: its id, and the check the host makes when one is spent,
+// into a folder's balance or with an inbox entry; and a buy's price. The wire format (the challenge,
+// a buy's reference, what a sponsor's ticket and a folder's balance payment sign) is the buyer's
+// side's, read from ../client/client.ts, so the two never differ. See README.md, "Credits".
 //
 // A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA signature the host made blind, over
 // a nonce only the buyer's app knows, so when it comes back to be spent the host sees a good
 // signature and nothing that ties it to the buy. The checks are Cloudflare's privacypass-ts,
 // unchanged.
 
-import { Token, TokenChallenge, publicVerif } from '@cloudflare/privacypass-ts'
-import { base58, base64urlnopad } from '@scure/base'
+import { Token, publicVerif } from '@cloudflare/privacypass-ts'
 
-const { BLIND_RSA, BlindRSAMode, convertRSASSAPSSToEnc } = publicVerif
+import { CREDIT_TYPE, challengeOf, creditBytes, importKey } from '../client/client.ts'
 
-/** The Privacy Pass credit type a credit is: Blind RSA (2048-bit), RSABSSA-SHA384-PSS-Deterministic. */
-export const CREDIT_TYPE = 0x0002
-/** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
-export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
-/** The header a buy is collected with, naming what paid it: `ticket <ticket>`. */
-export const PAYMENT_HEADER = 'forest-payment'
+export { BUY_TYPE, CREDIT_BYTES, CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, SPEND_PATH, balanceMessage, challengeOf, referenceOf, ticketMessage } from '../client/client.ts'
+
+const { BLIND_RSA, BlindRSAMode } = publicVerif
 
 const suite = () => BLIND_RSA.suite[BlindRSAMode.PSS]()
 const sha256 = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
-const b64u = base64urlnopad
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i])
-
-function base58Bytes(text: unknown, what: string): Uint8Array {
-  try {
-    const bytes = base58.decode(text as string)
-    if (bytes.length === 32 && base58.encode(bytes) === text) return bytes
-  } catch {
-    // Refused below.
-  }
-  throw new Error(`${what} is 32 bytes in base58`)
-}
-
-/** An origin as a profile entry's `hosts` writes it, and its host, the name its credits' challenge carries. */
-function originOf(origin: string): { origin: string; host: string } {
-  const url = new URL(origin)
-  if (url.origin !== origin || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) {
-    throw new Error('a service is an origin: https, or http on loopback for tests')
-  }
-  return { origin, host: url.host }
-}
-
-/** The one challenge every credit of this service answers: type 2, its host, no redemption context, no origin info, so credits can be bought ahead and kept. */
-export function challengeOf(origin: string): TokenChallenge {
-  return new TokenChallenge(CREDIT_TYPE, originOf(origin).host, new Uint8Array(0))
-}
-
-const importKey = (key: Uint8Array) => crypto.subtle.importKey('spki', convertRSASSAPSSToEnc(key) as Uint8Array<ArrayBuffer>, BLIND_RSA.rsaParams, true, ['verify'])
-
-/** A buy's reference, which a ticket names: SHA-256 of its bytes, in base58. */
-export async function referenceOf(buy: Uint8Array): Promise<string> {
-  return base58.encode(await sha256(own(buy)))
-}
 
 /** What `count` credits cost: `count` times `price`, exactly, in decimal text. */
 export function amountOf(price: string, count: number): string {
@@ -64,37 +29,9 @@ export function amountOf(price: string, count: number): string {
   return out.includes('.') ? out.replace(/0+$/, '').replace(/\.$/, '') : out
 }
 
-/**
- * What a sponsor signs, with Ed25519, to pay for a buy: the service, the buy's reference and how many
- * credits it holds. So a ticket pays for that buy at that service, of that many credits, and no other.
- */
-export function ticketMessage(origin: string, reference: string, credits: number): Uint8Array {
-  originOf(origin)
-  base58Bytes(reference, 'reference')
-  if (!Number.isSafeInteger(credits) || credits < 1) throw new RangeError('a ticket is for one credit or more')
-  return new TextEncoder().encode(`forest credit ticket\n${origin}\n${reference}\n${credits}`)
-}
-
-/** A credit's size: type, nonce, challenge digest, key id, and the 256-byte signature. */
-export const CREDIT_BYTES = 2 + 32 + 32 + 32 + 256
-
-/**
- * Bytes in an array of their own. privacypass-ts reads a view's whole underlying buffer from its
- * start, so a credit or an answer that is a slice of a larger one (a Node Buffer from the pool, say)
- * would be read wrong without this copy.
- */
-const own = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes)
-
-/** A credit's bytes, as shown or in base64url: exactly CREDIT_BYTES, in an array of their own. */
-function bytesOf(credit: Uint8Array | string): Uint8Array {
-  const bytes = own(credit instanceof Uint8Array ? credit : b64u.decode(credit))
-  if (bytes.length !== CREDIT_BYTES) throw new Error(`not a credit: a credit is ${CREDIT_BYTES} bytes`)
-  return bytes
-}
-
 /** What a credit is named by on a service's spent list: its nonce, lowercase hex. */
 export function creditId(credit: Uint8Array | string): string {
-  const token = Token.deserialize(BLIND_RSA, bytesOf(credit))
+  const token = Token.deserialize(BLIND_RSA, creditBytes(credit))
   return Array.from(token.authInput.nonce, (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -107,7 +44,7 @@ export async function checkCredit(credit: Uint8Array | string, service: { origin
   let token: Token
   let bytes: Uint8Array
   try {
-    bytes = bytesOf(credit)
+    bytes = creditBytes(credit)
     token = Token.deserialize(BLIND_RSA, bytes)
   } catch {
     throw new Error('not a credit')

@@ -4,14 +4,17 @@
 // be spent the host sees a good signature and nothing that ties it to the buy. See the host's
 // README.md, "Credits".
 //
-// The service, from its directory; the buy, and the reference a sponsor's ticket names it by;
-// finishing the credits from the service's answer; listing them for a spend. It talks to no network of its own. The blinding and
-// the signatures are Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in
-// memory only, so the buy here keeps it as bytes, to finish later, from what the app keeps. The
-// host checks and sells credits with its own code (../credits/), on the same wire format. The e2e
-// loop buys with this, and so do the verifier's tests.
+// The service, from its directory; the buy, and the reference its payment names it by; what a
+// payer signs, a sponsor's ticket or a folder's key paying from its balance; finishing the credits
+// from the service's answer; listing them for a spend, or as an inbox request's payment. It reaches
+// a host only through the fetch it is given. The blinding and the signatures are Cloudflare's
+// privacypass-ts, unchanged; its type 2 client keeps the blinding in memory only, so the buy here
+// keeps it as bytes, to finish later, from what the app keeps. The host checks and sells credits
+// with its own code (../credits/), which reads this wire format from here. The e2e loop, the
+// reference app and the mcp buy with this, and so do the host's and the verifier's tests.
 
 import { AuthenticatorInput, Token, TokenChallenge, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
+import { type Payment, type Writer, signAs, writerOf } from '@foundationforest/folders'
 import { base58, base64urlnopad } from '@scure/base'
 
 const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicVerif
@@ -20,8 +23,14 @@ const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicV
 export const CREDIT_TYPE = 0x0002
 /** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
 export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
-/** The header a buy is collected with, naming what paid it, such as `ticket <ticket>`. */
+/** The header a buy is collected with, naming what paid it, and an inbox request's credits: the standard's payment header. */
 export const PAYMENT_HEADER = 'forest-payment'
+/** A buy's media type, as Privacy Pass's batched requests name it. */
+export const BUY_TYPE = 'application/private-token-generic-batch-request'
+/** Where credits are spent into a folder's balance, at a Forest host: `{ folder, credits }`. */
+export const SPEND_PATH = '/credits/spend'
+/** A request to a host is given up after a minute, as the standard's reads are. */
+const TIMEOUT_MS = 60_000
 
 const suite = () => BLIND_RSA.suite[BlindRSAMode.PSS]()
 const sha256 = async (bytes: Uint8Array) => new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as Uint8Array<ArrayBuffer>))
@@ -59,7 +68,7 @@ const isObject = (v: unknown): v is { [key: string]: unknown } => v !== null && 
 const DECIMAL = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/
 
 /** An origin as a profile entry's `hosts` writes it, and its host, the name its credits' challenge carries. */
-function originOf(origin: string): { origin: string; host: string } {
+export function originOf(origin: string): { origin: string; host: string } {
   const url = new URL(origin)
   if (url.origin !== origin || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)))) {
     throw new Error('a service is an origin: https, or http on loopback for tests')
@@ -106,11 +115,59 @@ async function tokenInput(origin: string, key: Uint8Array, nonce: Uint8Array): P
   return new AuthenticatorInput(BLIND_RSA, CREDIT_TYPE, nonce, await sha256(challengeOf(origin).serialize()), await sha256(key))
 }
 
-const importKey = (key: Uint8Array) => crypto.subtle.importKey('spki', convertRSASSAPSSToEnc(key) as Uint8Array<ArrayBuffer>, BLIND_RSA.rsaParams, true, ['verify'])
+/** The service's credit key, for Web Crypto's RSA-PSS. */
+export const importKey = (key: Uint8Array) => crypto.subtle.importKey('spki', convertRSASSAPSSToEnc(key) as Uint8Array<ArrayBuffer>, BLIND_RSA.rsaParams, true, ['verify'])
 
-/** A buy's reference, which a sponsor's ticket names: SHA-256 of its bytes, in base58. */
+/** A buy's reference, which its payment names: SHA-256 of its bytes, in base58. */
 export async function referenceOf(buy: Uint8Array): Promise<string> {
   return base58.encode(await sha256(own(buy)))
+}
+
+function base58Bytes(text: unknown, what: string): Uint8Array {
+  try {
+    const bytes = base58.decode(text as string)
+    if (bytes.length === 32 && base58.encode(bytes) === text) return bytes
+  } catch {
+    // Refused below.
+  }
+  throw new Error(`${what} is 32 bytes in base58`)
+}
+
+function checkCount(credits: number): void {
+  if (!Number.isSafeInteger(credits) || credits < 1) throw new RangeError('a buy is of one credit or more')
+}
+
+/**
+ * What a sponsor signs, with Ed25519, to pay for a buy: the service, the buy's reference and how many
+ * credits it holds. So a ticket pays for that buy at that service, of that many credits, and no other.
+ */
+export function ticketMessage(origin: string, reference: string, credits: number): Uint8Array {
+  originOf(origin)
+  base58Bytes(reference, 'reference')
+  checkCount(credits)
+  return new TextEncoder().encode(`forest credit ticket\n${origin}\n${reference}\n${credits}`)
+}
+
+/**
+ * What a folder's key signs to pay for a buy from the folder's balance at a service: the service,
+ * the folder, the buy's reference and how many credits it holds, so it pays for that buy alone.
+ */
+export function balanceMessage(origin: string, folder: string, reference: string, credits: number): Uint8Array {
+  originOf(origin)
+  base58Bytes(folder, 'a folder')
+  base58Bytes(reference, 'reference')
+  checkCount(credits)
+  return new TextEncoder().encode(`forest credit balance\n${origin}\n${folder}\n${reference}\n${credits}`)
+}
+
+/**
+ * A buy paid from a folder's balance at the service, as its payment header carries it:
+ * `balance <folder>.<key>.<signature>`, signed by the folder's main key (then `key` is the folder),
+ * or by an access key its profile entry there lists with `message`.
+ */
+export function balancePayment(origin: string, writer: Writer, reference: string, credits: number): string {
+  const { profile, key } = writerOf(writer)
+  return `balance ${profile}.${key.address}.${signAs(key, key.address, balanceMessage(origin, profile, reference, credits))}`
 }
 
 /**
@@ -189,7 +246,7 @@ export const CREDIT_BYTES = 2 + 32 + 32 + 32 + 256
 const own = (bytes: Uint8Array): Uint8Array => new Uint8Array(bytes)
 
 /** A credit's bytes, from the form the app keeps or as they are: exactly CREDIT_BYTES, in an array of their own. */
-function bytesOf(credit: Credit | Uint8Array | string): Uint8Array {
+export function creditBytes(credit: Credit | Uint8Array | string): Uint8Array {
   const bytes = own(credit instanceof Uint8Array ? credit : b64u.decode(typeof credit === 'string' ? credit : credit.credit))
   if (bytes.length !== CREDIT_BYTES) throw new Error(`not a credit: a credit is ${CREDIT_BYTES} bytes`)
   return bytes
@@ -200,5 +257,59 @@ function bytesOf(credit: Credit | Uint8Array | string): Uint8Array {
  * The host takes up to 100 in one spend into a folder's balance, and all of them or none.
  */
 export function creditList(credits: (Credit | Uint8Array | string)[]): string[] {
-  return credits.map((credit) => b64u.encode(bytesOf(credit)))
+  return credits.map((credit) => b64u.encode(creditBytes(credit)))
+}
+
+/** Credits as an inbox request's payment: `credits <credit> …`, one for each of its lines, in order. */
+export function creditsPayment(credits: (Credit | Uint8Array | string)[]): string {
+  return `credits ${creditList(credits).join(' ')}`
+}
+
+/** The service at `origin`, from its directory; null when it sells no credits (its directory is not there). */
+export async function serviceAt(origin: string, fetchWith: typeof fetch = fetch): Promise<Service | null> {
+  const res = await fetchWith(`${origin}${DIRECTORY_PATH}`, { redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
+  if (res.status === 404) {
+    await res.body?.cancel()
+    return null
+  }
+  if (!res.ok) throw new Error(`${origin} answered ${res.status} for its credit directory`)
+  return serviceOf(origin, await res.json())
+}
+
+/**
+ * `count` credits bought at the service and finished: the buy, collected with `pay(reference,
+ * count)` as its payment, and the answer finished. Throws with the service's words when it does not
+ * sell them.
+ */
+export async function bought(service: Service, count: number, pay: (reference: string, count: number) => string | Promise<string>, fetchWith: typeof fetch = fetch): Promise<Credit[]> {
+  const b = await buy(service, count)
+  const res = await fetchWith(service.requestUri, { method: 'POST', headers: { 'content-type': BUY_TYPE, [PAYMENT_HEADER]: await pay(b.reference, count) }, body: b.buy as Uint8Array<ArrayBuffer>, redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
+  if (!res.ok) {
+    const said = (await res.json().catch(() => ({}))) as { error?: string; detail?: string }
+    throw new Error(`${service.origin} sold no credits: ${[said.error ?? res.status, said.detail].filter(Boolean).join(', ')}`)
+  }
+  return finish(b.pending, new Uint8Array(await res.arrayBuffer()))
+}
+
+/** Credits spent into `folder`'s balance at the host at `origin`, up to 100 at once: the balance it then holds. Throws with the host's words when it takes none. */
+export async function spendInto(origin: string, folder: string, credits: (Credit | Uint8Array | string)[], fetchWith: typeof fetch = fetch): Promise<number> {
+  const res = await fetchWith(`${origin}${SPEND_PATH}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder, credits: creditList(credits) }), redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
+  const said = (await res.json().catch(() => ({}))) as { credits?: number; error?: string; detail?: string }
+  if (!res.ok || typeof said.credits !== 'number') throw new Error(`${origin} took no credits: ${[said.error ?? res.status, said.detail].filter(Boolean).join(', ')}`)
+  return said.credits
+}
+
+/**
+ * The standard's payment for leaving inbox entries (`leave`): at each host that sells credits, for
+ * each request, a credit for each of its lines, bought there from the writer's folder's balance,
+ * as `credits <credit> …`. A host that sells none gets no payment; one that will not sell them
+ * fails the request with its words.
+ */
+export function inboxPayment(writer: Writer, fetchWith: typeof fetch = fetch): Payment {
+  return async (host, body) => {
+    const service = await serviceAt(host, fetchWith)
+    if (!service) return undefined
+    const lines = new TextDecoder().decode(body).split('\n').filter(Boolean).length
+    return creditsPayment(await bought(service, lines, (reference, n) => balancePayment(host, writer, reference, n), fetchWith))
+  }
 }

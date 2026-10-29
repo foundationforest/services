@@ -8,7 +8,7 @@
 //
 // It runs both checks on the sandbox application's two workflows, with the SFace model (`npm run
 // fetch -- models` first) and its own seed and file in data/sandbox/. PORT, VERIFIER_NAME, APP_ORIGINS,
-// HOST_URL and HOST_CREDITS are read as `npm start` reads them. Then, by hand: `POST /face/session`, open the page it answers and
+// HOST_URL, FACE_CREDITS and ID_CREDITS are read as `npm start` reads them. Then, by hand: `POST /face/session`, open the page it answers and
 // walk through Didit's mocked flow, and `POST /face/stamp` with the session and a stamp number.
 
 import { DiditClient } from '../src/didit.ts'
@@ -22,13 +22,14 @@ if (!apiKey) throw new Error('DIDIT_SANDBOX_API_KEY is not set: the sandbox appl
 if (apiKey === process.env.DIDIT_API_KEY) throw new Error('DIDIT_SANDBOX_API_KEY is the same as DIDIT_API_KEY: the sandbox takes the sandbox application’s key, never the live one')
 const scenario = process.argv[2] || 'approve'
 
-const { PORT, VERIFIER_NAME, APP_ORIGINS, HOST_URL, HOST_CREDITS } = process.env
+const { PORT, VERIFIER_NAME, APP_ORIGINS, HOST_URL, FACE_CREDITS, ID_CREDITS } = process.env
 const config = readConfig({
   PORT,
   VERIFIER_NAME,
   APP_ORIGINS,
   HOST_URL,
-  HOST_CREDITS,
+  FACE_CREDITS,
+  ID_CREDITS,
   DIDIT_API_KEY: apiKey,
   DIDIT_FACE_WORKFLOW_ID: SANDBOX.face,
   DIDIT_ID_WORKFLOW_ID: SANDBOX.id,

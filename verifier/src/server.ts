@@ -4,7 +4,7 @@
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
 //                       signs its stamps, as an address, and its facts recipe; what h is; and, with
-//                       a welcome gift, {"gift":{"host":"<origin>","credits":n,"sponsor":"<address>"}}
+//                       gifts, {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
 //   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
 //                                                    person back to returnUrl, an app's own page, when
 //                                                    its origin is in APP_ORIGINS
@@ -12,7 +12,8 @@
 //   POST /face/stamp    {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the face key
 //                       with a gift, also {gift: "<the host buy's reference>"}
 //                                                 -> 200 {stamp, gift: {ticket} or {error}}
-//   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key
+//   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key,
+//                                                    and its gift asked the same way
 //   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
 //                                                    a stamp or null, its own fields only; 404
 //                                                    `not_found` when none was signed for it
@@ -143,7 +144,7 @@ export type VerifierDeps = {
   fingerprintKey: Uint8Array
   /** `GET /`, canonical text. */
   about: string
-  /** Unset: no welcome gift. */
+  /** Unset: no gifts. */
   gift?: { gift: Gift; sponsor: Ed25519Key }
   /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
   appOrigins?: string[]
@@ -247,22 +248,27 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
-   * The welcome gift for this stamp number, once: a ticket for the app's host buy, and the buy kept,
+   * A check's gift for this stamp number, once: a ticket for the app's host buy, and the buy kept,
    * hashed, next to the stamp number. The same buy asked for again gets the same ticket; another buy
    * gets `given`. It rides with the stamp, and never holds it back.
    */
-  function giveGift(stampNumber: bigint, reference: unknown): Record<string, string> {
-    const ticket = ticketFor(deps.gift!.gift, reference, deps.gift!.sponsor)
+  function giveGift(check: Check, stampNumber: bigint, reference: unknown): Record<string, string> {
+    const ticket = ticketFor(deps.gift!.gift, check, reference, deps.gift!.sponsor)
     if (ticket === 'bad_gift') return { error: ticket }
-    if (store.giveGift(stampNumber, buyOf(reference as string)) === 'other') return { error: 'given' }
+    if (store.giveGift(stampNumber, check, buyOf(reference as string)) === 'other') return { error: 'given' }
     return { ticket }
+  }
+
+  /** A stamp request's session and stamp number, and the gift's buy, asked only of a check that gives one. */
+  function stampAsked(check: Check, body: Record<string, unknown>): { sessionId: string; stampNumber: bigint; gift?: { reference: unknown } } {
+    const { gift: reference, ...rest } = body
+    const asked = (deps.gift?.gift.credits[check] ?? 0) > 0 && 'gift' in body
+    return { ...stampRequest(fields(asked ? rest : body, ['sessionId', 'stampNumber'])), ...(asked && { gift: { reference } }) }
   }
 
   /** A stamp from the face key, for this stamp number, from a face check Didit approved. */
   async function faceStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const { gift: reference, ...rest } = body
-    const asked = deps.gift !== undefined && 'gift' in body
-    const { sessionId, stampNumber } = stampRequest(fields(asked ? rest : body, ['sessionId', 'stampNumber']))
+    const { sessionId, stampNumber, gift } = stampAsked('face', body)
     kept(store.check({ sessionId, stampNumber, since: since() }))
 
     const decision = await decided(face, sessionId)
@@ -274,7 +280,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     // stamp number while this request waited for Didit.
     kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now(), stamp }))
     const answer: Record<string, unknown> = { stamp: stampToJson(stamp) }
-    if (asked) answer.gift = giveGift(stampNumber, reference)
+    if (gift) answer.gift = giveGift('face', stampNumber, gift.reference)
     return [200, answer]
   }
 
@@ -283,7 +289,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
    * fingerprint was signed for no other stamp number.
    */
   async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const { sessionId, stampNumber } = stampRequest(fields(body, ['sessionId', 'stampNumber']))
+    const { sessionId, stampNumber, gift } = stampAsked('id', body)
     kept(store.check({ sessionId, stampNumber, since: since() }))
 
     const decision = await decided(id, sessionId)
@@ -296,7 +302,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const facts = idFacts(model, embedded, who)
     const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
     kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print }))
-    return [200, { stamp: stampToJson(stamp) }]
+    return [200, { stamp: stampToJson(stamp), ...(gift && { gift: giveGift('id', stampNumber, gift.reference) }) }]
   }
 
   /**

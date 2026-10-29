@@ -7,7 +7,8 @@
 //                                    taken; which current entries name which files; and which
 //                                    files are stored
 //   <dir>/files/<sha256>             the bytes, with <sha256>.type beside them (the disk driver);
-//                                    or <sha256> in an S3-compatible bucket, typed by content-type
+//                                    or <sha256> in an S3-compatible bucket, typed by content-type,
+//                                    and read through a short-lived link straight from the bucket
 //
 // host.sqlite holds nothing that exists only there but when each stored file stopped being named:
 // rebuild(dir) makes it again from the folder files and the file store. A folder is its file: with
@@ -30,6 +31,8 @@ const OPEN_FOLDERS = 128
 const HASH = /^[0-9a-f]{64}$/
 /** Milliseconds an S3 request may take. */
 const S3_TIMEOUT_MS = 60_000
+/** Seconds a link to a file in the bucket works: long enough to follow it at once, never to keep it. */
+export const LINK_SECONDS = 300
 /** An address as text: base58 of 32 bytes, 32 to 44 characters, a word of its own. */
 const ADDRESS = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/g
 
@@ -69,6 +72,8 @@ export interface FileStore {
   delete(sha256: string): Promise<void>
   /** Every hash held, with its type. */
   list(): AsyncIterable<Stored>
+  /** A short-lived link that reads the bytes straight from the store, from a store that gives one. */
+  link?(sha256: string): string
 }
 
 // ------------------------------------------------------------------------------------------
@@ -479,6 +484,11 @@ export class Storage {
     return this.files.get(sha256)
   }
 
+  /** A short-lived link to stored bytes, from a store that gives one; undefined for bytes host.sqlite does not list, or on disk. */
+  fileLink(sha256: string): string | undefined {
+    return this.holdsFile(sha256) ? this.files.link?.(sha256) : undefined
+  }
+
   private oneAtATime<T>(sha256: string, run: () => Promise<T>): Promise<T> {
     const out = (this.fileQueue.get(sha256) ?? Promise.resolve()).then(run, run)
     const settled = out.then(
@@ -643,29 +653,57 @@ const hmac = (key: Uint8Array | string, data: string) => createHmac('sha256', ke
 /** RFC 3986's unreserved characters stay; everything else is percent-encoded, as SigV4 asks. */
 const uriEncode = (text: string) => encodeURIComponent(text).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`)
 
+type Credentials = Pick<S3Options, 'accessKeyId' | 'secretAccessKey' | 'region'>
+
+/** SigV4's signature of a canonical request, at `amzDate` (`YYYYMMDDTHHMMSSZ`), and the scope it names. */
+function sigV4(canonical: string, amzDate: string, credentials: Credentials): { scope: string; signature: string } {
+  const region = credentials.region ?? 'us-east-1'
+  const day = amzDate.slice(0, 8)
+  const scope = `${day}/${region}/s3/aws4_request`
+  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256Hex(canonical)].join('\n')
+  const key = hmac(hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, day), region), 's3'), 'aws4_request')
+  return { scope, signature: createHmac('sha256', key).update(toSign).digest('hex') }
+}
+
+/** A URL's path and query as SigV4 writes them: each segment and each name and value encoded, the query sorted by name. */
+function canonicalUrl(url: URL): [path: string, query: string] {
+  const path = url.pathname.split('/').map((segment) => uriEncode(decodeURIComponent(segment))).join('/')
+  const query = [...url.searchParams].map(([k, v]) => [uriEncode(k), uriEncode(v)]).sort(([a], [b]) => (a! < b! ? -1 : a! > b! ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join('&')
+  return [path, query]
+}
+
 /**
  * The headers that sign a request: SigV4 over `host`, every header given, and the payload's
  * SHA-256. `amzDate` is `YYYYMMDDTHHMMSSZ`.
  */
-export function signS3(request: { method: string; url: URL; headers: Record<string, string>; payloadHash: string; amzDate: string }, credentials: Pick<S3Options, 'accessKeyId' | 'secretAccessKey' | 'region'>): Record<string, string> {
-  const region = credentials.region ?? 'us-east-1'
+export function signS3(request: { method: string; url: URL; headers: Record<string, string>; payloadHash: string; amzDate: string }, credentials: Credentials): Record<string, string> {
   const headers: Record<string, string> = { ...request.headers, host: request.url.host, 'x-amz-content-sha256': request.payloadHash, 'x-amz-date': request.amzDate }
   const names = Object.keys(headers).map((n) => n.toLowerCase()).sort()
   const lower = Object.fromEntries(Object.entries(headers).map(([n, v]) => [n.toLowerCase(), v.trim().replace(/\s+/g, ' ')]))
-  const path = request.url.pathname.split('/').map((segment) => uriEncode(decodeURIComponent(segment))).join('/')
-  const query = [...request.url.searchParams].map(([k, v]) => [uriEncode(k), uriEncode(v)]).sort(([a], [b]) => (a! < b! ? -1 : a! > b! ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join('&')
-  const canonical = [request.method, path, query, ...names.map((n) => `${n}:${lower[n]}`), '', names.join(';'), request.payloadHash].join('\n')
-  const day = request.amzDate.slice(0, 8)
-  const scope = `${day}/${region}/s3/aws4_request`
-  const toSign = ['AWS4-HMAC-SHA256', request.amzDate, scope, sha256Hex(canonical)].join('\n')
-  const key = hmac(hmac(hmac(hmac(`AWS4${credentials.secretAccessKey}`, day), region), 's3'), 'aws4_request')
-  const signature = createHmac('sha256', key).update(toSign).digest('hex')
+  const canonical = [request.method, ...canonicalUrl(request.url), ...names.map((n) => `${n}:${lower[n]}`), '', names.join(';'), request.payloadHash].join('\n')
+  const { scope, signature } = sigV4(canonical, request.amzDate, credentials)
   return { ...headers, authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` }
 }
 
+/**
+ * A link that GETs an object with no key of its own, for `seconds` from `amzDate`: SigV4 in its
+ * query, `host` the one header signed, the payload unsigned, as S3's presigned URLs are.
+ */
+export function presignS3(request: { url: URL; amzDate: string; seconds: number }, credentials: Credentials): URL {
+  const url = new URL(request.url)
+  const scope = sigV4('', request.amzDate, credentials).scope
+  for (const [name, value] of [['X-Amz-Algorithm', 'AWS4-HMAC-SHA256'], ['X-Amz-Credential', `${credentials.accessKeyId}/${scope}`], ['X-Amz-Date', request.amzDate], ['X-Amz-Expires', String(request.seconds)], ['X-Amz-SignedHeaders', 'host']]) url.searchParams.set(name!, value!)
+  const canonical = ['GET', ...canonicalUrl(url), `host:${url.host}`, '', 'host', 'UNSIGNED-PAYLOAD'].join('\n')
+  url.searchParams.set('X-Amz-Signature', sigV4(canonical, request.amzDate, credentials).signature)
+  return url
+}
+
+/** Now, as SigV4 writes a time: `YYYYMMDDTHHMMSSZ`. */
+const amzNow = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+
 function s3Files(options: S3Options): FileStore {
   const send = async (method: string, url: URL, body?: Uint8Array, headers: Record<string, string> = {}) => {
-    const amzDate = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+    const amzDate = amzNow()
     const signed = signS3({ method, url, headers, payloadHash: sha256Hex(body ?? new Uint8Array()), amzDate }, options)
     delete signed.host
     return fetch(url, { method, headers: signed, ...(body && { body: new Uint8Array(body) }), signal: AbortSignal.timeout(S3_TIMEOUT_MS) })
@@ -697,6 +735,9 @@ function s3Files(options: S3Options): FileStore {
     async delete(sha256) {
       const res = await send('DELETE', object(sha256))
       if (!res.ok && res.status !== 404) await fail('DELETE', res)
+    },
+    link(sha256) {
+      return presignS3({ url: object(sha256), amzDate: amzNow(), seconds: LINK_SECONDS }, options).href
     },
     async *list() {
       for (let token: string | undefined; ; ) {

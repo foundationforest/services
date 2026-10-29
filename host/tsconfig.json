@@ -25,6 +25,7 @@
     "src",
     "credits",
     "client",
-    "test"
+    "test",
+    "check-host.ts"
   ]
 }

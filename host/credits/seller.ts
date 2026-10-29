@@ -1,7 +1,8 @@
-// The host's credits, its seller: its credit key, its directory, a buy collected once a sponsor's
-// ticket pays for it, the blind signatures it answers with, the proofs it took, its sponsors' bill,
-// and its spent list, in one SQLite file that also holds the host's balances (src/credits.ts). A
-// spend takes a list of credits together. See README.md, "Credits".
+// The host's credits, its seller: its credit key, its directory, a buy collected once it is paid, by
+// a sponsor's ticket or from a folder's balance here, the blind signatures it answers with, the buys
+// it was paid for, its sponsors' bill, and its spent list, in one SQLite file that also holds the
+// host's balances (src/credits.ts). A spend takes a list of credits together. See README.md,
+// "Credits".
 //
 // Node only: the file is SQLite (node:sqlite), and the key a file the seller makes on the volume at
 // its first start. It talks to no network. privacypass-ts reads the buy and writes the answer,
@@ -14,9 +15,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
 import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
+import { checkSignature } from '@foundationforest/folders'
 import { base58, base64urlnopad } from '@scure/base'
 
-import { CREDIT_TYPE, DIRECTORY_PATH, referenceOf, ticketMessage } from './credit.ts'
+import { CREDIT_TYPE, DIRECTORY_PATH, balanceMessage, referenceOf, ticketMessage } from './credit.ts'
 
 const { getPublicKeyBytes } = publicVerif
 
@@ -117,9 +119,20 @@ function readTicket(text: string): { sponsor: string; key: Uint8Array; credits: 
   return { sponsor, key, credits: Number(credits), signature: sig }
 }
 
+/** A balance payment's parts, as the client's `balancePayment` writes it: `<folder>.<key>.<signature>`; null for anything else. */
+function readBalance(text: string): { folder: string; key: string; signature: Uint8Array } | null {
+  const [folder = '', key = '', signature = '', ...rest] = text.split('.')
+  const sig = bytesOf(signature, 'base64url', 64)
+  if (rest.length || !bytesOf(folder, 'base58', 32) || !bytesOf(key, 'base58', 32) || !sig) return null
+  return { folder, key, signature: sig }
+}
+
 /** What a service answers: a status, a body (JSON, or bytes with their type). */
 export type Answer = { status: number; body: unknown; type?: string }
-const refuse = (error: string, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
+export const refuse = (error: string, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
+
+/** A balance that could not pay, thrown inside the buy's transaction so it is rolled back. */
+class Short extends Error {}
 
 /** `work` in one transaction: all of it, or, if it throws, none. Inside one already open, it is part of that one. */
 function together<T>(db: DatabaseSync, work: () => T): T {
@@ -173,11 +186,17 @@ export type SellerConfig = {
   sponsors: string[]
   /** Its one SQLite file, or ':memory:'. */
   path: string
+  /**
+   * The folders' balances, for a buy paid from one: whether a key may pay from a folder's balance,
+   * and taking `credits` whole credits from it, in the buy's transaction (null when taken, else why
+   * not). No balance payment without it.
+   */
+  balance?: { counts(folder: string, key: string): boolean; take(folder: string, credits: number): string | null }
 }
 
 /** The host's seller: see `seller`. */
 export type Seller = {
-  /** The seller's one file, open: the spent list, the proofs, the bill, and the host's balances. */
+  /** The seller's one file, open: the spent list, the buys paid for, the bill, and the host's balances. */
   db: DatabaseSync
   spent: SpentList
   /** `work` in one transaction of the seller's file. */
@@ -192,16 +211,20 @@ export type Seller = {
 }
 
 /**
- * The host's seller of credits, in one SQLite file: its directory; each buy collected once a
- * sponsor's ticket pays for it (`ticket <ticket>`, in the PAYMENT_HEADER); the proofs it took, so a
- * buy collected again is billed once; how many credits each sponsor's tickets paid for (its bill,
- * counted, never capped); and the spent list. Other ways to pay are this host's to add.
+ * The host's seller of credits, in one SQLite file: its directory; each buy collected once it is
+ * paid, in the PAYMENT_HEADER, by a sponsor's ticket (`ticket <ticket>`) or from a folder's balance
+ * here (`balance <folder>.<key>.<signature>`); the reference of each buy paid for, so a buy is paid
+ * once, whatever pays it; how many credits each sponsor's tickets paid for (its bill, counted, never
+ * capped); and the spent list. Other ways to pay are added beside these.
  */
 export function seller(config: SellerConfig): Seller {
   for (const s of config.sponsors) if (!bytesOf(s, 'base58', 32)) throw new Error('a sponsor is an address: an Ed25519 key, 32 bytes in base58')
   const sponsors = new Set(config.sponsors)
   const db = new DatabaseSync(config.path)
-  db.exec('CREATE TABLE IF NOT EXISTS proofs (proof TEXT PRIMARY KEY) WITHOUT ROWID')
+  // Each buy paid for, by its reference. It took the place of `proofs`, the tickets taken, which
+  // only kept a sponsor's bill from counting a buy twice.
+  db.exec('DROP TABLE IF EXISTS proofs')
+  db.exec('CREATE TABLE IF NOT EXISTS buys (reference TEXT PRIMARY KEY) WITHOUT ROWID')
   db.exec('CREATE TABLE IF NOT EXISTS bill (sponsor TEXT PRIMARY KEY, credits INTEGER NOT NULL) WITHOUT ROWID')
   const spent = new SpentList(db)
   const { origin, key, price, maxBuy } = config
@@ -215,21 +238,33 @@ export function seller(config: SellerConfig): Seller {
     }
     if (count > maxBuy) return refuse('too_many', 400, `at most ${maxBuy} credits a buy`)
     const reference = await referenceOf(buy)
-    const owed = 'a ticket from a sponsor this host takes'
+    const owed = "a sponsor's ticket this host takes, or a folder's balance here"
     if (!header?.trim()) return refuse('not_paid', 402, owed)
     const [kind, value = '', ...rest] = header.trim().split(' ')
     const t = kind === 'ticket' && !rest.length ? readTicket(value) : null
-    if (!t) return refuse('bad_payment', 400, 'the forest-payment header is `ticket <ticket>`')
-    const signed = verify(null, ticketMessage(origin, reference, count), { key: Buffer.concat([ED25519_SPKI, t.key]), format: 'der', type: 'spki' }, t.signature)
-    if (!sponsors.has(t.sponsor) || t.credits !== count || !signed) return refuse('not_paid', 402, owed)
-    const proof = `ticket ${t.sponsor} ${value.split('.')[2]}`
-    const sponsor = t.sponsor
-    // A ticket signs its buy's reference, so it pays for that buy alone. Collected again, the same
-    // answer, and the bill counts it once.
-    together(db, () => {
-      if (db.prepare('INSERT OR IGNORE INTO proofs (proof) VALUES (?)').run(proof).changes === 0) return
-      db.prepare('INSERT INTO bill (sponsor, credits) VALUES (?, ?) ON CONFLICT (sponsor) DO UPDATE SET credits = credits + excluded.credits').run(sponsor, count)
-    })
+    const b = kind === 'balance' && !rest.length ? readBalance(value) : null
+    if (!t && !b) return refuse('bad_payment', 400, 'the forest-payment header is `ticket <ticket>` or `balance <folder>.<key>.<signature>`')
+    if (t) {
+      const signed = verify(null, ticketMessage(origin, reference, count), { key: Buffer.concat([ED25519_SPKI, t.key]), format: 'der', type: 'spki' }, t.signature)
+      if (!sponsors.has(t.sponsor) || t.credits !== count || !signed) return refuse('not_paid', 402, owed)
+    } else if (!config.balance?.counts(b!.folder, b!.key) || !checkSignature(b!.signature, balanceMessage(origin, b!.folder, reference, count), b!.key)) {
+      return refuse('not_paid', 402, "signed by the folder's main key, or by an access key its profile entry here lists with message")
+    }
+    // Its payment signs its buy's reference, so it pays for that buy alone. A buy is paid once:
+    // collected again, whatever pays, the same answer, and nothing more is billed or taken.
+    try {
+      together(db, () => {
+        if (db.prepare('INSERT OR IGNORE INTO buys (reference) VALUES (?)').run(reference).changes === 0) return
+        if (t) db.prepare('INSERT INTO bill (sponsor, credits) VALUES (?, ?) ON CONFLICT (sponsor) DO UPDATE SET credits = credits + excluded.credits').run(t.sponsor, count)
+        else {
+          const short = config.balance!.take(b!.folder, count)
+          if (short) throw new Short(short)
+        }
+      })
+    } catch (error) {
+      if (error instanceof Short) return refuse('not_paid', 402, error.message)
+      throw error
+    }
     return { status: 200, body: await answer(buy, key), type: 'application/private-token-generic-batch-response' }
   }
 

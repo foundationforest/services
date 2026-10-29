@@ -7,7 +7,7 @@
 //
 //   the verifier   verifier/src, with the stand-in Didit its tests run (verifier/test/fake-didit.ts,
 //                  a process of its own) and the stand-in face model; its own name and seed in a
-//                  directory of its own; the welcome gift, credits at the loop's host
+//                  directory of its own; its gifts, credits at the loop's host
 //   the host       host/src, as `npm start` runs it, the plug and the credits, taking the loop
 //                  verifier's sponsor's tickets
 //   the index      index/src, with lists of its own: the host it reads, the loop verifier's two keys
@@ -175,7 +175,7 @@ export async function startServices(o: { appUrl: string; say: (line: string) => 
     const host = `http://127.0.0.1:${hostPort}`
 
     // The verifier: the stand-in Didit first, then the verifier, which makes its seed in its
-    // directory, with the welcome gift at the loop's host.
+    // directory, with its gifts at the loop's host.
     const diditPort = await freePort()
     const didit = child('stand-in Didit', process.execPath, ['--disable-warning=ExperimentalWarning', 'test/fake-didit.ts'], join(repo, 'verifier'), {
       FAKE_DIDIT_PORT: String(diditPort),

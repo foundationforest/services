@@ -2,16 +2,16 @@
 
 The host keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. A
 folder is a profile's entries on a host, each signed by its main key or an access key its profile
-entry lists. A small write costs a fraction of a cent, paid in credits, prepaid units of this host's
-writes; your first credits are a gift from the verifier. The Forest Foundation runs this copy, at
-https://host.forest.foundation. Anyone can run another; the main way is this code, or their own that
-passes the standard's host check
-([folders](https://github.com/foundationforest/standard/blob/main/folders/README.md#hosts)). It keeps
-copies: the entries signed for each profile (a locked one as an envelope only the keys it was locked
-to open), its inbox entries, locked too, and the files its current entries name. Anyone can copy a
-folder out; the main way is the person's app reading every entry and file and writing them to another
-host. The only thing here no key signed is a folder's balance of credits. No key of yours, no money
-but its own credits, no account.
+entry lists. A small write costs a fraction of a cent, paid from the folder's balance of credits,
+prepaid units of this host's writes, and a message carries one credit; your first credits are a gift
+from the verifier. The Forest Foundation runs this copy, at https://host.forest.foundation. Anyone
+can run another; the main way is this code, or their own that passes the standard's host check
+([folders](https://github.com/foundationforest/standard/blob/main/folders/README.md#hosts)). It
+keeps copies: the entries signed for each profile (a locked one as an envelope only the keys it was
+locked to open), its inbox entries, locked too, and the files its current entries name. Anyone can
+copy a folder out; the main way is the person's app reading every entry and file and writing them to
+another host. The only thing here no key signed is a folder's balance of credits. No key of yours,
+no money but its own credits, no account.
 
 ## How it works
 
@@ -39,21 +39,18 @@ counts is current again.
 |---|---|
 | `entryChoice` | Charges an entry to its own folder's balance, or refuses it (`refused`, with the price and the balance). Asked about every entry but a profile entry, and about a profile entry only while the folder has no entry here: a folder's first entry costs a write, whatever it is, and leaving or updating after that is free |
 | `fileChoice` | Takes the plug's file types, then reserves the bytes' price on a folder whose current entry names them, the newest naming entry's folder first, until one can pay. The front takes it once the plug has stored them, or releases it |
-| `inboxChoice` | Takes 1,000 inbox entries an inbox a day, from midnight UTC, and refuses the rest (`refused`) until the next day. Inbox entries are free: the sender and the message are locked inside, so no folder could be asked to pay |
+| `inboxChoice` | Takes the one credit an inbox entry carries in its request's payment, keeps the entry's price and puts the rest into the recipient folder's balance, or refuses it (`refused`): the sender is locked inside, so no folder could be asked to pay |
 
-**Inboxes.** The plug takes an inbox entry for any folder whose profile entry here has `openKey` (the
-open key envelopes for it are locked to), from anyone, and lists any inbox to anyone, after a cursor: only the envelopes protect it. It checks
-no sender and no signature inside; that is the recipient's app's. Nobody deletes an inbox entry: it
-goes after the keep days.
+**Inboxes.** The plug takes an inbox entry for any folder whose profile entry here has `openKey`
+(the open key envelopes for it are locked to), from anyone who sends its credit, and lists any inbox
+to anyone, after a cursor: only the envelopes protect it. It checks no sender and no signature
+inside; that is the recipient's app's. Nobody deletes an inbox entry: it goes after the keep days.
 
 **Files.** A file is the bytes an entry's body names in `files`, by SHA-256, type and size. The plug
 takes them only while a current entry here names them with that type and size, keeps them while one
 does, and for the keep days after. Bytes several folders name are stored once. The front sends on
-one upload of the same bytes at a time, so a second finds them stored and pays nothing.
-
-**Taking your own things down is never blocked by money.** A null body over a live entry costs the
-floor, and goes through free when the balance cannot pay. A null body where nothing stands takes
-nothing down: it is a new entry, paid like any other, or an empty folder could fill paths for free.
+one upload of the same bytes at a time, so a second finds them stored and pays nothing. From a
+bucket, a read is a redirect to a short-lived link straight to the bytes there.
 
 **Where it keeps things,** in the data directory (`DATA_DIR`):
 
@@ -62,7 +59,7 @@ nothing down: it is a new entry, paid like any other, or an empty folder could f
 | `folders/<address>.sqlite` | One SQLite file per folder: its entries and its inbox. With the host stopped, deleting the file removes the folder; the files only it named go keep days after the next prune |
 | `host.sqlite` | The log numbering every folder's entries in the order taken, which files each folder's current entries name, and which files are stored. All but when each stored file stopped being named comes back: `rebuild(dir)` makes it again, dating at the rebuild each file no current entry names |
 | `files/`, or a bucket | The files, on disk or, with `FILES=s3`, in any S3-compatible bucket. It serves only the bytes `host.sqlite` lists as stored |
-| `credits/credits.sqlite` | The spent list, the proofs it took, its sponsors' bill, the balances, and the id of each entry it took a price for |
+| `credits/credits.sqlite` | The spent list, the reference of each buy it was paid for, its sponsors' bill, the balances, and the id of each entry it took a price for |
 | `credits/key.der` | The credit key |
 
 - A new number, an entry's or an inbox entry's, is the larger of the last plus 1 and the clock in
@@ -76,8 +73,9 @@ nothing down: it is a new entry, paid like any other, or an empty folder could f
 
 ### Credits
 
-`credits/` sells and takes them, and `src/credits.ts` keeps the balances and the price. The buyer's
-side is `client/client.ts`: the loop and the verifier's tests buy with it.
+`credits/` sells and takes them, and `src/credits.ts` keeps the balances and the prices. The buyer's
+side is `client/client.ts`: the loop, the reference app and the mcp buy with it, and the host's own
+credit code reads the wire format from it.
 
 **A credit** is a Privacy Pass credit (the IETF's standard for tokens that cannot be tied to their
 buy) of type 2, Blind RSA (RFC 9576, 9577, 9578). The host signs it blind, over a number only the
@@ -87,11 +85,9 @@ ties it to the buy.
 - Every credit answers one challenge: type 2, the host's name (from `PUBLIC_ORIGIN`) as its
   `issuer_name`, no redemption context and no origin info, so credits can be bought ahead and kept.
 - Its bytes: type (2), nonce (32), the challenge's SHA-256 (32), the key's id, SHA-256 of the key
-  (32), and the signature (256): 354 bytes, in base64url. Its id on the spent list is its nonce in
-  hex.
-- The signature is RSABSSA-SHA384-PSS-Deterministic (RFC 9474) over the first 98 bytes, made with
-  Node's own RSA (OpenSSL); privacypass-ts's `Issuer` signs with JavaScript big integers, hundreds of
-  times slower.
+  (32), and the signature (256): 354 bytes, in base64url. Its spent-list id is its nonce, in hex.
+- The signature is RSABSSA-SHA384-PSS-Deterministic (RFC 9474) over the first 98 bytes, by Node's
+  own RSA (OpenSSL), hundreds of times faster than privacypass-ts's JavaScript `Issuer`.
 - **The credit key** is RSA-2048, made at the first start in `credits/key.der` (PKCS #8, readable by
   its own user only) and read on every start after. It is in no setting.
 
@@ -102,45 +98,51 @@ with one more field:
 { "issuer-request-uri": "/credits/buy",
   "token-keys": [{ "token-type": 2, "token-key": <base64url> }],
   "forest-credit": { "unit": "writes at this host", "price": <decimal text>,
-                     "write": <decimal text>, "kilobyte": <decimal text> } }
+                     "entry": <decimal text>, "file": <decimal text> } }
 ```
 
-`price` is a credit's price in dollars; `write` and `kilobyte` are what a write costs, in credits,
-each and for each 1,000 bytes it stores. An app takes the latest type 2 key whose `not-before` has
-passed; this host lists one, with none.
+`price` is a credit's price in dollars; `entry` and `file` are what 1,000 bytes cost, in credits, on
+the disk and in the bucket. An app takes the latest type 2 key whose `not-before` has passed; this
+host lists one, with none.
 
-**Buying,** in four steps:
+**Buying,** in three steps:
 
 1. **The buy.** The app makes `n` blinded requests in one batch, as
    `draft-ietf-privacypass-batched-tokens` writes it, and keeps each nonce and blinding's inverse.
    The buy's reference is the SHA-256 of its bytes, in base58.
-2. **Pay.** A sponsor (a key whose tickets pay for someone's credits) signs a ticket for it.
-3. **Get signed.** Anyone holding the buy sends its bytes to `POST /credits/buy` with the proof in
-   `Forest-Payment`, and gets the `n` blind signatures. Signing is deterministic: the same buy and
-   proof again get the same answer, so a lost answer costs nothing and gives nothing more.
-4. **Finish.** The app unblinds each signature, checks it against the host's key, and keeps the
-   credits.
+2. **Get signed.** Anyone holding the buy sends its bytes to `POST /credits/buy` with a payment, one
+   of the ways below, in `Forest-Payment`, and gets the `n` blind signatures. The payment signs the
+   reference: it pays for that buy here, of `n` credits, and no other. A buy is paid once: collected
+   again, whatever pays, it gets the same answer, and nothing more is billed or taken.
+3. **Finish.** The app unblinds each signature, checks it against the host's key, and keeps them.
 
-**Anyone can buy credits for any folder; the main way is a sponsor's ticket,**
-`Forest-Payment: ticket <ticket>`, the only way this host takes today; other ways are this host's to
-add. A sponsor is an Ed25519 key in `SPONSORS`. It signs `forest credit ticket\n<origin>\n<reference>\n<n>` in UTF-8, so
-the ticket pays for that buy at this host, of `n` credits, and no other; the ticket is
-`<sponsor's address>.<n>.<signature in base64url>`. The host keeps each proof it took, so a buy is
-billed once, and a bill of how many credits each sponsor's tickets paid for. The buyer and the
-sponsor see the reference, never the credits; the host sees which sponsor paid and the blinded buy,
-never which spends they become.
+**Anyone can pay for any buy; the main way is the person's app, from its wallet,** the Profiles
+folder's balance. Other ways (a card, say) are added beside these two, each signing UTF-8 text. The
+host sees what paid and the blinded buy, never which spends they become: a credit says nothing about
+who paid for it.
+
+| Way | `Forest-Payment` | Signed by, over |
+|---|---|---|
+| A sponsor's ticket | `ticket <sponsor's address>.<n>.<signature>` | An Ed25519 key in `SPONSORS`, over `forest credit ticket\n<origin>\n<reference>\n<n>`. The host keeps a bill of how many credits each sponsor's tickets paid for |
+| A folder's balance | `balance <folder>.<key>.<signature>` | The folder's main key (then `key` is the folder), or an access key its profile entry here lists with `message`, over `forest credit balance\n<origin>\n<folder>\n<reference>\n<n>`. The host takes `n` credits from the balance, or refuses (`not_paid`, with what it holds) |
 
 **A folder's balance** is kept in millionths of a credit. Anyone can add credits to any folder, a
-whole credit each; the main way is the person's own app, right after a buy. Only that folder's writes
-draw from it. A spend marks its credits spent and adds them in one transaction, all or none, and the
-spent list ties no credit to a folder. Credits are never refunded, and once in a folder never move
-to another: one credit is a cent of writes here, and nothing anywhere else.
+whole credit each; the main way is the person's own app, right after a buy. A spend marks them spent
+and adds them in one transaction, all or none; the spent list ties no credit to a folder. The
+folder's writes, and the buys it pays for, draw from it: credits move between folders only as blind
+credits, are never refunded, and are a cent of writes here each, and nothing anywhere else.
 
-**What a write costs:** the floor (`WRITE_FLOOR`), plus `PER_KB` for each 1,000 bytes it stores (an
-entry's canonical text, or a file's bytes), rounded up to a millionth. A delete costs the floor. An
-entry pays from its own folder, a file from a folder whose current entry names it. A write is paid
-once: an entry is claimed by its id as its price is taken, so copies pay once, and stored bytes cost
-nothing again.
+**What a write costs:** what it stores, counted as at least 1,000 bytes, rounded up to a millionth:
+an entry's canonical text at `ENTRY_PER_KB`, on the disk; a file's bytes at `FILE_PER_KB`, in the
+bucket. An entry pays from its own folder, a file from a folder whose current entry names it, once:
+an entry is claimed by its id as its price is taken, and stored bytes cost nothing again. Taking
+your own things down is free: a null body over a live entry costs nothing; one where nothing stands
+takes nothing down, so it is paid like any other, or an empty folder could fill paths for free.
+
+**An inbox entry carries one credit,** in its request's `Forest-Payment`: `credits <credit> …`, one
+a line, in order. The host keeps the entry's price and puts the rest into the recipient folder's
+balance. No credit that holds, no inbox entry (`refused`); a line refused before its price leaves
+its credit unspent.
 
 ## Its API
 
@@ -150,12 +152,12 @@ nothing again.
 | `POST /v1/entries` | NDJSON of canonical entries; one NDJSON result each | `unlisted`, `refused` (with price and balance), the standard's checks |
 | `POST /v1/entries/read` | `{ profile, after? }`: that folder's entries after the cursor, as NDJSON in the order taken; header `forest-cursor` | |
 | `GET /v1/entries?after=` | Every folder's entries after the cursor, the same way | |
-| `POST /v1/inbox` | NDJSON of canonical inbox entries; one result each | `no_inbox` (no `openKey` here), `refused` (the day's 1,000) |
+| `POST /v1/inbox` | NDJSON of canonical inbox entries, with their credits in `Forest-Payment`; one result each | `no_inbox` (no `openKey` here), `refused` (no credit that holds) |
 | `POST /v1/inbox/read` | `{ to, after? }`: the inbox entries left for that folder after the cursor, in arrival order; `forest-cursor` | |
 | `PUT /v1/files/<sha256>` | The bytes, `content-type` their type | `unnamed` (no current entry names them), `shape` (another type or size), `hash`, `size`, `refused` (no folder can pay); `413` when declared over 50,000,000 bytes, unread |
-| `GET /v1/files/<sha256>` | The bytes, with their type | |
+| `GET /v1/files/<sha256>` | The bytes, with their type; from a bucket, `302` to a link to them there | |
 | `GET /.well-known/private-token-issuer-directory` | [Its directory](#credits) | |
-| `POST /credits/buy` | A buy's bytes, as `application/private-token-generic-batch-request`, with `Forest-Payment`; answers its blind signatures | `not_a_buy`, `too_many` (over `MAX_BUY`), `bad_payment`, `not_paid` (402, with what to pay) |
+| `POST /credits/buy` | A buy's bytes, as `application/private-token-generic-batch-request`, with `Forest-Payment`, a ticket or a balance; answers its blind signatures | `not_a_buy`, `too_many` (over `MAX_BUY`), `bad_payment`, `not_paid` (402, with what to pay) |
 | `POST /credits/spend` | `{ folder, credits }`, 1 to 100 credits in base64url, all into that folder or none; answers `{ folder, credits }`, the balance, up to six decimals | `bad_request`, `credit` (402: one does not hold, or twice), `spent` (409) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }` | `bad_request` |
 
@@ -164,50 +166,53 @@ A credit route asked with another method answers `method` (405), and a POST body
 
 ## How we run it
 
-Every number is set in this directory: `src/host.ts` (`choice`, `INBOX_A_DAY`), `src/plug.ts` (its
-`DEFAULT_*`), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`), or a setting.
+Every number is set in this directory: `src/host.ts` (`choice`), `src/plug.ts` (its `DEFAULT_*`,
+`MAX_HEADER_BYTES`), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`), `src/storage.ts`
+(`LINK_SECONDS`), or a setting.
 
-- **One credit is one US cent.** A write costs **0.01 credit**, plus **0.01 a kilobyte** it stores:
-  a 1 kB entry 0.02, a 200 kB photo 2.01, a 50 MB video 500.01, five dollars. A delete costs 0.01,
-  free when the folder cannot pay. A folder's first entry costs what any entry does, and is refused
-  when the folder cannot pay. Inbox entries and reads are free, up to **1,000** an inbox a day.
-- **Why these prices:** ten years of keeping at Railway's prices today, plus reads, plus 40%. At 0.01
-  credit a kilobyte, a gigabyte is $100. Ten years of a gigabyte costs $18 on Railway's volume ($0.15
-  a GB a month), where entries live, and $1.80 in its bucket ($0.015), where files live. Less the
-  40%, $71 a gigabyte is left: after the keeping, enough to serve each byte about 1,070 times from
-  the volume, or 1,390 from the bucket, at $0.05 a GB out. The floor is one kilobyte's price, since
-  a small write is checked and logged like a large one. The numbers move when Railway's prices do.
-- **Buying:** at most **1,000** credits a buy, **100** a spend. `SPONSORS` lists the verifier's
-  sponsor address, whose tickets are a person's first credits.
+- **One credit is one US cent,** and a price is our cost divided by 0.6: 40% of it is our margin.
+  The cost is keeping a gigabyte 10 years at Railway's prices:
+
+  | A gigabyte | On the disk: entries, inbox entries | In the bucket: files |
+  |---|---|---|
+  | Kept, a month | $0.15 | $0.015 |
+  | Kept 10 years, and uploaded | $18.00 | $1.80, and $0.05 uploaded: $1.85 |
+  | ÷ 0.6 | $30.00 | $3.08 |
+  | 1,000 bytes, in credits | **0.003** | **0.00031**, 0.000308 rounded up |
+
+  A write is paid once and kept as long as we run the host; the 10 years is how we price it, since
+  storage keeps getting cheaper. A 1 kB entry costs 0.003, a 200 kB photo 0.062, a 50 MB video 15.5,
+  a message one credit, of which its inbox entry keeps about 0.015 and the recipient gets the rest.
+- **Buying:** at most **1,000** credits a buy, **100** a spend. `SPONSORS`: the verifier's sponsor.
 - **Sizes:** entries up to **50,000,000 bytes**, as large as a file, since each write is paid by the
-  byte; inbox entries up to **65,536**, since they are free and anyone leaves them. **100** lines a
-  request, its body at most a full batch of the largest inbox entries or one largest entry, so a
-  batch of large entries gets 413 and the client sends it again in halves. **1,000** lines and
-  **4,194,304 bytes** a page, though always one line. A read request is at most 1,024 bytes.
-- **Files:** png, jpeg and mp4, up to 50,000,000 bytes each.
+  byte; inbox entries up to **65,536**, a message's. **100** lines a request, its body at most a
+  full batch of the largest inbox entries or one largest entry, so a batch of large entries gets 413
+  and the client sends it again in halves; its headers up to **64 KiB**, room for a credit a line.
+  **1,000** lines and **4,194,304 bytes** a page, though always one line. A read request is at most
+  1,024 bytes. A request has **60 seconds** to arrive in full, or gets 408.
+- **Files:** png, jpeg and mp4, up to 50,000,000 bytes each, read through a link straight from the
+  bucket, good for **5 minutes**, whose egress Railway does not charge. A browser app that fetches
+  one needs the bucket's CORS to let any origin GET: a setting of the bucket's, not of this code.
 - **Keeps** an entry that stopped being current or counting, an inbox entry, and a file no current
   entry names for **30 days**, by its own clock, pruning every hour. A current entry stays.
-- **A request** has **60 seconds** to arrive in full, or gets 408.
 - **Its speed,** on one core of the machine this was written on: about **175 entries a second**
   checked and stored, about 9,800 served (`npm run bench`); pure JavaScript checks about 235
   signatures a second there.
 - **Who may write:** anyone who pays, with the folder's main key or an access key listed with
   `write`; the main way is the person's app, writing each entry to every host its profile entry
-  names. It refuses no write by its own choice but for its price, and no inbox entry but for an
-  inbox's day: no other rate limit. **Who may read:** anyone, any folder and any inbox, for free; the
+  names. It refuses no write by its own choice but for its price, and no inbox entry but for its
+  credit: no other rate limit. **Who may read:** anyone, any folder and any inbox, for free; the
   main way is an index reading every page, or an app reading one profile.
 - **Public:** every entry here (a locked one as an envelope), every file, any folder's balance, the
-  directory. **Secret:** the credit key and the bucket's key. **Kept, not published:** the spent
-  list, the proofs and tickets it took, the sponsors' bill, the balances, the ids of entries it took
-  a price for.
+  directory. **Secret:** the credit key and the bucket's key. **Kept, not published:** what
+  `credits/credits.sqlite` holds.
 - **Where:** Railway, one replica of `deploy/Dockerfile` built from the repo root, the data
   directory on its volume, files in a Railway bucket (`FILES=s3`).
 
 ### Settings
 
 The credit key is a file on the volume, never a setting; the settings hold only the bucket's key and
-this host's choices. One that cannot be read (a partial bucket, a price that is not decimal text)
-stops the start.
+this host's choices. One that cannot be read (a partial bucket, a price not decimal text) stops it.
 
 | Setting | Default | What |
 |---|---|---|
@@ -220,8 +225,8 @@ stops the start.
 | `FILES_REGION` | `us-east-1` | The region requests are signed for |
 | `FILES_STYLE` | `path` | `path` or `virtual`, as the bucket's service asks |
 | `CREDIT_PRICE_CENTS` | `1` | One credit's price, in whole US cents |
-| `WRITE_FLOOR` | `0.01` | Each write, in credits: decimal text, at most six decimals |
-| `PER_KB` | `0.01` | Each 1,000 bytes a write stores, the same |
+| `ENTRY_PER_KB` | `0.003` | Each 1,000 bytes of an entry or inbox entry, on the disk, in credits: decimal text, at most six decimals |
+| `FILE_PER_KB` | `0.00031` | Each 1,000 bytes of a file, in the bucket, the same |
 | `MAX_BUY` | `1000` | The most credits one buy may ask for |
 | `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
 
@@ -236,47 +241,41 @@ npm run bench                         # its speed on this machine
 SEED=<64 hex characters> npm run check-host -- https://host.forest.foundation
 ```
 
-`check-host` runs the standard's own host check (`standard/folders/scripts/check-host.ts`,
-unchanged) against any host: it writes from two profiles of one seed, `check/a` and `check/b`, and an
-access key it makes, and prints each check ok, unchecked or FAILED, exiting 1 on a failure. Here a
-new seed's first write is refused for credits, so the rest is unchecked; give it a `SEED` whose two
-folders hold credits. At these prices the first run costs `check/a` about 0.14 credit and `check/b`
-about 0.03, joining included, and each run after about 0.09 and nothing.
+`check-host` runs the standard's host check, unchanged, against any host (`check-host.ts`): it
+writes from two profiles of one seed, `check/a` and `check/b`, and an access key it makes, pays for
+each inbox entry with a credit bought from `check/b`'s balance, and prints each check ok, unchecked
+or FAILED, exiting 1 on a failure. Give it a `SEED` whose two folders hold credits, or the rest is
+unchecked. Each run costs `check/b` about 7 credits; `check/a`, their recipient, gets 3.9 back.
 
-`test/` covers, on loopback: the host check against the plug alone and against the whole host with
-credits; the plug's keep days, socket, refusals, choices, files, inbox and storage, the S3 driver
-among it; and the credits through the whole host, bought with `test/buyer.ts` as an app buys,
-every price and refusal above, the inbox cap on a stand-in clock, the credit key, and an end-to-end
-write read back with the standard's client.
+`test/` covers, on loopback: the host check against the plug and the whole host, paying; the plug
+and its storage, the S3 driver and its links among it; and every price, payment and refusal above.
 
 ## Promises
 
 - **It fits the standard's plug.** The standard's host check (`@foundationforest/folders/check`)
-  passes against it, and anyone can run
-  it against the deployed copy. The front adds the line at `/`, the credit routes and the price of
-  each write, and nothing else.
-- **Taking your own things down, and leaving, are never blocked by money; joining costs a write.** A
-  delete of a live entry goes through when the balance cannot pay its floor. A folder's first entry
-  costs a write, whatever it is; later profile entries, which leave this host or update the list,
-  the plug never asks about, so they are free.
+  passes against it, and anyone can run it against the deployed copy. The front adds the line at
+  `/`, the credit routes and the price of each write, and nothing else.
+- **Taking your own things down, and leaving, are free; joining costs a write.** A delete of a live
+  entry costs nothing. A folder's first entry costs a write, whatever it is; later profile entries,
+  which leave this host or update the list, the plug never asks about.
 - **No sign-ups, and no address logs.** A folder's balance is a number next to its address, and an
   entry's signature is its only proof. Neither part logs or keeps an address, and it logs no request
   but one it answers 500: its path and the error's message, any address taken out.
-- **It cannot tell which buy a credit came from, as long as it gave everyone the same key.** It
-  signed the credit blind and never saw its nonce.
+- **A credit says nothing about who paid for it, as long as the host gave everyone the same key.**
+  It signed the credit blind and never saw its nonce.
 - **A credit is spent once, a buy's credits are signed once, and a write is paid once.** A second
-  ticket for the same buy gives nothing more, collecting a buy again gives the same credits, and the
-  same entry or bytes sent again cost nothing.
+  payment for the same buy gives nothing more, collecting a buy again gives the same credits, and
+  the same entry or bytes sent again cost nothing.
 
 ## Limits
 
-- **Anyone who pays can write here** anything the plug accepts.
+- **Anyone who pays can write here** anything the plug accepts, and anyone with a credit can leave
+  an inbox entry in any inbox with `openKey`; choosing what to show is the recipient's app's.
 - **An entry is read and checked before its price is asked,** so anyone can make the host read up to
   50 MB a request it then refuses.
-- **Inbox entries are free, so any inbox can be filled:** past 1,000 a day, the inbox's own friends
-  wait for the next day. Choosing what to show is the recipient's app's.
-- **Inbox entries keep bytes here for free:** up to 64 KB each, 1,000 an inbox a day, for 30 days,
-  in any inbox with `openKey`. The day's count is in memory, so a restart counts from none.
+- **A sender needs a balance at each of the recipient's hosts:** a credit counts at its own host
+  only, so a message reaches only those where the sender's app can buy one.
+- **A reader that refuses redirects cannot read a file from the bucket:** each read is one.
 - **Anyone can list any inbox:** whom each entry is for, when it came and its size, never who wrote
   it or what it says.
 - **A folder's balance is public** to anyone who knows its address.
@@ -290,8 +289,8 @@ write read back with the standard's client.
 - **The batch is a draft:** `draft-ietf-privacypass-batched-tokens` is not an RFC; its encoding is
   `privacypass-ts` 0.9.0's.
 - **The credits code is not audited.**
-- **The price is a guess about reads:** bytes read less than about a thousand times in ten years pay
-  more than they cost, bytes read more pay less.
+- **Reads are free and not in the price:** a folder read very often costs the host more than its
+  writes paid.
 - **Bytes are paid by one folder that names them;** another naming them pays only for its entry.
 - **A stop between storing bytes and taking their price** leaves them stored and unpaid: the
   reservation is in this one process's memory.
@@ -305,7 +304,8 @@ write read back with the standard's client.
 
 **Why a balance per folder, and not a credit shown with each write?**
 A write costs a fraction of a credit, and the plug takes entries in batches. A balance takes credits
-once, through one route, and every write after draws from it.
+once, through one route, and every write after draws from it. An inbox entry is the one write that
+carries its own: its sender is locked inside, so no balance here is theirs.
 
 **Why is a file paid at its upload, by a folder that names it?**
 An upload is not signed; the entry naming the bytes is, and anyone may upload what it names. So the

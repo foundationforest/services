@@ -16,7 +16,7 @@ import { openingHalf } from '@foundationforest/keys'
 import { type Body, entry, fetchFile, fileOf, leave, readAll, readInbox, readPage, upload, write } from '@foundationforest/folders'
 import { inboxEntry } from '@foundationforest/folders/locked'
 import { DAY, type FileDriver, Host, rebuild } from '../src/plug.ts'
-import { s3Url, signS3 } from '../src/storage.ts'
+import { LINK_SECONDS, presignS3, s3Url, signS3 } from '../src/storage.ts'
 import { MINUTE, T0, alice, aliceBuyer, aliceOpening, bob, offerBody, profileBody } from './fixtures.ts'
 import { Clock, startPlug } from './helpers.ts'
 
@@ -381,8 +381,9 @@ describe('the S3 driver', () => {
   const credentials = { accessKeyId: 'FORESTTESTKEY', secretAccessKey: 'forest-test-secret' }
 
   /**
-   * A local S3 stand-in, path-style: it checks each request's SigV4 signature and payload hash,
-   * keeps objects in memory with their content-type, and lists one key a page.
+   * A local S3 stand-in, path-style: it checks each request's SigV4 signature and payload hash, or
+   * a link's, signed in its query, keeps objects in memory with their content-type, and lists one
+   * key a page.
    */
   async function s3Stub() {
     const objects = new Map<string, { type: string; bytes: Uint8Array }>()
@@ -391,6 +392,16 @@ describe('the S3 driver', () => {
       for await (const chunk of req) chunks.push(chunk as Buffer)
       const body = Buffer.concat(chunks)
       const url = new URL(req.url!, `http://${req.headers.host}`)
+      if (url.searchParams.has('X-Amz-Signature')) {
+        // A link: the same link signed again, from its own date and seconds, gives its signature.
+        const bare = new URL(url)
+        for (const name of [...url.searchParams.keys()]) if (name.startsWith('X-Amz-')) bare.searchParams.delete(name)
+        const again = presignS3({ url: bare, amzDate: url.searchParams.get('X-Amz-Date')!, seconds: Number(url.searchParams.get('X-Amz-Expires')) }, credentials)
+        const held = objects.get(url.pathname.split('/')[2]!)
+        if (req.method !== 'GET' || again.href !== url.href) return void res.writeHead(403).end('<Error><Code>SignatureDoesNotMatch</Code></Error>')
+        if (!held) return void res.writeHead(404).end('<Error><Code>NoSuchKey</Code></Error>')
+        return void res.writeHead(200, { 'content-type': held.type, 'content-length': held.bytes.length }).end(held.bytes)
+      }
       const auth = req.headers.authorization ?? ''
       const signed = (/SignedHeaders=([^,]+)/.exec(auth)?.[1] ?? '').split(';').filter((n) => !['host', 'x-amz-content-sha256', 'x-amz-date'].includes(n))
       const payloadHash = String(req.headers['x-amz-content-sha256'])
@@ -433,6 +444,10 @@ describe('the S3 driver', () => {
       assert.deepEqual(await putBoth(h.url), [true, true])
       assert.deepEqual([...stub.objects].map(([k, o]) => [k, o.type]).sort(), [[sha256Hex(photo), 'image/jpeg'], [sha256Hex(clip), 'video/mp4']].sort())
       assert.ok(!existsSync(join(dir, 'files')), 'nothing on disk')
+      // A read is a redirect to a short-lived link straight from the bucket, which serves the bytes.
+      const read = await fetch(`${h.url}/v1/files/${sha256Hex(clip)}`, { redirect: 'manual' })
+      const link = new URL(read.headers.get('location') ?? '')
+      assert.deepEqual([read.status, read.headers.get('cache-control'), link.origin, link.searchParams.get('X-Amz-Expires')], [302, 'no-store', stub.url, String(LINK_SECONDS)])
       assert.deepEqual(await fetchFile([h.url], sha256Hex(clip)).then((g) => [g!.type, g!.bytes]), ['video/mp4', clip])
       assert.equal((await fetch(`${h.url}/v1/files/${sha256Hex(bytesOf(9))}`)).status, 404)
 
@@ -470,7 +485,7 @@ describe('the S3 driver', () => {
     }
   })
 
-  test('path-style by default, virtual-hosted on request; signed as AWS’s own examples are', () => {
+  test('path-style by default, virtual-hosted on request; signed, and a link presigned, as AWS’s own examples are', () => {
     const endpoint = 'https://s3.amazonaws.com'
     assert.equal(s3Url({ endpoint, bucket: 'examplebucket' }, 'test.txt').href, 'https://s3.amazonaws.com/examplebucket/test.txt')
     const url = (key: string) => s3Url({ endpoint, bucket: 'examplebucket', style: 'virtual' }, key)
@@ -486,5 +501,9 @@ describe('the S3 driver', () => {
     list.searchParams.set('max-keys', '2')
     list.searchParams.set('prefix', 'J')
     assert.equal(signature('GET', list, {}, empty), '34b48302e7b5fa45bde8084f4b7868a86f0a534bc59db6670ed5711ef69dc6f7')
+    // And its presigned URL example: an object for 86,400 seconds, the payload unsigned.
+    const link = presignS3({ url: url('test.txt'), amzDate: '20130524T000000Z', seconds: 86_400 }, aws)
+    assert.equal(link.searchParams.get('X-Amz-Signature'), 'aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404')
+    assert.equal(link.searchParams.get('X-Amz-Credential'), 'AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request')
   })
 })
