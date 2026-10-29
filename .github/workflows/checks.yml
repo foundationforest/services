@@ -10,8 +10,6 @@
 #   index        its type-check and its tests, on loopback: this repo's host (its plug), real
 #                verifications and a real reputation proof from the circuits' committed proving files,
 #                a stand-in RPC, and the index end to end
-#   fee-payer    the local run's type-check, against the standard's escrow client, and the kora.toml
-#                its Dockerfile makes with deploy/devnet-config.sh
 #   host         its type-check and its tests: the standard's host check against the plug and against
 #                the whole host, the plug's own tests and its storage's, and its credits'
 #   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
@@ -23,9 +21,8 @@
 #                SDK's client and the pack, every tool in the person's folders, and the image's own
 #                command
 #
-# Not here, and in each directory's README: the fee payer's local run, which needs a local validator
-# and Kora built; the loop itself, which needs the phrase and the chain; and mcp's smoke test against
-# the deployed copy.
+# Not here, and in each directory's README: the loop itself, which needs the phrase and the chain;
+# and mcp's smoke test against the deployed copy.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.
@@ -91,24 +88,6 @@ jobs:
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
-
-  fee-payer:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - name: Install
-        run: |
-          ./standard.sh
-          (cd fee-payer && npm ci --no-audit --no-fund)
-      - name: The local run's type-check
-        working-directory: fee-payer
-        run: npm run check
-      - name: The image's kora.toml
-        run: bash fee-payer/deploy/devnet-config.sh fee-payer/kora.toml > /dev/null
 
   host:
     runs-on: ubuntu-latest

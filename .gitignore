@@ -5,7 +5,7 @@ markets/
 node_modules/
 
 # What the host and the mcp keep when run by hand (DATA_DIR=./data): the mcp's key among it. The
-# verifier's, the index's and Kora's are in their directories' own .gitignore.
+# verifier's and the index's are in their directories' own .gitignore.
 host/data/
 mcp/data/
 

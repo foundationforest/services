@@ -571,8 +571,7 @@ them. The build context is the repo root. `deploy/Dockerfile` builds it (Node 22
   country from a document whose country Didit did not read.
 - **The ID check is not offered** until a price is set.
 - **Payment is untried on chain.** The payment path runs in this code's tests only, against a
-  stand-in RPC, and a transfer that lists one more account is not among what the fee payer's tests
-  sent through Kora.
+  stand-in RPC.
 - **A payment's session is found again through Didit's list of sessions,** by its `vendor_data`; the API key
   must be allowed to read sessions. A session Didit opened whose answer was lost, if Didit's list
   misses it, is opened again on the next ask, and the foundation pays Didit for both.
