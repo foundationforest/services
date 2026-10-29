@@ -26,8 +26,9 @@ reader checks that. Each service here helps with one part, and holds none of it 
 | Indexes rank them | Ratings and a trust, and a reputation proof that carries the trust to another of their profiles without linking them | Each signed statement, and the root of the index's tree (one number that stands for all its trusts), against the index's key; the proof, against the root | The **index** reads the hosts and the chain, ranks each profile, and signs what it says |
 
 **The mcp** is the AI's door to all of it, over MCP (the Model Context Protocol, the way AI apps
-call outside tools): it passes on what indexes say and what the markets hold, and carries what an
-AI app asks to the person's app, and the answer back.
+call outside tools): it passes on what indexes say and what the markets hold, and acts in the
+person's own profiles with the access keys their app hands it at login, holding none between
+calls.
 
 ### The sort
 
@@ -49,7 +50,7 @@ AI app asks to the person's app, and the answer back.
 | [`host`](host/README.md) | Keeps profiles' folders, their entries, inboxes and photos, serves the entries and photos to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
 | [`index`](index/README.md) | Reads the hosts it lists and the chains it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
 | [`fee-payer`](fee-payer/README.md) | Pays the chain's fees for a person's transaction, and charges them what that cost in the dollar they pay with | https://fee-payer.forest.foundation |
-| [`mcp`](mcp/README.md) | The AI's door: reads the markets and passes on what indexes say, and carries what an AI app asks to the person's app, and the answer back | https://mcp.forest.foundation |
+| [`mcp`](mcp/README.md) | The AI's door: reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app hands it at login | https://mcp.forest.foundation |
 | [`e2e`](e2e/README.md) | The loop: two people through all five, each with a stand-in for their app and an AI, end to end. Not a service | |
 
 ## Run a copy
@@ -119,7 +120,8 @@ Everything but its secrets and what it keeps private for people:
   - what each run of the loop did, in `e2e/runs/`.
 - **Secret:**
   - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the fee
-    payer's key, the host's credit key, and the mcp's key, which signs its logins;
+    payer's key, the host's credit key, and the mcp's two keys, one that signs its logins and one
+    whose opening half opens the packs of access keys a person's app hands it;
   - the phrase that funds the loop;
   - the API keys and keyed URLs (web addresses with a key inside): Didit's, and the RPC's (the
     access point the services reach the chain through);
@@ -129,7 +131,9 @@ Everything but its secrets and what it keeps private for people:
   - the inbox entries, which anyone can list, and only the keys they were locked to open: the
     profile's main key's opening half, and each access key its profile entry lists with
     `read-inbox`;
-  - what an AI asks through the mcp, which it carries and never writes down.
+  - what an AI does through the mcp, which it never writes down, and the access keys in each login,
+    which travel locked to the mcp's open key inside the AI app's token, and are opened only for a
+    call.
 - **Kept, not published:**
   - the host's list of spent credits, the payment proofs it took, the bill for its sponsors (the
     keys whose tickets pay for someone's credits), each folder's balance, and the id of each entry it
