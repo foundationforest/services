@@ -5,13 +5,15 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 
 ## Words
 
-Use these words: seed, the seed's number, main key, access key, note, profile, profile entry, entry,
-address, label, scope, verifier, verified, stamp, stamp number, facts, verification, reputation
-proof, check, folder, file, host, service key, connection, connector, private, envelope, encrypted
-(an envelope), message, inbox, pay address, pay key, escrow, schedule, window, stop, payer,
-recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
+Use these words: seed (the secret on your device), the seed's number, main key, access key, note,
+profile, profile entry, entry, post, address, label, scope, verifier, verified, stamp, stamp number,
+facts, verification, reputation proof, check, folder, file, host, service key, connection,
+connector, private, envelope, encrypted (an envelope), locked, message, inbox, pay address, pay key,
+escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, credits, ticket,
+review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
 
-- A verifier is anyone who signs stamps; a person it signed a stamp to is verified. A stamp is what
+- A verifier is anyone who signs stamps; a person it signed a stamp to is verified, never "verified
+  once". A stamp is what
   a verifier signs to a person's seed: their stamp number and its facts. A verification is what a
   profile shows: the proof that its seed holds a stamp from that verifier.
 - The verifier has two keys: its face key, which signs the face check's stamps, and its ID key,
@@ -28,19 +30,25 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
 - Check, never verify: a reader checks a proof or a signature. Main key, never profile key;
   address, never wallet, for a key ("a wallet app" is fine).
 - Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
-  sealed, write key, read key, account for a person, card, registry, row, tier, standing, policy,
+  sealed, write key, read key, account (but in "no account"), card, registry, row, tier, standing,
+  policy,
   seed scalar, keyed path, a signature's prefix. A string baked into a recipe, a circuit or a key's
   text keeps its bytes even when its words grow old (the standard's three texts, `forest/profile/`,
   `forest/verifier/` and `forest/pay/`, the circuits' signal names and files, the verifier's `face`,
   `id`, `fingerprint` and `sponsor` texts): rename the code around it, never the string, and say
   why in a comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`,
   snarkjs's verifier).
-- encrypted is for an envelope: what is locked to a key's open key.
+- encrypted is for an envelope: what is locked to a key's open key. Locked, never sealed.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
 - A folder is a profile's entries on a host, signed by its main key or an access key its profile
   entry lists; this repo's folders are directories.
-- The foundation runs every service here, never Soil; the app is the Forest app.
+- The foundation runs every service here, never Soil; the app is the Forest app. In prose it is the
+  Forest Foundation; its registered name, the Open Forest Foundation, is only in legal text: the
+  verifier's consent screen and its data-law line.
+- The mcp is introduced once in each README that names it, as "a connector, over MCP".
+- No timing refs: no other repo's open issue or pull request, no date on a price, nothing true only
+  for a while.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
 - devnet, devnet USDC and mainnet are named only where something is configured for them: in a
@@ -56,14 +64,24 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
 - The promises in each README change only when Carlos says so in a chat.
 - One README per level: the repo's, and one in each directory; each starts with what it is and how
   it works.
-- Each piece's README ends Promises, Limits, Who decides what, FAQ; the repo README ends Who
-  decides what, FAQ.
+- Each level explains at its own altitude, and a fact lives once, at the lowest level that explains
+  it. Who decides what is only in the repo README, which ends Who decides what, FAQ.
 - A question lives at the lowest level whose README explains the thing it is about.
-- A FAQ is only for what the explanation does not answer; when a question shows the explanation is
-  missing something, the explanation changes.
-- Each service's README, in this order: what it is, in one plain sentence; who runs it, and that
-  anyone can run another; How it works; How we run it, every number and choice the service makes,
-  in plain words; Promises; Limits; Who decides what; FAQ. The README is the directory's only doc.
+- A FAQ is only for what a newcomer would ask that the explanation cannot carry; when a question
+  shows the explanation is missing something, the explanation changes.
+- Each piece's README (each service's, and `e2e/`'s), technical and precise, every term defined once
+  in plain words, in this order:
+  - what it is: one paragraph, in the repo README's words for it: who runs it, that anyone can run
+    another, and what it keeps;
+  - How it works: the substance, in tables and short lists wherever they carry the same as prose;
+  - Its API: one table;
+  - How we run it: our own choices, prices, settings, the image and the commands, in one place, and
+    one line on what `test/` covers, never test by test;
+  - Promises: at most five, the ones a stranger can check;
+  - Limits: only what is real today, one line each;
+  - FAQ.
+
+  The README is the directory's only doc.
 - Use existing pieces unchanged, and write only what does not exist. A change one of the standard's
   pieces needs is made in the standard first; then `STANDARD` moves, in a pull request of its own
   that fixes every service the move touches. `MARKETS` moves the same way.

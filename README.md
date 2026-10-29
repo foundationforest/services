@@ -1,145 +1,32 @@
 # services
 
-Part of [Forest](https://github.com/foundationforest). What the Open Forest Foundation runs: one
-copy of each service Forest's standard needs, and the loop that tests them together. Anyone can run
-another of each; the main way is this code (Apache 2.0), and their own is as good. None of them
-owns anything of the person's: no seed (the secret, kept on their own devices, that all their keys
-come from), no key made from it, no money, and no sign-up. None of them touches a chain: payments
-come later, with the standard's escrow. Each one's prices and choices are its own, in its README's
-How we run it.
+The Forest Foundation runs one copy of each service so Forest works from day one. Each is open source, so anyone can run another. None of them owns anything of yours: no seed, no main key, no money, no account.
 
-## How it works
+## What we run
 
-### What Forest is, and what each service does for it
-
-Forest is one seed and its profiles, verified, with offers and reviews in public that indexes
-rank. A profile is one of the person's identities, one for each market and role, such as a tutor in
-tutoring. The person holds the seed on their own devices, in their app, and the main key of each
-profile never leaves them. What acts for the person holds an access key their app hands it: each
-profile's profile entry lists the access keys it hands out and what each can do, and every host and
-reader checks that. Each service here helps with one part, and holds none of it for the person:
-
-| The part | What the person holds | How anyone checks it | The service that helps |
-|---|---|---|---|
-| One seed and its profiles | A main key from the seed for each profile's label (its market and role, such as `tutoring/tutor`), the entries signed for it, and the access keys its profile entry lists | Each entry's signature, against the profile's address or an access key its profile entry lists | The **host** keeps each profile's folder (its profile entry, every entry signed for it there, the files they name, and its inbox), and serves the entries to anyone |
-| Verified | A stamp, a verifier's signature to their seed saying it checked them, which any of their profiles shows as a verification | The verification, against the verifier's key | The **verifier** checks one real person and signs them a stamp |
-| Offers and reviews in public | The offers and reviews each profile signs | Each entry's signature | The **host** keeps them |
-| Indexes rank them | Ratings and a trust, and a reputation proof that carries the trust to another of their profiles without linking them | Each signed statement, and the root of the index's tree (one number that stands for all its trusts), against the index's key; the proof, against the root | The **index** reads the hosts, ranks each profile, and signs what it says |
-
-**The mcp** is a connector over MCP (the Model Context Protocol, the way AI apps call outside
-tools): it passes on what indexes say and what the markets hold, and acts in the person's own
-profiles with the access keys their app keeps for it, holding none between calls.
-
-### The sort
-
-- **[standard](https://github.com/foundationforest/standard):** what two strangers' programs must
-  agree on. That means formats, recipes and checks: keys, access keys among them, the verification
-  and the reputation proof, folders and the plug every host fits, and the escrow. Every service here
-  uses its pieces unchanged.
-- **[markets](https://github.com/foundationforest/markets):** what a post, a review, a vouch and a
-  report hold, one market at a time.
-- **services, this repo:** the foundation's copy of each service, and the loop.
-- **[app](https://github.com/foundationforest/app):** the Forest app: it holds the person's seed,
-  hands out access keys, and uses any copy of any service.
-
-### The services
-
-| Folder | What it is | The foundation's copy |
+| Service | What it does for you | Address |
 |---|---|---|
-| [`verifier`](verifier/README.md) | Checks that you are one real person, by face or by a government ID, through Didit, and signs you a stamp with its face key or its ID key | https://verifier.forest.foundation |
-| [`host`](host/README.md) | Keeps profiles' folders, their entries, inboxes and photos, serves the entries and photos to anyone, and takes each write's price in its credits, prepaid units of its writes | https://host.forest.foundation |
-| [`index`](index/README.md) | Reads the hosts it lists, ranks each profile whose verification checks, and serves it all as pages and JSON, signed | https://index.forest.foundation |
-| [`mcp`](mcp/README.md) | Reads the markets and passes on what indexes say, and acts in the person's own profiles with the access keys their app keeps for it | https://mcp.forest.foundation |
-| [`e2e`](e2e/README.md) | The loop: two people through all four, each with a stand-in for their app and an AI, end to end. Not a service | |
+| [verifier](verifier/README.md) | Checks that you are one real person, by your face or your ID, and signs a stamp to your seed. Your profiles then prove they're verified without saying who you are. | verifier.forest.foundation |
+| [host](host/README.md) | Keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. A small write costs a fraction of a cent, paid in credits. Your first credits are a gift from the verifier. | host.forest.foundation |
+| [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | index.forest.foundation |
+| [mcp](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you: find people, post, review, message, within the access keys you give it. It keeps nothing of yours. Until the Forest app's connect page is up, it only reads. | mcp.forest.foundation |
+
+The loop ([`e2e/`](e2e/README.md)) runs two people through all four, end to end, on every change. None of the services touches a chain: payments come later, with the standard's escrow.
 
 ## Run a copy
 
-Anyone can run another copy of any of them; the main way is its folder's `deploy/Dockerfile`, built
-with this repo's root as the build context. Each folder's README says its settings, what it keeps
-and where, and How we run it. On a machine of your own, Node 22.18 or later:
-
-```sh
-./standard.sh                      # the standard and the markets, at their pins
-cd host && npm ci && npm start     # or verifier, index, mcp; each README lists its settings
-```
-
-What [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs on every pull request and
-on `main`, from a clean install, six jobs:
-
-```sh
-./standard.sh
-
-(cd verifier && npm ci && npm run fetch && npm run check && npm test)   # needs host installed
-(cd index && npm ci && npm run check && npm test)       # needs host installed
-(cd host && npm ci && npm run check && npm test)
-(cd e2e && npm ci && npm run check && npm test)        # needs verifier, host, index and mcp installed
-(cd e2e && npm run e2e)                                # the loop, on loopback, no chain and no secret
-(cd mcp && npm ci && npm run check && npm test)        # needs host installed
-```
-
-A test that cannot find what it needs skips, and CI fails on any skip: each summary must say
-`# skipped 0`. CI does not run mcp's smoke test against the deployed copy; mcp's README says how to
-run it.
+Each service's folder has its own `deploy/Dockerfile`, built from the repo root, and a README listing its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's folder; the verifier first fetches its face models (`npm run fetch -- models`).
 
 ## The pins
 
-- `STANDARD` holds one commit of the standard, and `MARKETS` one commit of the markets.
-- `./standard.sh` fetches each at its commit into `standard/` and `markets/` (neither committed),
-  then installs and builds the standard's packages and the markets package, `markets/build`.
-- Each service depends on the standard's packages by name, through `file:` links into `standard/`.
-  The index and the mcp read the markets through the markets package, `@foundationforest/markets`,
-  linked the same way from `markets/build`, and check every post, review, vouch and report with its
-  one check, never over the network while they run.
-- Moving a pin is a one-line change, in a pull request of its own that fixes every service the move
-  touches and keeps every README true. A change one of the standard's pieces needs is made in the
-  standard first.
+`STANDARD` and `MARKETS` each hold one commit. Every service uses exactly those, so a change upstream reaches the services only when a pin moves, in a pull request of its own.
 
 ## Who decides what
 
-- **The standard, at `STANDARD`:** what every service here must agree on with every other copy.
-- **The markets directory, at `MARKETS`:** each market's roles, posts and reviews.
-- **Each service, as it is run:** what its README's How we run it says. Whoever runs a copy chooses
-  its own.
-- **An app, with the person:** which verifier, host, index and mcp to use.
-- **The person:** their seed and profiles; which AI apps, services and people hold an access key for
-  which profile, and what each can do; and which proofs to show.
+- **Each service, as it runs:** its prices and choices, in its README's How we run it.
+- **An app, with the person:** which services to use.
+- **The person:** their seed and profiles, and which keys go to whom.
 
 ## FAQ
 
-**What of what the foundation runs is public?**
-Everything but its secrets and what it keeps private for people:
-
-- **Public:**
-  - this code and every setting these READMEs list;
-  - the verifier's name and its two keys;
-  - every entry on the host (a locked entry as an envelope only the keys it was locked to open);
-  - the index's pages, JSON, signed ratings and reputation tree;
-  - what each run of the loop did, in CI's log for it.
-- **Secret:**
-  - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the
-    host's credit key, and the mcp's two keys, one that signs its logins and one whose opening
-    half opens the connections a person's app makes for it;
-  - Didit's API key;
-  - the keys to the host's bucket, the storage its photos and videos live in.
-- **Private by design:**
-  - what the verifier keeps ([verifier](verifier/README.md#what-it-keeps));
-  - the inbox entries, which anyone can list, and only the keys they were locked to open: the
-    profile's main key's opening half, and each access key its profile entry lists with
-    `read-inbox`;
-  - what an AI does through the mcp, which it never writes down, and the access keys of each
-    connection, in a folder of the person's, locked to its own key and the mcp's open key, and
-    opened only for a call.
-- **Kept, not published:**
-  - the host's list of spent credits, the tickets it took, the bill for its sponsors (the keys
-    whose tickets pay for someone's credits), each folder's balance, and the id of each entry it
-    took a price for;
-  - the verifier's list of stamp numbers given a gift;
-  - the hosting provider's own request logs.
-
-**Why is the standard pinned by `standard.sh`, and not a submodule or a copy?**
-Each image is built from the repo root, and a copy would drift from the standard. One commit in one
-file is the whole pin, and moving it is a one-line change plus whatever it touches.
-
-**Why one repo for four services?**
-They share one pin of the standard, one CI, and one loop that tests them together. Each directory
-stands alone: its own package, its own image, its own README.
+**Why one repo for four services?** They share one pin of the standard, one CI and one loop. Each folder still stands alone, with its own package, image and README.
