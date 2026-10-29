@@ -64,7 +64,7 @@ cd host && npm ci && npm start     # or verifier, index, mcp; each README lists 
 ```
 
 What [`.github/workflows/checks.yml`](.github/workflows/checks.yml) runs on every pull request and
-on `main`, from a clean install, five jobs:
+on `main`, from a clean install, six jobs:
 
 ```sh
 ./standard.sh
@@ -73,13 +73,13 @@ on `main`, from a clean install, five jobs:
 (cd index && npm ci && npm run check && npm test)       # needs host installed
 (cd host && npm ci && npm run check && npm test)
 (cd e2e && npm ci && npm run check && npm test)        # needs verifier, host, index and mcp installed
+(cd e2e && npm run e2e)                                # the loop, on loopback, no chain and no secret
 (cd mcp && npm ci && npm run check && npm test)        # needs host installed
 ```
 
 A test that cannot find what it needs skips, and CI fails on any skip: each summary must say
-`# skipped 0`. CI does not run the slower checks, and each folder's README says how to run them:
-- the loop, which needs the phrase and the chain;
-- mcp's smoke test against the deployed copy.
+`# skipped 0`. CI does not run mcp's smoke test against the deployed copy; mcp's README says how to
+run it.
 
 ## The pins
 
@@ -113,12 +113,11 @@ Everything but its secrets and what it keeps private for people:
   - every entry on the host (a locked entry as an envelope only the keys it was locked to open);
   - every payment and escrow receipt, on chain;
   - the index's pages, JSON, signed ratings and reputation tree;
-  - what each run of the loop did, in `e2e/runs/`.
+  - what each run of the loop did, in CI's log for it.
 - **Secret:**
   - the seeds and keys each service makes for itself: the verifier's seed, the index's seed, the
     host's credit key, and the mcp's two keys, one that signs its logins and one whose opening
     half opens the packs of access keys a person's app hands it;
-  - the phrase that funds the loop;
   - the API keys and keyed URLs (web addresses with a key inside): Didit's, and the RPC's (the
     access point the services reach the chain through);
   - the keys to the host's bucket, the storage its photos and videos live in.

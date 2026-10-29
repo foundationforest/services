@@ -43,9 +43,8 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
   rule".
 - devnet, devnet USDC and mainnet are named only where something is configured for them: in a
-  README's How we run it, as a setting of the service configured for them, and in `e2e/`. Every
-  intro says what its service does, chain-free. A name is a name: `FOREST_DEVNET_SEED`, a file's
-  path, here or in the standard.
+  README's How we run it, and as a setting of the service configured for them. Every intro says what
+  its service does, chain-free. A name is a name: a file's path, here or in the standard.
 - Never "replace every app".
 
 ## How to work in this repo
@@ -73,8 +72,7 @@ recipient, sponsor, receipt, deal, credit, ticket, review, evidence, index, app,
   its reason down: as a question in the FAQ of the directory it belongs to (the top README's for the
   whole repo) if it shapes these services, otherwise in a comment beside the code. Ask only when the
   choice spends money.
-- No private key, no phrase and no keyed URL ever goes in the repo. The loop's keys come from the
-  phrase by the recipe in the standard's `escrows/solana/devnet/deploy.sh`.
+- No private key, no phrase and no keyed URL ever goes in the repo.
 - Run what `.github/workflows/checks.yml` runs before you push (Node 22.18 or later). A test that
-  skips fails CI: the summary must say `# skipped 0`. The slower checks (the loop, mcp's smoke test
-  against the deployed copy) are in each directory's README.
+  skips fails CI: the summary must say `# skipped 0`. The slower check, mcp's smoke test against
+  the deployed copy, is in its README.
