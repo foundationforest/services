@@ -62,8 +62,8 @@ const naming = (me: Folder, path: string, bytes: Uint8Array, type: string, time:
 
 /** An offer whose canonical text is exactly `bytes` long. */
 function offerOf(me: Folder, bytes: number, time: number): SignedEntry {
-  const empty = Buffer.byteLength(encodeEntry(entry(me, 'offer/maths', { text: '' }, time)))
-  const offer = entry(me, 'offer/maths', { text: 'a'.repeat(bytes - empty) }, time)
+  const empty = Buffer.byteLength(encodeEntry(entry(me, 'post/maths', { text: '' }, time)))
+  const offer = entry(me, 'post/maths', { text: 'a'.repeat(bytes - empty) }, time)
   assert.equal(Buffer.byteLength(encodeEntry(offer)), bytes)
   return offer
 }
@@ -98,7 +98,7 @@ test('the price of joining, of a 1 kB entry, of a 200 kB file, and of a delete',
     assert.equal((await put(running, photo, 'image/png')).message, 'already here')
     assert.equal(spent(), 0, 'the same bytes again cost nothing')
 
-    assert.ok((await results(running, [entry(me, 'offer/maths', null, now + 1)]))[0]!.ok)
+    assert.ok((await results(running, [entry(me, 'post/maths', null, now + 1)]))[0]!.ok)
     assert.equal(spent(), 10_000, 'taking an entry down: the floor')
   } finally {
     await running.close()
@@ -114,23 +114,23 @@ test('a write is refused with no balance, joining too; leaving and taking your o
     const join = (await results(running, [entry(me, 'profile', profileOf(running), now)]))[0]!
     assert.deepEqual([join.ok, join.error], [false, 'refused'], 'joining costs a write')
     assert.match(join.message!, /costs 1 credit, and the folder holds 0 here/)
-    const refused = (await results(running, [entry(me, 'offer/maths', { text: 'maths' }, now)]))[0]!
+    const refused = (await results(running, [entry(me, 'post/maths', { text: 'maths' }, now)]))[0]!
     assert.deepEqual([refused.ok, refused.error], [false, 'refused'])
 
     await fund(running, me.address, 3)
     const photo = new Uint8Array(1000).fill(1)
     assert.ok((await results(running, [entry(me, 'profile', profileOf(running), now)]))[0]!.ok)
-    assert.ok((await results(running, [entry(me, 'offer/maths', { text: 'maths' }, now)]))[0]!.ok)
+    assert.ok((await results(running, [entry(me, 'post/maths', { text: 'maths' }, now)]))[0]!.ok)
     assert.ok((await results(running, [naming(me, 'photo/1', photo, 'image/jpeg', now)]))[0]!.ok)
     assert.equal(balance(running, me.address), 0)
     const short = await put(running, photo, 'image/jpeg')
     assert.deepEqual([short.ok, short.error], [false, 'refused'], 'bytes too')
     assert.ok((await results(running, [entry(me, 'profile', profileOf(running, { hosts: [running.url, 'https://elsewhere.example'] }), now + 1)]))[0]!.ok, 'a later profile entry, an update, needs no balance')
 
-    assert.ok((await results(running, [entry(me, 'offer/maths', null, now + 1)]))[0]!.ok, 'a live entry taken down, free')
+    assert.ok((await results(running, [entry(me, 'post/maths', null, now + 1)]))[0]!.ok, 'a live entry taken down, free')
     assert.ok((await results(running, [entry(me, 'photo/1', null, now + 1)]))[0]!.ok, 'and the one naming the photo')
     assert.equal(balance(running, me.address), 0)
-    const nothing = (await results(running, [entry(me, 'offer/physics', null, now)]))[0]!
+    const nothing = (await results(running, [entry(me, 'post/physics', null, now)]))[0]!
     assert.deepEqual([nothing.ok, nothing.error], [false, 'refused'], 'a null body where nothing stands is a write like any other')
     assert.ok((await results(running, [entry(me, 'profile', profileOf(running, { hosts: ['https://elsewhere.example'] }), now + 2)]))[0]!.ok, 'leaving needs no balance')
   } finally {
@@ -279,14 +279,14 @@ test('end to end: a folder, an entry and a file, through the whole host with cre
     const now = Date.now()
     const photo = crypto.getRandomValues(new Uint8Array(30_000))
     const profile = entry(me, 'profile', profileOf(running, { files: [fileOf(photo, 'image/jpeg')] }), now)
-    const offer = entry(me, 'offer/maths', { text: 'Maths, an hour on Tuesdays.' }, now)
+    const offer = entry(me, 'post/maths', { text: 'Maths, an hour on Tuesdays.' }, now)
     const outcome = await write([running.url], [profile, offer])
     assert.deepEqual(outcome[0]!.results.map((r) => [r.ok, r.error]), [[true, undefined], [true, undefined]])
     assert.ok((await put(running, photo, 'image/jpeg')).ok)
 
     const view = await readFolder([running.url], me.address, Date.now())
     assert.deepEqual(view.hosts, [running.url])
-    assert.deepEqual(view.current.get('offer/maths')?.entry.body, offer.body)
+    assert.deepEqual(view.current.get('post/maths')?.entry.body, offer.body)
     assert.deepEqual(view.current.get('profile')?.entry.body, profile.body)
     assert.deepEqual((await fetchFile(view.hosts, fileOf(photo, 'image/jpeg').sha256))?.bytes, photo)
 

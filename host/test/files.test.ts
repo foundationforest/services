@@ -61,10 +61,10 @@ describe('files', () => {
   test('only a current entry that counts names bytes: not one replaced, deleted, or by a key no longer listed', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
-      await writes(h, alice, 'offer/a', naming([photo, 'image/jpeg']), T0)
-      await writes(h, alice, 'offer/a', offerBody('no photo now'), T0 + 1)
-      await writes(h, alice, 'offer/b', naming([clip, 'video/mp4']), T0)
-      await writes(h, alice, 'offer/b', null, T0 + 1)
+      await writes(h, alice, 'post/a', naming([photo, 'image/jpeg']), T0)
+      await writes(h, alice, 'post/a', offerBody('no photo now'), T0 + 1)
+      await writes(h, alice, 'post/b', naming([clip, 'video/mp4']), T0)
+      await writes(h, alice, 'post/b', null, T0 + 1)
       assert.deepEqual([await put(h, photo), await put(h, clip, 'video/mp4')], ['unnamed', 'unnamed'])
       const asHelper = { profile: alice.address, key: helper }
       await writes(h, alice, 'profile', aliceWith(['write']), T0)
@@ -107,7 +107,7 @@ describe('files', () => {
     const small = await startPlug({ now: () => T0, maxFileBytes: 1000, fileChoice: (file) => (file.type === 'video/mp4' ? 'no video here' : null) })
     try {
       const all: Array<[Uint8Array, string]> = [[gif, 'image/gif'], [photo, 'image/png'], [bytesOf(4, 900), 'video/mp4'], [bytesOf(5, 900), 'image/gif']]
-      for (const h of [plain, small]) await writes(h, alice, 'offer/a', naming(...all), T0)
+      for (const h of [plain, small]) await writes(h, alice, 'post/a', naming(...all), T0)
       assert.equal(await put(plain, gif, 'image/gif'), 'refused', 'a gif')
       assert.equal(await put(plain, photo, 'image/png'), 'ok')
       const [over] = await upload([small.url], photo, 'image/png')
@@ -138,11 +138,11 @@ describe('files', () => {
       },
     })
     try {
-      await writes(h, alice, 'offer/a', naming([photo, 'image/jpeg'], [clip, 'video/mp4']), T0)
+      await writes(h, alice, 'post/a', naming([photo, 'image/jpeg'], [clip, 'video/mp4']), T0)
       assert.equal(await put(h, photo), 'ok')
       assert.equal(await put(h, photo), 'already here', 'not asked again')
       assert.equal(await put(h, clip, 'video/mp4'), 'refused')
-      await writes(h, bob, 'offer/a', naming([clip, 'video/mp4']), T0)
+      await writes(h, bob, 'post/a', naming([clip, 'video/mp4']), T0)
       assert.equal(await put(h, clip, 'video/mp4'), 'ok')
       assert.deepEqual(seen, [
         [{ folder: alice.address, files: 0, bytes: 0 }],

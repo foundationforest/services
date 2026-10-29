@@ -21,10 +21,10 @@ describe('keep days are the host’s', () => {
     const clock = new Clock(T0)
     const h = await startPlug({ now: clock.now })
     try {
-      await write([h.url], [entry(alice, 'profile', profileBody('calculus'), T0), entry(alice, 'offer/maths', offerBody('30'), T0)])
+      await write([h.url], [entry(alice, 'profile', profileBody('calculus'), T0), entry(alice, 'post/maths', offerBody('30'), T0)])
       clock.advance(MINUTE)
       const known = await readFolder([h.url], alice.address, clock.t)
-      await write([h.url], [entry(alice, 'offer/maths', offerBody('35'), nextTime(clock.t, known, 'offer/maths')), entry(alice, 'profile', null, nextTime(clock.t, known, 'profile'))])
+      await write([h.url], [entry(alice, 'post/maths', offerBody('35'), nextTime(clock.t, known, 'post/maths')), entry(alice, 'profile', null, nextTime(clock.t, known, 'profile'))])
       const was = h.count(alice.address)
       assert.equal(await h.prune(clock.t + 29 * DAY), 0)
       assert.equal(await h.prune(clock.t + 31 * DAY), 2, 'the replaced offer and the replaced profile entry')
@@ -39,7 +39,7 @@ describe('keep days are the host’s', () => {
   test('a host with keep days 0 forgets a replaced version at its next prune', async () => {
     const h = await startPlug({ now: () => T0, keepDays: 0 })
     try {
-      await write([h.url], [entry(alice, 'offer/a', offerBody('1'), T0), entry(alice, 'offer/a', offerBody('2'), T0 + 1)])
+      await write([h.url], [entry(alice, 'post/a', offerBody('1'), T0), entry(alice, 'post/a', offerBody('2'), T0 + 1)])
       assert.equal(await h.prune(T0), 1)
       assert.deepEqual((await readAll(h.url)).entries.map((c) => c.entry.time), [T0 + 1])
     } finally {
@@ -51,10 +51,10 @@ describe('keep days are the host’s', () => {
     const clock = new Clock(T0)
     const h = await startPlug({ now: clock.now })
     try {
-      const older = entry(alice, 'offer/a', offerBody('by the main key'), T0)
-      const byKey = entry(asHelper, 'offer/a', offerBody('by the access key'), T0 + 1)
+      const older = entry(alice, 'post/a', offerBody('by the main key'), T0)
+      const byKey = entry(asHelper, 'post/a', offerBody('by the access key'), T0 + 1)
       assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['write']), T0), older, byKey]), ['ok', 'ok', 'ok'])
-      const at = () => h.view(alice.address).current.get('offer/a')!.entry.body
+      const at = () => h.view(alice.address).current.get('post/a')!.entry.body
       assert.deepEqual(at(), offerBody('by the access key'))
       // Removed: the main key's older entry is current again.
       assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['read-inbox']), T0 + 2)]), ['ok'])
@@ -68,7 +68,7 @@ describe('keep days are the host’s', () => {
       clock.advance(MINUTE)
       assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith([]), T0 + 4)]), ['ok'])
       assert.equal(await h.prune(clock.t + 31 * DAY), 2, 'the replaced profile entry and the key’s offer')
-      assert.equal(h.view(alice.address).current.get('offer/a'), undefined)
+      assert.equal(h.view(alice.address).current.get('post/a'), undefined)
     } finally {
       await h.close()
     }
@@ -81,11 +81,11 @@ describe('the socket', () => {
     try {
       await write([h.url], [entry(alice, 'profile', profileBody('calculus'), T0)])
       await write([h.url], [entry(bob, 'profile', profileBody('chemistry'), T0)])
-      await write([h.url], [entry(alice, 'offer/a', offerBody('1'), T0)])
+      await write([h.url], [entry(alice, 'post/a', offerBody('1'), T0)])
       const first = T0 * 1000
       const since = await readPage(h.url, { after: first })
-      assert.deepEqual(since.entries.map((c) => [c.entry.profile, c.entry.path]), [[bob.address, 'profile'], [alice.address, 'offer/a']])
-      assert.deepEqual((await readPage(h.url, { after: first, profile: alice.address })).entries.map((c) => c.entry.path), ['offer/a'])
+      assert.deepEqual(since.entries.map((c) => [c.entry.profile, c.entry.path]), [[bob.address, 'profile'], [alice.address, 'post/a']])
+      assert.deepEqual((await readPage(h.url, { after: first, profile: alice.address })).entries.map((c) => c.entry.path), ['post/a'])
     } finally {
       await h.close()
     }
@@ -119,7 +119,7 @@ describe('the socket', () => {
         assert.equal((await fetch(`${h.url}${path}`, { method })).status, 405, `${method} ${path}`)
       }
       for (const after of ['-1', '1.5', 'x']) assert.equal((await fetch(`${h.url}/v1/entries?after=${after}`)).status, 400, after)
-      const many = Array.from({ length: 101 }, (_, i) => encodeEntry(entry(alice, `offer/${i}`, offerBody('1'), T0)))
+      const many = Array.from({ length: 101 }, (_, i) => encodeEntry(entry(alice, `post/${i}`, offerBody('1'), T0)))
       assert.deepEqual(await h.accept(many), [{ i: 0, ok: false, error: 'batch', message: 'at most 100 lines a request' }])
     } finally {
       await h.close()
@@ -147,7 +147,7 @@ describe('the socket', () => {
   test('a host is open: it takes a profile entry that names other hosts, and entries for a folder with no profile entry here', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
-      assert.deepEqual(await errors(h, [entry(alice, 'profile', { ...profileBody('maths'), hosts: ['https://elsewhere.example'] }, T0), entry(bob, 'offer/a', offerBody('1'), T0)]), ['ok', 'ok'])
+      assert.deepEqual(await errors(h, [entry(alice, 'profile', { ...profileBody('maths'), hosts: ['https://elsewhere.example'] }, T0), entry(bob, 'post/a', offerBody('1'), T0)]), ['ok', 'ok'])
     } finally {
       await h.close()
     }
@@ -156,15 +156,15 @@ describe('the socket', () => {
   test('a host refuses what does not check: forged, signed by a key that is not the main key, by a key not listed, a profile entry by an access key, dated ahead, not canonical', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
-      const good = entry(alice, 'offer/a', offerBody('1'), T0)
-      const unsigned = { v: 1 as const, profile: alice.address, path: 'offer/c', time: T0, body: offerBody('1') }
+      const good = entry(alice, 'post/a', offerBody('1'), T0)
+      const unsigned = { v: 1 as const, profile: alice.address, path: 'post/c', time: T0, body: offerBody('1') }
       const byHelper = { v: 1 as const, profile: alice.address, path: 'profile', time: T0, body: profileBody('maths'), key: helper.address }
       const results = await h.accept([
         encodeEntry({ ...good, body: offerBody('2') }),
         encodeEntry({ ...unsigned, sig: signAs(stranger, stranger.address, signingInput(unsigned)) }),
-        encodeEntry(entry({ profile: alice.address, key: stranger }, 'offer/d', offerBody('1'), T0)),
+        encodeEntry(entry({ profile: alice.address, key: stranger }, 'post/d', offerBody('1'), T0)),
         canonical({ ...byHelper, sig: signAs(helper, helper.address, signingInput(byHelper)) }),
-        encodeEntry(entry(alice, 'offer/b', offerBody('1'), T0 + 11 * MINUTE)),
+        encodeEntry(entry(alice, 'post/b', offerBody('1'), T0 + 11 * MINUTE)),
         JSON.stringify(good, null, 1),
         encodeEntry(good),
       ])
@@ -177,11 +177,11 @@ describe('the socket', () => {
   test('an access key writes any path but profile while the profile entry here lists it with write, and nothing once it does not', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
-      assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['read', 'read-inbox', 'message']), T0), entry(asHelper, 'offer/a', offerBody('1'), T0)]), ['ok', 'unlisted'])
-      assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['write']), T0 + 1), entry(asHelper, 'offer/a', offerBody('1'), T0 + 1), entry(asHelper, 'photo/1', offerBody('1'), T0 + 1)]), ['ok', 'ok', 'ok'])
-      assert.deepEqual(await errors(h, [entry(asHelper, 'offer/b', offerBody('1'), T0 + 2)]), ['ok'])
-      assert.deepEqual(await errors(h, [entry(alice, 'profile', profileBody('maths'), T0 + 3), entry(asHelper, 'offer/c', offerBody('1'), T0 + 3)]), ['ok', 'unlisted'])
-      assert.deepEqual(await errors(h, [entry(asHelper, 'offer/a', offerBody('1'), T0 + 4)].map((e) => ({ ...e, profile: bob.address }))), ['signature'], 'a key listed for one folder signs for none other')
+      assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['read', 'read-inbox', 'message']), T0), entry(asHelper, 'post/a', offerBody('1'), T0)]), ['ok', 'unlisted'])
+      assert.deepEqual(await errors(h, [entry(alice, 'profile', aliceWith(['write']), T0 + 1), entry(asHelper, 'post/a', offerBody('1'), T0 + 1), entry(asHelper, 'photo/1', offerBody('1'), T0 + 1)]), ['ok', 'ok', 'ok'])
+      assert.deepEqual(await errors(h, [entry(asHelper, 'post/b', offerBody('1'), T0 + 2)]), ['ok'])
+      assert.deepEqual(await errors(h, [entry(alice, 'profile', profileBody('maths'), T0 + 3), entry(asHelper, 'post/c', offerBody('1'), T0 + 3)]), ['ok', 'unlisted'])
+      assert.deepEqual(await errors(h, [entry(asHelper, 'post/a', offerBody('1'), T0 + 4)].map((e) => ({ ...e, profile: bob.address }))), ['signature'], 'a key listed for one folder signs for none other')
     } finally {
       await h.close()
     }
@@ -227,13 +227,13 @@ describe('limits: each host’s own size, batch and page', () => {
   test('a host chooses its batch: a client sends a request it finds too big again in halves, and every entry lands', async () => {
     const h = await startPlug({ now: () => T0, maxBatch: 3 })
     try {
-      const entries = Array.from({ length: 10 }, (_, i) => entry(alice, `offer/${i}`, offerBody('1'), T0))
+      const entries = Array.from({ length: 10 }, (_, i) => entry(alice, `post/${i}`, offerBody('1'), T0))
       assert.deepEqual(await h.accept(entries.map(encodeEntry)), [{ i: 0, ok: false, error: 'batch', message: 'at most 3 lines a request' }])
-      const [outcome] = await write([h.url], [entry(alice, 'offer/0', offerBody('1'), T0 - 1), ...entries])
+      const [outcome] = await write([h.url], [entry(alice, 'post/0', offerBody('1'), T0 - 1), ...entries])
       assert.equal(outcome!.status, 200)
       assert.deepEqual(outcome!.results.map((r) => r.i), [...Array(11).keys()], 'each result at its place in the request')
       assert.deepEqual(outcome!.results.map((r) => r.error ?? 'ok'), ['ok', ...Array(10).fill('ok')])
-      assert.equal(h.view(alice.address).current.size, 10, 'the newer offer/0 replaced the older')
+      assert.equal(h.view(alice.address).current.size, 10, 'the newer post/0 replaced the older')
     } finally {
       await h.close()
     }
@@ -243,7 +243,7 @@ describe('limits: each host’s own size, batch and page', () => {
     for (const options of [{ maxPageLines: 2 }, { maxPageBytes: 10 }]) {
       const h = await startPlug({ now: () => T0, ...options })
       try {
-        await write([h.url], Array.from({ length: 5 }, (_, i) => entry(alice, `offer/${i}`, offerBody('1'), T0)))
+        await write([h.url], Array.from({ length: 5 }, (_, i) => entry(alice, `post/${i}`, offerBody('1'), T0)))
         assert.ok(h.read().lines.length <= 2 && h.read().lines.length >= 1, JSON.stringify(options))
         assert.equal((await readAll(h.url)).entries.length, 5, JSON.stringify(options))
       } finally {
@@ -294,8 +294,8 @@ describe('host choice', () => {
   test('a host’s own choice refuses entries; a newer profile entry for a folder it holds always passes', async () => {
     const host = await startPlug({ now: () => T0, entryChoice: threeEach })
     try {
-      assert.deepEqual(await errors(host, [entry(alice, 'profile', profileBody('maths'), T0), entry(alice, 'offer/a', offerBody('1'), T0), entry(alice, 'offer/b', offerBody('1'), T0)]), ['ok', 'ok', 'ok'])
-      assert.deepEqual(await errors(host, [entry(alice, 'offer/c', offerBody('1'), T0), entry(alice, 'key/0123456789abcdef0123456789abcdef', offerBody('1'), T0)]), ['refused', 'refused'], 'any path but profile')
+      assert.deepEqual(await errors(host, [entry(alice, 'profile', profileBody('maths'), T0), entry(alice, 'post/a', offerBody('1'), T0), entry(alice, 'post/b', offerBody('1'), T0)]), ['ok', 'ok', 'ok'])
+      assert.deepEqual(await errors(host, [entry(alice, 'post/c', offerBody('1'), T0), entry(alice, 'key/0123456789abcdef0123456789abcdef', offerBody('1'), T0)]), ['refused', 'refused'], 'any path but profile')
       // The person can always move.
       assert.deepEqual(await errors(host, [entry(alice, 'profile', { ...profileBody('maths'), hosts: ['https://elsewhere.example'] }, T0 + 1), entry(alice, 'profile', { ...profileBody('maths'), hosts: ['https://other.example'] }, T0 + 2)]), ['ok', 'ok'])
     } finally {
@@ -314,9 +314,9 @@ describe('host choice', () => {
     const host = await startPlug({ now: () => T0, entryChoice: choice })
     try {
       assert.deepEqual(await errors(host, [entry(alice, 'profile', profileBody('maths'), T0)]), ['refused'], 'not paid: the first profile entry is refused')
-      assert.deepEqual(await errors(host, [entry(alice, 'offer/a', offerBody('1'), T0)]), ['refused'], 'and so is any other, by the same choice')
+      assert.deepEqual(await errors(host, [entry(alice, 'post/a', offerBody('1'), T0)]), ['refused'], 'and so is any other, by the same choice')
       paid.add(alice.address)
-      assert.deepEqual(await errors(host, [entry(alice, 'profile', profileBody('maths'), T0), entry(alice, 'offer/a', offerBody('1'), T0)]), ['ok', 'ok'])
+      assert.deepEqual(await errors(host, [entry(alice, 'profile', profileBody('maths'), T0), entry(alice, 'post/a', offerBody('1'), T0)]), ['ok', 'ok'])
       paid.delete(alice.address)
       asked.length = 0
       assert.deepEqual(await errors(host, [entry(alice, 'profile', { ...profileBody('maths'), hosts: ['https://elsewhere.example'] }, T0 + 1), entry(alice, 'profile', null, T0 + 2)]), ['ok', 'ok'], 'a folder it holds can always leave')

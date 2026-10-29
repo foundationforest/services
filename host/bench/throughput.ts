@@ -23,14 +23,14 @@ function rate(label: string, n: number, run: (i: number) => void): number {
 }
 
 const key = serviceKey(new Uint8Array(32).fill(5))
-const one = entry(key, 'offer/maths', offer, 1_790_000_000_000)
+const one = entry(key, 'post/maths', offer, 1_790_000_000_000)
 const wire = encodeEntry(one)
 const message = signingInput(unsignedOf(one))
 const sig = b64u.decode(one.sig)
 console.log(`machine: ${cpus()[0]?.model ?? 'unknown'}, node ${process.version}; one offer entry is ${wire.length} bytes on the wire`)
 
 rate('canonical text of an entry', 20_000, () => canonical(one))
-rate('sign an entry (EdDSA-Poseidon on Baby Jubjub)', 1_000, (i) => entry(key, 'offer/maths', offer, 1_790_000_000_000 + i))
+rate('sign an entry (EdDSA-Poseidon on Baby Jubjub)', 1_000, (i) => entry(key, 'post/maths', offer, 1_790_000_000_000 + i))
 rate('check, Forest strict (key in the subgroup, R8 on curve)', 1_000, () => checkSignature(sig, message, key.address))
 const signature = unpackSignature(sig)!
 const hm = bytesMessage(message)
@@ -43,7 +43,7 @@ const lines: string[] = []
 for (let p = 0; p < 500; p++) {
   const k = serviceKey(new Uint8Array(32).map((_, j) => (p * 13 + j * 7 + 1) & 255))
   lines.push(encodeEntry(entry(k, 'profile', { market: 'tutoring', role: 'seller', hosts: ['https://host.example'] }, 1_790_000_000_000)))
-  for (let o = 0; o < 4; o++) lines.push(encodeEntry(entry(k, `offer/${o}`, offer, 1_790_000_000_000 + o)))
+  for (let o = 0; o < 4; o++) lines.push(encodeEntry(entry(k, `post/${o}`, offer, 1_790_000_000_000 + o)))
 }
 let start = performance.now()
 for (let i = 0; i < lines.length; i += 100) await host.accept(lines.slice(i, i + 100))
@@ -62,6 +62,6 @@ const read = served / ((performance.now() - start) / 1000)
 console.log(`${'host: serve everything, pages of 1,000'.padEnd(58)} ${Math.round(read).toLocaleString('en-US').padStart(10)} /s`)
 
 // The view of a busy folder: 1,000 entries.
-const busy = Array.from({ length: 1000 }, (_, i) => checkEntry(entry(key, `offer/${i % 200}`, offer, 1_790_000_000_000 + i)))
+const busy = Array.from({ length: 1000 }, (_, i) => checkEntry(entry(key, `post/${i % 200}`, offer, 1_790_000_000_000 + i)))
 rate('the view of a folder of 1,000 entries', 200, () => viewFolder(key.address, busy, 1_790_000_000_000 + 10_000))
 await host.close()
