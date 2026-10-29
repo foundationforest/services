@@ -314,7 +314,7 @@ gone. What the run did on chain is on Solana's explorer: [the payment][p] and [t
   their entries, their notes and Profiles folders among them (locked), stay until it is wiped.
 - **The checks are stand-ins.** The stand-in Didit passes everyone, and the stand-in face model
   gives everyone one embedding, so a run says nothing about Didit or the face model. Only the face
-  check: the loop verifier offers no ID check, since it sets no price.
+  check: no one in the loop takes the ID check.
 - **The connect page is a stand-in.** The loop ticks the profile for each person, with every switch,
   so a run says nothing about the Forest app's own page. Against the deployed mcp, which has none
   yet, it only checks that the mcp answers.

@@ -8,11 +8,10 @@
 //   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
 //                                                    person back to returnUrl, an app's own page, when
 //                                                    its origin is in APP_ORIGINS
+//   POST /id/session    {} or {returnUrl}         -> 201 {sessionId, url}   an ID check, the same way
 //   POST /face/stamp    {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the face key
 //                       with a gift, also {gift: "<the host buy's reference>"}
 //                                                 -> 200 {stamp, gift: {ticket} or {error}}
-//   POST /id/session    {} or {payment}           -> 201 {sessionId, url}   an ID check, or 402 with a
-//                                                    payment to make first
 //   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key
 //   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
 //                                                    a stamp or null, its own fields only; 404
@@ -20,11 +19,10 @@
 //
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
 // in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
-// 402 a payment still to make or still to land, 403 a check that does not count (the code says why),
-// 404 `not_offered` for the ID check when it has no price or `not_found`, 409 a session or payment already used for
-// another stamp number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
-// share of sessions this hour, 502 Didit or the RPC not answering. A refused or failed request uses
-// nothing up: the same session can be sent again.
+// 403 a check that does not count (the code says why), 404 `not_found`, 409 a session already used
+// for another stamp number, 413 a body over 4 KB, 429 `try_later` for an address that has opened its
+// share of sessions this hour, on either check, 502 Didit not answering. A refused or failed request
+// uses nothing up: the same session can be sent again.
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
@@ -34,7 +32,6 @@
 // No request is logged. The client's address is read for one thing only, counting the sessions it
 // opens against the limit (`limit.ts`), and is never written anywhere.
 
-import { createHash, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { signStamp, stampToJson } from '@foundationforest/verification'
@@ -46,14 +43,11 @@ import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import type { RateLimit } from './limit.ts'
 import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
-import type { Payments, Price } from './payment.ts'
 import type { Ed25519Key } from './seed.ts'
 import type { Store } from './store.ts'
 
 const MAX_BODY = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** A payment's id, as the verifier hands it out: 16 random bytes in hex. */
-const PAYMENT_ID = /^[0-9a-f]{32}$/
 
 class HttpError extends Error {
   readonly status: number
@@ -139,14 +133,6 @@ export type CheckDeps = {
   workflowId: string
 }
 
-/** The ID check's price, and how a payment is found. Unset: the ID check is not offered. */
-export type PaymentDeps = {
-  price: Price
-  payments: Payments
-  /** The address a payment with this id must name: a key mixed from the verifier's seed. */
-  reference(id: string): Promise<string>
-}
-
 export type VerifierDeps = {
   face: CheckDeps
   id: CheckDeps
@@ -158,7 +144,6 @@ export type VerifierDeps = {
   fingerprintKey: Uint8Array
   /** `GET /`, canonical text. */
   about: string
-  payment?: PaymentDeps
   /** Unset: no welcome gift. */
   gift?: { gift: Gift; sponsor: Ed25519Key }
   /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
@@ -211,7 +196,7 @@ function clientAddress(req: IncomingMessage, header: string | undefined): string
 }
 
 export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerResponse) => void {
-  const { face, id, store, embedder, payment, limit } = deps
+  const { face, id, store, embedder, limit } = deps
   const log = deps.log ?? ((line) => console.log(line))
   const now = deps.now ?? Date.now
   /** The earliest first signing a session may have to be signed again now. */
@@ -219,8 +204,14 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   type Route = (body: Record<string, unknown>, req: IncomingMessage) => Promise<[number, unknown]>
 
-  /** A session on the check's workflow, counted against the address's share of the hour. */
-  async function open(c: CheckDeps, req: IncomingMessage, callback?: string): Promise<[number, unknown]> {
+  /**
+   * A session on the check's workflow, counted against the address's share of the hour, both checks
+   * together: `{}`, or `{returnUrl}` on an app's origin, where Didit sends the person when it is done.
+   */
+  async function open(c: CheckDeps, body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
+    let callback: string | undefined
+    if ('returnUrl' in body) callback = returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!)
+    else fields(body)
     if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
     try {
       return [201, await c.check.createSession({ callback })]
@@ -305,7 +296,6 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
    * fingerprint was signed for no other stamp number.
    */
   async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
-    if (!payment) throw new HttpError(404, 'not_offered')
     const { sessionId, stampNumber } = stampRequest(fields(body, ['sessionId', 'stampNumber']))
     kept(store.check({ sessionId, stampNumber, since: since() }))
 
@@ -338,91 +328,10 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return [200, { face: back('face'), id: back('id') }]
   }
 
-  /**
-   * The ID check's session, once paid. `{}` answers 402 with a new payment: its id, the reference
-   * the transfer must name, where to pay, in which dollar, how much. `{payment}` then opens a session
-   * once a payment naming that reference has landed; until then it answers 402 `not_paid`, and the
-   * app asks again. A payment is never given back. Each session a payment id opens carries its mark in
-   * Didit, so a lost answer is found again, and a session whose opening Didit never answered is
-   * found, or opened, on the next ask. A payment whose session Didit answered it opened, and no longer
-   * lists, gave its stamp and was deleted since: it is used.
-   */
-  async function openId(body: Record<string, unknown>, req: IncomingMessage): Promise<[number, unknown]> {
-    if (!payment) throw new HttpError(404, 'not_offered')
-    if (Object.keys(body).length === 0) {
-      const paymentId = randomBytes(16).toString('hex')
-      const { amount, mint, payTo } = payment.price
-      const reference = await payment.reference(paymentId)
-      return [402, { error: 'payment_required', payment: { id: paymentId, reference, to: payTo, mint, amount: amount.toString() } }]
-    }
-    const paymentId = fields(body, ['payment']).payment!
-    if (!PAYMENT_ID.test(paymentId)) throw new HttpError(400, 'bad_payment')
-    // Two asks with one payment id at once share one answer, so they never open two sessions.
-    const running = opening.get(paymentId)
-    if (running) return running
-    const answer = paidSession(paymentId, req)
-    opening.set(paymentId, answer)
-    try {
-      return await answer
-    } finally {
-      opening.delete(paymentId)
-    }
-  }
-
-  const opening = new Map<string, Promise<[number, unknown]>>()
-
-  async function paidSession(paymentId: string, req: IncomingMessage): Promise<[number, unknown]> {
-    const reference = await payment!.reference(paymentId)
-    let landed: string[]
-    try {
-      landed = await payment!.payments.landed(reference)
-    } catch {
-      throw new HttpError(502, 'payment_check_unavailable')
-    }
-    if (landed.length === 0) throw new HttpError(402, 'not_paid')
-    // What Didit knows the payment by: never the id itself, which claims it.
-    const mark = createHash('sha256').update(`payment/${paymentId}`).digest('hex')
-    const unused = landed.find((signature) => store.paymentFor(signature) === undefined)
-    let paid = unused
-    if (!unused) {
-      // Every payment naming the reference is used: for this payment id, its session is found again,
-      // or, for a payment whose opening Didit never answered, opened now; for another, refused.
-      const mine = landed.filter((signature) => store.paymentFor(signature) === reference)
-      if (mine.length === 0) throw new HttpError(409, 'payment_used')
-      let found
-      try {
-        found = await id.check.marked(mark)
-      } catch {
-        throw new HttpError(502, 'face_check_unavailable')
-      }
-      if (found) return [201, found]
-      paid = mine.find((signature) => !store.opened(signature))
-      if (!paid) throw new HttpError(409, 'payment_used')
-    }
-    if (!limit.take(clientAddress(req, deps.clientAddressHeader))) throw new HttpError(429, 'try_later')
-    // Marked in one statement: another payment id naming this transaction may have got here first.
-    if (unused && !store.usePayment(unused, reference)) throw new HttpError(409, 'payment_used')
-    let session
-    try {
-      session = await id.check.createSession({ mark })
-    } catch {
-      // Opened or not, the payment stays used: the next ask finds the session by its mark, or opens it.
-      throw new HttpError(502, 'face_check_unavailable')
-    }
-    store.markOpened(paid!)
-    return [201, session]
-  }
-
   const routes: Record<string, Route> = {
-    async '/face/session'(body, req) {
-      if (!('returnUrl' in body)) {
-        fields(body)
-        return open(face, req)
-      }
-      return open(face, req, returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!))
-    },
+    '/face/session': (body, req) => open(face, body, req),
     '/face/stamp': faceStamp,
-    '/id/session': openId,
+    '/id/session': (body, req) => open(id, body, req),
     '/id/stamp': idStamp,
     '/stamp': stampBack,
   }

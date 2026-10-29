@@ -30,7 +30,6 @@ import { readConfig, startVerifier, type Verifier } from '../src/service.ts'
 import {
   FACE_WORKFLOW,
   FakeFaceCheck,
-  FakePayments,
   ID_WORKFLOW,
   VERIFIER_NAME,
   assertKept,
@@ -40,7 +39,6 @@ import {
   stampNumber,
   passed,
   passedId,
-  randomSignature,
   seedJson,
 } from './fakes.ts'
 
@@ -60,26 +58,17 @@ function tempDir(): string {
   return dir
 }
 
-/** A price for the ID check, in a test dollar, paid to an address of its own: the ID check is offered. */
-const PRICED = {
-  ID_PRICE: '2500000',
-  ID_MINT: 'J2QBACfPPb1ys2UyGx3ecXHgCr4hWuHFT3C2Nr6TSVSa',
-  ID_PAY_TO: '3Ht8GtvWYJi1bUFvWL53gPuV77VZmmpnSDzWPCf6xEiH',
-  RPC_URL: 'http://127.0.0.1:1',
-}
-
 type Harness = {
   verifier: Verifier
   faces: FakeFaceCheck
   /** The ID check's Didit. */
   ids: FakeFaceCheck
-  payments: FakePayments
   dbPath: string
   logs: string[]
   post(path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>
   /** A new face session whose check came to `decision`; returns its id. */
   session(decision: ReturnType<typeof passed>): Promise<string>
-  /** A new ID session whose check came to `decision`, as if opened once paid; returns its id. */
+  /** A new ID session whose check came to `decision`; returns its id. */
   idSession(decision: ReturnType<typeof passed>): Promise<string>
   /** Moves the verifier's clock on. */
   later(ms: number): void
@@ -87,7 +76,7 @@ type Harness = {
 
 /**
  * The verifier, with `seed` in its seed file beside the database when given; with none there, it
- * makes one. The ID check is offered (PRICED) unless `env` says otherwise.
+ * makes one.
  */
 async function start(options: { env?: Record<string, string | undefined>; seed?: string; dbPath?: string } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'verifier.sqlite')
@@ -101,15 +90,13 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
     // Every request here comes from one address; the limit has its own test.
     SESSION_LIMIT_PER_HOUR: '100000',
     PORT: '0',
-    ...PRICED,
     ...options.env,
   })
   const faces = new FakeFaceCheck()
   const ids = new FakeFaceCheck()
-  const payments = new FakePayments()
   const logs: string[] = []
   let clock = Date.now()
-  const verifier = await startVerifier(config, { faceCheck: faces, idCheck: ids, payments, embedder: namedFaces(), log: (line) => logs.push(line), now: () => clock })
+  const verifier = await startVerifier(config, { faceCheck: faces, idCheck: ids, embedder: namedFaces(), log: (line) => logs.push(line), now: () => clock })
   const post = async (path: string, body: unknown = {}, headers: Record<string, string> = {}) => {
     const res = await fetch(verifier.url + path, {
       method: 'POST',
@@ -125,11 +112,12 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
     return body.sessionId as string
   }
   const idSession = async (decision: ReturnType<typeof passed>) => {
-    const { sessionId } = await ids.createSession()
-    ids.set(sessionId, decision)
-    return sessionId
+    const { status, body } = await post('/id/session')
+    assert.equal(status, 201)
+    ids.set(body.sessionId, decision)
+    return body.sessionId as string
   }
-  return { verifier, faces, ids, payments, dbPath, logs, post, session, idSession, later: (ms) => void (clock += ms) }
+  return { verifier, faces, ids, dbPath, logs, post, session, idSession, later: (ms) => void (clock += ms) }
 }
 
 const faceStamp = (h: Harness, sessionId: string, n: bigint) => h.post('/face/stamp', { sessionId, stampNumber: n.toString() })
@@ -446,14 +434,16 @@ test('refusals, malformed requests, and Didit not answering', async () => {
   }
 })
 
-test('with no price, the ID check is not offered', async () => {
-  const h = await start({ env: { ID_PRICE: undefined, ID_MINT: undefined, ID_PAY_TO: undefined, RPC_URL: undefined } })
+test('the ID check is offered with no price: its session opens as a face session does, on the ID check’s Didit', async () => {
+  const h = await start()
   try {
-    assert.deepEqual(await h.post('/id/session'), { status: 404, body: { error: 'not_offered' } })
-    assert.deepEqual(await idStamp(h, await h.idSession(passedId('ada')), await stampNumber()), { status: 404, body: { error: 'not_offered' } })
-    assert.equal(h.ids.created, 1, 'only the session this test opened itself')
-    assert.ok((await about(h)).id.key, 'its key is still published')
-    assert.equal((await face(h, 'alice', await stampNumber())).stamp.model, 'test-model', 'the face check is')
+    const opened = await h.post('/id/session')
+    assert.equal(opened.status, 201)
+    assert.deepEqual([h.ids.created, h.faces.created], [1, 0], 'on the ID check’s Didit, and only there')
+    h.ids.set(opened.body.sessionId, passedId('ada'))
+    assert.equal((await idStamp(h, opened.body.sessionId, await stampNumber())).status, 200)
+    for (const body of [{ payment: 'ab'.repeat(16) }, { x: 1 }]) assert.deepEqual(await h.post('/id/session', body), { status: 400, body: { error: 'expected_empty_body' } })
+    assert.equal(h.ids.created, 1, 'a refused request never reaches Didit')
   } finally {
     await h.verifier.close()
   }
@@ -546,92 +536,6 @@ test('a stamp number nothing was signed for is 404, and a body with any other fi
   }
 })
 
-test('the ID check opens once a payment naming its reference has landed, and each payment opens one', async () => {
-  const seed = seedJson()
-  const h = await start({ seed: seed.json })
-  try {
-    const asked = await h.post('/id/session')
-    assert.equal(asked.status, 402)
-    assert.equal(asked.body.error, 'payment_required')
-    const { payment } = asked.body
-    assert.deepEqual(Object.keys(payment).sort(), ['amount', 'id', 'mint', 'reference', 'to'])
-    assert.match(payment.id, /^[0-9a-f]{32}$/)
-    assert.deepEqual([payment.to, payment.mint, payment.amount], [PRICED.ID_PAY_TO, PRICED.ID_MINT, PRICED.ID_PRICE])
-    assert.equal(payment.reference, (await seedFrom(seed.bytes).ed25519(INFO.reference(payment.id))).address, "the reference: a key mixed from the verifier's seed")
-    const other = (await h.post('/id/session')).body.payment
-    assert.notEqual(other.reference, payment.reference, 'one reference per payment')
-    assert.equal(h.ids.created, 0, 'no session yet')
-    assert.equal((await h.post('/face/session')).status, 201, 'the face check stays free')
-
-    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 402, body: { error: 'not_paid' } })
-    h.payments.down = true
-    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), { status: 502, body: { error: 'payment_check_unavailable' } })
-    h.payments.down = false
-
-    const signature = randomSignature()
-    h.payments.paid.set(payment.reference, [signature])
-    const opened = await h.post('/id/session', { payment: payment.id })
-    assert.equal(opened.status, 201)
-    assert.equal(h.ids.created, 1)
-    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), opened, 'a lost answer: asked again, the same session')
-    assert.equal(h.ids.created, 1, 'and no second one opened')
-    h.payments.paid.set(other.reference, [signature])
-    assert.deepEqual(await h.post('/id/session', { payment: other.id }), { status: 409, body: { error: 'payment_used' } }, 'one transaction pays for one check, for its own payment')
-    const second = randomSignature()
-    h.payments.paid.set(payment.reference, [second, signature])
-    const twice = await h.post('/id/session', { payment: payment.id })
-    assert.equal(twice.status, 201)
-    assert.notEqual(twice.body.sessionId, opened.body.sessionId, 'a second payment naming the same reference opens a second')
-    assert.deepEqual(await h.post('/id/session', { payment: payment.id }), twice, 'and its answer, lost, is the newest session')
-    assert.ok(!JSON.stringify(h.ids.marks).includes(payment.id), 'Didit never holds the payment id, only its mark')
-
-    // Didit opened a session and its answer was lost, or Didit did not answer at all: the payment is
-    // never given back, and the next ask finds the session, or opens it.
-    const third = (await h.post('/id/session')).body.payment
-    h.payments.paid.set(third.reference, [randomSignature()])
-    h.ids.lost = true
-    assert.deepEqual(await h.post('/id/session', { payment: third.id }), { status: 502, body: { error: 'face_check_unavailable' } })
-    const found = await h.post('/id/session', { payment: third.id })
-    assert.deepEqual([found.status, found.body.sessionId], [201, h.ids.marks.at(-1)!.sessionId], 'the session Didit opened, found by its mark')
-    const fourth = (await h.post('/id/session')).body.payment
-    h.payments.paid.set(fourth.reference, [randomSignature()])
-    h.ids.down = true
-    assert.deepEqual(await h.post('/id/session', { payment: fourth.id }), { status: 502, body: { error: 'face_check_unavailable' } })
-    h.ids.down = false
-    assert.equal((await h.post('/id/session', { payment: fourth.id })).status, 201, 'Didit down: the payment is still good')
-    const created = h.ids.created
-    const [a, b] = await Promise.all([h.post('/id/session', { payment: fourth.id }), h.post('/id/session', { payment: fourth.id })])
-    assert.deepEqual([a, h.ids.created], [b, created], 'two asks at once: one answer, no session opened')
-
-    // The session it opened is an ID session like any other.
-    h.ids.set(opened.body.sessionId, passedId('alice'))
-    assert.equal((await idStamp(h, opened.body.sessionId, await stampNumber())).status, 200)
-
-    // A payment whose session gave its stamp, and was deleted with it, is used: asked again, no new session.
-    const fifth = (await h.post('/id/session')).body.payment
-    h.payments.paid.set(fifth.reference, [randomSignature()])
-    const its = await h.post('/id/session', { payment: fifth.id })
-    h.ids.set(its.body.sessionId, passedId('fay', doc('Fairfax')))
-    assert.equal((await idStamp(h, its.body.sessionId, await stampNumber())).status, 200)
-    h.later(SIGNED_FOR_MS)
-    await h.verifier.sweep()
-    assert.ok(h.ids.deleted.includes(its.body.sessionId))
-    const before = h.ids.created
-    assert.deepEqual(await h.post('/id/session', { payment: fifth.id }), { status: 409, body: { error: 'payment_used' } })
-    assert.equal(h.ids.created, before, 'and no session opened')
-
-    for (const [body, status, error] of [
-      [{ payment: 'ABC' }, 400, 'bad_payment'],
-      [{ payment: payment.id, more: 'x' }, 400, 'expected_exactly_payment'],
-      [{ paid: payment.id }, 400, 'expected_exactly_payment'],
-    ] as [unknown, number, string][]) {
-      assert.deepEqual(await h.post('/id/session', body), { status, body: { error } })
-    }
-  } finally {
-    await h.verifier.close()
-  }
-})
-
 test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({}), /missing environment variables: DIDIT_API_KEY, DIDIT_FACE_WORKFLOW_ID, DIDIT_ID_WORKFLOW_ID$/)
   const base = { DIDIT_API_KEY: 'k', DIDIT_FACE_WORKFLOW_ID: 'f', DIDIT_ID_WORKFLOW_ID: 'i' }
@@ -643,23 +547,12 @@ test('the configuration names what is missing', () => {
   assert.equal(config.sessionLimitPerHour, 5)
   assert.equal(config.clientAddressHeader, undefined)
   assert.equal(readConfig({ ...base, CLIENT_ADDRESS_HEADER: 'X-Real-IP' }).clientAddressHeader, 'x-real-ip')
-  assert.equal(config.idPrice, undefined, 'the ID check is not offered unless a price is set')
-  assert.equal(config.rpcUrl, undefined)
 
   // The stand-in embedding is for a stand-in Didit on this machine, and nowhere else.
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'stand-in' }), /FACE_MODEL=stand-in is for a stand-in Didit on this machine only/)
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'stand-in', DIDIT_BASE_URL: 'https://didit.example' }), /stand-in/)
   assert.equal(readConfig({ ...base, FACE_MODEL: 'stand-in', DIDIT_BASE_URL: 'http://127.0.0.1:8090' }).faceModel, 'stand-in')
   assert.throws(() => readConfig({ ...base, FACE_MODEL: 'other' }), /FACE_MODEL is sface or stand-in/)
-
-  // The ID check's four settings: all, or none.
-  assert.throws(() => readConfig({ ...base, ID_PRICE: '2500000' }), /missing environment variables: ID_PAY_TO, ID_MINT, RPC_URL$/)
-  assert.throws(() => readConfig({ ...base, ID_PAY_TO: PRICED.ID_PAY_TO }), /missing environment variables: ID_PRICE, ID_MINT, RPC_URL$/)
-  assert.throws(() => readConfig({ ...base, RPC_URL: 'http://rpc.example' }), /missing environment variables: ID_PRICE, ID_PAY_TO, ID_MINT$/)
-  for (const price of ['0', '2.5', '-1', '01', 'free']) assert.throws(() => readConfig({ ...base, ...PRICED, ID_PRICE: price }), /ID_PRICE must be a whole number above 0/)
-  assert.throws(() => readConfig({ ...base, ...PRICED, ID_PAY_TO: 'not-an-address' }), /ID_PAY_TO is not an address/)
-  assert.throws(() => readConfig({ ...base, ...PRICED, ID_MINT: 'not-an-address' }), /ID_MINT is not an address/)
-  assert.deepEqual(readConfig({ ...base, ...PRICED }).idPrice, { amount: 2_500_000n, payTo: PRICED.ID_PAY_TO, mint: PRICED.ID_MINT })
 
   // The welcome gift: none unless the host is named; ten credits unless set; none at 0.
   assert.equal(config.gift, undefined)
@@ -674,12 +567,6 @@ test('the configuration names what is missing', () => {
   assert.deepEqual(readConfig({ ...base, APP_ORIGINS: 'https://app.example, http://localhost:5173' }).appOrigins, ['https://app.example', 'http://localhost:5173'])
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'https://app.example/' }), /APP_ORIGINS is an origin/)
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'app.example' }), /APP_ORIGINS is an origin/)
-})
-
-test("the ID check's price is never paid to the verifier's own sponsor key", async () => {
-  const seed = seedJson()
-  const own = (await seedFrom(seed.bytes).ed25519(INFO.sponsor)).address
-  await assert.rejects(start({ seed: seed.json, env: { ID_PAY_TO: own } }), /ID_PAY_TO is the verifier's own sponsor key/)
 })
 
 /** The host's own seller, taking the verifier's sponsor key. */
@@ -775,6 +662,10 @@ test('opening sessions is limited per address, and a refusal says only "try late
     assert.equal((await from('2001:db8:1:3::a')).status, 201, 'the next /64 is someone else')
     assert.equal((await h.post('/face/session', { x: 1 }, { 'x-real-ip': '203.0.113.9' })).status, 400)
     for (let i = 0; i < 3; i++) assert.equal((await from('203.0.113.9')).status, 201, 'a malformed request is not counted')
+    // Both checks draw on one share.
+    const either = (path: string) => h.post(path, {}, { 'x-real-ip': '203.0.113.11' })
+    for (const path of ['/face/session', '/id/session', '/face/session']) assert.equal((await either(path)).status, 201, path)
+    assert.deepEqual(await either('/id/session'), { status: 429, body: { error: 'try_later' } }, 'the ID check counts with the face check')
 
     // Stamps are not limited, and the address is never written: not in the log, not in the file.
     const sessionId = (await from('203.0.113.10')).body.sessionId
@@ -861,7 +752,7 @@ test('the seed: made on the first start beside the database, kept there, the sam
   }
 })
 
-test('a face check sends the person back only to an app the verifier names in APP_ORIGINS', async () => {
+test('a check sends the person back only to an app the verifier names in APP_ORIGINS', async () => {
   const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
   try {
     const opened = await h.post('/face/session', { returnUrl: 'https://app.example/checked?from=face' })
@@ -874,6 +765,12 @@ test('a face check sends the person back only to an app the verifier names in AP
     assert.deepEqual(await h.post('/face/session', { returnUrl: 3 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
     assert.deepEqual(await h.post('/face/session', { returnUrl: 'https://app.example/', x: 1 }), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
     assert.equal(h.faces.created, 2, 'a refused request never reaches Didit')
+    // The ID check, the same way.
+    const id = await h.post('/id/session', { returnUrl: 'https://app.example/checked?from=id' })
+    assert.equal(id.status, 201)
+    assert.equal(h.ids.callbacks.get(id.body.sessionId), 'https://app.example/checked?from=id')
+    assert.deepEqual(await h.post('/id/session', { returnUrl: 'https://other.example/' }), { status: 400, body: { error: 'bad_return_url' } })
+    assert.equal(h.ids.created, 1)
   } finally {
     await h.verifier.close()
   }
@@ -902,13 +799,10 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
     FACE_MODEL: 'stand-in',
     DATABASE_PATH: join(tempDir(), 'verifier.sqlite'),
     PORT: '0',
-    ...PRICED,
   })
-  // Each payment counts as landed, under its own reference: the stand-in has no chain.
-  const payments = { landed: async (reference: string) => [reference] }
   const didit = new DiditClient({ apiKey: 'fake-didit', workflowId: FACE_WORKFLOW, check: 'face', baseUrl })
   let clock = Date.now()
-  const verifier = await startVerifier(config, { payments, log: () => {}, now: () => clock })
+  const verifier = await startVerifier(config, { log: () => {}, now: () => clock })
   const reviewed = await startVerifier(
     { ...config, databasePath: join(tempDir(), 'verifier.sqlite') },
     { faceCheck: new DiditClient({ apiKey: 'fake-didit', workflowId: FACE_WORKFLOW, check: 'face', baseUrl, scenario: 'review_duplicated_face' }), log: () => {} },
@@ -931,8 +825,7 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
       assert.equal((await didit.decision(face.body.sessionId))?.status, 'Approved', 'still in Didit once its stamp is signed')
       const again = await post(verifier, '/face/stamp', { sessionId: face.body.sessionId, stampNumber: n.toString() })
       assert.deepEqual(again.body.stamp, faceStamp.body.stamp, 'within the hour, the same stamp')
-      const { payment } = (await post(verifier, '/id/session')).body
-      const id = await post(verifier, '/id/session', { payment: payment.id })
+      const id = await post(verifier, '/id/session')
       assert.equal(id.status, 201, JSON.stringify(id.body))
       const idStamp = await post(verifier, '/id/stamp', { sessionId: id.body.sessionId, stampNumber: n.toString() })
       assert.equal(idStamp.status, 200, JSON.stringify(idStamp.body))
