@@ -6,7 +6,7 @@ The foundation's host keeps profiles' folders, their entries, their inboxes and 
 entries name, serves the entries and files to anyone, and takes each write's price in credits:
 prepaid units of its writes.
 
-Forest is one seed and its profiles, verified once, with offers and reviews in public that indexes
+Forest is one seed and its profiles, verified, with offers and reviews in public that indexes
 rank. A host serves two of these: it keeps the folder of each profile a seed gives (every entry
 signed for that profile here, by its main key or an access key its profile entry lists), and serves
 the offers and reviews in it to anyone. The rest it only carries:
@@ -31,17 +31,17 @@ balance of credits.
 
 Two parts, in one process:
 
-- **The plug** (`src/plug.ts`, over `src/storage.ts`): the eight requests every host answers
+- **The plug** (`src/plug.ts`, over `src/storage.ts`): the seven requests every host answers
   ([folders](https://github.com/foundationforest/standard/blob/main/folders/README.md#hosts)):
-  entries in, and out, one folder's by POST or everyone's by GET; inbox entries in, listed and
-  deleted; files in and out. It checks every entry, inbox entry, inbox delete and file as the
-  standard says before it keeps anything, and listens on loopback.
+  entries in, and out, one folder's by POST or everyone's by GET; inbox entries in, and listed;
+  files in and out. It checks every entry, inbox entry and file as the standard says before it
+  keeps anything, and listens on loopback.
 - **The front** (`src/host.ts`), the only part the internet reaches. It does three things:
   - answers `GET /` with one line saying what this is;
   - answers the credit routes ([Credits](#credits));
   - passes every other request, untouched, to the plug.
 
-So the routes are the standard's eight, the four credit routes, and `/`. The standard's host check
+So the routes are the standard's seven, the four credit routes, and `/`. The standard's host check
 (`@foundationforest/folders/check`) shows the whole host fits the plug: its tests run it, and anyone
 runs it against the deployed copy ([Run it](#run-it)).
 
@@ -69,8 +69,8 @@ newest entry that still counts is current again.
 
 **Inboxes.** The plug takes an inbox entry for any folder whose profile entry here has `openKey`,
 from anyone, and lists a folder's inbox to anyone, after a cursor: only the envelopes protect it. It
-checks no sender and no signature inside: that is the recipient's app's. It deletes an inbox entry
-for the folder's main key, or a key its profile entry here lists with `read-inbox`.
+checks no sender and no signature inside: that is the recipient's app's. Nobody deletes an inbox
+entry: it goes after the keep days.
 
 **Files.** A file is the bytes an entry's body names in `files`, by their SHA-256, type and size. The
 plug takes them only while a current entry here names them with that type and size, and keeps them
@@ -82,7 +82,6 @@ while one does; once none does, for its keep days. Bytes several folders name ar
   cannot pay, it goes through free.
 - A null body at a path where nothing stands takes nothing down. It is a write like any other, so
   an empty folder cannot fill paths for free.
-- An inbox delete costs nothing.
 
 **One upload of the same bytes at a time.** The front sends on one upload of the same bytes at a
 time, so a second finds them stored and pays nothing.
@@ -169,7 +168,8 @@ directory as RFC 9578 writes it, with one more field:
 4. **Finish.** The app unblinds each signature, checks it against the host's key, and keeps the
    credits.
 
-**How a buy is paid.** A proof pays for one buy: the host keeps which proof paid which reference.
+**How a buy is paid.** A proof pays for one buy, since a ticket signs that buy's reference: the host
+keeps each proof it took, so a buy collected again is billed once.
 Anyone can buy credits for any folder; the main way is a sponsor's ticket, the only way this host
 takes today. Other ways to pay for credits are this host's to add.
 
@@ -188,7 +188,7 @@ and the blinded buy, never which spends they become.
 | Route | What |
 |---|---|
 | `GET /.well-known/private-token-issuer-directory` | Its directory, above |
-| `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Answers its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`; `too_many` (over `MAX_BUY`); `bad_payment` (a header that is no ticket); `not_paid` (402, with what to pay); `proof_used` (409, the proof paid for another buy) |
+| `POST /credits/buy` | A buy's bytes, with what paid for it in the `Forest-Payment` header. Answers its blind signatures, the same each time it is collected with that proof. Refused: `not_a_buy`; `too_many` (over `MAX_BUY`); `bad_payment` (a header that is no ticket); `not_paid` (402, with what to pay) |
 | `POST /credits/spend` | `{ folder, credits }`: from 1 to 100 credits, each in base64url. All go into that folder's balance, or none. The answer is `{ folder, credits }`, the balance, a number with up to six decimals. Refused: `bad_request`; `credit` (402: one does not hold, or one is there twice); `spent` (409: one was spent) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }`. Refused: `bad_request` (not a folder's address) |
 
@@ -230,7 +230,7 @@ directory, so nothing outside it changes one.
     folder cannot pay: joining costs a write. A profile entry after it, which leaves or updates, is
     free.
   - Inbox entries are free, up to **1,000** an inbox a day (`INBOX_A_DAY`), counted from midnight
-    UTC. Inbox deletes and reads are free.
+    UTC. Inbox reads are free.
   - Both prices are in the directory, where an app reads them.
 - **Why these prices:** ten years of keeping at Railway's prices today, plus reads, plus 40%. The
   numbers move when Railway's prices do.
@@ -245,14 +245,14 @@ directory, so nothing outside it changes one.
   Tickets from the sponsors in `SPONSORS`, the only way this host takes today; we list the
   verifier's sponsor address, whose tickets are a person's first credits. Other ways to pay for
   credits are this host's to add.
-- **Sizes:** entries, inbox entries and inbox deletes up to **65,536 bytes** each in UTF-8
+- **Sizes:** entries and inbox entries up to **65,536 bytes** each in UTF-8
   (`DEFAULT_MAX_LINE_BYTES`); **100** of them a request; **1,000** a page, and at most **4,194,304
   bytes** a page, though always one line. A read request is at most 1,024 bytes.
 - **Files:** png, jpeg and mp4 (`DEFAULT_FILE_TYPES`), up to **50,000,000 bytes** each, kept while a
   current entry here names them. A declared size over that is answered 413, unread.
 - **Keeps** an entry that stopped being current or counting, an inbox entry, and a file no current
   entry names any more for **30 days**, by its own clock, and prunes every hour. A current entry
-  stays; an inbox entry goes sooner when it is deleted.
+  stays.
 - **Inboxes:** it takes an inbox entry for any folder whose profile entry here has `openKey`, from
   anyone, and lists any inbox to anyone.
 - **A request** has **60 seconds** to arrive in full; past that it gets 408.
@@ -270,8 +270,8 @@ directory, so nothing outside it changes one.
 - **No request logs.** Neither the plug nor the front logs a request or keeps an address. A request
   it answers 500 logs one line: its path and the error's message, any address in them taken out. A
   folder file the feed or the prune cannot open logs one line too: its error, any address taken out.
-- **What it keeps for credits:** the spent list (each spent credit's id), each proof it took with
-  the buy's reference, how many credits each sponsor paid for, each folder's balance, and the id of
+- **What it keeps for credits:** the spent list (each spent credit's id), each proof it took, how
+  many credits each sponsor paid for, each folder's balance, and the id of
   each entry it took a price for. Nothing ties a credit to the folder it went into.
 - **Where:** one copy on Railway: one replica built from `deploy/Dockerfile`, with this repo's root
   as the build context, and the data directory on its volume. Files go in a Railway bucket
@@ -343,8 +343,7 @@ The tests, on loopback:
     replaced, deleted, or written by a key no longer listed; stored once for two folders, and kept
     keep days after neither names them; their types and sizes; the folders a choice sees.
   - The inbox: inbox entries checked in the plug's order, a folder with no `openKey` here refused as
-    `no_inbox`, listed to anyone after a cursor, and deleted only for the main key or a key with
-    `read-inbox`.
+    `no_inbox`, and listed to anyone after a cursor.
   - The storage: a file per folder, the feed across them, removing a folder, `rebuild` and the files
     it dates, a folder file in another layout refused, a read of it answering 500 and logging one
     line with no address, and the feed and the prune skipping it among good folders, one line each;
@@ -359,7 +358,7 @@ The tests, on loopback:
     for nothing, and a null body where nothing stands is refused;
   - a file paid by the folder that can, when the newest folder naming it cannot, and refused when
     none can;
-  - inbox entries and their deletes free; on the cap's own code, with a cap of 2 and a stand-in
+  - inbox entries free; on the cap's own code, with a cap of 2 and a stand-in
     clock, an inbox taking a day's cap, the next refused, another inbox counted on its own, and the
     next UTC day counted again;
   - a ticket collected, the same answer twice and billed once. A ticket is refused from a sponsor
@@ -378,13 +377,12 @@ The tests, on loopback:
   it against the deployed copy. The front adds the line at `/`, the credit routes and the price of
   each write, and nothing else.
 - **Taking your own things down is never blocked by money.** A delete of a live entry goes through
-  when the balance cannot pay its floor, and an inbox delete costs nothing.
+  when the balance cannot pay its floor.
 - **A person can always leave; joining costs a write.** A folder's first entry here costs a write,
   whatever it is. Later profile entries, which leave this host or update the list, the plug never
   asks about, so they are free.
 - **No sign-ups.** A folder's balance is just a number next to its address. Nobody logs in: an
-  entry's signature is its only proof, and an inbox delete's is the main key's or that of an access
-  key the profile entry lists.
+  entry's signature is its only proof.
 - **No address logs.** Neither the plug nor the front logs an address or keeps one. It logs no
   request but one it answers 500: its path and the error's message, any address in them taken
   out. On Railway, Railway's own request logs exist.
@@ -439,8 +437,7 @@ The tests, on loopback:
 
 ## Who decides what
 
-- **The standard:** the eight requests; what makes an entry, an inbox entry, an inbox delete and a
-  file valid; the profile entry's fields and what each access key can do; and the host check.
+- **The standard:** the seven requests; what makes an entry, an inbox entry and a file valid; the profile entry's fields and what each access key can do; and the host check.
 - **This host, by its own choice:**
   - the numbers above: its prices, what one credit costs, and what is free;
   - which sponsors it takes, and any other way it takes to pay for credits;
@@ -455,7 +452,7 @@ The tests, on loopback:
 ## FAQ
 
 **Why is the host's code here, and not in the standard?**
-The standard holds only what two strangers' programs must agree on: for a host, the eight requests
+The standard holds only what two strangers' programs must agree on: for a host, the seven requests
 and the check that shows a host answers them. A host is a program someone runs, with its own
 storage and its own numbers, so its code lives with whoever runs it, and the check keeps it honest.
 

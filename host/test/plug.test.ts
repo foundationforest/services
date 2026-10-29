@@ -110,12 +110,12 @@ describe('the socket', () => {
     }
   })
 
-  test('only the eight requests, each by its method, and a cursor is a whole number', async () => {
+  test('only the seven requests, each by its method, and a cursor is a whole number', async () => {
     const h = await startPlug({ now: () => T0 })
     try {
       const hash = '0'.repeat(64)
-      for (const path of ['/v1/records', '/v1/inbox/pull', `/v1/blobs/${hash}`, `/v1/files/${hash.toUpperCase()}`, '/v2/entries']) assert.equal((await fetch(`${h.url}${path}`)).status, 404, path)
-      for (const [method, path] of [['PUT', '/v1/entries'], ['GET', '/v1/inbox'], ['GET', '/v1/inbox/delete'], ['DELETE', `/v1/files/${hash}`], ['POST', `/v1/files/${hash}`]]) {
+      for (const path of ['/v1/records', '/v1/inbox/pull', '/v1/inbox/delete', `/v1/blobs/${hash}`, `/v1/files/${hash.toUpperCase()}`, '/v2/entries']) assert.equal((await fetch(`${h.url}${path}`)).status, 404, path)
+      for (const [method, path] of [['PUT', '/v1/entries'], ['GET', '/v1/inbox'], ['DELETE', `/v1/files/${hash}`], ['POST', `/v1/files/${hash}`]]) {
         assert.equal((await fetch(`${h.url}${path}`, { method })).status, 405, `${method} ${path}`)
       }
       for (const after of ['-1', '1.5', 'x']) assert.equal((await fetch(`${h.url}/v1/entries?after=${after}`)).status, 400, after)

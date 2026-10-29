@@ -1,6 +1,6 @@
 // The host's storage (storage.ts): a SQLite file per folder, host.sqlite for the log and for which
 // files are named and stored, and the bytes on disk or in an S3-compatible bucket. None of it is the
-// standard: the eight requests answer the same whatever the storage. Here: where things land, the
+// standard: the seven requests answer the same whatever the storage. Here: where things land, the
 // feed across folders, removing a folder, a malformed address, rebuilding host.sqlite, a folder file
 // in another layout, refused and left out of the feed and the prune, and the S3 driver.
 

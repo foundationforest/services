@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { after, mock, test } from 'node:test'
 
 import { mainKey, newSeed, openingHalf } from '@foundationforest/keys'
-import { type Body, type InboxEntry, type SignedEntry, base58, deleteInbox, encodeEntry, entry, fetchFile, fileOf, inboxDelete, inboxId, leave, readFolder, upload, write } from '@foundationforest/folders'
+import { type Body, type InboxEntry, type SignedEntry, base58, encodeEntry, entry, fetchFile, fileOf, leave, readFolder, upload, write } from '@foundationforest/folders'
 import { inboxEntry } from '@foundationforest/folders/locked'
 
 import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
@@ -163,7 +163,7 @@ test('a file is paid by a folder whose current entry names it: the newest naming
   }
 })
 
-test('inbox entries are free, whoever leaves them, and so are their deletes', async () => {
+test('inbox entries are free, whoever leaves them', async () => {
   const running = await start({ WRITE_FLOOR: '1', PER_KB: '0' })
   try {
     const me = await folder()
@@ -173,13 +173,10 @@ test('inbox entries are free, whoever leaves them, and so are their deletes', as
     assert.ok((await results(running, [entry(me, 'profile', profile, now)]))[0]!.ok)
     const left = async (from: Folder, text: string) => {
       const e = await inboxEntry(from, me.address, { text }, Date.now(), profile)
-      return { e, result: (await leave([running.url], [e]))[0]!.results[0]! }
+      return (await leave([running.url], [e]))[0]!.results[0]!
     }
-    const own = await left(me, 'A note to my other devices.')
-    assert.ok(own.result.ok)
-    assert.ok((await left(await mainKey(newSeed(), 'tutoring/buyer'), 'Is the coat still for sale?')).result.ok)
-    const [deleted] = await deleteInbox([running.url], [inboxDelete(me, inboxId(own.e as InboxEntry))])
-    assert.ok(deleted!.results[0]!.ok)
+    assert.ok((await left(me, 'A note to my other devices.')).ok)
+    assert.ok((await left(await mainKey(newSeed(), 'tutoring/buyer'), 'Is the coat still for sale?')).ok)
     assert.equal(balance(running, me.address), 0, 'the profile entry took the one credit; nothing else')
   } finally {
     await running.close()
@@ -191,7 +188,7 @@ test('an inbox takes INBOX_A_DAY inbox entries a day, from midnight UTC', async 
   let clock = Date.UTC(2026, 9, 26, 23, 59)
   const choose = cappedInbox(2, () => clock)
   const [inbox, another] = [(await folder()).address, (await folder()).address]
-  const to = (address: string): InboxEntry => ({ v: 1, to: address, time: clock, body: { private: '' } })
+  const to = (address: string): InboxEntry => ({ v: 1, to: address, private: '' })
   const stored = { entries: 0, bytes: 0 }
   assert.equal(await choose(to(inbox), stored), null)
   assert.equal(await choose(to(inbox), stored), null)

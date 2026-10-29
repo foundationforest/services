@@ -14,7 +14,7 @@
 // released; the front sends on one upload of the same bytes at a time. The plug asks about a
 // folder's first profile entry, so joining costs a write, and never about a later one, so leaving
 // and updating are free. Inbox entries are free, INBOX_A_DAY an inbox a day: a host cannot see who
-// left one, so no folder here pays for it. Inbox deletes and reads are free.
+// left one, so no folder here pays for it. Inbox reads are free.
 //
 // Taking your own things down is never blocked by money: a null body over a live entry costs the
 // floor when the balance holds it, and goes through free when it does not. A null body where nothing
