@@ -19,7 +19,8 @@ const paid = () => ({ signature: signature(), charge: '3698080', bytes: 700 })
 function passed(): RunRecord {
   const person = () => ({ label: 'tutoring/tutor', profile: address(), pay: { solana: address(), evm: '0x1900f9C5c30615F3a5f6a0887D2DeF5bA4C7b437' } })
   const evidence = (id: string) => `solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1:${id}`
-  const login = { profiles: ['tutoring/tutor'], can: ['read', 'write', 'pay'], limit: '5 USD a day' }
+  const switches = ['read-inbox', 'read', 'write', 'message']
+  const login = () => ({ profiles: ['tutoring/tutor'], can: switches, key: address(), note: 'locked to the main key' })
   return {
     started: '2026-10-22T10:00:00.000Z',
     ended: '2026-10-22T10:04:00.000Z',
@@ -27,7 +28,7 @@ function passed(): RunRecord {
     commits: { services: 'a'.repeat(40), standard: 'b'.repeat(40), markets: 'c'.repeat(40) },
     services: { verifier: 'loopback', host: 'loopback', feePayer: 'loopback', index: 'loopback', mcp: 'loopback' },
     checked: [],
-    chain: { rpc: 'https://rpc.example', escrow: address(), testDollar: address(), market: 'tutoring' },
+    chain: { rpc: 'https://rpc.example', testDollar: address(), market: 'tutoring' },
     loop: { verifier: { name: 'verifier.e2e-loop.invalid', face: address(), id: address() }, index: address() },
     steps: {
       keys: { tutor: person(), student: person(), coach: person() },
@@ -38,26 +39,25 @@ function passed(): RunRecord {
         student: { signature: signature(), amount: '0.1', credits: 10, reference: address() },
       },
       profiles: {
-        tutor: { profile: address(), tag: hex(), spent: 6, stampProof: 'checks' },
-        student: { profile: address(), tag: hex(), spent: 10, stampProof: 'checks' },
+        tutor: { profile: address(), profilesFolder: address(), spent: 5, verification: 'checks' },
+        student: { profile: address(), profilesFolder: address(), spent: 8, verification: 'checks' },
       },
-      logins: { tutor: login, student: { ...login, profiles: ['tutoring/student'], can: ['write', 'pay'] } },
-      mcp: { offer: 'x/offer/maths', found: { profile: address() }, message: 'done', reply: 'done', approval: { ask: 'read', why: 'read as tutoring/student is not in what this connection may do', approved: 'done' } },
-      deal: {
-        payment: { ...paid(), evidence: evidence(signature()) },
-        escrow: { address: address(), version: 4, open: paid(), pay: paid(), outcome: 'pay', sponsor: address(), evidence: evidence(address()) },
-      },
-      reviews: { student: { id: 'a1', evidence: evidence(signature()), postedBy: 'ai' }, tutor: { id: 'b2', evidence: evidence(address()), postedBy: 'app' } },
+      logins: { tutor: login(), student: { ...login(), profiles: ['tutoring/student'] } },
+      mcp: { offer: 'x/offer/maths', offerKey: address(), found: address(), message: 'sent', inbox: { from: address(), counts: true, market: 'tutoring', role: 'student' }, reply: 'sent', replyRead: true },
+      payment: { ...paid(), to: address(), evidence: evidence(signature()) },
+      review: { id: 'maths', evidence: evidence(signature()), writtenBy: 'ai', key: address() },
       index: {
-        tutor: { rating: 10, count: 1, trust: 45, uniqueness: 75, pickiness: 'average' },
-        student: { rating: 9, count: 1, trust: 45, uniqueness: 75, pickiness: 'average' },
-        deal: { outcome: 'pay', reviews: 1 },
+        tutor: { rating: 10, count: 1, trust: 44, uniqueness: 75, pickiness: 'average' },
+        student: { rating: null, count: 0, trust: 38, uniqueness: 75, pickiness: 'average' },
+        review: { evidence: 'with' },
       },
-      reputation: { profile: address(), tag: hex(), root: hex(), time: 1_790_000_000_000, score: 45, result: 'shown' },
+      reputation: { profile: address(), root: hex(), time: 1_790_000_000_000, leaves: 2, score: 44, result: 'shown' },
+      removed: { key: address(), refused: 'no host took it: http://127.0.0.1:1 (unlisted: no write)', offer: 'gone' },
+      device: { labels: ['sports-coaching/coach', 'tutoring/tutor'], stamps: 1 },
       addresses: { tutor: { answers: 7, addresses: 7, held: 0 }, student: { answers: 6, addresses: 4, held: 0 } },
-      balances: { tutor: 5.9, student: 9.92, coach: 3.97 },
+      balances: { tutor: 4.9, student: 7.92, coach: 2.97 },
     },
-    sweep: { signature: signature(), dollars: '37536400', lamports: 48294920 },
+    sweep: { signature: signature(), dollars: '100000', lamports: 49970000 },
   }
 }
 
@@ -88,19 +88,22 @@ test('refused: a record that is not one', () => {
     ['a failed run with no error', { ...p, passed: false }],
     ['steps out of order', { ...p, passed: false, error: 'x', steps: { funding: p.steps.funding, keys: p.steps.keys } }],
     ['a step that is not one', { ...p, passed: false, error: 'x', steps: { keys: p.steps.keys, more: {} } }],
-    ['a field of the wrong kind', { ...p, steps: { ...p.steps, deal: { ...p.steps.deal, payment: { ...paid(), charge: 3.7 } } } }],
-    ['a rating that is not one', { ...p, steps: { ...p.steps, index: { ...p.steps.index, tutor: { rating: 8.05, count: 1, trust: 45, uniqueness: 75, pickiness: 'average' } } } }],
-    ['a trust that is not a whole number', { ...p, steps: { ...p.steps, index: { ...p.steps.index, student: { rating: 9, count: 1, trust: 45.5, uniqueness: 75, pickiness: 'average' } } } }],
-    ['a pickiness that is not a word of three', { ...p, steps: { ...p.steps, index: { ...p.steps.index, student: { rating: 9, count: 1, trust: 45, uniqueness: 75, pickiness: 'picky' } } } }],
+    ['a field of the wrong kind', { ...p, steps: { ...p.steps, payment: { ...p.steps.payment, charge: 3.7 } } }],
+    ['a rating that is not one', { ...p, steps: { ...p.steps, index: { ...p.steps.index, tutor: { rating: 8.05, count: 1, trust: 44, uniqueness: 75, pickiness: 'average' } } } }],
+    ['a rating for the student, whom no one rated', { ...p, steps: { ...p.steps, index: { ...p.steps.index, student: { rating: 9, count: 1, trust: 38, uniqueness: 75, pickiness: 'average' } } } }],
+    ['a trust that is not a whole number', { ...p, steps: { ...p.steps, index: { ...p.steps.index, student: { rating: null, count: 0, trust: 38.5, uniqueness: 75, pickiness: 'average' } } } }],
+    ['a pickiness that is not a word of three', { ...p, steps: { ...p.steps, index: { ...p.steps.index, student: { rating: null, count: 0, trust: 38, uniqueness: 75, pickiness: 'picky' } } } }],
     ['a leaf score above 100', { ...p, steps: { ...p.steps, reputation: { ...p.steps.reputation, score: 101 } } }],
     ['a stamp not asked back', { ...p, steps: { ...p.steps, stamps: { ...p.steps.stamps, tutor: { verifier: address(), model: 'stand-in' } } } }],
-    ['an escrow of another version', { ...p, steps: { ...p.steps, deal: { ...p.steps.deal, escrow: { ...(p.steps.deal!.escrow as object), version: 3 } } } }],
-    ['the tutor’s review posted by its AI', { ...p, steps: { ...p.steps, reviews: { ...p.steps.reviews, tutor: { ...(p.steps.reviews!.tutor as object), postedBy: 'ai' } } } }],
+    ['a review written by the app', { ...p, steps: { ...p.steps, review: { ...p.steps.review, writtenBy: 'app' } } }],
+    ['a removed key whose write was not refused as unlisted', { ...p, steps: { ...p.steps, removed: { ...p.steps.removed, refused: 'refused: no credits' } } }],
+    ['a new device that found no stamp', { ...p, steps: { ...p.steps, device: { ...p.steps.device, stamps: 0 } } }],
+    ['a note not locked to the main key', { ...p, steps: { ...p.steps, logins: { ...p.steps.logins, tutor: { ...(p.steps.logins!.tutor as object), note: 'public' } } } }],
     ['an RPC with a key in its URL', { ...p, chain: { ...p.chain, rpc: 'https://rpc.example/?api-key=x' } }],
     ['a service that is neither loopback nor an origin', { ...p, services: { ...p.services, host: 'https://host.example/v1' } }],
     ['a deployed mcp the run acted through', { ...p, services: { ...p.services, mcp: 'https://mcp.forest.foundation' } }],
     ['a checked service that is not an origin', { ...p, checked: ['mcp.forest.foundation'] }],
-    ['evidence with no chain', { ...p, steps: { ...p.steps, reviews: { ...p.steps.reviews, tutor: { id: 'b2', evidence: address() } } } }],
+    ['evidence with no chain', { ...p, steps: { ...p.steps, review: { ...p.steps.review, evidence: address() } } }],
     ['an answer that held an own address', { ...p, steps: { ...p.steps, addresses: { ...p.steps.addresses, student: { answers: 6, addresses: 4, held: 1 } } } }],
     ['not a commit', { ...p, commits: { ...p.commits, standard: 'main' } }],
     ['an end before its start', { ...p, ended: '2026-10-22T09:00:00.000Z' }],

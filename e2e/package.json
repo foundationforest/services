@@ -2,7 +2,7 @@
   "name": "@forest/e2e",
   "version": "0.0.0",
   "private": true,
-  "description": "Forest end to end: two people from two seeds, each with a stamp from the loop's verifier kept on their device and asked back by its stamp number, a profile record carrying a real stamp proof and signed pay { solana, evm }, credits bought for USDC, and the reference signer acting by the permissions in each profile's folder; each person's AI logging in through the connect page and reading, writing and paying through the mcp, one ask waiting for the person's yes; a deal paid directly and through an escrow, version 4, on the market's schedule, both through the fee payer; two reviews naming their evidence, one filled in by the signer and one written by the app; the loop's index counting it all and serving what each profile shows, its ratings, trust, uniqueness and pickiness, signed; and the tutor carrying its trust to a second profile with a reputation proof. The loop's own verifier, index and mcp, with the host and fee payer on loopback from this repo by default, or the deployed ones a services.json names; the chain is remote.",
+  "description": "Forest end to end: two people from two seeds, each with a stamp from the loop's verifier kept in their Profiles folder and asked back by its stamp number, a profile entry carrying a real verification and signed pay { solana, evm }, credits bought for USDC; each person's AI logging in through the connect page, where the reference app hands the mcp an access key in a pack, then writing, searching, messaging and reading the inbox through the mcp; a direct payment through the fee payer, and a review naming it written by the AI; the loop's index counting it all and serving what each profile shows, its ratings, trust, uniqueness and pickiness, signed; the tutor carrying its trust to a second profile with a reputation proof; the access key removed and its next write refused; and a new device finding the profiles from the seed. The loop's own verifier, index and mcp, with the host and fee payer on loopback from this repo by default, or the deployed ones a services.json names; the chain is remote.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -16,11 +16,10 @@
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",
     "@foundationforest/escrow-client": "file:../standard/escrows/solana/client",
+    "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
-    "@foundationforest/records": "file:../standard/records",
     "@foundationforest/reputation": "file:../standard/proofs/reputation/client",
-    "@foundationforest/signers": "file:../standard/signers",
-    "@foundationforest/stamp": "file:../standard/proofs/stamp/client",
+    "@foundationforest/verification": "file:../standard/proofs/verification/client",
     "@scure/base": "2.4.0",
     "@solana/spl-token": "0.4.9",
     "@solana/web3.js": "1.99.0"

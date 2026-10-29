@@ -18,7 +18,7 @@
 //                  (the face check 1 point, the ID check 2, as the foundation's index lists them),
 //                  and its own reputation proofs; its numbers, money and chains are index/config's
 //   the mcp        mcp/src, reading the loop's index and the markets, with `appUrl` as its connect
-//                  page: the loop's stand-in for the Forest app's
+//                  page, the loop's stand-in for the Forest app's, and reaching the host on loopback
 //
 // Each process of its own gets only the settings it needs, never the phrase, and what it prints
 // comes here with the RPC's URL taken out.
@@ -39,7 +39,7 @@ import { readConfig as verifierConfig, startVerifier } from '../verifier/src/ser
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..')
 
-/** services.json: each service's origin, or null for the loop's own; the RPC, the escrow, the dollar the loop pays in, the market. */
+/** services.json: each service's origin, or null for the loop's own; the RPC, the dollar the loop pays in, the market. */
 export type Services = {
   verifier: string | null
   host: string | null
@@ -47,7 +47,6 @@ export type Services = {
   index: string | null
   mcp: string | null
   rpc: string
-  escrow: string
   testDollar: string
   market: string
 }
@@ -61,11 +60,11 @@ export function readServices(path: string): Services {
     const v = s[name]
     if (v !== null && !(typeof v === 'string' && URL.canParse(v) && new URL(v).origin === v)) throw new Error(`${path}: ${name} is null or an origin`)
   }
-  for (const name of ['rpc', 'escrow', 'testDollar', 'market']) if (typeof s[name] !== 'string' || !s[name]) throw new Error(`${path}: ${name} is needed`)
+  for (const name of ['rpc', 'testDollar', 'market']) if (typeof s[name] !== 'string' || !s[name]) throw new Error(`${path}: ${name} is needed`)
   return s as Services
 }
 
-/** The loop verifier's name, which each person's stamp number and tags at it are mixed from: one no real verifier has. */
+/** The loop verifier's name, which each person's stamp number at it is mixed from: one no real verifier has. */
 export const VERIFIER_NAME = 'verifier.e2e-loop.invalid'
 /** The confidence the loop index's lists give the loop verifier's face key, as the index's own lists give the foundation's. */
 export const FACE_CONFIDENCE = 0.75
@@ -78,7 +77,7 @@ export type Running = {
   host: string
   feePayer: string
   index: { url: string; address: string }
-  /** The loop's own mcp: its origin, which a person's permissions name as the connector. */
+  /** The loop's own mcp: its origin, the connector a person's app locks the pack for. */
   mcp: string
   /** The loop's own fee payer's key, which the loop funds; null when the fee payer is deployed. */
   ownFeePayer: string | null
@@ -259,8 +258,9 @@ export async function startServices(s: Services, o: { rpcUrl: string; payTo: str
     const index = await startIndex({ dataDir: join(dir, 'index'), publicUrl: indexUrl, settings: { RPC_URL: o.rpcUrl }, readSeconds: 5, listsRoot: lists, port: indexPort, hostname: '127.0.0.1', log: log('loop index') })
     closers.push(() => index.close())
 
-    // The mcp: reading the loop's index, its logins through the loop's connect page.
-    const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { index: indexUrl } }, '127.0.0.1', 0)
+    // The mcp: reading the loop's index, its logins through the loop's connect page, and reaching
+    // hosts with a plain fetch, since the loop's own host is on loopback, which publicFetch refuses.
+    const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { index: indexUrl }, hostFetch: fetch }, '127.0.0.1', 0)
     closers.push(() => mcp.close())
 
     return { verifier: { url: verifier.url, name: VERIFIER_NAME, keys: verifier.keys }, host, feePayer, index: { url: indexUrl, address: index.address }, mcp: mcp.origin, ownFeePayer, ownFeePayerKey, checked, stop }
