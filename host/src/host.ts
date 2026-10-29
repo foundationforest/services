@@ -54,6 +54,12 @@ export const choice = {
   maxPageBytes: 4 * 1024 * 1024,
   /** The largest file it takes. Its types are the plug's default: png, jpeg and mp4. */
   maxFileBytes: 50_000_000,
+  /**
+   * The largest entry it takes, as large as a file: each write is paid by the byte, so its size
+   * needs no other cap. Inbox entries stay the plug's 65,536 bytes: they are free, and anyone
+   * leaves them in anyone's folder.
+   */
+  maxEntryBytes: 50_000_000,
 } as const satisfies HostOptions
 
 /** Inbox entries one inbox takes in a day, from midnight UTC. */
