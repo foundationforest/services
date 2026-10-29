@@ -5,7 +5,7 @@
 //   2. names a key lists/verifiers.json lists;
 //   3. carries the verifier name that list gives the key;
 //   4. is for the label `<market>/<role>`, the profile entry's own;
-//   5. checks (the verification client's `checkVerification`);
+//   5. checks (the proofs package's `checkVerification`);
 //   6. was first seen by this index no later than the key's `until`, when the list gives one.
 //
 // A counted profile's uniqueness is 1 - prod(1 - c) over the confidences of the keys its
@@ -16,10 +16,10 @@
 import { createHash } from 'node:crypto'
 
 import { hex, proofsOf, verificationCheck } from '@foundationforest/folders'
-import { checkVerification } from '@foundationforest/verification'
+import type { Markets } from '@foundationforest/markets'
+import { checkVerification } from '@foundationforest/proofs'
 
 import type { ListedKey } from './lists.ts'
-import type { Markets } from './markets.ts'
 import { uniqueness } from './rank.ts'
 import type { Store } from './store.ts'
 
@@ -61,7 +61,7 @@ function firstSeen(store: Store, profile: string, key: string, now: number): num
 export async function filter(store: Store, profile: Profile, keys: ListedKey[], markets: Markets, now: number): Promise<Filtered> {
   const out: Filtered = { counted: false, uniqueness: 0, checks: [], verifications: new Map() }
   const confidences = new Map<string, number>()
-  const market = profile.market ? markets.get(profile.market) : undefined
+  const market = profile.market ? markets.market(profile.market) : undefined
   const inDirectory = !!market && market.roles.some((r) => r.role === profile.role)
   const label = `${profile.market}/${profile.role}`
 

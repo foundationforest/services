@@ -1,6 +1,6 @@
 // The host's storage (storage.ts): a SQLite file per folder, host.sqlite for the log and for which
 // files are named and stored, and the bytes on disk or in an S3-compatible bucket. None of it is the
-// standard: the eight requests answer the same whatever the storage. Here: where things land, the
+// standard: the seven requests answer the same whatever the storage. Here: where things land, the
 // feed across folders, removing a folder, a malformed address, rebuilding host.sqlite, a folder file
 // in another layout, refused and left out of the feed and the prune, and the S3 driver.
 
@@ -39,7 +39,7 @@ const bobOpening = await openingHalf(bob.secret)
 const aliceProfile: Body = { ...profileBody('calculus'), openKey: aliceOpening.openKey }
 const bobProfile: Body = { ...profileBody('chemistry'), role: 'buyer', openKey: bobOpening.openKey }
 /** Alice's offer naming her photo. */
-const photoOffer = entry(alice, 'offer/photo', { ...offerBody('5'), files: [fileOf(photo, 'image/jpeg')] }, T0)
+const photoOffer = entry(alice, 'post/photo', { ...offerBody('5'), files: [fileOf(photo, 'image/jpeg')] }, T0)
 const withClip = (about: string): Body => ({ ...offerBody(about), files: [fileOf(clip, 'video/mp4')] })
 
 /** Every page of the feed, as [cursor, ids]: what a crawler sees, number for number. */
@@ -88,7 +88,7 @@ describe('a file per folder', () => {
     const dir = scratch()
     const h = await startPlug({ dir, now: () => T0 })
     try {
-      const entries = [entry(alice, 'profile', profileBody('calculus'), T0), entry(bob, 'profile', profileBody('chemistry'), T0), entry(alice, 'offer/a', offerBody('1'), T0)]
+      const entries = [entry(alice, 'profile', profileBody('calculus'), T0), entry(bob, 'profile', profileBody('chemistry'), T0), entry(alice, 'post/a', offerBody('1'), T0)]
       await write([h.url], entries)
       assert.deepEqual(readdirSync(join(dir, 'folders')).sort(), [`${alice.address}.sqlite`, `${bob.address}.sqlite`].sort())
       const profiles = (address: string) => query<{ text: string }>(join(dir, 'folders', `${address}.sqlite`), 'SELECT text FROM entries ORDER BY seq').map((r) => (JSON.parse(r.text) as { profile: string }).profile)
@@ -109,14 +109,14 @@ describe('a file per folder', () => {
     const clock = new Clock(T0)
     const h = await startPlug({ now: clock.now, maxPageLines: 2 })
     try {
-      const order = [[alice, 'offer/1'], [bob, 'offer/1'], [alice, 'offer/2'], [bob, 'offer/2'], [alice, 'offer/3']] as const
+      const order = [[alice, 'post/1'], [bob, 'post/1'], [alice, 'post/2'], [bob, 'post/2'], [alice, 'post/3']] as const
       for (const [key, path] of order) await write([h.url], [entry(key, path, offerBody('1'), clock.advance(1))])
       assert.deepEqual((await readAll(h.url)).entries.map((c) => [c.entry.profile, c.entry.path]), order.map(([key, path]) => [key.address, path]))
       // Each number is the clock in microseconds, the entry at T0 + i ms numbered (T0 + i) × 1000.
       const n = (i: number) => (T0 + i) * 1000
       assert.deepEqual((await pages(h.url)).map(([cursor, ids]) => [cursor, ids.length]), [[n(2), 2], [n(4), 2], [n(5), 1]])
       // A cursor from the feed works for one folder too.
-      assert.deepEqual((await readPage(h.url, { after: n(2), profile: alice.address })).entries.map((c) => c.entry.path), ['offer/2', 'offer/3'])
+      assert.deepEqual((await readPage(h.url, { after: n(2), profile: alice.address })).entries.map((c) => c.entry.path), ['post/2', 'post/3'])
       assert.deepEqual((await readPage(h.url, { after: n(2), profile: bob.address })).cursor, n(4))
     } finally {
       await h.close()
@@ -132,8 +132,8 @@ describe('a file per folder', () => {
     try {
       await write([h.url], [entry(alice, 'profile', aliceProfile, T0), photoOffer])
       await write([h.url], [entry(bob, 'profile', bobProfile, T0)])
-      await write([h.url], [entry(alice, 'offer/a', withClip('1'), T0)])
-      await write([h.url], [entry(bob, 'offer/b', withClip('2'), T0)])
+      await write([h.url], [entry(alice, 'post/a', withClip('1'), T0)])
+      await write([h.url], [entry(bob, 'post/b', withClip('2'), T0)])
       assert.deepEqual(await putBoth(h.url), [true, true])
       await leave([h.url], [await inboxEntry(bob, alice.address, { text: 'Tuesday?' }, T0, aliceProfile)])
       await leave([h.url], [await inboxEntry(alice, bob.address, { text: 'Tuesday.' }, T0, bobProfile)])
@@ -232,8 +232,8 @@ describe('host.sqlite holds nothing that exists only there', () => {
     let h = await startPlug(options)
     let was: Array<[number, string[]]>
     try {
-      await write([h.url], [entry(alice, 'profile', aliceProfile, T0), photoOffer, entry(alice, 'offer/a', withClip('1'), T0)])
-      await write([h.url], [entry(bob, 'profile', bobProfile, T0), entry(bob, 'offer/b', withClip('2'), T0)])
+      await write([h.url], [entry(alice, 'profile', aliceProfile, T0), photoOffer, entry(alice, 'post/a', withClip('1'), T0)])
+      await write([h.url], [entry(bob, 'profile', bobProfile, T0), entry(bob, 'post/b', withClip('2'), T0)])
       assert.deepEqual(await putBoth(h.url), [true, true])
       was = await pages(h.url)
     } finally {
@@ -251,13 +251,13 @@ describe('host.sqlite holds nothing that exists only there', () => {
       assert.deepEqual((await upload([h.url], photo, 'image/jpeg'))[0]!.message, 'already here')
       // New entries go on past the numbers given before, from the clock.
       const last = was.at(-1)![0]
-      await write([h.url], [entry(bob, 'offer/c', offerBody('3'), clock.t)])
+      await write([h.url], [entry(bob, 'post/c', offerBody('3'), clock.t)])
       assert.equal((await readPage(h.url, { after: last })).cursor, clock.t * 1000)
       assert.ok(clock.t * 1000 > last)
       // Each file is named still: a prune keeps both, and the clip goes keep days after neither names it.
       await h.prune(clock.t + 365 * DAY)
       assert.ok(await h.getFile(sha256Hex(photo)))
-      await write([h.url], [entry(alice, 'offer/a', null, clock.t), entry(bob, 'offer/b', null, clock.t)])
+      await write([h.url], [entry(alice, 'post/a', null, clock.t), entry(bob, 'post/b', null, clock.t)])
       await h.prune(clock.t + 31 * DAY)
       assert.equal(await h.getFile(sha256Hex(clip)), undefined)
       assert.ok(await h.getFile(sha256Hex(photo)))
@@ -274,7 +274,7 @@ describe('host.sqlite holds nothing that exists only there', () => {
     try {
       await write([h.url], [photoOffer])
       assert.ok((await upload([h.url], photo, 'image/jpeg'))[0]!.ok)
-      await write([h.url], [entry(alice, 'offer/photo', null, T0 + 1)])
+      await write([h.url], [entry(alice, 'post/photo', null, T0 + 1)])
     } finally {
       await h.close()
     }
@@ -343,8 +343,8 @@ describe('a folder file in another layout', () => {
     let h = await startPlug({ dir, now: clock.now })
     const keys = [alice, bob, aliceBuyer]
     // Each folder's offer is replaced once, so each good folder has an entry the prune deletes.
-    await write([h.url], keys.flatMap((key) => [entry(key, 'profile', profileBody('calculus'), T0), entry(key, 'offer/a', offerBody('1'), T0)]))
-    await write([h.url], keys.map((key) => entry(key, 'offer/a', offerBody('2'), T0 + MINUTE)))
+    await write([h.url], keys.flatMap((key) => [entry(key, 'profile', profileBody('calculus'), T0), entry(key, 'post/a', offerBody('1'), T0)]))
+    await write([h.url], keys.map((key) => entry(key, 'post/a', offerBody('2'), T0 + MINUTE)))
     const ids = async (profile?: string) => (await readPage(h.url, { after: 0, ...(profile && { profile }) })).entries.map((c) => c.id)
     const bobs = new Set(await ids(bob.address))
     const good = (await ids()).filter((id) => !bobs.has(id))
@@ -429,7 +429,7 @@ describe('the S3 driver', () => {
     const options = { dir, now: clock.now, files: driver }
     let h = await startPlug(options)
     try {
-      await write([h.url], [entry(alice, 'profile', aliceProfile, T0), photoOffer, entry(alice, 'offer/a', withClip('1'), T0)])
+      await write([h.url], [entry(alice, 'profile', aliceProfile, T0), photoOffer, entry(alice, 'post/a', withClip('1'), T0)])
       assert.deepEqual(await putBoth(h.url), [true, true])
       assert.deepEqual([...stub.objects].map(([k, o]) => [k, o.type]).sort(), [[sha256Hex(photo), 'image/jpeg'], [sha256Hex(clip), 'video/mp4']].sort())
       assert.ok(!existsSync(join(dir, 'files')), 'nothing on disk')
@@ -437,10 +437,10 @@ describe('the S3 driver', () => {
       assert.equal((await fetch(`${h.url}/v1/files/${sha256Hex(bytesOf(9))}`)).status, 404)
 
       // Alice takes the clip down: keep days later, it leaves the bucket. Named again, it comes back.
-      await write([h.url], [entry(alice, 'offer/a', null, T0 + 1)])
+      await write([h.url], [entry(alice, 'post/a', null, T0 + 1)])
       await h.prune(clock.t + 31 * DAY)
       assert.deepEqual([...stub.objects.keys()], [sha256Hex(photo)])
-      await write([h.url], [entry(bob, 'offer/b', withClip('2'), T0)])
+      await write([h.url], [entry(bob, 'post/b', withClip('2'), T0)])
       assert.ok((await upload([h.url], clip, 'video/mp4'))[0]!.ok)
     } finally {
       await h.close()

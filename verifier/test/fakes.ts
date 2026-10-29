@@ -1,18 +1,16 @@
-// A stand-in for Didit, an embedder that knows people by name, the RPC payments are found through, a
-// fresh verifier seed, a person's stamp number, and the check that the file keeps nothing it shouldn't.
+// A stand-in for Didit, an embedder that knows people by name, a fresh verifier seed, a person's stamp number, and the check that the file keeps nothing it shouldn't.
 
 import assert from 'node:assert/strict'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
 
-import { verifierSecret } from '@foundationforest/keys'
-import { fromBytes32 } from '@foundationforest/verification'
-import { base58, hex } from '@foundationforest/folders'
+import { seedNumber, stampNumberOf } from '@foundationforest/keys'
+import { fromBytes32 } from '@foundationforest/proofs'
+import { hex } from '@foundationforest/folders'
 
 import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
-import type { Payments } from '../src/payment.ts'
 import { sessionHash } from '../src/store.ts'
 
 export const FACE_WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
@@ -76,25 +74,8 @@ export function faceOf(name: string): Uint8Array {
   return out
 }
 
-/** The RPC, as far as the verifier sees it: the paying transactions each reference has, set by the test. */
-export class FakePayments implements Payments {
-  readonly paid = new Map<string, string[]>()
-  down = false
-  /** How many times it was asked. */
-  asked = 0
-
-  async landed(reference: string) {
-    this.asked++
-    if (this.down) throw new Error('down')
-    return this.paid.get(reference) ?? []
-  }
-}
-
-/** A transaction signature's shape: 64 random bytes in base58. */
-export const randomSignature = () => base58.encode(randomBytes(64))
-
 /** A person's stamp number for the test verifier, as their app mixes it: from a fresh seed and the verifier's name. */
-export const stampNumber = async () => (await verifierSecret(new Uint8Array(randomBytes(32)), VERIFIER_NAME)).stampNumber
+export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(randomBytes(32))), VERIFIER_NAME)
 
 /**
  * Didit, as far as the verifier sees it. A test says what each session came to with `set`. With
@@ -106,11 +87,8 @@ export class FakeFaceCheck implements FaceCheck {
   down = false
   photoDown = false
   waiting = 0
-  /** How many sessions Didit was asked to open; with `lost`, the next one is opened and its answer lost. */
+  /** How many sessions Didit was asked to open. */
   created = 0
-  lost = false
-  /** Each session opened with a mark, newest last. */
-  readonly marks: { mark: string; sessionId: string; url: string }[] = []
   /** The callback each session was opened with, by session id. */
   readonly callbacks = new Map<string, string | undefined>()
   /** Each session deleted, in order; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with the face. */
@@ -119,25 +97,12 @@ export class FakeFaceCheck implements FaceCheck {
   outcome = 'retained_with_user'
   #gate: Promise<void> | undefined
 
-  async createSession({ mark, callback }: { mark?: string; callback?: string } = {}) {
+  async createSession({ callback }: { callback?: string } = {}) {
     if (this.down) throw new Error('down')
     this.created++
     const sessionId = randomUUID()
-    const opened = { sessionId, url: `https://verify.example/session/${sessionId}` }
     this.callbacks.set(sessionId, callback)
-    if (mark) this.marks.push({ mark, ...opened })
-    if (this.lost) {
-      this.lost = false
-      throw new Error('opened, and the answer lost')
-    }
-    return opened
-  }
-
-  async marked(mark: string) {
-    if (this.down) throw new Error('down')
-    // Didit's list no longer shows a deleted session.
-    const found = this.marks.findLast((t) => t.mark === mark && !this.deleted.includes(t.sessionId))
-    return found ? { sessionId: found.sessionId, url: found.url } : null
+    return { sessionId, url: `https://verify.example/session/${sessionId}` }
   }
 
   set(sessionId: string, decision: Decision) {
@@ -189,23 +154,21 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
   'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID',
   'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the payments used; the stamp numbers given a gift. */
-export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; payments?: string[]; gifts?: bigint[]; never: string[] }
+/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the stamp numbers given a gift. */
+export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; gifts?: bigint[]; never: string[] }
 
 /**
- * The file holds six tables and nothing else: each session that gave a stamp as the hash of its id,
+ * The file holds five tables and nothing else: each session that gave a stamp as the hash of its id,
  * next to its stamp number and its check; one stamp for each stamp number and check those sessions
- * gave; the sessions not yet deleted in Didit, by id; each
- * fingerprint next to its stamp number; the payments used, each with its reference; the stamp numbers
- * given a gift, each with a hash of its buy. None of `never` (names, birth dates, embeddings,
- * references) is anywhere in its bytes, no other session id is in the clear, and no journal is left
- * beside it.
+ * gave; the sessions not yet deleted in Didit, by id; each fingerprint next to its stamp number; the
+ * stamp numbers given a gift, each with a hash of its buy. None of `never` (names, birth dates,
+ * embeddings, a gift's buy) is anywhere in its bytes, no other session id is in the clear, and no
+ * journal is left beside it.
  */
 export function assertKept(path: string, expected: Expected): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
@@ -219,7 +182,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'six tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'five tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -245,12 +208,6 @@ export function assertKept(path: string, expected: Expected): void {
       .map((r) => fromBytes32(r.stamp_number as Uint8Array))
       .sort()
     assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their stamp number')
-    const payments = db
-      .prepare('SELECT signature FROM id_payments')
-      .all()
-      .map((r) => base58.encode(r.signature as Uint8Array))
-      .sort()
-    assert.deepEqual(payments, [...(expected.payments ?? [])].sort(), 'the payments used, and nothing beside them')
     const gifts = db
       .prepare('SELECT stamp_number FROM gifts')
       .all()

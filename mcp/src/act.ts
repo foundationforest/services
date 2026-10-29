@@ -1,5 +1,5 @@
 // Acting for the person: one of their profiles, by its label, from the call's pack, its access key
-// made from its 32 bytes for this call alone; the folders a tool reads and writes, from their hosts;
+// made from its 64 bytes for this call alone; the folders a tool reads and writes, from their hosts;
 // and the person's own addresses, which no answer of a tool that acts for them holds.
 //
 // Where someone else's folder is looked for: at the hosts the person's own profiles use, the
@@ -9,7 +9,7 @@
 // entry names any host.
 
 import { type Body, type ReadHow, type View, b64u, readFolder } from '@foundationforest/folders'
-import { type KeyPair, accessKey } from '@foundationforest/keys'
+import { type AccessKey, accessKey } from '@foundationforest/keys'
 import { isObject, refuse } from './forest.ts'
 import type { Ctx } from './params.ts'
 
@@ -21,7 +21,7 @@ export type Own = {
   hosts: string[]
   can: string[]
   /** Its access key, both halves, for this call. */
-  key: KeyPair
+  key: AccessKey
 }
 
 /** How every host is reached: with the call's fetch, refusing a host that redirects. */

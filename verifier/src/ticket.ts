@@ -11,7 +11,7 @@ function addressBytes(text: unknown, what: string): Uint8Array {
   } catch {
     // Refused below.
   }
-  throw new Error(`${what} is a Solana address`)
+  throw new Error(`${what} is 32 bytes in base58`)
 }
 
 /** A service's origin, as a profile entry's `hosts` writes it: https, or http on loopback for tests. */

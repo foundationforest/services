@@ -5,10 +5,10 @@
 # are committed there and pinned by SHA-256, so they come with it and nothing else downloads them.
 # A service depends on a standard package by the name in
 # that package's package.json, through a file: link into standard/. Then, when MARKETS is beside
-# it, fetches foundationforest/markets at that commit into markets/ (not committed), the same way:
-# a service reads directory.json and market files from there, never over the network at run time.
-# An image that copies no MARKETS reads no markets, so it skips them. Moving a pin is a one-line
-# change to STANDARD or MARKETS. Needs git and the network.
+# it, fetches foundationforest/markets at that commit into markets/ (not committed), the same way,
+# and installs and builds its package, markets/build: a service reads the markets through it, from
+# there, never over the network at run time. An image that copies no MARKETS reads no markets, so it
+# skips them. Moving a pin is a one-line change to STANDARD or MARKETS. Needs git and the network.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -31,4 +31,5 @@ pinned standard "${STANDARD_REPO:-https://github.com/foundationforest/standard}"
 
 if [ -f MARKETS ]; then
   pinned markets "${MARKETS_REPO:-https://github.com/foundationforest/markets}" "$(tr -d '[:space:]' < MARKETS)"
+  (cd markets/build && npm ci --no-audit --no-fund && npm run build)
 fi

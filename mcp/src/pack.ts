@@ -2,7 +2,7 @@
 // this service's own format, which an app follows (README.md, The pack):
 //
 //   { request: <SHA-256 of the login request, lowercase hex>,
-//     profiles: [{ label, address, hosts, key: <the access key's 32 bytes, base64url>, can }, …] }
+//     profiles: [{ label, address, hosts, key: <the access key's 64 bytes, base64url>, can }, …] }
 //
 // locked with folders/locked's lock to this copy's open key alone, and handed back as that
 // envelope's text (the `private` of a locked body). The app made each access key (keys/'s
@@ -18,7 +18,7 @@ import { CAN, MAX_HOSTS, b64u, normalizeOrigin, publicKeyFromAddress } from '@fo
 import { openLocked } from '@foundationforest/folders/locked'
 import { isObject } from './forest.ts'
 
-/** The longest pack taken, in characters: about 16 profiles with one host each, so the access token stays under Node's 16 KB of headers. */
+/** The longest pack taken, in characters: about 15 profiles with one host each, so the access token stays under Node's 16 KB of headers. */
 export const MAX_PACK = 8192
 
 /** One of the person's profiles, as the pack holds it. */
@@ -48,7 +48,7 @@ export function packWrong(value: unknown): string | null {
     if (!Array.isArray(hosts) || hosts.length < 1 || hosts.length > MAX_HOSTS || new Set(hosts).size !== hosts.length || !hosts.every((h) => typeof h === 'string' && normalizeOrigin(h) === h)) {
       return `each profile's hosts are 1 to ${MAX_HOSTS} origins, each once`
     }
-    if (typeof p.key !== 'string' || !B64U.test(p.key) || b64u.decode(p.key).length !== 32) return "each key is an access key's 32 bytes, in base64url"
+    if (typeof p.key !== 'string' || !B64U.test(p.key) || b64u.decode(p.key).length !== 64) return "each key is an access key's 64 bytes, in base64url"
     const can = p.can
     if (!Array.isArray(can) || new Set(can).size !== can.length || !can.every((c) => (CAN as readonly unknown[]).includes(c))) return `each can holds any of ${CAN.join(', ')}, each once`
     labels.add(p.label)

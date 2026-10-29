@@ -20,8 +20,6 @@ const s = seller({
   key: await keyFrom(new Uint8Array(generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'der' }))),
   requestUri: '/credits/buy',
   price: '0.01',
-  // Tickets buy here; the RPC a Solana payment would be checked through is never asked.
-  payment: { address: '7DnNQWuv73SsNFLxVwWVCkiVf8kALjb49FdZTbndc7KA', mint: 'SOL', rpc: async () => Promise.reject(new Error('no chain here')) },
   maxBuy: 10,
   sponsors: [sponsor.address],
   path: ':memory:',

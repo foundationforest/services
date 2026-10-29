@@ -7,36 +7,24 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
-import { VERSION, discriminator } from '@foundationforest/escrow-client'
 import { checkBytes, unpackSignature } from '@foundationforest/keys'
 import { b64u, base58 } from '@foundationforest/folders'
 
-import { ESCROW_PROGRAM } from '../src/chain.ts'
 import { ROOT } from '../src/index.ts'
-import { deal } from '../src/pages/deal.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
 import { profile as profilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
 import { draw, type Page } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
-import { at, CHAIN, DOLLAR, index, verifier, MARKETS, page, post, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
+import { at, index, verifier, MARKETS, page, post, profile, publishProfile, startHost, twin } from './world.ts'
 
 const BASE = 'https://index.test.example'
 const by = verifier()
 const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 let i: Awaited<ReturnType<typeof index>>
 const people: { [name: string]: Awaited<ReturnType<typeof profile>> } = {}
-const escrow = base58.encode(randomBytes(32))
-
-const u64 = (n: bigint) => {
-  const b = new Uint8Array(8)
-  new DataView(b.buffer).setBigUint64(0, n, true)
-  return b
-}
-const bytes = (...parts: Uint8Array[]) => Uint8Array.from(parts.flatMap((p) => [...p]))
 
 before(async () => {
   host = await startHost()
@@ -47,37 +35,27 @@ before(async () => {
   for (const p of Object.values(people)) await publishProfile(host.url, p)
   const { a, b, c, s1, s2, uncounted } = people as { [k: string]: (typeof people)[string] }
   await post(host.url, [
-    at(a!, 'offer/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
-    at(b!, 'offer/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
-    at(c!, 'offer/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
-    at(s1!, 'offer/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
-    at(uncounted!, 'offer/u', { description: 'Maths, uncounted.' }),
-    at(s1!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a`, text: 'Very clear.', evidence: `${CHAIN}:${escrow}` }),
-    at(s2!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a` }),
-    at(s2!, 'review/b', { subject: b!.key.address, score: '4', offer: `${b!.key.address}/offer/b` }),
+    at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
+    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
+    at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
+    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
+    at(uncounted!, 'post/u', { description: 'Maths, uncounted.' }),
+    at(s1!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a`, text: 'Very clear.' }),
+    at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
+    at(s2!, 'review/b', { subject: b!.key.address, score: '4', post: `${b!.key.address}/post/b` }),
     at(uncounted!, 'review/a', { subject: a!.key.address, score: '1' }),
   ])
-  const signature = base58.encode(randomBytes(64))
-  const key = (x: string) => base58.decode(x)
-  const empty = bytes(Uint8Array.of(0), ...Array.from({ length: 4 }, () => new Uint8Array(10)), Uint8Array.of(0))
-  const created = bytes(discriminator('event', 'Created'), key(escrow), Uint8Array.of(VERSION), u64(1n), key(s1!.pay.solana), key(a!.pay.solana), Uint8Array.of(0), new Uint8Array(32), key(DOLLAR), randomBytes(32), randomBytes(32), u64(30_000_000n), empty, u64(1_790_000_000n))
-  const ended = bytes(discriminator('event', 'Ended'), key(escrow), Uint8Array.of(0), u64(30_000_000n), u64(30_000_000n), u64(0n), u64(30_000_000n), u64(1_790_000_100n), randomBytes(32), u64(0n), u64(1_790_000_050n))
-  const logs = [`Program ${ESCROW_PROGRAM} invoke [1]`, ...[created, ended].map((e) => `Program data: ${Buffer.from(e).toString('base64')}`), `Program ${ESCROW_PROGRAM} success`]
-  rpc = await startRpc((method, params) =>
-    method === 'getSignaturesForAddress' ? ((params[1] as { until?: string }).until ? [] : [{ signature, err: null }]) : { blockTime: 1_790_000_200, meta: { err: null, logMessages: logs } },
-  )
-  i = await index({ hosts: [host.url], keys }, rpc.url)
+  i = await index({ hosts: [host.url], keys })
   await i.pass()
 })
 after(async () => {
   await i.close()
   await host.close()
-  await rpc.close()
 })
 
 const keysOf = (o: object) => Object.keys(o).sort()
-const RESULT = ['checks', 'market', 'pickiness', 'post', 'profile', 'ratings', 'role', 'trust', 'uniqueness']
-const SHOWN = ['pickiness', 'ratings', 'trust', 'uniqueness']
+const RESULT = ['checks', 'market', 'post', 'profile', 'ratings', 'role', 'trust', 'uniqueness']
+const SHOWN = ['ratings', 'trust', 'uniqueness']
 
 test('the four answers the mcp reads, in their shapes', async () => {
   const home = (await twin<{ index: string; markets: Array<{ name: string; description: string; roles: string[] }> }>(i, '/index.json')).body
@@ -110,7 +88,7 @@ test('the four answers the mcp reads, in their shapes', async () => {
   for (const x of p.posts as object[]) assert.deepEqual(keysOf(x), ['address', 'body', 'listed'])
   const reviews = p.reviews as { received: Array<{ [k: string]: unknown }>; given: unknown[] }
   assert.deepEqual(keysOf(reviews), ['given', 'received'])
-  for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'evidence', 'reviewer', 'weight', ...(r.counted ? [] : ['why'])].sort())
+  for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'reviewer', 'weight', ...(r.counted ? [] : ['why'])].sort())
   for (const kind of ['vouches', 'reports', 'words']) assert.deepEqual(keysOf(p[kind] as object), ['given', 'received'])
   const words = (p.words as { received: Array<{ [k: string]: unknown }> }).received
   assert.deepEqual(words.map((w) => [keysOf(w), w.word]), [0, 1].map(() => [['subject', 'weight', 'word', 'writer'], 'vouch']))
@@ -119,16 +97,15 @@ test('the four answers the mcp reads, in their shapes', async () => {
   assert.deepEqual(p.ratings, { value: 9, count: 2 })
   assert.equal(p.uniqueness, 75)
   assert.ok((p.trust as number) > 38 && (p.trust as number) < 75, `${p.trust}`)
-  assert.equal(p.pickiness, 'average')
 
   // The statement of what it shows, signed by the index's key.
   const { statement, signature } = p as unknown as { statement: string; signature: string }
-  assert.deepEqual(JSON.parse(statement), { index: i.address, profile: people.a!.key.address, ratings: { value: '9.0', count: 2 }, trust: p.trust, uniqueness: 75, pickiness: 'average', time: JSON.parse(statement).time })
+  assert.deepEqual(JSON.parse(statement), { index: i.address, profile: people.a!.key.address, ratings: { value: '9.0', count: 2 }, trust: p.trust, uniqueness: 75, time: JSON.parse(statement).time })
   assert.ok(checkBytes(i.address, new TextEncoder().encode(statement), unpackSignature(b64u.decode(signature))!))
 
-  // A profile that does not count has a page, and no rating, trust, uniqueness or pickiness.
+  // A profile that does not count has a page, and no rating, trust or uniqueness.
   const u = (await twin<{ [k: string]: unknown }>(i, `/profiles/${people.uncounted!.key.address}.json`)).body
-  assert.deepEqual([u.ratings, u.trust, u.uniqueness, u.pickiness, u.statement], [{ value: null, count: 0 }, 0, 0, null, undefined])
+  assert.deepEqual([u.ratings, u.trust, u.uniqueness, u.statement], [{ value: null, count: 0 }, 0, 0, undefined])
   assert.deepEqual(u.checks, [])
 })
 
@@ -139,7 +116,6 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
     ['/markets/tennis-matches', market as Page<never>],
     [`/profiles/${people.a!.key.address}`, profilePage as Page<never>],
     [`/profiles/${people.uncounted!.key.address}`, profilePage as Page<never>],
-    [`/deals/${escrow}`, deal as Page<never>],
     ['/search?q=maths', search as Page<never>],
     ['/search', search as Page<never>],
   ]
@@ -193,7 +169,6 @@ test('the sitemap, robots.txt, and what is not here', async () => {
   const sitemap = (await page(i, '/sitemap.xml')).text
   assert.ok(sitemap.includes(`${BASE}/profiles/${people.a!.key.address}`))
   assert.ok(!sitemap.includes(people.uncounted!.key.address))
-  assert.ok(sitemap.includes(`${BASE}/deals/${escrow}`))
   assert.match((await page(i, '/robots.txt')).text, /Sitemap: https:\/\/index\.test\.example\/sitemap\.xml/)
   assert.equal((await page(i, '/markets/knitting')).status, 404)
   assert.equal((await page(i, `/profiles/${base58.encode(randomBytes(32))}.json`)).status, 404)

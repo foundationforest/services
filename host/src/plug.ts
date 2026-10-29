@@ -1,10 +1,9 @@
-// The plug: the eight requests every host answers (the standard's folders/README.md, Hosts), over
+// The plug: the seven requests every host answers (the standard's folders/README.md, Hosts), over
 // plain HTTP, a SQLite file per folder, and a file store (storage.ts). It is this host's own code;
 // the standard's host check (@foundationforest/folders/check) shows it fits the plug.
 //
 // It holds no keys, has no sign-up and asks for no login: an entry's signature is its only
-// credential, and an inbox delete's is the folder's main key's or an access key's its profile entry
-// lists. It is open: it takes signed entries for any folder and serves them to anyone; it takes
+// credential. It is open: it takes signed entries for any folder and serves them to anyone; it takes
 // inbox entries for any folder whose profile entry here has openKey, and lists them to anyone; it
 // takes the bytes a current entry here names, and serves them to anyone. The bodies it reads are
 // the profile entry's and each body's `files`. It keeps the current entry at each path; an entry
@@ -19,7 +18,6 @@
 //   POST /v1/inbox                 NDJSON of canonical inbox entries; one NDJSON result each
 //   POST /v1/inbox/read            { to, after? }: NDJSON of the inbox entries left for that folder
 //                                  after the cursor, in arrival order; header forest-cursor
-//   POST /v1/inbox/delete          NDJSON of canonical inbox deletes; one NDJSON result each
 //   PUT  /v1/files/<sha256>        raw bytes, content-type their type
 //   GET  /v1/files/<sha256>        the bytes, with the type they came in with
 //
@@ -44,7 +42,6 @@ import {
   type SignedEntry,
   type View,
   canDo,
-  decodeDelete,
   decodeEntry,
   decodeInbox,
   encodeEntry,
@@ -61,7 +58,7 @@ const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
 const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 export const DAY = 86_400_000
-/** The largest entry, inbox entry or inbox delete it takes, as canonical text in bytes, unless the operator says otherwise. */
+/** The largest entry or inbox entry it takes, as canonical text in bytes, unless the operator says otherwise. */
 export const DEFAULT_MAX_LINE_BYTES = 65_536
 /** Lines a request carries, unless the operator says otherwise. */
 export const DEFAULT_MAX_BATCH = 100
@@ -284,7 +281,7 @@ export class Host {
   }
 
   // ------------------------------------------------------------------------------------------
-  // The inbox: Taking an inbox entry in, and Deleting one, in the plug's order.
+  // The inbox: Taking an inbox entry in, in the plug's order.
 
   /** Take a request's inbox entries (wire text), check each in the standard's order, store what passes. */
   async leave(lines: string[]): Promise<Result[]> {
@@ -306,7 +303,6 @@ export class Host {
     }
     const { entry: e, id } = c
     const refuse = (error: string, message: string): Answer => ({ id, ok: false, error, message })
-    if (e.time > now + MAX_FUTURE_MS) return refuse('future', 'dated more than ten minutes ahead')
     if (this.storage.hasInbox(e.to, id)) return refuse('duplicate', 'this inbox entry is already here')
     let takes = open.get(e.to)
     if (takes === undefined) open.set(e.to, (takes = openKeyOf(this.profileBody(e.to, now)) !== null))
@@ -325,27 +321,6 @@ export class Host {
   readInbox(to: string, after = 0): Page {
     if (!publicKeyFromAddress(to)) return { lines: [], cursor: after }
     return this.page(this.storage.inboxAfter(to, after), after)
-  }
-
-  /** Take a request's inbox deletes (wire text): each signed by the folder's main key, or a key its profile entry here lists with read-inbox. */
-  async remove(lines: string[]): Promise<Result[]> {
-    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} lines a request` }]
-    const now = this.now()
-    return lines.map((line, i) => ({ i, ...this.removeOne(line, now) }))
-  }
-
-  private removeOne(line: string, now: number): Answer {
-    if (this.tooBig(line)) return { ok: false, error: 'size', message: `this host takes inbox deletes of at most ${this.maxLineBytes} bytes` }
-    let request
-    try {
-      request = decodeDelete(line)
-    } catch (err) {
-      return refusal(err)
-    }
-    const { to, id, key } = request
-    if (key !== undefined && !canDo(this.profileBody(to, now), key, 'read-inbox')) return { id, ok: false, error: 'unlisted', message: 'the profile entry here lists no such key with read-inbox' }
-    if (!this.storage.deleteInbox(to, id)) return { id, ok: true, message: 'not here' }
-    return { id, ok: true }
   }
 
   // ------------------------------------------------------------------------------------------
@@ -416,7 +391,7 @@ export class Host {
       return
     }
     const file = FILE_PATH.exec(url.pathname)?.[1]
-    const posts = ['/v1/entries/read', '/v1/inbox', '/v1/inbox/read', '/v1/inbox/delete']
+    const posts = ['/v1/entries/read', '/v1/inbox', '/v1/inbox/read']
     const methods = url.pathname === '/v1/entries' ? ['GET', 'POST'] : posts.includes(url.pathname) ? ['POST'] : file ? ['GET', 'PUT'] : []
     if (!methods.length) {
       res.writeHead(404).end()
@@ -469,14 +444,14 @@ export class Host {
       return sendLines(res, field === 'profile' ? this.read({ profile: asked.folder, after: asked.after }) : this.readInbox(asked.folder, asked.after))
     }
 
-    // POST /v1/entries, /v1/inbox or /v1/inbox/delete: NDJSON in, one NDJSON result a line out.
+    // POST /v1/entries or /v1/inbox: NDJSON in, one NDJSON result a line out.
     const body = await readBody(req, this.maxBatch * (this.maxLineBytes + 1))
     if (body === null) {
       res.writeHead(413).end()
       return
     }
     const lines = bodyText.decode(body).split('\n').filter((l) => l.length > 0)
-    const results = url.pathname === '/v1/inbox' ? await this.leave(lines) : url.pathname === '/v1/inbox/delete' ? await this.remove(lines) : await this.accept(lines)
+    const results = url.pathname === '/v1/inbox' ? await this.leave(lines) : await this.accept(lines)
     res.writeHead(200, { 'content-type': 'application/x-ndjson' })
     res.end(results.map((r) => JSON.stringify(r) + '\n').join(''))
   }

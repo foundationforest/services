@@ -6,7 +6,6 @@ import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { deal } from './pages/deal.ts'
 import { home } from './pages/home.ts'
 import { market } from './pages/market.ts'
 import { profile } from './pages/profile.ts'
@@ -17,7 +16,7 @@ import { newestRoot, servedLeaves } from './tree.ts'
 /** The address llms.txt and skill.md are written for; each copy serves them with its own PUBLIC_URL. */
 export const WRITTEN_FOR = 'https://index.forest.foundation'
 
-const PAGES: { [first: string]: Page<never> } = { markets: market, profiles: profile, deals: deal, search } as never
+const PAGES: { [first: string]: Page<never> } = { markets: market, profiles: profile, search } as never
 const HEADERS = { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=30, stale-while-revalidate=300' }
 const TEXT = 'text/plain; charset=utf-8'
 
@@ -34,9 +33,8 @@ export function web(ctx: Context, base: string, root: string): Web {
     const u = urls(base)
     const list = [
       u.home,
-      ...ctx.markets.list.map((m) => u.market(m.name)),
+      ...ctx.markets.directory.markets.map((m) => u.market(m.name)),
       ...(ctx.store.db.prepare('select address from profiles where counted = 1 order by address').all() as Array<{ address: string }>).map((p) => u.profile(p.address)),
-      ...(ctx.store.db.prepare('select escrow from receipts order by escrow').all() as Array<{ escrow: string }>).map((r) => u.deal(r.escrow)),
     ]
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${list.map((l) => `<url><loc>${esc(l)}</loc></url>\n`).join('')}</urlset>\n`
   }

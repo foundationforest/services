@@ -48,7 +48,7 @@ no login; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview`, the fields a post's preview shows first (the manual's default when the file leaves it out), and `kinds`, the kinds of entry it defines |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview`, the fields a post's preview shows first (the manual's default when the file leaves it out), and `kinds`, the kinds of entry it defines, each with its fields |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed to it as they are; or, given a profile's address, that profile's page at the index |
 | `my_profiles` | read-only | nothing | From the pack: each profile the login acts in, by its label, with what its access key `can` do. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | With a path: the current entry there in that profile's folder, its body and time, opened when it is locked and the key may open it. With the inbox: the messages to that profile (below) |
@@ -72,7 +72,8 @@ it, as a chat starts (MCP's `initialize`), comes the index's guide, its `skill.m
 the URL it was read from, as the index's own word; or a line saying the index gave none.
 
 **`read`, the inbox.** It lists the profile's inbox at each of its hosts, every page, each inbox
-entry once, newest first, and opens the newest 100 with the access key: each message's signature is
+entry once, newest first by arrival, since an inbox entry carries no time, and opens the newest 100
+with the access key: each message's signature is
 checked as the standard says (`openInbox`). For each, it gives the message's time and body;
 `from`, the sender's address, or `fromLabel`, the label of another of the person's own profiles;
 `counts`, whether the sender's own profile entry, read from its hosts, stands behind the key that
@@ -83,12 +84,13 @@ app listed it with `read-inbox`. `older` counts those past the newest 100.
 
 **`write`, public or locked.**
 
-- **Public,** the main way: at `<kind>/<id>`, a kind the profile's market defines (its profile
-  entry's `market`), the body checked against that kind's fields before anything is signed, as the
-  index checks what it lists (`src/check.ts`): each field one the market names, for the profile's
-  role (or, in a review, the role of the profile it is about), of its type in `types.json`, a choice
-  among its values, a `file` one of the files the body lists in `files`; the shared names by their
-  meaning, `evidence` among them, as text. A body that does not fit is refused, naming the field.
+- **Public,** the main way: at `<kind>/<id>`, a kind every market defines (`post`, `review`,
+  `vouch`, `report`), the body checked against its profile entry's `market` before anything is
+  signed, with the markets package's `checkEntry`, the check the index lists by: each field one the
+  market names, for the profile's role (or, in a review, the role of the profile it is about), of
+  its type, a choice among its values, a `file` one of the files the body lists in `files`; the
+  shared names by their meaning. Then the standard's part: `subject` an address, and the profile in
+  a review's `post`. A body that does not fit is refused, naming the field.
 - **Locked,** `locked: true`: at any path but `profile` and `key/…` (the person's notes about their
   access keys), the body the person's own and unchecked, with no `files` (anyone fetches a file by
   its hash), locked to every key that may read the folder (`lockKeysOf`): the main key's open key
@@ -98,8 +100,8 @@ app listed it with `read-inbox`. `older` counts those past the newest 100.
 
 **Where other folders are looked for.** A message's recipient, an inbox sender, a review's subject:
 at the hosts the person's own profiles use (the pack's), and at a message's own `host`, then every
-host the folder's profile entry names. Every host is reached with the standard's `publicFetch`
-(`@foundationforest/folders/public`), which reaches only public addresses and follows no redirect,
+host the folder's profile entry names. Every host is reached with `publicFetch` (`src/public.ts`,
+the standard's until its #121), which reaches only public addresses and follows no redirect,
 since anyone can make a pack and any profile entry names any host.
 
 **The person's own addresses.** In every answer of the four tools that act for the person, each
@@ -121,15 +123,15 @@ copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under this copy'
 
 1. **The challenge.** A call to a tool that acts for the person, with no token, gets a 401 with
    `WWW-Authenticate: Bearer resource_metadata="<origin>/.well-known/oauth-protected-resource"`; a
-   token this copy did not give, or one from before packs, gets the same on any request to its MCP
-   door (`/` or `/mcp`), with `error="invalid_token"`, and so does a token whose pack no longer
+   token this copy did not give, or one from before packs, gets the same on any request to MCP
+   (`/` or `/mcp`), with `error="invalid_token"`, and so does a token whose pack no longer
    opens, once this copy's opening half changed, on a call that acts for the person.
 2. **Discovery.** `/.well-known/oauth-protected-resource` names this copy as the resource and its
    authorization server; `/.well-known/oauth-authorization-server` names `/authorize`, `/token` and
    `/register`, S256, and that client documents work.
 3. **The AI app.** It registers one of two ways, and nothing is kept for either:
    - by a client document (CIMD): its `client_id` is an https address with a path, read with the
-     standard's `publicFetch` (10 seconds, 64 KB) each time a login starts; it must name itself as its
+     `publicFetch` (10 seconds, 64 KB) each time a login starts; it must name itself as its
      `client_id` and list the redirect address;
    - by registration (DCR, `POST /register`): its `client_id` is a body holding its redirect addresses
      (1 to 8), its name and how it signs in at `/token`. Unless it registers as public (`none`), it
@@ -170,13 +172,13 @@ this copy's opening half, an age post-quantum key, readable from any page
 
 **What the app does, on the person's yes,** for each profile they ticked:
 
-1. makes an access key, keys/'s `newAccessKey()`: 32 random bytes and both their halves;
+1. makes an access key, keys/'s `newAccessKey()`: 64 random bytes, both its halves;
 2. writes a new profile entry, signed by the main key, that lists it in `keys` as
    `{ key: <its address>, open: <its open key>, can: [ … ] }`, with the switches the person chose,
    all four unless they chose fewer, never more (`open` only when it can `read` or `read-inbox`);
-3. writes its note, the standard's private note about an access key: at `key/<id>`, the id keyed by
-   the access key's address (folders' `notePath`), locked to the main key's open key alone; what it
-   says is the app's (the reference app writes the AI app's name, this copy's origin and the time).
+3. writes its note, the standard's private note about an access key: at `key/<id>`, a random id,
+   locked to the main key's open key alone, naming the access key, `{ key, … }`; the rest it says is
+   the app's (the reference app writes the AI app's name, this copy's origin and the time).
 
 Then it reads this copy's open key, and locks, with folders/locked's `lock`, to that key alone:
 
@@ -185,7 +187,7 @@ Then it reads this copy's open key, and locks, with folders/locked's `lock`, to 
   "profiles": [ { "label": <the profile's label>,
                   "address": <the profile's address>,
                   "hosts": [<origin>, …],           1 to 8, its profile entry's
-                  "key": <the access key's 32 bytes, base64url without padding>,
+                  "key": <the access key's 64 bytes, base64url without padding>,
                   "can": [<"read-inbox" | "read" | "write" | "message">, …] }, … ] }
 ```
 
@@ -196,11 +198,12 @@ these five fields. `request` ties the pack to this one login.
 ### The reference app
 
 [`test/app.ts`](test/app.ts) is what the person's app does around this copy, in plain code, with the
-standard's libraries; the tests and the loop run it. It keeps the person's Profiles folder, its
-`label/<id>` and `stamp/<id>` entries locked to the Profiles folder key; makes a profile, its profile
-entry with market, role, hosts, open key, both pay addresses signed, and a verification for each
-stamp it keeps; does the connect page's work above; removes an access key and its note; and, on a
-new device, finds the person's profiles and stamps from the seed alone.
+standard's libraries; the tests and the loop run it. It keeps the person's Profiles folder, the
+empty label's, its `label/<id>` and `stamp/<id>` entries at random ids, locked to its own open key;
+makes a profile, its profile entry with market, role, hosts, open key, both pay addresses, and a
+verification for each stamp it keeps; does the connect page's work above; removes an access key and
+its note, found by opening the folder's notes; and, on a new device, finds the person's profiles
+and stamps from the seed alone, by opening every entry the Profiles folder holds.
 
 ### Run it
 
@@ -216,9 +219,10 @@ npm run smoke -- https://mcp.forest.foundation
 
 Node 22.18 or later. Built from existing pieces, used unchanged: the standard's keys and folders
 packages (`@foundationforest/keys`, `@foundationforest/folders`, through file: links into
-`standard/`); `@modelcontextprotocol/sdk`, for the MCP door; `ajv` and `ajv-formats`, for the market
-check, the versions the markets directory's own check uses; Node's `crypto`, for HMAC and SHA-256.
-The reference app also uses the standard's verification client.
+`standard/`); the markets package (`@foundationforest/markets`, through a file: link into
+`markets/build`), for the markets and their one check; `@modelcontextprotocol/sdk`, for MCP; `undici`,
+for `publicFetch`; Node's `crypto`, for HMAC and SHA-256. The reference app also uses the standard's
+proofs package.
 
 | Variable | What it sets | Unless set |
 |---|---|---|
@@ -249,15 +253,18 @@ profiles, the page ticking their two tutoring ones:
   a line saying it gave none; the markets; the index's search and a profile's page, each whole,
   `badge` in it and among the filters; `my_profiles`; `read` of the profile entry with its pay
   addresses by label, of a missing path, of a locked entry opened and of one locked before the
-  login, not opened; `write` of an offer signed by the access key, and each refusal naming its field
-  or why; a review naming its evidence; a delete; a locked entry at any path, opened by the main key
+  login, not opened; `write` of a post signed by the access key, and each refusal naming its field
+  or why; a review naming its post; a delete; a locked entry at any path, opened by the main key
   and the access key, and refused at `key/…`, at `profile`, with files; the inbox, a stranger's
   message with its sender counted and the index's word, one from before the login unopened, one
   from another of the person's profiles by its label, one signed by a key its sender does not list,
   not counted; `message` to a stranger, who opens it, signed by the access key; a login with
-  `write` alone, a file field named in `files` and not, and no message; then the key removed, the
-  host refusing its next write as `unlisted` and what it wrote no longer current; and no answer in
-  the file holding one of the person's addresses.
+  `write` alone, a file field named in `files` and not, and no message; then the key and its note
+  removed, the host refusing its next write as `unlisted` and what it wrote no longer current; and
+  no answer in the file holding one of the person's addresses.
+- `test/public.test.ts`: `publicFetch`, the standard's own tests of it: every range that is not
+  public refused, written in the URL or reached through a name, before anything is sent, and no
+  redirect followed, even when asked.
 - `test/smoke.test.ts` reads the command and working directory from `deploy/Dockerfile`, runs them
   here, and connects with the MCP SDK's own client (`smoke.ts`): how Forest works first, as the
   server's instructions, the mark as its icon, no session, every tool, reading with no login, the
@@ -290,7 +297,7 @@ The foundation's copy, at https://mcp.forest.foundation:
   - 10 minutes on the connect page, to unlock the device and choose; 60 seconds for a code, which
     the AI app redeems at once; no end for a login, which does what its access keys may until the
     person removes them;
-  - at most 8,192 characters for a pack: about 16 profiles with one host each, so the access token,
+  - at most 8,192 characters for a pack: about 15 profiles with one host each, so the access token,
     which carries it, stays well under the 16 KB of headers Node takes;
   - the newest 100 inbox entries a read opens: each takes a post-quantum opening, and anyone can
     leave entries in an inbox;
@@ -363,9 +370,9 @@ it acts.
 - **A stranger's folder is found only on the hosts the person's profiles use,** or a message's own
   host. A profile whose folder lives only elsewhere can be read about through the index, not
   messaged.
-- **The newest 100 inbox entries** a read; older ones wait for the newest to be deleted, which this
-  copy does not do.
-- **At most about 16 profiles a login,** in a pack of 8,192 characters.
+- **The newest 100 inbox entries** a read; older ones wait for the newest to leave their hosts, after
+  each host's keep days.
+- **At most about 15 profiles a login,** in a pack of 8,192 characters.
 - **The AI can still find a profile it posted for:** what it posts is public, and an index lists it.
   What this copy keeps from it is the map of the person's profiles.
 - **A code works more than once in its 60 seconds,** since nothing is kept; only the AI app holding
@@ -374,9 +381,9 @@ it acts.
   until `MARKETS` moves.
 - **An index's answer may hold anything,** since `search` picks nothing from it.
 - **No rate limit.** Anyone can keep the copy busy.
-- **Not here:** paying, putting or deleting files (photos and videos), deleting inbox entries,
-  buying credits (a host's prepaid units of writes) for a host that charges, views in the AI app
-  (MCP Apps), and a copy on the person's own computer.
+- **Not here:** paying, putting or deleting files (photos and videos), buying credits (a host's
+  prepaid units of writes) for a host that charges, views in the AI app (MCP Apps), and a copy on
+  the person's own computer.
 
 ## Who decides what
 
@@ -414,7 +421,8 @@ only.
 
 **Why does this copy check a public body against its market, and not the person's app?**
 This copy signs it, with the access key, so this copy is the last to see it before the hosts do. The
-check is the one the index runs before it lists a post, so a body refused here would not be listed.
+check is the markets package's, the one the index runs before it lists a post, so a body refused
+here would not be listed.
 A locked body is the person's own, and no market defines it.
 
 **Why does `write` not check the key's listing first, when `message` does?**

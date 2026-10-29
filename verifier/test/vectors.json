@@ -1,5 +1,5 @@
 {
-  "about": "The facts recipes (src/facts.ts), pinned. h(x) is SHA-256 of x's bytes, read as a big-endian integer, mod the BN254 scalar order. The stamp number is keys/'s, from its test vectors (standard/keys/test/vectors.json): the seed 00 01 ... 1f at issuer-a.example.",
+  "about": "The facts recipes (src/facts.ts), pinned. h(x) is SHA-256 of x's bytes, read as a big-endian integer, mod the BN254 scalar order. The stamp number is keys/'s, from its test vectors (standard/keys/test/vectors.json): the seed 00 01 ... 1f at verifier-a.example.",
   "h": {
     "model": "opencv-sface-2021dec",
     "value": "10591749797650705127731616988021729254250218697580187264448946244445411076997"
@@ -63,7 +63,7 @@
   ],
   "stampNumber": {
     "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-    "verifier": "issuer-a.example",
-    "stampNumber": "20944015934799795826415284381445320057207905995401371295488411919908256593839"
+    "verifier": "verifier-a.example",
+    "stampNumber": "18402149250886678356079257736529107316112840223970378666944710760051516693134"
   }
 }

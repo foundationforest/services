@@ -2,36 +2,52 @@
 // standard's pieces only, for the tests and the loop to run. It holds the person's seed and the
 // stamps it was given, and:
 //
-// - keeps the person's Profiles folder (folders/README.md, The Profiles folder): its profile entry,
-//   which holds only its hosts; a `label/<id>` entry for each profile it makes and a `stamp/<id>`
-//   entry for each stamp it keeps, each locked to the Profiles folder key's open key alone;
+// - keeps the person's Profiles folder (folders/README.md, The Profiles folder), the empty label's:
+//   its profile entry, which holds only its hosts; a `label/<id>` entry for each profile it makes
+//   and a `stamp/<id>` entry for each stamp it keeps, each at a random id, locked to the folder's own
+//   open key alone;
 // - makes a profile: its profile entry with its market and role, its hosts, its main key's open key
-//   (so it takes inbox entries), both pay addresses each signed by its pay key, a verification
-//   made on the device for each stamp it keeps, and any more proofs;
+//   (so it takes inbox entries), both pay addresses, a verification made on the device for each
+//   stamp it keeps, and any more proofs;
 // - at the connect page, on the person's yes: makes one access key for each profile they ticked
 //   (keys/'s newAccessKey), lists it in that profile's entry with its switches (all four unless the
-//   person chose fewer), writes its note at `key/<id>` locked to the main key alone, and hands back
-//   the pack, locked to this copy's open key, which it reads at the connector's /open-key;
-// - removes an access key from a profile's entry, and its note;
-// - on a new device, finds the person's profiles and stamps from the seed alone.
+//   person chose fewer), writes its note at `key/<id>`, a random id, locked to the main key alone and
+//   naming the key, and hands back the pack, locked to this copy's open key, which it reads at the
+//   connector's /open-key;
+// - removes an access key from a profile's entry, and its note, found by opening the folder's notes;
+// - on a new device, finds the person's profiles and stamps from the seed alone, by opening every
+//   entry its Profiles folder holds.
 //
 // It signs with each profile's main key and writes straight to its hosts. It keeps nothing but the
 // stamps, in memory.
 
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { CAN, type Body, b64u, entry, labelPath, liveContent, nextTime, notePath, readFolder, stampPath, write } from '@foundationforest/folders'
+import { CAN, type Body, type View, b64u, entry, hex, liveContent, nextTime, readFolder, write } from '@foundationforest/folders'
 import { isLocked, lock, openLocked } from '@foundationforest/folders/locked'
-import { mainKey, newAccessKey, openingHalf, payAddresses, payKey, profilesKey, seedScalar, signPay } from '@foundationforest/keys'
-import { type SignedStamp, proofBytes, proveVerification, stampToJson } from '@foundationforest/verification'
+import { mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
+import { type SignedStamp, proofBytes, proveVerification, stampToJson } from '@foundationforest/proofs'
 
 /** What the person chose at the connect page: the profiles they ticked, and what the AI app may do there; or no. */
 export type Choice = { profiles: string[]; can?: string[] } | 'no'
 
 /** The verification circuit's committed proving files, in the standard at STANDARD. */
 const VERIFICATION_FILES = {
-  wasm: fileURLToPath(new URL('../../standard/proofs/verification/circuit/setup/verification.wasm', import.meta.url)),
-  zkey: fileURLToPath(new URL('../../standard/proofs/verification/circuit/setup/verification.zkey', import.meta.url)),
+  wasm: fileURLToPath(new URL('../../standard/proofs/verification/setup/verification.wasm', import.meta.url)),
+  zkey: fileURLToPath(new URL('../../standard/proofs/verification/setup/verification.zkey', import.meta.url)),
+}
+
+/** A random id, which names nothing: 16 random bytes, in lowercase hex. */
+const randomId = () => hex.encode(crypto.getRandomValues(new Uint8Array(16)))
+
+/** Each locked entry of a folder under `kind/`, opened with `identity`: its path, its locked body, and what it holds. */
+async function opened(view: View, kind: string, identity: string): Promise<Array<{ path: string; locked: { private: string }; body: Body }>> {
+  const out = []
+  for (const [path, { entry: e }] of liveContent(view)) {
+    if (!path.startsWith(`${kind}/`) || !isLocked(e.body)) continue
+    out.push({ path, locked: e.body as { private: string }, body: await openLocked(e.body, identity) })
+  }
+  return out
 }
 
 /** A written batch, checked: every host took every entry, or why not. */
@@ -45,33 +61,32 @@ async function wrote(hosts: string[], entries: Parameters<typeof write>[1]): Pro
 export class App {
   private readonly seed: Uint8Array
   private readonly hosts: string[]
-  /** The stamps this device holds, each with its verifier's name. */
-  private readonly stamps: Array<{ stamp: SignedStamp; verifierName: string }> = []
+  /** The stamps this device holds, each naming its verifier. */
+  private readonly stamps: SignedStamp[] = []
 
   constructor(options: { seed: Uint8Array; hosts: string[] }) {
     this.seed = options.seed
     this.hosts = options.hosts
   }
 
-  /** The Profiles folder key, and its folder as its hosts serve it. */
+  /** The Profiles folder's main key, the empty label's, and its folder as its hosts serve it. */
   private async profilesFolder() {
-    const key = await profilesKey(this.seed)
+    const key = await mainKey(this.seed, '')
     return { key, view: await readFolder(this.hosts, key.address, Date.now()) }
   }
 
-  /** An entry in the Profiles folder at `path`, locked to its own open key alone; its profile entry first, when it has none. */
-  private async inProfiles(path: string, body: Body): Promise<void> {
+  /** An entry in the Profiles folder at `<kind>/<id>`, a random id, locked to its own open key alone; its profile entry first, when it has none. */
+  private async inProfiles(kind: string, body: Body): Promise<void> {
     const { key, view } = await this.profilesFolder()
     const now = Date.now()
     const first = view.current.has('profile') ? [] : [entry(key, 'profile', { hosts: this.hosts }, now)]
-    await wrote(this.hosts, [...first, entry(key, path, await lock(body, [key.openKey]), nextTime(now, view, path))])
+    await wrote(this.hosts, [...first, entry(key, `${kind}/${randomId()}`, await lock(body, [(await openingHalf(key.secret)).openKey]), now)])
   }
 
   /** A stamp this device keeps: in the Profiles folder, so a new device has it too; a profile it makes after carries a verification of it. */
-  async keep(stamp: SignedStamp, verifierName: string): Promise<void> {
-    this.stamps.push({ stamp, verifierName })
-    const text = JSON.stringify(stampToJson(stamp))
-    await this.inProfiles(stampPath((await profilesKey(this.seed)).secret, text), { stamp: text })
+  async keep(stamp: SignedStamp): Promise<void> {
+    this.stamps.push(stamp)
+    await this.inProfiles('stamp', { stamp: JSON.stringify(stampToJson(stamp)) })
   }
 
   /** A profile's main key, and its folder as its hosts serve it. */
@@ -82,37 +97,40 @@ export class App {
 
   /**
    * A new profile, `<market>/<role>`, listed in the Profiles folder: its profile entry with its
-   * market, role and hosts, its open key, both pay addresses signed, a verification for each stamp
-   * this device keeps, then `proofs`. Gives back its address.
+   * market, role and hosts, its open key, both pay addresses, a verification for each stamp this
+   * device keeps, then `proofs`. Gives back its address.
    */
   async addProfile(label: string, more: { proofs?: Body[] } = {}): Promise<string> {
     const [market, role] = label.split('/')
     const main = await mainKey(this.seed, label)
-    const scalar = await seedScalar(this.seed)
     const verifications: Body[] = []
-    for (const { stamp, verifierName } of this.stamps) {
-      const r = await proveVerification({ seedScalar: scalar, verifierName, stamp, label, artifacts: VERIFICATION_FILES })
-      verifications.push({ circuit: 'verification', verifier: r.verifier, verifierName, label, proof: b64u.encode(proofBytes(r.proof)) })
+    for (const stamp of this.stamps) {
+      const r = await proveVerification({ seed: this.seed, stamp, label, artifacts: VERIFICATION_FILES })
+      verifications.push({ circuit: 'verification', verifier: r.verifier, verifierName: r.verifierName, label, proof: b64u.encode(proofBytes(r.proof)) })
     }
     const proofs = [...verifications, ...(more.proofs ?? [])]
-    const paySig = { solana: signPay(await payKey(this.seed, label, 'solana'), main.address), evm: signPay(await payKey(this.seed, label, 'evm'), main.address) }
     const body: Body = {
       market: market!,
       role: role!,
       hosts: this.hosts,
       openKey: (await openingHalf(main.secret)).openKey,
       pay: { ...(await payAddresses(this.seed, label)) },
-      paySig,
       ...(proofs.length > 0 && { proofs }),
     }
     await wrote(this.hosts, [entry(main, 'profile', body, Date.now())])
-    await this.inProfiles(labelPath((await profilesKey(this.seed)).secret, label), { label, time: Date.now() })
+    await this.inProfiles('label', { label, time: Date.now() })
     return main.address
   }
 
   /** The access keys `label`'s profile entry lists now. */
   async keys(label: string): Promise<Array<{ key: string; open?: string; can: string[] }>> {
     return (await this.folder(label)).view.keys
+  }
+
+  /** The note about the access key at `address` in `label`'s folder, found by opening each note there with the main key: its path, its locked body, and what it holds. */
+  async note(label: string, address: string): Promise<{ path: string; locked: { private: string }; body: Body } | undefined> {
+    const { main, view } = await this.folder(label)
+    return (await opened(view, 'key', (await openingHalf(main.secret)).identity)).find((n) => n.body.key === address)
   }
 
   /** `label`'s profile entry, changed by `change`, written by its main key. */
@@ -145,9 +163,8 @@ export class App {
       const { main } = await this.folder(label)
       await this.changeProfile(label, (body) => ({ ...body, keys: [...((body.keys as Body[] | undefined) ?? []), { key: key.address, ...(can.some((c) => c === 'read' || c === 'read-inbox') && { open: key.openKey }), can }] }))
       const { view } = await this.folder(label)
-      const note = notePath(main.secret, key.address)
       const mine = (await openingHalf(main.secret)).openKey
-      await wrote(view.hosts, [entry(main, note, await lock({ name, connector, time: Date.now() }, [mine]), nextTime(Date.now(), view, note))])
+      await wrote(view.hosts, [entry(main, `key/${randomId()}`, await lock({ key: key.address, name, connector, time: Date.now() }, [mine]), Date.now())])
       profiles.push({ label, address: main.address, hosts: view.hosts, key: b64u.encode(key.secret), can })
     }
     const request256 = createHash('sha256').update(request, 'utf8').digest('hex')
@@ -158,24 +175,19 @@ export class App {
   /** The access key at `address` taken out of `label`'s profile entry, and its note deleted. */
   async removeKey(label: string, address: string): Promise<void> {
     await this.changeProfile(label, (body) => ({ ...body, keys: ((body.keys as Body[] | undefined) ?? []).filter((k) => k.key !== address) }))
+    const note = await this.note(label, address)
+    if (!note) return
     const { main, view } = await this.folder(label)
-    const note = notePath(main.secret, address)
-    await wrote(view.hosts, [entry(main, note, null, nextTime(Date.now(), view, note))])
+    await wrote(view.hosts, [entry(main, note.path, null, nextTime(Date.now(), view, note.path))])
   }
 
   /** A new device: from the seed alone, the labels of the person's profiles and the stamps they hold, from the Profiles folder on `hosts`. */
   static async find(seed: Uint8Array, hosts: string[]): Promise<{ labels: string[]; stamps: string[] }> {
-    const key = await profilesKey(seed)
+    const key = await mainKey(seed, '')
     const view = await readFolder(hosts, key.address, Date.now())
-    const labels: string[] = []
-    const stamps: string[] = []
-    for (const [path, { entry: e }] of liveContent(view)) {
-      if (!isLocked(e.body)) continue
-      const body = await openLocked(e.body, key.identity)
-      // Each path is keyed by what its entry holds, so an entry moved to another path is not taken.
-      if (typeof body.label === 'string' && labelPath(key.secret, body.label) === path) labels.push(body.label)
-      if (typeof body.stamp === 'string' && stampPath(key.secret, body.stamp) === path) stamps.push(body.stamp)
-    }
+    const { identity } = await openingHalf(key.secret)
+    const labels = (await opened(view, 'label', identity)).map((e) => e.body.label).filter((l): l is string => typeof l === 'string')
+    const stamps = (await opened(view, 'stamp', identity)).map((e) => e.body.stamp).filter((s): s is string => typeof s === 'string')
     return { labels: labels.sort(), stamps }
   }
 }

@@ -1,4 +1,4 @@
-// The hosted copy: the MCP door over Streamable HTTP at its root (and at /mcp, where connectors
+// The hosted copy: MCP over Streamable HTTP at its root (and at /mcp, where connectors
 // added before point), the login (login.ts), its open key at /open-key, and the icon. Stateless:
 // each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept; the
 // pack a token carries is opened for the request that needs it, and forgotten with it.
@@ -14,7 +14,6 @@ import type { AddressInfo } from 'node:net'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import { publicFetch } from '@foundationforest/folders/public'
 import { leaveOut } from './act.ts'
 import { type Context, MAX_ANSWER_BYTES, indexSays, isObject, refuse } from './forest.ts'
 import { TooLarge, json, readBody } from './http.ts'
@@ -23,6 +22,7 @@ import { loadKey, loadOpening } from './keys.ts'
 import { Login } from './login.ts'
 import type { Pack } from './pack.ts'
 import { type Ctx, type Tool, checkArgs } from './params.ts'
+import { publicFetch } from './public.ts'
 import { HOW, TOOLS } from './tools.ts'
 
 const VERSION = '0.0.0'
@@ -87,9 +87,9 @@ export type Settings = {
   dataDir: string
   /** The index it reads. */
   read: Context
-  /** How a client document is fetched: the standard's publicFetch unless told otherwise. */
+  /** How a client document is fetched: publicFetch (public.ts) unless told otherwise. */
   clientFetch?: typeof fetch
-  /** How hosts are reached: the standard's publicFetch unless told otherwise. */
+  /** How hosts are reached: publicFetch (public.ts) unless told otherwise. */
   hostFetch?: typeof fetch
 }
 

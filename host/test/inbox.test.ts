@@ -1,13 +1,13 @@
 // The inbox on the plug, in the order the standard's plug checks an inbox entry: its text and shape,
-// the future, a duplicate, an inbox here, then its own choice; the sizes and batches it chooses;
-// listing to anyone; and deleting, only by the folder's main key or a key listed with read-inbox.
+// a duplicate, an inbox here, then its own choice; the sizes and batches it chooses; and listing to
+// anyone.
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { type Body, type InboxEntry, type Writer, canonical, deleteInbox, encodeDelete, encodeInbox, entry, inboxDelete, inboxId, leave, readInbox, write } from '@foundationforest/folders'
+import { type Body, type InboxEntry, type Writer, canonical, encodeInbox, entry, inboxId, leave, readInbox, write } from '@foundationforest/folders'
 import { inboxEntry, openInbox } from '@foundationforest/folders/locked'
 import { DEFAULT_MAX_LINE_BYTES, type Host, type HostOptions } from '../src/plug.ts'
-import { MINUTE, T0, alice, aliceBuyer, aliceOpening, aliceWith, bob, helper, profileBody, stranger } from './fixtures.ts'
+import { T0, alice, aliceBuyer, aliceOpening, aliceWith, bob, profileBody, stranger } from './fixtures.ts'
 import { startPlug } from './helpers.ts'
 
 /** Alice's profile entry: her open key, and `helper` listed with read-inbox. */
@@ -22,24 +22,24 @@ async function hostWith(body: Body | null = ALICE, options: HostOptions = {}): P
 /** An inbox entry from `from` to Alice, locked to the keys her profile entry gives. */
 const letter = (from: Writer = bob, text = 'Is Tuesday at six free?', time = T0) => inboxEntry(from, alice.address, { text }, time, ALICE)
 const errors = async (h: Host, entries: InboxEntry[]) => (await leave([h.url], entries))[0]!.results.map((r) => r.error ?? 'ok')
-const deletes = async (h: Host, lines: string[]) => (await h.remove(lines)).map((r) => r.error ?? r.message ?? 'ok')
 
 describe('leaving', () => {
-  test('a host checks an inbox entry in order: text, shape, body, future, duplicate, an inbox here', async () => {
+  test('a host checks an inbox entry in order: text, shape, version, address, duplicate, an inbox here', async () => {
     const h = await hostWith()
     try {
       const e = await letter()
       const results = await h.leave([
         'not json',
         canonical({ ...e, from: bob.address }),
-        encodeInbox({ ...e, body: { ...e.body, text: 'x' } } as never),
-        encodeInbox(await letter(bob, 'later', T0 + 10 * MINUTE + 1)),
+        canonical({ ...e, v: 2 }),
+        canonical({ ...e, to: 'x' }),
+        canonical({ ...e, private: e.private + '!' }),
         encodeInbox(e),
         encodeInbox(e),
         encodeInbox({ ...e, to: bob.address }),
         encodeInbox({ ...e, to: aliceBuyer.address }),
       ])
-      assert.deepEqual(results.map((r) => r.error ?? 'ok'), ['canonical', 'shape', 'body', 'future', 'ok', 'duplicate', 'no_inbox', 'no_inbox'])
+      assert.deepEqual(results.map((r) => r.error ?? 'ok'), ['canonical', 'shape', 'version', 'key', 'shape', 'ok', 'duplicate', 'no_inbox', 'no_inbox'])
       assert.deepEqual(await errors(h, [e]), ['duplicate'], 'in a later request too')
       // The host checks no signature: the sender is locked inside, for the keys it was locked to.
       const { message } = await openInbox(e, aliceOpening.identity)
@@ -128,38 +128,6 @@ describe('listing', () => {
       assert.deepEqual((await readInbox(h.url, alice.address, { after: page.cursor })).entries.map((e) => e.id), [inboxId(three!)])
       assert.equal((await readInbox(h.url, bob.address)).entries.length, 0)
       assert.equal((await readInbox(h.url, 'x')).entries.length, 0, 'a folder that is no address has none')
-    } finally {
-      await h.close()
-    }
-  })
-})
-
-describe('deleting', () => {
-  test('only the main key, or a key its profile entry lists with read-inbox: another profile’s key, a key not listed or listed without it, or a changed delete is refused', async () => {
-    const h = await hostWith()
-    try {
-      const [one, two] = await Promise.all([letter(bob, 'one'), letter(bob, 'two')])
-      await leave([h.url], [one!, two!])
-      const [a, b] = [inboxId(one!), inboxId(two!)]
-      const asHelper = { profile: alice.address, key: helper }
-      assert.deepEqual(
-        await deletes(h, [
-          'not json',
-          canonical({ ...inboxDelete(alice, a), more: 1 }),
-          encodeDelete({ ...inboxDelete(alice, a), id: b }),
-          encodeDelete({ ...inboxDelete(bob, a), to: alice.address }),
-          encodeDelete({ ...inboxDelete(aliceBuyer, a), to: alice.address }),
-          encodeDelete(inboxDelete({ profile: alice.address, key: stranger }, a)),
-        ]),
-        ['canonical', 'shape', 'signature', 'signature', 'signature', 'unlisted'],
-      )
-      assert.deepEqual(await deletes(h, [encodeDelete(inboxDelete(alice, a)), encodeDelete(inboxDelete(alice, a))]), ['ok', 'not here'], 'a delete names one entry: sending it again deletes nothing more')
-      await write([h.url], [entry(alice, 'profile', aliceWith(['write']), T0 + 1)])
-      assert.deepEqual(await deletes(h, [encodeDelete(inboxDelete(asHelper, b))]), ['unlisted'], 'listed without read-inbox')
-      await write([h.url], [entry(alice, 'profile', ALICE, T0 + 2)])
-      const [outcome] = await deleteInbox([h.url], [inboxDelete(asHelper, b)])
-      assert.deepEqual(outcome!.results.map((r) => r.error ?? r.message ?? 'ok'), ['ok'])
-      assert.equal((await readInbox(h.url, alice.address)).entries.length, 0)
     } finally {
       await h.close()
     }

@@ -6,22 +6,19 @@ import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
 
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { index, verifier, profile, publishProfile, startHost, startRpc, twin } from './world.ts'
+import { index, verifier, profile, publishProfile, startHost, twin } from './world.ts'
 
 const listed = verifier('verifier.test.example')
 const other = verifier('other.test.example')
 const leaked = verifier('leaked.test.example')
 const id = verifier('id.test.example')
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 
 before(async () => {
   host = await startHost()
-  rpc = await startRpc()
 })
 after(async () => {
   await host.close()
-  await rpc.close()
 })
 
 const keys = () => [
@@ -47,7 +44,7 @@ test('a profile counts only with a verification that checks, for a listed key, u
   const all = { good, changed, unlisted, wrongName, wrongLabel, noMarket, noRole, afterUntil, twice, both }
   for (const p of Object.values(all)) await publishProfile(host.url, p)
 
-  const i = await index({ hosts: [host.url], keys: keys() }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: keys() })
   await i.pass()
   const seen = async (p: typeof good) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body
 

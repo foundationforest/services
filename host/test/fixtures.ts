@@ -16,8 +16,8 @@ export const aliceBuyer = await mainKey(SEED, 'tutoring/buyer') // the same pers
 export const bob = await mainKey(OTHER_SEED, 'tutoring/buyer') // someone else
 /** A key that is no one's main key here: what tries to sign for a profile it is not. */
 export const stranger = serviceKey(new Uint8Array(32).fill(99))
-/** An access key Alice's profile entry may list: keys/'s, from 32 bytes of 0x2b. */
-export const helper = await accessKey(new Uint8Array(32).fill(0x2b))
+/** An access key Alice's profile entry may list: keys/'s, from 32 bytes of 0x2b then 32 of 0x2c. */
+export const helper = await accessKey(new Uint8Array([...new Uint8Array(32).fill(0x2b), ...new Uint8Array(32).fill(0x2c)]))
 export const [aliceOpening, bobOpening] = await Promise.all([openingHalf(alice.secret), openingHalf(bob.secret)])
 
 export const T0 = Date.UTC(2026, 9, 2, 12, 0, 0)

@@ -1,4 +1,4 @@
-// The verifier's one file, six tables:
+// The verifier's one file, five tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
@@ -11,10 +11,6 @@
 //                  deleted the session
 //   fingerprints   for each person the ID check signed: their fingerprint (facts.ts), and the stamp
 //                  number it was signed for, so a person seen again is signed again only for that one
-//   id_payments    the transaction signature of each payment that opened an ID check, with the
-//                  reference it named (public in that transaction) and whether Didit answered that it
-//                  opened the session, so one payment opens one, for its own payment id only, and a
-//                  session deleted once its stamp was signed is not opened again
 //   gifts          each stamp number given its welcome gift (gift.ts), with a hash of the buy it was
 //                  given for, so a person gets one, and the same buy asked again gets the same ticket
 //
@@ -28,8 +24,7 @@
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
-import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/verification'
-import { base58 } from '@foundationforest/folders'
+import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/proofs'
 
 import type { Check } from './didit.ts'
 
@@ -51,9 +46,6 @@ export class Store {
   readonly #addFingerprint: StatementSync
   readonly #addStamp: StatementSync
   readonly #stamps: StatementSync
-  readonly #pay: StatementSync
-  readonly #paidFor: StatementSync
-  readonly #open: StatementSync
   readonly #give: StatementSync
   readonly #given: StatementSync
   readonly #signedAt: StatementSync
@@ -72,7 +64,6 @@ export class Store {
       CREATE TABLE IF NOT EXISTS stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS id_payments (signature BLOB PRIMARY KEY, reference TEXT NOT NULL, opened INTEGER NOT NULL DEFAULT 0) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
     `)
     this.#session = this.#db.prepare('SELECT stamp_number FROM sessions WHERE hash = ?')
@@ -81,9 +72,6 @@ export class Store {
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, stamp_number) VALUES (?, ?)')
     this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
     this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ?')
-    this.#pay = this.#db.prepare('INSERT OR IGNORE INTO id_payments (signature, reference) VALUES (?, ?)')
-    this.#paidFor = this.#db.prepare('SELECT reference, opened FROM id_payments WHERE signature = ?')
-    this.#open = this.#db.prepare('UPDATE id_payments SET opened = 1 WHERE signature = ?')
     this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (stamp_number, buy) VALUES (?, ?)')
     this.#given = this.#db.prepare('SELECT buy FROM gifts WHERE stamp_number = ?')
     this.#signedAt = this.#db.prepare('SELECT signed_at FROM to_delete WHERE session_id = ?')
@@ -157,17 +145,6 @@ export class Store {
     return kept
   }
 
-  /** Whom this payment, by its transaction's signature (base58), opened a check for: its reference; undefined if unused. */
-  paymentFor(signature: string): string | undefined {
-    return this.#paidFor.get(base58.decode(signature))?.reference as string | undefined
-  }
-
-  /** Marks a payment used for `reference`: true if it was free, or already used for that reference. It is never given back. */
-  usePayment(signature: string, reference: string): boolean {
-    this.#pay.run(base58.decode(signature), reference)
-    return this.paymentFor(signature) === reference
-  }
-
   /** The sessions first signed at `before` or earlier and not yet deleted in Didit, oldest first. */
   due(before: number): { sessionId: string; kind: Check }[] {
     return this.#due.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check }))
@@ -176,16 +153,6 @@ export class Store {
   /** Forgets a session's id and time, once Didit has deleted it. */
   deleted(sessionId: string): void {
     this.#deleted.run(sessionId)
-  }
-
-  /** Whether Didit answered that it opened this payment's session. */
-  opened(signature: string): boolean {
-    return this.#paidFor.get(base58.decode(signature))?.opened === 1
-  }
-
-  /** Marks that Didit answered that it opened this payment's session. */
-  markOpened(signature: string): void {
-    this.#open.run(base58.decode(signature))
   }
 
   /** Marks this stamp number's gift given for this buy: `given` the first time, `again` for the same buy, `other` for another. */

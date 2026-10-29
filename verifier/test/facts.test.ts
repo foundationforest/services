@@ -10,11 +10,9 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-import { PREFIX, nameHashOf, seedScalar, verifierSecret } from '@foundationforest/keys'
+import { nameHashOf, seedNumber, stampNumberOf } from '@foundationforest/keys'
 import { b64u, hex } from '@foundationforest/folders'
-import { poseidon1 } from 'poseidon-lite/poseidon1'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
-import { poseidon3 } from 'poseidon-lite/poseidon3'
 import { poseidon5 } from 'poseidon-lite/poseidon5'
 
 import { daysOf, faceFacts, h, idFacts, person } from '../src/facts.ts'
@@ -58,11 +56,11 @@ test('the ID key’s facts: Poseidon([h(model), h(embedding), h(name), birthDays
   assert.equal(vectors.id[1].name, vectors.id[1].name.normalize('NFC'))
 })
 
-test('poseidon-lite is the standard’s Poseidon: it makes the stamp number keys/ makes, and pins', async () => {
+test('poseidon-lite is the standard’s Poseidon: it makes the stamp number keys/ makes, and pins', () => {
   const { seed: seedHex, verifier, stampNumber } = vectors.stampNumber
   const seed = hex.decode(seedHex)
-  const fromKeys = (await verifierSecret(seed, verifier)).stampNumber
-  const byPoseidonLite = poseidon1([poseidon3([PREFIX.verifier, await seedScalar(seed), nameHashOf(verifier)])])
+  const fromKeys = stampNumberOf(seedNumber(seed), verifier)
+  const byPoseidonLite = poseidon2([seedNumber(seed), nameHashOf(verifier)])
   assert.equal(fromKeys.toString(), stampNumber, "keys/'s own test vector")
   assert.equal(byPoseidonLite, fromKeys)
 })

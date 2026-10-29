@@ -1,76 +1,21 @@
-// The markets: read from the pinned checkout; a post that does not fit its market is kept, not
-// listed, and says why; the escrow this index reads is the one the pinned standard names, on a
-// chain config/chains.json lists.
+// The markets, read from the pinned checkout through the markets package: a post that does not fit
+// its market (the package's checkEntry, whose own tests are the markets repo's) is kept, not listed,
+// and says why.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
-import { VERSION } from '@foundationforest/escrow-client'
-
-import { ESCROW_CHAIN, ESCROW_PROGRAM } from '../src/chain.ts'
-import { ROOT } from '../src/index.ts'
-import { loadLists } from '../src/lists.ts'
-import { loadMarkets } from '../src/markets.ts'
 import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
-import { at, index, verifier, MARKETS, post, profile, publishProfile, STANDARD, startHost, startRpc, twin } from './world.ts'
-
-test('the escrow this index reads is the program the pinned standard names, of the version its client reads, on a chain this index reads', () => {
-  const deployed = JSON.parse(readFileSync(join(STANDARD, 'escrows/solana/devnet/devnet.json'), 'utf8')) as { cluster: string; escrow: { programId: string; version: number } }
-  assert.equal(ESCROW_PROGRAM, deployed.escrow.programId)
-  assert.equal(deployed.escrow.version, VERSION)
-  assert.equal(VERSION, 4)
-  // Solana's devnet in CAIP-2 form, as the markets manual writes it.
-  assert.equal(deployed.cluster, 'devnet')
-  assert.equal(ESCROW_CHAIN, 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1')
-  assert.deepEqual(loadLists(ROOT).chains.get(ESCROW_CHAIN), { reader: 'solana', rpc: 'RPC_URL' })
-})
-
-test("each market's check reads its file: fields, choices, lists, roles", () => {
-  const m = loadMarkets(MARKETS)
-  assert.deepEqual(
-    m.list.map((x) => x.name),
-    (JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string }> }).markets.map((x) => x.name),
-  )
-  const place = { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' }
-  assert.equal(m.checkPost('tutoring', 'tutor', { description: 'Maths', price: { amount: '30', currency: 'USD', per: 'hour' }, subjects: ['maths'], place }), null)
-  assert.match(m.checkPost('tutoring', 'tutor', { description: 'Maths', colour: 'red' })!, /does not name: colour/)
-  assert.match(m.checkPost('tutoring', 'tutor', { subjects: ['knitting'] })!, /its subjects is not a list of choice/)
-  assert.match(m.checkPost('tutoring', 'tutor', { subjects: ['maths', 'maths'] })!, /its subjects is not a list of choice/)
-  assert.match(m.checkPost('tutoring', 'tutor', { price: { amount: 30, currency: 'USD' } })!, /its price is not a money/)
-  assert.match(m.checkPost('electronics', 'buyer', { photos: [] })!, /photos is a field for seller/)
-  assert.equal(m.checkPost('electronics', 'seller', { photos: [] }), null)
-  // A file field names one of the body's files, which is the standard's field and no market's.
-  const photo = { sha256: '04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', type: 'image/jpeg', size: 48213 }
-  assert.equal(m.checkPost('clothing', 'seller', { description: 'A wool coat.', photos: [photo.sha256], files: [photo] }), null)
-  assert.equal(m.checkPost('tutoring', 'tutor', { description: 'Maths', files: [photo] }), null)
-  assert.match(m.checkPost('clothing', 'seller', { photos: [photo.sha256] })!, /its photos names a file its files do not list/)
-  assert.match(m.checkPost('clothing', 'seller', { photos: [photo], files: [photo] })!, /its photos is not a list of file/)
-  assert.match(m.checkPost('tutoring', 'seller', {})!, /seller is not a role in the tutoring market/)
-  assert.match(m.checkPost('knitting', 'maker', {})!, /knitting is not a market/)
-  assert.equal(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '8.5', showedUp: 'yes' }), null)
-  assert.match(m.checkAbout('review', 'tennis-matches', 'player', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', evidence: 'x' })!, /reviews hold no evidence/)
-  assert.match(m.checkAbout('review', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '11' })!, /score is not "1" to "10"/)
-  assert.match(m.checkAbout('review', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', offer: 'maths' })!, /offer is not a post's address/)
-  // A vouch and a report hold a subject and text, by the market's own vouch and report.
-  assert.equal(m.checkAbout('vouch', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', text: 'Real and honest.' }), null)
-  assert.equal(m.checkAbout('report', 'clothing', 'seller', { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC' }), null)
-  assert.match(m.checkAbout('vouch', 'tutoring', null, { subject: '9bpPbLYCPwNWq9BZqnJr3EqRNqymFZ4g58Zk9K86azDC', score: '9' })!, /the tutoring market's vouches hold no score/)
-  assert.match(m.checkAbout('report', 'tutoring', null, { text: 'A scam.' })!, /names no subject/)
-})
+import { at, index, verifier, post, profile, publishProfile, startHost, twin } from './world.ts'
 
 const by = verifier()
 let host: Awaited<ReturnType<typeof startHost>>
-let rpc: Awaited<ReturnType<typeof startRpc>>
 before(async () => {
   host = await startHost()
-  rpc = await startRpc()
 })
 after(async () => {
   await host.close()
-  await rpc.close()
 })
 
 test('a post that does not fit its market is kept, not listed, and its profile page says why', async () => {
@@ -78,24 +23,24 @@ test('a post that does not fit its market is kept, not listed, and its profile p
   const student = await profile('tutoring/student', [by])
   for (const p of [tutor, student]) await publishProfile(host.url, p)
   await post(host.url, [
-    at(tutor, 'offer/good', { description: 'Maths, any level.', subjects: ['maths'] }),
-    at(tutor, 'offer/odd', { description: 'Maths.', colour: 'red' }),
-    at(student, 'offer/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
+    at(tutor, 'post/good', { description: 'Maths, any level.', subjects: ['maths'] }),
+    at(tutor, 'post/odd', { description: 'Maths.', colour: 'red' }),
+    at(student, 'post/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
-  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] }, rpc.url)
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
   await i.pass()
 
   const m = (await twin<MarketPage>(i, '/markets/tutoring.json')).body
   assert.deepEqual(Object.keys(m.posts), ['tutor', 'student'])
-  assert.deepEqual(m.posts.tutor!.map((r) => r.post.address), [`${tutor.key.address}/offer/good`])
-  assert.deepEqual(m.posts.student!.map((r) => r.post.address), [`${student.key.address}/offer/physics`])
+  assert.deepEqual(m.posts.tutor!.map((r) => r.post.address), [`${tutor.key.address}/post/good`])
+  assert.deepEqual(m.posts.student!.map((r) => r.post.address), [`${student.key.address}/post/physics`])
 
   const t = (await twin<ProfilePage>(i, `/profiles/${tutor.key.address}.json`)).body
-  const odd = t.posts.find((p) => p.address.endsWith('/offer/odd'))!
+  const odd = t.posts.find((p) => p.address.endsWith('/post/odd'))!
   assert.equal(odd.listed, false)
-  assert.equal(odd.why, 'it has a field the tutoring market does not name: colour')
+  assert.equal(odd.why, 'a post in tutoring has no field colour')
   assert.deepEqual(odd.body, { description: 'Maths.', colour: 'red' })
-  assert.equal(t.posts.find((p) => p.address.endsWith('/offer/good'))!.listed, true)
-  assert.equal('why' in t.posts.find((p) => p.address.endsWith('/offer/good'))!, false)
+  assert.equal(t.posts.find((p) => p.address.endsWith('/post/good'))!.listed, true)
+  assert.equal('why' in t.posts.find((p) => p.address.endsWith('/post/good'))!, false)
   await i.close()
 })

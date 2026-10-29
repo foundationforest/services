@@ -1,11 +1,9 @@
 // `/profiles/<address>`: a profile this index holds a profile entry for. Its profile entry; each
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
-// ratings, trust, uniqueness and pickiness) and the statement that signs them; its posts, listed or
-// not and why; the reviews, vouches and reports it received and gave, each with whether it counts
-// and why not, a review with its evidence (and why, when it is unchecked or already used) and its
-// weight; and the words it received and gave, each with its weight.
+// ratings, trust and uniqueness) and the statement that signs them; its posts, listed or not and
+// why; the reviews, vouches and reports it received and gave, each with whether it counts and why
+// not, a review with its weight; and the words it received and gave, each with its weight.
 
-import type { Evidence } from '../evidence/index.ts'
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
 import { aggregateOf, personOf, postFields, type Shown, shownFor, shownHtml } from './common.ts'
@@ -17,9 +15,6 @@ export type ReviewEntry = {
   body: { [key: string]: unknown }
   counted: boolean
   why?: string
-  evidence: Evidence['status']
-  /** Only when the evidence is unchecked, the chain this index does not read; or invalid because an earlier review used it, "already used". */
-  evidenceWhy?: string
   weight: number
 }
 /** A vouch or a report. */
@@ -40,7 +35,7 @@ export type ProfilePage = {
   proofs: Array<{ circuit: unknown; result: string; [key: string]: unknown }>
 } & Shown & { statement?: string; signature?: string }
 
-type ReviewColumns = { address: string; reviewer: string; body: string; counted: number; why: string | null; evidence: ReviewEntry['evidence']; evidence_why: string | null; weight: number }
+type ReviewColumns = { address: string; reviewer: string; body: string; counted: number; why: string | null; weight: number }
 const entry = (r: ReviewColumns): ReviewEntry => {
   const body = parse<{ [key: string]: unknown }>(r.body)
   return {
@@ -49,21 +44,17 @@ const entry = (r: ReviewColumns): ReviewEntry => {
     body,
     counted: r.counted === 1,
     ...(r.why !== null && { why: r.why }),
-    evidence: r.evidence,
-    ...(r.evidence_why !== null && { evidenceWhy: r.evidence_why }),
     weight: r.weight,
   }
 }
 type SaidColumns = { address: string; writer: string; body: string; counted: number; why: string | null }
 const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), counted: r.counted === 1, ...(r.why !== null && { why: r.why }) })
 
-const EVIDENCE = { with: 'with a payment', without: 'without a payment', unchecked: 'its evidence is unchecked', invalid: 'its evidence does not count' }
-
 const counts = (r: { counted: boolean; why?: string }, more = '') => html`<p class="muted">${r.counted ? `Counts${more}.` : html`<span class="no">Does not count: ${r.why}.</span>`}</p>`
 
 function reviewHtml(r: ReviewEntry, other: string, base: string): Raw {
   const score = typeof r.body.score === 'string' ? `${r.body.score} of 10` : 'no score'
-  return html`<section><p>${score}, <a href="${urls(base).profile(other)}">${short(other)}</a>, ${EVIDENCE[r.evidence]}${r.evidenceWhy ? `: ${r.evidenceWhy}` : ''}.${typeof r.body.text === 'string' ? html` ${r.body.text}` : ''}</p>
+  return html`<section><p>${score}, <a href="${urls(base).profile(other)}">${short(other)}</a>.${typeof r.body.text === 'string' ? html` ${r.body.text}` : ''}</p>
 ${counts(r, `, weight ${r.weight.toFixed(2)}`)}</section>`
 }
 
@@ -88,7 +79,7 @@ export const profile: Page<ProfilePage> = {
       why: string | null
     }>
     const reviews = (column: string) =>
-      (store.db.prepare(`select address, reviewer, subject, body, counted, why, evidence, evidence_why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
+      (store.db.prepare(`select address, reviewer, subject, body, counted, why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
     const saidIn = (table: string) => {
       const of = (column: string) => (store.db.prepare(`select address, writer, body, counted, why from ${table} where ${column} = ? order by time desc, address`).all(found.address) as SaidColumns[]).map(said)
       return { received: of('subject'), given: of('writer') }

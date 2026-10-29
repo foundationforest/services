@@ -1,11 +1,8 @@
 {
-  "about": "Every number this index ranks by, explained in README.md, How it scores; each verifier key's confidence is in lists/verifiers.json. Changing one changes every ranking. This is this index's opinion: another index ranks by other numbers. vouchStep: how much of what is left each full vouch keeps, in the vouch part. reportCut: what each full report leaves, in the report part. toughFrom and easyTo: the pickiness at and above which a rater is tough, and at and below which it is easy; between, average. marketWeight: how much of the market's average search adds to each profile's ratings, for order only. tolerance and maxRounds: the ranking settles when nothing moves by more than tolerance, or after maxRounds rounds. evidence: one factor per kind of evidence a review can carry (escrow, payment), and none for a review with no evidence or evidence that does not count; each score's weight is multiplied by it.",
+  "about": "Every number this index ranks by, explained in README.md, How it scores; each verifier key's confidence is in lists/verifiers.json. Changing one changes every ranking. This is this index's opinion: another index ranks by other numbers. vouchStep: how much of what is left each full vouch keeps, in the vouch part. reportCut: what each full report leaves, in the report part. marketWeight: how much of the market's average search adds to each profile's ratings, for order only. tolerance and maxRounds: the ranking settles when nothing moves by more than tolerance, or after maxRounds rounds.",
   "vouchStep": 0.5,
   "reportCut": 0.25,
-  "toughFrom": 0.55,
-  "easyTo": 0.45,
   "marketWeight": 1,
   "tolerance": 1e-9,
-  "maxRounds": 1000,
-  "evidence": { "escrow": 1, "payment": 1, "none": 1 }
+  "maxRounds": 1000
 }
