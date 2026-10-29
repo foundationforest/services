@@ -1,5 +1,5 @@
 // The foundation's host: the plug (plug.ts, over storage.ts), run with this service's choices. It
-// takes anyone's records, delivers messages to inboxes, and keeps blobs, as the standard's plug
+// takes anyone's entries, inbox entries and the files a current entry names, as the standard's plug
 // says; every number it uses is in `choice` below, in plug.ts's defaults, or a setting, and
 // README.md says each in words.
 //
@@ -8,20 +8,20 @@
 // loopback.
 //
 // Every write is paid for in credits, from its folder's balance here: the plug asks this host's
-// choices (`recordChoice`, `blobChoice`, `messageChoice`). A record is claimed by its id as its
-// price is taken, so two copies pay once. Bytes are stored first: their price is reserved, then
-// taken once the plug answers that it kept them, or released; the front sends on one request for
-// the same bytes at a time. The plug asks about a folder's first hosts record, so joining costs a
-// write, and never about a later one, so leaving and updating are free. A message to its own
-// profile's inbox is a write of that folder's, priced and claimed as a record is; others' messages
-// are free, MESSAGES_A_DAY an inbox a day. Reads are free.
+// choices (`entryChoice`, `fileChoice`, `inboxChoice`). An entry is claimed by its id as its price
+// is taken, so two copies pay once. A file's bytes are stored first: their price is reserved on a
+// folder whose current entry names them, then taken once the plug answers that it stored them, or
+// released; the front sends on one upload of the same bytes at a time. The plug asks about a
+// folder's first profile entry, so joining costs a write, and never about a later one, so leaving
+// and updating are free. Inbox entries are free, INBOX_A_DAY an inbox a day: a host cannot see who
+// left one, so no folder here pays for it. Inbox deletes and reads are free.
 //
-// Taking your own things down is never blocked by money: a null body over a live record, and a blob
-// delete the plug carries out, cost the floor when the balance holds it, and go through free when it
-// does not. A null body where nothing stands is a write like any other.
+// Taking your own things down is never blocked by money: a null body over a live entry costs the
+// floor when the balance holds it, and goes through free when it does not. A null body where nothing
+// stands is a write like any other.
 //
 // Where it keeps things is storage.ts's: a data directory (DATA_DIR) with a SQLite file per folder,
-// and the blobs on disk there or in an S3-compatible bucket (BLOBS=s3). The credits keep their own
+// and the files on disk there or in an S3-compatible bucket (FILES=s3). The credits keep their own
 // file and their key in DATA_DIR/credits.
 
 import { mkdirSync } from 'node:fs'
@@ -29,14 +29,14 @@ import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, 
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { checkBlobRequest, encodeMessage, encodeRecord, messageId, recordId, unsignedMessageOf, unsignedOf } from '@foundationforest/records'
+import { encodeEntry, entryId, unsignedOf } from '@foundationforest/folders'
 import { base58 } from '@scure/base'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { type Rpc, keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
-import { type BlobChoice, type BlobDriver, Host, type HostOptions, type MessageChoice, type RecordChoice, defaultBlobChoice, logFailure } from './plug.ts'
+import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -45,27 +45,27 @@ export const LABEL =
 
 /** This host's choices: each number the plug takes as an option. */
 export const choice = {
-  /** Days a replaced record or a message is kept. */
+  /** Days an entry that stopped being current or counting, an inbox entry, and a file no current entry names are kept. */
   keepDays: 30,
-  /** Records or messages one request may carry. */
+  /** Lines one request may carry. */
   maxBatch: 100,
-  /** Records or messages one page holds at most. */
-  maxPageRecords: 1000,
+  /** Lines one page holds at most. */
+  maxPageLines: 1000,
   /** Bytes one page holds at most, though always one line. */
   maxPageBytes: 4 * 1024 * 1024,
-  /** The largest blob it takes. Its types are the standard's default: png, jpeg and mp4. */
-  maxBlobBytes: 50_000_000,
+  /** The largest file it takes. Its types are the plug's default: png, jpeg and mp4. */
+  maxFileBytes: 50_000_000,
 } as const satisfies HostOptions
 
-/** Others' messages one inbox takes in a day, from midnight UTC. */
-export const MESSAGES_A_DAY = 1_000
+/** Inbox entries one inbox takes in a day, from midnight UTC. */
+export const INBOX_A_DAY = 1_000
 const DAY_MS = 86_400_000
 
 export type Config = {
   /** The data directory: the plug's storage, and the credits' file and key in `credits/`. */
   dir: string
-  /** Where blob bytes go: disk in `dir`, or a bucket. */
-  blobs: BlobDriver
+  /** Where file bytes go: disk in `dir`, or a bucket. */
+  files: FileDriver
   port: number
   /** Its public origin, `https://host`: the name its credits carry, and that a ticket names. */
   origin: string
@@ -81,28 +81,28 @@ export type Config = {
   cost: { floor: string; perKb: string }
 }
 
-/** The bucket's settings, with BLOBS=s3; the first four are needed. */
-const BUCKET_NEEDED = ['BLOBS_ENDPOINT', 'BLOBS_BUCKET', 'BLOBS_ACCESS_KEY_ID', 'BLOBS_SECRET_ACCESS_KEY']
+/** The bucket's settings, with FILES=s3; the first four are needed. */
+const BUCKET_NEEDED = ['FILES_ENDPOINT', 'FILES_BUCKET', 'FILES_ACCESS_KEY_ID', 'FILES_SECRET_ACCESS_KEY']
 /** A payment on Solana takes all three, or none: then only tickets buy. */
 const PAYMENT = ['CREDIT_MINT', 'CREDIT_PAY_TO', 'RPC_URL']
 
-function blobDriver(env: Record<string, string | undefined>): BlobDriver {
-  const kind = env.BLOBS || 'disk'
+function fileDriver(env: Record<string, string | undefined>): FileDriver {
+  const kind = env.FILES || 'disk'
   if (kind === 'disk') return { kind: 'disk' }
-  if (kind !== 's3') throw new Error('BLOBS is disk or s3')
+  if (kind !== 's3') throw new Error('FILES is disk or s3')
   const missing = BUCKET_NEEDED.filter((name) => !env[name])
-  if (missing.length) throw new Error(`BLOBS=s3 needs ${BUCKET_NEEDED.join(', ')}; missing: ${missing.join(', ')}`)
-  new URL(env.BLOBS_ENDPOINT!)
-  const style = env.BLOBS_STYLE || undefined
-  if (style !== undefined && style !== 'path' && style !== 'virtual') throw new Error('BLOBS_STYLE is path or virtual')
+  if (missing.length) throw new Error(`FILES=s3 needs ${BUCKET_NEEDED.join(', ')}; missing: ${missing.join(', ')}`)
+  new URL(env.FILES_ENDPOINT!)
+  const style = env.FILES_STYLE || undefined
+  if (style !== undefined && style !== 'path' && style !== 'virtual') throw new Error('FILES_STYLE is path or virtual')
   return {
     kind: 's3',
-    endpoint: env.BLOBS_ENDPOINT!,
-    bucket: env.BLOBS_BUCKET!,
-    accessKeyId: env.BLOBS_ACCESS_KEY_ID!,
-    secretAccessKey: env.BLOBS_SECRET_ACCESS_KEY!,
+    endpoint: env.FILES_ENDPOINT!,
+    bucket: env.FILES_BUCKET!,
+    accessKeyId: env.FILES_ACCESS_KEY_ID!,
+    secretAccessKey: env.FILES_SECRET_ACCESS_KEY!,
     // storage.ts signs with whatever region it is given, `auto` included; us-east-1 when none.
-    ...(env.BLOBS_REGION && { region: env.BLOBS_REGION }),
+    ...(env.FILES_REGION && { region: env.FILES_REGION }),
     ...(style && { style }),
   }
 }
@@ -142,7 +142,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   millionthsOf('PER_KB', cost.perKb)
   return {
     dir,
-    blobs: blobDriver(env),
+    files: fileDriver(env),
     port: whole('PORT', env.PORT || '8080'),
     origin,
     priceCents: whole('CREDIT_PRICE_CENTS', env.CREDIT_PRICE_CENTS || '1', 1),
@@ -169,49 +169,60 @@ function rpcAt(url: string): Rpc {
 }
 
 /**
- * A record's price, from its own folder's balance: the floor and its canonical bytes by the kilobyte.
- * The plug asks about a folder's first hosts record too, so it is priced like any. A null body over a
- * live record takes it down: it costs the floor, and goes through free when the folder cannot pay.
- * `host` is the plug the record is going into, for what stands there.
+ * An entry's price, from its own folder's balance: the floor and its canonical bytes by the
+ * kilobyte. The plug asks about a folder's first profile entry too, so it is priced like any. A null
+ * body over a live entry takes it down: it costs the floor, and goes through free when the folder
+ * cannot pay. `host` is the plug the entry is going into, for what stands there.
  */
-export function paidRecords(credits: Credits, host: () => Host): RecordChoice {
-  return (record) => {
-    const id = recordId(unsignedOf(record))
-    if (record.body === null && host().view(record.profile).current.get(record.path)?.record.body) {
-      credits.charge(record.profile, credits.floor, id)
+export function paidEntries(credits: Credits, host: () => Host): EntryChoice {
+  return (entry) => {
+    const id = entryId(unsignedOf(entry))
+    if (entry.body === null && host().view(entry.profile).current.get(entry.path)?.entry.body) {
+      credits.charge(entry.profile, credits.floor, id)
       return null
     }
-    return credits.charge(record.profile, credits.priceOf(Buffer.byteLength(encodeRecord(record))), id)
+    return credits.charge(entry.profile, credits.priceOf(Buffer.byteLength(encodeEntry(entry))), id)
   }
 }
 
 /**
- * A message's price. One whose `from` is its `to` is the profile writing to its own inbox, its
- * devices passing things to each other: a write of that folder's, priced from its balance as a
- * record of the same canonical bytes is, and claimed by its id, so two copies pay once. Any other is
- * free, and one inbox takes `cap` of them a day, from midnight UTC. The count is kept in memory, so
- * no file holds how many messages an inbox got, and a restart counts the day again from none.
+ * Inbox entries are free: the sender is locked inside, so no folder here can be asked to pay. One
+ * inbox takes `cap` of them a day, from midnight UTC. The count is kept in memory, so no file holds
+ * how many inbox entries an inbox got, and a restart counts the day again from none.
  */
-export function pricedMessages(credits: Credits, cap = MESSAGES_A_DAY, now: () => number = Date.now): MessageChoice {
+export function cappedInbox(cap = INBOX_A_DAY, now: () => number = Date.now): InboxChoice {
   let day = -1
   const counted = new Map<string, number>()
-  return (m) => {
-    if (m.from === m.to) return credits.charge(m.to, credits.priceOf(Buffer.byteLength(encodeMessage(m))), messageId(unsignedMessageOf(m)))
+  return (entry) => {
     const today = Math.floor(now() / DAY_MS)
     if (today !== day) {
       day = today
       counted.clear()
     }
-    const n = counted.get(m.to) ?? 0
-    if (n >= cap) return `this inbox has taken ${cap} messages from others today, as many as this host takes in a day; send again after midnight UTC`
-    counted.set(m.to, n + 1)
+    const n = counted.get(entry.to) ?? 0
+    if (n >= cap) return `this inbox has taken ${cap} inbox entries today, as many as this host takes in a day; send again after midnight UTC`
+    counted.set(entry.to, n + 1)
     return null
   }
 }
 
-/** Bytes, paid for once stored: the plug's own types, then their price, reserved on the folder that puts them. The front takes it once they are kept, or releases it. */
-export function paidBlobs(credits: Credits): BlobChoice {
-  return async (blob, stored) => (await defaultBlobChoice(blob, stored)) ?? credits.reserve(blob.sha256, blob.profile, credits.priceOf(blob.size))
+/**
+ * A file's bytes, paid for once stored: the plug's own types, then their price, reserved on the
+ * first of the folders naming them that can pay it, the newest naming entry first: the folder whose
+ * app is uploading, almost always. The front takes it once they are stored, or releases it.
+ */
+export function paidFiles(credits: Credits): FileChoice {
+  return async (file, folders) => {
+    const refused = await defaultFileChoice(file, folders)
+    if (refused) return refused
+    let first: string | null = null
+    for (const { folder } of folders) {
+      const short = credits.reserve(file.sha256, folder, credits.priceOf(file.size))
+      if (!short) return null
+      first ??= short
+    }
+    return first
+  }
 }
 
 const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding']
@@ -229,13 +240,13 @@ export type RunningHost = {
   close(): Promise<void>
 }
 
-const BLOB = /^\/v1\/blobs\/([0-9a-f]{64})$/
+const FILE = /^\/v1\/files\/([0-9a-f]{64})$/
 
 /**
- * A request sent on to the plug, untouched, and its answer back. With `heard`, the answer (a blob
- * request's, a little JSON) is read whole first, and `heard` learns, once, whether the plug carried
- * the request out (`{ "ok": true }` and no message: bytes stored, or deleted)
- * before the answer goes back; anything else, or no answer, is false.
+ * A request sent on to the plug, untouched, and its answer back. With `heard`, the answer (an
+ * upload's, a little JSON) is read whole first, and `heard` learns, once, whether the plug stored
+ * the bytes (`{ "ok": true }` and no message) before the answer goes back; anything else, or no
+ * answer, is false.
  */
 function forward(inner: URL, req: IncomingMessage, res: ServerResponse, heard?: (done: boolean) => void): void {
   let told = false
@@ -351,17 +362,6 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   return true
 }
 
-/** The folder a blob delete is for, when the header holds a signed delete of the bytes `name`; null for anything else, which the plug refuses itself. */
-function deleteFrom(header: string | string[] | undefined, name: string): string | null {
-  if (typeof header !== 'string') return null
-  try {
-    const ask = checkBlobRequest(header, Date.now())
-    return ask.action === 'delete' && ask.sha256 === name ? ask.profile : null
-  } catch {
-    return null
-  }
-}
-
 /** In tests, `rpc` stands in for the RPC the payment check asks, otherwise made from the payment's `rpcUrl`. */
 export async function startHost(config: Config, stand: { rpc?: Rpc } = {}): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
@@ -371,14 +371,14 @@ export async function startHost(config: Config, stand: { rpc?: Rpc } = {}): Prom
   const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, payment, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost })
   const host: Host = new Host({
     dir: config.dir,
-    blobs: config.blobs,
+    files: config.files,
     ...choice,
-    recordChoice: paidRecords(credits, () => host),
-    blobChoice: paidBlobs(credits),
-    messageChoice: pricedMessages(credits),
+    entryChoice: paidEntries(credits, () => host),
+    fileChoice: paidFiles(credits),
+    inboxChoice: cappedInbox(),
   })
   const inner = new URL(await host.listen(0))
-  const blobQueue = new Map<string, Promise<void>>()
+  const fileQueue = new Map<string, Promise<void>>()
 
   const server = createServer((req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
@@ -394,26 +394,23 @@ export async function startHost(config: Config, stand: { rpc?: Rpc } = {}): Prom
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
     if (creditRoute(credits, path, req, res)) return
-    const name = req.method === 'PUT' || req.method === 'DELETE' ? BLOB.exec(path)?.[1] : undefined
+    const name = req.method === 'PUT' ? FILE.exec(path)?.[1] : undefined
     if (!name) return forward(inner, req, res)
-    // One put or delete of the same bytes at a time: a second put finds them kept, and pays nothing.
-    // A put's price was reserved by the plug (paidBlobs); a delete's floor is reserved here, when the
-    // folder holds it, and the delete goes on either way. Each is taken once the plug answers that it
-    // carried the request out, before the answer goes back, or released.
-    const turn = (blobQueue.get(name) ?? Promise.resolve()).then(
+    // One upload of the same bytes at a time: a second finds them stored, and pays nothing. Its price
+    // was reserved by the plug (paidFiles), and is taken once the plug answers that it stored the
+    // bytes, before the answer goes back, or released.
+    const turn = (fileQueue.get(name) ?? Promise.resolve()).then(
       () =>
         new Promise<void>((done) => {
-          const folder = req.method === 'DELETE' ? deleteFrom(req.headers['forest-blob'], name) : null
-          if (folder) credits.reserve(name, folder, credits.floor)
-          forward(inner, req, res, (carried) => {
-            credits.settle(name, carried)
+          forward(inner, req, res, (stored) => {
+            credits.settle(name, stored)
             done()
           })
         }),
     )
-    blobQueue.set(name, turn)
+    fileQueue.set(name, turn)
     void turn.then(() => {
-      if (blobQueue.get(name) === turn) blobQueue.delete(name)
+      if (fileQueue.get(name) === turn) fileQueue.delete(name)
     })
   })
   await new Promise<void>((resolve, reject) => {

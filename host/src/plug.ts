@@ -1,104 +1,101 @@
-// The plug: the eight requests every host answers (the standard's records/README.md, Hosts), over
-// plain HTTP, a SQLite file per folder, and a blob store (storage.ts). It came from the standard's
-// reference host (records/src/host.ts at 7b1c937); since it left the standard, it is this host's
-// own, and the standard's host check (@foundationforest/records/check) shows it fits the plug.
+// The plug: the eight requests every host answers (the standard's folders/README.md, Hosts), over
+// plain HTTP, a SQLite file per folder, and a file store (storage.ts). It is this host's own code;
+// the standard's host check (@foundationforest/folders/check) shows it fits the plug.
 //
-// It holds no keys, has no sign-up and asks for no login: a record's signature is its only
-// credential, and a pull's and a blob request's are the main key's of the profile they are for. It
-// is open: it takes signed records for any profile and serves them to anyone; it takes messages for
-// any profile whose profile record here declares an inbox it can read, and serves them only to that
-// profile's main key; it takes the bytes a folder's main key puts, and serves them to anyone. It
-// never reads an offer's or a review's body: the bodies it reads are the hosts record's and the
-// profile record's inbox. It keeps the newest version at each path; versions that stop being
-// newest, and messages, go after `keepDays`. A folder's blobs stay until its main key deletes them.
+// It holds no keys, has no sign-up and asks for no login: an entry's signature is its only
+// credential, and an inbox delete's is the folder's main key's or an access key's its profile entry
+// lists. It is open: it takes signed entries for any folder and serves them to anyone; it takes
+// inbox entries for any folder whose profile entry here has openKey, and lists them to anyone; it
+// takes the bytes a current entry here names, and serves them to anyone. The bodies it reads are
+// the profile entry's and each body's `files`. It keeps the current entry at each path; an entry
+// that stops being current or stops counting, and an inbox entry, go after `keepDays`; a file goes
+// `keepDays` after no current entry names it.
 //
-//   POST /v1/records                      NDJSON of canonical records; one NDJSON result each
-//   GET  /v1/records?profile=&after=      NDJSON of stored records in the order taken;
-//                                         header forest-cursor: the last sequence number
-//   POST /v1/records/read                 the same, asked by { profile?, after? } in the body
-//   POST /v1/inbox                        NDJSON of canonical messages; one NDJSON result each
-//   POST /v1/inbox/pull                   a signed pull request; NDJSON of that profile's messages
-//                                         after the cursor, in arrival order; header forest-cursor
-//   PUT    /v1/blobs/<sha256>             raw bytes, content-type their type; header forest-blob:
-//                                         the signed put request
-//   GET    /v1/blobs/<sha256>             the bytes, with the type they came in with
-//   DELETE /v1/blobs/<sha256>             header forest-blob: the signed delete request
+//   POST /v1/entries               NDJSON of canonical entries; one NDJSON result each
+//   POST /v1/entries/read          { profile, after? }: NDJSON of that folder's stored entries after
+//                                  the cursor, in the order taken; header forest-cursor: the last
+//                                  sequence number
+//   GET  /v1/entries?after=        every folder's stored entries after the cursor, the same way
+//   POST /v1/inbox                 NDJSON of canonical inbox entries; one NDJSON result each
+//   POST /v1/inbox/read            { to, after? }: NDJSON of the inbox entries left for that folder
+//                                  after the cursor, in arrival order; header forest-cursor
+//   POST /v1/inbox/delete          NDJSON of canonical inbox deletes; one NDJSON result each
+//   PUT  /v1/files/<sha256>        raw bytes, content-type their type
+//   GET  /v1/files/<sha256>        the bytes, with the type they came in with
 //
-// How large a record, a message or a blob it takes, and how many lines a request or a page holds,
-// is this host's own choice (maxLineBytes, maxBlobBytes, maxBatch, maxPageRecords, maxPageBytes); a
-// client handles any size. It logs nothing about who asks. Where it keeps things is storage.ts's
-// business, and only storage.ts's.
+// How large an entry, an inbox entry or a file it takes, and how many lines a request or a page
+// holds, is this host's own choice (maxLineBytes, maxFileBytes, maxBatch, maxPageLines,
+// maxPageBytes); a client handles any size. It logs nothing about who asks. Where it keeps things is
+// storage.ts's business, and only storage.ts's.
 
 import { createHash } from 'node:crypto'
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import {
   type Checked,
-  type CheckedMessage,
-  type Inbox,
+  type CheckedInbox,
+  FolderError,
+  type InboxEntry,
   MAX_FUTURE_MS,
+  PROFILE_PATH,
   READ_TIMEOUT_MS,
   type ReadOptions,
-  RecordError,
   type Result,
-  type SignedBlobRequest,
-  type SignedMessage,
-  type SignedRecord,
+  type SignedEntry,
   type View,
-  checkBlobRequest,
-  checkMessage,
-  checkPull,
-  decodeRecord,
-  encodeRecord,
-  inboxOf,
-  isControlPath,
+  canDo,
+  decodeDelete,
+  decodeEntry,
+  decodeInbox,
+  encodeEntry,
+  isMediaType,
+  openKeyOf,
   publicKeyFromAddress,
-  readMessage,
-  viewProfile,
-} from '@foundationforest/records'
-import { type BlobDriver, type Row, Storage, logLine } from './storage.ts'
+  viewFolder,
+} from '@foundationforest/folders'
+import { type FileDriver, type Row, Storage, logLine } from './storage.ts'
 
-export { type BlobDriver, type S3Options, rebuild } from './storage.ts'
+export { type FileDriver, type S3Options, rebuild } from './storage.ts'
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text)
 const sha256Hex = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
 
 export const DAY = 86_400_000
-/** The largest record or message it takes, as canonical text in bytes, unless the operator says otherwise. */
+/** The largest entry, inbox entry or inbox delete it takes, as canonical text in bytes, unless the operator says otherwise. */
 export const DEFAULT_MAX_LINE_BYTES = 65_536
-/** Records or messages a request carries, unless the operator says otherwise. */
+/** Lines a request carries, unless the operator says otherwise. */
 export const DEFAULT_MAX_BATCH = 100
-/** Records or messages a page holds, unless the operator says otherwise. */
-export const DEFAULT_MAX_PAGE_RECORDS = 1000
+/** Lines a page holds, unless the operator says otherwise. */
+export const DEFAULT_MAX_PAGE_LINES = 1000
 /** Bytes a page holds, unless the operator says otherwise. A page always holds at least one line. */
 export const DEFAULT_MAX_PAGE_BYTES = 4 * 1024 * 1024
-/** Days a replaced version or a message is kept, unless the operator says otherwise. */
+/** Days an entry that stopped being current or counting, an inbox entry, and a file no current entry names are kept, unless the operator says otherwise. */
 export const DEFAULT_KEEP_DAYS = 30
-/** The largest blob it reads, unless the operator says otherwise: a short video. */
-export const DEFAULT_MAX_BLOB_BYTES = 50_000_000
-/** The blob types it takes, unless the operator says otherwise: photos and short videos. */
-export const DEFAULT_BLOB_TYPES = ['image/png', 'image/jpeg', 'video/mp4']
-/** A pull request is about 200 bytes, and a read request under 100. */
+/** The largest file it reads, unless the operator says otherwise: a short video. */
+export const DEFAULT_MAX_FILE_BYTES = 50_000_000
+/** The file types it takes, unless the operator says otherwise: photos and short videos. */
+export const DEFAULT_FILE_TYPES = ['image/png', 'image/jpeg', 'video/mp4']
+/** A read request is under 100 bytes. */
 const MAX_ASK_BYTES = 1024
-const BLOB_PATH = /^\/v1\/blobs\/([0-9a-f]{64})$/
-/** A blob request is about 300 bytes. */
-const MAX_BLOB_REQUEST_BYTES = 1024
+const FILE_PATH = /^\/v1\/files\/([0-9a-f]{64})$/
 
 /**
- * A host's own choice for content records, and for the first hosts record of a folder it holds no
- * record of yet: null takes the record, a reason refuses it. So joining can cost; a hosts record for
- * a folder it holds is never asked about, so a person can always leave or update.
+ * A host's own choice for entries: every entry but a profile entry, and a folder's first profile
+ * entry while it holds no entry of that folder yet. Null takes the entry, a reason refuses it. So
+ * joining can cost; a profile entry for a folder it holds is never asked about, so a person can
+ * always leave or update.
  */
-export type RecordChoice = (record: SignedRecord, stored: { records: number; bytes: number }) => string | null | Promise<string | null>
-/** A host's own choice for messages, from the message and what it holds for the profile it is to. */
-export type MessageChoice = (message: SignedMessage, stored: { messages: number; bytes: number }) => string | null | Promise<string | null>
+export type EntryChoice = (entry: SignedEntry, stored: { entries: number; bytes: number }) => string | null | Promise<string | null>
+/** A host's own choice for inbox entries, from the inbox entry and what it holds in that inbox: its spam limits. */
+export type InboxChoice = (entry: InboxEntry, stored: { entries: number; bytes: number }) => string | null | Promise<string | null>
 /**
- * A host's own choice for blobs, past its size cap: bytes a folder puts here, from what the folder
- * holds here already, so a choice may go by folder: a quota, say.
+ * A host's own choice for files, past its size cap: bytes a current entry here names, with the
+ * folders whose current entries name them with this type and size, the newest naming entry first,
+ * and what each of those holds here already, so a choice may go by folder: a quota, say.
  */
-export type BlobChoice = (blob: { sha256: string; type: string; size: number; profile: string }, stored: { blobs: number; bytes: number }) => string | null | Promise<string | null>
+export type FileChoice = (file: { sha256: string; type: string; size: number }, folders: Array<{ folder: string; files: number; bytes: number }>) => string | null | Promise<string | null>
 
-export const defaultBlobChoice: BlobChoice = (blob) => (DEFAULT_BLOB_TYPES.includes(blob.type) ? null : `this host takes ${DEFAULT_BLOB_TYPES.join(', ')}`)
+export const defaultFileChoice: FileChoice = (file) => (DEFAULT_FILE_TYPES.includes(file.type) ? null : `this host takes ${DEFAULT_FILE_TYPES.join(', ')}`)
 
 /**
  * The one line a request answered 500 leaves in the log: its path and the error's message, any
@@ -110,35 +107,39 @@ export function logFailure(path: string, err: unknown): void {
 
 export type HostOptions = {
   /**
-   * The data directory: `folders/` (a SQLite file per folder), `host.sqlite` (the log and the blob
-   * index) and, for the disk driver, `blobs/`. A fresh temporary one, removed on close, when omitted.
+   * The data directory: `folders/` (a SQLite file per folder), `host.sqlite` (the log, and which
+   * files are named and stored) and, for the disk driver, `files/`. A fresh temporary one, removed
+   * on close, when omitted.
    */
   dir?: string
-  /** Where blob bytes go: on disk in the data directory, or an S3-compatible bucket. Disk when omitted. */
-  blobs?: BlobDriver
+  /** Where file bytes go: on disk in the data directory, or an S3-compatible bucket. Disk when omitted. */
+  files?: FileDriver
   now?: () => number
   /** The operator's choice; DEFAULT_KEEP_DAYS when omitted. */
   keepDays?: number
-  /** The largest record or message it takes, as canonical text in bytes; DEFAULT_MAX_LINE_BYTES when omitted. */
+  /** The largest line it takes, as canonical text in bytes; DEFAULT_MAX_LINE_BYTES when omitted. */
   maxLineBytes?: number
-  recordChoice?: RecordChoice
+  entryChoice?: EntryChoice
   /** Milliseconds a request may take to arrive in full; past that it gets 408. READ_TIMEOUT_MS when omitted. */
   timeout?: number
-  /** Records or messages a request may carry; DEFAULT_MAX_BATCH when omitted. */
+  /** Lines a request may carry; DEFAULT_MAX_BATCH when omitted. */
   maxBatch?: number
-  /** Records or messages a page holds at most; DEFAULT_MAX_PAGE_RECORDS when omitted. */
-  maxPageRecords?: number
+  /** Lines a page holds at most; DEFAULT_MAX_PAGE_LINES when omitted. */
+  maxPageLines?: number
   /** Bytes a page holds at most, though always one line; DEFAULT_MAX_PAGE_BYTES when omitted. */
   maxPageBytes?: number
-  messageChoice?: MessageChoice
-  /** The largest blob it reads; DEFAULT_MAX_BLOB_BYTES when omitted. */
-  maxBlobBytes?: number
-  /** defaultBlobChoice when omitted. */
-  blobChoice?: BlobChoice
+  inboxChoice?: InboxChoice
+  /** The largest file it reads; DEFAULT_MAX_FILE_BYTES when omitted. */
+  maxFileBytes?: number
+  /** defaultFileChoice when omitted. */
+  fileChoice?: FileChoice
 }
 
 export type { ReadOptions, Result }
 type Answer = Omit<Result, 'i'>
+type Page = { lines: string[]; cursor: number }
+
+const refusal = (err: unknown): Answer => ({ ok: false, error: err instanceof FolderError ? err.code : 'invalid', message: (err as Error).message })
 
 export class Host {
   /** Where it listens, once it does. */
@@ -146,14 +147,14 @@ export class Host {
   readonly keepDays: number
   readonly maxLineBytes: number
   readonly maxBatch: number
-  readonly maxPageRecords: number
+  readonly maxPageLines: number
   readonly maxPageBytes: number
-  readonly maxBlobBytes: number
+  readonly maxFileBytes: number
   private readonly storage: Storage
   private readonly now: () => number
-  private readonly recordChoice?: RecordChoice
-  private readonly messageChoice?: MessageChoice
-  private readonly blobChoice: BlobChoice
+  private readonly entryChoice?: EntryChoice
+  private readonly inboxChoice?: InboxChoice
+  private readonly fileChoice: FileChoice
   private readonly timeout: number
   private server?: Server
   private pruning?: NodeJS.Timeout
@@ -163,33 +164,33 @@ export class Host {
     this.keepDays = options.keepDays ?? DEFAULT_KEEP_DAYS
     this.maxLineBytes = options.maxLineBytes ?? DEFAULT_MAX_LINE_BYTES
     this.maxBatch = options.maxBatch ?? DEFAULT_MAX_BATCH
-    this.maxPageRecords = options.maxPageRecords ?? DEFAULT_MAX_PAGE_RECORDS
+    this.maxPageLines = options.maxPageLines ?? DEFAULT_MAX_PAGE_LINES
     this.maxPageBytes = options.maxPageBytes ?? DEFAULT_MAX_PAGE_BYTES
-    this.maxBlobBytes = options.maxBlobBytes ?? DEFAULT_MAX_BLOB_BYTES
-    this.recordChoice = options.recordChoice
-    this.messageChoice = options.messageChoice
-    this.blobChoice = options.blobChoice ?? defaultBlobChoice
+    this.maxFileBytes = options.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
+    this.entryChoice = options.entryChoice
+    this.inboxChoice = options.inboxChoice
+    this.fileChoice = options.fileChoice ?? defaultFileChoice
     this.timeout = options.timeout ?? READ_TIMEOUT_MS
-    this.storage = new Storage(options.dir, options.blobs)
+    this.storage = new Storage(options.dir, options.files)
   }
 
   // ------------------------------------------------------------------------------------------
-  // Records
+  // Entries: Taking an entry in, in the plug's order.
 
-  /** Take a request's records (wire text), check each, store what is newest at its path. */
+  /** Take a request's entries (wire text), check each, store what becomes current at its path. */
   async accept(lines: string[]): Promise<Result[]> {
-    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} records a request` }]
+    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} lines a request` }]
     const now = this.now()
     const results: Result[] = []
     const decoded: Array<{ i: number; checked: Checked }> = []
     lines.forEach((line, i) => {
       try {
-        if (this.tooBig(line)) throw new RecordError('size', `this host takes records of at most ${this.maxLineBytes} bytes`)
-        const checked = decodeRecord(line)
-        if (checked.record.time > now + MAX_FUTURE_MS) results.push({ i, id: checked.id, ok: false, error: 'future', message: 'dated more than ten minutes ahead' })
+        if (this.tooBig(line)) throw new FolderError('size', `this host takes entries of at most ${this.maxLineBytes} bytes`)
+        const checked = decodeEntry(line)
+        if (checked.entry.time > now + MAX_FUTURE_MS) results.push({ i, id: checked.id, ok: false, error: 'future', message: 'dated more than ten minutes ahead' })
         else decoded.push({ i, checked })
       } catch (err) {
-        results.push({ i, ok: false, error: err instanceof RecordError ? err.code : 'invalid', message: (err as Error).message })
+        results.push({ i, ...refusal(err) })
       }
     })
     for (const { i, checked } of decoded) results.push({ i, id: checked.id, ...(await this.acceptOne(checked, now)) })
@@ -197,50 +198,54 @@ export class Host {
   }
 
   private async acceptOne(c: Checked, now: number): Promise<Omit<Result, 'i' | 'id'>> {
-    const { record } = c
-    if (this.storage.hasRecord(record.profile, c.id)) return { ok: true, message: 'already here' }
-    // Kept only if it becomes the newest at its path, by what every reader follows (the standard's viewProfile).
-    const view = viewProfile(record.profile, [...this.stored(record.profile), c], now)
-    if (view.current.get(record.path)?.id !== c.id) return { ok: false, error: 'older', message: 'a newer version is already here' }
-    if (this.recordChoice && (!isControlPath(record.path) || this.storage.recordTotals(record.profile).records === 0)) {
-      const refused = await this.recordChoice(record, this.storage.recordTotals(record.profile))
+    const { entry } = c
+    const stored = this.stored(entry.profile)
+    // An access key's entry: its folder's current profile entry here lists the key with write.
+    if (entry.key !== undefined && !canDo(viewFolder(entry.profile, stored, now).current.get(PROFILE_PATH)?.entry.body, entry.key, 'write')) {
+      return { ok: false, error: 'unlisted', message: 'the profile entry here lists no such key with write' }
+    }
+    if (this.storage.hasEntry(entry.profile, c.id)) return { ok: true, message: 'already here' }
+    // Taken only if it becomes current at its path, by what every reader follows (the standard's viewFolder).
+    if (viewFolder(entry.profile, [...stored, c], now).current.get(entry.path)?.id !== c.id) return { ok: false, error: 'older', message: 'a newer version is already here' }
+    if (this.entryChoice && (entry.path !== PROFILE_PATH || this.storage.entryTotals(entry.profile).entries === 0)) {
+      const refused = await this.entryChoice(entry, this.storage.entryTotals(entry.profile))
       if (refused) return { ok: false, error: 'refused', message: refused }
     }
-    // From here on, no wait: its own choice may have let other requests store records for this
-    // profile, so what is current is worked out again. What is current is kept; what stopped being
-    // current gets a date, and goes `keepDays` later.
-    if (this.storage.hasRecord(record.profile, c.id)) return { ok: true, message: 'already here' }
-    const settled = viewProfile(record.profile, [...this.stored(record.profile), c], now)
-    this.storage.addRecord(record.profile, c.id, encodeRecord(record), now, new Set([...settled.current.values()].map((s) => s.id)))
+    // From here on, no wait: its own choice may have let other requests store entries for this
+    // folder, so what is current is worked out again. What is current is kept; what stopped being
+    // current, or counting, gets a date, and goes `keepDays` later.
+    if (this.storage.hasEntry(entry.profile, c.id)) return { ok: true, message: 'already here' }
+    const settled = viewFolder(entry.profile, [...this.stored(entry.profile), c], now)
+    this.storage.addEntry(entry.profile, c.id, encodeEntry(entry), now, new Set([...settled.current.values()].map((s) => s.id)))
     return { ok: true }
   }
 
   /**
-   * Delete what stopped being the newest at its path, the messages that arrived, and the bytes no
-   * current record has named, more than `keepDays` ago. Returns how many it deleted.
+   * Delete the entries that stopped being current or counting, the inbox entries that arrived, and
+   * the files no current entry has named, more than `keepDays` ago. Returns how many it deleted.
    */
   prune(now = this.now()): Promise<number> {
-    return this.storage.prune(now - this.keepDays * DAY)
+    return this.storage.prune(now - this.keepDays * DAY, now)
   }
 
   /**
-   * Stored records in the order taken, as canonical text, after a cursor, for one profile if
-   * asked: at most maxPageRecords, and a page ends before a line that would take it past
-   * maxPageBytes, though it always holds one.
+   * Stored entries in the order taken, as canonical text, after a cursor, for one folder if asked:
+   * at most maxPageLines, and a page ends before a line that would take it past maxPageBytes,
+   * though it always holds one.
    */
-  read(options: ReadOptions = {}): { lines: string[]; cursor: number } {
+  read(options: ReadOptions = {}): Page {
     const after = options.after ?? 0
     // A profile that is no address has no folder: nothing to read, and no file to look for.
     if (options.profile !== undefined && !publicKeyFromAddress(options.profile)) return { lines: [], cursor: after }
-    return this.page(this.storage.recordsAfter(after, options.profile), after)
+    return this.page(this.storage.entriesAfter(after, options.profile), after)
   }
 
-  private page(rows: Iterable<Row>, after: number): { lines: string[]; cursor: number } {
+  private page(rows: Iterable<Row>, after: number): Page {
     const lines: string[] = []
     let cursor = after
     let size = 0
     for (const row of rows) {
-      if (lines.length >= this.maxPageRecords) break
+      if (lines.length >= this.maxPageLines) break
       size += row.bytes + 1
       if (size > this.maxPageBytes && lines.length) break
       lines.push(row.text)
@@ -254,138 +259,122 @@ export class Host {
     return line.length > this.maxLineBytes || utf8(line).length > this.maxLineBytes
   }
 
-  /** This host's view of a profile, from what it stores. */
+  /** This host's view of a folder, from what it stores. */
   view(profile: string, now = this.now()): View {
-    return viewProfile(profile, this.stored(profile), now)
+    return viewFolder(profile, this.stored(profile), now)
   }
 
-  /** A profile's stored records. They were checked on the way in. */
+  /** A folder's stored entries. They were checked on the way in. */
   private stored(profile: string): Checked[] {
-    return this.storage.records(profile).map((r) => ({ id: r.id, record: JSON.parse(r.text) as SignedRecord }))
+    return this.storage.entries(profile).map((r) => ({ id: r.id, entry: JSON.parse(r.text) as SignedEntry }))
+  }
+
+  /** The body of a folder's current profile entry here, if it has one. */
+  private profileBody(profile: string, now: number) {
+    return this.view(profile, now).current.get(PROFILE_PATH)?.entry.body
   }
 
   count(profile?: string): number {
     return this.storage.count(profile)
   }
 
-  /** Every stored record's and message's text: what a host operator can see on its own disk. */
+  /** Every stored entry's and inbox entry's text: what a host operator can see on its own disk. */
   dump(): string[] {
     return this.storage.dump()
   }
 
   // ------------------------------------------------------------------------------------------
-  // Messages
+  // The inbox: Taking an inbox entry in, and Deleting one, in the plug's order.
 
-  /** Take a request's messages (wire text), check each in the standard's order, store what passes. */
-  async deliver(lines: string[]): Promise<Result[]> {
-    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} messages a request` }]
+  /** Take a request's inbox entries (wire text), check each in the standard's order, store what passes. */
+  async leave(lines: string[]): Promise<Result[]> {
+    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} lines a request` }]
     const now = this.now()
-    const inboxes = new Map<string, Inbox | null | 'unsupported'>()
+    const open = new Map<string, boolean>()
     const results: Result[] = []
-    for (const [i, line] of lines.entries()) results.push({ i, ...(await this.deliverOne(line, now, inboxes)) })
+    for (const [i, line] of lines.entries()) results.push({ i, ...(await this.leaveOne(line, now, open)) })
     return results
   }
 
-  private async deliverOne(line: string, now: number, inboxes: Map<string, Inbox | null | 'unsupported'>): Promise<Answer> {
-    if (this.tooBig(line)) return { ok: false, error: 'size', message: `this host takes messages of at most ${this.maxLineBytes} bytes` }
-    let c: CheckedMessage
+  private async leaveOne(line: string, now: number, open: Map<string, boolean>): Promise<Answer> {
+    if (this.tooBig(line)) return { ok: false, error: 'size', message: `this host takes inbox entries of at most ${this.maxLineBytes} bytes` }
+    let c: CheckedInbox
     try {
-      c = readMessage(line)
+      c = decodeInbox(line)
     } catch (err) {
-      return { ok: false, error: err instanceof RecordError ? err.code : 'invalid', message: (err as Error).message }
+      return refusal(err)
     }
-    const { message: m, id } = c
+    const { entry: e, id } = c
     const refuse = (error: string, message: string): Answer => ({ id, ok: false, error, message })
-    if (m.time > now + MAX_FUTURE_MS) return refuse('future', 'dated more than ten minutes ahead')
-    if (this.storage.hasMessage(m.to, id)) return refuse('duplicate', 'this message is already here')
-    let inbox = inboxes.get(m.to)
-    if (inbox === undefined) inboxes.set(m.to, (inbox = inboxOf(this.view(m.to, now).current.get('profile')?.record.body)))
-    if (inbox === null) return refuse('no_inbox', 'the profile record here declares no inbox')
-    // A field or a value it does not know could be a limit the profile set: it takes nothing rather
-    // than guess, so a new field can be added without this host taking what it should refuse.
-    if (inbox === 'unsupported') return refuse('no_inbox', 'the profile record here declares an inbox this host cannot read')
-    if (!checkMessage(c)) return refuse('signature', 'the signature does not hold')
-    // An inbox's limit is for others: a message from the profile it is to skips it.
-    if (m.from !== m.to && inbox.maxBytes !== undefined && utf8(line).length > inbox.maxBytes) return refuse('too_big', `this inbox takes messages of at most ${inbox.maxBytes} bytes`)
-    if (this.messageChoice) {
-      const refused = await this.messageChoice(m, this.storage.messageTotals(m.to))
+    if (e.time > now + MAX_FUTURE_MS) return refuse('future', 'dated more than ten minutes ahead')
+    if (this.storage.hasInbox(e.to, id)) return refuse('duplicate', 'this inbox entry is already here')
+    let takes = open.get(e.to)
+    if (takes === undefined) open.set(e.to, (takes = openKeyOf(this.profileBody(e.to, now)) !== null))
+    if (!takes) return refuse('no_inbox', 'the profile entry here has no openKey: the folder takes no inbox entries')
+    if (this.inboxChoice) {
+      const refused = await this.inboxChoice(e, this.storage.inboxTotals(e.to))
       if (refused) return refuse('refused', refused)
     }
     // Checked again here, with no wait in between: another request may have taken the same id
     // during its own choice.
-    if (!this.storage.addMessage(m.to, id, line, now)) return refuse('duplicate', 'this message is already here')
+    if (!this.storage.addInbox(e.to, id, line, now)) return refuse('duplicate', 'this inbox entry is already here')
     return { id, ok: true }
   }
 
-  /**
-   * A pull (wire text), checked at this host's clock, then a page of that profile's messages after
-   * the cursor, in arrival order, paged as records are. Throws RecordError.
-   */
-  pull(text: string, now = this.now()): { lines: string[]; cursor: number } {
-    const request = checkPull(text, now)
-    return this.page(this.storage.messagesAfter(request.profile, request.after), request.after)
+  /** A folder's inbox entries after the cursor, in the order they arrived, paged as entries are: to anyone. */
+  readInbox(to: string, after = 0): Page {
+    if (!publicKeyFromAddress(to)) return { lines: [], cursor: after }
+    return this.page(this.storage.inboxAfter(to, after), after)
+  }
+
+  /** Take a request's inbox deletes (wire text): each signed by the folder's main key, or a key its profile entry here lists with read-inbox. */
+  async remove(lines: string[]): Promise<Result[]> {
+    if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} lines a request` }]
+    const now = this.now()
+    return lines.map((line, i) => ({ i, ...this.removeOne(line, now) }))
+  }
+
+  private removeOne(line: string, now: number): Answer {
+    if (this.tooBig(line)) return { ok: false, error: 'size', message: `this host takes inbox deletes of at most ${this.maxLineBytes} bytes` }
+    let request
+    try {
+      request = decodeDelete(line)
+    } catch (err) {
+      return refusal(err)
+    }
+    const { to, id, key } = request
+    if (key !== undefined && !canDo(this.profileBody(to, now), key, 'read-inbox')) return { id, ok: false, error: 'unlisted', message: 'the profile entry here lists no such key with read-inbox' }
+    if (!this.storage.deleteInbox(to, id)) return { id, ok: true, message: 'not here' }
+    return { id, ok: true }
   }
 
   // ------------------------------------------------------------------------------------------
-  // Blobs
+  // Files: Taking a file in.
 
   /**
-   * A blob request off the wire, for the bytes at `name`: checked at this host's clock
-   * (checkBlobRequest), then the action asked for and the bytes it names [shape]. Throws
-   * RecordError.
+   * Take bytes a current entry here names: `type` is a media type [shape], a current entry names
+   * the hash [unnamed] with this type and this size [shape], and the bytes hash to it [hash].
+   * Bytes stored already are `already here`. Otherwise this host must take their size and type
+   * [size, refused]. Bytes several folders name are stored once.
    */
-  private checkBlob(text: string, action: 'put' | 'delete', name: string, now: number): SignedBlobRequest {
-    if (utf8(text).length > MAX_BLOB_REQUEST_BYTES) throw new RecordError('size', `a blob request is at most ${MAX_BLOB_REQUEST_BYTES} bytes`)
-    const request = checkBlobRequest(text, now)
-    if (request.action !== action) throw new RecordError('shape', `this is a ${action} request`)
-    if (request.sha256 !== name) throw new RecordError('shape', 'the request names other bytes')
-    return request
-  }
-
-  /**
-   * Put bytes in a folder: the signed put request (checkBlob) names them by their hash, type and
-   * size [shape], and they hash to it [hash]. Bytes the folder holds already are `already here`.
-   * Otherwise this host must take their size and type [refused]. Bytes another folder holds are
-   * stored once.
-   */
-  async putBlob(name: string, type: string, request: string, bytes: Uint8Array): Promise<Answer> {
-    const now = this.now()
-    let put: SignedBlobRequest & { action: 'put' }
-    try {
-      put = this.checkBlob(request, 'put', name, now) as SignedBlobRequest & { action: 'put' }
-    } catch (err) {
-      if (!(err instanceof RecordError)) throw err
-      return { ok: false, error: err.code, message: err.message }
-    }
-    if (put.mimeType !== type || put.size !== bytes.length) return { ok: false, error: 'shape', message: 'the bytes are not the type and size the request names' }
+  async putFile(name: string, type: string, bytes: Uint8Array): Promise<Answer> {
+    if (!isMediaType(type)) return { ok: false, error: 'shape', message: 'content-type is a media type, type/subtype in lower case' }
+    const named = this.storage.namedBy(name)
+    if (!named.length) return { ok: false, error: 'unnamed', message: 'no current entry here names these bytes' }
+    const folders = [...new Set(named.filter((n) => n.type === type && n.size === bytes.length).map((n) => n.folder))]
+    if (!folders.length) return { ok: false, error: 'shape', message: 'no current entry here names these bytes with this type and size' }
     if (sha256Hex(bytes) !== name) return { ok: false, error: 'hash', message: 'the bytes do not hash to their name' }
-    if (this.storage.holdsBlob(put.profile, name)) return { ok: true, message: 'already here' }
-    const refused = bytes.length > this.maxBlobBytes ? `at most ${this.maxBlobBytes} bytes` : await this.blobChoice({ sha256: name, type, size: bytes.length, profile: put.profile }, this.storage.blobTotals(put.profile))
+    if (this.storage.holdsFile(name)) return { ok: true, message: 'already here' }
+    if (bytes.length > this.maxFileBytes) return { ok: false, error: 'size', message: `at most ${this.maxFileBytes} bytes` }
+    const refused = await this.fileChoice({ sha256: name, type, size: bytes.length }, folders.map((folder) => ({ folder, ...this.storage.fileTotals(folder) })))
     if (refused) return { ok: false, error: 'refused', message: refused }
-    await this.storage.putBlob(put.profile, name, type, bytes.length, bytes, now)
+    await this.storage.putFile(name, type, bytes, this.now())
     return { ok: true }
   }
 
-  /**
-   * Delete bytes from a folder: the signed delete request (checkBlob). Bytes the folder does not
-   * hold are `not here`. Once no folder holds them, they leave the store.
-   */
-  async deleteBlob(name: string, request: string): Promise<Answer> {
-    const now = this.now()
-    let ask: SignedBlobRequest
-    try {
-      ask = this.checkBlob(request, 'delete', name, now)
-    } catch (err) {
-      if (!(err instanceof RecordError)) throw err
-      return { ok: false, error: err.code, message: err.message }
-    }
-    if ((await this.storage.deleteBlob(ask.profile, name)) === 'not here') return { ok: true, message: 'not here' }
-    return { ok: true }
-  }
-
-  /** Held bytes and their type, or undefined. */
-  getBlob(name: string): Promise<{ type: string; bytes: Uint8Array } | undefined> {
-    return this.storage.getBlob(name)
+  /** Stored bytes and their type, or undefined. */
+  getFile(name: string): Promise<{ type: string; bytes: Uint8Array } | undefined> {
+    return this.storage.getFile(name)
   }
 
   // ------------------------------------------------------------------------------------------
@@ -423,11 +412,12 @@ export class Host {
       return
     }
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT, DELETE', 'access-control-allow-headers': 'content-type, forest-blob' }).end()
+      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT', 'access-control-allow-headers': 'content-type' }).end()
       return
     }
-    const blob = BLOB_PATH.exec(url.pathname)?.[1]
-    const methods = url.pathname === '/v1/records' ? ['GET', 'POST'] : ['/v1/records/read', '/v1/inbox', '/v1/inbox/pull'].includes(url.pathname) ? ['POST'] : blob ? ['GET', 'PUT', 'DELETE'] : []
+    const file = FILE_PATH.exec(url.pathname)?.[1]
+    const posts = ['/v1/entries/read', '/v1/inbox', '/v1/inbox/read', '/v1/inbox/delete']
+    const methods = url.pathname === '/v1/entries' ? ['GET', 'POST'] : posts.includes(url.pathname) ? ['POST'] : file ? ['GET', 'PUT'] : []
     if (!methods.length) {
       res.writeHead(404).end()
       return
@@ -437,82 +427,63 @@ export class Host {
       return
     }
 
-    if (blob && req.method === 'GET') {
-      const held = await this.getBlob(blob)
+    if (file && req.method === 'GET') {
+      const held = await this.getFile(file)
       if (!held) res.writeHead(404).end()
       else res.writeHead(200, { 'content-type': held.type, 'content-length': held.bytes.length }).end(held.bytes)
       return
     }
-    if (blob) {
-      const request = req.headers['forest-blob']
-      if (typeof request !== 'string') {
-        req.resume()
-        return sendJson(res, 400, { ok: false, error: 'shape', message: 'a blob request is signed, in the header forest-blob' })
-      }
-      if (req.method === 'DELETE') {
-        req.resume()
-        const answer = await this.deleteBlob(blob, request)
-        return sendJson(res, answer.ok ? 200 : 400, answer)
-      }
-      const tooBig = { ok: false, error: 'refused', message: `at most ${this.maxBlobBytes} bytes` }
-      if (Number(req.headers['content-length'] ?? 0) > this.maxBlobBytes) return sendJson(res, 413, tooBig)
-      const bytes = await readBody(req, this.maxBlobBytes)
+    if (file) {
+      const tooBig = { ok: false, error: 'size', message: `at most ${this.maxFileBytes} bytes` }
+      if (Number(req.headers['content-length'] ?? 0) > this.maxFileBytes) return sendJson(res, 413, tooBig)
+      const bytes = await readBody(req, this.maxFileBytes)
       if (bytes === null) return sendJson(res, 413, tooBig)
-      const answer = await this.putBlob(blob, (req.headers['content-type'] ?? '').trim(), request, bytes)
+      const answer = await this.putFile(file, (req.headers['content-type'] ?? '').trim(), bytes)
       return sendJson(res, answer.ok ? 200 : 400, answer)
     }
 
-    if (url.pathname === '/v1/inbox/pull') {
-      const body = await readBody(req, MAX_ASK_BYTES)
-      if (body === null) return sendJson(res, 413, { ok: false, error: 'size', message: `a pull request is at most ${MAX_ASK_BYTES} bytes` })
-      let out: { lines: string[]; cursor: number }
-      try {
-        out = this.pull(bodyText.decode(body))
-      } catch (err) {
-        if (!(err instanceof RecordError)) throw err
-        return sendJson(res, 400, { ok: false, error: err.code, message: err.message })
-      }
-      return sendLines(res, out)
-    }
-
-    // A read, by GET with the profile and cursor in the URL, or by POST with them in the body, which
-    // front doors do not log: the same answer.
-    if (req.method === 'GET' || url.pathname === '/v1/records/read') {
-      let asked: ReadOptions | undefined
-      if (req.method === 'GET') {
-        const after = url.searchParams.get('after')
-        asked = { after: after === null ? 0 : Number(after), profile: url.searchParams.get('profile') ?? undefined }
-      } else {
-        const body = await readBody(req, MAX_ASK_BYTES)
-        if (body === null) {
-          res.writeHead(413).end()
-          return
-        }
-        asked = readAsk(bodyText.decode(body))
-      }
-      if (!asked || !Number.isSafeInteger(asked.after) || asked.after! < 0) {
+    // Everyone's entries, by GET, after a cursor and nothing else: a folder is read by POST, its
+    // address in the body, which front doors do not log.
+    if (req.method === 'GET') {
+      const keys = [...url.searchParams.keys()]
+      const after = url.searchParams.get('after')
+      const asked = after === null ? 0 : Number(after)
+      if (keys.some((k) => k !== 'after') || keys.length > 1 || !Number.isSafeInteger(asked) || asked < 0) {
         res.writeHead(400).end()
         return
       }
-      return sendLines(res, this.read(asked))
+      return sendLines(res, this.read({ after: asked }))
+    }
+    if (url.pathname === '/v1/entries/read' || url.pathname === '/v1/inbox/read') {
+      const body = await readBody(req, MAX_ASK_BYTES)
+      if (body === null) {
+        res.writeHead(413).end()
+        return
+      }
+      const field = url.pathname === '/v1/entries/read' ? 'profile' : 'to'
+      const asked = readAsk(bodyText.decode(body), field)
+      if (!asked) {
+        res.writeHead(400).end()
+        return
+      }
+      return sendLines(res, field === 'profile' ? this.read({ profile: asked.folder, after: asked.after }) : this.readInbox(asked.folder, asked.after))
     }
 
-    // POST /v1/records or /v1/inbox: NDJSON in, one NDJSON result a line out.
-    const inbox = url.pathname === '/v1/inbox'
+    // POST /v1/entries, /v1/inbox or /v1/inbox/delete: NDJSON in, one NDJSON result a line out.
     const body = await readBody(req, this.maxBatch * (this.maxLineBytes + 1))
     if (body === null) {
       res.writeHead(413).end()
       return
     }
     const lines = bodyText.decode(body).split('\n').filter((l) => l.length > 0)
-    const results = inbox ? await this.deliver(lines) : await this.accept(lines)
+    const results = url.pathname === '/v1/inbox' ? await this.leave(lines) : url.pathname === '/v1/inbox/delete' ? await this.remove(lines) : await this.accept(lines)
     res.writeHead(200, { 'content-type': 'application/x-ndjson' })
     res.end(results.map((r) => JSON.stringify(r) + '\n').join(''))
   }
 }
 
-/** A read request's body: `{ profile?, after? }` and nothing else, or undefined. */
-function readAsk(text: string): ReadOptions | undefined {
+/** A read request's body: `{ <field>, after? }` and nothing else, or undefined. */
+function readAsk(text: string, field: 'profile' | 'to'): { folder: string; after: number } | undefined {
   let value: unknown
   try {
     value = JSON.parse(text)
@@ -520,16 +491,16 @@ function readAsk(text: string): ReadOptions | undefined {
     return undefined
   }
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const { profile, after = 0, ...rest } = value as { [key: string]: unknown }
-  if (Object.keys(rest).length || (profile !== undefined && typeof profile !== 'string') || typeof after !== 'number') return undefined
-  return { after, profile }
+  const { [field]: folder, after = 0, ...rest } = value as { [key: string]: unknown }
+  if (Object.keys(rest).length || typeof folder !== 'string' || !Number.isSafeInteger(after) || (after as number) < 0) return undefined
+  return { folder, after: after as number }
 }
 
 function sendJson(res: ServerResponse, status: number, value: object) {
   res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(value))
 }
 
-function sendLines(res: ServerResponse, out: { lines: string[]; cursor: number }) {
+function sendLines(res: ServerResponse, out: Page) {
   res.writeHead(200, { 'content-type': 'application/x-ndjson', 'forest-cursor': String(out.cursor), 'access-control-expose-headers': 'forest-cursor' })
   res.end(out.lines.map((l) => l + '\n').join(''))
 }

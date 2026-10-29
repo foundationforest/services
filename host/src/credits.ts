@@ -8,19 +8,19 @@
 //
 // A write costs a floor (WRITE_FLOOR) plus what it stores at a price a kilobyte (PER_KB), both in
 // credits, rounded up to a millionth of a credit: the unit a balance is kept in, so the fractions of
-// a cent each write costs add up. A delete costs the floor. A folder's first hosts record and a
-// message to its own inbox are writes like any other; a later hosts record and others' messages are
-// free (src/host.ts).
+// a cent each write costs add up. A write is an entry or a file's bytes. A delete costs the floor. A
+// folder's first profile entry is a write like any other; a later profile entry and inbox entries
+// are free (src/host.ts).
 //
-// A record, or a message to its own inbox, is claimed once, by its id, in the same transaction that
-// takes its price: a second copy in flight, or the same one sent again, costs nothing. Bytes are
-// stored first and charged after: their price is reserved from the balance before the plug stores
-// them, taken once they are stored, released if they are not; a blob delete's floor the same way.
+// An entry is claimed once, by its id, in the same transaction that takes its price: a second copy
+// in flight, or the same one sent again, costs nothing. A file's bytes are stored first and charged
+// after: their price is reserved from a balance before the plug stores them, taken once they are
+// stored, released if they are not.
 //
 // One SQLite file, its seller's: the spent list, the proofs, the bill, each folder's balance in
-// millionths of a credit and each record's and message's id it took a price for. A spend marks its
-// credits spent and adds them to the balance in one transaction. Nothing ties a credit to a folder.
-// It logs nothing.
+// millionths of a credit and each entry's id it took a price for. A spend marks its credits spent
+// and adds them to the balance in one transaction. Nothing ties a credit to a folder. It logs
+// nothing.
 
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -92,7 +92,7 @@ export class Credits {
   readonly #config: CreditConfig
   /** What a write costs, in millionths: the floor, and each kilobyte. */
   readonly #cost: { floor: number; perKb: number }
-  /** Millionths reserved for bytes being stored or deleted now, by folder; and each reservation, by the bytes' name. */
+  /** Millionths reserved for bytes being stored now, by folder; and each reservation, by the bytes' name. */
   readonly #reserved = new Map<string, number>()
   readonly #pending = new Map<string, { folder: string; price: number }>()
 
@@ -167,7 +167,7 @@ export class Credits {
   }
 
   /**
-   * A record's or a message's price, in millionths, from the folder's balance, claimed by its id
+   * An entry's price, in millionths, from the folder's balance, claimed by its id
    * (lowercase hex) in the same transaction: null if it was paid, now or before, else what to tell
    * the writer.
    */
@@ -183,7 +183,7 @@ export class Credits {
     })
   }
 
-  /** Reserves `price`, in millionths, on `folder` for the bytes named `name`, before they are stored or deleted: null if the folder holds it, else what to tell the writer. */
+  /** Reserves `price`, in millionths, on `folder` for the bytes named `name`, before they are stored: null if the folder holds it, else what to tell the writer. */
   reserve(name: string, folder: string, price: number): string | null {
     if (this.#free(folder) < price) return this.#short(folder, price)
     this.#reserved.set(folder, (this.#reserved.get(folder) ?? 0) + price)
@@ -191,7 +191,7 @@ export class Credits {
     return null
   }
 
-  /** The bytes named `name` were stored or deleted, or were not: their reserved price is taken, or released. Nothing if none was reserved. */
+  /** The bytes named `name` were stored, or were not: their reserved price is taken, or released. Nothing if none was reserved. */
   settle(name: string, done: boolean): void {
     const held = this.#pending.get(name)
     if (!held) return

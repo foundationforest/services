@@ -1,4 +1,4 @@
-// The standard's host check (@foundationforest/records/check) against this host: the plug alone,
+// The standard's host check (@foundationforest/folders/check) against this host: the plug alone,
 // which chooses nothing of its own, passes every check; the whole host, credits and all, refuses a
 // fresh seed's first write by its own choice, so the check stops there unchecked and nothing fails;
 // and given a seed whose two folders hold credits, as `npm run check-host` is given one against the
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { after, test } from 'node:test'
 
 import { mainKey, newSeed } from '@foundationforest/keys'
-import { CHECK_LABELS, type HostCheck, checkHost } from '@foundationforest/records/check'
+import { CHECK_LABELS, type HostCheck, checkHost } from '@foundationforest/folders/check'
 
 import { readConfig, startHost } from '../src/host.ts'
 import { buy, collect, keyOf, spend, sponsor } from './buyer.ts'
