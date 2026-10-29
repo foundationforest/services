@@ -49,8 +49,8 @@ proofs it shows; and `maxAgeDays`.
     GET https://index.forest.foundation/markets/tutoring.json
 
 `{ "index", "market", "posts": { "<role>": [<result>] } }`: the market's file as the directory holds
-it (its fields, the fields a post's preview shows first, its review, vouch and report fields, its
-payment schedules, how deals go), and its listed posts by role, in search's order.
+it (its roles, its post fields, the fields a post's preview shows first, and the fields its reviews
+add), and its listed posts by role, in search's order.
 
 ## Search
 
@@ -93,7 +93,7 @@ result's `ratings` is as it is.
   not fit its market, its profile does not count, or it was deleted: a deleted post keeps its last
   body here, so a review that names it still finds it).
 - `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "counted", "why",
-  "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `offer` it is about,
+  "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `post` it is about,
   and the fields its market adds. `counted` says whether it counts here; `why`, only when it does
   not, says why (its writer does not count, it gives no score, it is about another market or its
   own writer, or a later one by the same writer about the same profile and post counts instead).

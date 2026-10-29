@@ -4,13 +4,13 @@
 
 import { b64u, canonical, type Key, proofsOf } from '@foundationforest/folders'
 import { packSignature, signBytes } from '@foundationforest/keys'
+import type { Markets } from '@foundationforest/markets'
 
 import { type Filtered, filter } from './filter.ts'
 import type { Lists } from './lists.ts'
-import { type Markets, MANY } from './markets.ts'
 import { rank, type Said } from './rank.ts'
 import { allProfiles, comingDue, readHosts, viewAgain } from './read.ts'
-import { judge, type Written } from './reviews.ts'
+import { judge, MANY, type Written } from './reviews.ts'
 import { parse, type Store } from './store.ts'
 import { leavesOf, reputationProofs, updateTree } from './tree.ts'
 
@@ -28,9 +28,9 @@ export type Shown = { ratings: { value: number | null; count: number }; trust: n
 /**
  * The statement a profile's ratings, trust and uniqueness are signed as: canonical JSON,
  * by the standard's folders' `canonical`, signed with the index's key over its UTF-8 bytes (the
- * standard's keys' `signBytes`). It begins with `{`, never with the 0xff every entry, message,
- * inbox delete and root begins with, so it is never one of those. The rating's value is text,
- * since canonical JSON's numbers are whole.
+ * standard's keys' `signBytes`). Its own fields, `index` and `ratings` among them, say what it is,
+ * as every signed thing in the standard does, so it is never an entry, a message or a root. The
+ * rating's value is text, since canonical JSON's numbers are whole.
  */
 export function statementOf(index: string, profile: string, shown: Shown, time: number): string {
   const { ratings, trust, uniqueness } = shown
@@ -125,7 +125,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
           ? 'its profile has no profile entry here'
           : !author.counted
             ? 'its profile does not count here'
-            : markets.checkPost(author.market!, author.role!, parse(p.body))
+            : markets.checkEntry(author.market!, author.role!, 'post', parse(p.body))
       setPost.run(why ? 0 : 1, why, p.address)
     }
 

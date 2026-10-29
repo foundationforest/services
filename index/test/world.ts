@@ -8,9 +8,9 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { mainKey, type MainKey, type PayAddresses, payAddresses, payKey, seedScalar, signPay } from '@foundationforest/keys'
+import { mainKey, type MainKey, type PayAddresses, payAddresses, seedNumber, stampNumberOf } from '@foundationforest/keys'
 import { b64u, entry, type SignedEntry, write } from '@foundationforest/folders'
-import { proofBytes, proveVerification, signStamp, stampNumberOf, verifierKeyOf } from '@foundationforest/verification'
+import { proofBytes, proveVerification, signStamp, verifierKeyOf } from '@foundationforest/proofs'
 
 import { Host } from '../../host/src/plug.ts'
 import { type Index, ROOT, startIndex } from '../src/index.ts'
@@ -18,12 +18,12 @@ import { type Index, ROOT, startIndex } from '../src/index.ts'
 export const STANDARD = join(ROOT, '../standard')
 export const MARKETS = join(ROOT, '../markets')
 export const VERIFICATION_FILES = {
-  wasm: join(STANDARD, 'proofs/verification/circuit/setup/verification.wasm'),
-  zkey: join(STANDARD, 'proofs/verification/circuit/setup/verification.zkey'),
+  wasm: join(STANDARD, 'proofs/verification/setup/verification.wasm'),
+  zkey: join(STANDARD, 'proofs/verification/setup/verification.zkey'),
 }
 export const REPUTATION_FILES = {
-  wasm: join(STANDARD, 'proofs/reputation/circuit/setup/reputation.wasm'),
-  zkey: join(STANDARD, 'proofs/reputation/circuit/setup/reputation.zkey'),
+  wasm: join(STANDARD, 'proofs/reputation/setup/reputation.wasm'),
+  zkey: join(STANDARD, 'proofs/reputation/setup/reputation.zkey'),
 }
 
 export const tmp = (name: string) => mkdtempSync(join(tmpdir(), `index-${name}-`))
@@ -38,14 +38,13 @@ export function verifier(name = 'verifier.test.example'): Verifier {
 /** A verification as a profile entry carries it. */
 export type ProofField = { circuit: 'verification'; verifier: string; verifierName: string; label: string; proof: string }
 
-/** A person's profile under one label: its main key, its pay addresses and each one's signature for it, and verifications from each verifier given. */
-export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: PayAddresses; paySig: { solana: string; evm: string }; proofs: ProofField[] }
+/** A person's profile under one label: its main key, its pay addresses, and verifications from each verifier given. */
+export type Profile = { seed: Uint8Array<ArrayBuffer>; label: string; key: MainKey; pay: PayAddresses; proofs: ProofField[] }
 
 /** A stamp from `by` for this seed, and its verification for `label` (about a second each). */
 export async function verification(seed: Uint8Array<ArrayBuffer>, label: string, by: Verifier): Promise<ProofField> {
-  const scalar = await seedScalar(seed)
-  const stamp = signStamp(by.privateKey, { stampNumber: stampNumberOf(scalar, by.name), facts: 1n })
-  const r = await proveVerification({ seedScalar: scalar, verifierName: by.name, stamp, label, artifacts: VERIFICATION_FILES })
+  const stamp = signStamp(by.privateKey, { stampNumber: stampNumberOf(seedNumber(seed), by.name), facts: 1n, verifierName: by.name })
+  const r = await proveVerification({ seed, stamp, label, artifacts: VERIFICATION_FILES })
   return { circuit: 'verification', verifier: r.verifier, verifierName: by.name, label, proof: b64u.encode(proofBytes(r.proof)) }
 }
 
@@ -53,14 +52,13 @@ export async function profile(label: string, by: Verifier[] = [], seed = new Uin
   const proofs = []
   for (const v of by) proofs.push(await verification(seed, label, v))
   const key = await mainKey(seed, label)
-  const paySig = { solana: signPay(await payKey(seed, label, 'solana'), key.address), evm: signPay(await payKey(seed, label, 'evm'), key.address) }
-  return { seed, label, key, pay: await payAddresses(seed, label), paySig, proofs }
+  return { seed, label, key, pay: await payAddresses(seed, label), proofs }
 }
 
-/** The profile entry a profile shows: its market, role, hosts, pay addresses signed and proofs, and anything more. */
+/** The profile entry a profile shows: its market, role, hosts, pay addresses and proofs, and anything more. */
 export function profileBody(p: Profile, hosts: string[], more: { [key: string]: unknown } = {}): { [key: string]: unknown } {
   const [market, role] = p.label.split('/')
-  return { market, role, hosts, pay: p.pay, paySig: p.paySig, proofs: p.proofs, ...more }
+  return { market, role, hosts, pay: p.pay, proofs: p.proofs, ...more }
 }
 
 let clock = Date.now()

@@ -35,14 +35,14 @@ before(async () => {
   for (const p of Object.values(people)) await publishProfile(host.url, p)
   const { a, b, c, s1, s2, uncounted } = people as { [k: string]: (typeof people)[string] }
   await post(host.url, [
-    at(a!, 'offer/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
-    at(b!, 'offer/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
-    at(c!, 'offer/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
-    at(s1!, 'offer/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
-    at(uncounted!, 'offer/u', { description: 'Maths, uncounted.' }),
-    at(s1!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a`, text: 'Very clear.' }),
-    at(s2!, 'review/a', { subject: a!.key.address, score: '9', offer: `${a!.key.address}/offer/a` }),
-    at(s2!, 'review/b', { subject: b!.key.address, score: '4', offer: `${b!.key.address}/offer/b` }),
+    at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
+    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
+    at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
+    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
+    at(uncounted!, 'post/u', { description: 'Maths, uncounted.' }),
+    at(s1!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a`, text: 'Very clear.' }),
+    at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
+    at(s2!, 'review/b', { subject: b!.key.address, score: '4', post: `${b!.key.address}/post/b` }),
     at(uncounted!, 'review/a', { subject: a!.key.address, score: '1' }),
   ])
   i = await index({ hosts: [host.url], keys })

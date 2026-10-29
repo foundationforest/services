@@ -17,7 +17,7 @@ export const home: Page<Home> = {
   data({ lists, markets, self }) {
     return {
       index: self,
-      markets: markets.list.map((m) => ({ name: m.name, description: m.description, roles: m.roles.map((r) => r.role) })),
+      markets: markets.directory.markets.map((m) => ({ name: m.name, description: m.description, roles: m.roles.map((r) => r.role) })),
       lists: {
         hosts: lists.hosts,
         keys: lists.keys.map((k) => ({ key: k.key, verifier: k.verifier, label: k.label, confidence: k.confidence, ...(k.until !== undefined && { until: new Date(k.until).toISOString() }) })),

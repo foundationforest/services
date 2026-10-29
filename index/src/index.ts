@@ -7,8 +7,9 @@ import type { Server } from 'node:http'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { loadMarkets } from '@foundationforest/markets'
+
 import { loadLists } from './lists.ts'
-import { loadMarkets } from './markets.ts'
 import { runPass } from './pass.ts'
 import { loadOrMakeKey } from './seed.ts'
 import { openStore, type Store } from './store.ts'
