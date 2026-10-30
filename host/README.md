@@ -74,8 +74,8 @@ bucket, a read is a redirect to a short-lived link straight to the bytes there.
 ### Credits
 
 `credits/` sells and takes them, and `src/credits.ts` keeps the balances and the prices. The buyer's
-side is `client/client.ts`: the loop, the reference app and the mcp buy with it, and the host's own
-credit code reads the wire format from it.
+side is `client/client.ts`: the loop, the reference app and the mcp, a connector, over MCP, buy with
+it, and the host's own credit code reads the wire format from it.
 
 **A credit** is a Privacy Pass credit (the IETF's standard for tokens that cannot be tied to their
 buy) of type 2, Blind RSA (RFC 9576, 9577, 9578). The host signs it blind, over a number only the
