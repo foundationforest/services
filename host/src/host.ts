@@ -7,18 +7,18 @@
 // sells and takes credits (credits.ts), and passes every other request, untouched, to the plug on
 // loopback.
 //
-// Every write is paid for in credits, from its folder's balance here: the plug asks this host's
-// choices (`entryChoice`, `fileChoice`, `inboxChoice`). An entry is claimed by its id as its price
-// is taken, so two copies pay once. A file's bytes are stored first: their price is reserved on a
-// folder whose current entry names them, then taken once the plug answers that it stored them, or
-// released; the front sends on one upload of the same bytes at a time. The plug asks about a
-// folder's first profile entry, so joining costs a write, and never about a later one, so leaving
-// and updating are free. Inbox entries are free, INBOX_A_DAY an inbox a day: a host cannot see who
-// left one, so no folder here pays for it. Inbox reads are free.
+// Every write is paid for in credits, from its folder's balance here, at the price of what it
+// stores: the plug asks this host's choices (`entryChoice`, `fileChoice`, `inboxChoice`). An entry
+// is claimed by its id as its price is taken, so two copies pay once. A file's bytes are stored
+// first: their price is reserved on a folder whose current entry names them, then taken once the
+// plug answers that it stored them, or released; the front sends on one upload of the same bytes
+// at a time. The plug asks about a folder's first profile entry, so joining costs a write, and never
+// about a later one, so leaving and updating are free. An inbox entry carries one credit, in its
+// request's payment: a host cannot see who left one, so no folder here pays for it; it keeps the
+// entry's price, and the rest goes into the recipient folder's balance. Reads are free.
 //
-// Taking your own things down is never blocked by money: a null body over a live entry costs the
-// floor when the balance holds it, and goes through free when it does not. A null body where nothing
-// stands is a write like any other.
+// Taking your own things down is free: a null body over a live entry costs nothing. A null body
+// where nothing stands is a write like any other.
 //
 // Where it keeps things is storage.ts's: a data directory (DATA_DIR) with a SQLite file per folder,
 // and the files on disk there or in an S3-compatible bucket (FILES=s3). The credits keep their own
@@ -29,13 +29,13 @@ import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, 
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { encodeEntry, entryId, unsignedOf } from '@foundationforest/folders'
+import { canDo, encodeEntry, encodeInbox, entryId, unsignedOf } from '@foundationforest/folders'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
-import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
+import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, MAX_HEADER_BYTES, defaultFileChoice, logFailure } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -56,15 +56,11 @@ export const choice = {
   maxFileBytes: 50_000_000,
   /**
    * The largest entry it takes, as large as a file: each write is paid by the byte, so its size
-   * needs no other cap. Inbox entries stay the plug's 65,536 bytes: they are free, and anyone
-   * leaves them in anyone's folder.
+   * needs no other cap. Inbox entries stay the plug's 65,536 bytes: a message, which anyone leaves
+   * in anyone's folder.
    */
   maxEntryBytes: 50_000_000,
 } as const satisfies HostOptions
-
-/** Inbox entries one inbox takes in a day, from midnight UTC. */
-export const INBOX_A_DAY = 1_000
-const DAY_MS = 86_400_000
 
 export type Config = {
   /** The data directory: the plug's storage, and the credits' file and key in `credits/`. */
@@ -80,8 +76,8 @@ export type Config = {
   maxBuy: number
   /** The sponsors whose tickets pay for a buy here, by address. */
   sponsors: string[]
-  /** What a write costs, in credits as decimal text: `floor` each, and `perKb` for each 1,000 bytes it stores. */
-  cost: { floor: string; perKb: string }
+  /** What a kilobyte costs, in credits as decimal text: `entry` on the disk, `file` in the bucket. */
+  rates: { entry: string; file: string }
 }
 
 /** The bucket's settings, with FILES=s3; the first four are needed. */
@@ -125,9 +121,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   } catch {
     throw new Error('PUBLIC_ORIGIN is https, or http only on loopback')
   }
-  const cost = { floor: (env.WRITE_FLOOR || '0.01').trim(), perKb: (env.PER_KB || '0.01').trim() }
-  millionthsOf('WRITE_FLOOR', cost.floor)
-  millionthsOf('PER_KB', cost.perKb)
+  const rates = { entry: (env.ENTRY_PER_KB || '0.003').trim(), file: (env.FILE_PER_KB || '0.00031').trim() }
+  millionthsOf('ENTRY_PER_KB', rates.entry)
+  millionthsOf('FILE_PER_KB', rates.file)
   return {
     dir,
     files: fileDriver(env),
@@ -136,52 +132,41 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     priceCents: whole('CREDIT_PRICE_CENTS', env.CREDIT_PRICE_CENTS || '1', 1),
     maxBuy: whole('MAX_BUY', env.MAX_BUY || '1000', 1),
     sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
-    cost,
+    rates,
   }
 }
 
 /**
- * An entry's price, from its own folder's balance: the floor and its canonical bytes by the
- * kilobyte. The plug asks about a folder's first profile entry too, so it is priced like any. A null
- * body over a live entry takes it down: it costs the floor, and goes through free when the folder
- * cannot pay. `host` is the plug the entry is going into, for what stands there.
+ * An entry's price, from its own folder's balance: its canonical bytes, kept on the disk. The plug
+ * asks about a folder's first profile entry too, so it is priced like any. A null body over a live
+ * entry takes it down, for free. `host` is the plug the entry is going into, for what stands there.
  */
 export function paidEntries(credits: Credits, host: () => Host): EntryChoice {
   return (entry) => {
-    const id = entryId(unsignedOf(entry))
-    if (entry.body === null && host().view(entry.profile).current.get(entry.path)?.entry.body) {
-      credits.charge(entry.profile, credits.floor, id)
-      return null
-    }
-    return credits.charge(entry.profile, credits.priceOf(Buffer.byteLength(encodeEntry(entry))), id)
+    if (entry.body === null && host().view(entry.profile).current.get(entry.path)?.entry.body) return null
+    return credits.charge(entry.profile, credits.entryPrice(Buffer.byteLength(encodeEntry(entry))), entryId(unsignedOf(entry)))
   }
 }
 
 /**
- * Inbox entries are free: the sender is locked inside, so no folder here can be asked to pay. One
- * inbox takes `cap` of them a day, from midnight UTC. The count is kept in memory, so no file holds
- * how many inbox entries an inbox got, and a restart counts the day again from none.
+ * An inbox entry's credit: its line's in the request's payment, `credits <credit> …`, one for each
+ * line in order. The sender is locked inside, so no folder here can be asked to pay: the credit
+ * pays, and says nothing about who paid for it. The host keeps the entry's price, kept on the disk,
+ * and the rest goes into the recipient folder's balance. A line refused before its choice leaves
+ * its credit unspent.
  */
-export function cappedInbox(cap = INBOX_A_DAY, now: () => number = Date.now): InboxChoice {
-  let day = -1
-  const counted = new Map<string, number>()
-  return (entry) => {
-    const today = Math.floor(now() / DAY_MS)
-    if (today !== day) {
-      day = today
-      counted.clear()
-    }
-    const n = counted.get(entry.to) ?? 0
-    if (n >= cap) return `this inbox has taken ${cap} inbox entries today, as many as this host takes in a day; send again after midnight UTC`
-    counted.set(entry.to, n + 1)
-    return null
+export function paidInbox(credits: Credits): InboxChoice {
+  return (entry, _stored, { payment, line }) => {
+    const [kind, ...list] = (payment ?? '').trim().split(/ +/)
+    return credits.inbox(entry.to, kind === 'credits' ? list[line] : undefined, credits.entryPrice(Buffer.byteLength(encodeInbox(entry))))
   }
 }
 
 /**
- * A file's bytes, paid for once stored: the plug's own types, then their price, reserved on the
- * first of the folders naming them that can pay it, the newest naming entry first: the folder whose
- * app is uploading, almost always. The front takes it once they are stored, or releases it.
+ * A file's bytes, paid for once stored: the plug's own types, then their price, kept in the bucket,
+ * reserved on the first of the folders naming them that can pay it, the newest naming entry first:
+ * the folder whose app is uploading, almost always. The front takes it once they are stored, or
+ * releases it.
  */
 export function paidFiles(credits: Credits): FileChoice {
   return async (file, folders) => {
@@ -189,7 +174,7 @@ export function paidFiles(credits: Credits): FileChoice {
     if (refused) return refused
     let first: string | null = null
     for (const { folder } of folders) {
-      const short = credits.reserve(file.sha256, folder, credits.priceOf(file.size))
+      const short = credits.reserve(file.sha256, folder, credits.filePrice(file.size))
       if (!short) return null
       first ??= short
     }
@@ -338,19 +323,22 @@ export async function startHost(config: Config): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
   mkdirSync(creditsDir, { recursive: true })
   const creditKey = await keyAt(join(creditsDir, 'key.der'))
-  const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, maxBuy: config.maxBuy, sponsors: config.sponsors, cost: config.cost })
+  // A buy is paid from a folder's balance by its main key, or by an access key its profile entry
+  // here lists with message: the switch that already lets a key leave messages for it.
+  const keyCounts = (folder: string, key: string) => key === folder || canDo(host.view(folder).current.get('profile')?.entry.body, key, 'message')
+  const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, maxBuy: config.maxBuy, sponsors: config.sponsors, rates: config.rates, keyCounts })
   const host: Host = new Host({
     dir: config.dir,
     files: config.files,
     ...choice,
     entryChoice: paidEntries(credits, () => host),
     fileChoice: paidFiles(credits),
-    inboxChoice: cappedInbox(),
+    inboxChoice: paidInbox(credits),
   })
   const inner = new URL(await host.listen(0))
   const fileQueue = new Map<string, Promise<void>>()
 
-  const server = createServer((req, res) => {
+  const server = createServer({ maxHeaderSize: MAX_HEADER_BYTES }, (req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
     // the process.
     const path = URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname

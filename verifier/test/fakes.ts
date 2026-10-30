@@ -154,19 +154,20 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 const TABLES = [
   'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
   'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID',
   'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the stamp numbers given a gift. */
-export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; gifts?: bigint[]; never: string[] }
+/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the stamp numbers given each check's gift. */
+export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; gifts?: bigint[]; idGifts?: bigint[]; never: string[] }
 
 /**
- * The file holds five tables and nothing else: each session that gave a stamp as the hash of its id,
+ * The file holds six tables and nothing else: each session that gave a stamp as the hash of its id,
  * next to its stamp number and its check; one stamp for each stamp number and check those sessions
  * gave; the sessions not yet deleted in Didit, by id; each fingerprint next to its stamp number; the
- * stamp numbers given a gift, each with a hash of its buy. None of `never` (names, birth dates,
+ * stamp numbers given each check's gift, each with a hash of its buy. None of `never` (names, birth dates,
  * embeddings, a gift's buy) is anywhere in its bytes, no other session id is in the clear, and no
  * journal is left beside it.
  */
@@ -182,7 +183,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'five tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'six tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -208,12 +209,14 @@ export function assertKept(path: string, expected: Expected): void {
       .map((r) => fromBytes32(r.stamp_number as Uint8Array))
       .sort()
     assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their stamp number')
-    const gifts = db
-      .prepare('SELECT stamp_number FROM gifts')
-      .all()
-      .map((r) => fromBytes32(r.stamp_number as Uint8Array))
-      .sort()
-    assert.deepEqual(gifts, [...(expected.gifts ?? [])].sort(), 'the stamp numbers given a gift, and of the gift only a hash of its buy')
+    for (const [table, given] of [['gifts', expected.gifts], ['id_gifts', expected.idGifts]] as const) {
+      const gifts = db
+        .prepare(`SELECT stamp_number FROM ${table}`)
+        .all()
+        .map((r) => fromBytes32(r.stamp_number as Uint8Array))
+        .sort()
+      assert.deepEqual(gifts, [...(given ?? [])].sort(), `the stamp numbers given a gift, in ${table}, and of the gift only a hash of its buy`)
+    }
   } finally {
     db.close()
   }

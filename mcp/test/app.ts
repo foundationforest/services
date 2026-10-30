@@ -6,6 +6,9 @@
 //   its profile entry, which holds only its hosts; a `label/<id>` entry for each profile it makes
 //   and a `stamp/<id>` entry for each stamp it keeps, each at a random id, locked to the folder's own
 //   open key alone;
+// - keeps the wallet, the Profiles folder's balance at each host, where gifts and buys land, and
+//   funds a folder from it (`fund`): a buy paid from the wallet with the Profiles folder's main key,
+//   its credits spent into that folder. The credits say nothing about who paid for them;
 // - makes a profile: its profile entry with its market and role, its hosts, its main key's open key
 //   (so it takes inbox entries), both pay addresses, a verification made on the device for each
 //   stamp it keeps, and any more proofs;
@@ -25,8 +28,8 @@
 // - on a new device, finds the person's profiles and stamps from the seed alone, by opening every
 //   entry its Profiles folder holds.
 //
-// It signs with each profile's main key, and the connection folder's own, and writes straight to
-// their hosts. It keeps nothing but the stamps, in memory.
+// It signs with each profile's main key, the Profiles folder's, and the connection folder's own, and
+// writes straight to their hosts. It keeps nothing but the stamps, in memory.
 
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -34,6 +37,7 @@ import { CAN, type Body, type SignedEntry, type View, b64u, entry, hex, liveCont
 import { isLocked, lock, openLocked } from '@foundationforest/folders/locked'
 import { type AccessKey, accessKey, mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
 import { type SignedStamp, proofBytes, proveVerification, stampToJson } from '@foundationforest/proofs'
+import { balancePayment, bought, serviceAt, spendInto } from '../../host/client/client.ts'
 
 /** What the person chose at the connect page: the profiles they ticked, and what the AI app may do there; or no. */
 export type Choice = { profiles: string[]; can?: string[] } | 'no'
@@ -74,7 +78,7 @@ async function wrote(hosts: string[], entries: Parameters<typeof write>[1]): Pro
 export class App {
   private readonly seed: Uint8Array
   private readonly hosts: string[]
-  /** What pays for a connection folder's first write, at its hosts, before it: the device's credits, where a host charges. */
+  /** What pays for a connection folder's first write, at its hosts, before it, where a host charges: the device's choice; the main way is `fund` from the wallet. */
   private readonly pay: ((folder: string) => Promise<unknown>) | undefined
   /** The stamps this device holds, each naming its verifier. */
   private readonly stamps: SignedStamp[] = []
@@ -83,6 +87,19 @@ export class App {
     this.seed = options.seed
     this.hosts = options.hosts
     this.pay = options.pay
+  }
+
+  /**
+   * `n` credits, up to 100, from the wallet into `folder`'s balance, at each of the hosts that sell
+   * credits: a buy paid from the Profiles folder's balance, signed by its main key, and its credits
+   * spent into the folder. A host that will not sell them throws.
+   */
+  async fund(folder: string, n: number): Promise<void> {
+    const wallet = await mainKey(this.seed, '')
+    for (const host of this.hosts) {
+      const service = await serviceAt(host)
+      if (service) await spendInto(host, folder, await bought(service, n, (reference, count) => balancePayment(host, wallet, reference, count)))
+    }
   }
 
   /** The Profiles folder's main key, the empty label's, and its folder as its hosts serve it. */

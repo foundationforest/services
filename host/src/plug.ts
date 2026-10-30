@@ -19,7 +19,11 @@
 //   POST /v1/inbox/read            { to, after? }: NDJSON of the inbox entries left for that folder
 //                                  after the cursor, in arrival order; header forest-cursor
 //   PUT  /v1/files/<sha256>        raw bytes, content-type their type
-//   GET  /v1/files/<sha256>        the bytes, with the type they came in with
+//   GET  /v1/files/<sha256>        the bytes, with the type they came in with; or, from a bucket
+//                                  that gives one, a redirect to a short-lived link to them there
+//
+// A write's payment, the standard's forest-payment header, goes to this host's choice for inbox
+// entries with each line's place in the request; the plug reads nothing in it.
 //
 // How large an entry, an inbox entry or a file it takes, and how many lines a request or a page
 // holds, is this host's own choice (maxEntryBytes, maxInboxBytes, maxFileBytes, maxBatch,
@@ -76,6 +80,10 @@ export const DEFAULT_MAX_FILE_BYTES = 50_000_000
 export const DEFAULT_FILE_TYPES = ['image/png', 'image/jpeg', 'video/mp4']
 /** A read request is under 100 bytes. */
 const MAX_ASK_BYTES = 1024
+/** A request's headers, at most: room for a payment of a credit, 472 characters, for each of a full batch's lines. */
+export const MAX_HEADER_BYTES = 64 * 1024
+/** The header a write's payment comes in, as the standard names it. */
+const PAYMENT_HEADER = 'forest-payment'
 const FILE_PATH = /^\/v1\/files\/([0-9a-f]{64})$/
 
 /**
@@ -85,8 +93,12 @@ const FILE_PATH = /^\/v1\/files\/([0-9a-f]{64})$/
  * always leave or update.
  */
 export type EntryChoice = (entry: SignedEntry, stored: { entries: number; bytes: number }) => string | null | Promise<string | null>
-/** A host's own choice for inbox entries, from the inbox entry and what it holds in that inbox: its spam limits. */
-export type InboxChoice = (entry: InboxEntry, stored: { entries: number; bytes: number }) => string | null | Promise<string | null>
+/**
+ * A host's own choice for inbox entries, from the inbox entry, what it holds in that inbox, and the
+ * request's payment (its forest-payment header, if any) with the line's place in the request: its
+ * spam limits, or its price.
+ */
+export type InboxChoice = (entry: InboxEntry, stored: { entries: number; bytes: number }, paid: { payment: string | undefined; line: number }) => string | null | Promise<string | null>
 /**
  * A host's own choice for files, past its size cap: bytes a current entry here names, with the
  * folders whose current entries name them with this type and size, the newest naming entry first,
@@ -300,17 +312,17 @@ export class Host {
   // ------------------------------------------------------------------------------------------
   // The inbox: Taking an inbox entry in, in the plug's order.
 
-  /** Take a request's inbox entries (wire text), check each in the standard's order, store what passes. */
-  async leave(lines: string[]): Promise<Result[]> {
+  /** Take a request's inbox entries (wire text), check each in the standard's order, store what passes. `payment` is the request's, for this host's choice. */
+  async leave(lines: string[], payment?: string): Promise<Result[]> {
     if (lines.length > this.maxBatch) return [{ i: 0, ok: false, error: 'batch', message: `at most ${this.maxBatch} lines a request` }]
     const now = this.now()
     const open = new Map<string, boolean>()
     const results: Result[] = []
-    for (const [i, line] of lines.entries()) results.push({ i, ...(await this.leaveOne(line, now, open)) })
+    for (const [i, line] of lines.entries()) results.push({ i, ...(await this.leaveOne(line, now, open, { payment, line: i })) })
     return results
   }
 
-  private async leaveOne(line: string, now: number, open: Map<string, boolean>): Promise<Answer> {
+  private async leaveOne(line: string, now: number, open: Map<string, boolean>, paid: { payment: string | undefined; line: number }): Promise<Answer> {
     if (this.tooBig(line, this.maxInboxBytes)) return { ok: false, error: 'size', message: `this host takes inbox entries of at most ${this.maxInboxBytes} bytes` }
     let c: CheckedInbox
     try {
@@ -325,7 +337,7 @@ export class Host {
     if (takes === undefined) open.set(e.to, (takes = openKeyOf(this.profileBody(e.to, now)) !== null))
     if (!takes) return refuse('no_inbox', 'the profile entry here has no openKey: the folder takes no inbox entries')
     if (this.inboxChoice) {
-      const refused = await this.inboxChoice(e, this.storage.inboxTotals(e.to))
+      const refused = await this.inboxChoice(e, this.storage.inboxTotals(e.to), paid)
       if (refused) return refuse('refused', refused)
     }
     // Checked again here, with no wait in between: another request may have taken the same id
@@ -369,13 +381,18 @@ export class Host {
     return this.storage.getFile(name)
   }
 
+  /** A short-lived link to stored bytes, from a store that gives one (a bucket); else undefined. */
+  fileLink(name: string): string | undefined {
+    return this.storage.fileLink(name)
+  }
+
   // ------------------------------------------------------------------------------------------
   // HTTP
 
   /** Listen on loopback unless told otherwise, and prune every hour. Returns the url. */
   async listen(port = 0, hostname = '127.0.0.1'): Promise<string> {
     // Node looks for requests past the timeout every 30 seconds by default; every second keeps it near.
-    this.server = createServer({ requestTimeout: this.timeout, connectionsCheckingInterval: 1000 }, (req, res) => {
+    this.server = createServer({ requestTimeout: this.timeout, connectionsCheckingInterval: 1000, maxHeaderSize: MAX_HEADER_BYTES }, (req, res) => {
       this.handle(req, res).catch((err: unknown) => {
         // A request dropped while it arrived (408, or the asker gone) gets no 500, so it logs none.
         if (res.headersSent || res.destroyed) return
@@ -404,7 +421,7 @@ export class Host {
       return
     }
     if (req.method === 'OPTIONS') {
-      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT', 'access-control-allow-headers': 'content-type' }).end()
+      res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, PUT', 'access-control-allow-headers': `content-type, ${PAYMENT_HEADER}` }).end()
       return
     }
     const file = FILE_PATH.exec(url.pathname)?.[1]
@@ -420,6 +437,9 @@ export class Host {
     }
 
     if (file && req.method === 'GET') {
+      // From a bucket, a link straight to the bytes there: the bucket serves them, not this host.
+      const link = this.fileLink(file)
+      if (link) return void res.writeHead(302, { location: link, 'cache-control': 'no-store' }).end()
       const held = await this.getFile(file)
       if (!held) res.writeHead(404).end()
       else res.writeHead(200, { 'content-type': held.type, 'content-length': held.bytes.length }).end(held.bytes)
@@ -468,7 +488,8 @@ export class Host {
       return
     }
     const lines = bodyText.decode(body).split('\n').filter((l) => l.length > 0)
-    const results = url.pathname === '/v1/inbox' ? await this.leave(lines) : await this.accept(lines)
+    const payment = req.headers[PAYMENT_HEADER]
+    const results = url.pathname === '/v1/inbox' ? await this.leave(lines, typeof payment === 'string' ? payment : undefined) : await this.accept(lines)
     res.writeHead(200, { 'content-type': 'application/x-ndjson' })
     res.end(results.map((r) => JSON.stringify(r) + '\n').join(''))
   }

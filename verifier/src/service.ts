@@ -27,7 +27,7 @@ export type Config = {
   diditBaseUrl: string
   /** `sface`, or `stand-in`: one fixed embedding, only with a stand-in Didit on this machine. */
   faceModel: 'sface' | 'stand-in'
-  /** The welcome gift: the host's origin and how many of its credits. Unset: none. */
+  /** The gifts: the host's origin and how many of its credits each check gives. Unset: none. */
   gift?: Gift
   /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
   appOrigins: string[]
@@ -76,8 +76,8 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 
   let gift: Gift | undefined
   if (env.HOST_URL) {
-    const credits = whole('HOST_CREDITS', env.HOST_CREDITS || '10', 0)
-    if (credits > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
+    const credits = { face: whole('FACE_CREDITS', env.FACE_CREDITS || '10', 0), id: whole('ID_CREDITS', env.ID_CREDITS || '100', 0) }
+    if (credits.face > 0 || credits.id > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
   }
   const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
   const faceModel = env.FACE_MODEL || 'sface'
@@ -149,7 +149,7 @@ export async function startVerifier(
     face: { key: keys.face, facts: RECIPES.face },
     id: { key: keys.id, facts: RECIPES.id },
     h: RECIPES.h,
-    ...(gift && { gift: { host: gift.gift.origin, credits: gift.gift.credits, sponsor: sponsor.address } }),
+    ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
   })
 
   const server = createServer(

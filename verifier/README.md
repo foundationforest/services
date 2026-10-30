@@ -88,8 +88,8 @@ hour.
 ### Its keys
 
 `GET /` gives its name, its two keys as addresses each with its facts recipe, and `h`, in canonical
-JSON (one exact way of writing it); with a welcome gift, also
-`"gift":{"credits":<n>,"host":"<origin>","sponsor":"<address>"}`.
+JSON (one exact way of writing it); with gifts, also
+`"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is mixed from it
   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-recipe)).
@@ -100,7 +100,7 @@ JSON (one exact way of writing it); with a welcome gift, also
   or logs it.
 - **Mixed from the seed** with the standard's `hkdf` (a standard way to make many keys from one
   secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key; `sponsor`,
-  the sponsor key, an Ed25519 key that signs the gift's tickets. The texts never change, since a new
+  the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change, since a new
   text would mix a new key. None of the keys holds money.
 
 ### Once a stamp is signed
@@ -120,7 +120,7 @@ JSON (one exact way of writing it); with a welcome gift, also
 
 ### What it keeps
 
-One SQLite file (a database in a single file), five tables:
+One SQLite file (a database in a single file), six tables:
 
 | Table | What | Why |
 |---|---|---|
@@ -128,7 +128,7 @@ One SQLite file (a database in a single file), five tables:
 | `stamps` | The first stamp each key signed for each stamp number: the number, the key, the facts, the signature | A lost stamp comes back |
 | `to_delete` | The id of each session not yet deleted in Didit, its check, and when it was first signed | The hour, and the sweep. It goes once Didit has deleted it |
 | `fingerprints` | Each fingerprint the ID check signed for, with the stamp number | One name and birth date, one stamp number's ID stamp |
-| `gifts` | Each stamp number given its welcome gift, with a hash of the buy | One gift a person; the same buy gets the same ticket |
+| `gifts`, `id_gifts` | Each stamp number given its face stamp's gift, or its ID stamp's, with a hash of the buy | One gift a person from each check; the same buy gets the same ticket |
 
 Nothing else: no face, no embedding, no name, no birth date, no document, no address, none of the
 fields beside a stamp. Facts are a one-way hash: without the exact embedding, which no new photo
@@ -160,22 +160,23 @@ weights is one any other verifier can run.
 - `FACE_MODEL=stand-in`, only with a Didit on this machine (`test/fake-didit.ts`, run by the tests
   and the loop), gives every photo one fixed embedding, under the model `stand-in`.
 
-### The welcome gift
+### The gifts
 
-With `HOST_URL`, a face stamp asked with a gift comes with `HOST_CREDITS` of the host's credits
-(prepaid units of its writes, [host](../host/README.md#credits)), once a stamp number. The host signs
-them blind, so the verifier never sees them, and the verifier pays nothing: the host lists its
-sponsor key and counts what its tickets paid for.
+With `HOST_URL`, a stamp asked with a gift comes with the host's credits (prepaid units of its
+writes, [host](../host/README.md#credits)), once a stamp number from each check: `FACE_CREDITS` with
+a face stamp, `ID_CREDITS` with an ID stamp. The host signs them blind, so the verifier never sees
+them, and pays nothing: the host lists its sponsor key and counts what its tickets paid for.
 
-1. The app reads the gift in `GET /`, makes one buy at the host for exactly those credits (`buy`, in
-   `host/client/`), and keeps what finishes it.
-2. It sends `"gift": "<the buy's reference>"` with `POST /face/stamp`.
+1. The app reads the gift in `GET /`, makes one buy at the host for exactly the check's credits
+   (`buy`, in `host/client/`), and keeps what finishes it.
+2. It sends `"gift": "<the buy's reference>"` with `POST /face/stamp` or `POST /id/stamp`.
 3. Once a stamp number, the verifier keeps a hash of the buy and signs a ticket with its sponsor key
    (`ticketMessage`, `src/ticket.ts`): that host, that buy, that many credits.
 4. The answer adds `"gift": {"ticket": …}`, or `{"error": …}`: `bad_gift` for anything but a buy's
    reference, `given` for another buy than this number's. The same buy again gets the same ticket.
    The gift never holds back the stamp.
-5. The app collects the buy at the host with the ticket, and finishes its credits.
+5. The app collects the buy with the ticket and finishes its credits: the main way, into its wallet,
+   the Profiles folder's balance.
 
 ## Its API
 
@@ -184,7 +185,7 @@ sponsor key and counts what its tickets paid for.
 | `GET /` | | `200`, [its keys](#its-keys) |
 | `POST /face/session`, `POST /id/session` | none, `{}`, or `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}` |
 | `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked; `202 {"waiting": "review"}` |
-| `POST /id/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}` | `200 {"stamp"}`; `202 {"waiting": "review"}` |
+| `POST /id/stamp` | The same, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked; `202 {"waiting": "review"}` |
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face", "id"}`, each a stamp or `null`; `404 not_found` if neither |
 
 A stamp number is decimal text, as the standard's `stampNumberOf` gives it: no sign, no leading zero,
@@ -215,8 +216,8 @@ Errors are `{"error": "<code>"}`:
 | `DIDIT_BASE_URL` | `https://verification.didit.me` | For a stand-in Didit | the default |
 | `FACE_MODEL` | `sface` | Or `stand-in`, with `DIDIT_BASE_URL` on loopback | `sface` |
 | `APP_ORIGINS` | none: no `returnUrl` | Where Didit may send a person back, by origin, comma-separated | the Forest app, https://app.forest.foundation |
-| `HOST_URL` | none: no gift | The host whose credits the gift pays for, `https://<host>` | https://host.forest.foundation |
-| `HOST_CREDITS` | `10` | How many; 0 for none | 10, a cent of writes each |
+| `HOST_URL` | none: no gift | The host whose credits the gifts pay for, `https://<host>` | https://host.forest.foundation |
+| `FACE_CREDITS`, `ID_CREDITS` | `10`, `100` | How many with a face stamp, and an ID stamp; 0 for none | the defaults, a cent of writes each |
 | `DATABASE_PATH` | `./data/verifier.sqlite` | The one file; the seed file is made beside it | on its volume, in a directory of its own |
 | `PORT` | `8080` | | |
 
@@ -274,7 +275,7 @@ then `npm start`.
 
 ```
 ./standard.sh                     # from the repo root: the standard, at its pin
-(cd host && npm ci)               # the host's credits client and seller, for the gift's tests
+(cd host && npm ci)               # the host's credits client and seller, for the gifts' tests
 cd verifier && npm ci             # the standard's packages, linked by name from ../standard/
 npm run fetch                     # the face models and the three test portraits, checked by SHA-256
 npm run check && npm test
@@ -296,8 +297,8 @@ are the same, and keeps its own seed and file in `data/sandbox/`.
 
 `test/` covers, against a stand-in Didit, a real SQLite file and real HTTP: both checks and review,
 verifications made from the stamps and checked against the published keys, the facts vectors, stamps
-asked back, the seed, the sweep, the raw file, the face models on three portraits, the gift's ticket
-taken by the host's own seller, and the fetch's retries.
+asked back, the seed, the sweep, the raw file, the face models on three portraits, both gifts'
+tickets taken by the host's own seller, and the fetch's retries.
 
 ## Promises
 
@@ -328,8 +329,7 @@ taken by the host's own seller, and the fetch's retries.
 - **Stamps signed before this code kept them do not come back:** `not_found`, and the person checks
   again.
 - **For that hour, `to_delete` names the session:** whoever reads the file can ask Didit about it.
-- **A deletion Didit does not answer** leaves the session there, images included, until a later
-  sweep.
+- **A deletion Didit does not answer** leaves the session there, images and all, till a later sweep.
 - **It trusts Didit's decision,** and relies on the workflow settings above, which it cannot see.
 - **The answer that signs a stamp says who the person is:** keep it as a key is kept.
 - **A country with no ISO numeric code enters as 0,** like one Didit did not read.

@@ -3,7 +3,7 @@
 // stamp, keeps the Profiles folder, makes each profile with its verification, and at the connect
 // page makes the AI's connection folder, with an access key for the profile ticked, and hands the
 // mcp the pointer to it. What it has no method for, the device does here with the standard's
-// pieces: the stamp and the welcome gift asked for, the credits, the reputation proof. Each
+// pieces: the stamp and its gift asked for, the credits, the reputation proof. Each
 // person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in through the loop's connect
 // page and calling the mcp's tools, which read the connection and act in the person's folder with
 // that access key. Against the loop's own verifier, host, index and mcp, on loopback (services.ts),
@@ -18,18 +18,22 @@
 //       number at the loop verifier (keys/'s stampNumberOf); the tutor's second profile,
 //       sports-coaching/coach;
 //    2. stamps: the loop verifier's face check (its stand-in Didit passes it), asked with the
-//       welcome gift for one buy at the host; a stamp for each, kept on the person's device, then
+//       face stamp's gift, one buy at the host; a stamp for each, kept on the person's device, then
 //       asked back from the verifier by its stamp number;
-//    3. credits: each buy collected at the host with the gift's ticket, and finished;
-//    4. profiles: credits into each folder, the stamp kept in the Profiles folder, and the profile,
-//       its profile entry with a verification made on the device, listed there too;
+//    3. credits: each buy collected at the host with the gift's ticket, finished, and spent into the
+//       wallet, the Profiles folder's balance;
+//    4. profiles: the stamp kept in the Profiles folder, the profile's folder funded from the wallet
+//       (a buy paid from its balance, its credits spent into the folder), and the profile, its
+//       profile entry with a verification made on the device, listed there too;
 //    5. logins: each AI logs in through the connect page, where the person ticks their profile and
-//       their app makes the connection folder, paid with one credit, lists an access key in the
-//       profile entry with every switch, writes its note and its access entry, and hands the mcp the
-//       pointer;
-//    6. mcp: the tutor's AI writes a post; the student's finds it through the index's search and
-//       messages the tutor; the tutor's reads the inbox, the student's market, role and checks as the
-//       index shows them, and replies; the student's reads the reply;
+//       their app makes the connection folder, funded from the wallet with one credit, lists an
+//       access key in the profile entry with every switch, writes its note and its access entry, and
+//       hands the mcp the pointer;
+//    6. mcp: the tutor's AI writes a post, paid from the profile's balance; the student's finds it
+//       through the index's search and messages the tutor, carrying one credit bought from the
+//       student's balance, most of which lands in the tutor's; the tutor's reads the inbox, the
+//       student's market, role and checks as the index shows them, and replies the same way; the
+//       student's reads the reply;
 //    7. the review: the student's AI reviews the tutor, naming the post;
 //    8. the loop index counts it all: both profiles, the post, the review, and what each profile
 //       shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no message
@@ -54,7 +58,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-import { type Body, b64u, hex, proofsOf, readFolder, verificationCheck } from '@foundationforest/folders'
+import { type Body, b64u, encodeEntry, encodeInbox, hex, proofsOf, readFolder, readInbox, verificationCheck } from '@foundationforest/folders'
 import { lockCount, openLocked } from '@foundationforest/folders/locked'
 import { type PayAddresses, accessKey, checkBytes, mainKey, newSeed, openingHalf, payAddresses, pointOf, seedNumber, stampNumberOf, unpackSignature } from '@foundationforest/keys'
 import {
@@ -70,7 +74,7 @@ import {
   toBytes32,
 } from '@foundationforest/proofs'
 
-import { type Credit, DIRECTORY_PATH, PAYMENT_HEADER, type Pending, buy, creditList, finish, serviceOf } from '../host/client/client.ts'
+import { BUY_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, type Pending, buy, finish, serviceOf, spendInto } from '../host/client/client.ts'
 import { hundredth, tenth } from '../index/src/pass.ts'
 import { type Numbers, rank, uniqueness } from '../index/src/rank.ts'
 import { App } from '../mcp/test/app.ts'
@@ -84,8 +88,15 @@ const cfg = readServices(servicesFile)
 const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/setup/reputation.wasm'), zkey: join(repo, 'standard/proofs/reputation/setup/reputation.zkey') }
 /** The tutor's second profile, where it carries its trust: another market, from the same seed. */
 const COACH = 'sports-coaching/coach'
-/** How many of the host's credits the loop verifier's welcome gift gives each person: its own default. */
+/** How many of the host's credits the loop verifier's face stamp gives each person: its own default. */
 const CREDITS = 10
+/** And its ID stamp, which no one in the loop takes: its own default. */
+const ID_CREDITS = 100
+/** What each person's app funds each profile with from the wallet, and the coach profile. */
+const PROFILE_CREDITS = 3
+const COACH_CREDITS = 2
+/** A credit, in millionths: the unit a balance is kept in. */
+const CREDIT = 1_000_000
 /** What the person's app lets each AI do in the profile ticked, unless the person chooses fewer: every switch. */
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 /** How long to wait for the index to show what was done: it reads every 5 seconds. */
@@ -178,9 +189,8 @@ type Person = {
   pay: PayAddresses
   stampNumber: bigint
   stamp?: SignedStamp
-  /** The buy the welcome gift pays for, its bytes and what finishes it, and the gift's ticket. */
+  /** The buy the face stamp's gift pays for, its bytes and what finishes it, and the gift's ticket. */
   gift?: { buy: Uint8Array; pending: Pending; ticket: string }
-  credits: Credit[]
   app?: App
   ai?: AI
   /** The address of the access key the person's app handed the mcp for the profile. */
@@ -199,7 +209,6 @@ async function person(role: Person['role']): Promise<Person> {
     address: (await mainKey(seed, label)).address,
     pay: await payAddresses(seed, label),
     stampNumber: stampNumberOf(seedNumber(seed), VERIFIER_NAME),
-    credits: [],
   }
 }
 
@@ -217,7 +226,7 @@ let page: Awaited<ReturnType<typeof connectPage>> | undefined
 const people: Person[] = []
 
 /**
- * The face check, as the app does it, asked with the welcome gift: the gift read in the verifier's
+ * The face check, as the app does it, asked with its gift: the gift read in the verifier's
  * `GET /`, one buy at its host of exactly its credits, a session, the check (the stand-in passes
  * it), the stamp number and the buy's reference sent, and a stamp and a ticket back, checked. The
  * app keeps the stamp on the device, as safely as a key, and the buy to finish later.
@@ -225,7 +234,7 @@ const people: Person[] = []
 async function faceStamp(p: Person) {
   const verifier = services!.verifier
   const about = await json(`${verifier.url}/`)
-  assert.deepEqual(about.body.gift, { credits: CREDITS, host: services!.host, sponsor: verifier.sponsor }, 'the loop verifier gives ten of its host’s credits')
+  assert.deepEqual(about.body.gift, { face: CREDITS, host: services!.host, id: ID_CREDITS, sponsor: verifier.sponsor }, 'the loop verifier gives ten of its host’s credits with a face stamp, and a hundred with an ID stamp')
   const directory = await json(`${services!.host}${DIRECTORY_PATH}`)
   assert.equal(directory.status, 200, `${services!.host} publishes its credits`)
   const b = await buy(serviceOf(services!.host, directory.body), CREDITS)
@@ -250,21 +259,33 @@ async function faceStamp(p: Person) {
   say(`${p.role}: a stamp from the loop verifier's face check, model ${String(got.body.stamp.model)}, kept on the device, the same asked back by its stamp number, and the gift's ticket for ${CREDITS} credits, buy ${b.reference}`)
 }
 
-/** The gift's credits, as the app collects them: the buy sent to the host with its ticket, and the credits finished. */
+/** The gift's credits, as the app collects them: the buy sent to the host with its ticket, the credits finished, and spent into the wallet, the Profiles folder's balance. */
 async function collectGift(p: Person) {
   const service = serviceOf(services!.host, (await json(`${services!.host}${DIRECTORY_PATH}`)).body)
-  const res = await fetch(service.requestUri, { method: 'POST', headers: { 'content-type': 'application/private-token-generic-batch-request', [PAYMENT_HEADER]: `ticket ${p.gift!.ticket}` }, body: p.gift!.buy as Uint8Array<ArrayBuffer> })
+  const res = await fetch(service.requestUri, { method: 'POST', headers: { 'content-type': BUY_TYPE, [PAYMENT_HEADER]: `ticket ${p.gift!.ticket}` }, body: p.gift!.buy as Uint8Array<ArrayBuffer> })
   assert.equal(res.status, 200, `${services!.host} takes the gift's ticket: ${await res.clone().text()}`)
-  p.credits = await finish(p.gift!.pending, new Uint8Array(await res.arrayBuffer()))
-  assert.equal(p.credits.length, CREDITS)
-  say(`${p.role}: ${CREDITS} credits collected with the gift's ticket and finished`)
+  const credits = await finish(p.gift!.pending, new Uint8Array(await res.arrayBuffer()))
+  assert.equal(credits.length, CREDITS)
+  const wallet = (await mainKey(p.seed, '')).address
+  assert.equal(await spendInto(services!.host, wallet, credits), CREDITS, 'all of them in the wallet')
+  say(`${p.role}: ${CREDITS} credits collected with the gift's ticket, finished, and in the wallet, the Profiles folder ${wallet}'s balance`)
 }
 
-/** `n` of the person's credits spent into `folder`'s balance at the host. */
-async function spend(p: Person, folder: string, n: number): Promise<number> {
-  const got = await post(`${services!.host}/credits/spend`, { folder, credits: creditList(p.credits.splice(0, n)) })
-  assert.equal(got.status, 200, `the host takes the credits: ${JSON.stringify(got.body)}`)
-  return got.body.credits
+/** A folder's balance at the host, in millionths of a credit. */
+async function held(folder: string): Promise<number> {
+  return Math.round((await json(`${services!.host}/credits/balance/${folder}`)).body.credits * CREDIT)
+}
+
+/** What an entry or an inbox entry of `bytes` costs at the host, in millionths: a kilobyte at least, at the rate its directory gives for the disk. */
+async function entryPrice(bytes: number): Promise<number> {
+  const rate = Math.round(Number((await json(`${services!.host}${DIRECTORY_PATH}`)).body['forest-credit'].entry) * CREDIT)
+  return Math.ceil((Math.max(bytes, 1000) * rate) / 1000)
+}
+
+/** The newest inbox entry left for `folder` at the host, as its bytes are kept. */
+async function newestInbox(folder: string): Promise<number> {
+  const page = await readInbox(services!.host, folder)
+  return Buffer.byteLength(encodeInbox(page.entries.at(-1)!.entry))
 }
 
 /** A folder's current profile entry's body, as any reader reads it from the host. */
@@ -294,7 +315,7 @@ async function profile(p: Person, label: string, more: Body[] = []) {
 /**
  * A person's AI logs in: its first call to act gets the challenge, the person's browser goes
  * through the connect page, where they tick their profile, and their app makes the connection
- * folder, paid with one credit, lists an access key in the profile entry with every switch, writes
+ * folder, funded from the wallet with one credit, lists an access key in the profile entry with every switch, writes
  * its note and its access entry, and hands the mcp the pointer; the code becomes a login. Read back
  * from the host: one access key listed; its note, at a random id, locked to the main key alone,
  * found by opening the folder's notes, holding the connection folder's key; and the connection
@@ -329,7 +350,7 @@ async function logInAs(p: Person) {
   assert.equal(conn.access.length, 1, 'one access entry')
   assert.deepEqual([conn.access[0]!.body.label, (await accessKey(b64u.decode(conn.access[0]!.body.key as string))).address], [p.label, p.key], 'for this profile and this key')
   p.connection = conn.address
-  say(`${p.role}: its AI logged in, and acts in ${p.label} with the access key ${p.key}: ${SWITCHES.join(', ')}, its note locked to the main key; its connection folder ${conn.address}, paid with one credit`)
+  say(`${p.role}: its AI logged in, and acts in ${p.label} with the access key ${p.key}: ${SWITCHES.join(', ')}, its note locked to the main key; its connection folder ${conn.address}, funded from the wallet with one credit`)
 }
 
 async function main() {
@@ -346,23 +367,24 @@ async function main() {
   const coach = { address: (await mainKey(tutor.seed, COACH)).address, pay: await payAddresses(tutor.seed, COACH) }
   say(`two people, each from a seed: tutor ${tutor.address}, student ${student.address}, and the tutor's coach profile ${coach.address}`)
 
-  // 2. Stamps, each asked with the welcome gift.
+  // 2. Stamps, each asked with its gift.
   for (const p of [tutor, student]) await faceStamp(p)
 
-  // 3. Credits: the gift's buys, collected with their tickets.
+  // 3. Credits: the gift's buys, collected with their tickets, land in each wallet.
   for (const p of [tutor, student]) await collectGift(p)
 
-  // 4. Profiles: credits into the Profiles folder, where the app keeps the stamp, and into the
-  // profile's folder, then the profile. Each keeps one credit for its AI's connection folder, which
-  // the app asks for as it makes it (pay), and the tutor three for its coach profile.
-  for (const [p, n] of [[tutor, CREDITS - 6], [student, CREDITS - 3]] as const) {
-    p.app = new App({ seed: p.seed, hosts: [s.host], pay: (folder) => spend(p, folder, 1) })
-    const folder = (await mainKey(p.seed, '')).address
-    await spend(p, folder, 2)
+  // 4. Profiles: the stamp kept in the Profiles folder, paid from its own balance, the wallet; the
+  // profile's folder funded from the wallet; then the profile. Each app funds its AI's connection
+  // folder from the wallet too, as it makes it (pay).
+  for (const p of [tutor, student]) {
+    p.app = new App({ seed: p.seed, hosts: [s.host], pay: (folder) => p.app!.fund(folder, 1) })
+    const wallet = (await mainKey(p.seed, '')).address
     await p.app.keep(p.stamp!)
-    await spend(p, p.address, n)
+    const before = await held(wallet)
+    await p.app.fund(p.address, PROFILE_CREDITS)
+    assert.deepEqual([await held(wallet), await held(p.address)], [before - PROFILE_CREDITS * CREDIT, PROFILE_CREDITS * CREDIT], 'funded from the wallet: a buy paid from its balance, its credits spent into the profile’s folder')
     const made = await profile(p, p.label)
-    say(`${p.role}: its profile on the host, ${made}, with a verification and pay { solana, evm }, listed in its Profiles folder ${folder}; 2 credits there and ${n} in the profile's folder`)
+    say(`${p.role}: its profile on the host, ${made}, with a verification and pay { solana, evm }, listed in its Profiles folder ${wallet}, and funded from its wallet with ${PROFILE_CREDITS} credits, a buy paid from its balance`)
   }
 
   // 5. Logins: each AI acts in its person's profile, with every switch.
@@ -379,20 +401,32 @@ async function main() {
     levels: ['secondary'],
     place: { online: true },
   }
+  const beforePost = await held(tutor.address)
   assert.equal((await tutor.ai!.call('write', { label: tutor.label, path: 'post/maths', body: maths })).written, 'post/maths')
   const postAddress = `${tutor.address}/post/maths`
   const onHost = (await readFolder([s.host], tutor.address, Date.now())).current.get('post/maths')?.entry
   assert.equal(onHost?.body?.description, maths.description, 'on the host, and current')
   assert.equal(onHost?.key, tutor.key, 'signed by the access key the tutor’s app handed over')
-  say(`mcp: the tutor's AI wrote ${postAddress}, signed by its access key`)
+  const postPrice = await entryPrice(Buffer.byteLength(encodeEntry(onHost!)))
+  assert.equal(await held(tutor.address), beforePost - postPrice, 'paid from the profile’s balance, at its price')
+  say(`mcp: the tutor's AI wrote ${postAddress}, signed by its access key, paid from the profile's balance: ${postPrice / CREDIT} credits`)
+
+  /** A message the AI of `from` sends `to`: one credit bought from the sender's balance, and all of it but the inbox entry's price in the recipient's. */
+  const message = async (from: Person, to: string, text: string) => {
+    const [fromBefore, toBefore] = [await held(from.address), await held(to)]
+    assert.deepEqual(await from.ai!.call('message', { label: from.label, to, body: { text } }), { sent: true, hosts: 1 })
+    const price = await entryPrice(await newestInbox(to))
+    assert.deepEqual([await held(from.address), await held(to)], [fromBefore - CREDIT, toBefore + CREDIT - price], 'one credit from the sender, all of it but the inbox entry’s price to the recipient')
+    return price
+  }
 
   const found = await waitFor('the post in the index’s search, through the mcp', INDEX_WAIT, async () => {
     const out = await student.ai!.call('search', { filters: { q: 'maths', market, role: tutorRole } })
     return (out.index.answer.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === postAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
-  assert.deepEqual(await student.ai!.call('message', { label: student.label, to: found.profile, body: { text } }), { sent: true, hosts: 1 })
-  say('mcp: the student’s AI found the post in the index’s search, and messaged the tutor')
+  const kept = await message(student, found.profile, text)
+  say(`mcp: the student’s AI found the post in the index’s search, and messaged the tutor, carrying one credit from the student's balance: the host kept ${kept / CREDIT} for the inbox entry, and the tutor's balance went up by ${(CREDIT - kept) / CREDIT}`)
 
   type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
   const asked = await waitFor('the index to show the student, beside its message', INDEX_WAIT, async () => {
@@ -403,8 +437,8 @@ async function main() {
   assert.equal(asked.counts, true, 'whose profile entry lists the key that signed it with message')
   assert.deepEqual([asked.index!.market, asked.index!.role], [cfg.market, 'student'], 'the student’s market and role, as the index shows them')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
-  await tutor.ai!.call('message', { label: tutor.label, to: asked.from, body: { text: replyText } })
-  say('mcp: the tutor’s AI read it, counted, with the student’s market, role and face check as the index shows them, and replied')
+  await message(tutor, asked.from!, replyText)
+  say('mcp: the tutor’s AI read it, counted, with the student’s market, role and face check as the index shows them, and replied, carrying one credit the same way')
   const replied = ((await student.ai!.call('read', { label: student.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
   assert.deepEqual([replied?.from, replied?.counts], [tutor.address, true], 'the student’s AI reads the tutor’s reply')
   say('mcp: the student’s AI read the reply')
@@ -474,9 +508,9 @@ async function main() {
   assert.equal(Number(carried.score), shown.tutor.trust, 'carrying the tutor’s trust')
   assert.ok(await checkReputation({ proof: carried.proof, root, score: carried.score, profile: coach.address, index: index.address, time: tree.served.time, signature: rootSignature }), 'it checks')
   const reputation = { circuit: 'reputation', index: tree.served.index, root: tree.served.root, time: tree.served.time, signature: tree.served.signature, score: Number(carried.score), proof: b64u.encode(reputationBytes(carried.proof)) }
-  await spend(tutor, coach.address, 3)
+  await tutor.app!.fund(coach.address, COACH_CREDITS)
   await profile(tutor, COACH, [reputation])
-  say(`tutor: its leaf found among ${leaves.length}, its trust, ${carried.score}, proven onto ${coach.address} with its last 3 credits`)
+  say(`tutor: its leaf found among ${leaves.length}, its trust, ${carried.score}, proven onto ${coach.address}, funded from its wallet with ${COACH_CREDITS} credits`)
   await waitFor('the index to show the proof on the coach profile', INDEX_WAIT, async () => {
     const v = await profilePage(coach.address)
     const x = v.status === 200 ? v.body.proofs?.find((p: { circuit: string }) => p.circuit === 'reputation') : null

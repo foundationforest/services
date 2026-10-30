@@ -13,7 +13,7 @@
     "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 --test-force-exit test/*.test.ts",
     "check": "tsc --noEmit",
     "bench": "node --disable-warning=ExperimentalWarning bench/throughput.ts",
-    "check-host": "cd ../standard/folders && node scripts/check-host.ts"
+    "check-host": "node --disable-warning=ExperimentalWarning check-host.ts"
   },
   "dependencies": {
     "@cloudflare/privacypass-ts": "0.9.0",

@@ -1,4 +1,4 @@
-// The verifier's one file, five tables:
+// The verifier's one file, six tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
@@ -11,8 +11,10 @@
 //                  deleted the session
 //   fingerprints   for each person the ID check signed: their fingerprint (facts.ts), and the stamp
 //                  number it was signed for, so a person seen again is signed again only for that one
-//   gifts          each stamp number given its welcome gift (gift.ts), with a hash of the buy it was
-//                  given for, so a person gets one, and the same buy asked again gets the same ticket
+//   gifts          each stamp number given its face stamp's gift (gift.ts), with a hash of the buy it
+//                  was given for, so a person gets one, and the same buy asked again gets the same
+//                  ticket
+//   id_gifts       the same, for the ID stamp's gift
 //
 // Nothing else: no face, no embedding, no name, no birth date, no document, none of the fields beside a
 // stamp, and of a gift only a hash of its buy. A session id is kept as its hash; in clear, and with a time, only in `to_delete`, until
@@ -46,8 +48,8 @@ export class Store {
   readonly #addFingerprint: StatementSync
   readonly #addStamp: StatementSync
   readonly #stamps: StatementSync
-  readonly #give: StatementSync
-  readonly #given: StatementSync
+  /** Each check's gift: give one, and the buy one was given for. */
+  readonly #gifts: Record<Check, { give: StatementSync; given: StatementSync }>
   readonly #signedAt: StatementSync
   readonly #addToDelete: StatementSync
   readonly #due: StatementSync
@@ -65,6 +67,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
     `)
     this.#session = this.#db.prepare('SELECT stamp_number FROM sessions WHERE hash = ?')
     this.#fingerprint = this.#db.prepare('SELECT stamp_number FROM fingerprints WHERE fingerprint = ?')
@@ -72,8 +75,8 @@ export class Store {
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, stamp_number) VALUES (?, ?)')
     this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
     this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ?')
-    this.#give = this.#db.prepare('INSERT OR IGNORE INTO gifts (stamp_number, buy) VALUES (?, ?)')
-    this.#given = this.#db.prepare('SELECT buy FROM gifts WHERE stamp_number = ?')
+    const gifts = (table: string) => ({ give: this.#db.prepare(`INSERT OR IGNORE INTO ${table} (stamp_number, buy) VALUES (?, ?)`), given: this.#db.prepare(`SELECT buy FROM ${table} WHERE stamp_number = ?`) })
+    this.#gifts = { face: gifts('gifts'), id: gifts('id_gifts') }
     this.#signedAt = this.#db.prepare('SELECT signed_at FROM to_delete WHERE session_id = ?')
     this.#addToDelete = this.#db.prepare('INSERT OR IGNORE INTO to_delete (session_id, kind, signed_at) VALUES (?, ?, ?)')
     this.#due = this.#db.prepare('SELECT session_id, kind FROM to_delete WHERE signed_at <= ? ORDER BY signed_at')
@@ -155,10 +158,11 @@ export class Store {
     this.#deleted.run(sessionId)
   }
 
-  /** Marks this stamp number's gift given for this buy: `given` the first time, `again` for the same buy, `other` for another. */
-  giveGift(stampNumber: bigint, buy: Uint8Array): 'given' | 'again' | 'other' {
-    if (Number(this.#give.run(toBytes32(stampNumber), buy).changes) === 1) return 'given'
-    const kept = this.#given.get(toBytes32(stampNumber))?.buy as Uint8Array | undefined
+  /** Marks this stamp number's gift from this check given for this buy: `given` the first time, `again` for the same buy, `other` for another. */
+  giveGift(stampNumber: bigint, check: Check, buy: Uint8Array): 'given' | 'again' | 'other' {
+    const { give, given } = this.#gifts[check]
+    if (Number(give.run(toBytes32(stampNumber), buy).changes) === 1) return 'given'
+    const kept = given.get(toBytes32(stampNumber))?.buy as Uint8Array | undefined
     return kept && Buffer.from(kept).equals(Buffer.from(buy)) ? 'again' : 'other'
   }
 
