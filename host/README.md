@@ -187,7 +187,9 @@ Every number is set in this directory: `src/host.ts` (`choice`), `src/plug.ts` (
 - **Sizes:** entries up to **50,000,000 bytes**, as large as a file, since each write is paid by the
   byte; inbox entries up to **65,536**, a message's. **100** lines a request, its body at most a
   full batch of the largest inbox entries or one largest entry, so a batch of large entries gets 413
-  and the client sends it again in halves; its headers up to **64 KiB**, room for a credit a line.
+  and the client sends it again in halves; its headers up to **64 KiB**, room for a credit a line,
+  but Railway's edge answers 431 to headers over about **32 KB** before the host sees them: room for
+  about **65** credits a request here, not 100.
   **1,000** lines and **4,194,304 bytes** a page, though always one line. A read request is at most
   1,024 bytes. A request has **60 seconds** to arrive in full, or gets 408.
 - **Files:** png, jpeg and mp4, up to 50,000,000 bytes each, read through a link straight from the
@@ -275,6 +277,8 @@ and its storage, the S3 driver and its links among it; and every price, payment 
   50 MB a request it then refuses.
 - **A sender needs a balance at each of the recipient's hosts:** a credit counts at its own host
   only, so a message reaches only those where the sender's app can buy one.
+- **About 65 messages a request here, not 100:** their credits ride in its headers, which Railway's
+  edge cuts at about 32 KB; the mcp and apps send one message at a time.
 - **A reader that refuses redirects cannot read a file from the bucket:** each read is one.
 - **Anyone can list any inbox:** whom each entry is for, when it came and its size, never who wrote
   it or what it says.
