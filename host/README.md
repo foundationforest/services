@@ -4,8 +4,9 @@ The host keeps your profiles' folders (posts, reviews, photos, inbox) and serves
 folder is a profile's entries on a host, each signed by its main key or an access key its profile
 entry lists. A small write costs a fraction of a cent, paid from the folder's balance of credits,
 prepaid units of this host's writes, and a message is paid the same way, from its sender's folder;
-your first credits are a gift from the verifier. The Forest Foundation runs this copy, at https://host.forest.foundation. Anyone
-can run another; the main way is this code, or their own that passes the standard's host check
+your first credits are a gift from the verifier. The Forest Foundation runs this copy, at
+https://host.forest.foundation. Anyone can run another; the main way is this code, or their own that
+passes the standard's host check
 ([folders](https://github.com/foundationforest/standard/blob/main/folders/README.md#hosts)). It
 keeps copies: the entries signed for each profile (a locked one as an envelope only the keys it was
 locked to open), its inbox entries, locked too, and the files its current entries name. Anyone can
@@ -128,16 +129,17 @@ who paid for it.
 **A folder's balance** is kept in millionths of a credit. Anyone can add credits to any folder, a
 whole credit each; the main way is the person's own app, right after a buy. A spend marks them spent
 and adds them in one transaction, all or none; the spent list ties no credit to a folder. The
-folder's writes, the messages it sends, and the buys it pays for, draw from it: credits move between folders only as blind
-credits, are never refunded, and are a cent of writes here each, and nothing anywhere else.
+folder's writes, the messages it sends, and the buys it pays for, draw from it: credits move
+between folders only as blind credits, are never refunded, and are a cent of writes here each, and
+nothing anywhere else.
 
 **What a write costs:** what it stores, counted as at least 1,000 bytes, rounded up to a millionth:
 an entry's or an inbox entry's canonical text at `ENTRY_PER_KB`, on the disk; a file's bytes at
 `FILE_PER_KB`, in the bucket. An entry pays from its own folder, an inbox entry from its sender's
 (below), a file from a folder whose current entry names it, once: an entry is claimed by its id as
-its price is taken, and stored bytes cost nothing again. Taking
-your own things down is free: a null body over a live entry costs nothing; one where nothing stands
-takes nothing down, so it is paid like any other, or an empty folder could fill paths for free.
+its price is taken, and stored bytes cost nothing again. Taking your own things down is free: a null
+body over a live entry costs nothing; one where nothing stands takes nothing down, so it is paid
+like any other, or an empty folder could fill paths for free.
 
 **An inbox entry is paid by its sender's folder,** in its request's `Forest-Payment`:
 `balance <folder>.<key>.<signature> …`, one for each line, in order, each signed over
