@@ -2,7 +2,7 @@
 
 > The foundation's index of Forest. It ranks what is public: it reads the hosts it lists, keeps the profiles whose verification (a proof that a verifier checked the person behind the profile) checks for a verifier key it lists, ranks each within its market, and serves what it finds as pages for people and as JSON for machines. Each profile shows its ratings (a weighted average from 1 to 10, as it is, with how many raters), its trust (0 to 100: how much its own words weigh, from the vouches, ratings and reports it gets) and its uniqueness (0 to 100: how sure the index is that it is one real person), signed. Each profile is one person's profile in one market and role; nothing here links one profile to another.
 
-Every page has a JSON twin at the same address with `.json` on its path. Reading needs no key, no sign-up and no sign-in.
+Every page has a JSON twin at the same address with `.json` on its path. Any AI that can read the web can search these pages and read any profile, with nothing to install and no login: no key and no sign-up.
 
 ## For AI agents
 
