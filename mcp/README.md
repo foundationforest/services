@@ -34,10 +34,10 @@ read before the person connects anything; four act for the person and need one.
 |---|---|---|---|
 | `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a post's preview shows first) and `kinds` (the kinds of entry it defines, each with its fields) |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index |
-| `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now. Never an address |
+| `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, below |
 | `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
-| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, and at a host that sells credits one credit, bought there from the profile's balance with the access key |
+| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key |
 
 MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
 
@@ -71,8 +71,8 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   own and unchecked, with no `files` (anyone fetches a file by its hash), locked to every key that
   may read the folder (`lockKeysOf`): the main key's open key and each access key listed with
   `read`. No access key writes `profile`. Whether the key may write is the hosts' to say, and each
-  host's refusal is passed on, so a key no longer listed hears `unlisted`; a `message`, which no host
-  checks, is checked here first, since only the recipient's app would see it does not count.
+  host's refusal is passed on, so an ended key hears `unlisted`; a `message` is checked here first,
+  since only the recipient's app would see it does not count.
 - **Other folders** (a recipient, a sender, a review's subject) are looked for at the hosts the
   person's own profiles use, and a message's own `host`, then every host the folder's profile entry
   names: that is where the profiles the person deals with live today, and a message names its
@@ -154,9 +154,9 @@ folder of the person's for each AI app, and a pointer to it, which the AI app's 
   checks its secret, then opens the `access/` entries and acts with their keys, keeping none. No
   `connection` entry, one that does not open, or another secret: a 401, a login to make again. An
   access entry that does not open or fit, or names a profile already named, counts for nothing.
-- **Adding a profile** is one more key and access entry; **removing one** takes its key out of its
-  profile entry, with its access entry and note; **ending** deletes `connection`, then removes each
-  key. None needs a new login.
+- **Adding a profile** is one more key and access entry; **removing one** ends its key, listing it
+  with `until`, the time of the profile entry that ends it, and deletes its access entry and note;
+  **ending** deletes `connection`, then removes each profile. None needs a new login.
 
 [`test/app.ts`](test/app.ts), the reference app, is what the person's app does around this copy, in
 plain code with the standard's libraries; the tests and the loop run it. It keeps the person's
@@ -235,7 +235,7 @@ reference app), the markets package and its one check, the host's credits client
 `@modelcontextprotocol/sdk`, `undici` for `publicFetch`, and Node's `crypto`. `test/` covers, on loopback, with this repo's host, a stand-in
 index whose answers carry a field this copy has never seen, and a stand-in connect page running the
 reference app: the login end to end through the MCP SDK's own client and every refusal on its way,
-every tool and its refusals, a key removed and the connection ended, `publicFetch`, and the image's
+every tool and its refusals, a key ended and the connection ended, `publicFetch`, and the image's
 own command. `npm run smoke` runs the same client (`smoke.ts`) against a deployed copy, without the login, which
 needs a person; CI does not, since a check that cannot reach it would skip.
 
@@ -258,9 +258,9 @@ keeps working, and logs in again the first time it acts.
   for one call and forgets them. No login, call, connection or answer is written.
 - **It acts only as far as the access keys a connection holds may, and only for the token whose
   secret matches.** Every host and reader checks a key against the profile entry's listing, so a key
-  the person removes stops counting; a connection folder's address alone acts for no one.
+  the person ends stops acting; a connection folder's address alone acts for no one.
 - **It moves no money, and spends only the credits in the profiles the person connected, as their
-  access keys allow:** a message's one credit, from its profile's balance.
+  access keys allow:** what each write and message stores, from its profile's balance.
 - **The AI never gets a key, nor one of the person's own addresses,** from a tool that acts for them:
   it names each profile by its label.
 - **What an index says is passed on as the index's word, whole, and labelled so;** `read` picks only
@@ -288,8 +288,8 @@ keeps working, and logs in again the first time it acts.
   moves.
 - **An index's answer may hold anything.**
 - **No rate limit:** anyone can keep the copy busy.
-- **Not here:** paying, putting or deleting files, buying a host's credits but the one each message
-  carries, views in the AI app (MCP Apps), and a copy on the person's own computer.
+- **Not here:** paying, putting or deleting files, buying a host's credits, views in the AI app (MCP
+  Apps), and a copy on the person's own computer.
 - **Railway's own request logs** hold each request's client address and path.
 
 ## FAQ

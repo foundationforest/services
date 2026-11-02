@@ -237,7 +237,10 @@ describe('a connection, changed with no new login', () => {
     const sellerKey = (await w.app.keys(SELLER)).at(-1)!.key
     assert.equal((await readFolder([w.host], w.own[SELLER]!, Date.now())).current.get('notes/added')?.entry.key, sellerKey, 'signed by its new access key')
     const studentKey = (await w.app.keys(STUDENT)).at(-1)!.key
-    await device.removeKey(STUDENT, studentKey)
+    await device.endKey(STUDENT, studentKey)
+    const profile = (await readFolder([w.host], w.own[STUDENT]!, Date.now())).current.get('profile')!.entry
+    const ended = (profile.body!.keys as Body[]).find((k) => k.key === studentKey)
+    assert.deepEqual([ended?.until, 'open' in ended!], [profile.time, false], 'its key ended, at the time of the profile entry that ends it, with no open key')
     assert.equal((await entriesOf(folder, 'access')).length, 2, 'its access entry deleted')
     assert.equal(await w.app.note(STUDENT, studentKey), undefined, 'and its note')
     assert.deepEqual((await mine()).map((p: { label: string }) => p.label), [SELLER, TUTOR])
@@ -253,7 +256,10 @@ describe('a connection, changed with no new login', () => {
     await new App({ seed: w.seed, hosts: [w.host] }).endConnection(folder.address)
     assert.deepEqual(await entriesOf(folder, 'connection'), [], 'its connection entry deleted')
     assert.deepEqual(await entriesOf(folder, 'access'), [], 'and every access entry')
-    for (const label of [TUTOR, STUDENT]) assert.equal((await w.app.keys(label)).some((k) => keys.includes(k.key)), false, `no key of it in ${label}'s profile entry`)
+    for (const label of [TUTOR, STUDENT]) {
+      const listed = (await w.app.keys(label)).filter((k) => keys.includes(k.key))
+      assert.ok(listed.length === 1 && listed[0]!.until !== undefined, `its key in ${label}'s profile entry, ended`)
+    }
     const res = await asked(token)
     assert.equal(res.status, 401)
     assert.match(res.headers.get('www-authenticate')!, /error="invalid_token", error_description="the connection this login points to is gone"/)

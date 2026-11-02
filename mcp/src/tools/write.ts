@@ -5,7 +5,7 @@
 // to the standard. Locked: at any path but `profile` and `key/…`
 // (the person's notes about access keys), the body the person's own and unchecked, locked to every
 // key that may read the folder (lockKeysOf). Never `profile`: no access key writes it. Whether the
-// key may write is the hosts' to say: each one's refusal is passed on, so a key the person removed
+// key may write is the hosts' to say: each one's refusal is passed on, so a key the person ended
 // hears `unlisted`.
 
 import { type Body, FolderError, type SignedEntry, entry, filesOf, lockKeysOf, nextTime, publicKeyFromAddress, write } from '@foundationforest/folders'
