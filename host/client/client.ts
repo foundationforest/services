@@ -5,16 +5,17 @@
 // README.md, "Credits".
 //
 // The service, from its directory; the buy, and the reference its payment names it by; what a
-// payer signs, a sponsor's ticket or a folder's key paying from its balance; finishing the credits
-// from the service's answer; listing them for a spend, or as an inbox request's payment. It reaches
-// a host only through the fetch it is given. The blinding and the signatures are Cloudflare's
-// privacypass-ts, unchanged; its type 2 client keeps the blinding in memory only, so the buy here
-// keeps it as bytes, to finish later, from what the app keeps. The host checks and sells credits
-// with its own code (../credits/), which reads this wire format from here. The e2e loop, the
-// reference app and the mcp buy with this, and so do the host's and the verifier's tests.
+// payer signs, a sponsor's ticket or a folder's key paying from its balance, for a buy or for an
+// inbox entry; finishing the credits from the service's answer; listing them for a spend. It
+// reaches a host only through the fetch it is given. The blinding and the signatures are
+// Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in memory only, so
+// the buy here keeps it as bytes, to finish later, from what the app keeps. The host checks and
+// sells credits with its own code (../credits/), which reads this wire format from here. The e2e
+// loop and the reference app buy with this, the mcp pays for its messages with it, and so do the
+// host's and the verifier's tests.
 
 import { AuthenticatorInput, Token, TokenChallenge, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
-import { type Payment, type Writer, signAs, writerOf } from '@foundationforest/folders'
+import { type Payment, type Writer, decodeInbox, signAs, writerOf } from '@foundationforest/folders'
 import { base58, base64urlnopad } from '@scure/base'
 
 const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicVerif
@@ -23,7 +24,7 @@ const { BLIND_RSA, BlindRSAMode, TokenRequest, convertRSASSAPSSToEnc } = publicV
 export const CREDIT_TYPE = 0x0002
 /** Where a service publishes its credit key and its price: Privacy Pass's issuer directory. */
 export const DIRECTORY_PATH = '/.well-known/private-token-issuer-directory'
-/** The header a buy is collected with, naming what paid it, and an inbox request's credits: the standard's payment header. */
+/** The header a buy is collected with, naming what paid it, and what pays for an inbox request's entries: the standard's payment header. */
 export const PAYMENT_HEADER = 'forest-payment'
 /** A buy's media type, as Privacy Pass's batched requests name it. */
 export const BUY_TYPE = 'application/private-token-generic-batch-request'
@@ -260,11 +261,6 @@ export function creditList(credits: (Credit | Uint8Array | string)[]): string[] 
   return credits.map((credit) => b64u.encode(creditBytes(credit)))
 }
 
-/** Credits as an inbox request's payment: `credits <credit> …`, one for each of its lines, in order. */
-export function creditsPayment(credits: (Credit | Uint8Array | string)[]): string {
-  return `credits ${creditList(credits).join(' ')}`
-}
-
 /** The service at `origin`, from its directory; null when it sells no credits (its directory is not there). */
 export async function serviceAt(origin: string, fetchWith: typeof fetch = fetch): Promise<Service | null> {
   const res = await fetchWith(`${origin}${DIRECTORY_PATH}`, { redirect: 'error', signal: AbortSignal.timeout(TIMEOUT_MS) })
@@ -300,16 +296,26 @@ export async function spendInto(origin: string, folder: string, credits: (Credit
 }
 
 /**
- * The standard's payment for leaving inbox entries (`leave`): at each host that sells credits, for
- * each request, a credit for each of its lines, bought there from the writer's folder's balance,
- * as `credits <credit> …`. A host that sells none gets no payment; one that will not sell them
- * fails the request with its words.
+ * What a folder's key signs to pay for an inbox entry from the folder's balance at a host: the host
+ * and the inbox entry's id, so it pays for that inbox entry there alone.
  */
-export function inboxPayment(writer: Writer, fetchWith: typeof fetch = fetch): Payment {
-  return async (host, body) => {
-    const service = await serviceAt(host, fetchWith)
-    if (!service) return undefined
-    const lines = new TextDecoder().decode(body).split('\n').filter(Boolean).length
-    return creditsPayment(await bought(service, lines, (reference, n) => balancePayment(host, writer, reference, n), fetchWith))
+export function inboxMessage(origin: string, id: string): Uint8Array {
+  originOf(origin)
+  if (!/^[0-9a-f]{64}$/.test(id)) throw new Error("an inbox entry's id is 64 lowercase hex characters")
+  return new TextEncoder().encode(`forest inbox\n${origin}\n${id}`)
+}
+
+/**
+ * The standard's payment for leaving inbox entries (`leave`), from the writer's folder's balance at
+ * each host: `balance <folder>.<key>.<signature> …`, one for each line of the request, in order,
+ * each signed over that inbox entry's id there, by the folder's main key (then `key` is the folder)
+ * or an access key its profile entry there lists with `message`. A host takes each one's price, by
+ * its bytes, from that balance; one that charges nothing for inbox entries reads none of it.
+ */
+export function inboxPayment(writer: Writer): Payment {
+  const { profile, key } = writerOf(writer)
+  return (host, body) => {
+    const ids = new TextDecoder().decode(body).split('\n').filter(Boolean).map((line) => decodeInbox(line).id)
+    return `balance ${ids.map((id) => `${profile}.${key.address}.${signAs(key, key.address, inboxMessage(host, id))}`).join(' ')}`
   }
 }

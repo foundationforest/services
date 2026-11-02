@@ -8,7 +8,8 @@ Forest Foundation runs this copy, at https://index.forest.foundation. Anyone can
 main way is this code with lists of its own. It holds opinions and nothing of the person's: which
 hosts it reads, which verifier keys count and how much, and every number it ranks by are files here,
 and everything it ranks is public on a host. It holds no key but its own, and there is no account.
-For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
+Any AI that can read the web can search these pages and read any profile, with nothing to install
+and no login. For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
 ## How it works
 
@@ -267,8 +268,7 @@ rebuilds included.
 ## Limits
 
 - **It trusts the verifiers it lists** to sign stamps only for the people they say.
-- **Two of one person's profiles can rate or vouch for each other:** nothing here links them. Two
-  faces lift each other from 38 to 45, and no ring passes its uniqueness, 75.
+- **Two of one person's profiles can rate or vouch for each other:** nothing here links them (FAQ).
 - **A rating of 1 is a vouch:** a profile that cheated someone gains trust from their rating, unless
   they report it instead.
 - **Trust grows only from words received:** a side of a market that is never rated keeps 38, however
@@ -296,3 +296,9 @@ Reports can make whole moves flip for ever: thirty profiles that all report each
 trust, so heavy reports, to low trust, so light reports, and back, every round. Moving half as far
 settles them where trust is what the reports leave of it, 6 each. Where whole moves settle on their
 own, the result is the same, within `tolerance`.
+
+**Can one of my other profiles rate or vouch for me?**
+Only in the same market, and only as the other role: a review, a vouch or a report counts only
+between two profiles of one market, and a seed has one profile per market and role. Nothing here
+can link two profiles of one seed, so this index cannot catch it. The ranking bounds it: two faces
+lift each other from 38 to 45, and never past their uniqueness, 75.

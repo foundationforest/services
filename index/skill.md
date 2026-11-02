@@ -10,7 +10,8 @@ its proofs.
 
 ## How to read
 
-- Everything is a plain GET. No key, no sign-up, no cookies.
+- Everything is a plain GET, so any AI that can read the web can search these pages and read any
+  profile, with nothing to install and no login: no key, no sign-up, no cookies.
 - Every page has a JSON twin at the same address with `.json` on its path; the home page's is
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
