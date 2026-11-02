@@ -13,9 +13,9 @@
 // first: their price is reserved on a folder whose current entry names them, then taken once the
 // plug answers that it stored them, or released; the front sends on one upload of the same bytes
 // at a time. The plug asks about a folder's first profile entry, so joining costs a write, and never
-// about a later one, so leaving and updating are free. An inbox entry carries one credit, in its
-// request's payment: a host cannot see who left one, so no folder here pays for it; it keeps the
-// entry's price, and the rest goes into the recipient folder's balance. Reads are free.
+// about a later one, so leaving and updating are free. An inbox entry is paid like an entry, by its
+// bytes, from the balance of the folder its request's payment names, signed over its id by that
+// folder's key; nothing goes to the recipient. Reads are free.
 //
 // Taking your own things down is free: a null body over a live entry costs nothing. A null body
 // where nothing stands is a write like any other.
@@ -29,7 +29,7 @@ import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, 
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
-import { canDo, encodeEntry, encodeInbox, entryId, unsignedOf } from '@foundationforest/folders'
+import { canDo, encodeEntry, encodeInbox, entryId, inboxId, unsignedOf } from '@foundationforest/folders'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { keyAt } from '../credits/seller.ts'
@@ -149,16 +149,16 @@ export function paidEntries(credits: Credits, host: () => Host): EntryChoice {
 }
 
 /**
- * An inbox entry's credit: its line's in the request's payment, `credits <credit> …`, one for each
- * line in order. The sender is locked inside, so no folder here can be asked to pay: the credit
- * pays, and says nothing about who paid for it. The host keeps the entry's price, kept on the disk,
- * and the rest goes into the recipient folder's balance. A line refused before its choice leaves
- * its credit unspent.
+ * An inbox entry's price, kept on the disk, from the balance of the folder its line's payment names:
+ * the request's payment is `balance <folder>.<key>.<signature> …`, one for each line in order, each
+ * signed over that line's inbox entry's id. No inbox entry's id is kept, as an entry's is: the plug
+ * refuses one already here (`duplicate`) before it asks, and this choice never waits, so no other
+ * request is taken between that check and the store, and an inbox entry here is paid once.
  */
 export function paidInbox(credits: Credits): InboxChoice {
   return (entry, _stored, { payment, line }) => {
     const [kind, ...list] = (payment ?? '').trim().split(/ +/)
-    return credits.inbox(entry.to, kind === 'credits' ? list[line] : undefined, credits.entryPrice(Buffer.byteLength(encodeInbox(entry))))
+    return credits.inbox(kind === 'balance' ? list[line] : undefined, inboxId(entry), credits.entryPrice(Buffer.byteLength(encodeInbox(entry))))
   }
 }
 
@@ -323,8 +323,9 @@ export async function startHost(config: Config): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
   mkdirSync(creditsDir, { recursive: true })
   const creditKey = await keyAt(join(creditsDir, 'key.der'))
-  // A buy is paid from a folder's balance by its main key, or by an access key its profile entry
-  // here lists with message: the switch that already lets a key leave messages for it.
+  // A buy, or an inbox entry, is paid from a folder's balance by its main key, or by an access key
+  // its profile entry here lists with message and no until: the switch that lets a key send
+  // messages for it.
   const keyCounts = (folder: string, key: string) => key === folder || canDo(host.view(folder).current.get('profile')?.entry.body, key, 'message')
   const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, maxBuy: config.maxBuy, sponsors: config.sponsors, rates: config.rates, keyCounts })
   const host: Host = new Host({

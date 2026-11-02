@@ -80,7 +80,7 @@ export const DEFAULT_MAX_FILE_BYTES = 50_000_000
 export const DEFAULT_FILE_TYPES = ['image/png', 'image/jpeg', 'video/mp4']
 /** A read request is under 100 bytes. */
 const MAX_ASK_BYTES = 1024
-/** A request's headers, at most: room for a payment of a credit, 472 characters, for each of a full batch's lines. */
+/** A request's headers, at most: room, several times over, for a full batch's payment, about 176 characters a line from a folder's balance. */
 export const MAX_HEADER_BYTES = 64 * 1024
 /** The header a write's payment comes in, as the standard names it. */
 const PAYMENT_HEADER = 'forest-payment'
@@ -217,7 +217,7 @@ export class Host {
     const stored = this.stored(entry.profile)
     // An access key's entry: its folder's current profile entry here lists the key with write.
     if (entry.key !== undefined && !canDo(viewFolder(entry.profile, stored, now).current.get(PROFILE_PATH)?.entry.body, entry.key, 'write')) {
-      return { ok: false, error: 'unlisted', message: 'the profile entry here lists no such key with write' }
+      return { ok: false, error: 'unlisted', message: 'the profile entry here lists no such key with write, or it has ended' }
     }
     if (this.storage.hasEntry(entry.profile, c.id)) return { ok: true, message: 'already here' }
     // Taken only if it becomes current at its path, by what every reader follows (the standard's viewFolder).

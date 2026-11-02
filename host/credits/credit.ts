@@ -1,6 +1,6 @@
-// The host's credits, what a credit is: its id, and the check the host makes when one is spent,
-// into a folder's balance or with an inbox entry; and a buy's price. The wire format (the challenge,
-// a buy's reference, what a sponsor's ticket and a folder's balance payment sign) is the buyer's
+// The host's credits, what a credit is: its id, and the check the host makes when one is spent into
+// a folder's balance; and a buy's price. The wire format (the challenge, a buy's reference, what a
+// sponsor's ticket and a folder's balance payment sign, for a buy or an inbox entry) is the buyer's
 // side's, read from ../client/client.ts, so the two never differ. See README.md, "Credits".
 //
 // A credit is a Privacy Pass credit of type 2 (RFC 9578): an RSA signature the host made blind, over
@@ -12,7 +12,7 @@ import { Token, publicVerif } from '@cloudflare/privacypass-ts'
 
 import { CREDIT_TYPE, challengeOf, creditBytes, importKey } from '../client/client.ts'
 
-export { BUY_TYPE, CREDIT_BYTES, CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, SPEND_PATH, balanceMessage, challengeOf, referenceOf, ticketMessage } from '../client/client.ts'
+export { BUY_TYPE, CREDIT_BYTES, CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, SPEND_PATH, balanceMessage, challengeOf, inboxMessage, referenceOf, ticketMessage } from '../client/client.ts'
 
 const { BLIND_RSA, BlindRSAMode } = publicVerif
 

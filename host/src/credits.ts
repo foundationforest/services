@@ -11,9 +11,9 @@
 // kept: an entry or an inbox entry on the host's disk (ENTRY_PER_KB), a file's bytes in the bucket
 // (FILE_PER_KB), both in credits, rounded up to a millionth of a credit: the unit a balance is kept
 // in, so the fractions of a cent each write costs add up. A delete is free. A folder's first profile
-// entry is a write like any other; a later profile entry is free (src/host.ts). An inbox entry
-// carries one credit of its own: the host keeps its price, and the rest goes into the recipient
-// folder's balance.
+// entry is a write like any other; a later profile entry is free (src/host.ts). An inbox entry is
+// paid like an entry, from the balance of the folder its request's payment names, signed over its
+// id by that folder's key.
 //
 // An entry is claimed once, by its id, in the same transaction that takes its price: a second copy
 // in flight, or the same one sent again, costs nothing. A file's bytes are stored first and charged
@@ -30,8 +30,10 @@ import { join } from 'node:path'
 
 import { base58 } from '@scure/base'
 
-import { PAYMENT_HEADER, SPEND_PATH, amountOf, checkCredit, checkCredits } from '../credits/credit.ts'
-import { type Answer, type CreditKey, DIRECTORY_PATH, type Seller, type SpentList, UNIT, refuse, seller } from '../credits/seller.ts'
+import { checkSignature } from '@foundationforest/folders'
+
+import { PAYMENT_HEADER, SPEND_PATH, amountOf, checkCredits, inboxMessage } from '../credits/credit.ts'
+import { type Answer, type CreditKey, DIRECTORY_PATH, type Seller, type SpentList, UNIT, readBalance, refuse, seller } from '../credits/seller.ts'
 
 export { type Answer, DIRECTORY_PATH, SPEND_PATH, UNIT }
 
@@ -70,7 +72,7 @@ export type CreditConfig = {
   sponsors: string[]
   /** What a kilobyte costs, in credits as decimal text: `entry` on the disk, `file` in the bucket. */
   rates: { entry: string; file: string }
-  /** Whether `key` may pay for a buy from `folder`'s balance: its main key, or an access key its profile entry here lists with message. */
+  /** Whether `key` may pay for a buy or an inbox entry from `folder`'s balance: its main key, or an access key its profile entry here lists with message and no until. */
   keyCounts(folder: string, key: string): boolean
 }
 
@@ -180,27 +182,19 @@ export class Credits {
   }
 
   /**
-   * An inbox entry's credit, shown as its line's in the request's payment: checked, then, in one
-   * transaction, marked spent, and all of it but the entry's `price`, in millionths, put into the
-   * recipient folder's balance. Null when it was, else what to tell the sender. The credit says
-   * nothing about who paid for it.
+   * An inbox entry's price, in millionths, from the balance of the folder its line's payment names:
+   * `<folder>.<key>.<signature>`, signed over the inbox entry's id at this host (`inboxMessage`) by
+   * the folder's main key, or an access key its profile entry here lists with message and no until.
+   * Null when taken, else what to tell the sender. Nothing keeps which folder paid for which inbox
+   * entry: the plug refuses the same one again by its id before it asks its price.
    */
-  async inbox(to: string, credit: string | undefined, price: number): Promise<string | null> {
-    if (credit === undefined) return `an inbox entry here carries one credit, in the ${PAYMENT_HEADER} header as \`credits <credit> …\`, one for each line in order; credits are sold at ${DIRECTORY_PATH}`
-    let id: string
-    try {
-      id = await checkCredit(credit, { origin: this.#config.origin, keys: [this.#config.creditKey.published] })
-    } catch (error) {
-      return `the credit for this inbox entry does not hold: ${(error as Error).message}`
+  inbox(payment: string | undefined, id: string, price: number): string | null {
+    if (payment === undefined) return `an inbox entry here is paid from a folder's balance, in the ${PAYMENT_HEADER} header as \`balance <folder>.<key>.<signature> …\`, one for each line in order`
+    const paid = readBalance(payment)
+    if (!paid || !this.#config.keyCounts(paid.folder, paid.key) || !checkSignature(paid.signature, inboxMessage(this.#config.origin, id), paid.key)) {
+      return "this inbox entry's payment is not signed over its id here by the folder's main key, or by an access key its profile entry here lists with message"
     }
-    // Never below none: at a rate where an inbox entry costs more than its credit, the recipient gets nothing.
-    const rest = Math.max(0, MILLIONTHS - price)
-    const landed = this.seller.together(() => {
-      if (!this.spent.spend([id])) return false
-      this.seller.db.prepare('INSERT INTO balances (folder, millionths) VALUES (?, ?) ON CONFLICT (folder) DO UPDATE SET millionths = millionths + excluded.millionths').run(to, rest)
-      return true
-    })
-    return landed ? null : 'the credit for this inbox entry was spent already'
+    return this.#takes(paid.folder, price) ? null : this.#short(paid.folder, price, 'this inbox entry')
   }
 
   /**
