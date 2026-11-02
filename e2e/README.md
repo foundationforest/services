@@ -44,8 +44,8 @@ checks what it did, and the run passes only if every step does.
    locked to its own key and the mcp's.
 6. **mcp:** the tutor's AI reads `markets` and writes a post, `post/maths`, 2 USD an hour, signed by
    its access key and paid at its price; the student's AI finds it with `search` and messages the
-   tutor with one credit, the student's balance down 1 and the tutor's up 1 less the inbox entry's
-   price; the tutor's AI reads its inbox (the message counted, with the student's market, role and
+   tutor, the student's balance down by the message's price, by its bytes, and the tutor's as it
+   was; the tutor's AI reads its inbox (the message counted, with the student's market, role and
    face check as the index shows them) and replies the same way; the student's AI reads the reply.
 7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the post.
 8. **The index** shows both profiles counted under the face key, the post listed, the review counted,
@@ -58,8 +58,9 @@ checks what it did, and the run passes only if every step does.
    index shows the proof on the coach's page.
 10. **Added:** from the seed alone, the tutor's app adds the coach to the connection; with no new
     login, `my_profiles` shows both, and the AI writes and reads back a locked note as the coach.
-11. **Ended:** the app deletes the connection entry and removes each key; the mcp answers the AI
-    401, and what the keys wrote counts for nothing on the host.
+11. **Ended:** the app deletes the connection entry and ends each key, listing it with `until`, with
+    its note and its access entry deleted; the mcp answers the AI 401; what the keys wrote still
+    counts on the host and the index, and a new write by them is refused (`unlisted`).
 12. **A new device:** from the tutor's seed alone, the Profiles folder gives both profiles, each with
     its folder, and its stamp.
 13. **Addresses:** no answer either AI got holds one of its own person's addresses (profiles, pay

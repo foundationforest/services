@@ -30,10 +30,10 @@
 //       access key in the profile entry with every switch, writes its note and its access entry, and
 //       hands the mcp the pointer;
 //    6. mcp: the tutor's AI writes a post, paid from the profile's balance; the student's finds it
-//       through the index's search and messages the tutor, carrying one credit bought from the
-//       student's balance, most of which lands in the tutor's; the tutor's reads the inbox, the
-//       student's market, role and checks as the index shows them, and replies the same way; the
-//       student's reads the reply;
+//       through the index's search and messages the tutor, paid from the student's balance by its
+//       bytes, the tutor's balance as it was; the tutor's reads the inbox, the student's market,
+//       role and checks as the index shows them, and replies the same way; the student's reads the
+//       reply;
 //    7. the review: the student's AI reviews the tutor, naming the post;
 //    8. the loop index counts it all: both profiles, the post, the review, and what each profile
 //       shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no message
@@ -42,8 +42,9 @@
 //       its coach profile, and the index shows the proof;
 //   10. added: the tutor's app, from the seed alone, adds the coach profile to its AI's connection;
 //       with no new login, the AI acts as both, and writes a locked note as the coach;
-//   11. ended: the tutor's app ends the connection, its entry and both keys gone; the mcp refuses
-//       the AI's next call, 401, and what the keys wrote counts for nothing;
+//   11. ended: the tutor's app ends the connection, its entry gone and both keys ended; the mcp
+//       refuses the AI's next call, 401; what the keys wrote still counts on the host and the
+//       index, and a new write by either is refused;
 //   12. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
 //       stamp;
 //   13. addresses: no answer either AI received holds one of its own person's addresses;
@@ -58,7 +59,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
 
-import { type Body, b64u, encodeEntry, encodeInbox, hex, proofsOf, readFolder, readInbox, verificationCheck } from '@foundationforest/folders'
+import { type Body, b64u, encodeEntry, encodeInbox, entry, hex, proofsOf, readFolder, readInbox, verificationCheck, write } from '@foundationforest/folders'
 import { lockCount, openLocked } from '@foundationforest/folders/locked'
 import { type PayAddresses, accessKey, checkBytes, mainKey, newSeed, openingHalf, payAddresses, pointOf, seedNumber, stampNumberOf, unpackSignature } from '@foundationforest/keys'
 import {
@@ -411,12 +412,12 @@ async function main() {
   assert.equal(await held(tutor.address), beforePost - postPrice, 'paid from the profile’s balance, at its price')
   say(`mcp: the tutor's AI wrote ${postAddress}, signed by its access key, paid from the profile's balance: ${postPrice / CREDIT} credits`)
 
-  /** A message the AI of `from` sends `to`: one credit bought from the sender's balance, and all of it but the inbox entry's price in the recipient's. */
+  /** A message the AI of `from` sends `to`: its inbox entry's price, by its bytes, from the sender's balance, and nothing to the recipient's. */
   const message = async (from: Person, to: string, text: string) => {
     const [fromBefore, toBefore] = [await held(from.address), await held(to)]
     assert.deepEqual(await from.ai!.call('message', { label: from.label, to, body: { text } }), { sent: true, hosts: 1 })
     const price = await entryPrice(await newestInbox(to))
-    assert.deepEqual([await held(from.address), await held(to)], [fromBefore - CREDIT, toBefore + CREDIT - price], 'one credit from the sender, all of it but the inbox entry’s price to the recipient')
+    assert.deepEqual([await held(from.address), await held(to)], [fromBefore - price, toBefore], 'its price from the sender, by its bytes, and the recipient’s balance as it was')
     return price
   }
 
@@ -425,8 +426,8 @@ async function main() {
     return (out.index.answer.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === postAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
-  const kept = await message(student, found.profile, text)
-  say(`mcp: the student’s AI found the post in the index’s search, and messaged the tutor, carrying one credit from the student's balance: the host kept ${kept / CREDIT} for the inbox entry, and the tutor's balance went up by ${(CREDIT - kept) / CREDIT}`)
+  const price = await message(student, found.profile, text)
+  say(`mcp: the student’s AI found the post in the index’s search, and messaged the tutor, paid from the student's balance by its bytes: ${price / CREDIT} credits, and the tutor's balance as it was`)
 
   type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
   const asked = await waitFor('the index to show the student, beside its message', INDEX_WAIT, async () => {
@@ -438,7 +439,7 @@ async function main() {
   assert.deepEqual([asked.index!.market, asked.index!.role], [cfg.market, 'student'], 'the student’s market and role, as the index shows them')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
   await message(tutor, asked.from!, replyText)
-  say('mcp: the tutor’s AI read it, counted, with the student’s market, role and face check as the index shows them, and replied, carrying one credit the same way')
+  say('mcp: the tutor’s AI read it, counted, with the student’s market, role and face check as the index shows them, and replied, paid the same way')
   const replied = ((await student.ai!.call('read', { label: student.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
   assert.deepEqual([replied?.from, replied?.counts], [tutor.address, true], 'the student’s AI reads the tutor’s reply')
   say('mcp: the student’s AI read the reply')
@@ -531,11 +532,18 @@ async function main() {
   say(`added: the tutor's app added ${COACH} to its AI's connection, from the seed alone; with no new login, the AI wrote a locked note as the coach, signed by its access key ${coachKey}`)
 
   // 11. Ended: the tutor's app ends the connection: its connection entry deleted, then each key it
-  // holds taken out of its profile entry, with its note and its access entry. The mcp answers the
-  // AI's next call 401, so it must log in again, and what the keys wrote counts for nothing: the
-  // newest entry that still counts at each path is current, and there is none.
+  // holds ended, listed in its profile entry with until, with its note and its access entry deleted.
+  // The mcp answers the AI's next call 401, so it must log in again. What the keys wrote still
+  // counts, on the host and at the index; a new entry either signs is refused. The device holds the
+  // keys for that, opened from the connection's access entries before it ends, as it can.
+  const access = (await tutor.app!.connections()).find((c) => c.address === tutor.connection)!.access
+  const keys = await Promise.all(access.map(async (a) => ({ label: a.body.label as string, address: a.body.address as string, key: await accessKey(b64u.decode(a.body.key as string)) })))
+  assert.deepEqual(keys.map((k) => k.label).sort(), [COACH, tutor.label].sort(), 'the connection holds both keys')
   await tutor.app!.endConnection(tutor.connection!)
-  for (const label of [tutor.label, COACH]) assert.deepEqual(await tutor.app!.keys(label), [], `no access key listed in ${label}`)
+  for (const label of [tutor.label, COACH]) {
+    const listed = await tutor.app!.keys(label)
+    assert.ok(listed.length === 1 && listed[0]!.until !== undefined && listed[0]!.open === undefined, `${label}'s key, ended, with no open key`)
+  }
   assert.equal(await tutor.app!.note(tutor.label, tutor.key!), undefined, 'and no note about it')
   assert.deepEqual(await tutor.app!.connections(), [], 'and no connection')
   const ended = await fetch(s.mcp, {
@@ -551,9 +559,18 @@ async function main() {
     (err: Error) => err,
   )
   assert.ok(!(next instanceof Refused), `the AI's next call is refused before any tool, so it must log in again: ${next.message}`)
-  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('post/maths'), undefined, 'the post its key wrote counts for nothing')
-  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan'), undefined, 'nor the coach’s note')
-  say(`ended: the tutor's app ended its AI's connection; the mcp answered its next call 401 (${why.split('error_description=')[1]}), and the post and the note its keys wrote are gone from the host's view`)
+  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('post/maths')?.entry.key, tutor.key, 'the post its key wrote still counts')
+  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan')?.entry.key, coachKey, 'and so does the coach’s note')
+  for (const k of keys) {
+    const [o] = await write([s.host], [entry({ profile: k.address, key: k.key }, 'notes/after', { text: 'After the key ended. A test entry.' }, Date.now())])
+    assert.equal(o!.results[0]?.error, 'unlisted', `the host refuses a new entry by ${k.label}'s ended key`)
+  }
+  await waitFor('the index to read the tutor’s key ended, and still list its post', INDEX_WAIT, async () => {
+    const t = await profilePage(tutor.address)
+    const listed = (t.body?.profile?.keys as Body[] | undefined)?.find((k) => k.key === tutor.key)
+    return listed?.until !== undefined && t.body.posts.some((p: { address: string; listed: boolean }) => p.address === postAddress && p.listed) ? true : null
+  })
+  say(`ended: the tutor's app ended its AI's connection; the mcp answered its next call 401 (${why.split('error_description=')[1]}); the post and the note its keys wrote still count, on the host and at the index, and the host refused a new entry by either key`)
 
   // 12. A new device: the tutor's seed alone gives its Profiles folder, its two profiles and its stamp.
   const device = await App.find(tutor.seed, [s.host])
