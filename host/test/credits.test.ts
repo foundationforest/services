@@ -2,9 +2,10 @@
 // entry, a file and a delete cost, each counted as at least a kilobyte, at the rate of where it is
 // kept; an entry larger than any inbox entry, paid by the byte, as entries up to a file's size are;
 // a write refused with no balance, joining too, and leaving and taking down never; a file paid by a
-// folder that names it; an inbox entry's one credit, its price kept and the rest the recipient's;
-// a buy paid by a ticket, or from a folder's balance by its main key or an access key listed with
-// message, and paid once; the credit key made at the first start; and one end to end, a folder, an
+// folder that names it; an inbox entry paid by its sender's folder, by its bytes, signed over its
+// id by the folder's main key or an access key listed with message, and paid once; a buy paid by a
+// ticket, or from a folder's balance by its main key or an access key listed with message, and paid
+// once; the credit key made at the first start; and one end to end, a folder, an
 // entry and a file, read back. The plug's own tests are plug.test.ts and its neighbours, and the
 // standard's host check is check.test.ts.
 
@@ -15,10 +16,10 @@ import { join } from 'node:path'
 import { after, mock, test } from 'node:test'
 
 import { mainKey, newAccessKey, newSeed, openingHalf } from '@foundationforest/keys'
-import { type Body, type SignedEntry, base58, encodeEntry, encodeInbox, entry, fetchFile, fileOf, leave, readFolder, upload, write } from '@foundationforest/folders'
+import { type Body, type Payment, type SignedEntry, base58, encodeEntry, encodeInbox, entry, fetchFile, fileOf, leave, readFolder, upload, write } from '@foundationforest/folders'
 import { inboxEntry } from '@foundationforest/folders/locked'
 
-import { balancePayment, creditsPayment, inboxPayment } from '../client/client.ts'
+import { balancePayment, inboxPayment } from '../client/client.ts'
 import { DIRECTORY_PATH, MILLIONTHS } from '../src/credits.ts'
 import { type RunningHost, readConfig, startHost } from '../src/host.ts'
 import { buy, collect, keyOf, spend, sponsor } from './buyer.ts'
@@ -193,52 +194,49 @@ test('a file is paid by a folder whose current entry names it: the newest naming
   }
 })
 
-test('an inbox entry carries one credit: the host keeps its price, and the rest goes into the recipient folder’s balance', async () => {
-  const running = await start()
+test('an inbox entry is paid by its sender’s folder, by its bytes: signed over its id by the folder’s main key or an access key listed with message, once, and never by the recipient', async () => {
+  // Its host names itself, port and all: a payment signs the host's origin, as a credit names it.
+  const port = await freePort()
+  const running = await start({ PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, PORT: String(port) })
   try {
-    const me = await folder()
-    await fund(running, me.address, 1)
+    const [me, to, poor] = [await folder(), await folder(), await folder()]
+    const [messages, writes, ended] = [await newAccessKey(), await newAccessKey(), await newAccessKey()]
+    await fund(running, me.address, 1, running.url)
+    await fund(running, to.address, 1, running.url)
     const now = Date.now()
-    const profile = profileOf(running, { openKey: (await openingHalf(me.secret)).openKey })
-    assert.ok((await results(running, [entry(me, 'profile', profile, now)]))[0]!.ok)
-    const received = spending(running, me.address)
-    const letter = (text: string) => inboxEntry(me, me.address, { text }, Date.now(), profile)
-    const left = async (entries: Awaited<ReturnType<typeof letter>>[], payment?: string) => (await leave([running.url], entries, { payment: () => payment }))[0]!.results
+    const keys: Body[] = [{ key: messages.address, can: ['message'] }, { key: writes.address, can: ['write'] }, { key: ended.address, can: ['message'], until: now }]
+    assert.ok((await results(running, [entry(me, 'profile', profileOf(running, { keys }), now)]))[0]!.ok)
+    const profile = profileOf(running, { openKey: (await openingHalf(to.secret)).openKey })
+    assert.ok((await results(running, [entry(to, 'profile', profile, now)]))[0]!.ok)
+    const [spent, received] = [spending(running, me.address), spending(running, to.address)]
+    const letter = (text: string) => inboxEntry(me, to.address, { text }, Date.now(), profile)
+    const left = async (entries: Awaited<ReturnType<typeof letter>>[], payment?: Payment) => (await leave([running.url], entries, { payment }))[0]!.results
     const said = (r: { ok: boolean; error?: string; message?: string }[]) => r.map((x) => (x.ok ? 'ok' : `${x.error}: ${x.message}`))
+    const by = (key: Parameters<typeof inboxPayment>[0]) => inboxPayment(key)
 
-    const one = await letter('A note to my other devices.')
-    assert.match(said(await left([one]))[0]!, /^refused: an inbox entry here carries one credit, in the forest-payment header as `credits <credit> …`/, 'no credit, no inbox entry')
-    assert.match(said(await left([one], 'credits not-a-credit'))[0]!, /^refused: the credit for this inbox entry does not hold/)
+    const one = await letter('Is the coat still for sale?')
+    assert.match(said(await left([one]))[0]!, /^refused: an inbox entry here is paid from a folder's balance, in the forest-payment header as `balance <folder>.<key>.<signature> …`/, 'no payment, no inbox entry')
+    assert.match(said(await left([one], () => 'balance not-a-payment'))[0]!, /^refused: this inbox entry's payment is not signed/)
+    for (const [key, what] of [[writes, 'a key listed with write only'], [ended, 'a key listed with message that ended'], [poor, 'another folder’s main key']] as const) {
+      assert.match(said(await left([one], by({ profile: me.address, key })))[0]!, /^refused: this inbox entry's payment is not signed/, what)
+    }
+    assert.match(said(await left([one], (_host, body) => by(me)('http://127.0.0.1:1', body)))[0]!, /^refused: this inbox entry's payment is not signed/, 'signed for another host')
+    assert.equal(spent(), 0, 'nothing taken for any of them')
 
-    const [a, b, c] = await credits(running, 3)
-    assert.deepEqual(said(await left([one], creditsPayment([a!]))), ['ok'])
-    const kept = running.credits.entryPrice(Buffer.byteLength(encodeInbox(one)))
-    assert.ok(kept >= 3000 && kept < MILLIONTHS)
-    assert.equal(-received(), MILLIONTHS - kept, 'the recipient gets the credit, but for the entry’s price on the disk')
-    assert.match(said(await left([await letter('again')], creditsPayment([a!])))[0]!, /^refused: the credit for this inbox entry was spent already/)
+    assert.deepEqual(said(await left([one], by(me))), ['ok'], 'signed by its main key')
+    const price = running.credits.entryPrice(Buffer.byteLength(encodeInbox(one)))
+    assert.ok(price >= 3000 && price < MILLIONTHS / 10)
+    assert.deepEqual([spent(), received()], [price, 0], 'its sender paid its bytes, at the disk’s rate, and its recipient got nothing')
+    assert.deepEqual(said(await left([one], by(me))).map((r) => r.split(':')[0]), ['duplicate'])
+    assert.equal(spent(), 0, 'sent again, it is refused by its id before its price')
 
-    // One credit for each line, in order: a line refused before its price leaves its credit unspent.
-    const batch = await left([one, await letter('two'), await letter('three')], creditsPayment([b!, c!]))
-    assert.deepEqual(said(batch).map((r) => r.split(':')[0]), ['duplicate', 'ok', 'refused'])
-    assert.deepEqual(said(await left([await letter('four')], creditsPayment([b!]))), ['ok'], 'the duplicate’s credit, unspent, pays for another')
-  } finally {
-    await running.close()
-  }
-})
+    // One payment for each line, in order, here by an access key listed with message.
+    const [two, three] = [await letter('two'), await letter('three')]
+    assert.deepEqual(said(await left([two, three], by({ profile: me.address, key: messages }))), ['ok', 'ok'])
+    assert.equal(spent(), [two, three].reduce((sum, e) => sum + running.credits.entryPrice(Buffer.byteLength(encodeInbox(e))), 0))
 
-test('at a rate where an inbox entry costs more than its credit, the recipient gets nothing, never less', async () => {
-  const running = await start({ ENTRY_PER_KB: '1' })
-  try {
-    const me = await folder()
-    await fund(running, me.address, 3)
-    const profile = profileOf(running, { openKey: (await openingHalf(me.secret)).openKey })
-    assert.ok((await results(running, [entry(me, 'profile', profile, Date.now())]))[0]!.ok)
-    const held = balance(running, me.address)
-    const e = await inboxEntry(me, me.address, { text: 'More than a kilobyte, locked.' }, Date.now(), profile)
-    assert.ok(running.credits.entryPrice(Buffer.byteLength(encodeInbox(e))) > MILLIONTHS)
-    const [credit] = await credits(running, 1)
-    assert.deepEqual((await leave([running.url], [e], { payment: () => creditsPayment([credit!]) }))[0]!.results.map((r) => r.ok), [true])
-    assert.equal(balance(running, me.address), held)
+    const short = said(await left([await letter('four')], by(poor)))[0]!
+    assert.match(short, /^refused: this inbox entry costs 0\.0[0-9]+ credits, and the folder holds 0 here/, 'a folder that holds too little: the price and the balance')
   } finally {
     await running.close()
   }
@@ -302,28 +300,6 @@ test('a buy paid from a folder’s balance: by its main key or an access key its
     assert.equal(poor.got.status, 402, 'nor more than the folder holds')
     assert.match(JSON.parse(Buffer.from(poor.got.body).toString()).detail, /this buy costs 1 credit, and the folder holds 0\.997 here/)
     assert.equal(balance(running, me.address), 0.997)
-
-    // The standard's payment for inbox entries, from the client: a credit for each, bought from the
-    // folder's balance by its access key. Its host names itself, port and all, as its credits do.
-    const port = await freePort()
-    const named = await start({ PUBLIC_ORIGIN: `http://127.0.0.1:${port}`, PORT: String(port) })
-    try {
-      const to = await folder()
-      await fund(named, me.address, 2, named.url)
-      await fund(named, to.address, 1, named.url)
-      assert.ok((await results(named, [entry(me, 'profile', profileOf(named, { keys }), Date.now())]))[0]!.ok)
-      const profile = profileOf(named, { openKey: (await openingHalf(to.secret)).openKey })
-      assert.ok((await results(named, [entry(to, 'profile', profile, Date.now())]))[0]!.ok)
-      const from = { profile: me.address, key: messages }
-      const e = await inboxEntry(from, to.address, { text: 'Is the coat still for sale?' }, Date.now(), profile)
-      const received = spending(named, to.address)
-      const [took] = await leave([named.url], [e], { payment: inboxPayment(from) })
-      assert.deepEqual(took!.results.map((r) => r.ok), [true])
-      assert.equal(balance(named, me.address), 0.997, 'its sender paid one credit')
-      assert.equal(-received(), MILLIONTHS - named.credits.entryPrice(Buffer.byteLength(encodeInbox(e))), 'and its recipient got it, but for its price')
-    } finally {
-      await named.close()
-    }
   } finally {
     await running.close()
   }

@@ -2,9 +2,9 @@
 // address, with this host's payment for inbox entries: `SEED=<64 hex characters> npm run check-host
 // -- https://host.example`. As the standard's own script (standard/folders/scripts/check-host.ts),
 // it writes from check/a and check/b, of a new seed or of SEED's, whose folders a host that charges
-// must hold credits; and it pays for each inbox entry it leaves with one credit, bought from
-// check/b's balance at that host, signed by check/b's main key. Each check prints ok, unchecked
-// (what the host refused by its own choice stopped it) or FAILED; it exits 1 if any failed.
+// must hold credits; and it pays for each inbox entry it leaves from check/b's balance at that
+// host, signed by check/b's main key. Each check prints ok, unchecked (what the host refused by its
+// own choice stopped it) or FAILED; it exits 1 if any failed.
 
 import { fileURLToPath } from 'node:url'
 
@@ -12,7 +12,7 @@ import { type Payment, decodeInbox, hex } from '@foundationforest/folders'
 import { CHECK_LABELS, checkHost } from '@foundationforest/folders/check'
 import { mainKey } from '@foundationforest/keys'
 
-import { balancePayment, bought, creditsPayment, serviceAt } from './client/client.ts'
+import { inboxPayment } from './client/client.ts'
 
 const isInbox = (line: string) => {
   try {
@@ -24,17 +24,15 @@ const isInbox = (line: string) => {
 }
 
 /**
- * The check's payment: at a host that sells credits, for a request of inbox entries only, a credit
- * for each, bought from check/b's balance there; nothing for any other request, so a line the host
- * must refuse before its price wastes no credit.
+ * The check's payment: for a request of inbox entries only, each paid from check/b's balance there,
+ * signed by its main key; nothing for any other request, whose lines a host refuses before any
+ * price.
  */
 export async function checkPayment(seed: Uint8Array): Promise<Payment> {
-  const b = await mainKey(seed, CHECK_LABELS[1])
-  return async (host, body) => {
+  const pay = inboxPayment(await mainKey(seed, CHECK_LABELS[1]))
+  return (host, body) => {
     const lines = new TextDecoder().decode(body).split('\n').filter(Boolean)
-    if (!lines.length || !lines.every(isInbox)) return undefined
-    const service = await serviceAt(host)
-    return service ? creditsPayment(await bought(service, lines.length, (reference, n) => balancePayment(host, b, reference, n))) : undefined
+    return lines.length && lines.every(isInbox) ? pay(host, body) : undefined
   }
 }
 

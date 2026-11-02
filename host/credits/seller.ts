@@ -119,8 +119,8 @@ function readTicket(text: string): { sponsor: string; key: Uint8Array; credits: 
   return { sponsor, key, credits: Number(credits), signature: sig }
 }
 
-/** A balance payment's parts, as the client's `balancePayment` writes it: `<folder>.<key>.<signature>`; null for anything else. */
-function readBalance(text: string): { folder: string; key: string; signature: Uint8Array } | null {
+/** A balance payment's parts, as the client's `balancePayment` and `inboxPayment` write each: `<folder>.<key>.<signature>`; null for anything else. */
+export function readBalance(text: string): { folder: string; key: string; signature: Uint8Array } | null {
   const [folder = '', key = '', signature = '', ...rest] = text.split('.')
   const sig = bytesOf(signature, 'base64url', 64)
   if (rest.length || !bytesOf(folder, 'base58', 32) || !bytesOf(key, 'base58', 32) || !sig) return null

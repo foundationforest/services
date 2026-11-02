@@ -2,8 +2,8 @@
 // which chooses nothing of its own, passes every check; the whole host, credits and all, refuses a
 // fresh seed's first write by its own choice, so the check stops there unchecked and nothing fails;
 // and given a seed whose two folders hold credits, and the payment `npm run check-host` gives it
-// (check-host.ts), a credit for each inbox entry bought from check/b's balance, it passes every
-// check, the inbox's included.
+// (check-host.ts), each inbox entry paid from check/b's balance, it passes every check, the inbox's
+// included.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -51,7 +51,7 @@ test('the whole host: a fresh seed stops at its first write, refused for credits
     assert.equal(fresh[0]!.status, 'unchecked')
     assert.match(fresh[0]!.why!, /refused .* by its own choice: refused, .*credit/)
 
-    // check/a pays for its writes; check/b for its writes and a credit for each inbox entry it leaves.
+    // check/a pays for its writes; check/b for its writes and the inbox entries it leaves.
     const seed = newSeed()
     for (const [label, n] of [[CHECK_LABELS[0], 1], [CHECK_LABELS[1], 10]] as const) {
       const folder = (await mainKey(seed, label)).address
@@ -62,8 +62,8 @@ test('the whole host: a fresh seed stops at its first write, refused for credits
     }
     const folders = await Promise.all(CHECK_LABELS.map(async (label) => (await mainKey(seed, label)).address))
     const unpaid = await checkHost(running.url, { seed })
-    assert.deepEqual(unpaid.filter((r) => r.status === 'failed'), [], 'an inbox entry with no credit is refused by the host’s own choice')
-    assert.ok(unpaid.some((r) => r.status === 'unchecked' && /inbox entry .*by its own choice: refused, an inbox entry here carries one credit/.test(r.why ?? '')))
+    assert.deepEqual(unpaid.filter((r) => r.status === 'failed'), [], 'an inbox entry with no payment is refused by the host’s own choice')
+    assert.ok(unpaid.some((r) => r.status === 'unchecked' && /inbox entry .*by its own choice: refused, an inbox entry here is paid from a folder's balance/.test(r.why ?? '')))
     const before = folders.map((f) => running.credits.balance(f))
     assert.deepEqual(notOk(await checkHost(ORIGIN, { seed, payment: await checkPayment(seed) })), [])
     console.log(`# the check paid, check/a ${(before[0]! - running.credits.balance(folders[0]!)).toFixed(6)} credits, check/b ${(before[1]! - running.credits.balance(folders[1]!)).toFixed(6)}`)
