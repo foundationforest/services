@@ -15,6 +15,7 @@ import { RECIPES } from './facts.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
 import { SWEEP_EVERY_MS, errorKind, handler, sweep } from './server.ts'
 import { Store } from './store.ts'
+import { type Payments, StripeClient } from './stripe.ts'
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is mixed from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
@@ -31,6 +32,8 @@ export type Config = {
   gift?: Gift
   /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
   appOrigins: string[]
+  /** Stripe's key and the Price the ID check sells. Unset: the ID check is not for sale. */
+  stripe?: { secretKey: string; price: string }
   /** The one file; the verifier's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
   port: number
@@ -79,6 +82,15 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     const credits = { face: whole('FACE_CREDITS', env.FACE_CREDITS || '10', 0), id: whole('ID_CREDITS', env.ID_CREDITS || '100', 0) }
     if (credits.face > 0 || credits.id > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
   }
+  const price = env.STRIPE_ID_PRICE
+  if (price && !/^price_[A-Za-z0-9]+$/.test(price)) throw new Error('STRIPE_ID_PRICE is a Stripe Price: price_…')
+  let stripe: Config['stripe']
+  if (env.STRIPE_SECRET_KEY) {
+    // Never quoted: it is a secret.
+    if (!/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(env.STRIPE_SECRET_KEY)) throw new Error('STRIPE_SECRET_KEY is a Stripe secret key, sk_…, or a restricted one, rk_…')
+    if (!price) throw new Error('STRIPE_SECRET_KEY needs STRIPE_ID_PRICE, the Price the ID check sells')
+    stripe = { secretKey: env.STRIPE_SECRET_KEY, price }
+  }
   const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
   const faceModel = env.FACE_MODEL || 'sface'
   if (faceModel !== 'sface' && faceModel !== 'stand-in') throw new Error('FACE_MODEL is sface or stand-in')
@@ -95,6 +107,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     faceModel,
     gift,
     appOrigins,
+    stripe,
     databasePath: env.DATABASE_PATH || './data/verifier.sqlite',
     port: whole('PORT', env.PORT || '8080', 0),
   }
@@ -117,8 +130,9 @@ export type Verifier = {
 }
 
 /**
- * Starts the service. Tests and the sandbox run pass their own checks and embedder; otherwise it
- * talks to Didit, and loads the face models (or, with `FACE_MODEL=stand-in`, the stand-in).
+ * Starts the service. Tests and the sandbox run pass their own checks and embedder, and tests their
+ * own Stripe; otherwise it talks to Didit and, with a key, Stripe, and loads the face models (or,
+ * with `FACE_MODEL=stand-in`, the stand-in).
  */
 export async function startVerifier(
   config: Config,
@@ -126,6 +140,7 @@ export async function startVerifier(
     faceCheck?: FaceCheck
     idCheck?: FaceCheck
     embedder?: Embedder
+    payments?: Payments
     log?: (line: string) => void
     now?: () => number
   } = {},
@@ -140,6 +155,7 @@ export async function startVerifier(
   const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditFaceWorkflowId, check: 'face' })
   const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, check: 'id' })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
+  const payments = overrides.payments ?? (config.stripe && new StripeClient(config.stripe))
 
   const store = new Store(config.databasePath)
 
@@ -164,6 +180,7 @@ export async function startVerifier(
       about,
       gift,
       appOrigins: config.appOrigins,
+      payments,
       log: overrides.log,
       now: overrides.now,
     }),

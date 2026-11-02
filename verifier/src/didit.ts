@@ -44,7 +44,7 @@ export type Document = { firstName: string; lastName: string; fullName: string; 
 /** What the verifier reads from a session's decision. */
 export type Decision = {
   workflowId: string
-  /** The session's overall status: `Approved`, `Declined`, `In Review`, and so on. */
+  /** The session's overall status: `Approved`, `Declined`, `In Review`, `Expired`, `Abandoned`, and so on. */
   status: string
   /** One per liveness step the workflow ran, with that step's own status. */
   liveness: { status: string }[]
@@ -82,6 +82,8 @@ export const FACE_RETENTION_DAYS = 3650
 export type Refusal =
   | 'unknown_session'
   | 'wrong_workflow'
+  | 'declined'
+  | 'expired'
   | 'not_approved'
   | 'no_liveness'
   | 'liveness_not_passed'
@@ -104,14 +106,17 @@ function steps(list: { status: string }[], none: Refusal, failed: Refusal): Refu
 
 /**
  * What Didit's decision means to the verifier: a session on the check's own workflow; In Review, a
- * person at the foundation still to decide; anything else but approved, a refusal; and approved, every
- * liveness step passed and, for the ID check, every document step and every face match too. Null
- * means Didit passed it.
+ * person at the foundation still to decide; Declined, `declined`, and Expired or Abandoned (the person
+ * did not finish in time), `expired`: a session that will never pass, so the app starts a new one;
+ * anything else but approved, unfinished, `not_approved`; and approved, every liveness step passed
+ * and, for the ID check, every document step and every face match too. Null means Didit passed it.
  */
 export function judge(decision: Decision | null, workflowId: string, check: Check = 'face'): Refusal | 'in_review' | null {
   if (!decision) return 'unknown_session'
   if (decision.workflowId !== workflowId) return 'wrong_workflow'
   if (is(decision.status, 'in review')) return 'in_review'
+  if (is(decision.status, 'declined')) return 'declined'
+  if (is(decision.status, 'expired') || is(decision.status, 'abandoned')) return 'expired'
   if (!is(decision.status, 'approved')) return 'not_approved'
   return (
     steps(decision.liveness, 'no_liveness', 'liveness_not_passed') ??

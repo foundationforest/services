@@ -5,8 +5,10 @@ seed (the secret on your device that all your keys come from). Your profiles the
 verified without saying who you are, or which of your other profiles they go with. The Forest
 Foundation runs this copy, at https://verifier.forest.foundation. Anyone can sign stamps; the main
 way is a verifier like this one, and each reader decides which verifiers count. It keeps your stamp
-number, which check gave it, the stamp, and for the ID check a keyed hash of your name and birthday.
-Your face stays with Didit, its check provider. No key of yours, no money, no account.
+number, which check gave it, the stamp, for the ID check a keyed hash of your name and birthday, and
+of the ID check's payment a hash, never beside your stamp. Your face stays with Didit, its check
+provider, and how you paid with Stripe. The face check is free; the ID check is paid. No key of
+yours, no account.
 
 ## How it works
 
@@ -25,17 +27,21 @@ nothing here puts either on a chain.
 
 Both are Didit sessions. The app drives them; the verifier only asks Didit what each came to.
 
-| Step | Face check, free | ID check, free for now |
+| Step | Face check, free | ID check, paid |
 |---|---|---|
-| Open | `POST /face/session` opens a session on the face workflow and answers the page the person uses | `POST /id/session`, on the ID workflow |
+| Pay | | `POST /id/payment`, and the person pays on Stripe's page ([The ID check's payment](#the-id-checks-payment)) |
+| Open | `POST /face/session` opens a session on the face workflow and answers the page the person uses | `POST /id/session` with the payment, on the ID workflow |
 | The person | Didit checks for a live person and compares the face with every face it has seen | Didit also reads a government document and matches the live face to its photo |
-| Ask | The app sends the session and its stamp number to `POST /face/stamp` | `POST /id/stamp` |
+| Ask | The app sends the session and its stamp number to `POST /face/stamp` | `POST /id/stamp`, with the payment |
 | Approved | The verifier fetches the selfie, computes its embedding ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a stamp from the face key | Every document, liveness and face-match step passed too; then the fingerprint, and a stamp from the ID key |
 
 - **In Review** means Didit has seen the face before: the verifier answers `202 {"waiting":"review"}`,
   keeps nothing, and the app asks again later. A person at the foundation decides in Didit's
   console, so a second stamp number for one face is a person's call, not this code's.
-- **Anything else** (declined, unfinished) is refused. A refused or failed request uses nothing up.
+- **Declined** answers `403 declined`, and **Expired** or **Abandoned** (the person did not finish
+  in time) `403 expired`: the session will never pass, so the app opens a new one.
+- **Anything else unfinished** answers `403 not_approved`, and the app asks again once the person is
+  done. A refused or failed request uses nothing up.
 - **The fingerprint** is HMAC-SHA256 (a keyed hash), under the fingerprint key, of the standard's
   canonical JSON of `{birth, name}`: the name Didit reads, first and last, else the full name, in
   Unicode NFKC, lower case, one space between words; the birth date as `YYYY-MM-DD`. Kept next to
@@ -44,6 +50,30 @@ Both are Didit sessions. The app drives them; the verifier only asks Didit what 
   same person. Without the key, a guessed name and birthday cannot be tested against the file.
 - **`vendor_data`** on each session is a fresh random id after a prefix naming only the check, so it
   names nobody; Didit's face search compares a face with those under other `vendor_data`.
+
+### The ID check's payment
+
+The ID check is paid before its session opens, on a Stripe Checkout page the verifier makes. One
+payment gives one ID stamp, and up to three sessions to get it.
+
+1. The app sends `POST /id/payment` with a `returnUrl` on an origin in `APP_ORIGINS`, and gets the
+   payment's id (its Checkout Session's, `cs_…`) and Stripe's page. It keeps the id: Stripe sends
+   the person back to `returnUrl` as it is, paid or not, with no id in its address.
+2. The person pays on Stripe's page.
+3. The app sends `POST /id/session` with the payment. The first time, the verifier asks Stripe
+   whether that Checkout Session was paid and is one it made (its mark, `metadata.check`); if not,
+   `402 not_paid`, and the app asks again whenever it likes. Each session opened takes one of the
+   payment's three tries, and one Didit does not open gives its try back; after three,
+   `409 payment_used`.
+4. The app sends the payment again with `POST /id/stamp`. The first stamp it gives uses it up: no
+   more sessions and no more stamps from it (`409 payment_used`). A refused stamp uses nothing, and
+   a session sent again within its hour uses no payment.
+
+No webhook: the verifier asks Stripe when the app comes back, so nothing waits on Stripe's redirect.
+The payment sent with a stamp need not be the one that opened its session: each payment opens at
+most three sessions and gives at most one stamp, which is all the rule needs, so nothing ever ties a
+payment to a session or a stamp number. Without `STRIPE_SECRET_KEY`, all three routes answer
+`503 not_for_sale`.
 
 ### The stamp
 
@@ -120,7 +150,7 @@ JSON (one exact way of writing it); with gifts, also
 
 ### What it keeps
 
-One SQLite file (a database in a single file), six tables:
+One SQLite file (a database in a single file), seven tables:
 
 | Table | What | Why |
 |---|---|---|
@@ -129,13 +159,15 @@ One SQLite file (a database in a single file), six tables:
 | `to_delete` | The id of each session not yet deleted in Didit, its check, and when it was first signed | The hour, and the sweep. It goes once Didit has deleted it |
 | `fingerprints` | Each fingerprint the ID check signed for, with the stamp number | One name and birth date, one stamp number's ID stamp |
 | `gifts`, `id_gifts` | Each stamp number given its face stamp's gift, or its ID stamp's, with a hash of the buy | One gift a person from each check; the same buy gets the same ticket |
+| `payments` | The SHA-256 of each payment that opened an ID session, how many sessions it opened, and whether it gave a stamp | One payment, three sessions at most and one ID stamp |
 
 Nothing else: no face, no embedding, no name, no birth date, no document, no address, none of the
-fields beside a stamp. Facts are a one-way hash: without the exact embedding, which no new photo
-gives again, no guess can be tested against them. A session id is in clear, with a time, only in
-`to_delete`, for the hour or so until Didit has deleted it. Deleted bytes are overwritten
-(`secure_delete`). The stamp number links the tables, so whoever also holds what Didit keeps of those
-sessions can tell which face went with which name.
+fields beside a stamp, and of a payment nothing of who paid or with what, no amount, no time, and
+nothing beside a session or a stamp number. Facts are a one-way hash: without the exact embedding,
+which no new photo gives again, no guess can be tested against them. A session id is in clear, with
+a time, only in `to_delete`, for the hour or so until Didit has deleted it. Deleted bytes are
+overwritten (`secure_delete`). The stamp number links the tables, so whoever also holds what Didit
+keeps of those sessions can tell which face went with which name.
 
 ### The face model
 
@@ -183,25 +215,32 @@ them, and pays nothing: the host lists its sponsor key and counts what its ticke
 | Route | Body | Answer |
 |---|---|---|
 | `GET /` | | `200`, [its keys](#its-keys) |
-| `POST /face/session`, `POST /id/session` | none, `{}`, or `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}` |
+| `POST /face/session` | none, `{}`, or `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}` |
 | `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked; `202 {"waiting": "review"}` |
-| `POST /id/stamp` | The same, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked; `202 {"waiting": "review"}` |
+| `POST /id/payment` | `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Stripe sends the person after, paid or not | `201 {"payment", "url"}` |
+| `POST /id/session` | `{"payment": "<its id>"}`, and may add `"returnUrl"`, as for a face session | `201 {"sessionId", "url"}` |
+| `POST /id/stamp` | `{"sessionId", "stampNumber", "payment"}`, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked; `202 {"waiting": "review"}` |
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face", "id"}`, each a stamp or `null`; `404 not_found` if neither |
 
 A stamp number is decimal text, as the standard's `stampNumberOf` gives it: no sign, no leading zero,
-below BN254's scalar order. A body with any other field is refused. CORS is open to any origin.
-Errors are `{"error": "<code>"}`:
+below BN254's scalar order. A payment's id is its Checkout Session's, `cs_test_…` or `cs_live_…`. A
+body with any other field is refused. CORS is open to any origin. Errors are `{"error": "<code>"}`:
 
 - **`400`:** `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`,
-  `expected_exactly_sessionId_and_stampNumber`, `expected_exactly_stampNumber`, `bad_session_id`,
-  `bad_stamp_number`, `bad_return_url`.
-- **`403`, the check does not count:** `unknown_session`, `wrong_workflow`, `not_approved`,
-  `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`, `no_face_match`,
-  `face_match_not_passed`, `no_face`, `no_document_data` (no name, or no real birth date),
-  `duplicate_document`.
-- **Others:** `404 not_found` (no route, or no stamp); `409 session_used` (given to another stamp
-  number, or its hour is over); `405 post_only`, `405 get_only`; `413 too_large` (over 4 KB);
-  `502 face_check_unavailable`; `500 internal`.
+  `expected_exactly_payment`, `expected_exactly_payment_and_returnUrl`,
+  `expected_exactly_sessionId_and_stampNumber`,
+  `expected_exactly_sessionId_and_stampNumber_and_payment`, `expected_exactly_stampNumber`,
+  `bad_session_id`, `bad_stamp_number`, `bad_return_url`, `bad_payment`.
+- **`402`:** `not_paid` (not paid, or no payment Stripe has).
+- **`403`, the check does not count:** `unknown_session`, `wrong_workflow`, `declined`, `expired`,
+  `not_approved`, `no_liveness`, `liveness_not_passed`, `no_document`, `document_not_passed`,
+  `no_face_match`, `face_match_not_passed`, `no_face`, `no_document_data` (no name, or no real birth
+  date), `duplicate_document`.
+- **`409`:** `session_used` (given to another stamp number, or its hour is over), `payment_used`
+  (it gave its stamp, or opened its three sessions).
+- **Others:** `404 not_found` (no route, or no stamp); `405 post_only`, `405 get_only`;
+  `413 too_large` (over 4 KB); `502 face_check_unavailable`, `502 payment_unavailable` (Stripe);
+  `503 not_for_sale` (no Stripe); `500 internal`.
 
 ## How we run it
 
@@ -215,7 +254,9 @@ Errors are `{"error": "<code>"}`:
 | `DIDIT_ID_WORKFLOW_ID` | required | The ID check's workflow; the same | "Forest ID", `bfbdb912-d2f5-41d8-827c-4304e8209d24` |
 | `DIDIT_BASE_URL` | `https://verification.didit.me` | For a stand-in Didit | the default |
 | `FACE_MODEL` | `sface` | Or `stand-in`, with `DIDIT_BASE_URL` on loopback | `sface` |
-| `APP_ORIGINS` | none: no `returnUrl` | Where Didit may send a person back, by origin, comma-separated | the Forest app, https://app.forest.foundation |
+| `APP_ORIGINS` | none: no `returnUrl` | Where Didit and Stripe may send a person back, by origin, comma-separated | the Forest app, https://app.forest.foundation |
+| `STRIPE_SECRET_KEY` | none: the ID check is not for sale | Stripe's secret key, `sk_…`, or a restricted one, `rk_…`. A secret | a test-mode key, for "Forest" at Stripe, added by hand in Railway |
+| `STRIPE_ID_PRICE` | required with the key | The Stripe Price the ID check sells, `price_…` | "Forest ID check", $5, `price_1UXRbDILoxkbMfX4cfwRfCOI` |
 | `HOST_URL` | none: no gift | The host whose credits the gifts pay for, `https://<host>` | https://host.forest.foundation |
 | `FACE_CREDITS`, `ID_CREDITS` | `10`, `100` | How many with a face stamp, and an ID stamp; 0 for none | the defaults, a cent of writes each |
 | `DATABASE_PATH` | `./data/verifier.sqlite` | The one file; the seed file is made beside it | on its volume, in a directory of its own |
@@ -224,13 +265,14 @@ Errors are `{"error": "<code>"}`:
 It refuses to start without a required variable, so never without Didit: every stamp it signs counts
 with every reader that trusts its keys, and a stand-in that passed everyone would sign for anyone. It
 also refuses a seed file that is not a seed (quoting none of it), `FACE_MODEL=stand-in` with a Didit
-off this machine, and a host or app that is not an origin.
+off this machine, a host or app that is not an origin, and a Stripe key or Price that is not one
+(quoting no key), or a key without a Price.
 
 ### Didit
 
 - **The foundation pays per check:** about $0.15 a face check, up to $0.30 an ID check on Didit's
   list. The cost is capped at Didit by a prepaid balance with no auto-refill, so there is no session
-  limit here. A price for the ID check, and how it is paid, is this verifier's to set later.
+  limit here. The ID check's price is in [Stripe](#stripe).
 - **"Forest face":** one passive liveness step, face search on. A face seen before, even with another
   name or document, goes to review. A screen, a virtual camera, an injected frame, an outside camera
   or more than one face is declined.
@@ -242,28 +284,51 @@ off this machine, and a host or app that is not an origin.
 
 **The consent screen.** Before the ID check the app shows this, word for word:
 
-> Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its
-> provider, to make sure each person is checked once. Didit keeps photos of your ID and what it
-> reads on it (your name, date of birth and document number), your selfie and a short video while
-> it checks. An hour after your stamp is signed, Forest deletes them at Didit, which keeps only a
-> template of your face, for up to ten years, so it can tell if the same face comes back. Forest
-> keeps none of this: only a one-way fingerprint of your name and date of birth next to your stamp
-> number, so the same person is not checked twice, and the stamp it signed you, a one-way hash of
-> what the check saw, so it can hand it back if you lose it. It gives you a stamp, with your name,
-> date of birth and country beside it for your own records; a profile that shows it says only that
-> you were checked.
+> The check costs $5, paid to the Open Forest Foundation through Stripe, and covers up to three
+> tries. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way
+> hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation,
+> checks your face and a government ID with Didit, its provider, to make sure each person is checked
+> once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document
+> number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest
+> deletes them at Didit, which keeps only a template of your face, for up to ten years, so it can
+> tell if the same face comes back. Forest keeps none of this: only a one-way fingerprint of your
+> name and date of birth next to your stamp number, so the same person is not checked twice, and the
+> stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it.
+> It gives you a stamp, with your name, date of birth and country beside it for your own records; a
+> profile that shows it says only that you were checked.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so three things
 sit outside this code: a processing agreement with Didit, the consent screen above, and Didit's
 retention setting. Paperwork and settings; nothing here does them.
 
+### Stripe
+
+- **The price:** $5 an ID check, the Price in `STRIPE_ID_PRICE`, in US dollars, paid at Stripe to
+  the business the key belongs to. Stripe takes its fee from it.
+- **Three tries a payment:** a real person's ID check fails mostly to glare, blur or a moved face,
+  which a second or third try fixes. Three keep Didit's share, up to $0.30 a session, under a fifth
+  of the price after Stripe's fee; more would mostly help someone trying fake documents on Didit.
+- **How a person pays:** Stripe's `card` method, with Apple Pay, Google Pay and Link on top of it
+  (`payment_method_types: card`), each as the key's payment method settings at Stripe allow. Ours
+  has `card`, Apple Pay and Link on; Google Pay shows as unavailable, a setting of Stripe's own.
+- **What Stripe sees:** what the person pays with, their email, the name, country and, for some
+  countries, postal code it asks for, their device's network address, and the app's page they come
+  back to. The verifier tells it only the Price and its mark, `check: id`: never a stamp number, a
+  Didit session or anything from the ID. It reads back only whether the payment was paid, and the
+  mark.
+- **A test-mode key** takes only Stripe's test cards, which anyone can look up, so it charges
+  nobody, and a payment made under it is unknown to a live key: `not_paid` there.
+- **A live key** is a restricted one with only Checkout Sessions: Write, all the verifier uses, for
+  a business at Stripe that is the foundation's, with a live Price in `STRIPE_ID_PRICE`.
+
 ### Public, secret, kept
 
 - **Public:** this code, these settings, its name and its two keys.
-- **Secret:** its seed and `DIDIT_API_KEY`.
+- **Secret:** its seed, `DIDIT_API_KEY` and `STRIPE_SECRET_KEY`.
 - **Kept, not published:** [What it keeps](#what-it-keeps), the stamp numbers given a gift among it.
-- **Logged:** its port, that it made a seed, an error's kind, and at a sweep how many deletions Didit
-  did not answer and what Didit did with a face it kept no template of. Never a session.
+- **Logged:** its port, that it made a seed, an error's kind, and at a sweep how many deletions
+  Didit did not answer and what Didit did with a face it kept no template of. Never a session or a
+  payment.
 
 ### The image and the commands
 
@@ -292,20 +357,25 @@ DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox           
 DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox -- review_x  # or Didit's review_…, decline_… scenarios
 ```
 
-It runs both checks on the sandbox's two workflows, never reads `DIDIT_API_KEY`, refuses when the two
-are the same, and keeps its own seed and file in `data/sandbox/`.
+It runs both checks on the sandbox's two workflows, never reads `DIDIT_API_KEY`, refuses when the
+two are the same, and keeps its own seed and file in `data/sandbox/`. With `STRIPE_SECRET_KEY`,
+`STRIPE_ID_PRICE` and `APP_ORIGINS` set, the ID check is paid in Stripe's test mode, with a test
+card; it refuses a live key.
 
-`test/` covers, against a stand-in Didit, a real SQLite file and real HTTP: both checks and review,
-verifications made from the stamps and checked against the published keys, the facts vectors, stamps
-asked back, the seed, the sweep, the raw file, the face models on three portraits, both gifts'
-tickets taken by the host's own seller, and the fetch's retries.
+`test/` covers, against a stand-in Didit and a stand-in Stripe, a real SQLite file and real HTTP:
+both checks and review, the ID check's payment and its tries, verifications made from the stamps and
+checked against the published keys, the facts vectors, stamps asked back, the seed, the sweep, the
+raw file, the face models on three portraits, both gifts' tickets taken by the host's own seller,
+the Stripe client's requests, and the fetch's retries.
 
 ## Promises
 
 - **It keeps which check session gave which stamp number, and the stamp it signed, and nothing else
-  of a check.** No face, no embedding, no name, no birth date, no document, and no time or session id
-  in clear once a session is deleted in Didit; deleted bytes are overwritten. A test reads the raw
-  file for names, birth dates, embeddings, references and session ids.
+  of a check; of a payment, only a hash, how many sessions it opened and whether it gave a stamp,
+  never beside a session or a stamp number.** No face, no embedding, no name, no birth date, no
+  document, and no time or session id in clear once a session is deleted in Didit; deleted bytes are
+  overwritten. A test reads the raw file for names, birth dates, embeddings, references, payment ids
+  and session ids.
 - **It never logs a request, an address, a session, a stamp number or a stamp, and never writes down
   an address.** It logs an error's kind, never its message.
 - **It takes no key of the person's, has no sign-ups, and nothing it keeps ties a person to a
@@ -319,7 +389,8 @@ tickets taken by the host's own seller, and the fetch's retries.
 
 ## Limits
 
-- **Two people with one name and birthday:** the second is refused the ID check, with no review.
+- **Two people with one name and birthday:** the second pays, and is refused the ID check, with no
+  review.
 - **One person whose documents spell the name differently** can hold two ID stamps.
 - **One person per verifier rests on Didit's face search;** a face approved from review is signed for
   whatever stamp number the person brings.
@@ -341,6 +412,9 @@ tickets taken by the host's own seller, and the fetch's retries.
 - **The face test is three NASA portraits,** two of one person: it shows the model tells them apart,
   not how often it errs.
 - **Railway's own request logs** hold each request's client address and path.
+- **What Stripe keeps and Railway's logs** both hold a person's network address and a time, so
+  together they can tie a payment to the request that used it.
+- **A refund in Stripe** leaves its payment open: the verifier asks only whether it was paid.
 
 ## FAQ
 

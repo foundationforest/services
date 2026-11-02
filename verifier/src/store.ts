@@ -1,4 +1,4 @@
-// The verifier's one file, six tables:
+// The verifier's one file, seven tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
@@ -15,9 +15,15 @@
 //                  was given for, so a person gets one, and the same buy asked again gets the same
 //                  ticket
 //   id_gifts       the same, for the ID stamp's gift
+//   payments       each payment (stripe.ts) that opened an ID session: the SHA-256 of its id, how many
+//                  sessions it opened, and whether it gave a stamp, so it opens at most ID_TRIES and
+//                  gives one stamp. Nothing of it sits beside a session or a stamp number: a stamp may
+//                  take any payment that opened a session and gave no stamp yet, so nothing needs to
+//                  know which session a payment opened
 //
 // Nothing else: no face, no embedding, no name, no birth date, no document, none of the fields beside a
-// stamp, and of a gift only a hash of its buy. A session id is kept as its hash; in clear, and with a time, only in `to_delete`, until
+// stamp, of a gift only a hash of its buy, and of a payment nothing of who paid or with what, no
+// amount and no time. A session id is kept as its hash; in clear, and with a time, only in `to_delete`, until
 // Didit has deleted the session, so then the file names no Didit session and holds no time.
 // The stamp number links the tables: a person's fingerprint sits next to the same stamp number as the
 // hashes of the sessions signed for it, face sessions included. Deleted bytes are overwritten
@@ -35,7 +41,15 @@ export function sessionHash(sessionId: string): Uint8Array {
   return createHash('sha256').update(sessionId, 'utf8').digest()
 }
 
-export type Remembered = 'ok' | 'session_used' | 'duplicate_document'
+/** What the file keeps of a payment's id: its SHA-256, so the file lists no payment. */
+export function paymentHash(payment: string): Uint8Array {
+  return createHash('sha256').update(payment, 'utf8').digest()
+}
+
+/** How many ID sessions one payment opens: the first try and two more. */
+export const ID_TRIES = 3
+
+export type Remembered = 'ok' | 'session_used' | 'duplicate_document' | 'not_paid' | 'payment_used'
 
 /** What the file keeps of a stamp, beside its stamp number and key: its facts and its signature. */
 export type KeptStamp = { facts: bigint; signature: StampSignature }
@@ -54,6 +68,10 @@ export class Store {
   readonly #addToDelete: StatementSync
   readonly #due: StatementSync
   readonly #deleted: StatementSync
+  readonly #payment: StatementSync
+  readonly #addPayment: StatementSync
+  readonly #tries: StatementSync
+  readonly #stamped: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -68,6 +86,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL) WITHOUT ROWID;
     `)
     this.#session = this.#db.prepare('SELECT stamp_number FROM sessions WHERE hash = ?')
     this.#fingerprint = this.#db.prepare('SELECT stamp_number FROM fingerprints WHERE fingerprint = ?')
@@ -81,6 +100,11 @@ export class Store {
     this.#addToDelete = this.#db.prepare('INSERT OR IGNORE INTO to_delete (session_id, kind, signed_at) VALUES (?, ?, ?)')
     this.#due = this.#db.prepare('SELECT session_id, kind FROM to_delete WHERE signed_at <= ? ORDER BY signed_at')
     this.#deleted = this.#db.prepare('DELETE FROM to_delete WHERE session_id = ?')
+    this.#payment = this.#db.prepare('SELECT tries, stamped FROM payments WHERE hash = ?')
+    this.#addPayment = this.#db.prepare('INSERT INTO payments (hash, tries, stamped) VALUES (?, 1, 0)')
+    this.#tries = this.#db.prepare('UPDATE payments SET tries = tries + ? WHERE hash = ? AND stamped = 0')
+    // Stamped, a payment opens no more sessions, and the file forgets how many it took.
+    this.#stamped = this.#db.prepare(`UPDATE payments SET stamped = 1, tries = ${ID_TRIES} WHERE hash = ?`)
   }
 
   /** Whether this session gave a stamp. */
@@ -91,9 +115,10 @@ export class Store {
   /**
    * Whether a stamp for `stampNumber` may be signed from this session: the session gave no other stamp
    * number, and, if it gave this one, was first signed after `since` (within its hour, and not yet
-   * deleted); and the person's fingerprint, if there is one, was signed for no other.
+   * deleted); for a session that gave no stamp yet, the payment, if one is asked, opened a session and
+   * gave no stamp; and the person's fingerprint, if there is one, was signed for no other.
    */
-  check(input: { sessionId: string; stampNumber: bigint; since: number; fingerprint?: Uint8Array }): Remembered {
+  check(input: { sessionId: string; stampNumber: bigint; since: number; fingerprint?: Uint8Array; payment?: Uint8Array }): Remembered {
     const other = (kept: Record<string, unknown> | undefined) => kept !== undefined && fromBytes32(kept.stamp_number as Uint8Array) !== input.stampNumber
     const kept = this.#session.get(sessionHash(input.sessionId))
     if (other(kept)) return 'session_used'
@@ -101,6 +126,10 @@ export class Store {
       // The same stamp number again: only within the session's hour, while Didit still has it.
       const signedAt = this.#signedAt.get(input.sessionId)?.signed_at as number | undefined
       if (signedAt === undefined || signedAt <= input.since) return 'session_used'
+    } else if (input.payment) {
+      const paid = this.#payment.get(input.payment)
+      if (!paid) return 'not_paid'
+      if (paid.stamped) return 'payment_used'
     }
     if (input.fingerprint && other(this.#fingerprint.get(input.fingerprint))) return 'duplicate_document'
     return 'ok'
@@ -108,14 +137,18 @@ export class Store {
 
   /**
    * `check`, and when it passes, the session, the stamp and the fingerprint kept with the stamp
-   * number, in one transaction. Two requests can both pass every check before this while each waits
-   * for Didit; only the first to get here keeps anything, and the second is checked against it.
+   * number, and the payment marked stamped, in one transaction. Two requests can both pass every check
+   * before this while each waits for Didit; only the first to get here keeps anything, and the second
+   * is checked against it. A session sent again within its hour uses no payment.
    */
-  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; stamp: KeptStamp; fingerprint?: Uint8Array }): Remembered {
+  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; stamp: KeptStamp; fingerprint?: Uint8Array; payment?: Uint8Array }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
+      const again = this.holds(input.sessionId)
       const outcome = this.check(input)
       if (outcome === 'ok') {
+        // Nothing ties the payment to the session or the stamp number: it is only marked.
+        if (input.payment && !again) this.#stamped.run(input.payment)
         const number = toBytes32(input.stampNumber)
         this.#addSession.run(sessionHash(input.sessionId), number, input.kind)
         // The first stamp a key signs for a stamp number stays: a later check for that number, by
@@ -156,6 +189,36 @@ export class Store {
   /** Forgets a session's id and time, once Didit has deleted it. */
   deleted(sessionId: string): void {
     this.#deleted.run(sessionId)
+  }
+
+  /** Whether this payment opened a session: Stripe said it was paid, and need not be asked again. */
+  knowsPayment(payment: Uint8Array): boolean {
+    return this.#payment.get(payment) !== undefined
+  }
+
+  /**
+   * One of the payment's tries, for a session about to open: `ok`, or `payment_used` once it gave its
+   * stamp or opened ID_TRIES sessions. The first try keeps the payment, as paid.
+   */
+  takeTry(payment: Uint8Array): 'ok' | 'payment_used' {
+    this.#db.exec('BEGIN IMMEDIATE')
+    try {
+      const paid = this.#payment.get(payment)
+      let outcome: 'ok' | 'payment_used' = 'ok'
+      if (!paid) this.#addPayment.run(payment)
+      else if (paid.stamped || (paid.tries as number) >= ID_TRIES) outcome = 'payment_used'
+      else this.#tries.run(1, payment)
+      this.#db.exec('COMMIT')
+      return outcome
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec('ROLLBACK')
+      throw error
+    }
+  }
+
+  /** A try back, for a session Didit did not open. */
+  giveBackTry(payment: Uint8Array): void {
+    this.#tries.run(-1, payment)
   }
 
   /** Marks this stamp number's gift from this check given for this buy: `given` the first time, `again` for the same buy, `other` for another. */
