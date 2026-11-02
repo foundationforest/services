@@ -6,9 +6,9 @@
 // the inbox, each message opened and its sender checked, one from before the login left unopened;
 // write, public against the market (the markets package's checkEntry), refused naming the field, a
 // file named and not, a delete, locked anywhere but profile and key/…; message, which the recipient
-// opens, signed by the access key; once the profile entry no longer lists the key, the host
-// refusing its next write and its entries counting for nothing; and once the person's app removes
-// it, its note and access entry gone with it. No answer, in the whole run, holds one of the
+// opens, signed by the access key; once the profile entry ends the key, the host refusing its next
+// write, this copy its next message, and what it wrote still counting; and once the person's app
+// ends it, its note and access entry gone with it. No answer, in the whole run, holds one of the
 // person's own addresses.
 
 import assert from 'node:assert/strict'
@@ -241,25 +241,30 @@ describe('acting for the person', () => {
     }
   })
 
-  test("the key taken out of the tutor's profile entry alone: my_profiles shows no switch, the host refuses its next write, and what it wrote counts for nothing", async () => {
+  test("the key ended in the tutor's profile entry alone: my_profiles shows no switch, the host refuses its next write, no message goes, and what it wrote still counts", async () => {
     await call('write', { label: TUTOR, path: 'post/physics', body: lesson('Physics, from the AI.') })
     assert.equal((await at(TUTOR, 'post/physics'))?.key, tutorKey)
-    // A profile entry by the main key that no longer lists it, while the connection still holds it.
+    // A profile entry by the main key that lists it with until, its own time, while the connection still holds it.
     const main = await mainKey(w.seed, TUTOR)
     const view = await readFolder([w.host], w.own[TUTOR]!, Date.now())
     const body = view.current.get('profile')!.entry.body!
-    await write([w.host], [entry(main, 'profile', { ...body, keys: (body.keys as Body[]).filter((k) => k.key !== tutorKey) }, nextTime(Date.now(), view, 'profile'))])
+    const time = nextTime(Date.now(), view, 'profile')
+    const keys = (body.keys as Body[]).map((k) => (k.key === tutorKey ? { key: k.key, can: k.can, until: time } : k))
+    await write([w.host], [entry(main, 'profile', { ...body, keys }, time)])
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: [] }] })
     assert.match((await call('write', { label: TUTOR, path: 'post/chemistry', body: lesson('Chemistry.') })).refused, /no host took it: .*\(unlisted: /)
-    assert.equal(await at(TUTOR, 'post/physics'), null, 'its post no longer counts')
-    assert.equal(await at(TUTOR, 'post/maths'), null)
+    assert.match((await call('message', { label: TUTOR, to: w.stranger.address, body: { text: 'x' } })).refused, /may not message as tutoring\/tutor: .*or the key has ended/)
+    for (const path of ['post/physics', 'post/maths']) assert.equal((await at(TUTOR, path))?.key, tutorKey, `${path}, which it wrote before it ended, still counts`)
   })
 
-  test("the key removed by the person's app: its note and its access entry go with it, and the login acts as the tutor no more", async () => {
-    await w.app.removeKey(TUTOR, tutorKey)
-    assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted with it')
+  test("the key ended by the person's app: still listed, its note and its access entry gone, the login acts as the tutor no more, and what it wrote still counts", async () => {
+    const before = (await w.app.keys(TUTOR)).find((k) => k.key === tutorKey)!.until
+    await w.app.endKey(TUTOR, tutorKey)
+    assert.equal((await w.app.keys(TUTOR)).find((k) => k.key === tutorKey)?.until, before, 'listed still, its until as it was')
+    assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted')
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }] })
     assert.match((await call('write', { label: TUTOR, path: 'post/chemistry', body: lesson('Chemistry.') })).refused, /tutoring\/tutor is not a profile this login acts in/)
+    assert.equal((await at(TUTOR, 'post/physics'))?.key, tutorKey)
   })
 
   test("no answer in this file holds one of the person's own addresses", async () => {

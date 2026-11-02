@@ -23,8 +23,9 @@
 //   back the pointer to the folder, locked to that open key alone;
 // - adds a profile to a connection, and ends one, each found from the seed alone, by opening the
 //   notes of every profile its Profiles folder lists;
-// - removes an access key from a profile's entry, its entry in the connection its note names, and
-//   its note, each found by opening them;
+// - ends an access key: lists it in its profile entry with `until`, that profile entry's own time,
+//   and no open key, so what it wrote by then still counts and nothing more it signs does; and
+//   deletes its entry in the connection its note names, and its note, each found by opening them;
 // - on a new device, finds the person's profiles and stamps from the seed alone, by opening every
 //   entry its Profiles folder holds.
 //
@@ -155,8 +156,8 @@ export class App {
     return main.address
   }
 
-  /** The access keys `label`'s profile entry lists now. */
-  async keys(label: string): Promise<Array<{ key: string; open?: string; can: string[] }>> {
+  /** The access keys `label`'s profile entry lists now, ended ones among them. */
+  async keys(label: string): Promise<View['keys']> {
     return (await this.folder(label)).view.keys
   }
 
@@ -166,12 +167,13 @@ export class App {
     return (await opened(view, 'key', (await openingHalf(main.secret)).identity)).find((n) => n.body.key === address)
   }
 
-  /** `label`'s profile entry, changed by `change`, written by its main key. */
-  private async changeProfile(label: string, change: (body: Body) => Body): Promise<void> {
+  /** `label`'s profile entry, changed by `change`, given the new one's time, and written by its main key at it. */
+  private async changeProfile(label: string, change: (body: Body, time: number) => Body): Promise<void> {
     const { main, view } = await this.folder(label)
     const body = view.current.get('profile')?.entry.body
     if (!body) throw new Error(`${label} has no profile entry`)
-    await wrote(view.hosts, [entry(main, 'profile', change(body), nextTime(Date.now(), view, 'profile'))])
+    const time = nextTime(Date.now(), view, 'profile')
+    await wrote(view.hosts, [entry(main, 'profile', change(body, time), time)])
   }
 
   /**
@@ -259,16 +261,25 @@ export class App {
     await wrote(c.view.hosts, [await this.grant(c, label, can, await openKeyOf(c.connector))])
   }
 
-  /** The connection at `address` ended: its connection entry deleted first, then each access key it holds removed (removeKey). */
+  /** The connection at `address` ended: its connection entry deleted first, then each access key it holds ended (endKey). */
   async endConnection(address: string): Promise<void> {
     const c = await this.connection(address)
     await wrote(c.view.hosts, [entry(c.key, 'connection', null, nextTime(Date.now(), c.view, 'connection'))])
-    for (const a of c.access) await this.removeKey(a.body.label as string, (await accessKey(b64u.decode(a.body.key as string))).address)
+    for (const a of c.access) await this.endKey(a.body.label as string, (await accessKey(b64u.decode(a.body.key as string))).address)
   }
 
-  /** The access key at `address` taken out of `label`'s profile entry; its entry in the connection its note names, and its note, deleted. */
-  async removeKey(label: string, address: string): Promise<void> {
-    await this.changeProfile(label, (body) => ({ ...body, keys: ((body.keys as Body[] | undefined) ?? []).filter((k) => k.key !== address) }))
+  /**
+   * The access key at `address` ended in `label`'s profile entry: listed with `until`, the time of
+   * the profile entry that ends it, and without its open key, as nothing new is locked to it (a key
+   * that ended already keeps its own `until`); then its entry in the connection its note names, and
+   * its note, deleted. What it wrote by then still counts; a host takes nothing more it signs.
+   */
+  async endKey(label: string, address: string): Promise<void> {
+    const ended = (k: Body, until: number): Body => {
+      const { open: _, ...kept } = k
+      return { ...kept, until }
+    }
+    await this.changeProfile(label, (body, time) => ({ ...body, keys: ((body.keys as Body[] | undefined) ?? []).map((k) => (k.key === address && k.until === undefined ? ended(k, time) : k)) }))
     const note = await this.note(label, address)
     if (!note) return
     if (typeof note.body.connection === 'string') {
