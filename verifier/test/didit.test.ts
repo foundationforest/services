@@ -226,7 +226,10 @@ test("what Didit's decision means to the verifier, in order", () => {
   for (const status of ['In Review', 'IN_REVIEW', 'in review']) {
     assert.equal(judge({ ...ok, status, liveness: [{ status: 'In Review' }] }, WORKFLOW), 'in_review', status)
   }
-  for (const status of ['Declined', 'Not Started', 'In Progress', 'Expired', 'Abandoned', '']) {
+  // Declined, or Expired or Abandoned: a session that will never pass, each with its own code.
+  for (const status of ['Declined', 'DECLINED']) assert.equal(judge({ ...ok, status }, WORKFLOW), 'declined', status)
+  for (const status of ['Expired', 'EXPIRED', 'Abandoned', 'ABANDONED']) assert.equal(judge({ ...ok, status }, WORKFLOW), 'expired', status)
+  for (const status of ['Not Started', 'NOT_STARTED', 'In Progress', 'Resubmitted', '']) {
     assert.equal(judge({ ...ok, status }, WORKFLOW), 'not_approved', status)
   }
   assert.equal(judge({ ...ok, liveness: [] }, WORKFLOW), 'no_liveness')

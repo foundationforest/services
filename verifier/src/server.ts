@@ -8,21 +8,34 @@
 //   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
 //                                                    person back to returnUrl, an app's own page, when
 //                                                    its origin is in APP_ORIGINS
-//   POST /id/session    {} or {returnUrl}         -> 201 {sessionId, url}   an ID check, the same way
 //   POST /face/stamp    {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the face key
 //                       with a gift, also {gift: "<the host buy's reference>"}
 //                                                 -> 200 {stamp, gift: {ticket} or {error}}
-//   POST /id/stamp      {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the ID key,
-//                                                    and its gift asked the same way
+//   POST /id/payment    {returnUrl}               -> 201 {payment, url}     a Stripe Checkout page for one
+//                                                    ID check (stripe.ts); Stripe sends the person back
+//                                                    to returnUrl, on an origin in APP_ORIGINS
+//   POST /id/session    {payment} or {payment, returnUrl}
+//                                                 -> 201 {sessionId, url}   an ID check, opened as a face
+//                                                    check is, for a paid payment with a try left
+//   POST /id/stamp      {sessionId, stampNumber, payment}
+//                                                 -> 200 {stamp}            a stamp from the ID key, for a
+//                                                    payment that gave none yet, and its gift asked as
+//                                                    the face stamp's is
 //   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
 //                                                    a stamp or null, its own fields only; 404
 //                                                    `not_found` when none was signed for it
 //
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
 // in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
-// 403 a check that does not count (the code says why), 404 `not_found`, 409 a session already used
-// for another stamp number, 413 a body over 4 KB, 502 Didit not answering. A refused or failed
+// 402 a payment not paid, 403 a check that does not count (the code says why; `declined` and
+// `expired` mean the session will never pass, so the app starts a new one), 404 `not_found`, 409 a
+// session already used for another stamp number, or a payment used up, 413 a body over 4 KB, 502
+// Didit or Stripe not answering, 503 the ID check not for sale (no Stripe). A refused or failed
 // request uses nothing up: the same session can be sent again.
+//
+// One payment opens up to ID_TRIES ID sessions (store.ts) and gives one ID stamp. The payment sent
+// with a stamp need not be the one that opened its session: each opens at most ID_TRIES and gives at
+// most one, which is all the rule needs, so nothing ever ties a payment to a session.
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
@@ -42,7 +55,8 @@ import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
 import type { Ed25519Key } from './seed.ts'
-import type { Store } from './store.ts'
+import { type Store, paymentHash } from './store.ts'
+import { PAYMENT, type Payments } from './stripe.ts'
 
 const MAX_BODY = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -100,6 +114,12 @@ function returnUrlIn(origins: string[], value: string): string {
   throw new HttpError(400, 'bad_return_url')
 }
 
+/** A payment's id, as Stripe gave it: a Checkout Session's. */
+function paymentOf(value: string): string {
+  if (!PAYMENT.test(value)) throw new HttpError(400, 'bad_payment')
+  return value
+}
+
 /** A request for a stamp: a Didit session id, and the person's stamp number at this verifier. */
 function stampRequest(input: Record<string, string>): { sessionId: string; stampNumber: bigint } {
   if (!UUID.test(input.sessionId!)) throw new HttpError(400, 'bad_session_id')
@@ -148,6 +168,8 @@ export type VerifierDeps = {
   gift?: { gift: Gift; sponsor: Ed25519Key }
   /** The origins a `returnUrl` may be on: the apps' own. Empty: none is taken. */
   appOrigins?: string[]
+  /** Stripe, which the ID check is paid through. Unset: the ID check is not for sale. */
+  payments?: Payments
   log?: (line: string) => void
   /** The clock, in ms; unset, the system's. */
   now?: () => number
@@ -208,6 +230,51 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     }
   }
 
+  /** Stripe, or `not_for_sale`: the ID check is sold only through it. */
+  function forSale(): Payments {
+    if (!deps.payments) throw new HttpError(503, 'not_for_sale')
+    return deps.payments
+  }
+
+  /** A Stripe Checkout page for one ID check, sending the person back to `returnUrl`, an app's page. */
+  async function pay(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const payments = forSale()
+    const returnUrl = returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!)
+    try {
+      return [201, await payments.checkout(returnUrl)]
+    } catch {
+      throw new HttpError(502, 'payment_unavailable')
+    }
+  }
+
+  /**
+   * An ID session, for a payment: Stripe is asked only the first time, whether it was paid; then each
+   * session takes one of its tries, and a session Didit does not open gives its try back.
+   */
+  async function openId(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const payments = forSale()
+    const input = fields(body, 'returnUrl' in body ? ['payment', 'returnUrl'] : ['payment'])
+    const callback = input.returnUrl === undefined ? undefined : returnUrlIn(deps.appOrigins ?? [], input.returnUrl)
+    const payment = paymentOf(input.payment!)
+    const hash = paymentHash(payment)
+    if (!store.knowsPayment(hash)) {
+      let paid: boolean
+      try {
+        paid = await payments.paid(payment)
+      } catch {
+        throw new HttpError(502, 'payment_unavailable')
+      }
+      if (!paid) throw new HttpError(402, 'not_paid')
+    }
+    kept(store.takeTry(hash))
+    try {
+      return [201, await id.check.createSession({ callback })]
+    } catch {
+      store.giveBackTry(hash)
+      throw new HttpError(502, 'face_check_unavailable')
+    }
+  }
+
   /** What Didit decided for this session, if it passed: otherwise waiting, or the refusal. */
   async function decided(c: CheckDeps, sessionId: string) {
     let decision
@@ -243,7 +310,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   /** The store's answer, as the refusal it is. */
   function kept(outcome: ReturnType<Store['check']>): void {
-    if (outcome === 'session_used') throw new HttpError(409, outcome)
+    if (outcome === 'session_used' || outcome === 'payment_used') throw new HttpError(409, outcome)
+    if (outcome === 'not_paid') throw new HttpError(402, outcome)
     if (outcome !== 'ok') throw new HttpError(403, outcome)
   }
 
@@ -259,11 +327,15 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return { ticket }
   }
 
-  /** A stamp request's session and stamp number, and the gift's buy, asked only of a check that gives one. */
-  function stampAsked(check: Check, body: Record<string, unknown>): { sessionId: string; stampNumber: bigint; gift?: { reference: unknown } } {
+  /**
+   * A stamp request's session and stamp number, and `more` fields, and the gift's buy, asked only of a
+   * check that gives one.
+   */
+  function stampAsked(check: Check, body: Record<string, unknown>, more: string[] = []): { sessionId: string; stampNumber: bigint; input: Record<string, string>; gift?: { reference: unknown } } {
     const { gift: reference, ...rest } = body
     const asked = (deps.gift?.gift.credits[check] ?? 0) > 0 && 'gift' in body
-    return { ...stampRequest(fields(asked ? rest : body, ['sessionId', 'stampNumber'])), ...(asked && { gift: { reference } }) }
+    const input = fields(asked ? rest : body, ['sessionId', 'stampNumber', ...more])
+    return { ...stampRequest(input), input, ...(asked && { gift: { reference } }) }
   }
 
   /** A stamp from the face key, for this stamp number, from a face check Didit approved. */
@@ -285,23 +357,25 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
-   * A stamp from the ID key, for this stamp number, from an ID check Didit approved, when the person's
-   * fingerprint was signed for no other stamp number.
+   * A stamp from the ID key, for this stamp number, from an ID check Didit approved, for a payment that
+   * gave no stamp yet, when the person's fingerprint was signed for no other stamp number.
    */
   async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
-    const { sessionId, stampNumber, gift } = stampAsked('id', body)
-    kept(store.check({ sessionId, stampNumber, since: since() }))
+    forSale()
+    const { sessionId, stampNumber, input, gift } = stampAsked('id', body, ['payment'])
+    const payment = paymentHash(paymentOf(input.payment!))
+    kept(store.check({ sessionId, stampNumber, since: since(), payment }))
 
     const decision = await decided(id, sessionId)
     const who = person(decision.document)
     if (!who) throw new HttpError(403, 'no_document_data')
     const print = fingerprint(deps.fingerprintKey, who)
-    kept(store.check({ sessionId, stampNumber, since: since(), fingerprint: print }))
+    kept(store.check({ sessionId, stampNumber, since: since(), fingerprint: print, payment }))
     const embedded = await embedding(id, decision.faceImage)
     const model = embedder.model
     const facts = idFacts(model, embedded, who)
     const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
-    kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print }))
+    kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print, payment }))
     return [200, { stamp: stampToJson(stamp), ...(gift && { gift: giveGift('id', stampNumber, gift.reference) }) }]
   }
 
@@ -324,7 +398,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   const routes: Record<string, Route> = {
     '/face/session': (body) => open(face, body),
     '/face/stamp': faceStamp,
-    '/id/session': (body) => open(id, body),
+    '/id/payment': pay,
+    '/id/session': openId,
     '/id/stamp': idStamp,
     '/stamp': stampBack,
   }
