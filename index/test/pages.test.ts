@@ -1,8 +1,10 @@
 // The pages: the four JSON answers the mcp reads, every field they gave kept and the fields added
 // beside them, each entry's time on a profile's page, each page drawn from its JSON twin alone, the
-// JSON-LD every page carries, a post's own page and its twin, its photos linked at its profile
-// entry's first host, the apps a page links to for messaging a profile, the profile page's order
-// and its fold, search's filters and sort, and every URL the files for AI agents name.
+// JSON-LD every page carries, the header and footer, the font served here and nothing asked of
+// another site, a post's own page and its twin, its facts without its file fields, its photos linked
+// at its profile entry's first host, the apps a page links to for messaging a profile, the profile
+// page's order and its folds, the numbers only in a fold, the market page's sections, the About
+// page, search's filters, sort and form, and every URL the files for AI agents name.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
@@ -16,12 +18,13 @@ import { b64u, base58 } from '@foundationforest/folders'
 
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
-import { fieldsOf, photosOf } from '../src/pages/common.ts'
+import { fieldsOf, inWords, photosOf } from '../src/pages/common.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
 import { post as postPage, type PostPage } from '../src/pages/post.ts'
 import { profile as profilePage, type ProfilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
+import { about } from '../src/pages/about.ts'
 import { draw, esc, type Page } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 import { at, index, listsDir, verifier, MARKETS, page, post, profile, publishProfile, startHost, TEST_APPS, twin } from './world.ts'
@@ -40,27 +43,30 @@ const times = new Map<string, number>()
 
 before(async () => {
   host = await startHost()
-  for (const [name, label] of Object.entries({ a: 'tutoring/tutor', b: 'tutoring/tutor', c: 'tutoring/tutor', s1: 'tutoring/student', s2: 'tutoring/student', seller: 'clothing/seller' })) {
+  for (const [name, label] of Object.entries({ a: 'tutoring/tutor', b: 'tutoring/tutor', c: 'tutoring/tutor', s1: 'tutoring/student', s2: 'tutoring/student', seller: 'clothing/seller', repairer: 'home-repair/repairer' })) {
     people[name] = await profile(label, [by])
   }
   people.uncounted = await profile('tutoring/tutor')
   for (const [name, p] of Object.entries(people)) await publishProfile(host.url, p, name === 'seller' ? { hosts: [PHOTOS, host.url] } : {})
-  const { a, b, c, s1, s2, seller, uncounted } = people as { [k: string]: (typeof people)[string] }
+  const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
     at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' }, contact: 'https://wa.me/34600000000' }),
-    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
+    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true }, contact: 'http://example.com/maths/' }),
     at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
-    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
+    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'], contact: 'mailto:s1@example.com' }),
     // A place that is an area alone, with no point.
     at(seller!, 'post/coat', {
       description: 'A wool coat, worn twice.',
       kind: 'coat',
+      condition: 'like-new',
       price: { amount: '40', currency: 'EUR' },
       location: { area: 'Madrid' },
       photos: COAT,
       files: COAT.map((sha256, n) => ({ sha256, type: 'image/jpeg', size: 1000 + n })),
       contact: 'seller@example.com',
     }),
+    // A file field named pastWork, not photos: the facts leave it out by its type.
+    at(repairer!, 'post/taps', { description: 'Leaks and taps fixed.', repairs: ['plumbing'], place: { area: 'Seville' }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
     at(uncounted!, 'post/u', { description: 'Maths, uncounted.' }),
     at(s1!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a`, text: 'Very clear.' }),
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
@@ -92,12 +98,13 @@ const addressOf = (name: string) => people[name]!.key.address
 const mainOf = (html: string) => /<main>[\s\S]*<\/main>/.exec(html)![0]
 
 test('the four answers the mcp reads, in their shapes: every field they gave, and those added beside them', async () => {
-  const home = (await twin<{ index: string; markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number } }> }>(i, '/index.json')).body
+  const home = (await twin<{ index: string; markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: string } }> }>(i, '/index.json')).body
   assert.deepEqual(keysOf(home), ['index', 'lists', 'markets'])
   assert.equal(home.index, i.address)
-  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string; roles: Array<{ role: string }> }> }
-  // Each market as the directory gives it, and, added, how many posts each role has listed.
-  assert.deepEqual(home.markets.map(({ listed: _, ...m }) => m), directory.markets.map((m) => ({ name: m.name, description: m.description, roles: m.roles.map((r) => r.role) })))
+  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string; roles: Array<{ role: string; posts: string }> }> }
+  // Each market as the directory gives it, and, added, how many posts each role has listed and each role's word for its posts.
+  assert.deepEqual(home.markets.map(({ listed: _, words: __, ...m }) => m), directory.markets.map((m) => ({ name: m.name, description: m.description, roles: m.roles.map((r) => r.role) })))
+  assert.deepEqual(home.markets.map((m) => m.words), directory.markets.map((m) => Object.fromEntries(m.roles.map((r) => [r.role, r.posts]))))
   const listed = Object.fromEntries(home.markets.map((m) => [m.name, m.listed]))
   assert.deepEqual(listed.tutoring, { tutor: 3, student: 1 })
   assert.deepEqual(listed.clothing, { seller: 1, buyer: 0 })
@@ -117,8 +124,11 @@ test('the four answers the mcp reads, in their shapes: every field they gave, an
     for (const c of r.checks as object[]) assert.deepEqual(keysOf(c), ['key', 'label', 'verifier'])
   }
 
-  const s = (await twin<{ index: string; total: number; results: Array<{ [k: string]: unknown }> }>(i, '/search.json?q=maths')).body
-  assert.deepEqual(keysOf(s), ['index', 'results', 'total'])
+  const s = (await twin<{ index: string; total: number; results: Array<{ [k: string]: unknown }>; query: unknown; markets: unknown }>(i, '/search.json?q=maths&km=&offset=0')).body
+  // Added beside them: the filters as given, an empty one left out, and every market's name, for the form.
+  assert.deepEqual(keysOf(s), ['index', 'markets', 'query', 'results', 'total'])
+  assert.deepEqual(s.query, { q: 'maths', offset: '0' })
+  assert.deepEqual(s.markets, directory.markets.map((m) => m.name))
   for (const r of s.results) {
     assert.deepEqual(keysOf(r), RESULT)
     assert.deepEqual(keysOf(r.post as object), both(POST, POST_ADDED))
@@ -175,6 +185,7 @@ test("each post, review, vouch and report on a profile's page gives its entry's 
 test("every page is drawn from its twin's object, and its JSON-LD passes schema.org's vocabulary", async () => {
   const pages: Array<[string, Page<never>]> = [
     ['/', home as Page<never>],
+    ['/about', about as Page<never>],
     ['/markets/tutoring', market as Page<never>],
     ['/markets/tennis-matches', market as Page<never>],
     ['/markets/clothing', market as Page<never>],
@@ -186,22 +197,54 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
     [`/profiles/${people.a!.key.address}/post/a`, postPage as Page<never>],
     [`/profiles/${people.seller!.key.address}/post/coat`, postPage as Page<never>],
     [`/profiles/${people.uncounted!.key.address}/post/u`, postPage as Page<never>],
+    [`/profiles/${people.repairer!.key.address}/post/taps`, postPage as Page<never>],
   ]
+  const fonts = new Set<string>()
   for (const [path, module] of pages) {
     const served = await page(i, path)
     assert.equal(served.status, 200, path)
     const [bare, query] = path.split('?')
     const o = (await twin<never>(i, `${bare === '/' ? '/index' : bare}.json${query ? `?${query}` : ''}`)).body
-    assert.equal(served.text, draw(module, o, BASE, `${BASE}${path}`, i.address), path)
+    assert.equal(served.text, draw(module, o, BASE, `${BASE}${path}`), path)
     const ld = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(served.text)![1]!
     assert.deepEqual(validateJsonLd(JSON.parse(ld)), [], path)
-    // No script but the JSON-LD; the Forest mark in the header; the key in the footer.
+    // No script but the JSON-LD; the Forest mark and About in the header; the footer's one line,
+    // without the index's address.
     assert.equal(served.text.match(/<script/g)!.length, 1, path)
-    assert.match(served.text, /<header><a class="home" href="https:\/\/index\.test\.example\/"><svg class="mark"[^>]*>.*<\/svg>Forest index<\/a>/, path)
-    for (const words of ['Verified by face, or by face and ID', 'Rated 9.2 by 14', 'A new profile starts at half its uniqueness', "Each profile is one person in one market and role, and nothing here links one person's profiles."]) {
-      assert.ok(/<footer>[\s\S]*<\/footer>/.exec(served.text)![0].includes(words), `${path}: ${words}`)
-    }
+    assert.match(served.text, /<header><a class="home" href="https:\/\/index\.test\.example\/"><svg class="mark"[^>]*>.*<\/svg>Forest index<\/a><a href="https:\/\/index\.test\.example\/about">About<\/a><\/header>/, path)
+    const twinUrl = `${BASE}${bare === '/' ? '/index' : bare}.json${query ? `?${esc(query)}` : ''}`
+    assert.equal(/<footer>[\s\S]*<\/footer>/.exec(served.text)![0], `<footer><p>Run by the Forest Foundation · <a href="${BASE}/about">About</a> · <a href="${twinUrl}">JSON</a></p></footer>`, path)
+    // Nothing asked of another site: no stylesheet or script by link, and the style names only the font here.
+    assert.ok(!/<link rel="stylesheet"|<script src/.test(served.text), path)
+    const style = /<style>([\s\S]*?)<\/style>/.exec(served.text)![1]!
+    const named = [...style.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1]!)
+    assert.ok(named.length > 0 && named.every((u) => u.startsWith('/fonts/')), `${path}: ${named.join(' ')}`)
+    for (const u of named) fonts.add(u)
   }
+  // Every file the style names is served here, as the font it is.
+  for (const u of fonts) {
+    const res = i.pages.handle(new Request(`${BASE}${u}`))
+    assert.equal(res.status, 200, u)
+    assert.equal(res.headers.get('content-type'), 'font/woff2', u)
+    assert.equal(Buffer.from(await res.arrayBuffer()).subarray(0, 4).toString(), 'wOF2', u)
+  }
+  assert.ok([...fonts].some((u) => u.includes('latin')))
+  assert.equal((await page(i, '/fonts/nowhere.woff2')).status, 404)
+  assert.equal((await page(i, '/fonts/../package.json')).status, 404)
+})
+
+test('trust and uniqueness only in a fold or on About; a row shows the shield and the chip, or New', async () => {
+  const outsideFolds = (html: string) => mainOf(html).replace(/<details>[\s\S]*?<\/details>/g, '')
+  for (const path of ['/', '/markets/tutoring', '/markets/clothing', '/search?q=maths', `/profiles/${addressOf('a')}`, `/profiles/${addressOf('a')}/post/a`, `/profiles/${addressOf('uncounted')}`]) {
+    const html = outsideFolds((await page(i, path)).text)
+    assert.ok(!/trust|uniqueness/i.test(html), path)
+  }
+  const tutors = mainOf((await page(i, '/markets/tutoring')).text)
+  // a, rated 9.0 by two, verified by face: its shield, outlined, and its chip; c, rated by no one: New.
+  assert.ok(tutors.includes(`<span class="aside"><svg class="icon shield" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Verified by face"><title>Verified by face</title>`))
+  assert.ok(tutors.includes('<span class="chip">9.0 ★ · 2</span></span></a>'))
+  const rowOf = (html: string, url: string) => new RegExp(`<a class="row post-row" href="${url}">.*?</a>`).exec(html)![0]
+  assert.ok(rowOf(tutors, `${BASE}/profiles/${addressOf('c')}/post/c`).endsWith('<span class="new">New</span></span></a>'))
 })
 
 test("search: words, market, role, a place, an area alone, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
@@ -248,6 +291,7 @@ test('the files for AI agents: every URL of this index they name answers', async
 test('the sitemap, robots.txt, and what is not here', async () => {
   const sitemap = (await page(i, '/sitemap.xml')).text
   assert.ok(sitemap.includes(`<loc>${BASE}/profiles/${people.a!.key.address}</loc>`))
+  assert.ok(sitemap.includes(`<loc>${BASE}/about</loc>`))
   // Every listed post, and no other.
   for (const listed of [`${addressOf('a')}/post/a`, `${addressOf('seller')}/post/coat`, `${addressOf('s1')}/post/need`]) assert.ok(sitemap.includes(`<loc>${BASE}/profiles/${listed}</loc>`), listed)
   assert.ok(!sitemap.includes(people.uncounted!.key.address))
@@ -255,6 +299,7 @@ test('the sitemap, robots.txt, and what is not here', async () => {
   assert.equal((await page(i, '/markets/knitting')).status, 404)
   assert.equal((await page(i, `/profiles/${base58.encode(randomBytes(32))}.json`)).status, 404)
   assert.equal((await page(i, '/nowhere')).status, 404)
+  for (const path of ['/about/more', '/about/more.json', '/search/more']) assert.equal((await page(i, path)).status, 404, path)
   for (const path of [`/profiles/${addressOf('a')}/post/nowhere`, `/profiles/${addressOf('a')}/post/nowhere.json`, `/profiles/${addressOf('a')}/posts/a`, `/profiles/${addressOf('a')}/post`, `/profiles/${addressOf('a')}/post/a/more`]) {
     assert.equal((await page(i, path)).status, 404, path)
   }
@@ -264,11 +309,11 @@ test('the sitemap, robots.txt, and what is not here', async () => {
   assert.equal(head.headers.get('access-control-allow-origin'), '*')
 })
 
-test("a post's page and its twin: its fields in its market's order, who posted it, and how to reach them", async () => {
+test("a post's page and its twin: its fields in its market's order with their types, who posted it, and how to reach them", async () => {
   const a = addressOf('a')
   const { status, body: o } = await twin<PostPage>(i, `/profiles/${a}/post/a.json`)
   assert.equal(status, 200)
-  assert.deepEqual(keysOf(o), ['checks', 'fields', 'index', 'market', 'message', 'post', 'profile', 'role', ...SHOWN].sort())
+  assert.deepEqual(keysOf(o), both(['checks', 'fields', 'index', 'market', 'message', 'post', 'profile', 'role', ...SHOWN], ['types']))
   assert.deepEqual(keysOf(o.post), both([...POST, 'listed', 'time'], POST_ADDED))
   assert.deepEqual([o.index, o.profile, o.market, o.role, o.post.address, o.post.url, o.post.listed], [i.address, a, 'tutoring', 'tutor', `${a}/post/a`, `${BASE}/profiles/${a}/post/a`, true])
   // The same profile, as its own page shows it.
@@ -276,8 +321,10 @@ test("a post's page and its twin: its fields in its market's order, who posted i
   assert.deepEqual([o.checks, o.ratings, o.trust, o.uniqueness, o.message], [p.checks, p.ratings, p.trust, p.uniqueness, p.message])
   assert.deepEqual(o.post.body, p.posts.find((x) => x.address === `${a}/post/a`)!.body)
   // The market's preview first, then the rest of its post fields in its order.
-  const tutoring = JSON.parse(readFileSync(join(MARKETS, 'markets/tutoring.json'), 'utf8')) as { post: object; preview: string[] }
+  const tutoring = JSON.parse(readFileSync(join(MARKETS, 'markets/tutoring.json'), 'utf8')) as { post: { [name: string]: { type: string } }; preview: string[] }
   assert.deepEqual(o.fields, [...tutoring.preview, ...Object.keys(tutoring.post).filter((f) => !tutoring.preview.includes(f))])
+  // Each field's type, as its market names it.
+  assert.deepEqual(o.types, Object.fromEntries(Object.entries(tutoring.post).map(([name, f]) => [name, f.type])))
   // A market with no preview: the markets manual's, description, price, then its first place field.
   const cleaning = (await twin<{ market: Market }>(i, '/markets/home-cleaning.json')).body.market
   assert.ok(!('preview' in cleaning))
@@ -292,20 +339,45 @@ test("a post's page and its twin: its fields in its market's order, who posted i
     assert.ok(n >= 0, text)
     return n
   }
-  const order = ['<h1>30 USD per hour · Maths and physics, in Madrid.</h1>', '<dt>Subjects</dt><dd>maths, physics</dd>', '<dt>Description</dt>', '<dt>Price</dt><dd>30 USD per hour</dd>', '<dt>Place</dt><dd>Madrid</dd>', 'Posted by <a href', '<h2>How to reach them</h2>', 'Contact, as they gave it: <a href="https://wa.me/34600000000" rel="nofollow ugc">https://wa.me/34600000000</a>', `Message this profile from a Forest app: <a href="https://app.test.example/message?to=${a}">Forest app</a>.`]
+  // A back link to its market; the description's first line, the price under it; the facts, which
+  // the description and the price are not among; who posted it, in a row; the contact, then the app.
+  const order = [
+    `<a class="back" href="${BASE}/markets/tutoring">`,
+    '<h1>Maths and physics, in Madrid.</h1><p class="price">30 USD per hour</p></div>',
+    '<dl class="facts"><div><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
+    '<div><dt>Place</dt><dd>Madrid</dd></div>',
+    `<h2>Posted by</h2><a class="row" href="${BASE}/profiles/${a}"><svg class="icon shield"`,
+    '<span class="grow"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></span><span class="chip">9.0 ★ · 2</span>',
+    '<h2>How to reach them</h2><a class="button" href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000</a>',
+    `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
+    '<details><summary>What these mean',
+    `<p>Its profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`,
+  ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
-  assert.ok(!html.includes('<dt>Contact</dt>'))
-  assert.ok(html.includes(`Posted by <a href="${BASE}/profiles/${a}">tutoring tutor `))
-  assert.ok(html.includes('Verified by face · Rated 9.0 by 2 <span class="nums">trust'))
+  for (const text of ['<dt>Contact</dt>', '<dt>Description</dt>', '<dt>Price</dt>']) assert.ok(!html.includes(text), text)
+  // One green button on the page, the first app's.
+  assert.equal(mainOf(html).match(/class="[^"]*primary/g)!.length, 1)
 
-  // An email address is a mailto link; a post that is not listed has its page, saying why.
-  assert.ok((await page(i, `/profiles/${addressOf('seller')}/post/coat`)).text.includes('<a href="mailto:seller@example.com" rel="nofollow ugc">seller@example.com</a>'))
+  // A link's label has no scheme and no trailing slash; an email address is a button to write to
+  // it, labelled with the address alone, with or without its mailto:. A post that is not listed has
+  // its page, saying why.
+  assert.ok((await page(i, `/profiles/${addressOf('b')}/post/b`)).text.includes('<a class="button" href="http://example.com/maths/" rel="nofollow ugc">example.com/maths</a>'))
+  assert.ok((await page(i, `/profiles/${addressOf('seller')}/post/coat`)).text.includes('<a class="button" href="mailto:seller@example.com" rel="nofollow ugc">seller@example.com</a>'))
+  assert.ok((await page(i, `/profiles/${addressOf('s1')}/post/need`)).text.includes('<a class="button" href="mailto:s1@example.com" rel="nofollow ugc">s1@example.com</a>'))
   const u = await twin<PostPage>(i, `/profiles/${addressOf('uncounted')}/post/u.json`)
   assert.deepEqual([u.status, u.body.post.listed, u.body.post.why], [200, false, 'its profile does not count here'])
-  assert.match((await page(i, `/profiles/${addressOf('uncounted')}/post/u`)).text, /<p class="no">Not listed: its profile does not count here\.<\/p>[\s\S]*Not verified here · No reviews yet/)
+  assert.match((await page(i, `/profiles/${addressOf('uncounted')}/post/u`)).text, /<p class="red">Not listed: its profile does not count here\.<\/p>[\s\S]*<span class="new">Not verified here<\/span>/)
+
+  // The facts leave out every field its market types file, whatever it is called: the repairer's
+  // past work is a photo, and its licences a fact.
+  const taps = (await twin<PostPage>(i, `/profiles/${addressOf('repairer')}/post/taps.json`)).body
+  assert.deepEqual([taps.post.listed, taps.types.pastWork, taps.post.photos], [true, 'file', [`${host.url}/v1/files/${COAT[0]}`]])
+  const tapsHtml = (await page(i, `/profiles/${addressOf('repairer')}/post/taps`)).text
+  assert.ok(!tapsHtml.includes('<dt>Past work</dt>') && !tapsHtml.includes('<dt>Files</dt>'))
+  assert.ok(tapsHtml.includes('<div><dt>Licences</dt><dd>Gas</dd></div>'))
 
   // Every place that shows the post links to its page.
-  for (const where of ['/markets/tutoring', '/search?q=maths', `/profiles/${a}`]) assert.ok((await page(i, where)).text.includes(`<a href="${BASE}/profiles/${a}/post/a">`), where)
+  for (const where of ['/markets/tutoring', '/search?q=maths', `/profiles/${a}`]) assert.ok((await page(i, where)).text.includes(`<a class="row post-row" href="${BASE}/profiles/${a}/post/a">`), where)
   // Its JSON-LD: the Offer at the post's own page.
   const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)
   assert.deepEqual([ld['@graph'][0]['@type'], ld['@graph'][0].mainEntity['@type'], ld['@graph'][0].mainEntity.url], ['ItemPage', 'Offer', `${BASE}/profiles/${a}/post/a`])
@@ -329,12 +401,17 @@ test("photos: each file a post's fields name, linked at its profile entry's firs
   const html = (await page(i, `/profiles/${seller}/post/coat`)).text
   for (const link of links) assert.ok(html.includes(`<img src="${link}" alt="A wool coat, worn twice." loading="lazy">`), link)
   for (const text of ['<dt>Photos</dt>', '<dt>Files</dt>', 'a file (', `<dd>${COAT[0]}`]) assert.ok(!html.includes(text), text)
-  assert.ok(html.includes('<dt>Kind</dt><dd>coat</dd>'))
-  // A card shows the first.
+  // A choice's value in words, as the app writes it.
+  assert.ok(html.includes('<div><dt>Kind</dt><dd>Coat</dd></div>'))
+  assert.ok(html.includes('<div><dt>Condition</dt><dd>Like new</dd></div>'))
+  // The first large, the rest small under it.
+  assert.ok(html.includes(`<a class="photo" href="${links[0]}"><img src="${links[0]}"`))
+  assert.ok(html.includes(`<div class="tiles"><a href="${links[1]}"><img src="${links[1]}"`))
+  // A row shows the first, 48px, its text empty since the row's says it.
   for (const where of ['/markets/clothing', '/search?q=coat', `/profiles/${seller}`]) {
-    const card = mainOf((await page(i, where)).text)
-    assert.ok(card.includes(`<img src="${links[0]}" alt="A wool coat, worn twice." loading="lazy">`), where)
-    assert.ok(!card.includes(links[1]!), where)
+    const row = mainOf((await page(i, where)).text)
+    assert.ok(row.includes(`<img class="thumb" src="${links[0]}" alt="" loading="lazy">`), where)
+    assert.ok(!row.includes(links[1]!), where)
   }
   // The JSON-LD's Offer carries the same links.
   const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)
@@ -358,7 +435,7 @@ test('the apps a page links to for messaging a profile: lists/apps.json, none wi
     const a = addressOf('a')
     assert.deepEqual((await twin<ProfilePage>(none, `/profiles/${a}.json`)).body.message, [])
     assert.deepEqual((await twin<PostPage>(none, `/profiles/${a}/post/a.json`)).body.message, [])
-    for (const path of [`/profiles/${a}`, `/profiles/${a}/post/a`]) assert.ok(!(await page(none, path)).text.includes('Message this profile'), path)
+    for (const path of [`/profiles/${a}`, `/profiles/${a}/post/a`]) assert.ok(!(await page(none, path)).text.includes('Message in the'), path)
   } finally {
     await none.close()
   }
@@ -375,37 +452,123 @@ test('the apps a page links to for messaging a profile: lists/apps.json, none wi
   for (const apps of bad) await assert.rejects(index({ ...keysList, apps }), /^Error: lists\/apps\.json: /, JSON.stringify(apps))
 })
 
-test("the profile page, for a buyer: what it is and shows, how to message it, its posts and the reviews it got; the rest in one fold", async () => {
+test("the profile page, for a buyer: its name and shield, how it is verified and its chip, the message button, its posts and the reviews it got; then two folds", async () => {
   const a = addressOf('a')
   const html = mainOf((await page(i, `/profiles/${a}`)).text)
   const o = (await twin<ProfilePage>(i, `/profiles/${a}.json`)).body
-  const fold = html.indexOf('<details><summary>Everything this index read about this profile</summary>')
-  const end = html.indexOf('</details>')
-  assert.ok(fold > 0 && end > fold)
+  const meaning = html.indexOf('<details><summary>What these mean')
+  const fold = html.indexOf('<details><summary>Everything this index read about this profile')
+  const end = html.indexOf('</details>', fold)
+  assert.ok(meaning > 0 && fold > meaning && end > fold)
   const at = (text: string) => {
     const n = html.indexOf(text)
     assert.ok(n >= 0, text)
     return n
   }
-  const order = ['<h1>tutoring tutor</h1>', '<p>Verified by face · Rated 9.0 by 2 <span class="nums">trust', `Message this profile from a Forest app: <a href="https://app.test.example/message?to=${a}">`, '<h2>Posts</h2>', `<a href="${BASE}/profiles/${a}/post/a">Maths and physics, in Madrid.</a>`, '<h2>Reviews received</h2>', 'Very clear.']
+  const order = [
+    '<h1 class="titled"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span><svg class="icon shield"',
+    '<p class="line">Verified by face · <span class="chip">9.0 ★ · 2</span></p>',
+    `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
+    '<h2>Posts</h2>',
+    `<a class="row post-row" href="${BASE}/profiles/${a}/post/a"><span class="two"><strong>Maths and physics, in Madrid.</strong><span>30 USD per hour · Madrid</span></span></a>`,
+    '<h2>Reviews received</h2>',
+    `<a class="row said-row" href="${BASE}/profiles/${addressOf('s1')}"><span class="chip">9 ★</span><span class="two"><span class="said-text">Very clear.</span></span></a>`,
+  ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
-  assert.ok(at(order.at(-1)!) < fold)
-  // Everything else is in the fold, and only there.
-  const inFold = [`<code>${a}</code>`, '<h2>Reviews given</h2>', '<h2>Vouches and reports received</h2>', '<h2>Vouches and reports given</h2>', '<h2>Words</h2>', '<h2>Proofs</h2>', '<h2>Signed statement</h2>', `<code>${esc(o.statement!)}</code>`, `<code>${o.signature}</code>`]
+  assert.ok(at(order.at(-1)!) < meaning)
+  // A review that does not count says why, in its row.
+  assert.ok(html.slice(0, meaning).includes(`<a class="row said-row" href="${BASE}/profiles/${addressOf('uncounted')}"><span class="chip">1 ★</span><span class="two"><span class="why">Does not count: `))
+  // What these mean: its own numbers, then the key.
+  assert.ok(at(`<p>This profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`) > meaning)
+  assert.ok(at('<p>The shield: a verifier checked the real person behind the profile') > meaning)
+  // Everything else is in the last fold, and only there: each review's weight among it.
+  const inFold = [`<code>${a}</code>`, '<h2>Reviews given</h2>', '<h2>Vouches and reports received</h2>', '<h2>Vouches and reports given</h2>', '<h2>Words</h2>', '<h2>Proofs</h2>', '<h2>Signed statement</h2>', `<code>${esc(o.statement!)}</code>`, `<code>${o.signature}</code>`, 'Counts, weight ']
   for (const text of inFold) assert.ok(at(text) > fold && at(text) < end, text)
-  // A card per post, with its price and area.
-  assert.match(html, /<article class="card"><p><a href="[^"]+\/post\/a">Maths and physics, in Madrid\.<\/a><\/p><p>30 USD per hour · Madrid<\/p><\/article>/)
-  // A profile no verification counts for, in words.
-  assert.ok((await page(i, `/profiles/${addressOf('uncounted')}`)).text.includes('<p>Not verified here · No reviews yet <span class="nums">trust 0 · uniqueness 0</span></p>'))
+  assert.ok(html.indexOf('<h2>Reviews received</h2>', fold) > fold)
+  // A profile no verification counts for, in words, with no shield, chip or New.
+  const u = mainOf((await page(i, `/profiles/${addressOf('uncounted')}`)).text)
+  assert.ok(u.includes('<h1 class="titled"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></h1>\n<p class="line">Not verified here</p>'))
+  assert.ok(u.includes('<p>This profile: no rating, trust 0, uniqueness 0.</p>'))
+  // An ID check fills the shield: here the same key, listed as an ID key.
+  const both = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'ID check', confidence: 0.95 }] })
+  try {
+    await both.pass()
+    assert.ok((await page(both, `/profiles/${a}`)).text.includes('<svg class="icon shield id" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Verified by ID">'))
+  } finally {
+    await both.close()
+  }
 })
 
-test('the home page: a search box with every market, and how many posts each role has listed; the search page asks words and a market', async () => {
-  const html = (await page(i, '/')).text
-  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string }> }
-  assert.match(html, /<form action="https:\/\/index\.test\.example\/search" method="get"><input name="q"[^>]*> <select name="market"[^>]*><option value="">Any market<\/option>/)
-  for (const m of directory.markets) assert.ok(html.includes(`<option value="${m.name}">${m.name}</option>`), m.name)
-  assert.ok(html.includes('<p class="muted">3 tutor posts · 1 student post</p>'))
-  assert.ok(html.includes('<p class="muted">1 seller post · 0 buyer posts</p>'))
-  const form = /<form[\s\S]*?<\/form>/.exec((await page(i, '/search?near=40.4,-3.7&km=50')).text)![0]
-  assert.deepEqual([...form.matchAll(/name="(\w+)"/g)].map((m) => m[1]), ['q', 'market'])
+test('the home page: what it is for, a search box with every market, and a row per market with its posts counted in its roles\' words', async () => {
+  const html = mainOf((await page(i, '/')).text)
+  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string }> }
+  assert.ok(html.startsWith('<main>\n<div class="lead"><h1>Find verified people</h1><p>Offers and requests, ranked by their reviews.</p></div>'))
+  assert.match(html, /<form class="search" action="https:\/\/index\.test\.example\/search" method="get"><label class="box"><svg class="icon"[^>]*>.*?<\/svg><input name="q" placeholder="Search posts" aria-label="Search posts"><\/label><select name="market" aria-label="Market"><option value="">Any market<\/option>/)
+  for (const m of directory.markets) assert.ok(html.includes(`<option value="${m.name}">${inWords(m.name)}</option>`), m.name)
+  assert.ok(html.includes('<option value="home-cleaning">Home cleaning</option>'))
+  assert.equal(html.match(/class="[^"]*primary/g)!.length, 1)
+  const rowOf = (name: string) => new RegExp(`<a class="row" href="${BASE}/markets/${name}">.*?</a>`).exec(html)![0]
+  assert.equal(rowOf('tutoring'), `<a class="row" href="${BASE}/markets/tutoring"><span class="two"><strong>Tutoring</strong><span>${esc(directory.markets.find((m) => m.name === 'tutoring')!.description)}</span></span><span class="aside">3 offers · 1 request</span></a>`)
+  // A role with none is left out; a market with none at all says so.
+  assert.ok(rowOf('clothing').endsWith('<span class="aside">1 offer</span></a>'))
+  assert.ok(rowOf('tennis-matches').endsWith('<span class="aside">None yet</span></a>'))
+  // What this index reads is on the About page now.
+  assert.ok(!html.includes('What this index reads') && !html.includes(i.address))
+})
+
+test('the search page: the home page\'s search box, filled with what was searched, then its rows', async () => {
+  const empty = /<form[\s\S]*?<\/form>/.exec((await page(i, '/search?near=40.4,-3.7&km=50')).text)![0]
+  assert.deepEqual([...empty.matchAll(/name="(\w+)"/g)].map((m) => m[1]), ['q', 'market'])
+  assert.ok(empty.includes('<input name="q" placeholder') && !empty.includes(' selected'))
+  const html = mainOf((await page(i, '/search?q=maths&market=tutoring')).text)
+  assert.ok(html.startsWith(`<main>\n<a class="back" href="${BASE}/"><svg`))
+  assert.ok(html.includes('<input name="q" value="maths" placeholder="Search posts" aria-label="Search posts">'))
+  assert.ok(html.includes('<option value="tutoring" selected>Tutoring</option>'))
+  assert.equal(html.match(/ selected/g)!.length, 1)
+  assert.ok(html.includes('<p>3 found.</p>'))
+  assert.equal(html.match(/<a class="row post-row"/g)!.length, 3)
+  // What was searched is text in the box, never markup.
+  assert.ok((await page(i, '/search?q=%22%3E%3Cb%3E')).text.includes('<input name="q" value="&quot;&gt;&lt;b&gt;" placeholder'))
+})
+
+test("a market's page: a way back, its name in words, and a section per role titled by its word for its posts", async () => {
+  const clothing = mainOf((await page(i, '/markets/clothing')).text)
+  assert.ok(clothing.startsWith(`<main>\n<a class="back" href="${BASE}/"><svg class="icon"`))
+  assert.ok(clothing.includes('Markets</a>\n<div class="lead"><h1>Clothing</h1><p>People sell clothes'))
+  assert.match(clothing, /<section><h2>Offers<\/h2><div class="rows"><a class="row post-row" href="[^"]+\/post\/coat">/)
+  assert.ok(clothing.includes('<section><h2>Requests</h2><p>No requests yet.</p></section>'))
+  assert.ok(mainOf((await page(i, '/markets/tennis-matches')).text).includes('<section><h2>Posts</h2><p>No posts yet.</p></section>'))
+  assert.ok(mainOf((await page(i, '/markets/home-cleaning')).text).includes('<h1>Home cleaning</h1>'))
+})
+
+test('the About page and its twin: what this index is, what it reads, what the numbers mean, its address, and its links', async () => {
+  const { status, body: o } = await twin<{ index: string; lists: unknown }>(i, '/about.json')
+  assert.equal(status, 200)
+  assert.deepEqual(keysOf(o), ['index', 'lists'])
+  assert.equal(o.index, i.address)
+  assert.deepEqual(o.lists, (await twin<{ lists: unknown }>(i, '/index.json')).body.lists)
+  const html = mainOf((await page(i, '/about')).text)
+  const at = (text: string) => {
+    const n = html.indexOf(text)
+    assert.ok(n >= 0, text)
+    return n
+  }
+  const order = [
+    '<h1>About this index</h1>',
+    'Anyone can run another index; the main way is this code with lists of its own.',
+    '<h2>What this index reads</h2>',
+    `Hosts, each read in full: ${host.url}.`,
+    `<code>${by.key}</code>, the face check of ${by.name}, confidence 0.75`,
+    `Reputation proofs it shows: Test index (<code>${i.address}</code>), against an index's newest root or one it signed in the last 30 days.`,
+    '<h2>What the numbers mean</h2>',
+    'The shield: a verifier checked the real person behind the profile',
+    'Uniqueness, 0 to 100: how sure this index is that the profile is one real person.',
+    '<h2>Its address</h2>',
+    `<p><code>${i.address}</code>: the address of this index's key`,
+    `<a class="row" href="${BASE}/index.json">`,
+    `<a class="row" href="${BASE}/skill.md">`,
+    `<a class="row" href="${BASE}/llms.txt">`,
+    '<a class="row" href="https://github.com/foundationforest/services/tree/main/index">',
+  ]
+  for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
 })

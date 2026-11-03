@@ -1,13 +1,15 @@
 // What several pages share: what a profile shows (its ratings, trust, uniqueness and checks) as the
 // JSON gives it, a post as every page gives it (its page and its photos among it), a search or
-// market result, and how the HTML draws each from the object.
+// market result, and how the HTML draws each from the object, in the pieces the Forest app draws: a
+// profile's name, the shield, the score's chip, a row, the facts list's words, and the fold that says
+// what a profile's words and numbers mean.
 
 import type { Market } from '@foundationforest/markets'
 
 import type { Check } from '../filter.ts'
 import type { ListedApp } from '../lists.ts'
 import { parse, type Store } from '../store.ts'
-import { html, type Raw, short, urls } from './template.ts'
+import { foldHtml, html, NEXT_ICON, type Raw, urls } from './template.ts'
 
 /**
  * What a profile shows: its ratings, from 1 to 10 to one decimal, with how many raters scored it;
@@ -50,9 +52,9 @@ export const postOf = (base: string, address: string, body: { [key: string]: unk
 /** Where to message a profile: one link per app the lists name, its address in each. */
 export const messageOf = (apps: ListedApp[], address: string) => apps.map((a) => ({ name: a.name, url: a.message.replaceAll('{address}', encodeURIComponent(address)) }))
 
-/** "Message this profile from a Forest app", with a link for each app; nothing when this index lists none. */
+/** A button to message the profile from each app: the first app's green, the page's one, any other outlined; nothing when this index lists none. */
 export function messageHtml(message: Array<{ name: string; url: string }>): Raw {
-  return message.length ? html`<p>Message this profile from a Forest app: ${message.map((m, i) => html`${i ? ', ' : ''}<a href="${m.url}">${m.name}</a>`)}.</p>` : html``
+  return message.length ? html`<div class="buttons">${message.map((m, i) => html`<a class="${i ? 'button' : 'button primary'}" href="${m.url}">Message in the ${m.name}</a>`)}</div>` : html``
 }
 
 /**
@@ -65,6 +67,11 @@ export function fieldsOf(m: Market | undefined): string[] {
   const names = Object.keys(m.post)
   const preview = m.preview ?? [...['description', 'price'].filter((n) => n in m.post), ...names.filter((n) => m.post[n]!.type === 'place').slice(0, 1)]
   return [...preview, ...names.filter((n) => !preview.includes(n))]
+}
+
+/** Each of a market's post fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
+export function typesOf(m: Market | undefined): { [field: string]: string } {
+  return m ? Object.fromEntries(Object.entries(m.post).map(([name, field]) => [name, field.type])) : {}
 }
 
 type ShownColumns = { value: number | null; count: number | null; trust: number | null; uniqueness: number | null }
@@ -113,11 +120,40 @@ export function verifiedText(checks: Check[]): string {
   return `Verified by ${ways.length > 1 ? `${ways.slice(0, -1).join(', ')} and ${ways.at(-1)}` : ways[0]}`
 }
 
-/** "Verified by face · Rated 9.2 by 14", then "trust 38 · uniqueness 75" in smaller text. */
-export function shownHtml(s: Shown, checks: Check[]): Raw {
-  const rated = s.ratings.value === null ? 'No reviews yet' : `Rated ${s.ratings.value.toFixed(1)} by ${s.ratings.count}`
-  return html`${verifiedText(checks)} · ${rated} <span class="nums">trust ${s.trust} · uniqueness ${s.uniqueness}</span>`
+/** A market's name or a choice's value in words, as the app writes them: `home-cleaning` is "Home cleaning", `like-new` "Like new". */
+export function inWords(name: string): string {
+  const words = name.replaceAll('-', ' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
+
+/** A profile's name as the app writes it: its market in words, in bold, then its role, quiet, no symbol between: "Clothing seller". */
+export function namedHtml(market: string | null, role: string | null): Raw {
+  if (!market) return html`A profile`
+  return html`<span class="named"><strong>${inWords(market)}</strong>${role ? html` <span class="role">${role}</span>` : ''}</span>`
+}
+
+/**
+ * How a profile is verified, as the app shows it, by its strongest check: an outline shield for a
+ * face check, filled in the ink with its tick in the paper's color for an ID check; none when this
+ * index counts no check for it. Its words, "Verified by face and ID", are its name. "ID check" is
+ * the name lists/verifiers.json gives the ID key's check, this index's own word for it.
+ */
+export function shieldHtml(checks: Check[]): Raw {
+  if (!checks.length) return html``
+  const words = verifiedText(checks)
+  return html`<svg class="${checks.some((c) => c.label === 'ID check') ? 'icon shield id' : 'icon shield'}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${words}"><title>${words}</title><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><polyline points="9,12 11.2,14.2 15.5,9.8"/></svg>`
+}
+
+/** A profile's rating on its sand chip, with how many raters scored it, "9.0 ★ · 2", or "New" when no one has rated it yet. */
+export function chipHtml(s: Shown): Raw {
+  return s.ratings.value === null ? html`<span class="new">New</span>` : html`<span class="chip">${s.ratings.value.toFixed(1)} ★ · ${s.ratings.count}</span>`
+}
+
+/** A review's score on its chip, as its writer gave it: "8.5 ★". */
+export const scoreHtml = (score: unknown) => html`<span class="chip">${typeof score === 'string' ? score : '–'} ★</span>`
+
+/** What a profile shows, on the right of a row: its shield and its chip, or that it is not verified here. */
+export const shownAside = (s: Shown & { checks: Check[] }) => (s.checks.length ? html`${shieldHtml(s.checks)}${chipHtml(s)}` : html`<span>Not verified here</span>`)
 
 /** A field's name as words: `pastWork` is "Past work". */
 export function fieldLabel(name: string): string {
@@ -145,6 +181,9 @@ export function valueText(v: unknown): string {
   return ''
 }
 
+/** A choice field's value in words, as the app writes it: each of its values in words, joined by commas. */
+export const choiceText = (v: unknown) => (Array.isArray(v) ? v : [v]).map((x) => inWords(String(x))).join(', ')
+
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */
 export function firstLine(text: string, max: number): string {
   const line = text.split('\n')[0]!.trim()
@@ -170,24 +209,45 @@ function areaText(body: { [key: string]: unknown }): string {
   return ''
 }
 
-/** A profile in one line: its market, role and short address, linking to its page, then what it shows in words. */
-export function byHtml(r: { profile: string; market: string | null; role: string | null; checks: Check[] } & Shown, base: string): Raw {
-  return html`<a href="${urls(base).profile(r.profile)}">${[r.market, r.role].filter(Boolean).join(' ') || 'A profile'} ${short(r.profile)}</a> · ${shownHtml(r, r.checks)}`
+/** Who posted a post, as one row linking to its profile: the shield, the profile's name, its chip and a chevron. */
+export function postedByHtml(r: { profile: string; market: string | null; role: string | null; checks: Check[] } & Shown, base: string): Raw {
+  return html`<a class="row" href="${urls(base).profile(r.profile)}">${shieldHtml(r.checks)}<span class="grow">${namedHtml(r.market, r.role)}</span>${r.checks.length ? chipHtml(r) : html`<span class="new">Not verified here</span>`}${NEXT_ICON}</a>`
 }
 
-/** A post as a card, linking to its page: its first photo, description, price and area, then `more`. */
-export function cardHtml(post: Post, more: Raw | string = ''): Raw {
+/**
+ * A post as a row, linking to its page, as the app draws one: its first photo, 48px, the
+ * description's first line in bold, then its price and place in one quiet line; then `note`, a
+ * quiet line that wraps, and `aside`, on the right. The photo's text is empty: the row's says it.
+ */
+export function postRowHtml(post: Post, { aside, note }: { aside?: Raw; note?: Raw } = {}): Raw {
   const description = typeof post.body.description === 'string' ? post.body.description : ''
   const facts = [priceText(post.body), areaText(post.body)].filter(Boolean).join(' · ')
-  return html`<article class="card">${post.photos[0] ? html`<a href="${post.url}"><img src="${post.photos[0]}" alt="${description}" loading="lazy"></a>` : ''}<p><a href="${post.url}">${firstLine(description, 140) || 'A post'}</a></p>${facts ? html`<p>${facts}</p>` : ''}${more}</article>`
+  return html`<a class="row post-row" href="${post.url}">${post.photos[0] ? html`<img class="thumb" src="${post.photos[0]}" alt="" loading="lazy">` : ''}<span class="two"><strong>${firstLine(description, 140) || 'A post'}</strong>${facts ? html`<span>${facts}</span>` : ''}${note ?? ''}</span>${aside ? html`<span class="aside">${aside}</span>` : ''}</a>`
 }
 
-/** Cards in a grid; with none, the line `none`, if given. */
-export const cardsHtml = (cards: Raw[], none = '') => (cards.length ? html`<div class="cards">${cards}</div>` : none ? html`<p class="muted">${none}</p>` : html``)
+/** Rows, stacked; with none, the line `none`, if given. */
+export const rowsHtml = (rows: Raw[], none = '') => (rows.length ? html`<div class="rows">${rows}</div>` : none ? html`<p>${none}</p>` : html``)
 
-/** One result, as a market page and the search page draw it: a card with its profile's line. */
-export function resultHtml(r: Result, base: string): Raw {
-  return cardHtml(r.post, html`<p class="nums">${byHtml(r, base)}</p>`)
+/** One result, as a market page and the search page draw it: a post's row, with its profile's shield and chip. */
+export function resultHtml(r: Result): Raw {
+  return postRowHtml(r.post, { aside: shownAside(r) })
+}
+
+/**
+ * What a profile's words and numbers mean, for a reader who lands on one page and reads nothing
+ * else: what README.md, How it scores, says, in plain words. In the fold of a post's page and a
+ * profile's, and on the About page.
+ */
+export const KEY = html`<p>The shield: a verifier checked the real person behind the profile, which proves it without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
+<p>9.2 ★ · 14: the profile's rating and how many raters scored it, the average of their scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
+<p>Trust, 0 to 100: how much the profile's own scores and words weigh. A new profile starts at half its uniqueness; vouches and ratings raise it, reports lower it. Uniqueness, 0 to 100: how sure this index is that the profile is one real person.</p>
+<p>Each profile is one person in one market and role, and nothing here links one person's profiles.</p>`
+
+/** The fold "What these mean": `who`'s rating with its raters, trust and uniqueness, the only place a page shows them, then the key. */
+export function meaningHtml(who: string, s: Shown): Raw {
+  const rated = s.ratings.value === null ? 'no rating' : `rated ${s.ratings.value.toFixed(1)} by ${s.ratings.count}`
+  return foldHtml('What these mean', html`<p>${who}: ${rated}, trust ${s.trust}, uniqueness ${s.uniqueness}.</p>
+${KEY}`)
 }
 
 /** A Person node for a profile, by its page. */

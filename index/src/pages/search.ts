@@ -9,15 +9,30 @@
 //   minRating    a profile rated at least this; one with no rating is left out
 //   minReviews   a profile scored by at least this many raters
 //   limit        20 unless given, at most 100; offset skips that many
+//
+// Its JSON gives, beside the results, `query`, each of these filters as it was given, and `markets`,
+// every market's name, so its page draws the home page's search box, filled with what was searched.
 
-import { cardsHtml, offerOf, type Result, resultHtml, results } from './common.ts'
-import { html, type Page, urls } from './template.ts'
+import { offerOf, type Result, resultHtml, results, rowsHtml } from './common.ts'
+import { searchForm } from './home.ts'
+import { backHtml, html, type Page, urls } from './template.ts'
 
 export const LIMIT = 20
 export const MAX_LIMIT = 100
 export const KM = 10
 
-export type SearchPage = { index: string; total: number; results: Result[] }
+/** The filters search reads, in the order its query names them. */
+export const FILTERS = ['q', 'market', 'role', 'near', 'km', 'minRating', 'minReviews', 'limit', 'offset']
+
+export type SearchPage = {
+  index: string
+  total: number
+  results: Result[]
+  /** Each filter as it was given, its text as written; one not given, or given empty, is left out. */
+  query: { [filter: string]: string }
+  /** Every market's name in the directory, the choices of the page's search box. */
+  markets: string[]
+}
 
 const number = (q: URLSearchParams, name: string) => {
   const text = q.get(name)
@@ -53,7 +68,7 @@ function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: n
 
 export const search: Page<SearchPage> = {
   noindex: true,
-  data({ store, self, base }, _path, q) {
+  data({ store, markets, self, base }, _path, q) {
     const where: string[] = []
     const params: Array<string | number> = []
     const words = match(q.get('q') ?? '')
@@ -73,14 +88,21 @@ export const search: Page<SearchPage> = {
     }
     const limit = Math.min(Math.max(Math.trunc(number(q, 'limit') ?? LIMIT), 1), MAX_LIMIT)
     const offset = Math.max(Math.trunc(number(q, 'offset') ?? 0), 0)
-    return { index: self, total: found.length, results: found.slice(offset, offset + limit).map(({ time: _, ...r }) => r) }
+    return {
+      index: self,
+      total: found.length,
+      results: found.slice(offset, offset + limit).map(({ time: _, ...r }) => r),
+      query: Object.fromEntries(FILTERS.filter((f) => q.get(f)).map((f) => [f, q.get(f)!])),
+      markets: markets.directory.markets.map((m) => m.name),
+    }
   },
   title: () => 'Forest index: search',
   body(o, base) {
-    return html`<h1>Search</h1>
-<form action="${urls(base).search({})}" method="get"><input name="q" placeholder="Words" aria-label="Words"> <input name="market" placeholder="Market" aria-label="Market"> <button>Search</button></form>
-<p class="muted">${o.total} found.</p>
-${cardsHtml(o.results.map((r) => resultHtml(r, base)))}`
+    return html`${backHtml(urls(base).home, 'Markets')}
+<h1>Search</h1>
+${searchForm(base, o.markets, o.query)}
+<p>${o.total} found.</p>
+${rowsHtml(o.results.map(resultHtml))}`
   },
   ld(o, base, url) {
     return {

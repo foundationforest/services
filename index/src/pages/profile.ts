@@ -6,13 +6,15 @@
 // report with its entry's own time; the words it received and gave, each with its weight; and where
 // to message it.
 //
-// The page is drawn for a buyer: what it is, what it shows in words, how to message it, its posts
-// and the reviews it received; everything else this index read is in one fold below.
+// The page is drawn for a buyer, as the app would show it: its name and shield, how it is verified
+// and its rating's chip, the button to message it, its posts and the reviews it received as rows;
+// then a fold saying what its words and numbers mean, with its own, and one with everything else
+// this index read, the weight of each review it received among it.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, cardHtml, cardsHtml, firstHost, messageHtml, messageOf, personOf, type Post, postOf, type Shown, shownFor, shownHtml } from './common.ts'
-import { html, type Page, type Raw, short, urls } from './template.ts'
+import { aggregateOf, chipHtml, firstHost, meaningHtml, messageHtml, messageOf, namedHtml, personOf, type Post, postOf, postRowHtml, rowsHtml, scoreHtml, type Shown, shieldHtml, shownFor, verifiedText } from './common.ts'
+import { foldHtml, html, type Page, type Raw, short, urls } from './template.ts'
 
 export type ReviewEntry = {
   reviewer: string
@@ -64,7 +66,7 @@ const entry = (r: ReviewColumns): ReviewEntry => {
 type SaidColumns = { address: string; writer: string; body: string; time: number; counted: number; why: string | null }
 const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), time: r.time, counted: r.counted === 1, ...(r.why !== null && { why: r.why }) })
 
-const counts = (r: { counted: boolean; why?: string }, more = '') => html`<p class="muted">${r.counted ? `Counts${more}.` : html`<span class="no">Does not count: ${r.why}.</span>`}</p>`
+const counts = (r: { counted: boolean; why?: string }, more = '') => html`<p>${r.counted ? `Counts${more}.` : html`<span class="red">Does not count: ${r.why}.</span>`}</p>`
 
 function reviewHtml(r: ReviewEntry, other: string, base: string): Raw {
   const score = typeof r.body.score === 'string' ? `${r.body.score} of 10` : 'no score'
@@ -77,7 +79,12 @@ function saidHtml(kind: string, r: SaidEntry, other: string, base: string): Raw 
 ${counts(r)}</section>`
 }
 
-const none = html`<p class="muted">None.</p>`
+/** A review it received, as a row linking to its writer: its score's chip, its text, and why it does not count, when it does not. */
+function receivedHtml(r: ReviewEntry, base: string): Raw {
+  return html`<a class="row said-row" href="${urls(base).profile(r.reviewer)}">${scoreHtml(r.body.score)}<span class="two">${typeof r.body.text === 'string' && r.body.text ? html`<span class="said-text">${r.body.text}</span>` : ''}${r.counted ? '' : html`<span class="why">Does not count: ${r.why}.</span>`}</span></a>`
+}
+
+const none = html`<p>None.</p>`
 const listOf = <T>(items: T[], draw: (item: T) => Raw) => (items.length ? items.map(draw) : none)
 
 export const profile: Page<ProfilePage> = {
@@ -127,15 +134,21 @@ export const profile: Page<ProfilePage> = {
   body(o, base) {
     const subjectOf = (r: { body: { [key: string]: unknown } }) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     const wordHtml = (w: WordEntry, other: string) => html`<li>${w.word}, <a href="${urls(base).profile(other)}">${short(other)}</a>, weight ${w.weight.toFixed(2)}</li>`
-    return html`<h1>${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ') || 'A profile'}</h1>
-<p>${shownHtml(o, o.checks)}</p>
+    const market = typeof o.profile.market === 'string' ? o.profile.market : null
+    const role = typeof o.profile.role === 'string' ? o.profile.role : null
+    return html`<div class="lead"><h1 class="titled">${namedHtml(market, role)}${shieldHtml(o.checks)}</h1>
+<p class="line">${o.checks.length ? html`${verifiedText(o.checks)} · ${chipHtml(o)}` : 'Not verified here'}</p></div>
 ${messageHtml(o.message)}
-<h2>Posts</h2>
-${cardsHtml(o.posts.map((p) => cardHtml(p, p.listed ? '' : html`<p class="no">Not listed: ${p.why}.</p>`)), 'None.')}
+<section><h2>Posts</h2>
+${rowsHtml(o.posts.map((p) => postRowHtml(p, p.listed ? {} : { note: html`<span class="why red">Not listed: ${p.why}.</span>` })), 'None.')}</section>
+<section><h2>Reviews received</h2>
+${rowsHtml(o.reviews.received.map((r) => receivedHtml(r, base)), 'None.')}</section>
+${meaningHtml('This profile', o)}
+${foldHtml(
+  'Everything this index read about this profile',
+  html`<p>Its address: <code>${o.address}</code></p>
 <h2>Reviews received</h2>
 ${listOf(o.reviews.received, (r) => reviewHtml(r, r.reviewer, base))}
-<details><summary>Everything this index read about this profile</summary>
-<p>Its address: <code>${o.address}</code></p>
 <h2>Reviews given</h2>
 ${listOf(o.reviews.given, (r) => reviewHtml(r, subjectOf(r), base))}
 <h2>Vouches and reports received</h2>
@@ -151,8 +164,8 @@ ${o.words.given.length ? html`<ul>${o.words.given.map((w) => wordHtml(w, w.subje
 <h2>Proofs</h2>
 ${listOf(o.proofs, (p) => html`<section><p>${String(p.circuit)} proof${p.verifier ? ` from ${p.verifier}` : ''}${p.index ? html`, index <code>${String(p.index)}</code>` : ''}${typeof p.trust === 'number' ? `, trust ${p.trust}` : ''}: ${p.result}.</p></section>`)}
 <h2>Signed statement</h2>
-${o.statement ? html`<p>What this index signed of what the profile shows, and its signature, which anyone checks against this index's address:</p><p><code>${o.statement}</code></p><p><code>${o.signature}</code></p>` : html`<p class="muted">None: this profile does not count here.</p>`}
-</details>`
+${o.statement ? html`<p>What this index signed of what the profile shows, and its signature, which anyone checks against this index's address:</p><p><code>${o.statement}</code></p><p><code>${o.signature}</code></p>` : html`<p>None: this profile does not count here.</p>`}`,
+)}`
   },
   ld(o, base, url) {
     const id = `${url}#profile`
