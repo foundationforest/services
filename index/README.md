@@ -69,11 +69,12 @@ rating and no trust, and its entries count for nothing.
 A post is listed when its profile counts and it fits its market by the markets package's
 `checkEntry`, the markets manual's own check, which the mcp, the foundation's connector, over MCP
 (the way AI apps call outside tools), runs too before it signs one: each field one its market names
-for the role, of its type in `types.json`, a choice among its values, a `many` field a list of
-different values, a `file` field one of the files the body lists in `files` (the standard's own
-field). A market's `required` is for apps to ask, and nothing enforces it. A post not listed is kept
-and shown on its profile's page with `why`: it does not fit (naming the field), its profile does not
-count, or it was deleted.
+for the role, of its type in `types.json`, a choice among its values, a `money` field's `per` one
+its field lists or none, a `place` field never online where its field says so, a `many` field a
+list of different values, a `file` field one of the files the body lists in `files` (the standard's
+own field). A market's `required` is for apps to ask, and nothing enforces it. A post not listed is
+kept and shown on its profile's page with `why`: it does not fit (naming the field), its profile
+does not count, or it was deleted.
 
 A review says how a deal went and gives a score; a vouch says "I know this profile is real and
 honest"; a report says "this profile is fake or a scam". Each names the profile it is about as its
