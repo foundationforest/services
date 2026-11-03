@@ -39,9 +39,10 @@ Every profile this index counts shows three things, each ranked inside its own m
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
 
 On the pages, a post in a list shows its profile's shield, an outline for a face check and filled
-for an ID check, and its rating as a chip, "9.2 ★", or New when no one has rated it. Its rating with
-how many raters, its trust and its uniqueness are in a fold on its page and on each of its posts'
-pages, What these mean, with what each means; the About page says what they mean too.
+for an ID check, and its rating with how many raters scored it as a chip, "9.2 ★ · 14", or New when
+no one has rated it. Its trust and its uniqueness are in a fold on its page and on each of its
+posts' pages, What these mean, with what each means; the About page says what they mean too. A
+choice's value is in words there, `like-new` as "Like new"; the JSON keeps it as written.
 
 ## The markets
 

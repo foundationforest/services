@@ -10,7 +10,7 @@
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { fieldLabel, fieldsOf, firstHost, firstLine, marketWords, meaningHtml, messageHtml, messageOf, offerOf, type Post, postedByHtml, postOf, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
+import { choiceText, fieldLabel, fieldsOf, firstHost, firstLine, inWords, meaningHtml, messageHtml, messageOf, offerOf, type Post, postedByHtml, postOf, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
 import { backHtml, html, type Page, type Raw, urls } from './template.ts'
 
 export type PostPage = {
@@ -47,11 +47,16 @@ function headOf(description: string): { head: string; rest: string } {
   return line.length <= 100 ? { head: line, rest: more.join('\n').trim() } : { head: firstLine(line, 100), rest: description.trim() }
 }
 
-/** A contact as its writer gave it: an outlined button when it is an http or https URL or an email address, else its words. */
+/**
+ * A contact as its writer gave it: an outlined button when it is an http or https URL, its label
+ * without the scheme or a trailing slash ("wa.me/34600000000"), or an email address, its label the
+ * address alone; else its words.
+ */
 function contactHtml(contact: string): Raw {
   const text = contact.trim()
-  if (/^https?:\/\/\S+$/i.test(text) && URL.canParse(text)) return html`<a class="button" href="${text}" rel="nofollow ugc">${contact}</a>`
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return html`<a class="button" href="mailto:${text}" rel="nofollow ugc">${contact}</a>`
+  if (/^https?:\/\/\S+$/i.test(text) && URL.canParse(text)) return html`<a class="button" href="${text}" rel="nofollow ugc">${text.replace(/^https?:\/\//i, '').replace(/\/$/, '')}</a>`
+  const address = text.replace(/^mailto:/i, '')
+  if (/^[^\s@:]+@[^\s@]+\.[^\s@]+$/.test(address)) return html`<a class="button" href="mailto:${address}" rel="nofollow ugc">${address}</a>`
   return html`<p>Contact, as they gave it: ${contact}</p>`
 }
 
@@ -96,11 +101,11 @@ export const post: Page<PostPage> = {
     const [photo, ...more] = o.post.photos
     const alt = descriptionOf(o)
     const contact = typeof body.contact === 'string' && body.contact ? body.contact : ''
-    return html`${o.market ? backHtml(urls(base).market(o.market), marketWords(o.market)) : backHtml(urls(base).home, 'Markets')}
+    return html`${o.market ? backHtml(urls(base).market(o.market), inWords(o.market)) : backHtml(urls(base).home, 'Markets')}
 ${photo ? html`<a class="photo" href="${photo}"><img src="${photo}" alt="${alt}" loading="lazy"></a>` : ''}${more.length ? html`<div class="tiles">${more.map((src) => html`<a href="${src}"><img src="${src}" alt="${alt}" loading="lazy"></a>`)}</div>` : ''}
 <div class="lead"><h1>${head || price || 'A post'}</h1>${price ? html`<p class="price">${price}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}</div>
 ${o.post.listed ? '' : html`<p class="red">Not listed: ${o.post.why}.</p>`}
-${names.length ? html`<dl class="facts">${names.map((n) => html`<div><dt>${fieldLabel(n)}</dt><dd>${valueText(body[n])}</dd></div>`)}</dl>` : ''}
+${names.length ? html`<dl class="facts">${names.map((n) => html`<div><dt>${fieldLabel(n)}</dt><dd>${o.types[n] === 'choice' ? choiceText(body[n]) : valueText(body[n])}</dd></div>`)}</dl>` : ''}
 <section><h2>Posted by</h2>${postedByHtml(o, base)}</section>
 ${contact || o.message.length ? html`<section><h2>How to reach them</h2>${contact ? contactHtml(contact) : ''}${messageHtml(o.message)}</section>` : ''}
 ${meaningHtml('Its profile', o)}`

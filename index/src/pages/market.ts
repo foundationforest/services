@@ -5,7 +5,7 @@
 
 import type { Market } from '@foundationforest/markets'
 
-import { marketWords, offerOf, type Result, resultHtml, results, rowsHtml } from './common.ts'
+import { inWords, offerOf, type Result, resultHtml, results, rowsHtml } from './common.ts'
 import { backHtml, html, type Page, urls } from './template.ts'
 
 export type MarketPage = { index: string; market: unknown; posts: { [role: string]: Result[] } }
@@ -23,7 +23,7 @@ export const market: Page<MarketPage> = {
   body(o, base) {
     const m = o.market as Market
     return html`${backHtml(urls(base).home, 'Markets')}
-<div class="lead"><h1>${marketWords(m.name)}</h1><p>${m.description}</p></div>
+<div class="lead"><h1>${inWords(m.name)}</h1><p>${m.description}</p></div>
 ${m.roles.map((r) => html`<section><h2>${r.posts.charAt(0).toUpperCase() + r.posts.slice(1)}</h2>${rowsHtml(o.posts[r.role]!.map(resultHtml), `No ${r.posts} yet.`)}</section>`)}`
   },
   ld(o, base, url) {

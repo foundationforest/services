@@ -18,7 +18,7 @@ import { b64u, base58 } from '@foundationforest/folders'
 
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
-import { fieldsOf, marketWords, photosOf } from '../src/pages/common.ts'
+import { fieldsOf, inWords, photosOf } from '../src/pages/common.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
 import { post as postPage, type PostPage } from '../src/pages/post.ts'
@@ -51,13 +51,14 @@ before(async () => {
   const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
     at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' }, contact: 'https://wa.me/34600000000' }),
-    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
+    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true }, contact: 'http://example.com/maths/' }),
     at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
-    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
+    at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'], contact: 'mailto:s1@example.com' }),
     // A place that is an area alone, with no point.
     at(seller!, 'post/coat', {
       description: 'A wool coat, worn twice.',
       kind: 'coat',
+      condition: 'like-new',
       price: { amount: '40', currency: 'EUR' },
       location: { area: 'Madrid' },
       photos: COAT,
@@ -241,7 +242,7 @@ test('trust and uniqueness only in a fold or on About; a row shows the shield an
   const tutors = mainOf((await page(i, '/markets/tutoring')).text)
   // a, rated 9.0 by two, verified by face: its shield, outlined, and its chip; c, rated by no one: New.
   assert.ok(tutors.includes(`<span class="aside"><svg class="icon shield" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Verified by face"><title>Verified by face</title>`))
-  assert.ok(tutors.includes('<span class="chip">9.0 ★</span></span></a>'))
+  assert.ok(tutors.includes('<span class="chip">9.0 ★ · 2</span></span></a>'))
   const rowOf = (html: string, url: string) => new RegExp(`<a class="row post-row" href="${url}">.*?</a>`).exec(html)![0]
   assert.ok(rowOf(tutors, `${BASE}/profiles/${addressOf('c')}/post/c`).endsWith('<span class="new">New</span></span></a>'))
 })
@@ -343,11 +344,11 @@ test("a post's page and its twin: its fields in its market's order with their ty
   const order = [
     `<a class="back" href="${BASE}/markets/tutoring">`,
     '<h1>Maths and physics, in Madrid.</h1><p class="price">30 USD per hour</p></div>',
-    '<dl class="facts"><div><dt>Subjects</dt><dd>maths, physics</dd></div>',
+    '<dl class="facts"><div><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
     '<div><dt>Place</dt><dd>Madrid</dd></div>',
     `<h2>Posted by</h2><a class="row" href="${BASE}/profiles/${a}"><svg class="icon shield"`,
-    '<span class="grow"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></span><span class="chip">9.0 ★</span>',
-    '<h2>How to reach them</h2><a class="button" href="https://wa.me/34600000000" rel="nofollow ugc">https://wa.me/34600000000</a>',
+    '<span class="grow"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></span><span class="chip">9.0 ★ · 2</span>',
+    '<h2>How to reach them</h2><a class="button" href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000</a>',
     `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
     '<details><summary>What these mean',
     `<p>Its profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`,
@@ -357,8 +358,12 @@ test("a post's page and its twin: its fields in its market's order with their ty
   // One green button on the page, the first app's.
   assert.equal(mainOf(html).match(/class="[^"]*primary/g)!.length, 1)
 
-  // An email address is an outlined button to write to it; a post that is not listed has its page, saying why.
+  // A link's label has no scheme and no trailing slash; an email address is a button to write to
+  // it, labelled with the address alone, with or without its mailto:. A post that is not listed has
+  // its page, saying why.
+  assert.ok((await page(i, `/profiles/${addressOf('b')}/post/b`)).text.includes('<a class="button" href="http://example.com/maths/" rel="nofollow ugc">example.com/maths</a>'))
   assert.ok((await page(i, `/profiles/${addressOf('seller')}/post/coat`)).text.includes('<a class="button" href="mailto:seller@example.com" rel="nofollow ugc">seller@example.com</a>'))
+  assert.ok((await page(i, `/profiles/${addressOf('s1')}/post/need`)).text.includes('<a class="button" href="mailto:s1@example.com" rel="nofollow ugc">s1@example.com</a>'))
   const u = await twin<PostPage>(i, `/profiles/${addressOf('uncounted')}/post/u.json`)
   assert.deepEqual([u.status, u.body.post.listed, u.body.post.why], [200, false, 'its profile does not count here'])
   assert.match((await page(i, `/profiles/${addressOf('uncounted')}/post/u`)).text, /<p class="red">Not listed: its profile does not count here\.<\/p>[\s\S]*<span class="new">Not verified here<\/span>/)
@@ -396,7 +401,9 @@ test("photos: each file a post's fields name, linked at its profile entry's firs
   const html = (await page(i, `/profiles/${seller}/post/coat`)).text
   for (const link of links) assert.ok(html.includes(`<img src="${link}" alt="A wool coat, worn twice." loading="lazy">`), link)
   for (const text of ['<dt>Photos</dt>', '<dt>Files</dt>', 'a file (', `<dd>${COAT[0]}`]) assert.ok(!html.includes(text), text)
-  assert.ok(html.includes('<dt>Kind</dt><dd>coat</dd>'))
+  // A choice's value in words, as the app writes it.
+  assert.ok(html.includes('<div><dt>Kind</dt><dd>Coat</dd></div>'))
+  assert.ok(html.includes('<div><dt>Condition</dt><dd>Like new</dd></div>'))
   // The first large, the rest small under it.
   assert.ok(html.includes(`<a class="photo" href="${links[0]}"><img src="${links[0]}"`))
   assert.ok(html.includes(`<div class="tiles"><a href="${links[1]}"><img src="${links[1]}"`))
@@ -460,7 +467,7 @@ test("the profile page, for a buyer: its name and shield, how it is verified and
   }
   const order = [
     '<h1 class="titled"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span><svg class="icon shield"',
-    '<p class="line">Verified by face · <span class="chip">9.0 ★</span></p>',
+    '<p class="line">Verified by face · <span class="chip">9.0 ★ · 2</span></p>',
     `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
     '<h2>Posts</h2>',
     `<a class="row post-row" href="${BASE}/profiles/${a}/post/a"><span class="two"><strong>Maths and physics, in Madrid.</strong><span>30 USD per hour · Madrid</span></span></a>`,
@@ -497,7 +504,7 @@ test('the home page: what it is for, a search box with every market, and a row p
   const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string }> }
   assert.ok(html.startsWith('<main>\n<div class="lead"><h1>Find verified people</h1><p>Offers and requests, ranked by their reviews.</p></div>'))
   assert.match(html, /<form class="search" action="https:\/\/index\.test\.example\/search" method="get"><label class="box"><svg class="icon"[^>]*>.*?<\/svg><input name="q" placeholder="Search posts" aria-label="Search posts"><\/label><select name="market" aria-label="Market"><option value="">Any market<\/option>/)
-  for (const m of directory.markets) assert.ok(html.includes(`<option value="${m.name}">${marketWords(m.name)}</option>`), m.name)
+  for (const m of directory.markets) assert.ok(html.includes(`<option value="${m.name}">${inWords(m.name)}</option>`), m.name)
   assert.ok(html.includes('<option value="home-cleaning">Home cleaning</option>'))
   assert.equal(html.match(/class="[^"]*primary/g)!.length, 1)
   const rowOf = (name: string) => new RegExp(`<a class="row" href="${BASE}/markets/${name}">.*?</a>`).exec(html)![0]

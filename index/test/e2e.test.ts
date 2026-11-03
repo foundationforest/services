@@ -85,7 +85,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   assert.equal(found.results[0]!.post.address, offer)
   assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 44])
   const html = await (await fetch(`${i.url}/profiles/${tutor.key.address}`)).text()
-  assert.ok(html.includes('<p class="line">Verified by face · <span class="chip">8.5 ★</span></p>'))
+  assert.ok(html.includes('<p class="line">Verified by face · <span class="chip">8.5 ★ · 1</span></p>'))
   assert.ok(html.includes('<p>This profile: rated 8.5 by 1, trust 44, uniqueness 75.</p>'))
   // The post's own page, over HTTP, at its address under /profiles.
   const postPage = await fetch(`${i.url}/profiles/${tutor.key.address}/post/maths`)

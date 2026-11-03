@@ -120,8 +120,8 @@ export function verifiedText(checks: Check[]): string {
   return `Verified by ${ways.length > 1 ? `${ways.slice(0, -1).join(', ')} and ${ways.at(-1)}` : ways[0]}`
 }
 
-/** A market's name in words, as the app writes it: `home-cleaning` is "Home cleaning". */
-export function marketWords(name: string): string {
+/** A market's name or a choice's value in words, as the app writes them: `home-cleaning` is "Home cleaning", `like-new` "Like new". */
+export function inWords(name: string): string {
   const words = name.replaceAll('-', ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
@@ -129,7 +129,7 @@ export function marketWords(name: string): string {
 /** A profile's name as the app writes it: its market in words, in bold, then its role, quiet, no symbol between: "Clothing seller". */
 export function namedHtml(market: string | null, role: string | null): Raw {
   if (!market) return html`A profile`
-  return html`<span class="named"><strong>${marketWords(market)}</strong>${role ? html` <span class="role">${role}</span>` : ''}</span>`
+  return html`<span class="named"><strong>${inWords(market)}</strong>${role ? html` <span class="role">${role}</span>` : ''}</span>`
 }
 
 /**
@@ -144,9 +144,9 @@ export function shieldHtml(checks: Check[]): Raw {
   return html`<svg class="${checks.some((c) => c.label === 'ID check') ? 'icon shield id' : 'icon shield'}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${words}"><title>${words}</title><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><polyline points="9,12 11.2,14.2 15.5,9.8"/></svg>`
 }
 
-/** A profile's rating on its sand chip, "9.0 ★", or "New" when no one has rated it yet. */
+/** A profile's rating on its sand chip, with how many raters scored it, "9.0 ★ · 2", or "New" when no one has rated it yet. */
 export function chipHtml(s: Shown): Raw {
-  return s.ratings.value === null ? html`<span class="new">New</span>` : html`<span class="chip">${s.ratings.value.toFixed(1)} ★</span>`
+  return s.ratings.value === null ? html`<span class="new">New</span>` : html`<span class="chip">${s.ratings.value.toFixed(1)} ★ · ${s.ratings.count}</span>`
 }
 
 /** A review's score on its chip, as its writer gave it: "8.5 ★". */
@@ -180,6 +180,9 @@ export function valueText(v: unknown): string {
   }
   return ''
 }
+
+/** A choice field's value in words, as the app writes it: each of its values in words, joined by commas. */
+export const choiceText = (v: unknown) => (Array.isArray(v) ? v : [v]).map((x) => inWords(String(x))).join(', ')
 
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */
 export function firstLine(text: string, max: number): string {
@@ -236,7 +239,7 @@ export function resultHtml(r: Result): Raw {
  * profile's, and on the About page.
  */
 export const KEY = html`<p>The shield: a verifier checked the real person behind the profile, which proves it without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
-<p>9.2 ★: the profile's rating, the average of its raters' scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
+<p>9.2 ★ · 14: the profile's rating and how many raters scored it, the average of their scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
 <p>Trust, 0 to 100: how much the profile's own scores and words weigh. A new profile starts at half its uniqueness; vouches and ratings raise it, reports lower it. Uniqueness, 0 to 100: how sure this index is that the profile is one real person.</p>
 <p>Each profile is one person in one market and role, and nothing here links one person's profiles.</p>`
 

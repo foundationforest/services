@@ -3,7 +3,7 @@
 // a row per market. The lists are drawn on the About page.
 
 import { listsOf, type ListsShown } from './about.ts'
-import { marketWords } from './common.ts'
+import { inWords } from './common.ts'
 import { html, type Page, type Raw, SEARCH_ICON, urls } from './template.ts'
 
 /** A role's word for its posts, as the markets directory gives it. */
@@ -21,7 +21,7 @@ export type Home = {
  * the page's one green button. Filled with what was searched, when it is search's own page.
  */
 export function searchForm(base: string, markets: string[], asked: { q?: string; market?: string } = {}): Raw {
-  return html`<form class="search" action="${urls(base).search({})}" method="get"><label class="box">${SEARCH_ICON}<input name="q"${asked.q ? html` value="${asked.q}"` : ''} placeholder="Search posts" aria-label="Search posts"></label><select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}"${m === asked.market ? ' selected' : ''}>${marketWords(m)}</option>`)}</select><button class="primary">Search</button></form>`
+  return html`<form class="search" action="${urls(base).search({})}" method="get"><label class="box">${SEARCH_ICON}<input name="q"${asked.q ? html` value="${asked.q}"` : ''} placeholder="Search posts" aria-label="Search posts"></label><select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}"${m === asked.market ? ' selected' : ''}>${inWords(m)}</option>`)}</select><button class="primary">Search</button></form>`
 }
 
 /** How many posts each role has listed, in its own word: "1 offer · 2 requests"; a role with none is left out, and "None yet" when no role has any. */
@@ -59,7 +59,7 @@ export const home: Page<Home> = {
     return html`<div class="lead"><h1>Find verified people</h1><p>Offers and requests, ranked by their reviews.</p></div>
 ${searchForm(base, o.markets.map((m) => m.name))}
 <section><h2>Markets</h2>
-<div class="rows">${o.markets.map((m) => html`<a class="row" href="${urls(base).market(m.name)}"><span class="two"><strong>${marketWords(m.name)}</strong><span>${m.description}</span></span><span class="aside">${countsText(m)}</span></a>`)}</div></section>`
+<div class="rows">${o.markets.map((m) => html`<a class="row" href="${urls(base).market(m.name)}"><span class="two"><strong>${inWords(m.name)}</strong><span>${m.description}</span></span><span class="aside">${countsText(m)}</span></a>`)}</div></section>`
   },
   ld(o, base, url) {
     return {
