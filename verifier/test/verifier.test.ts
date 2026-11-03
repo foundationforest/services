@@ -21,12 +21,13 @@ import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
-import { DiditClient } from '../src/didit.ts'
+import { DiditClient, DiditUnavailable } from '../src/didit.ts'
 import { RECIPES, faceFacts, idFacts } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { SIGNED_FOR_MS } from '../src/server.ts'
 import { readConfig, startVerifier, type Verifier } from '../src/service.ts'
 import { ID_TRIES } from '../src/store.ts'
+import { PaymentUnavailable } from '../src/stripe.ts'
 import {
   FACE_WORKFLOW,
   FakeFaceCheck,
@@ -572,6 +573,66 @@ test('one payment, one ID stamp: a session that will never pass leaves it for th
     const again = await h.idSession(passedId('ada', doc('Lovelace')))
     assert.deepEqual(await idStamp(h, again, await stampNumber()), { status: 403, body: { error: 'duplicate_document' } })
     assert.equal((await idStamp(h, again, n)).status, 200, 'its payment, still unused, for the same stamp number')
+  } finally {
+    await h.verifier.close()
+  }
+})
+
+test('Stripe or Didit failing a request: a 502, and one log line saying why by its status and codes alone, never its words, a key or an id', async () => {
+  const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
+  try {
+    const unasked = await h.paid()
+    const payment = await h.knownPayment()
+    const sessionId = await h.session(passed('gina'))
+    const n = await stampNumber()
+    const unavailable = (error: string) => ({ status: 502, body: { error } })
+
+    // Stripe refusing a new payment, as it refuses `payment_method_types`.
+    h.payments.down = true
+    h.payments.fail = new PaymentUnavailable('Stripe answered 400 to a new payment', { status: 400, codes: ['invalid_request_error', 'payment_method_types_no_longer_supported', 'payment_method_types'] })
+    assert.deepEqual(await h.post('/id/payment', { returnUrl: 'https://app.example/' }), unavailable('payment_unavailable'))
+    // Stripe refusing the key, asked about a payment: of what it sent, only what is a code.
+    const sent = ['invalid_request_error', 'Invalid API Key provided: sk_test_****ndin', 'sk_test_51standin', `sk_test_${'a'.repeat(99)}`, unasked, sessionId, 'X', 'a'.repeat(65), { code: 'x' }]
+    h.payments.fail = new PaymentUnavailable('Stripe answered 401 to a payment', { status: 401, codes: sent })
+    assert.deepEqual(await h.post('/id/session', { payment: unasked }), unavailable('payment_unavailable'))
+    // Stripe not reached: the error's kind alone.
+    h.payments.fail = new PaymentUnavailable('Stripe could not be reached')
+    assert.deepEqual(await h.post('/id/session', { payment: unasked }), unavailable('payment_unavailable'))
+    h.payments.down = false
+
+    // Didit refusing to open a session, then to say what one decided; the photo's address refusing.
+    h.faces.down = true
+    h.faces.fail = new DiditUnavailable('Didit answered 402 to a new session', { status: 402, codes: ['insufficient_credits'] })
+    assert.deepEqual(await h.post('/face/session'), unavailable('face_check_unavailable'))
+    h.faces.fail = new DiditUnavailable('Didit answered 401 to a decision', { status: 401, codes: [sessionId] })
+    assert.deepEqual(await faceStamp(h, sessionId, n), unavailable('face_check_unavailable'))
+    h.faces.down = false
+    h.faces.photoDown = true
+    h.faces.fail = new DiditUnavailable("the photo's address answered 403", { status: 403 })
+    assert.deepEqual(await faceStamp(h, sessionId, n), unavailable('face_check_unavailable'))
+    h.faces.photoDown = false
+    // Anything else thrown: its kind alone.
+    h.ids.down = true
+    assert.deepEqual(await h.post('/id/session', { payment }), unavailable('face_check_unavailable'))
+    h.ids.down = false
+
+    assert.deepEqual(h.logs, [
+      'verifier: payment_unavailable (PaymentUnavailable 400 invalid_request_error payment_method_types_no_longer_supported payment_method_types)',
+      'verifier: payment_unavailable (PaymentUnavailable 401 invalid_request_error)',
+      'verifier: payment_unavailable (PaymentUnavailable)',
+      'verifier: face_check_unavailable (DiditUnavailable 402 insufficient_credits)',
+      'verifier: face_check_unavailable (DiditUnavailable 401)',
+      'verifier: face_check_unavailable (DiditUnavailable 403)',
+      'verifier: face_check_unavailable (Error)',
+    ], 'one line for each')
+
+    // The sweep says why the last deletion Didit refused failed, the same way.
+    h.faces.fail = new DiditUnavailable('Didit answered 503 to a deletion', { status: 503 })
+    await face(h, 'hana', await stampNumber())
+    h.later(SIGNED_FOR_MS)
+    h.faces.deleteDown = true
+    await h.verifier.sweep()
+    assert.equal(h.logs.at(-1), 'verifier: 1 signed session could not be deleted in Didit, kept for the next sweep (DiditUnavailable 503)')
   } finally {
     await h.verifier.close()
   }

@@ -308,9 +308,11 @@ retention setting. Paperwork and settings; nothing here does them.
 - **Three tries a payment:** a real person's ID check fails mostly to glare, blur or a moved face,
   which a second or third try fixes. Three keep Didit's share, up to $0.30 a session, under a fifth
   of the price after Stripe's fee; more would mostly help someone trying fake documents on Didit.
-- **How a person pays:** Stripe's `card` method, with Apple Pay, Google Pay and Link on top of it
-  (`payment_method_types: card`), each as the key's payment method settings at Stripe allow. Ours
-  has `card`, Apple Pay and Link on; Google Pay shows as unavailable, a setting of Stripe's own.
+- **How a person pays:** as the key's payment method settings at Stripe allow; the verifier names no
+  method. Ours has `card`, Apple Pay and Link on, and Bancontact, EPS and giropay, which Stripe offers
+  only for a payment in euros; Google Pay shows as unavailable, a setting of Stripe's own.
+- **Its API version:** every request sends `Stripe-Version: 2026-10-28.endive`, the version its code
+  and its stand-in follow, so a new default version at Stripe changes nothing here.
 - **What Stripe sees:** what the person pays with, their email, the name, country and, for some
   countries, postal code it asks for, their device's network address, and the app's page they come
   back to. The verifier tells it only the Price and its mark, `check: id`: never a stamp number, a
@@ -326,9 +328,12 @@ retention setting. Paperwork and settings; nothing here does them.
 - **Public:** this code, these settings, its name and its two keys.
 - **Secret:** its seed, `DIDIT_API_KEY` and `STRIPE_SECRET_KEY`.
 - **Kept, not published:** [What it keeps](#what-it-keeps), the stamp numbers given a gift among it.
-- **Logged:** its port, that it made a seed, an error's kind, and at a sweep how many deletions
-  Didit did not answer and what Didit did with a face it kept no template of. Never a session or a
-  payment.
+- **Logged:** its port, that it made a seed, an error's kind, what Didit did with a face it kept no
+  template of, and why Stripe or Didit failed: at each 502, and at a sweep beside how many deletions
+  Didit did not answer, the error's kind and, when one answered, its HTTP status and codes (Stripe's
+  error `type`, `code` and `param`; Didit's `code`), each only if it is lower case, digits, `_`, `.`
+  and brackets, at most 64 characters, and not shaped like a Stripe key or a Checkout Session's id.
+  Never what either said in words, a key, a session or a payment.
 
 ### The image and the commands
 
@@ -366,7 +371,7 @@ card; it refuses a live key.
 both checks and review, the ID check's payment and its tries, verifications made from the stamps and
 checked against the published keys, the facts vectors, stamps asked back, the seed, the sweep, the
 raw file, the face models on three portraits, both gifts' tickets taken by the host's own seller,
-the Stripe client's requests, and the fetch's retries.
+the Stripe client's requests, what a failure at Stripe or Didit logs, and the fetch's retries.
 
 ## Promises
 

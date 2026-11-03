@@ -27,7 +27,9 @@
 // `GET /v3/session/{id}/decision/` and `DELETE /v3/session/{id}/delete/` (200 with
 // `face_retention_outcome`, 404 for a session already gone). A liveness step's `reference_image` is a signed URL to the
 // selfie, valid for hours. A document step reads `first_name`, `last_name`, `full_name`,
-// `date_of_birth` (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3).
+// `date_of_birth` (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3). A refusal's body varies by
+// endpoint; a stable `code` sits beside `detail`, Didit's own words, when it sends one. The thrown
+// error keeps the status and that code, for the log line (server.ts), and never `detail`.
 //
 // Each session's `vendor_data` is its check's name and a fresh random id, `face-<uuid>` or
 // `id-<uuid>`: it names nobody, and Didit's face search compares a face against faces checked under
@@ -154,8 +156,30 @@ export function parseDecision(body: unknown): Decision {
   }
 }
 
-/** Didit could not be asked, or answered something other than a session. Its message names no session. */
-export class DiditUnavailable extends Error {}
+/**
+ * Didit could not be asked, refused, or answered something other than a session. Its message names
+ * no session. With an answer, its HTTP status; with a refusal, its `code`, as Didit sent it.
+ */
+export class DiditUnavailable extends Error {
+  readonly status: number | undefined
+  readonly codes: unknown[]
+  constructor(message: string, answer?: { status: number; codes?: unknown[] }) {
+    super(message)
+    this.status = answer?.status
+    this.codes = answer?.codes ?? []
+  }
+}
+
+/** Didit refused `what`: its status, and its `code` when it sent one, unless it is the key. `detail` is dropped. */
+async function refused(res: Response, what: string, key: string): Promise<DiditUnavailable> {
+  let code: unknown
+  try {
+    code = ((await res.json()) as { code?: unknown } | null)?.code
+  } catch {
+    // No JSON: the status alone says why.
+  }
+  return new DiditUnavailable(`Didit answered ${res.status} to ${what}`, { status: res.status, codes: code === undefined || code === key ? [] : [code] })
+}
 
 /** The largest photo the verifier takes from Didit. */
 export const MAX_PHOTO_BYTES = 10_000_000
@@ -164,7 +188,7 @@ async function body(res: Response): Promise<unknown> {
   try {
     return await res.json()
   } catch {
-    throw new DiditUnavailable('Didit answered something that is not JSON')
+    throw new DiditUnavailable('Didit answered something that is not JSON', { status: res.status })
   }
 }
 
@@ -217,10 +241,10 @@ export class DiditClient implements FaceCheck {
         ...(this.#scenario && { sandbox_scenario: this.#scenario }),
       }),
     })
-    if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a new session`)
+    if (!res.ok) throw await refused(res, 'a new session', this.#apiKey)
     const json = (await body(res)) as Record<string, unknown> | null
     if (typeof json?.session_id !== 'string' || typeof json.url !== 'string') {
-      throw new DiditUnavailable('Didit answered a new session without an id or a page')
+      throw new DiditUnavailable('Didit answered a new session without an id or a page', { status: res.status })
     }
     return { sessionId: json.session_id, url: json.url }
   }
@@ -233,7 +257,7 @@ export class DiditClient implements FaceCheck {
       body: JSON.stringify({ retain_face_embeddings: true, face_retention_days: FACE_RETENTION_DAYS }),
     })
     if (res.status === 404) return 'gone'
-    if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a deletion`)
+    if (!res.ok) throw await refused(res, 'a deletion', this.#apiKey)
     const outcome = ((await body(res)) as { face_retention_outcome?: unknown } | null)?.face_retention_outcome
     return typeof outcome === 'string' ? outcome : ''
   }
@@ -241,7 +265,7 @@ export class DiditClient implements FaceCheck {
   async decision(sessionId: string): Promise<Decision | null> {
     const res = await this.#fetch(`/v3/session/${encodeURIComponent(sessionId)}/decision/`, { method: 'GET' })
     if (res.status === 404) return null
-    if (!res.ok) throw new DiditUnavailable(`Didit answered ${res.status} to a decision`)
+    if (!res.ok) throw await refused(res, 'a decision', this.#apiKey)
     return parseDecision(await body(res))
   }
 
@@ -254,7 +278,7 @@ export class DiditClient implements FaceCheck {
     } catch {
       throw new DiditUnavailable('the photo could not be reached')
     }
-    if (!res.ok) throw new DiditUnavailable(`the photo's address answered ${res.status}`)
+    if (!res.ok) throw new DiditUnavailable(`the photo's address answered ${res.status}`, { status: res.status })
     const bytes = new Uint8Array(await res.arrayBuffer())
     if (bytes.length > MAX_PHOTO_BYTES) throw new DiditUnavailable('the photo is larger than the verifier takes')
     return bytes

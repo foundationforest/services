@@ -30,8 +30,9 @@
 // 402 a payment not paid, 403 a check that does not count (the code says why; `declined` and
 // `expired` mean the session will never pass, so the app starts a new one), 404 `not_found`, 409 a
 // session already used for another stamp number, or a payment used up, 413 a body over 4 KB, 502
-// Didit or Stripe not answering, 503 the ID check not for sale (no Stripe). A refused or failed
-// request uses nothing up: the same session can be sent again.
+// Didit or Stripe failing the request (logged by its status and codes, `why`), 503 the ID check not
+// for sale (no Stripe). A refused or failed request uses nothing up: the same session can be sent
+// again.
 //
 // One payment opens up to ID_TRIES ID sessions (store.ts) and gives one ID stamp. The payment sent
 // with a stamp need not be the one that opened its session: each opens at most ID_TRIES and gives at
@@ -50,13 +51,13 @@ import { signStamp, stampToJson } from '@foundationforest/proofs'
 import type { ServiceKey } from '@foundationforest/keys'
 import { b64u } from '@foundationforest/folders'
 
-import { type Check, type FaceCheck, judge } from './didit.ts'
+import { type Check, DiditUnavailable, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
 import type { Ed25519Key } from './seed.ts'
 import { type Store, paymentHash } from './store.ts'
-import { PAYMENT, type Payments } from './stripe.ts'
+import { PAYMENT, PaymentUnavailable, type Payments } from './stripe.ts'
 
 const MAX_BODY = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -74,6 +75,26 @@ class Waiting extends Error {}
 
 /** The kind of error, never its message: a message can carry a URL, a key or a session. */
 export const errorKind = (error: unknown) => (error instanceof Error ? error.constructor.name : typeof error)
+
+/**
+ * A code as Stripe's error types, codes and params and Didit's codes are written: lower case, digits,
+ * `_`, `.` and brackets, at most 64 characters. Anything else Stripe or Didit sent, its own words and
+ * a session's id among it, is never logged.
+ */
+const CODE = /^[a-z0-9_.[\]]{1,64}$/
+
+/** A Stripe key's or a Checkout Session's shape: never logged, even where it would pass as a code. */
+const STRIPE_SECRET = /^(?:sk|rk|pk|cs)_(?:test|live)_/
+
+/**
+ * Why a request to Stripe or Didit failed, for a log line: the error's kind, and, when it answered,
+ * its HTTP status and the codes it sent that look like codes. Never a message.
+ */
+export function why(error: unknown): string {
+  if (!(error instanceof PaymentUnavailable || error instanceof DiditUnavailable)) return errorKind(error)
+  const codes = error.codes.filter((code): code is string => typeof code === 'string' && CODE.test(code) && !STRIPE_SECRET.test(code))
+  return [errorKind(error), ...(error.status === undefined ? [] : [String(error.status)]), ...codes].join(' ')
+}
 
 async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = []
@@ -184,8 +205,8 @@ export const SWEEP_EVERY_MS = 60_000
 /**
  * Deletes in Didit each session whose stamp was first signed an hour ago or more, keeping its face
  * template, and forgets its id and time once Didit has deleted it. A deletion Didit does not answer
- * stays, for the next sweep. Logs without the session: how many deletions failed, and what Didit said
- * it did with a face when it kept no template.
+ * stays, for the next sweep. Logs without the session: how many deletions failed and why the last did
+ * (`why`), and what Didit said it did with a face when it kept no template.
  */
 export async function sweep(deps: { store: Store; checks: Record<Check, FaceCheck>; now?: () => number; log?: (line: string) => void }): Promise<void> {
   const log = deps.log ?? ((line) => console.log(line))
@@ -197,7 +218,7 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
       outcome = await deps.checks[check].deleteSession(sessionId)
     } catch (error) {
       failed++
-      kind = errorKind(error)
+      kind = why(error)
       continue
     }
     deps.store.deleted(sessionId)
@@ -213,6 +234,12 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   /** The earliest first signing a session may have to be signed again now. */
   const since = () => now() - SIGNED_FOR_MS
 
+  /** A 502: Stripe or Didit failed the request, and one log line says why (`why`). */
+  function unavailable(code: 'face_check_unavailable' | 'payment_unavailable', error: unknown): HttpError {
+    log(`verifier: ${code} (${why(error)})`)
+    return new HttpError(502, code)
+  }
+
   type Route = (body: Record<string, unknown>) => Promise<[number, unknown]>
 
   /**
@@ -225,8 +252,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     else fields(body)
     try {
       return [201, await c.check.createSession({ callback })]
-    } catch {
-      throw new HttpError(502, 'face_check_unavailable')
+    } catch (error) {
+      throw unavailable('face_check_unavailable', error)
     }
   }
 
@@ -242,8 +269,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const returnUrl = returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!)
     try {
       return [201, await payments.checkout(returnUrl)]
-    } catch {
-      throw new HttpError(502, 'payment_unavailable')
+    } catch (error) {
+      throw unavailable('payment_unavailable', error)
     }
   }
 
@@ -261,17 +288,17 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       let paid: boolean
       try {
         paid = await payments.paid(payment)
-      } catch {
-        throw new HttpError(502, 'payment_unavailable')
+      } catch (error) {
+        throw unavailable('payment_unavailable', error)
       }
       if (!paid) throw new HttpError(402, 'not_paid')
     }
     kept(store.takeTry(hash))
     try {
       return [201, await id.check.createSession({ callback })]
-    } catch {
+    } catch (error) {
       store.giveBackTry(hash)
-      throw new HttpError(502, 'face_check_unavailable')
+      throw unavailable('face_check_unavailable', error)
     }
   }
 
@@ -280,8 +307,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     let decision
     try {
       decision = await c.check.decision(sessionId)
-    } catch {
-      throw new HttpError(502, 'face_check_unavailable')
+    } catch (error) {
+      throw unavailable('face_check_unavailable', error)
     }
     const refusal = judge(decision, c.workflowId, c.kind)
     // A session that gave a stamp and is gone from Didit was deleted: by the sweep, or by hand.
@@ -297,8 +324,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     let photo: Uint8Array
     try {
       photo = await c.check.photo(url)
-    } catch {
-      throw new HttpError(502, 'face_check_unavailable')
+    } catch (error) {
+      throw unavailable('face_check_unavailable', error)
     }
     try {
       return await embedder.embed(photo)
