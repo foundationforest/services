@@ -2,7 +2,8 @@
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
 // ratings, trust and uniqueness) and the statement that signs them; its posts, listed or not and
 // why; the reviews, vouches and reports it received and gave, each with whether it counts and why
-// not, a review with its weight; and the words it received and gave, each with its weight.
+// not, a review with its weight; each post, review, vouch and report with its entry's own time; and
+// the words it received and gave, each with its weight.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
@@ -13,12 +14,14 @@ export type ReviewEntry = {
   reviewer: string
   address: string
   body: { [key: string]: unknown }
+  /** The entry's own time, in ms since 1970: its writer's word. */
+  time: number
   counted: boolean
   why?: string
   weight: number
 }
 /** A vouch or a report. */
-export type SaidEntry = { writer: string; address: string; body: { [key: string]: unknown }; counted: boolean; why?: string }
+export type SaidEntry = { writer: string; address: string; body: { [key: string]: unknown }; time: number; counted: boolean; why?: string }
 /** A writer's one word about a profile: its giver's uniqueness times trust, from 0 to 1, is its weight. */
 export type WordEntry = { writer: string; subject: string; word: 'vouch' | 'report'; weight: number }
 type Both<T> = { received: T[]; given: T[] }
@@ -27,7 +30,8 @@ export type ProfilePage = {
   address: string
   profile: { [key: string]: unknown }
   checks: Check[]
-  posts: Array<{ address: string; body: { [key: string]: unknown }; listed: boolean; why?: string }>
+  /** Each post with its entry's time; a deleted one with its last body and that body's time. */
+  posts: Array<{ address: string; body: { [key: string]: unknown }; time: number; listed: boolean; why?: string }>
   reviews: Both<ReviewEntry>
   vouches: Both<SaidEntry>
   reports: Both<SaidEntry>
@@ -35,20 +39,21 @@ export type ProfilePage = {
   proofs: Array<{ circuit: unknown; result: string; [key: string]: unknown }>
 } & Shown & { statement?: string; signature?: string }
 
-type ReviewColumns = { address: string; reviewer: string; body: string; counted: number; why: string | null; weight: number }
+type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number }
 const entry = (r: ReviewColumns): ReviewEntry => {
   const body = parse<{ [key: string]: unknown }>(r.body)
   return {
     reviewer: r.reviewer,
     address: r.address,
     body,
+    time: r.time,
     counted: r.counted === 1,
     ...(r.why !== null && { why: r.why }),
     weight: r.weight,
   }
 }
-type SaidColumns = { address: string; writer: string; body: string; counted: number; why: string | null }
-const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), counted: r.counted === 1, ...(r.why !== null && { why: r.why }) })
+type SaidColumns = { address: string; writer: string; body: string; time: number; counted: number; why: string | null }
+const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), time: r.time, counted: r.counted === 1, ...(r.why !== null && { why: r.why }) })
 
 const counts = (r: { counted: boolean; why?: string }, more = '') => html`<p class="muted">${r.counted ? `Counts${more}.` : html`<span class="no">Does not count: ${r.why}.</span>`}</p>`
 
@@ -72,16 +77,17 @@ export const profile: Page<ProfilePage> = {
       | { address: string; body: string; checks: string; proofs: string }
       | undefined
     if (!found) return null
-    const posts = store.db.prepare('select address, body, listed, why from posts where profile = ? order by time desc, address').all(found.address) as Array<{
+    const posts = store.db.prepare('select address, body, time, listed, why from posts where profile = ? order by time desc, address').all(found.address) as Array<{
       address: string
       body: string
+      time: number
       listed: number
       why: string | null
     }>
     const reviews = (column: string) =>
-      (store.db.prepare(`select address, reviewer, subject, body, counted, why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
+      (store.db.prepare(`select address, reviewer, subject, body, time, counted, why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
     const saidIn = (table: string) => {
-      const of = (column: string) => (store.db.prepare(`select address, writer, body, counted, why from ${table} where ${column} = ? order by time desc, address`).all(found.address) as SaidColumns[]).map(said)
+      const of = (column: string) => (store.db.prepare(`select address, writer, body, time, counted, why from ${table} where ${column} = ? order by time desc, address`).all(found.address) as SaidColumns[]).map(said)
       return { received: of('subject'), given: of('writer') }
     }
     const words = (column: string) => store.db.prepare(`select writer, subject, word, weight from words where ${column} = ? order by weight desc, writer, subject`).all(found.address) as WordEntry[]
@@ -91,7 +97,7 @@ export const profile: Page<ProfilePage> = {
       profile: parse(found.body),
       checks: parse(found.checks),
       ...shownFor(store, found.address),
-      posts: posts.map((p) => ({ address: p.address, body: parse(p.body), listed: p.listed === 1, ...(p.why !== null && !p.listed && { why: p.why }) })),
+      posts: posts.map((p) => ({ address: p.address, body: parse(p.body), time: p.time, listed: p.listed === 1, ...(p.why !== null && !p.listed && { why: p.why }) })),
       reviews: { received: reviews('subject'), given: reviews('reviewer') },
       vouches: saidIn('vouches'),
       reports: saidIn('reports'),
@@ -100,6 +106,9 @@ export const profile: Page<ProfilePage> = {
     }
   },
   title: (o) => `Forest index: ${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ')} ${short(o.address)}`,
+  // Each entry's time is in the JSON alone. This page runs no script, so it cannot show a time in
+  // the reader's own zone, and drawing one would choose a zone and a format for every reader. The
+  // page still draws only from its JSON object, so the two never disagree.
   body(o, base) {
     const subjectOf = (r: { body: { [key: string]: unknown } }) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     const wordHtml = (w: WordEntry, other: string) => html`<li>${w.word}, <a href="${urls(base).profile(other)}">${short(other)}</a>, weight ${w.weight.toFixed(2)}</li>`

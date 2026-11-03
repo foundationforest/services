@@ -1,5 +1,6 @@
-// The pages: the four JSON answers the mcp reads, each page drawn from its JSON twin alone, the
-// JSON-LD every page carries, search's filters and sort, and every URL the files for AI agents name.
+// The pages: the four JSON answers the mcp reads, each entry's time on a profile's page, each page
+// drawn from its JSON twin alone, the JSON-LD every page carries, search's filters and sort, and
+// every URL the files for AI agents name.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
@@ -13,7 +14,7 @@ import { b64u, base58 } from '@foundationforest/folders'
 import { ROOT } from '../src/index.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
-import { profile as profilePage } from '../src/pages/profile.ts'
+import { profile as profilePage, type ProfilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
 import { draw, type Page } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
@@ -25,6 +26,8 @@ const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence:
 let host: Awaited<ReturnType<typeof startHost>>
 let i: Awaited<ReturnType<typeof index>>
 const people: { [name: string]: Awaited<ReturnType<typeof profile>> } = {}
+/** Each entry written below, by its address, `<profile>/<path>`, with its own time. */
+const times = new Map<string, number>()
 
 before(async () => {
   host = await startHost()
@@ -34,7 +37,7 @@ before(async () => {
   people.uncounted = await profile('tutoring/tutor')
   for (const p of Object.values(people)) await publishProfile(host.url, p)
   const { a, b, c, s1, s2, seller, uncounted } = people as { [k: string]: (typeof people)[string] }
-  await post(host.url, [
+  const written = [
     at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
     at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
     at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
@@ -46,7 +49,12 @@ before(async () => {
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
     at(s2!, 'review/b', { subject: b!.key.address, score: '4', post: `${b!.key.address}/post/b` }),
     at(uncounted!, 'review/a', { subject: a!.key.address, score: '1' }),
-  ])
+    // Its writer does not count, so neither changes a rating, a trust or search's order.
+    at(uncounted!, 'vouch/a', { subject: a!.key.address, text: 'Real.' }),
+    at(uncounted!, 'report/a', { subject: a!.key.address }),
+  ]
+  for (const e of written) times.set(`${e.profile}/${e.path}`, e.time)
+  await post(host.url, written)
   i = await index({ hosts: [host.url], keys })
   await i.pass()
 })
@@ -87,11 +95,16 @@ test('the four answers the mcp reads, in their shapes', async () => {
 
   const p = (await twin<{ [k: string]: unknown }>(i, `/profiles/${people.a!.key.address}.json`)).body
   assert.deepEqual(keysOf(p), ['address', 'checks', 'index', 'posts', 'profile', 'proofs', 'reports', 'reviews', 'signature', 'statement', 'vouches', 'words', ...SHOWN].sort())
-  for (const x of p.posts as object[]) assert.deepEqual(keysOf(x), ['address', 'body', 'listed'])
+  for (const x of p.posts as object[]) assert.deepEqual(keysOf(x), ['address', 'body', 'listed', 'time'])
   const reviews = p.reviews as { received: Array<{ [k: string]: unknown }>; given: unknown[] }
   assert.deepEqual(keysOf(reviews), ['given', 'received'])
-  for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'reviewer', 'weight', ...(r.counted ? [] : ['why'])].sort())
+  for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'reviewer', 'time', 'weight', ...(r.counted ? [] : ['why'])].sort())
   for (const kind of ['vouches', 'reports', 'words']) assert.deepEqual(keysOf(p[kind] as object), ['given', 'received'])
+  for (const kind of ['vouches', 'reports']) {
+    const received = (p[kind] as { received: Array<{ [k: string]: unknown }> }).received
+    assert.equal(received.length, 1, kind)
+    for (const r of received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'time', 'writer', ...(r.counted ? [] : ['why'])].sort())
+  }
   const words = (p.words as { received: Array<{ [k: string]: unknown }> }).received
   assert.deepEqual(words.map((w) => [keysOf(w), w.word]), [0, 1].map(() => [['subject', 'weight', 'word', 'writer'], 'vouch']))
   // Two raters of 9: a rating of 9, shown as it is. Each is a vouch, so a's trust is above a
@@ -109,6 +122,22 @@ test('the four answers the mcp reads, in their shapes', async () => {
   const u = (await twin<{ [k: string]: unknown }>(i, `/profiles/${people.uncounted!.key.address}.json`)).body
   assert.deepEqual([u.ratings, u.trust, u.uniqueness, u.statement], [{ value: null, count: 0 }, 0, 0, undefined])
   assert.deepEqual(u.checks, [])
+})
+
+test("each post, review, vouch and report on a profile's page gives its entry's own time", async () => {
+  const seen = new Map<string, unknown>()
+  for (const who of Object.values(people)) {
+    const p = (await twin<ProfilePage>(i, `/profiles/${who.key.address}.json`)).body
+    const all = [p.posts, p.reviews.received, p.reviews.given, p.vouches.received, p.vouches.given, p.reports.received, p.reports.given].flat()
+    for (const x of all) {
+      assert.equal(x.time, times.get(x.address), x.address)
+      seen.set(x.address, x.time)
+    }
+  }
+  // Every entry written is on a page, each kind among them, and each time is a plain number.
+  assert.deepEqual([...seen.keys()].sort(), [...times.keys()].sort())
+  assert.deepEqual(new Set([...seen.keys()].map((a) => a.split('/')[1])), new Set(['post', 'review', 'vouch', 'report']))
+  for (const t of seen.values()) assert.ok(Number.isSafeInteger(t), `${t}`)
 })
 
 test("every page is drawn from its twin's object, and its JSON-LD passes schema.org's vocabulary", async () => {

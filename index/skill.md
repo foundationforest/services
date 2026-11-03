@@ -90,20 +90,22 @@ result's `ratings` is as it is.
   canonical JSON of `{ index, profile, ratings: { value, count }, trust, uniqueness, time }`,
   the rating's value as text; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
   bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
-- `posts`: each post, `{ "address", "body", "listed" }`, with `why` when it is not listed (it does
-  not fit its market, its profile does not count, or it was deleted: a deleted post keeps its last
-  body here, so a review that names it still finds it).
-- `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "counted", "why",
-  "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `post` it is about,
-  and the fields its market adds. `counted` says whether it counts here; `why`, only when it does
-  not, says why (its writer does not count, it gives no score, it is about another market or its
-  own writer, or a later one by the same writer about the same profile and post counts instead).
-  `weight` is how much its score weighs in the rating, split equally across that rater's reviews of
-  the profile.
-- `vouches` and `reports`: `received` and `given`, each `{ "writer", "address", "body", "counted",
-  "why" }`. A vouch says "I know this profile is real and honest"; a report says "this profile is
-  fake or a scam"; each body holds its `subject` and any `text`. `counted` and `why` as for a review;
-  one vouch and one report count per writer and profile, the latest.
+- `posts`: each post, `{ "address", "body", "time", "listed" }`, with `why` when it is not listed
+  (it does not fit its market, its profile does not count, or it was deleted: a deleted post keeps
+  its last body here, and that body's time, so a review that names it still finds it). `time` is
+  its entry's own time, in ms since 1970, a plain number: its writer's word, not when this index
+  read it.
+- `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "time", "counted",
+  "why", "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `post` it is
+  about, and the fields its market adds. `time` is as for a post. `counted` says whether it counts
+  here; `why`, only when it does not, says why (its writer does not count, it gives no score, it is
+  about another market or its own writer, or a later one by the same writer about the same profile
+  and post counts instead). `weight` is how much its score weighs in the rating, split equally
+  across that rater's reviews of the profile.
+- `vouches` and `reports`: `received` and `given`, each `{ "writer", "address", "body", "time",
+  "counted", "why" }`. A vouch says "I know this profile is real and honest"; a report says "this
+  profile is fake or a scam"; each body holds its `subject` and any `text`. `time`, `counted` and
+  `why` as for a review; one vouch and one report count per writer and profile, the latest.
 - `words`: `received` and `given`, each `{ "writer", "subject", "word", "weight" }`: each writer's
   one word about a profile, `report` if its latest counted entry about it is a report, otherwise
   `vouch`, and its weight, the writer's uniqueness times trust, from 0 to 1. Trust comes from these.
