@@ -225,6 +225,8 @@ test("search: words, market, role, a place, an area alone, a rating, raters, pag
   assert.deepEqual(who(await s('q=coat')), ['seller'])
   assert.deepEqual(who(await s('market=clothing&role=seller')), ['seller'])
   assert.deepEqual(who(await s('near=40.4,-3.7&km=20000')), ['a', 'c'])
+  // A town by its name, as skill.md tells an AI to search it too: q finds the coat in its area.
+  assert.deepEqual(who(await s('q=madrid')).sort(), ['a', 'seller'])
   const paged = await s('role=tutor&limit=1&offset=1')
   assert.equal(paged.total, 3)
   assert.deepEqual(who(paged), ['c'])
