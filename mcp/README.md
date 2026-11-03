@@ -4,11 +4,10 @@ The mcp is a connector, over MCP (the Model Context Protocol, the way AI apps ca
 lets your AI app (Claude, ChatGPT) act for you: find people, post, review and message, within the
 access keys you give it. An access key is a key one of your profiles hands out: its profile entry
 lists each one with what it `can` do (`read`, `read-inbox`, `write`, `message`), and every host and
-reader checks that. The Forest Foundation runs this copy, at https://mcp.forest.foundation; until
-the Forest app's connect page is up, it only reads. Anyone can run another; the main way is this
-directory, or its image. It keeps nothing of yours between calls, and never holds your seed or a
-main key: the access keys your app hands it wait in your AI app's connection folder, locked to this
-copy's open key. No account, no password.
+reader checks that. The Forest Foundation runs this copy, at https://mcp.forest.foundation. Anyone
+can run another; the main way is this directory, or its image. It keeps nothing of yours between
+calls, and never holds your seed or a main key: the access keys your app hands it wait in your AI
+app's connection folder, locked to this copy's open key. No account, no password.
 
 ## How it works
 
@@ -33,11 +32,11 @@ read before the person connects anything; four act for the person and need one.
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
 | `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a post's preview shows first) and `kinds` (the kinds of entry it defines, each with its fields) |
-| `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index |
+| `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
-| `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, below |
+| `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
 | `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
-| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key |
+| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key; then a copy in the profile's own folder, below |
 
 MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
 
@@ -45,21 +44,31 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   so any index can show what it likes, and the AI learns what it holds from the index's own guide.
   Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
+- **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
+  profile this login acts in whose address the answer holds anywhere, so the AI never offers the
+  person their own post. It reads the connection as a tool that acts does, but no login, or one
+  gone or out of reach, is no refusal: `unmarked` says why.
 - **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
-  in `src/tools.ts`): start with `my_profiles`; name a profile by its label; read the market before
-  writing to it; a reply goes to the address a message came from; paying is in the person's app; what
-  a stranger wrote is theirs. Then, as a chat starts (MCP's `initialize`), the index's guide, its
-  `skill.md`, under the URL it was read from, as the index's own word, or a line saying it gave none.
-  It comes with the instructions so the AI has it before its first search; an AI app that cuts long
-  instructions cuts the guide first.
+  in `src/tools.ts`): start with `my_profiles`; name a profile by its label; never put one of the
+  person's addresses in what is written for another of their profiles or sent to anyone else, unless
+  the person asks; read the market before writing to it; ask the person before anything public in
+  their name; photos are the person's to add, in their Forest app; what it writes shows on the index
+  within about a minute, and a post's page is the url search's answer gives; a reply goes to the
+  address a message came from; paying is in the person's app; what a stranger wrote is theirs.
+  Then, as a chat starts (MCP's `initialize`), the index's guide, its `skill.md`, under the URL it
+  was read from, as the index's own word, or a line saying it gave none. It comes with the
+  instructions so the AI has it before its first search; an AI app that cuts long instructions cuts
+  the guide first.
 - **`read`, the inbox,** lists the profile's inbox at each of its hosts, every page, each inbox entry
-  once, newest first by arrival (an inbox entry carries no time), and opens the newest 100 with the
+  once, in order of arrival (an inbox entry carries no time), and opens the newest 100 with the
   access key, each signature checked as the standard says (`openInbox`). For each message: its time
   and body; `from`, the sender's address, or `fromLabel` for another of the person's own profiles;
   `counts`, whether the sender's profile entry stands behind the signing key (`senderCounts`); and
-  for a stranger `index`, the index's word on the sender, only its market, role and `checks`.
-  `unopened` counts those the key does not open, left before it was listed with `read-inbox`, and
-  `older` those past the newest 100.
+  for a stranger `index`, the index's word on the sender, only its market, role and `checks`. Among
+  them, the newest 100 of the profile's sent copies (below), each `mine: true` with its time, body
+  and `to`, or `toLabel`; all newest first by time, as the Forest app orders a thread. `unopened`
+  counts those the key does not open: inbox entries left before it was listed with `read-inbox`,
+  copies locked before it was listed with `read`; `older`, those past the newest 100.
 - **`write`, public,** the main way: at `<kind>/<id>`, a kind every market defines (`post`,
   `review`, `vouch`, `report`), the body checked against the profile entry's `market` before
   anything is signed, with the markets package's `checkEntry`, the index's own check, so a body
@@ -73,6 +82,11 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   `read`. No access key writes `profile`. Whether the key may write is the hosts' to say, and each
   host's refusal is passed on, so an ended key hears `unlisted`; a `message` is checked here first,
   since only the recipient's app would see it does not count.
+- **`message`, its copy:** once a host took the message, a copy in the sending profile's own folder,
+  as the Forest app keeps one: at `sent/<id>`, 16 random bytes in hex, `{ to, time, body }`, locked
+  to every key that may read the folder (`lockKeysOf`) and written as any entry, so the person's app
+  shows the AI's side of a thread. It answers `copy`, its path; or `null` and `why`, each host's
+  refusal, when none took it, as for a key listed without `write`: the message went all the same.
 - **Other folders** (a recipient, a sender, a review's subject) are looked for at the hosts the
   person's own profiles use, and a message's own `host`, then every host the folder's profile entry
   names: that is where the profiles the person deals with live today, and a message names its
@@ -82,7 +96,8 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   addresses and follows no redirect.
 - **The person's own addresses.** In every answer of the four tools that act, each address of a
   profile in the connection becomes its label, and each pay address of a profile entry it read
-  becomes `<label>'s <type> pay address`, wherever it appears.
+  becomes `<label>'s <type> pay address`, wherever it appears. `search` only reads: its answer
+  stays the index's, whole, with the person's addresses where the index put them.
 
 What this copy says itself is a refusal, in plain words: an argument that does not fit, a label the
 login does not act in, a path that is none, a body that does not fit, a host that took nothing, with
@@ -153,7 +168,9 @@ folder of the person's for each AI app, and a pointer to it, which the AI app's 
 - **Each call that acts** opens the pointer, reads the folder from its hosts, opens `connection` and
   checks its secret, then opens the `access/` entries and acts with their keys, keeping none. No
   `connection` entry, one that does not open, or another secret: a 401, a login to make again. An
-  access entry that does not open or fit, or names a profile already named, counts for nothing.
+  access entry that does not open or fit, or names a profile already named, counts for nothing. A
+  `search` with a login reads it the same way, at most once a request, and hears a gone one as
+  `unmarked`, never a 401.
 - **Adding a profile** is one more key and access entry; **removing one** ends its key, listing it
   with `until`, the time of the profile entry that ends it, and deletes its access entry and note;
   **ending** deletes `connection`, then removes each profile. None needs a new login.
@@ -189,8 +206,8 @@ Profiles folder's main key, spent into that folder.
   packages) and this directory, started as `node src/main.ts` on every address, `DATA_DIR=/data`.
 - **Where:** Railway, service `mcp`, `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`, one replica, a
   volume at `/data` holding its two keys, a public domain to `PORT`, and no health check, since the
-  root answers only what an MCP client sends. `APP_URL` is unset until the Forest app's connect page
-  exists; until then, reading works and logins wait. Another app runs its own copy, and its page.
+  root answers only what an MCP client sends. `APP_URL` is the Forest app's connect page. Another app
+  runs its own copy, and its page.
 - **What it reads:** the foundation's index, the markets at `MARKETS` (from the checkout, so every
   answer comes from the commit the tests ran against), and the folders each login points to and deals
   with, on public hosts only.
@@ -199,8 +216,9 @@ Profiles folder's main key, spent into that folder.
     AI app redeems at once; no end for a login;
   - at most 4,096 characters for a pointer, one envelope to one key holding up to 8 hosts, so the
     token that carries it stays well under the 16 KB of headers Node takes;
-  - at most 100 access entries opened a call, the first by path, and the newest 100 inbox entries a
-    read: each takes a post-quantum opening, and anyone can leave entries in an inbox;
+  - at most 100 access entries opened a call, the first by path, and the newest 100 inbox entries
+    and 100 sent copies a read: each takes a post-quantum opening, and anyone can leave entries in
+    an inbox;
   - 10 seconds for the index's guide as a chat starts, so a slow index does not hold the chat; 60 for
     any other read of the index, and the folders client's 60 for a host;
   - at most 4,194,304 bytes for an MCP request or an index's answer.
@@ -276,13 +294,16 @@ keeps working, and logs in again the first time it acts.
 - **A key opens nothing locked before it was listed.**
 - **A stranger's folder is found only on the person's hosts or a message's own host;** one that lives
   only elsewhere can be read about through the index, not messaged.
-- **The newest 100 inbox entries a read;** older ones wait for those to leave, after the keep days.
-- **Each call reads the connection from its hosts,** one post-quantum opening a profile; with none
-  of the hosts answering, the tools that act refuse.
+- **The newest 100 inbox entries and 100 sent copies a read;** older inbox entries wait for those to
+  leave, after the keep days.
+- **A key listed without `write` keeps no copy of what it sends.**
+- **Each call that acts, and each search with a login, reads the connection from its hosts,** one
+  post-quantum opening a profile; with none of the hosts answering, the tools that act refuse, and
+  search marks nothing.
 - **A connection folder is public:** anyone can see it exists and how many profiles it holds, never
   which.
-- **The AI can still find a profile it posted for,** through the index; what this copy keeps from it
-  is the map of the person's profiles.
+- **Search gives the AI the map of the person's profiles the index shows:** `mine` names, by label,
+  each one whose address the index's answer holds.
 - **A code works more than once in its 60 seconds,** only for the AI app holding its PKCE verifier.
 - **The markets are the directory's at one commit:** a market added since is unknown until `MARKETS`
   moves.

@@ -2,14 +2,17 @@
 // the six and their marks; how Forest works first, then the index's guide; the markets; the index's
 // answers whole, a field and a filter this copy has never seen among them. Then, in the person's
 // two tutoring profiles, with the access keys their app keeps in the connection: my_profiles by
-// label, with the switches each profile entry lists; read of an entry, public and locked, and of
-// the inbox, each message opened and its sender checked, one from before the login left unopened;
-// write, public against the market (the markets package's checkEntry), refused naming the field, a
-// file named and not, a delete, locked anywhere but profile and key/…; message, which the recipient
-// opens, signed by the access key; once the profile entry ends the key, the host refusing its next
-// write, this copy its next message, and what it wrote still counting; and once the person's app
-// ends it, its note and access entry gone with it. No answer, in the whole run, holds one of the
-// person's own addresses.
+// label, with the switches each profile entry lists; search, the person's own profiles in the
+// index's answer mapped to their labels (mine), and unmarked with no login; read of an entry,
+// public and locked, and of the inbox, each message opened and its sender checked, one from before
+// the login left unopened; write, public against the market (the markets package's checkEntry),
+// refused naming the field, a file named and not, a delete, locked anywhere but profile and key/…;
+// message, which the recipient opens, signed by the access key, and its copy at sent/<id> as the
+// Forest app keeps one, shown in the inbox as mine; a key that may message but not write, which
+// sends and keeps no copy; once the profile entry ends the key, the host refusing its next write,
+// this copy its next message, and what it wrote still counting; and once the person's app ends it,
+// its note and access entry gone with it. No answer of a tool that acts, in the whole run, holds
+// one of the person's own addresses.
 
 import assert from 'node:assert/strict'
 import { after, before, describe, test } from 'node:test'
@@ -28,12 +31,13 @@ let w: World
 let client: Client
 /** The address of the access key this login holds for the tutor profile, as its profile entry lists it. */
 let tutorKey: string
-/** Every answer an AI app got in this file. */
+/** Every answer an AI app got in this file from a tool that acts for the person. */
 const answers: string[] = []
 
 const TUTOR = 'tutoring/tutor'
 const STUDENT = 'tutoring/student'
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
+const ACTS = ['my_profiles', 'read', 'write', 'message']
 
 /** A message from the stranger to the person's tutor, signed by `key` when given, else its main key. */
 async function strangerWrites(text: string, key?: Awaited<ReturnType<typeof newAccessKey>>) {
@@ -65,7 +69,7 @@ after(async () => {
 async function call(name: string, args: { [key: string]: unknown } = {}, as = client): Promise<any> {
   const r = (await as.callTool({ name, arguments: args })) as Result
   const text = r.content[0]!.text
-  answers.push(text)
+  if (ACTS.includes(name)) answers.push(text)
   return r.isError ? { refused: text } : JSON.parse(text)
 }
 
@@ -135,6 +139,32 @@ describe('reading, with no login', () => {
 describe('acting for the person', () => {
   test('my_profiles: the two tutoring profiles, by label, with every switch their profile entries list; no address', async () => {
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: SWITCHES }] })
+  })
+
+  test("search, with the login: mine maps each of the person's own profiles the index's answer holds to its label, the answer whole; with none, unmarked", async () => {
+    const tutor = w.own[TUTOR]!
+    const ours = { profile: tutor, market: 'tutoring', role: 'tutor', post: { address: `${tutor}/post/maths`, body: lesson('Maths, from the AI.'), url: `${w.index}/profiles/${tutor}/post/maths` } }
+    const search = w.said['/search.json'] as { results: unknown[] }
+    const page = `/profiles/${tutor}.json`
+    w.said['/search.json'] = { ...search, results: [...search.results, ours] }
+    w.said[page] = { index: 'stand-in', address: tutor, profile: { market: 'tutoring', role: 'tutor' } }
+    try {
+      const found = await call('search', { filters: { q: 'maths' } })
+      assert.deepEqual(found.index.answer.results, [...search.results, ours], "the index's answer whole, the person's address in it where the index put it")
+      assert.deepEqual(found.mine, { [tutor]: TUTOR })
+      assert.deepEqual((await call('search', { address: tutor })).mine, { [tutor]: TUTOR }, "the person's own profile page")
+      assert.deepEqual((await call('search', { address: w.stranger.address })).mine, {}, "a stranger's")
+      const { client: anon } = await aiApp(w.mcp.origin)
+      try {
+        const unmarked = await call('search', { filters: { q: 'maths' } }, anon)
+        assert.deepEqual([unmarked.index.answer.results.length, unmarked.mine, unmarked.unmarked], [2, undefined, 'Acting for the person needs a login.'])
+      } finally {
+        await anon.close()
+      }
+    } finally {
+      w.said['/search.json'] = search
+      delete w.said[page]
+    }
   })
 
   test('read of an entry: the profile entry, its pay addresses by label; one missing; a path that is none; a profile this login does not hold', async () => {
@@ -207,11 +237,20 @@ describe('acting for the person', () => {
   })
 
   test('message: to a stranger, who opens it, signed by the access key; to the person’s own profile, shown by its label; one whose key does not count', async () => {
-    assert.deepEqual(await call('message', { label: TUTOR, to: w.stranger.address, body: { text: 'Yes, physics too.' } }), { sent: true, hosts: 1 })
+    const sent = await call('message', { label: TUTOR, to: w.stranger.address, body: { text: 'Yes, physics too.' } })
+    assert.deepEqual(Object.keys(sent), ['sent', 'hosts', 'copy'])
+    assert.deepEqual([sent.sent, sent.hosts], [true, 1])
+    assert.match(sent.copy, /^sent\/[0-9a-f]{32}$/, "the app's shape of id: 16 random bytes, in hex")
     const page = await readInbox(w.host, w.stranger.address)
     const { message } = await openInbox(page.entries.at(-1)!.entry, w.stranger.identity)
     assert.deepEqual([message.from, message.key, message.host, message.body], [w.own[TUTOR], tutorKey, w.host, { text: 'Yes, physics too.' }])
     assert.ok(senderCounts(message, (await at(TUTOR, 'profile'))!.body), "the tutor's profile entry lists the key with message")
+    // The copy, as the Forest app keeps one and opens it with the profile's main key.
+    const copy = (await at(TUTOR, sent.copy))!
+    assert.equal(copy.key, tutorKey, 'signed by the access key')
+    assert.equal(lockCount(copy.body as { private: string }), 2, "locked to the main key's open key and this login's key, the keys that read the folder")
+    const main = await mainKey(w.seed, TUTOR)
+    assert.deepEqual(await openLocked(copy.body!, (await openingHalf(main.secret)).identity), { to: w.stranger.address, time: message.time, body: { text: 'Yes, physics too.' } })
 
     await call('message', { label: STUDENT, to: w.own[TUTOR], body: { text: 'From the student.' } })
     await strangerWrites('Signed by a key my profile entry does not list.', await newAccessKey())
@@ -220,6 +259,12 @@ describe('acting for the person', () => {
     assert.deepEqual([mine.fromLabel, mine.from, mine.counts, mine.index], [STUDENT, undefined, true, undefined])
     const forged = box.messages.find((m: { body: { text: string } }) => m.body.text.startsWith('Signed by a key'))
     assert.deepEqual([forged.from, forged.counts], [w.stranger.address, false])
+    const reply = box.messages.find((m: { body: { text: string } }) => m.body.text === 'Yes, physics too.')
+    assert.deepEqual(reply, { time: message.time, mine: true, to: w.stranger.address, body: { text: 'Yes, physics too.' } }, "the tutor's own copy, among its messages")
+    const times = box.messages.map((m: { time: number }) => m.time)
+    assert.deepEqual(times, [...times].sort((a, b) => b - a), 'newest first by time')
+    const toTutor = (await call('read', { label: STUDENT, inbox: true })).messages.find((m: { body: { text: string } }) => m.body.text === 'From the student.')
+    assert.deepEqual([toTutor.mine, toTutor.toLabel, toTutor.to], [true, TUTOR, undefined], "a copy to another of the person's profiles, shown by its label")
 
     const nobody = (await mainKey(new Uint8Array(32).fill(5), 'tutoring/tutor')).address
     assert.match((await call('message', { label: TUTOR, to: nobody, body: { text: 'x' } })).refused, /no host this copy knows holds/)
@@ -235,6 +280,22 @@ describe('acting for the person', () => {
       assert.match((await call('write', { label: 'clothing/seller', path: 'post/coat', body: coat }, c.client)).refused, /photos names a file the body's files do not list/)
       assert.equal((await call('write', { label: 'clothing/seller', path: 'post/coat', body: { ...coat, files: [photo] } }, c.client)).written, 'post/coat')
       assert.match((await call('message', { label: 'clothing/seller', to: w.stranger.address, body: { text: 'x' } }, c.client)).refused, /may not message as clothing\/seller/)
+    } finally {
+      w.choose({ profiles: [TUTOR, STUDENT] })
+      await c.client.close()
+    }
+  })
+
+  test('another login, messaging only, in the clothing profile: it sends, and the hosts keep no copy', async () => {
+    w.choose({ profiles: ['clothing/seller'], can: ['message'] })
+    const c = await aiApp(w.mcp.origin)
+    try {
+      await logIn(c)
+      const sent = await call('message', { label: 'clothing/seller', to: w.stranger.address, body: { text: 'Is the coat still yours?' } }, c.client)
+      assert.deepEqual([sent.sent, sent.hosts, sent.copy], [true, 1, null])
+      assert.match(sent.why, /^no host took the copy: .*\(unlisted: /)
+      const { message } = await openInbox((await readInbox(w.host, w.stranger.address)).entries.at(-1)!.entry, w.stranger.identity)
+      assert.deepEqual(message.body, { text: 'Is the coat still yours?' }, 'the message went')
     } finally {
       w.choose({ profiles: [TUTOR, STUDENT] })
       await c.client.close()
@@ -267,7 +328,7 @@ describe('acting for the person', () => {
     assert.equal((await at(TUTOR, 'post/physics'))?.key, tutorKey)
   })
 
-  test("no answer in this file holds one of the person's own addresses", async () => {
+  test("no answer of a tool that acts, in this file, holds one of the person's own addresses", async () => {
     const own: string[] = []
     for (const [label, address] of Object.entries(w.own)) own.push(address, ...Object.values(await payAddresses(w.seed, label)))
     const all = answers.join('\n').toLowerCase()
