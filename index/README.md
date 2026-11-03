@@ -36,7 +36,7 @@ access key the profile entry lists with `write`, so this index sees what any rea
 | Path | What | A delete |
 |---|---|---|
 | `profile` | The profile entry: market and role, hosts, open key, pay addresses, access keys, proofs | |
-| `post/<id>` | A post | Keeps its last body for good, marked deleted, so a review naming it still finds it; one deleted before this index read it keeps the last version a host still serves |
+| `post/<id>` | A post | Keeps its last body, and that body's time, for good, marked deleted, so a review naming it still finds it; one deleted before this index read it keeps the last version a host still serves |
 | `review/<id>` | A review | Removes it |
 | `vouch/<id>`, `report/<id>` | A vouch, a report | Removes it |
 
@@ -191,7 +191,7 @@ Every field, for programs: [`skill.md`](skill.md).
 | `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles }], lists }`: its address, every market in the directory with its role words, and its lists, each key with its confidence |
 | `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order |
 | `/search` | `{ index, total, results: [<result>] }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km` (10 unless given), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset` |
-| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs }`: drawn as "Rated 9.2 by 14 · trust 42 · uniqueness 99", each check a badge. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight |
+| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs }`: drawn as "Rated 9.2 by 14 · trust 42 · uniqueness 99", each check a badge. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
 | `/sitemap.xml`, `/robots.txt` | The home page, each market, each counted profile |

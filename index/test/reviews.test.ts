@@ -26,7 +26,8 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   const coach = await profile('sports-coaching/coach', [by])
   for (const p of [tutor, student, another, stranger, coach]) await publishProfile(host.url, p)
   const maths = `${tutor.key.address}/post/maths`
-  await post(host.url, [at(tutor, 'post/maths', { description: 'Maths, any level.', subjects: ['maths'] })])
+  const made = at(tutor, 'post/maths', { description: 'Maths, any level.', subjects: ['maths'] })
+  await post(host.url, [made])
 
   const review = (subject: string, score: string | undefined, more: { [key: string]: unknown } = {}) => ({ subject, ...(score && { score }), ...more })
   await post(host.url, [
@@ -80,8 +81,9 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
   assert.ok(t.ratings.value! >= 1 && t.ratings.value! <= 10)
   assert.deepEqual(t.words.received.map((w) => [w.writer, w.word]).sort(), [[another.key.address, 'vouch'], [student.key.address, 'vouch']].sort())
 
-  // The post the reviews name is deleted, and kept with its body.
-  assert.deepEqual(t.posts, [{ address: maths, body: { description: 'Maths, any level.', subjects: ['maths'] }, listed: false, why: 'deleted' }])
+  // The post the reviews name is deleted, and kept with its body and that body's time, never the
+  // delete's.
+  assert.deepEqual(t.posts, [{ address: maths, body: { description: 'Maths, any level.', subjects: ['maths'] }, time: made.time, listed: false, why: 'deleted' }])
   await i.close()
 })
 
