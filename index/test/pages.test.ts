@@ -28,17 +28,19 @@ const people: { [name: string]: Awaited<ReturnType<typeof profile>> } = {}
 
 before(async () => {
   host = await startHost()
-  for (const [name, label] of Object.entries({ a: 'tutoring/tutor', b: 'tutoring/tutor', c: 'tutoring/tutor', s1: 'tutoring/student', s2: 'tutoring/student' })) {
+  for (const [name, label] of Object.entries({ a: 'tutoring/tutor', b: 'tutoring/tutor', c: 'tutoring/tutor', s1: 'tutoring/student', s2: 'tutoring/student', seller: 'clothing/seller' })) {
     people[name] = await profile(label, [by])
   }
   people.uncounted = await profile('tutoring/tutor')
   for (const p of Object.values(people)) await publishProfile(host.url, p)
-  const { a, b, c, s1, s2, uncounted } = people as { [k: string]: (typeof people)[string] }
+  const { a, b, c, s1, s2, seller, uncounted } = people as { [k: string]: (typeof people)[string] }
   await post(host.url, [
     at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' } }),
     at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true } }),
     at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
     at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'] }),
+    // A place that is an area alone, with no point.
+    at(seller!, 'post/coat', { description: 'A wool coat, worn twice.', kind: 'coat', price: { amount: '40', currency: 'EUR' }, location: { area: 'Madrid' } }),
     at(uncounted!, 'post/u', { description: 'Maths, uncounted.' }),
     at(s1!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a`, text: 'Very clear.' }),
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
@@ -114,8 +116,10 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
     ['/', home as Page<never>],
     ['/markets/tutoring', market as Page<never>],
     ['/markets/tennis-matches', market as Page<never>],
+    ['/markets/clothing', market as Page<never>],
     [`/profiles/${people.a!.key.address}`, profilePage as Page<never>],
     [`/profiles/${people.uncounted!.key.address}`, profilePage as Page<never>],
+    [`/profiles/${people.seller!.key.address}`, profilePage as Page<never>],
     ['/search?q=maths', search as Page<never>],
     ['/search', search as Page<never>],
   ]
@@ -130,7 +134,7 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
   }
 })
 
-test("search: words, market, role, a place, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
+test("search: words, market, role, a place, an area alone, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
   const s = async (q: string) => (await twin<{ total: number; results: Array<{ profile: string; post: { address: string } }> }>(i, `/search.json?${q}`)).body
   const who = (r: { results: Array<{ profile: string }> }) => r.results.map((x) => Object.keys(people).find((k) => people[k]!.key.address === x.profile))
   // Every score here weighs the same: two students no one has said a word about, neither picky. So
@@ -146,7 +150,11 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual(who(await s('near=38.7,-9.1')), ['c'])
   assert.deepEqual(who(await s('minRating=7.5')), ['a'])
   assert.deepEqual(who(await s('minReviews=1&role=tutor')), ['a', 'b'])
-  assert.deepEqual(who(await s('market=clothing')), [])
+  // The coat's location is an area alone: found by its words, market and role, and never near, as
+  // near reads a place's point. 20000 km from Madrid reaches both posts with a point.
+  assert.deepEqual(who(await s('q=coat')), ['seller'])
+  assert.deepEqual(who(await s('market=clothing&role=seller')), ['seller'])
+  assert.deepEqual(who(await s('near=40.4,-3.7&km=20000')), ['a', 'c'])
   const paged = await s('role=tutor&limit=1&offset=1')
   assert.equal(paged.total, 3)
   assert.deepEqual(who(paged), ['c'])
