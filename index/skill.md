@@ -61,8 +61,8 @@ add), and its listed posts by role, in search's order.
 
 - `q`: words in the post, each a word's start, all of them;
 - `market`, `role`: only that market, only posts by that role;
-- `near=lat,lon` and `km`: a post with a place within `km` kilometres (10 unless given); a post that
-  names no place is left out;
+- `near=lat,lon` and `km`: a post with a place whose point is within `km` kilometres (10 unless
+  given); a post with no point, as one whose place is only an area or online, is left out;
 - `minRating`: a profile rated at least this, from 1 to 10; one with no rating is left out;
 - `minReviews`: a profile scored by at least this many raters;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
