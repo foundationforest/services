@@ -3,7 +3,8 @@
 // A file that names any service by its origin is the deployed check instead: each one named is
 // checked to answer, and no loop runs. A deployed verifier checks real faces, and a script has none;
 // a deployed index trusts only that verifier; a deployed host takes only its own sponsors' tickets;
-// and the deployed mcp has no connect page for an AI to log in through (its APP_URL is unset).
+// and the deployed mcp logs an AI in only through the Forest app's connect page, where a person says
+// yes.
 //
 //   the verifier   verifier/src, with the stand-in Didit its tests run (verifier/test/fake-didit.ts,
 //                  a process of its own) and the stand-in face model; its own name and seed in a
