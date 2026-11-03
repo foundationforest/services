@@ -38,13 +38,20 @@ Every profile this index counts shows three things, each ranked inside its own m
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
 
+On the pages, a post in a list shows its profile's shield, an outline for a face check and filled
+for an ID check, and its rating as a chip, "9.2 ★", or New when no one has rated it. Its rating with
+how many raters, its trust and its uniqueness are in a fold on its page and on each of its posts'
+pages, What these mean, with what each means; the About page says what they mean too.
+
 ## The markets
 
     GET https://index.forest.foundation/index.json
 
-`{ "index", "markets": [{ "name", "description", "roles", "listed" }], "lists" }`: this index's
-address, every market in the markets directory it reads, with its roles and how many posts each role
-has `listed`, such as `{ "tutor": 3, "student": 1 }`, and the lists it reads by: `hosts`; `keys`,
+`{ "index", "markets": [{ "name", "description", "roles", "listed", "words" }], "lists" }`: this
+index's address, every market in the markets directory it reads, with its roles, how many posts each
+role has `listed`, such as `{ "tutor": 3, "student": 1 }`, and each role's word for its posts,
+`offers`, `requests` or `posts`, such as `{ "tutor": "offers", "student": "requests" }`, and the
+lists it reads by: `hosts`; `keys`,
 each verifier key it counts with its `verifier`, its `label` (such as face check) and its
 `confidence` from 0 to 1, that a profile it checked is one real person; `indexes`, whose reputation
 proofs it shows; and `maxAgeDays`.
@@ -59,7 +66,9 @@ add), and its listed posts by role, in search's order.
 
     GET https://index.forest.foundation/search.json?q=maths&market=tutoring&role=tutor
 
-`{ "index", "total", "results": [<result>] }`. Every filter may be left out:
+`{ "index", "total", "results": [<result>], "query", "markets" }`: `query` is each filter below as
+it was given, such as `{ "q": "maths", "market": "tutoring" }`, and `markets` every market's name.
+Every filter may be left out:
 
 - `q`: words in the post, each a word's start, all of them;
 - `market`, `role`: only that market, only posts by that role;
@@ -123,11 +132,20 @@ is.
     GET https://index.forest.foundation/profiles/<address>/post/<id>.json
 
 A post's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
-"post", "checks", "ratings", "trust", "uniqueness", "fields", "message" }`. `post` is as its
-profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message` are its profile's;
-`fields` is its market's post fields in the order the page shows them, the market's preview first.
+"post", "checks", "ratings", "trust", "uniqueness", "fields", "types", "message" }`. `post` is as
+its profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message` are its
+profile's; `fields` is its market's post fields in the order the page shows them, the market's
+preview first; `types` is each one's type, as its market names it, a `file` field naming photos.
 The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
 gives, in the writer's words, and `message`. A post that is not listed has its page too, with `why`.
+
+## About
+
+    GET https://index.forest.foundation/about.json
+
+`{ "index", "lists" }`: this index's address and the lists it reads by, as `/index.json` gives them.
+Its page says what this index is, what it reads, what a profile's words and numbers mean, and links
+to this file, `llms.txt`, the JSON and the source.
 
 ## The tree
 

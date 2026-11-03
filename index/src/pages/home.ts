@@ -1,26 +1,38 @@
-// `/`, twin `/index.json`: the markets, each with how many posts each of its roles has listed, this
-// index's address, and its lists; and a search box.
+// `/`, twin `/index.json`: the markets, each with how many posts each of its roles has listed and
+// each role's word for its posts, this index's address, and its lists; drawn as a search box and
+// a row per market. The lists are drawn on the About page.
 
-import { html, type Page, type Raw, urls } from './template.ts'
+import { listsOf, type ListsShown } from './about.ts'
+import { marketWords } from './common.ts'
+import { html, type Page, type Raw, SEARCH_ICON, urls } from './template.ts'
+
+/** A role's word for its posts, as the markets directory gives it. */
+export type PostsWord = 'offers' | 'requests' | 'posts'
 
 export type Home = {
   index: string
-  /** Each market in the directory, its role words, and how many posts each role has listed here. */
-  markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number } }>
-  lists: {
-    hosts: string[]
-    keys: Array<{ key: string; verifier: string; label: string; confidence: number; until?: string }>
-    indexes: Array<{ index: string; name: string }>
-    maxAgeDays: number
-  }
+  /** Each market in the directory, its role words, how many posts each role has listed here, and each role's word for its posts. */
+  markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: PostsWord } }>
+  lists: ListsShown
 }
 
-/** The search box: words, and the market, any of the directory's. */
-export function searchForm(base: string, markets: string[]): Raw {
-  return html`<form action="${urls(base).search({})}" method="get"><input name="q" placeholder="Words" aria-label="Words"> <select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}">${m}</option>`)}</select> <button>Search</button></form>`
+/**
+ * The search box: words, with the search icon, and the market, any of the directory's, in words;
+ * the page's one green button. Filled with what was searched, when it is search's own page.
+ */
+export function searchForm(base: string, markets: string[], asked: { q?: string; market?: string } = {}): Raw {
+  return html`<form class="search" action="${urls(base).search({})}" method="get"><label class="box">${SEARCH_ICON}<input name="q"${asked.q ? html` value="${asked.q}"` : ''} placeholder="Search posts" aria-label="Search posts"></label><select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}"${m === asked.market ? ' selected' : ''}>${marketWords(m)}</option>`)}</select><button class="primary">Search</button></form>`
 }
 
-const posts = (n: number, role: string) => `${n} ${role} post${n === 1 ? '' : 's'}`
+/** How many posts each role has listed, in its own word: "1 offer · 2 requests"; a role with none is left out, and "None yet" when no role has any. */
+export function countsText(m: Home['markets'][number]): string {
+  const parts = m.roles.filter((r) => (m.listed[r] ?? 0) > 0).map((r) => {
+    const n = m.listed[r]!
+    const word = m.words[r] ?? 'posts'
+    return `${n} ${n === 1 ? word.slice(0, -1) : word}`
+  })
+  return parts.join(' · ') || 'None yet'
+}
 
 export const home: Page<Home> = {
   data({ store, lists, markets, self }) {
@@ -37,24 +49,17 @@ export const home: Page<Home> = {
         description: m.description,
         roles: m.roles.map((r) => r.role),
         listed: Object.fromEntries(m.roles.map((r) => [r.role, listed(m.name, r.role)])),
+        words: Object.fromEntries(m.roles.map((r) => [r.role, r.posts])),
       })),
-      lists: {
-        hosts: lists.hosts,
-        keys: lists.keys.map((k) => ({ key: k.key, verifier: k.verifier, label: k.label, confidence: k.confidence, ...(k.until !== undefined && { until: new Date(k.until).toISOString() }) })),
-        indexes: lists.indexes.map((i) => ({ index: i.index === 'self' ? self : i.index, name: i.name })),
-        maxAgeDays: lists.maxAgeDays,
-      },
+      lists: listsOf(lists, self),
     }
   },
   title: () => 'Forest index: markets',
   body(o, base) {
-    return html`<h1>Markets</h1>
+    return html`<div class="lead"><h1>Find verified people</h1><p>Offers and requests, ranked by their reviews.</p></div>
 ${searchForm(base, o.markets.map((m) => m.name))}
-${o.markets.map((m) => html`<section><h2><a href="${urls(base).market(m.name)}">${m.name}</a></h2><p>${m.description}</p><p class="muted">${m.roles.map((r) => posts(m.listed[r] ?? 0, r)).join(' · ')}</p></section>`)}
-<h2>What this index reads</h2>
-<p>Hosts, each read in full: ${o.lists.hosts.join(', ') || 'none'}.</p>
-<p>Verifier keys it counts: ${o.lists.keys.length ? o.lists.keys.map((k) => html`<br><code>${k.key}</code>, the ${k.label} of ${k.verifier}, confidence ${k.confidence}${k.until ? `, until ${k.until}` : ''}`) : 'none yet, so no profile counts here yet.'}</p>
-<p>Reputation proofs it shows: ${o.lists.indexes.map((i) => html`${i.name} (<code>${i.index}</code>)`)}, against an index's newest root or one it signed in the last ${o.lists.maxAgeDays} days.</p>`
+<section><h2>Markets</h2>
+<div class="rows">${o.markets.map((m) => html`<a class="row" href="${urls(base).market(m.name)}"><span class="two"><strong>${marketWords(m.name)}</strong><span>${m.description}</span></span><span class="aside">${countsText(m)}</span></a>`)}</div></section>`
   },
   ld(o, base, url) {
     return {

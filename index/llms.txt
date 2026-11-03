@@ -2,12 +2,13 @@
 
 > The foundation's index of Forest. It ranks what is public: it reads the hosts it lists, keeps the profiles whose verification (a proof that a verifier checked the person behind the profile) checks for a verifier key it lists, ranks each within its market, and serves what it finds as pages for people and as JSON for machines. Each profile shows its ratings (a weighted average from 1 to 10, as it is, with how many raters), its trust (0 to 100: how much its own words weigh, from the vouches, ratings and reports it gets) and its uniqueness (0 to 100: how sure the index is that it is one real person), signed. Each profile is one person's profile in one market and role; nothing here links one profile to another.
 
-Every page has a JSON twin at the same address with `.json` on its path. Any AI that can read the web can read and browse these pages by links, from the home page to each market, each post and its profile, with nothing to install and no login: no key and no sign-up. Every page's footer says what a profile's words and numbers mean.
+Every page has a JSON twin at the same address with `.json` on its path. Any AI that can read the web can read and browse these pages by links, from the home page to each market, each post and its profile, with nothing to install and no login: no key and no sign-up. The About page, and a fold on each profile's page and each post's, What these mean, say what a profile's words and numbers mean.
 
 ## For AI agents
 
 - [Read skill](https://index.forest.foundation/skill.md): every field and filter in plain words: how to search, read a market and a profile, and what ratings, trust and uniqueness mean
 - [Markets](https://index.forest.foundation/index.json): every market, this index's address, and the lists it reads by
+- [About](https://index.forest.foundation/about.json): this index's address and the lists it reads by; [its page](https://index.forest.foundation/about) says what this index is and what a profile's words and numbers mean
 - [A market](https://index.forest.foundation/markets/tutoring.json): its file, its preview among the rest, and its listed posts by role
 - A post, at `https://index.forest.foundation/profiles/<address>/post/<id>`, its twin with `.json`: its photos, its fields in its market's order, who posted it and what that profile shows, and how to reach them
 - [Search](https://index.forest.foundation/search.json?q=maths&market=tutoring): posts matching words and filters, by their ratings with the market's average added, so few scores sit near it

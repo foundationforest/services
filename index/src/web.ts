@@ -1,23 +1,26 @@
 // Every URL the index answers, GET and HEAD only, open to any origin, with no login and no request
 // log. Each page answers at its path as HTML, and at the same path with `.json` as the object it is
-// drawn from (pages/template.ts). The rest is JSON or text only.
+// drawn from (pages/template.ts). The rest is JSON or text only, and the pages' font.
 
 import { createServer, type Server } from 'node:http'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { about } from './pages/about.ts'
 import { home } from './pages/home.ts'
 import { market } from './pages/market.ts'
 import { post } from './pages/post.ts'
 import { profile } from './pages/profile.ts'
 import { search } from './pages/search.ts'
-import { type Context, draw, esc, type Page, urls } from './pages/template.ts'
+import { type Context, draw, esc, FONT_FILES, type Page, urls } from './pages/template.ts'
 import { newestRoot, servedLeaves } from './tree.ts'
 
 /** The address llms.txt and skill.md are written for; each copy serves them with its own PUBLIC_URL. */
 export const WRITTEN_FOR = 'https://index.forest.foundation'
 
-const PAGES: { [first: string]: Page<never> } = { markets: market, profiles: profile, search } as never
+const PAGES: { [first: string]: Page<never> } = { markets: market, profiles: profile, search, about } as never
+/** The pages with nothing after their name in their path. */
+const ALONE = ['search', 'about']
 const HEADERS = { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=30, stale-while-revalidate=300' }
 const TEXT = 'text/plain; charset=utf-8'
 
@@ -30,11 +33,16 @@ export type Web = { handle(request: Request): Response }
 export function web(reads: Omit<Context, 'base'>, base: string, root: string): Web {
   const ctx: Context = { ...reads, base }
   const files = Object.fromEntries(['llms.txt', 'skill.md'].map((f) => [f, readFileSync(join(root, f), 'utf8').replaceAll(WRITTEN_FOR, base)]))
+  // The font's files as its package gives them, Manrope, the Forest app's, which every page's style
+  // names at /fonts/. Cached for a day, not for good: their names carry no version, so a newer
+  // package serves new bytes under the same name.
+  const fonts = Object.fromEntries(readdirSync(FONT_FILES).filter((f) => f.endsWith('.woff2')).map((f) => [f, new Uint8Array(readFileSync(join(FONT_FILES, f)))]))
 
   function sitemap(): string {
     const u = urls(base)
     const list = [
       u.home,
+      u.about,
       ...ctx.markets.directory.markets.map((m) => u.market(m.name)),
       ...(ctx.store.db.prepare('select address from profiles where counted = 1 order by address').all() as Array<{ address: string }>).map((p) => u.profile(p.address)),
       ...(ctx.store.db.prepare('select address from posts where listed = 1 order by address').all() as Array<{ address: string }>).map((p) => u.post(p.address)),
@@ -48,6 +56,11 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     if (path === '/sitemap.xml') return answer(200, 'application/xml; charset=utf-8', sitemap())
     if (path === '/llms.txt') return answer(200, TEXT, files['llms.txt']!)
     if (path === '/skill.md') return answer(200, 'text/markdown; charset=utf-8', files['skill.md']!)
+    if (path.startsWith('/fonts/')) {
+      const name = path.slice('/fonts/'.length)
+      if (!Object.hasOwn(fonts, name)) return answer(404, TEXT, 'Nothing here.\n')
+      return new Response(fonts[name], { headers: { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=86400', 'content-type': 'font/woff2' } })
+    }
     if (path === '/v1/reputation' || path === '/v1/reputation/leaves') {
       const leaves = servedLeaves(ctx.store)
       const root = newestRoot(ctx.store)
@@ -64,13 +77,14 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     // every path ending in .json is a twin.
     const isPost = first === 'profiles' && rest.length === 3 && rest[1] === 'post'
     const page = bare === '/' ? (home as Page<never>) : isPost ? (post as Page<never>) : PAGES[first ?? '']
-    const params = first === 'search' ? [] : isPost ? [rest[0]!, rest[2]!] : rest
-    if (!page || (first === 'search' && rest.length) || (bare !== '/' && first !== 'search' && !isPost && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
+    const alone = ALONE.includes(first ?? '')
+    const params = alone ? [] : isPost ? [rest[0]!, rest[2]!] : rest
+    if (!page || (alone && rest.length) || (bare !== '/' && !alone && !isPost && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
     const o = page.data(ctx, params, url.searchParams)
     if (o === null) return twin ? json({ error: 'not found' }, 404) : answer(404, TEXT, 'Nothing here.\n')
     if (twin) return json(o)
     const pageUrl = `${base}${bare === '/' ? '/' : bare}${url.search}`
-    return answer(200, 'text/html; charset=utf-8', draw(page, o, base, pageUrl, ctx.self))
+    return answer(200, 'text/html; charset=utf-8', draw(page, o, base, pageUrl))
   }
 
   return {

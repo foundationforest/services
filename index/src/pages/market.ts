@@ -1,11 +1,12 @@
 // `/markets/<name>`: the market's file, verbatim from the pinned directory, and its listed posts by
-// role, each with what its profile shows, sorted as search sorts them (search.ts), each drawn as a
-// card linking to its page.
+// role, each with what its profile shows, sorted as search sorts them (search.ts). Drawn as the
+// market's name in words, then a section per role titled by its word for its posts, each post a row
+// linking to its page.
 
 import type { Market } from '@foundationforest/markets'
 
-import { cardsHtml, offerOf, type Result, resultHtml, results } from './common.ts'
-import { html, type Page } from './template.ts'
+import { marketWords, offerOf, type Result, resultHtml, results, rowsHtml } from './common.ts'
+import { backHtml, html, type Page, urls } from './template.ts'
 
 export type MarketPage = { index: string; market: unknown; posts: { [role: string]: Result[] } }
 
@@ -21,8 +22,9 @@ export const market: Page<MarketPage> = {
   title: (o) => `Forest index: ${(o.market as Market).name}`,
   body(o, base) {
     const m = o.market as Market
-    return html`<h1>${m.name}</h1><p>${m.description}</p>
-${m.roles.map((r) => html`<h2>${r.role} (${r.posts})</h2>${cardsHtml(o.posts[r.role]!.map((x) => resultHtml(x, base)), 'Nothing listed yet.')}`)}`
+    return html`${backHtml(urls(base).home, 'Markets')}
+<div class="lead"><h1>${marketWords(m.name)}</h1><p>${m.description}</p></div>
+${m.roles.map((r) => html`<section><h2>${r.posts.charAt(0).toUpperCase() + r.posts.slice(1)}</h2>${rowsHtml(o.posts[r.role]!.map(resultHtml), `No ${r.posts} yet.`)}</section>`)}`
   },
   ld(o, base, url) {
     const m = o.market as Market

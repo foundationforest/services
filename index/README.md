@@ -167,7 +167,8 @@ knows only its own roots.
 The index's key is its seed (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes at its
 first start, in `DATA_DIR/index-seed.json`, readable by its own user only, never printed or logged,
 made into a service key with no text (the standard's keys' `serviceKey`). Its address is the index's
-name: every page shows it, and it signs the statements and the roots.
+name: the About page shows it, every page's JSON gives it as `index`, and it signs the statements
+and the roots.
 
 One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of posts;
 `src/store.ts`), beside the seed. Everything in it comes back from the hosts but two tables: when
@@ -181,23 +182,28 @@ column `seen`, keeping each first sighting's profile, key and time.
 ## Its API
 
 Every page is HTML for people, drawn by one template (`src/pages/template.ts`) from the page's JSON
-object, which is also served at the same path with `.json`: the two never disagree. The HTML runs no
-script, each page carries schema.org JSON-LD, and every page's footer says in plain words what a
-profile's verification, rating, trust and uniqueness mean. GET and HEAD only, open to any origin
-(`access-control-allow-origin: *`), `cache-control: public, max-age=30, stale-while-revalidate=300`.
-Every field, for programs: [`skill.md`](skill.md).
+object, which is also served at the same path with `.json`: the two never disagree. The pages look
+like the Forest app's public side, its colours light and dark and its font, Manrope, served from
+here, so a page asks no other site but the hosts for its photos. The HTML runs no script, and each
+page carries schema.org JSON-LD. A post's and a profile's page show the shield and a rating's chip;
+what those mean, with the profile's rating, trust and uniqueness, is in its fold What these mean, and
+on the About page. GET and HEAD only, open to any origin (`access-control-allow-origin: *`),
+`cache-control: public, max-age=30, stale-while-revalidate=300`. Every field, for programs:
+[`skill.md`](skill.md).
 
 | Path | JSON |
 |---|---|
-| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed }], lists }`: its address, every market in the directory with its role words and how many posts each role has `listed`, and its lists, each key with its confidence; drawn with a search box, words and a market |
-| `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order, each drawn as a card: its first photo, description, price and area, and what its profile shows |
-| `/search` | `{ index, total, results: [<result>] }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km` (10 unless given), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; its form asks words and a market, and the rest are in the query alone |
-| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer, as its market and role, "Verified by face · Rated 9.2 by 14" with "trust 42 · uniqueness 99" smaller, its `message` links, its posts as cards and the reviews it received; everything else in one fold. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
-| `/profiles/<address>/post/<id>` | `{ index, profile, market, role, post, checks, ratings, trust, uniqueness, fields, message }`: one post, at its address under `/profiles`; `post` as its profile's page gives it, `fields` its market's post fields in the order the page draws them, the `preview`'s first. Drawn as its photos, its fields, who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a post not listed has its page too, saying why |
+| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many posts each role has `listed` and each role's word for its posts (`offers`, `requests` or `posts`), and its lists, each key with its confidence; drawn as a search box, words and a market, and each market as one link, with its posts counted in those words |
+| `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is, what it reads, what a profile's words and numbers mean, its address, and links to its JSON, `skill.md`, `llms.txt` and its source |
+| `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order, each drawn as one link: its first photo, its description's first line, price and area, and its profile's shield and rating, or New |
+| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km` (10 unless given), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
+| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer, as its market and role with its shield, "Verified by face" and its rating's chip, its `message` links, its posts and the reviews it received, each one link; its rating, trust and uniqueness in the fold What these mean, and everything else in one more. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
+| `/profiles/<address>/post/<id>` | `{ index, profile, market, role, post, checks, ratings, trust, uniqueness, fields, types, message }`: one post, at its address under `/profiles`; `post` as its profile's page gives it, `fields` its market's post fields in the order the page draws them, the `preview`'s first, `types` each one's type. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but those of type `file`, who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a post not listed has its page too, saying why |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
-| `/sitemap.xml`, `/robots.txt` | The home page, each market, each counted profile, each listed post |
+| `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listed post |
 | `/llms.txt`, `/skill.md` | Files here written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place |
+| `/fonts/<file>` | The pages' font, the files of `@fontsource-variable/manrope` as the package gives them, cached for a day |
 
 A `<result>` is `{ profile, market, role, post: { address, body, url, photos }, ratings, trust, uniqueness, checks }`.
 A post, on every page, gives `url`, its own page, and `photos`: each file its fields name (a `file`
@@ -210,7 +216,7 @@ to each host its profile entry names. The index keeps no bytes.
 Each of these is this index's opinion, in a file anyone can read or a setting below. Another index
 holds its own.
 
-- **Its name:** the address of its key, on `/` and every page.
+- **Its name:** the address of its key, on the About page and as `index` in every page's JSON.
 - **Hosts** (`lists/hosts.json`): https://host.forest.foundation, in full. It reads no other host,
   follows no hosts a profile entry names, and takes no list of hosts sent to it.
 - **Verifier keys** (`lists/verifiers.json`): each by address, with the verifier name its
@@ -257,9 +263,11 @@ DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 `test/` covers, on loopback, with this repo's host and real verifications and reputation proofs
 from the circuits' committed proving files: the filter, every guarantee How it scores gives (forty
 random graphs among them), which reviews, vouches and reports count, the markets' check, the tree
-and the proofs' ages, every page's shape and JSON-LD, every JSON field kept, each post's page, its
-photos' links and the apps it links to, the profile page's order, the seed, and the index end to
-end over HTTP, rebuilds included.
+and the proofs' ages, every page's shape, header, footer and JSON-LD, the font served here and
+nothing asked of another site, every JSON field kept, each post's page, its fields without its file
+fields, its photos' links and the apps it links to, the profile page's order and folds, the numbers
+only in a fold, the market, search and About pages, the seed, and the index end to end over HTTP,
+rebuilds included.
 
 ## Promises
 
@@ -269,7 +277,7 @@ end over HTTP, rebuilds included.
 - **What it reads and how it weighs are files:** the hosts and the keys in `lists/`, its numbers in
   `config/`, its markets the directory at `MARKETS`. A change to one is a change anyone sees.
 - **What it shows is signed.** Every counted profile's ratings, trust and uniqueness are signed with
-  the key whose address is on every page, and so is every root.
+  the key whose address is on the About page and in every page's JSON, and so is every root.
 - **Every page is drawn from its JSON twin,** so a person and a machine read the same facts.
 - **Nothing here links two profiles of one person, but what a small tree can show.** It ranks each
   profile on its own, and nothing it serves ties a profile to a person; in a small tree, a trust a
