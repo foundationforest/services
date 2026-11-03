@@ -190,7 +190,7 @@ test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to
   assert.equal(await client().deleteSession(SESSION), 'gone', 'a session already deleted')
   for (const answer of [[503, { detail: 'The session could not be deleted because a storage service is unavailable.' }], [403, {}]] as [number, unknown][]) {
     reply = () => answer
-    await assert.rejects(client().deleteSession(SESSION), (error: Error) => error instanceof DiditUnavailable && !error.message.includes(SESSION))
+    await assert.rejects(client().deleteSession(SESSION), (error: Error) => error instanceof DiditUnavailable && error.status === answer[0] && error.codes.length === 0 && !error.message.includes(SESSION))
   }
 })
 
@@ -208,6 +208,19 @@ test('a session Didit does not know is no decision; anything else unexpected thr
   }
   reply = () => [201, { url: 'https://verify.didit.me/x' }]
   await assert.rejects(client().createSession(), DiditUnavailable)
+
+  // A refusal: its status, and the `code` Didit sends beside `detail`; never `detail`, Didit's own words.
+  reply = () => [402, { detail: `Not enough credits to open a session on ${WORKFLOW}.`, code: 'insufficient_credits' }]
+  await assert.rejects(client().createSession(), (error: Error) => {
+    assert.ok(error instanceof DiditUnavailable)
+    assert.deepEqual([error.message, error.status, error.codes], ['Didit answered 402 to a new session', 402, ['insufficient_credits']])
+    assert.ok(!JSON.stringify(error).includes('credits to'), 'not its detail')
+    return true
+  })
+  for (const [answer, codes] of [[{ detail: 'bad key' }, []], ['<html>oops</html>', []], [{ detail: 'Not found.', code: 'not_found' }, ['not_found']], [{ code: KEY }, []]] as [unknown, string[]][]) {
+    reply = () => [401, answer]
+    await assert.rejects(client().decision(SESSION), (error: Error) => error instanceof DiditUnavailable && error.message === 'Didit answered 401 to a decision' && error.status === 401 && JSON.stringify(error.codes) === JSON.stringify(codes))
+  }
 
   const unreachable = new DiditClient({ apiKey: KEY, workflowId: WORKFLOW, check: 'face', baseUrl: 'http://127.0.0.1:1' })
   await assert.rejects(unreachable.decision(SESSION), (error: Error) => {

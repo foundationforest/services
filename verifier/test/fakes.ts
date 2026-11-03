@@ -86,6 +86,8 @@ export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(r
 export class FakeFaceCheck implements FaceCheck {
   readonly sessions = new Map<string, Decision>()
   down = false
+  /** What Didit not answering throws, whichever way it is down. */
+  fail: Error = new Error('down')
   photoDown = false
   waiting = 0
   /** How many sessions Didit was asked to open. */
@@ -99,7 +101,7 @@ export class FakeFaceCheck implements FaceCheck {
   #gate: Promise<void> | undefined
 
   async createSession({ callback }: { callback?: string } = {}) {
-    if (this.down) throw new Error('down')
+    if (this.down) throw this.fail
     this.created++
     const sessionId = randomUUID()
     this.callbacks.set(sessionId, callback)
@@ -123,7 +125,7 @@ export class FakeFaceCheck implements FaceCheck {
     this.waiting++
     try {
       await (this.#gate ?? new Promise((r) => setImmediate(r)))
-      if (this.down) throw new Error('down')
+      if (this.down) throw this.fail
       return this.sessions.get(sessionId) ?? null
     } finally {
       this.waiting--
@@ -131,14 +133,14 @@ export class FakeFaceCheck implements FaceCheck {
   }
 
   async deleteSession(sessionId: string) {
-    if (this.deleteDown) throw new Error('down')
+    if (this.deleteDown) throw this.fail
     if (!this.sessions.delete(sessionId)) return 'gone'
     this.deleted.push(sessionId)
     return this.outcome
   }
 
   async photo(url: string) {
-    if (this.photoDown) throw new Error('down')
+    if (this.photoDown) throw this.fail
     return new TextEncoder().encode(url.split('/').at(-1))
   }
 }
@@ -151,11 +153,13 @@ export class FakePayments implements Payments {
   readonly returnUrls = new Map<string, string>()
   readonly #paid = new Set<string>()
   down = false
+  /** What Stripe not answering throws. */
+  fail: Error = new Error('down')
   /** How many times Stripe was asked whether a payment was paid. */
   asked = 0
 
   async checkout(returnUrl: string) {
-    if (this.down) throw new Error('down')
+    if (this.down) throw this.fail
     const payment = `cs_test_${randomBytes(24).toString('hex')}`
     this.returnUrls.set(payment, returnUrl)
     return { payment, url: `https://checkout.stripe.example/c/pay/${payment}` }
@@ -167,7 +171,7 @@ export class FakePayments implements Payments {
 
   async paid(payment: string) {
     this.asked++
-    if (this.down) throw new Error('down')
+    if (this.down) throw this.fail
     return this.#paid.has(payment)
   }
 }
