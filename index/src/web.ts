@@ -8,6 +8,7 @@ import { join } from 'node:path'
 
 import { home } from './pages/home.ts'
 import { market } from './pages/market.ts'
+import { post } from './pages/post.ts'
 import { profile } from './pages/profile.ts'
 import { search } from './pages/search.ts'
 import { type Context, draw, esc, type Page, urls } from './pages/template.ts'
@@ -26,7 +27,8 @@ const json = (value: unknown, status = 200) => answer(status, 'application/json;
 export type Web = { handle(request: Request): Response }
 
 /** The pages over `ctx`, published at `base`. `root` is this directory, which holds llms.txt and skill.md. */
-export function web(ctx: Context, base: string, root: string): Web {
+export function web(reads: Omit<Context, 'base'>, base: string, root: string): Web {
+  const ctx: Context = { ...reads, base }
   const files = Object.fromEntries(['llms.txt', 'skill.md'].map((f) => [f, readFileSync(join(root, f), 'utf8').replaceAll(WRITTEN_FOR, base)]))
 
   function sitemap(): string {
@@ -35,6 +37,7 @@ export function web(ctx: Context, base: string, root: string): Web {
       u.home,
       ...ctx.markets.directory.markets.map((m) => u.market(m.name)),
       ...(ctx.store.db.prepare('select address from profiles where counted = 1 order by address').all() as Array<{ address: string }>).map((p) => u.profile(p.address)),
+      ...(ctx.store.db.prepare('select address from posts where listed = 1 order by address').all() as Array<{ address: string }>).map((p) => u.post(p.address)),
     ]
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${list.map((l) => `<url><loc>${esc(l)}</loc></url>\n`).join('')}</urlset>\n`
   }
@@ -56,9 +59,13 @@ export function web(ctx: Context, base: string, root: string): Web {
     const twin = path === '/index.json' || (path.endsWith('.json') && path !== '/.json')
     const bare = path === '/index.json' ? '/' : twin ? path.slice(0, -'.json'.length) : path
     const [first, ...rest] = bare.split('/').slice(1).map((s) => decodeURIComponent(s))
-    const page = bare === '/' ? (home as Page<never>) : PAGES[first ?? '']
-    const params = first === 'search' ? [] : rest
-    if (!page || (first === 'search' && rest.length) || (bare !== '/' && first !== 'search' && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
+    // A post's page is its address under /profiles, `<profile>/post/<id>`. An id may end in .json,
+    // as a path's segment may; such a page's path is read as the twin of the post without it, as
+    // every path ending in .json is a twin.
+    const isPost = first === 'profiles' && rest.length === 3 && rest[1] === 'post'
+    const page = bare === '/' ? (home as Page<never>) : isPost ? (post as Page<never>) : PAGES[first ?? '']
+    const params = first === 'search' ? [] : isPost ? [rest[0]!, rest[2]!] : rest
+    if (!page || (first === 'search' && rest.length) || (bare !== '/' && first !== 'search' && !isPost && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
     const o = page.data(ctx, params, url.searchParams)
     if (o === null) return twin ? json({ error: 'not found' }, 404) : answer(404, TEXT, 'Nothing here.\n')
     if (twin) return json(o)

@@ -1,0 +1,4 @@
+{
+  "about": "The apps a profile's page and a post's page link to, so a reader can message the profile: each with its name and its message link, where {address} is the profile's address. Without this file, the pages link to no app. This is this index's opinion: another index links other apps.",
+  "apps": [{ "name": "Forest app", "message": "https://app.forest.foundation/message?to={address}" }]
+}

@@ -83,7 +83,7 @@ test('reviews: who counts, the latest per writer, subject and post, and why the 
 
   // The post the reviews name is deleted, and kept with its body and that body's time, never the
   // delete's.
-  assert.deepEqual(t.posts, [{ address: maths, body: { description: 'Maths, any level.', subjects: ['maths'] }, time: made.time, listed: false, why: 'deleted' }])
+  assert.deepEqual(t.posts, [{ address: maths, body: { description: 'Maths, any level.', subjects: ['maths'] }, time: made.time, listed: false, why: 'deleted', url: `https://index.test.example/profiles/${maths}`, photos: [] }])
   await i.close()
 })
 

@@ -92,7 +92,12 @@ export type Lists = {
   indexes?: Array<{ index: string; name: string }>
   maxAgeDays?: number
   scoring?: { [key: string]: unknown }
+  /** lists/apps.json's whole object; TEST_APPS unless given, and no file with null. */
+  apps?: unknown
 }
+
+/** The apps the test lists name: one, with a message link holding the profile's address. */
+export const TEST_APPS = [{ name: 'Forest app', message: 'https://app.test.example/message?to={address}' }]
 
 /** The index's own numbers, config/scoring.json. */
 export const SCORING = JSON.parse(readFileSync(join(ROOT, 'config/scoring.json'), 'utf8'))
@@ -107,6 +112,7 @@ export function listsDir(l: Lists): string {
   writeFileSync(join(dir, 'lists/verifiers.json'), JSON.stringify({ about, keys: l.keys ?? [] }))
   writeFileSync(join(dir, 'lists/indexes.json'), JSON.stringify({ about, maxAgeDays: l.maxAgeDays ?? 30, indexes: l.indexes ?? [{ index: 'self', name: 'Test index' }] }))
   writeFileSync(join(dir, 'config/scoring.json'), JSON.stringify({ ...SCORING, about, ...l.scoring }))
+  if (l.apps !== null) writeFileSync(join(dir, 'lists/apps.json'), JSON.stringify(l.apps ?? { about, apps: TEST_APPS }))
   return dir
 }
 
