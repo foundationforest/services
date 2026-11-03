@@ -412,13 +412,21 @@ async function main() {
   assert.equal(await held(tutor.address), beforePost - postPrice, 'paid from the profile’s balance, at its price')
   say(`mcp: the tutor's AI wrote ${postAddress}, signed by its access key, paid from the profile's balance: ${postPrice / CREDIT} credits`)
 
-  /** A message the AI of `from` sends `to`: its inbox entry's price, by its bytes, from the sender's balance, and nothing to the recipient's. */
+  /**
+   * A message the AI of `from` sends `to`, and its copy in the sender's folder, as the Forest app
+   * keeps one: each one's price, by its bytes, from the sender's balance, and nothing from the
+   * recipient's.
+   */
   const message = async (from: Person, to: string, text: string) => {
     const [fromBefore, toBefore] = [await held(from.address), await held(to)]
-    assert.deepEqual(await from.ai!.call('message', { label: from.label, to, body: { text } }), { sent: true, hosts: 1 })
+    const sent = await from.ai!.call('message', { label: from.label, to, body: { text } })
+    assert.deepEqual([sent.sent, sent.hosts], [true, 1])
     const price = await entryPrice(await newestInbox(to))
-    assert.deepEqual([await held(from.address), await held(to)], [fromBefore - price, toBefore], 'its price from the sender, by its bytes, and the recipient’s balance as it was')
-    return price
+    const copy = (await readFolder([s.host], from.address, Date.now())).current.get(sent.copy)?.entry
+    assert.equal(copy?.key, from.key, 'its copy at sent/<id> in the sender’s folder, signed by the access key')
+    const copyPrice = await entryPrice(Buffer.byteLength(encodeEntry(copy!)))
+    assert.deepEqual([await held(from.address), await held(to)], [fromBefore - price - copyPrice, toBefore], 'each price from the sender, by its bytes, and the recipient’s balance as it was')
+    return { price, copyPrice }
   }
 
   const found = await waitFor('the post in the index’s search, through the mcp', INDEX_WAIT, async () => {
@@ -426,8 +434,8 @@ async function main() {
     return (out.index.answer.results as Array<{ profile: string; post: { address: string } }> | undefined)?.find((r) => r.post.address === postAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
-  const price = await message(student, found.profile, text)
-  say(`mcp: the student’s AI found the post in the index’s search, and messaged the tutor, paid from the student's balance by its bytes: ${price / CREDIT} credits, and the tutor's balance as it was`)
+  const paid = await message(student, found.profile, text)
+  say(`mcp: the student’s AI found the post in the index’s search, and messaged the tutor, paid from the student's balance by its bytes: ${paid.price / CREDIT} credits, and ${paid.copyPrice / CREDIT} for its copy, and the tutor's balance as it was`)
 
   type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
   const asked = await waitFor('the index to show the student, beside its message', INDEX_WAIT, async () => {
