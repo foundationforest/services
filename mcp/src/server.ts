@@ -1,12 +1,14 @@
 // The hosted copy: MCP over Streamable HTTP at its root (and at /mcp, where connectors
 // added before point), the login (login.ts), its open key at /open-key, and the icon. Stateless:
 // each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept; the
-// connection a token points to is read and opened for the request that needs it, and forgotten
-// with it.
+// connection a token points to is read and opened at most once for the request that needs it, and
+// forgotten with it.
 //
 // Reading needs no login. A call to a tool that acts for the person with no token gets a 401 whose
 // challenge starts the AI app's login, and a token this copy did not give gets a 401 on any
-// request. The request's Origin is not checked: the transport's check guards a server on a person's
+// request. A tool that reads may still ask for the connection (search, to mark the person's own
+// profiles): with no token, or one whose connection is gone or out of reach, it hears why, and
+// never a 401. The request's Origin is not checked: the transport's check guards a server on a person's
 // own computer from a web page's requests, and here every act needs a token no web page holds,
 // while reading is open to anyone. TLS is the operator's.
 
@@ -79,6 +81,8 @@ const FILES: { [path: string]: { type: string; body: string | Buffer } } = {
 
 const LOGIN = new Set(TOOLS.filter((t) => t.login).map((t) => t.name))
 
+const GONE = 'the connection this login points to is gone'
+
 export type Settings = {
   /** This copy's origin, as people and AI apps reach it; the address it listens on when left out. */
   origin?: string
@@ -122,24 +126,28 @@ export async function serve(settings: Settings, hostname: string, port: number):
     const messages = (Array.isArray(body) ? body : [body]).filter(isObject)
     const acts = messages.some((m) => m.method === 'tools/call' && isObject(m.params) && LOGIN.has(m.params.name as string))
     if (pointer === null && acts) return login.challenge(res)
-    // The connection, read and opened only for a request that acts for the person, and forgotten
-    // with it. A token whose pointer no longer opens, once this copy's opening half changed, or
+    // The connection, read and opened at most once a request, and forgotten with it: before a
+    // request that acts for the person, and otherwise only when a tool asks for it. For a request
+    // that acts, a token whose pointer no longer opens, once this copy's opening half changed, or
     // whose connection is gone, is a login to make again; hosts that do not answer now are not.
     const own = new Map<string, string>()
-    let connection: Connection | null = null
-    let why = 'Acting for the person needs a login.'
-    if (pointer !== null && acts) {
-      const got = await login.connection(pointer, { fetch: hostFetch, redirect: 'error' })
-      if (got === 'gone') return login.challenge(res, 'the connection this login points to is gone')
-      if ('unreached' in got) why = got.unreached
-      else connection = got
-      for (const profile of connection?.profiles ?? []) own.set(profile.address, profile.label)
-    }
+    let reading: ReturnType<Login['connection']> | undefined
+    const read = (token: string) =>
+      (reading ??= login.connection(token, { fetch: hostFetch, redirect: 'error' }).then((got) => {
+        if (got !== 'gone' && !('unreached' in got)) for (const profile of got.profiles) own.set(profile.address, profile.label)
+        return got
+      }))
+    if (pointer !== null && acts && (await read(pointer)) === 'gone') return login.challenge(res, GONE)
     const ctx: Ctx = {
       ...settings.read,
       hostFetch,
       own,
-      connection: async () => connection ?? refuse(why),
+      connection: async (): Promise<Connection> => {
+        if (pointer === null) return refuse('Acting for the person needs a login.')
+        const got = await read(pointer)
+        if (got === 'gone') return refuse(`${GONE}: the person logs in again`)
+        return 'unreached' in got ? refuse(got.unreached) : got
+      },
     }
     const server = mcpServer(ctx, messages.some((m) => m.method === 'initialize') ? await instructions(settings.read) : HOW)
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })

@@ -260,6 +260,8 @@ describe('a connection, changed with no new login', () => {
       const listed = (await w.app.keys(label)).filter((k) => keys.includes(k.key))
       assert.ok(listed.length === 1 && listed[0]!.until !== undefined, `its key in ${label}'s profile entry, ended`)
     }
+    const search = (await c.client.callTool({ name: 'search', arguments: {} })) as Result
+    assert.match(JSON.parse(search.content[0]!.text).unmarked, /^the connection this login points to is gone/, 'reading still answers, with nothing marked as the person’s own')
     const res = await asked(token)
     assert.equal(res.status, 401)
     assert.match(res.headers.get('www-authenticate')!, /error="invalid_token", error_description="the connection this login points to is gone"/)

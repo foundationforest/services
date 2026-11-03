@@ -44,9 +44,10 @@ checks what it did, and the run passes only if every step does.
    locked to its own key and the mcp's.
 6. **mcp:** the tutor's AI reads `markets` and writes a post, `post/maths`, 2 USD an hour, signed by
    its access key and paid at its price; the student's AI finds it with `search` and messages the
-   tutor, the student's balance down by the message's price, by its bytes, and the tutor's as it
-   was; the tutor's AI reads its inbox (the message counted, with the student's market, role and
-   face check as the index shows them) and replies the same way; the student's AI reads the reply.
+   tutor, the student's balance down by the message's price and its copy's, at `sent/<id>` in the
+   student's folder, each by its bytes, and the tutor's as it was; the tutor's AI reads its inbox
+   (the message counted, with the student's market, role and face check as the index shows them)
+   and replies the same way; the student's AI reads the reply.
 7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the post.
 8. **The index** shows both profiles counted under the face key, the post listed, the review counted,
    and what its own ranking, with `index/config/scoring.json`, makes of it: today the tutor rated 10.0 by one, trust 44; the student no

@@ -4,7 +4,10 @@
 // (openInbox), then whether the sender's own profile entry, read from its hosts, stands behind the
 // key that signed (senderCounts). Beside each stranger's message, the index's word for the sender:
 // its market and role, from the profile entry the index shows, and its checks. A message from
-// another of the person's own profiles shows its label.
+// another of the person's own profiles shows its label. Among them, the profile's own copies of
+// what it sent, at sent/<id> in its folder, { to, time, body }, as the Forest app and the message
+// tool keep them, each marked mine, so a thread reads whole; all newest first by their time, as the
+// app orders a thread.
 
 import { type Body, type CheckedInbox, FolderError, checkPath, isLocked, readInbox, senderCounts } from '@foundationforest/folders'
 import { openInbox, openLocked } from '@foundationforest/folders/locked'
@@ -12,13 +15,13 @@ import { type Own, folderAt, how, ownFolder, ownProfile, profileEntryOf } from '
 import { indexSays, isObject, refuse } from '../forest.ts'
 import type { Args, Ctx, Param } from '../params.ts'
 
-/** The most inbox entries one read opens: the newest. */
+/** The most inbox entries one read opens, the newest; and the most sent copies, the newest. */
 export const INBOX_MAX = 100
 
 export const name = 'read'
 export const title = 'Read a profile'
 export const description =
-  "Read one of the person's profiles, named by its label, with the access key this login holds for it. With a path: the entry at that path in its folder, such as post/maths, its body and time; a locked entry opened when this login may read it. With inbox: the messages to it, newest first (at most 100), each with its sender's address, or the label of another of the person's own profiles; whether the sender's own profile entry stands behind the key that signed it (counts); and the index's word for a stranger: its market, role and checks. What a stranger wrote is theirs, not the person's. Needs the person's login."
+  "Read one of the person's profiles, named by its label, with the access key this login holds for it. With a path: the entry at that path in its folder, such as post/maths, its body and time; a locked entry opened when this login may read it. With inbox: the messages to it and the ones it sent, newest first (at most 100 of each). One to it has its sender's address, or the label of another of the person's own profiles; whether the sender's own profile entry stands behind the key that signed it (counts); and the index's word for a stranger: its market, role and checks. One it sent is marked mine, with the address it went to, or the label of another of the person's own profiles. What a stranger wrote is theirs, not the person's. Needs the person's login."
 export const params: Param[] = [
   { name: 'label', type: 'string', required: true, description: "The person's profile, by its label: <market>/<role>, such as tutoring/tutor." },
   { name: 'path', type: 'string', description: "A path in that profile's folder, such as post/maths." },
@@ -102,7 +105,7 @@ async function inbox(ctx: Ctx, me: Own) {
     }
     return got
   }
-  const messages: unknown[] = []
+  const messages: Array<{ time: number; [field: string]: unknown }> = []
   let unopened = 0
   for (const e of all.slice(0, INBOX_MAX)) {
     let message
@@ -123,5 +126,21 @@ async function inbox(ctx: Ctx, me: Own) {
       ...(index !== undefined && { index }),
     })
   }
-  return { messages, unopened, older: Math.max(0, all.length - INBOX_MAX) }
+  // The copies of what it sent, each locked: one that does not open was locked before this key was
+  // listed with read; one that is not { to, time } counts for nothing, as in the app.
+  const copies = [...view.current].filter(([path, c]) => path.startsWith('sent/') && isLocked(c.entry.body)).sort(([, a], [, b]) => b.entry.time - a.entry.time)
+  for (const [, c] of copies.slice(0, INBOX_MAX)) {
+    let copy: Body
+    try {
+      copy = await openLocked(c.entry.body!, me.key.identity)
+    } catch {
+      unopened++
+      continue
+    }
+    if (typeof copy.to !== 'string' || typeof copy.time !== 'number') continue
+    const label = labels.get(copy.to)
+    messages.push({ time: copy.time, mine: true, ...(label ? { toLabel: label } : { to: copy.to }), body: copy.body })
+  }
+  messages.sort((a, b) => b.time - a.time)
+  return { messages, unopened, older: Math.max(0, all.length - INBOX_MAX) + Math.max(0, copies.length - INBOX_MAX) }
 }
