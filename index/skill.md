@@ -10,8 +10,9 @@ its proofs.
 
 ## How to read
 
-- Everything is a plain GET, so any AI that can read the web can search these pages and read any
-  profile, with nothing to install and no login: no key, no sign-up, no cookies.
+- Everything is a plain GET, so any AI that can read the web can read and browse these pages by
+  links, with nothing to install and no login: no key, no sign-up, no cookies. The home page links
+  each market, a market each of its posts, and a post its profile.
 - Every page has a JSON twin at the same address with `.json` on its path; the home page's is
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
@@ -41,8 +42,9 @@ Every profile this index counts shows three things, each ranked inside its own m
 
     GET https://index.forest.foundation/index.json
 
-`{ "index", "markets": [{ "name", "description", "roles" }], "lists" }`: this index's address, every
-market in the markets directory it reads, with its roles, and the lists it reads by: `hosts`; `keys`,
+`{ "index", "markets": [{ "name", "description", "roles", "listed" }], "lists" }`: this index's
+address, every market in the markets directory it reads, with its roles and how many posts each role
+has `listed`, such as `{ "tutor": 3, "student": 1 }`, and the lists it reads by: `hosts`; `keys`,
 each verifier key it counts with its `verifier`, its `label` (such as face check) and its
 `confidence` from 0 to 1, that a profile it checked is one real person; `indexes`, whose reputation
 proofs it shows; and `maxAgeDays`.
@@ -67,12 +69,14 @@ add), and its listed posts by role, in search's order.
 - `minReviews`: a profile scored by at least this many raters;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
 
-A result is `{ "profile", "market", "role", "post": { "address", "body" }, "ratings", "trust",
-"uniqueness", "checks" }`: the post, with what its profile shows and its checks. The
-post's body holds its market's fields. Results are sorted by each profile's rating with one rater's
-worth of its market's average added, so a profile with few scores sits near the average; then by the
-newest post. A profile no one has rated sorts at its market's average. That is the order only: each
-result's `ratings` is as it is.
+A result is `{ "profile", "market", "role", "post": { "address", "body", "url", "photos" },
+"ratings", "trust", "uniqueness", "checks" }`: the post, with what its profile shows and its checks.
+The post's body holds its market's fields; `url` is its page; `photos` links to each file its fields
+name, at the first host its profile entry names, `<host>/v1/files/<sha256>`. This index keeps no
+bytes. Results are sorted by each profile's rating with one rater's worth of its market's average
+added, so a profile with few scores sits near the average; then by the newest post. A profile no one
+has rated sorts at its market's average. That is the order only: each result's `ratings` is as it
+is.
 
 ## A profile
 
@@ -90,11 +94,11 @@ result's `ratings` is as it is.
   canonical JSON of `{ index, profile, ratings: { value, count }, trust, uniqueness, time }`,
   the rating's value as text; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
   bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
-- `posts`: each post, `{ "address", "body", "time", "listed" }`, with `why` when it is not listed
-  (it does not fit its market, its profile does not count, or it was deleted: a deleted post keeps
-  its last body here, and that body's time, so a review that names it still finds it). `time` is
-  its entry's own time, in ms since 1970, a plain number: its writer's word, not when this index
-  read it.
+- `posts`: each post, `{ "address", "body", "time", "listed", "url", "photos" }`, with `why` when it
+  is not listed (it does not fit its market, its profile does not count, or it was deleted: a
+  deleted post keeps its last body here, and that body's time, so a review that names it still finds
+  it). `time` is its entry's own time, in ms since 1970, a plain number: its writer's word, not when
+  this index read it.
 - `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "time", "counted",
   "why", "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `post` it is
   about, and the fields its market adds. `time` is as for a post. `counted` says whether it counts
@@ -111,6 +115,18 @@ result's `ratings` is as it is.
   `vouch`, and its weight, the writer's uniqueness times trust, from 0 to 1. Trust comes from these.
 - `proofs`: each proof on the profile entry, with what this index made of it: a verification's
   `result` is `counts` or why not; a reputation proof's shows the `trust` it carries.
+- `message`: `[{ "name", "url" }]`, a link to message the profile from each app this index lists.
+
+## A post
+
+    GET https://index.forest.foundation/profiles/<address>/post/<id>.json
+
+A post's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
+"post", "checks", "ratings", "trust", "uniqueness", "fields", "message" }`. `post` is as its
+profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message` are its profile's;
+`fields` is its market's post fields in the order the page shows them, the market's preview first.
+The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
+gives, in the writer's words, and `message`. A post that is not listed has its page too, with `why`.
 
 ## The tree
 
@@ -127,7 +143,8 @@ A proof shows here against this index's newest root, or one it signed within `ma
 
 ## To act
 
-This index only reads. To post, review, vouch, report or message, the person's app signs with the
-profile's main key, or whoever holds an access key the profile entry lists signs with that key, within
-what the listing says it `can` do, and writes to the profile's hosts. An AI acts for the person
-with an access key their app hands it.
+This index only reads. To message a profile, a person follows a `message` link to their app, or uses
+the `contact` a post gives. To post, review, vouch, report or message, the person's app signs with
+the profile's main key, or whoever holds an access key the profile entry lists signs with that key,
+within what the profile entry says it `can` do, and writes to the profile's hosts. An AI acts for the
+person with an access key their app hands it.

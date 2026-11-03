@@ -1,8 +1,9 @@
-// The index's opinions: the three lists in lists/ and the one file in config/, read once at start.
-// Each is a file anyone can read; README.md, How we run it, says what each holds today. A file that
-// does not read stops the start, naming the file and what is wrong.
+// The index's opinions: the lists in lists/ and the one file in config/, read once at start. Each is
+// a file anyone can read; README.md, How we run it, says what each holds today. A file that does not
+// read stops the start, naming the file and what is wrong. lists/apps.json alone may be missing: then
+// the pages link to no app, as a copy with lists of its own, such as the e2e loop's, gives none.
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { normalizeOrigin, publicKeyFromAddress } from '@foundationforest/folders'
@@ -23,6 +24,9 @@ export type ListedKey = {
   until?: number
 }
 
+/** An app a page links to, to message a profile: `message` is its link, `{address}` the profile's address. */
+export type ListedApp = { name: string; message: string }
+
 /** An index whose reputation proofs this index shows. `self` is this index's own key. */
 export type ListedIndex = { index: string; name: string }
 
@@ -32,6 +36,8 @@ export type Lists = {
   /** How many days old a root, not the newest, may be for a reputation proof to show. */
   maxAgeDays: number
   indexes: ListedIndex[]
+  /** The apps a profile's page and a post's page link to, to message the profile (lists/apps.json); none without the file. */
+  apps: ListedApp[]
   /** The numbers the ranking takes (config/scoring.json), each explained in README.md, How it scores. */
   scoring: Numbers
 }
@@ -83,6 +89,8 @@ export function loadLists(root: string): Lists {
     return { index: i.index as string, name: i.name }
   })
 
+  const apps = existsSync(join(root, 'lists/apps.json')) ? appsOf(read(root, 'lists/apps.json')) : []
+
   const scoringFile = read(root, 'config/scoring.json')
   const { vouchStep, reportCut, marketWeight, tolerance, maxRounds } = scoringFile
   if (!isNumber(vouchStep) || vouchStep < 0 || vouchStep > 1) fail('config/scoring.json', 'vouchStep is from 0 to 1')
@@ -96,6 +104,21 @@ export function loadLists(root: string): Lists {
     keys,
     maxAgeDays: indexesFile.maxAgeDays as number,
     indexes,
+    apps,
     scoring: { vouchStep, reportCut, marketWeight, tolerance, maxRounds: maxRounds as number },
   }
+}
+
+/** lists/apps.json's apps: each a name and an http or https link with `{address}` in it. */
+function appsOf(file: { [key: string]: unknown }): ListedApp[] {
+  if (!Array.isArray(file.apps)) fail('lists/apps.json', 'apps is a list')
+  return file.apps.map((a): ListedApp => {
+    if (!isObject(a) || typeof a.name !== 'string' || !a.name) fail('lists/apps.json', `${JSON.stringify(a)}: each is { name, message }`)
+    const link = typeof a.message === 'string' ? a.message : ''
+    const filled = link.replaceAll('{address}', 'x')
+    if (!link.includes('{address}') || !/^https?:\/\//.test(link) || !URL.canParse(filled)) {
+      fail('lists/apps.json', `app ${JSON.stringify(a.name)}: message is an http or https link with {address} in it, such as https://app.forest.foundation/message?to={address}`)
+    }
+    return { name: a.name, message: link }
+  })
 }

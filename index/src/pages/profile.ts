@@ -1,13 +1,17 @@
 // `/profiles/<address>`: a profile this index holds a profile entry for. Its profile entry; each
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
 // ratings, trust and uniqueness) and the statement that signs them; its posts, listed or not and
-// why; the reviews, vouches and reports it received and gave, each with whether it counts and why
-// not, a review with its weight; each post, review, vouch and report with its entry's own time; and
-// the words it received and gave, each with its weight.
+// why, each with its page and its photos; the reviews, vouches and reports it received and gave,
+// each with whether it counts and why not, a review with its weight; each post, review, vouch and
+// report with its entry's own time; the words it received and gave, each with its weight; and where
+// to message it.
+//
+// The page is drawn for a buyer: what it is, what it shows in words, how to message it, its posts
+// and the reviews it received; everything else this index read is in one fold below.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, personOf, postFields, type Shown, shownFor, shownHtml } from './common.ts'
+import { aggregateOf, cardHtml, cardsHtml, firstHost, messageHtml, messageOf, personOf, type Post, postOf, type Shown, shownFor, shownHtml } from './common.ts'
 import { html, type Page, type Raw, short, urls } from './template.ts'
 
 export type ReviewEntry = {
@@ -30,14 +34,19 @@ export type ProfilePage = {
   address: string
   profile: { [key: string]: unknown }
   checks: Check[]
-  /** Each post with its entry's time; a deleted one with its last body and that body's time. */
-  posts: Array<{ address: string; body: { [key: string]: unknown }; time: number; listed: boolean; why?: string }>
+  /** Each post with its entry's time, its page and its photos; a deleted one with its last body and that body's time. */
+  posts: Array<Post & { time: number; listed: boolean; why?: string }>
   reviews: Both<ReviewEntry>
   vouches: Both<SaidEntry>
   reports: Both<SaidEntry>
   words: Both<WordEntry>
   proofs: Array<{ circuit: unknown; result: string; [key: string]: unknown }>
-} & Shown & { statement?: string; signature?: string }
+} & Shown & {
+  statement?: string
+  signature?: string
+  /** Where to message it: one link per app this index lists. */
+  message: Array<{ name: string; url: string }>
+}
 
 type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number }
 const entry = (r: ReviewColumns): ReviewEntry => {
@@ -72,7 +81,7 @@ const none = html`<p class="muted">None.</p>`
 const listOf = <T>(items: T[], draw: (item: T) => Raw) => (items.length ? items.map(draw) : none)
 
 export const profile: Page<ProfilePage> = {
-  data({ store, self }, [address]) {
+  data({ store, lists, self, base }, [address]) {
     const found = store.db.prepare('select address, body, checks, proofs from profiles where address = ?').get(address ?? '') as
       | { address: string; body: string; checks: string; proofs: string }
       | undefined
@@ -91,18 +100,24 @@ export const profile: Page<ProfilePage> = {
       return { received: of('subject'), given: of('writer') }
     }
     const words = (column: string) => store.db.prepare(`select writer, subject, word, weight from words where ${column} = ? order by weight desc, writer, subject`).all(found.address) as WordEntry[]
+    const entryBody = parse<{ [key: string]: unknown }>(found.body)
+    const host = firstHost(entryBody)
     return {
       index: self,
       address: found.address,
-      profile: parse(found.body),
+      profile: entryBody,
       checks: parse(found.checks),
       ...shownFor(store, found.address),
-      posts: posts.map((p) => ({ address: p.address, body: parse(p.body), time: p.time, listed: p.listed === 1, ...(p.why !== null && !p.listed && { why: p.why }) })),
+      posts: posts.map((p) => {
+        const { address, body, url, photos } = postOf(base, p.address, parse(p.body), host)
+        return { address, body, time: p.time, listed: p.listed === 1, ...(p.why !== null && !p.listed && { why: p.why }), url, photos }
+      }),
       reviews: { received: reviews('subject'), given: reviews('reviewer') },
       vouches: saidIn('vouches'),
       reports: saidIn('reports'),
       words: { received: words('subject'), given: words('writer') },
       proofs: parse(found.proofs),
+      message: messageOf(lists.apps, found.address),
     }
   },
   title: (o) => `Forest index: ${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ')} ${short(o.address)}`,
@@ -113,14 +128,14 @@ export const profile: Page<ProfilePage> = {
     const subjectOf = (r: { body: { [key: string]: unknown } }) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     const wordHtml = (w: WordEntry, other: string) => html`<li>${w.word}, <a href="${urls(base).profile(other)}">${short(other)}</a>, weight ${w.weight.toFixed(2)}</li>`
     return html`<h1>${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ') || 'A profile'}</h1>
-<p><code>${o.address}</code></p>
-<p>${shownHtml(o, o.checks)}.</p>
-<h2>Proofs</h2>
-${listOf(o.proofs, (p) => html`<section><p>${String(p.circuit)} proof${p.verifier ? ` from ${p.verifier}` : ''}${p.index ? html`, index <code>${String(p.index)}</code>` : ''}${typeof p.trust === 'number' ? `, trust ${p.trust}` : ''}: ${p.result}.</p></section>`)}
+<p>${shownHtml(o, o.checks)}</p>
+${messageHtml(o.message)}
 <h2>Posts</h2>
-${listOf(o.posts, (p) => html`<section>${postFields(p.body)}${p.listed ? '' : html`<p class="no">Not listed: ${p.why}.</p>`}<p class="muted"><code>${p.address}</code></p></section>`)}
+${cardsHtml(o.posts.map((p) => cardHtml(p, p.listed ? '' : html`<p class="no">Not listed: ${p.why}.</p>`)), 'None.')}
 <h2>Reviews received</h2>
 ${listOf(o.reviews.received, (r) => reviewHtml(r, r.reviewer, base))}
+<details><summary>Everything this index read about this profile</summary>
+<p>Its address: <code>${o.address}</code></p>
 <h2>Reviews given</h2>
 ${listOf(o.reviews.given, (r) => reviewHtml(r, subjectOf(r), base))}
 <h2>Vouches and reports received</h2>
@@ -132,7 +147,12 @@ ${listOf([...o.vouches.given.map((r) => saidHtml('vouch', r, subjectOf(r), base)
 <h3>Received</h3>
 ${o.words.received.length ? html`<ul>${o.words.received.map((w) => wordHtml(w, w.writer))}</ul>` : none}
 <h3>Given</h3>
-${o.words.given.length ? html`<ul>${o.words.given.map((w) => wordHtml(w, w.subject))}</ul>` : none}`
+${o.words.given.length ? html`<ul>${o.words.given.map((w) => wordHtml(w, w.subject))}</ul>` : none}
+<h2>Proofs</h2>
+${listOf(o.proofs, (p) => html`<section><p>${String(p.circuit)} proof${p.verifier ? ` from ${p.verifier}` : ''}${p.index ? html`, index <code>${String(p.index)}</code>` : ''}${typeof p.trust === 'number' ? `, trust ${p.trust}` : ''}: ${p.result}.</p></section>`)}
+<h2>Signed statement</h2>
+${o.statement ? html`<p>What this index signed of what the profile shows, and its signature, which anyone checks against this index's address:</p><p><code>${o.statement}</code></p><p><code>${o.signature}</code></p>` : html`<p class="muted">None: this profile does not count here.</p>`}
+</details>`
   },
   ld(o, base, url) {
     const id = `${url}#profile`

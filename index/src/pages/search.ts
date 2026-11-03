@@ -10,7 +10,7 @@
 //   minReviews   a profile scored by at least this many raters
 //   limit        20 unless given, at most 100; offset skips that many
 
-import { offerOf, type Result, resultHtml, results } from './common.ts'
+import { cardsHtml, offerOf, type Result, resultHtml, results } from './common.ts'
 import { html, type Page, urls } from './template.ts'
 
 export const LIMIT = 20
@@ -53,7 +53,7 @@ function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: n
 
 export const search: Page<SearchPage> = {
   noindex: true,
-  data({ store, self }, _path, q) {
+  data({ store, self, base }, _path, q) {
     const where: string[] = []
     const params: Array<string | number> = []
     const words = match(q.get('q') ?? '')
@@ -64,7 +64,7 @@ export const search: Page<SearchPage> = {
     if (minRating !== null) where.push('and r.value >= ?'), params.push(minRating)
     const minReviews = number(q, 'minReviews')
     if (minReviews !== null) where.push('and coalesce(r.count, 0) >= ?'), params.push(minReviews)
-    let found = results(store, where.join(' '), params)
+    let found = results(store, base, where.join(' '), params)
     const near = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(q.get('near') ?? '')
     if (near) {
       const at = { lat: Number(near[1]), lon: Number(near[2]) }
@@ -78,9 +78,9 @@ export const search: Page<SearchPage> = {
   title: () => 'Forest index: search',
   body(o, base) {
     return html`<h1>Search</h1>
-<form action="${urls(base).search({})}" method="get"><input name="q" placeholder="Words"> <input name="market" placeholder="Market"> <input name="near" placeholder="lat,lon"> <input name="km" placeholder="km"> <button>Search</button></form>
+<form action="${urls(base).search({})}" method="get"><input name="q" placeholder="Words" aria-label="Words"> <input name="market" placeholder="Market" aria-label="Market"> <button>Search</button></form>
 <p class="muted">${o.total} found.</p>
-${o.results.map((r) => resultHtml(r, base))}`
+${cardsHtml(o.results.map((r) => resultHtml(r, base)))}`
   },
   ld(o, base, url) {
     return {
