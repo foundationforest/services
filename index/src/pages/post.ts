@@ -5,12 +5,13 @@
 // why, as its profile's page does.
 //
 // Drawn as the app would show it: its photos, the description's first line as its heading, the
-// price under it, the rest of the description, the facts list of its other fields, who posted it in
-// one row, the buttons to reach them, and a fold saying what the profile's words and numbers mean.
+// price under it, the rest of the description, the facts list of its other fields (a choice by its
+// labels, a place with no area linked to its point on the map), who posted it in one row, the
+// buttons to reach them, and a fold saying what the profile's words and numbers mean.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { choiceText, fieldLabel, fieldsOf, firstHost, firstLine, inWords, meaningHtml, messageHtml, messageOf, offerOf, type Post, postedByHtml, postOf, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
+import { choiceText, fieldLabel, fieldsOf, firstHost, firstLine, inWords, labelsOf, meaningHtml, messageHtml, messageOf, offerOf, placeHtml, type Post, postedByHtml, postOf, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
 import { backHtml, html, type Page, type Raw, urls } from './template.ts'
 
 export type PostPage = {
@@ -28,6 +29,8 @@ export type PostPage = {
   fields: string[]
   /** Each of `fields`' type, as its market names it: a `file` field names photos. */
   types: { [field: string]: string }
+  /** For each choice field it holds, the labels its market gives the values it holds, such as `{ size: { xl: "XL" } }`. */
+  labels: { [field: string]: { [value: string]: string } }
   /** Where to message its profile: one link per app this index lists. */
   message: Array<{ name: string; url: string }>
 }
@@ -69,21 +72,24 @@ export const post: Page<PostPage> = {
       | undefined
     if (!found) return null
     const { statement: _, signature: __, ...shown } = shownFor(store, found.profile)
+    const m = found.market === null ? undefined : markets.market(found.market)
+    const body = parse<{ [key: string]: unknown }>(found.body)
     return {
       index: self,
       profile: found.profile,
       market: found.market,
       role: found.role,
       post: {
-        ...postOf(base, found.address, parse(found.body), firstHost(found.entry === null ? null : parse(found.entry))),
+        ...postOf(base, found.address, body, firstHost(found.entry === null ? null : parse(found.entry))),
         time: found.time,
         listed: found.listed === 1,
         ...(found.why !== null && found.listed !== 1 && { why: found.why }),
       },
       checks: found.checks === null ? [] : parse(found.checks),
       ...shown,
-      fields: fieldsOf(found.market === null ? undefined : markets.market(found.market)),
-      types: typesOf(found.market === null ? undefined : markets.market(found.market)),
+      fields: fieldsOf(m),
+      types: typesOf(m),
+      labels: labelsOf(m, body),
       message: messageOf(lists.apps, found.profile),
     }
   },
@@ -105,7 +111,7 @@ export const post: Page<PostPage> = {
 ${photo ? html`<a class="photo" href="${photo}"><img src="${photo}" alt="${alt}" loading="lazy"></a>` : ''}${more.length ? html`<div class="tiles">${more.map((src) => html`<a href="${src}"><img src="${src}" alt="${alt}" loading="lazy"></a>`)}</div>` : ''}
 <div class="lead"><h1>${head || price || 'A post'}</h1>${price ? html`<p class="price">${price}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}</div>
 ${o.post.listed ? '' : html`<p class="red">Not listed: ${o.post.why}.</p>`}
-${names.length ? html`<dl class="facts">${names.map((n) => html`<div><dt>${fieldLabel(n)}</dt><dd>${o.types[n] === 'choice' ? choiceText(body[n]) : valueText(body[n])}</dd></div>`)}</dl>` : ''}
+${names.length ? html`<dl class="facts">${names.map((n) => html`<div><dt>${fieldLabel(n)}</dt><dd>${o.types[n] === 'choice' ? choiceText(body[n], o.labels[n]) : o.types[n] === 'place' ? placeHtml(body[n]) : valueText(body[n])}</dd></div>`)}</dl>` : ''}
 <section><h2>Posted by</h2>${postedByHtml(o, base)}</section>
 ${contact || o.message.length ? html`<section><h2>How to reach them</h2>${contact ? contactHtml(contact) : ''}${messageHtml(o.message)}</section>` : ''}
 ${meaningHtml('Its profile', o)}`

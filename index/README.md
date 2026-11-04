@@ -69,10 +69,11 @@ rating and no trust, and its entries count for nothing.
 A post is listed when its profile counts and it fits its market by the markets package's
 `checkEntry`, the markets manual's own check, which the mcp, the foundation's connector, over MCP
 (the way AI apps call outside tools), runs too before it signs one: each field one its market names
-for the role, of its type in `types.json`, a choice among its values, a `money` field's `per` one
-its field lists or none, a `place` field never online where its field says so, a `many` field a
-list of different values, a `file` field one of the files the body lists in `files` (the standard's
-own field). A market's `required` is for apps to ask, and nothing enforces it. A post not listed is
+for the role, or `contact`, which every post may hold, held only where its `when` matches, of its
+type in `types.json`, a choice among its values, a `money` field's `per` one its field lists or
+none, a `place` a point and a radius, a `many` field a list of different values, a `file` field one
+of the files the body lists in `files` (the standard's own field). A market's `preview` is for apps
+to ask first, and nothing enforces it. A post not listed is
 kept, and its own page and its profile's say `why`: it does not fit (naming the field), its profile
 does not count, or it was deleted.
 
@@ -110,7 +111,7 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 | **Pickiness** | Each score on 0 to 1 as `(s − 1) / 9`; `P = 0.5 + 0.5 × Σ(Rt − s) / (1 + n)` over the `n` profiles it scored, `Rt` each one's current rating. Below others' ratings is tough, above is easy; few scores stay near 0.5. Shown nowhere |
 | **Ratings** | Each score weighs `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, so a tough rater's high scores count more and its low ones less, and an average rater's weigh half. A rater's reviews of one profile, one per post, are one score, their mean. A rating is the weighted average of its scores, 1 to 10, to one decimal, shown as it is with how many raters; none with no counted review. A review's `weight` is its score's weight, split among its rater's reviews of that profile |
 | **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust at half its uniqueness and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
-| **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest post. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest post. Order only: a profile's page shows its ratings as they are |
+| **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest post; with `near`, nearest first, then this. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest post. Order only: a profile's page shows its ratings as they are |
 
 At today's numbers, with trust from 0 to 100 as the pages show it:
 
@@ -175,9 +176,7 @@ One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text 
 each verification was first seen, and every root it signed. Without the first, every proof would be
 first seen anew, after any key's `until`; without the roots, the reputation proofs people show would
 stop showing. `npm run rebuild` drops every other table, makes each again with this code's schema,
-reads the hosts again, ranks, and exits; the seed is never touched. A file from before the
-standard's folders needs one `npm run rebuild` first, which also drops its old tables and the
-column `seen`, keeping each first sighting's profile, key and time.
+reads the hosts again, ranks, and exits; the seed is never touched.
 
 ## Its API
 
@@ -195,17 +194,18 @@ on the About page. GET and HEAD only, open to any origin (`access-control-allow-
 |---|---|
 | `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many posts each role has `listed` and each role's word for its posts (`offers`, `requests` or `posts`), and its lists, each key with its confidence; drawn as a search box, words and a market, and each market as one link, with its posts counted in those words |
 | `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is, what it reads, what a profile's words and numbers mean, its address, and links to its JSON, `skill.md`, `llms.txt` and its source |
-| `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order, each drawn as one link: its first photo, its description's first line, price and area, and its profile's shield and rating, or New |
-| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km` (10 unless given), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
+| `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order, each drawn as one link: its first photo, its description's first line, price and place, and its profile's shield and rating, or New |
+| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a post whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
 | `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer, as its market and role with its shield, "Verified by face" and its rating's chip, its `message` links, its posts and the reviews it received, each one link; its rating, trust and uniqueness in the fold What these mean, and everything else in one more. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
-| `/profiles/<address>/post/<id>` | `{ index, profile, market, role, post, checks, ratings, trust, uniqueness, fields, types, message }`: one post, at its address under `/profiles`; `post` as its profile's page gives it, `fields` its market's post fields in the order the page draws them, the `preview`'s first, `types` each one's type. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but those of type `file`, who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a post not listed has its page too, saying why |
+| `/profiles/<address>/post/<id>` | `{ index, profile, market, role, post, checks, ratings, trust, uniqueness, fields, types, labels, message }`: one post, at its address under `/profiles`; `post` as its profile's page gives it, `fields` its market's post fields in the order the page draws them, the `preview`'s first, `types` each one's type, `labels` the labels its market gives the choice values it holds. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but those of type `file` (a choice by its label or in words, a place with no area on the map, linked to its point at openstreetmap.org), who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a post not listed has its page too, saying why |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
 | `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listed post |
 | `/llms.txt`, `/skill.md` | Files here written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place |
 | `/fonts/<file>` | The pages' font, the files of `@fontsource-variable/manrope` as the package gives them, cached for a day |
 
-A `<result>` is `{ profile, market, role, post: { address, body, url, photos }, ratings, trust, uniqueness, checks }`.
+A `<result>` is `{ profile, market, role, post: { address, body, url, photos }, ratings, trust, uniqueness, checks }`, and with `near`,
+`km`: the distance between the two points, to one decimal.
 A post, on every page, gives `url`, its own page, and `photos`: each file its fields name (a `file`
 field, read by its shape) at the first host its profile entry names, `<host>/v1/files/<sha256>`
 ([the host's read](../host/README.md#its-api)), since the person's app writes every entry and file

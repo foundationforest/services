@@ -1,6 +1,6 @@
 // The markets, read from the pinned checkout through the markets package: a post that does not fit
 // its market (the package's checkEntry, whose own tests are the markets repo's) is kept, not listed,
-// and says why.
+// and says why, a place in the shape before the markets' point and radius among them.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -25,6 +25,7 @@ test('a post that does not fit its market is kept, not listed, and its profile p
   await post(host.url, [
     at(tutor, 'post/good', { description: 'Maths, any level.', subjects: ['maths'] }),
     at(tutor, 'post/odd', { description: 'Maths.', colour: 'red' }),
+    at(tutor, 'post/old', { description: 'Maths, in Madrid.', mode: ['in-person'], place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid', online: true } }),
     at(student, 'post/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
   const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
@@ -40,6 +41,8 @@ test('a post that does not fit its market is kept, not listed, and its profile p
   assert.equal(odd.listed, false)
   assert.equal(odd.why, 'a post in tutoring has no field colour')
   assert.deepEqual(odd.body, { description: 'Maths.', colour: 'red' })
+  const old = t.posts.find((p) => p.address.endsWith('/post/old'))!
+  assert.deepEqual([old.listed, old.why], [false, 'place takes { lat, lon, radiusKm, area }: lat and lon as decimal text, radiusKm in whole kilometres, and area a name if wanted'])
   assert.equal(t.posts.find((p) => p.address.endsWith('/post/good'))!.listed, true)
   assert.equal('why' in t.posts.find((p) => p.address.endsWith('/post/good'))!, false)
   await i.close()

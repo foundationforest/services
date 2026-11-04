@@ -31,11 +31,8 @@ create table if not exists roots (
 );
 `
 
-/**
- * Tables `rebuild` drops: each comes back from the hosts. `records` is the name the entries' table
- * had before the standard's folders, in a file from then.
- */
-const DROPPED = ['hosts', 'entries', 'records', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'ratings', 'leaves']
+/** Tables `rebuild` drops: each comes back from the hosts. */
+const DROPPED = ['hosts', 'entries', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'ratings', 'leaves']
 
 const SCHEMA = `
 create table if not exists hosts (url text primary key, cursor integer not null);
@@ -110,7 +107,7 @@ export type Store = {
   db: DatabaseSync
   /** Runs `fn` in one transaction. */
   tx<T>(fn: () => T): T
-  /** Drops every table but `seen` and `roots`, and makes them again, empty; `seen` loses a column a file from before the standard's folders has. */
+  /** Drops every table but `seen` and `roots`, and makes them again, empty. */
   drop(): void
   close(): void
 }
@@ -136,10 +133,6 @@ export function openStore(dir: string): Store {
     drop() {
       tx(() => {
         for (const t of DROPPED) db.exec(`drop table if exists ${t}`)
-        // A file from before the standard's folders has a column in seen, `tag` (`stamp` before
-        // that), for the number each proof showed then; the kept table is never made again, so the
-        // column goes here, once, and each row's profile, key and time stay.
-        for (const column of ['tag', 'stamp']) if (db.prepare('select 1 from pragma_table_info(?) where name = ?').get('seen', column)) db.exec(`alter table seen drop column ${column}`)
       })
       db.exec(SCHEMA)
     },

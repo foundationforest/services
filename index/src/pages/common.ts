@@ -60,18 +60,34 @@ export function messageHtml(message: Array<{ name: string; url: string }>): Raw 
 /**
  * A market's post fields, in the order a post's page shows them: its preview's first, then the rest
  * in the market's order. A market with no preview has the markets manual's: description, price,
- * then the first place field, of those it has.
+ * then the place fields, of those it has.
  */
 export function fieldsOf(m: Market | undefined): string[] {
   if (!m) return []
   const names = Object.keys(m.post)
-  const preview = m.preview ?? [...['description', 'price'].filter((n) => n in m.post), ...names.filter((n) => m.post[n]!.type === 'place').slice(0, 1)]
+  const preview = m.preview ?? [...['description', 'price'].filter((n) => n in m.post), ...names.filter((n) => m.post[n]!.type === 'place')]
   return [...preview, ...names.filter((n) => !preview.includes(n))]
 }
 
 /** Each of a market's post fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
 export function typesOf(m: Market | undefined): { [field: string]: string } {
   return m ? Object.fromEntries(Object.entries(m.post).map(([name, field]) => [name, field.type])) : {}
+}
+
+/**
+ * The labels of the values a body holds, for each of its market's choice fields that has some, as
+ * its file gives them: `{ size: { xl: "XL" } }`. Only those the body holds, so a post's JSON stays
+ * the size of the post.
+ */
+export function labelsOf(m: Market | undefined, body: { [key: string]: unknown }): { [field: string]: { [value: string]: string } } {
+  const out: { [field: string]: { [value: string]: string } } = {}
+  for (const [name, field] of Object.entries(m?.post ?? {})) {
+    const labels = field.type === 'choice' ? field.labels : undefined
+    if (!labels || !Object.hasOwn(body, name)) continue
+    const held = (Array.isArray(body[name]) ? (body[name] as unknown[]) : [body[name]]).filter((v): v is string => typeof v === 'string' && Object.hasOwn(labels, v))
+    if (held.length) out[name] = Object.fromEntries(held.map((v) => [v, labels[v]!]))
+  }
+  return out
 }
 
 type ShownColumns = { value: number | null; count: number | null; trust: number | null; uniqueness: number | null }
@@ -120,7 +136,7 @@ export function verifiedText(checks: Check[]): string {
   return `Verified by ${ways.length > 1 ? `${ways.slice(0, -1).join(', ')} and ${ways.at(-1)}` : ways[0]}`
 }
 
-/** A market's name or a choice's value in words, as the app writes them: `home-cleaning` is "Home cleaning", `like-new` "Like new". */
+/** A market's name or a choice's value in words, as the markets manual writes them, hyphens as spaces and a capital first letter: `home-cleaning` is "Home cleaning", `like-new` "Like new". */
 export function inWords(name: string): string {
   const words = name.replaceAll('-', ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
@@ -161,6 +177,30 @@ export function fieldLabel(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
+/** A place, read by its shape: its point and its radius, and its area if it has one. */
+type Place = { lat: string; lon: string; radiusKm: number; area?: unknown }
+const isPlace = (v: unknown): v is Place => {
+  const o = v as Place | null
+  return !!o && typeof o === 'object' && typeof o.lat === 'string' && typeof o.lon === 'string' && Number.isInteger(o.radiusKm)
+}
+
+/** Where a place's point is on openstreetmap.org, marked. */
+export const mapUrl = (p: Place) => `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=15/${p.lat}/${p.lon}`
+
+/** How far round a place reaches, after its area: nothing for radius 0, that exact spot. */
+const within = (p: Place) => (p.radiusKm === 0 ? '' : `, within ${p.radiusKm} km`)
+
+/**
+ * A place as text, in a row that is a link already: its area, or "on the map" with none, since its
+ * point alone says nothing to a reader; then how far round it reaches. Links do not nest, so the
+ * map is linked on the post's page only.
+ */
+export const placeText = (p: Place) => `${typeof p.area === 'string' ? p.area : 'on the map'}${within(p)}`
+
+/** A place on a post's page, as `placeText`, its "on the map" a link to its point. */
+export const placeHtml = (v: unknown): Raw =>
+  html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}${typeof p.area === 'string' ? p.area : html`<a href="${mapUrl(p)}">on the map</a>`}${within(p)}`)}`
+
 /** A field's value as words on a page: each of the markets' nine types, read by its shape. */
 export function valueText(v: unknown): string {
   if (typeof v === 'string') return v
@@ -169,8 +209,7 @@ export function valueText(v: unknown): string {
   if (v && typeof v === 'object') {
     const o = v as { [key: string]: unknown }
     if ('amount' in o && 'currency' in o) return `${o.amount} ${o.currency}${o.per ? ` per ${o.per}` : ''}`
-    if ('area' in o) return `${o.area}${o.online ? ', and online' : ''}${o.reachKm !== undefined ? `, up to ${o.reachKm} km away` : ''}`
-    if (o.online === true) return 'online'
+    if (isPlace(o)) return placeText(o)
     if ('sha256' in o) return `a file (${o.type}, ${o.size} bytes)`
     if ('from' in o && 'to' in o) return `${o.from} to ${o.to}`
     if ('zone' in o && Array.isArray(o.slots)) return `${(o.slots as Array<{ days: string[]; from: string; to: string }>).map((s) => `${s.days.join(', ')} ${s.from} to ${s.to}`).join('; ')} (${o.zone})`
@@ -181,8 +220,12 @@ export function valueText(v: unknown): string {
   return ''
 }
 
-/** A choice field's value in words, as the app writes it: each of its values in words, joined by commas. */
-export const choiceText = (v: unknown) => (Array.isArray(v) ? v : [v]).map((x) => inWords(String(x))).join(', ')
+/**
+ * A choice field's value as people read it: each value's label where its field has one (`xl` as
+ * "XL"), otherwise the value in words, joined by commas.
+ */
+export const choiceText = (v: unknown, labels: { [value: string]: string } = {}) =>
+  (Array.isArray(v) ? v : [v]).map((x) => (Object.hasOwn(labels, String(x)) ? labels[String(x)]! : inWords(String(x)))).join(', ')
 
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */
 export function firstLine(text: string, max: number): string {
@@ -198,15 +241,10 @@ export function priceText(body: { [key: string]: unknown }): string {
   return price && typeof price === 'object' && 'amount' in price && 'currency' in price ? valueText(price) : ''
 }
 
-/** The area of a post's first place, read by its shape, or "online". */
-function areaText(body: { [key: string]: unknown }): string {
-  for (const v of Object.values(body)) {
-    const o = v as { area?: unknown; online?: unknown } | null
-    if (!o || typeof o !== 'object' || Array.isArray(o)) continue
-    if (typeof o.area === 'string') return `${o.area}${o.online === true ? ', and online' : ''}`
-    if (o.online === true && Object.keys(o).length === 1) return 'online'
-  }
-  return ''
+/** A post's first place, read by its shape, in words. */
+function firstPlaceText(body: { [key: string]: unknown }): string {
+  const place = Object.values(body).find(isPlace)
+  return place ? placeText(place) : ''
 }
 
 /** Who posted a post, as one row linking to its profile: the shield, the profile's name, its chip and a chevron. */
@@ -221,7 +259,7 @@ export function postedByHtml(r: { profile: string; market: string | null; role: 
  */
 export function postRowHtml(post: Post, { aside, note }: { aside?: Raw; note?: Raw } = {}): Raw {
   const description = typeof post.body.description === 'string' ? post.body.description : ''
-  const facts = [priceText(post.body), areaText(post.body)].filter(Boolean).join(' · ')
+  const facts = [priceText(post.body), firstPlaceText(post.body)].filter(Boolean).join(' · ')
   return html`<a class="row post-row" href="${post.url}">${post.photos[0] ? html`<img class="thumb" src="${post.photos[0]}" alt="" loading="lazy">` : ''}<span class="two"><strong>${firstLine(description, 140) || 'A post'}</strong>${facts ? html`<span>${facts}</span>` : ''}${note ?? ''}</span>${aside ? html`<span class="aside">${aside}</span>` : ''}</a>`
 }
 

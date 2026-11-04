@@ -18,7 +18,7 @@ import { b64u, base58 } from '@foundationforest/folders'
 
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
-import { fieldsOf, inWords, photosOf } from '../src/pages/common.ts'
+import { fieldsOf, inWords, photosOf, placeHtml, valueText } from '../src/pages/common.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
 import { post as postPage, type PostPage } from '../src/pages/post.ts'
@@ -50,23 +50,26 @@ before(async () => {
   for (const [name, p] of Object.entries(people)) await publishProfile(host.url, p, name === 'seller' ? { hosts: [PHOTOS, host.url] } : {})
   const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
-    at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid' }, contact: 'https://wa.me/34600000000' }),
-    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], place: { online: true }, contact: 'http://example.com/maths/' }),
-    at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], place: { lat: '38.72', lon: '-9.14', precisionKm: 1, area: 'Lisbon' } }),
+    at(a!, 'post/a', { description: 'Maths and physics, in Madrid.', subjects: ['maths', 'physics'], price: { amount: '30', currency: 'USD', per: 'hour' }, mode: ['in-person'], place: { lat: '40.42', lon: '-3.70', radiusKm: 5, area: 'Madrid' }, contact: 'https://wa.me/34600000000' }),
+    // Online only: no place, as tutoring asks for one only in person.
+    at(b!, 'post/b', { description: 'Maths, online.', subjects: ['maths'], mode: ['online'], contact: 'http://example.com/maths/' }),
+    at(c!, 'post/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], mode: ['in-person'], place: { lat: '38.72', lon: '-9.14', radiusKm: 5, area: 'Lisbon' } }),
     at(s1!, 'post/need', { description: 'Help with maths homework.', subjects: ['maths'], contact: 'mailto:s1@example.com' }),
-    // A place that is an area alone, with no point.
+    // Its size a value its market labels, xl as XL; its place 8.9 km north of a's.
     at(seller!, 'post/coat', {
       description: 'A wool coat, worn twice.',
+      wearer: ['women'],
       kind: 'coat',
+      size: 'xl',
       condition: 'like-new',
       price: { amount: '40', currency: 'EUR' },
-      location: { area: 'Madrid' },
+      location: { lat: '40.50', lon: '-3.70', radiusKm: 2, area: 'Madrid' },
       photos: COAT,
       files: COAT.map((sha256, n) => ({ sha256, type: 'image/jpeg', size: 1000 + n })),
       contact: 'seller@example.com',
     }),
-    // A file field named pastWork, not photos: the facts leave it out by its type.
-    at(repairer!, 'post/taps', { description: 'Leaks and taps fixed.', repairs: ['plumbing'], place: { area: 'Seville' }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
+    // A file field named pastWork, not photos: the facts leave it out by its type. A place with no area.
+    at(repairer!, 'post/taps', { description: 'Leaks and taps fixed.', repairs: ['plumbing'], base: { lat: '37.39', lon: '-5.98', radiusKm: 10 }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
     at(uncounted!, 'post/u', { description: 'Maths, uncounted.' }),
     at(s1!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a`, text: 'Very clear.' }),
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', post: `${a!.key.address}/post/a` }),
@@ -247,7 +250,7 @@ test('trust and uniqueness only in a fold or on About; a row shows the shield an
   assert.ok(rowOf(tutors, `${BASE}/profiles/${addressOf('c')}/post/c`).endsWith('<span class="new">New</span></span></a>'))
 })
 
-test("search: words, market, role, a place, an area alone, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
+test("search: words, market, role, a place, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
   const s = async (q: string) => (await twin<{ total: number; results: Array<{ profile: string; post: { address: string } }> }>(i, `/search.json?${q}`)).body
   const who = (r: { results: Array<{ profile: string }> }) => r.results.map((x) => Object.keys(people).find((k) => people[k]!.key.address === x.profile))
   // Every score here weighs the same: two students no one has said a word about, neither picky. So
@@ -259,22 +262,37 @@ test("search: words, market, role, a place, an area alone, a rating, raters, pag
   assert.deepEqual(who(await s('q=math&role=tutor')), ['a', 'b'])
   assert.deepEqual(who(await s('q=chem')), ['c'])
   assert.deepEqual(who(await s('q=maths%20lisbon')), [])
-  assert.deepEqual(who(await s('near=40.4,-3.7&km=50')), ['a'])
+  // Near a point, nearest first: a at 2.2 km, the coat at 11.1; b, online, has no place.
+  assert.deepEqual(who(await s('near=40.4,-3.7&km=50')), ['a', 'seller'])
   assert.deepEqual(who(await s('near=38.7,-9.1')), ['c'])
   assert.deepEqual(who(await s('minRating=7.5')), ['a'])
   assert.deepEqual(who(await s('minReviews=1&role=tutor')), ['a', 'b'])
-  // The coat's location is an area alone: found by its words, market and role, and never near, as
-  // near reads a place's point. 20000 km from Madrid reaches both posts with a point.
   assert.deepEqual(who(await s('q=coat')), ['seller'])
   assert.deepEqual(who(await s('market=clothing&role=seller')), ['seller'])
-  assert.deepEqual(who(await s('near=40.4,-3.7&km=20000')), ['a', 'c'])
-  // A town by its name, as skill.md tells an AI to search it too: q finds the coat in its area.
+  // 20000 km reaches every post with a place, in every market, nearest first: Seville, then Lisbon.
+  assert.deepEqual(who(await s('near=40.4,-3.7&km=20000')), ['a', 'seller', 'repairer', 'c'])
+  // A town by its name, as skill.md says: q finds a place by its area.
   assert.deepEqual(who(await s('q=madrid')).sort(), ['a', 'seller'])
   const paged = await s('role=tutor&limit=1&offset=1')
   assert.equal(paged.total, 3)
   assert.deepEqual(who(paged), ['c'])
   // The uncounted profile's post is never a result.
   assert.ok(!who(await s('q=uncounted')).length)
+})
+
+test("search near a point: a post's radius reaches past km, the nearest first, each with its distance", async () => {
+  const s = async (q: string) => (await twin<{ results: Array<{ profile: string; km?: number }> }>(i, `/search.json?${q}`)).body
+  const who = (r: { results: Array<{ profile: string }> }) => r.results.map((x) => Object.keys(people).find((k) => people[k]!.key.address === x.profile))
+  // From 12.2 km north of a's point, past km 10 alone; a's place reaches 5 km round it, so the two
+  // circles touch. The coat, 3.3 km away, comes first, though a is rated and the coat is not.
+  const north = await s('near=40.53,-3.70&km=10')
+  assert.deepEqual(who(north), ['seller', 'a'])
+  assert.deepEqual(north.results.map((r) => r.km), [3.3, 12.2], 'between the two centres, to one decimal')
+  assert.deepEqual(keysOf(north.results[0]!), [...RESULT, 'km'].sort())
+  // At km 5 they no longer touch: 12.2 is more than 5 and 5.
+  assert.deepEqual(who(await s('near=40.53,-3.70&km=5')), ['seller'])
+  // With no point asked, no result carries a distance, and the order is search's.
+  assert.ok((await s('q=madrid')).results.every((r) => !('km' in r)))
 })
 
 test('the files for AI agents: every URL of this index they name answers', async () => {
@@ -313,7 +331,7 @@ test("a post's page and its twin: its fields in its market's order with their ty
   const a = addressOf('a')
   const { status, body: o } = await twin<PostPage>(i, `/profiles/${a}/post/a.json`)
   assert.equal(status, 200)
-  assert.deepEqual(keysOf(o), both(['checks', 'fields', 'index', 'market', 'message', 'post', 'profile', 'role', ...SHOWN], ['types']))
+  assert.deepEqual(keysOf(o), both(['checks', 'fields', 'index', 'market', 'message', 'post', 'profile', 'role', ...SHOWN], ['labels', 'types']))
   assert.deepEqual(keysOf(o.post), both([...POST, 'listed', 'time'], POST_ADDED))
   assert.deepEqual([o.index, o.profile, o.market, o.role, o.post.address, o.post.url, o.post.listed], [i.address, a, 'tutoring', 'tutor', `${a}/post/a`, `${BASE}/profiles/${a}/post/a`, true])
   // The same profile, as its own page shows it.
@@ -323,12 +341,12 @@ test("a post's page and its twin: its fields in its market's order with their ty
   // The market's preview first, then the rest of its post fields in its order.
   const tutoring = JSON.parse(readFileSync(join(MARKETS, 'markets/tutoring.json'), 'utf8')) as { post: { [name: string]: { type: string } }; preview: string[] }
   assert.deepEqual(o.fields, [...tutoring.preview, ...Object.keys(tutoring.post).filter((f) => !tutoring.preview.includes(f))])
-  // Each field's type, as its market names it.
+  // Each field's type, as its market names it; tutoring labels none of its values.
   assert.deepEqual(o.types, Object.fromEntries(Object.entries(tutoring.post).map(([name, f]) => [name, f.type])))
-  // A market with no preview: the markets manual's, description, price, then its first place field.
-  const cleaning = (await twin<{ market: Market }>(i, '/markets/home-cleaning.json')).body.market
-  assert.ok(!('preview' in cleaning))
-  assert.deepEqual(fieldsOf(cleaning).slice(0, 3), ['description', 'price', 'place'])
+  assert.deepEqual(o.labels, {})
+  // A market with no preview: the markets manual's, description, price, then its place fields.
+  const { preview: _, ...cleaning } = (await twin<{ market: Market }>(i, '/markets/home-cleaning.json')).body.market
+  assert.deepEqual(fieldsOf(cleaning).slice(0, 4), ['description', 'price', 'base', 'home'])
   assert.deepEqual(new Set(fieldsOf(cleaning)), new Set(Object.keys(cleaning.post)))
 
   const html = (await page(i, `/profiles/${a}/post/a`)).text
@@ -345,7 +363,7 @@ test("a post's page and its twin: its fields in its market's order with their ty
     `<a class="back" href="${BASE}/markets/tutoring">`,
     '<h1>Maths and physics, in Madrid.</h1><p class="price">30 USD per hour</p></div>',
     '<dl class="facts"><div><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
-    '<div><dt>Place</dt><dd>Madrid</dd></div>',
+    '<div><dt>Mode</dt><dd>In person</dd></div><div><dt>Place</dt><dd>Madrid, within 5 km</dd></div>',
     `<h2>Posted by</h2><a class="row" href="${BASE}/profiles/${a}"><svg class="icon shield"`,
     '<span class="grow"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></span><span class="chip">9.0 ★ · 2</span>',
     '<h2>How to reach them</h2><a class="button" href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000</a>',
@@ -375,6 +393,14 @@ test("a post's page and its twin: its fields in its market's order with their ty
   const tapsHtml = (await page(i, `/profiles/${addressOf('repairer')}/post/taps`)).text
   assert.ok(!tapsHtml.includes('<dt>Past work</dt>') && !tapsHtml.includes('<dt>Files</dt>'))
   assert.ok(tapsHtml.includes('<div><dt>Licences</dt><dd>Gas</dd></div>'))
+  // A place with no area: on the map, linked to its point; in a row, which is a link already, the
+  // same words with no link.
+  assert.ok(tapsHtml.includes('<div><dt>Base</dt><dd><a href="https://www.openstreetmap.org/?mlat=37.39&amp;mlon=-5.98#map=15/37.39/-5.98">on the map</a>, within 10 km</dd></div>'))
+  assert.ok(mainOf((await page(i, '/markets/home-repair')).text).includes('<span>on the map, within 10 km</span>'))
+  // Radius 0 is that exact spot: its area alone, or the map alone.
+  const spot = { lat: '40.42', lon: '-3.70', radiusKm: 0 }
+  assert.equal(valueText({ ...spot, area: 'Court 3' }), 'Court 3')
+  assert.equal(String(placeHtml(spot)), '<a href="https://www.openstreetmap.org/?mlat=40.42&amp;mlon=-3.70#map=15/40.42/-3.70">on the map</a>')
 
   // Every place that shows the post links to its page.
   for (const where of ['/markets/tutoring', '/search?q=maths', `/profiles/${a}`]) assert.ok((await page(i, where)).text.includes(`<a class="row post-row" href="${BASE}/profiles/${a}/post/a">`), where)
@@ -401,9 +427,13 @@ test("photos: each file a post's fields name, linked at its profile entry's firs
   const html = (await page(i, `/profiles/${seller}/post/coat`)).text
   for (const link of links) assert.ok(html.includes(`<img src="${link}" alt="A wool coat, worn twice." loading="lazy">`), link)
   for (const text of ['<dt>Photos</dt>', '<dt>Files</dt>', 'a file (', `<dd>${COAT[0]}`]) assert.ok(!html.includes(text), text)
-  // A choice's value in words, as the app writes it.
+  // A choice's value in words, as the markets manual writes them, or by its label where its field
+  // has one; its JSON carries the labels of the values it holds, no other. Its place, by its area.
   assert.ok(html.includes('<div><dt>Kind</dt><dd>Coat</dd></div>'))
   assert.ok(html.includes('<div><dt>Condition</dt><dd>Like new</dd></div>'))
+  assert.ok(html.includes('<div><dt>Size</dt><dd>XL</dd></div>'))
+  assert.deepEqual(o.labels, { size: { xl: 'XL' } })
+  assert.ok(html.includes('<div><dt>Location</dt><dd>Madrid, within 2 km</dd></div>'))
   // The first large, the rest small under it.
   assert.ok(html.includes(`<a class="photo" href="${links[0]}"><img src="${links[0]}"`))
   assert.ok(html.includes(`<div class="tiles"><a href="${links[1]}"><img src="${links[1]}"`))
@@ -470,7 +500,7 @@ test("the profile page, for a buyer: its name and shield, how it is verified and
     '<p class="line">Verified by face · <span class="chip">9.0 ★ · 2</span></p>',
     `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
     '<h2>Posts</h2>',
-    `<a class="row post-row" href="${BASE}/profiles/${a}/post/a"><span class="two"><strong>Maths and physics, in Madrid.</strong><span>30 USD per hour · Madrid</span></span></a>`,
+    `<a class="row post-row" href="${BASE}/profiles/${a}/post/a"><span class="two"><strong>Maths and physics, in Madrid.</strong><span>30 USD per hour · Madrid, within 5 km</span></span></a>`,
     '<h2>Reviews received</h2>',
     `<a class="row said-row" href="${BASE}/profiles/${addressOf('s1')}"><span class="chip">9 ★</span><span class="two"><span class="said-text">Very clear.</span></span></a>`,
   ]
