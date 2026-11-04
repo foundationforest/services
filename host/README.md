@@ -19,13 +19,12 @@ no money but its own credits, no account.
 Two parts, in one process. The standard holds only what two strangers' programs must agree on, so a
 host's code lives with whoever runs it, and the host check keeps it honest.
 
-- **The plug** (`src/plug.ts`, over `src/storage.ts`) answers the seven requests every host answers,
-  on loopback. It checks every entry, inbox entry and file as the standard says before it keeps
-  anything.
+- **The plug** (`src/plug.ts`, over `src/storage.ts`) answers the seven requests every host answers.
+  It checks every entry, inbox entry and file as the standard says before it keeps anything.
 - **The front** (`src/host.ts`), the only part the internet reaches, answers `GET /` with one line
-  saying what this is, answers the credit routes, and passes every other request, untouched, to the
-  plug. The credits stand in front of the plug, never inside it: the plug knows only the three hooks
-  it asks, so each part is tested, and changes, alone.
+  saying what this is, answers the credit routes, and hands every other request, untouched, to the
+  plug, in the same process: one server, on one port. The credits stand in front of the plug, never
+  inside it: the plug knows only the three hooks it asks, so each part is tested, and changes, alone.
 
 **Who writes.** The plug takes an entry signed by the folder's main key, or by an access key the
 folder's current profile entry here lists with `write`; any other key is refused (`unlisted`), and
@@ -48,8 +47,8 @@ inside; that is the recipient's app's. Nobody deletes an inbox entry: it goes af
 
 **Files.** A file is the bytes an entry's body names in `files`, by SHA-256, type and size. The plug
 takes them only while a current entry here names them with that type and size, keeps them while one
-does, and for the keep days after. Bytes several folders name are stored once. The front sends on
-one upload of the same bytes at a time, so a second finds them stored and pays nothing. From a
+does, and for the keep days after. Bytes several folders name are stored once. The front stores one
+upload of the same bytes at a time, so a second finds them stored and pays nothing. From a
 bucket, a read is a redirect to a short-lived link straight to the bytes there.
 
 **Where it keeps things,** in the data directory (`DATA_DIR`):

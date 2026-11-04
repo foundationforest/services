@@ -31,7 +31,7 @@
 // storage.ts's business, and only storage.ts's.
 
 import { createHash } from 'node:crypto'
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http'
+import { type IncomingMessage, type Server, type ServerOptions, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import {
   type Checked,
@@ -384,19 +384,37 @@ export class Host {
   // ------------------------------------------------------------------------------------------
   // HTTP
 
+  /**
+   * What a server answering the plug's requests is made with: the plug's timeout, looked at every
+   * second (Node looks every 30 by default, and every second keeps it near), and its header cap.
+   */
+  serverOptions(): ServerOptions {
+    return { requestTimeout: this.timeout, connectionsCheckingInterval: 1000, maxHeaderSize: MAX_HEADER_BYTES }
+  }
+
+  /**
+   * One request, answered as the plug answers it, on its own server (`listen`) or on one around it
+   * (host.ts). One that fails answers 500 and logs one line; one dropped while it arrived (408, or
+   * the asker gone) gets no 500, so it logs none.
+   */
+  serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    return this.handle(req, res).catch((err: unknown) => {
+      if (res.headersSent || res.destroyed) return
+      logFailure(URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname ?? '', err)
+      res.writeHead(500).end()
+    })
+  }
+
+  /** Prune every hour, until close: `listen` starts it, and so does a server around the plug. */
+  pruneEveryHour(): void {
+    this.pruning ??= setInterval(() => void this.prune().catch(() => {}), DAY / 24).unref()
+  }
+
   /** Listen on loopback unless told otherwise, and prune every hour. Returns the url. */
   async listen(port = 0, hostname = '127.0.0.1'): Promise<string> {
-    // Node looks for requests past the timeout every 30 seconds by default; every second keeps it near.
-    this.server = createServer({ requestTimeout: this.timeout, connectionsCheckingInterval: 1000, maxHeaderSize: MAX_HEADER_BYTES }, (req, res) => {
-      this.handle(req, res).catch((err: unknown) => {
-        // A request dropped while it arrived (408, or the asker gone) gets no 500, so it logs none.
-        if (res.headersSent || res.destroyed) return
-        logFailure(URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname ?? '', err)
-        res.writeHead(500).end()
-      })
-    })
+    this.server = createServer(this.serverOptions(), (req, res) => void this.serve(req, res))
     await new Promise<void>((resolve) => this.server!.listen(port, hostname, resolve))
-    this.pruning = setInterval(() => void this.prune().catch(() => {}), DAY / 24).unref()
+    this.pruneEveryHour()
     this.url = `http://${hostname.includes(':') ? `[${hostname}]` : hostname}:${(this.server.address() as AddressInfo).port}`
     return this.url
   }

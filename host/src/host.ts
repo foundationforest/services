@@ -4,15 +4,15 @@
 // README.md says each in words.
 //
 // Around the plug, one thing only: a front that answers `GET /` with one line saying what this is,
-// sells and takes credits (credits.ts), and passes every other request, untouched, to the plug on
-// loopback.
+// sells and takes credits (credits.ts), and hands every other request, untouched, to the plug, in
+// the same process: one server, on one port.
 //
 // Every write is paid for in credits, from its folder's balance here, at the price of what it
 // stores: the plug asks this host's choices (`entryChoice`, `fileChoice`, `inboxChoice`). An entry
 // is claimed by its id as its price is taken, so two copies pay once. A file's bytes are stored
 // first: their price is reserved on a folder whose current entry names them, then taken once the
-// plug answers that it stored them, or released; the front sends on one upload of the same bytes
-// at a time. The plug asks about a folder's first profile entry, so joining costs a write, and never
+// plug answers that it stored them, or released; the front stores one upload of the same bytes at
+// a time. The plug asks about a folder's first profile entry, so joining costs a write, and never
 // about a later one, so leaving and updating are free. An inbox entry is paid like an entry, by its
 // bytes, from the balance of the folder its request's payment names, signed over its id by that
 // folder's key; nothing goes to the recipient. Reads are free.
@@ -25,7 +25,7 @@
 // file and their key in DATA_DIR/credits.
 
 import { mkdirSync } from 'node:fs'
-import { createServer, request, type IncomingHttpHeaders, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 
@@ -35,7 +35,7 @@ import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { keyAt } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
-import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, MAX_HEADER_BYTES, defaultFileChoice, logFailure } from './plug.ts'
+import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
 export const LABEL =
@@ -182,11 +182,42 @@ export function paidFiles(credits: Credits): FileChoice {
   }
 }
 
-const HOP_BY_HOP = ['connection', 'keep-alive', 'transfer-encoding']
-const passed = (headers: IncomingHttpHeaders) => {
-  const out = { ...headers }
-  for (const name of HOP_BY_HOP) delete out[name]
-  return out
+/**
+ * The plug, with a file's price settled from what the plug answers as it stores the bytes: its
+ * handler stores them through `putFile`, so this one is the one it calls. One upload of the same
+ * bytes is stored at a time, so a second finds them stored and pays nothing. The price paidFiles
+ * reserved is taken once the plug answers that it stored them (`ok` and no message), or released
+ * on any other answer, or when storing them fails.
+ */
+class PaidHost extends Host {
+  readonly #credits: Credits
+  /** The last upload of each bytes' name still storing. */
+  readonly #storing = new Map<string, Promise<unknown>>()
+
+  constructor(credits: Credits, options: HostOptions) {
+    super(options)
+    this.#credits = credits
+  }
+
+  override putFile(name: string, type: string, bytes: Uint8Array) {
+    const answered = (this.#storing.get(name) ?? Promise.resolve()).then(async () => {
+      try {
+        const answer = await super.putFile(name, type, bytes)
+        this.#credits.settle(name, answer.ok && answer.message === undefined)
+        return answer
+      } catch (err) {
+        this.#credits.settle(name, false)
+        throw err
+      }
+    })
+    // The next upload of these bytes waits for this one, whatever it came to.
+    const done = answered.catch(() => {})
+    this.#storing.set(name, done)
+    void done.then(() => {
+      if (this.#storing.get(name) === done) this.#storing.delete(name)
+    })
+    return answered
+  }
 }
 
 export type RunningHost = {
@@ -195,61 +226,6 @@ export type RunningHost = {
   credits: Credits
   server: Server
   close(): Promise<void>
-}
-
-const FILE = /^\/v1\/files\/([0-9a-f]{64})$/
-
-/**
- * A request sent on to the plug, untouched, and its answer back. With `heard`, the answer (an
- * upload's, a little JSON) is read whole first, and `heard` learns, once, whether the plug stored
- * the bytes (`{ "ok": true }` and no message) before the answer goes back; anything else, or no
- * answer, is false.
- */
-function forward(inner: URL, req: IncomingMessage, res: ServerResponse, heard?: (done: boolean) => void): void {
-  let told = false
-  const tell = (done: boolean) => {
-    if (!told) heard?.(done)
-    told = true
-  }
-  let upstream
-  try {
-    upstream = request({ host: inner.hostname, port: inner.port, method: req.method, path: req.url, headers: passed(req.headers) }, (answer) => {
-      if (!heard) {
-        res.writeHead(answer.statusCode ?? 502, passed(answer.headers))
-        return void answer.pipe(res)
-      }
-      const chunks: Buffer[] = []
-      answer.on('data', (chunk: Buffer) => chunks.push(chunk))
-      answer.on('end', () => {
-        const body = Buffer.concat(chunks)
-        let said: { ok?: unknown; message?: unknown } | undefined
-        try {
-          said = JSON.parse(body.toString('utf8')) ?? undefined
-        } catch {
-          // Not the standard's JSON: nothing was carried out.
-        }
-        tell(answer.statusCode === 200 && said?.ok === true && said.message === undefined)
-        res.writeHead(answer.statusCode ?? 502, passed(answer.headers)).end(body)
-      })
-      answer.on('close', () => {
-        if (told) return
-        tell(false)
-        if (!res.headersSent) res.writeHead(502)
-        res.end()
-      })
-    })
-  } catch {
-    // A request node:http will not send on, as it is.
-    tell(false)
-    req.resume()
-    return void res.writeHead(400, { 'access-control-allow-origin': '*' }).end()
-  }
-  upstream.on('error', () => {
-    tell(false)
-    if (!res.headersSent) res.writeHead(502)
-    res.end()
-  })
-  req.pipe(upstream)
 }
 
 /** A credit route's body read whole: a buy of the most credits is a little over 260 bytes each. */
@@ -328,7 +304,7 @@ export async function startHost(config: Config): Promise<RunningHost> {
   // messages for it.
   const keyCounts = (folder: string, key: string) => key === folder || canDo(host.view(folder).current.get('profile')?.entry.body, key, 'message')
   const credits = new Credits(creditsDir, { origin: config.origin, creditKey, priceCents: config.priceCents, maxBuy: config.maxBuy, sponsors: config.sponsors, rates: config.rates, keyCounts })
-  const host: Host = new Host({
+  const host: Host = new PaidHost(credits, {
     dir: config.dir,
     files: config.files,
     ...choice,
@@ -336,10 +312,9 @@ export async function startHost(config: Config): Promise<RunningHost> {
     fileChoice: paidFiles(credits),
     inboxChoice: paidInbox(credits),
   })
-  const inner = new URL(await host.listen(0))
-  const fileQueue = new Map<string, Promise<void>>()
 
-  const server = createServer({ maxHeaderSize: MAX_HEADER_BYTES }, (req, res) => {
+  // The plug's own server options, its request timeout among them, for every request here.
+  const server = createServer(host.serverOptions(), (req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
     // the process.
     const path = URL.parse(req.url ?? '/', 'http://host.invalid')?.pathname
@@ -353,29 +328,13 @@ export async function startHost(config: Config): Promise<RunningHost> {
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
     if (creditRoute(credits, path, req, res)) return
-    const name = req.method === 'PUT' ? FILE.exec(path)?.[1] : undefined
-    if (!name) return forward(inner, req, res)
-    // One upload of the same bytes at a time: a second finds them stored, and pays nothing. Its price
-    // was reserved by the plug (paidFiles), and is taken once the plug answers that it stored the
-    // bytes, before the answer goes back, or released.
-    const turn = (fileQueue.get(name) ?? Promise.resolve()).then(
-      () =>
-        new Promise<void>((done) => {
-          forward(inner, req, res, (stored) => {
-            credits.settle(name, stored)
-            done()
-          })
-        }),
-    )
-    fileQueue.set(name, turn)
-    void turn.then(() => {
-      if (fileQueue.get(name) === turn) fileQueue.delete(name)
-    })
+    void host.serve(req, res)
   })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, resolve)
   })
+  host.pruneEveryHour()
 
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
