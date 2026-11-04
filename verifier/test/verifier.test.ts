@@ -25,7 +25,7 @@ import { DiditClient, DiditUnavailable } from '../src/didit.ts'
 import { RECIPES, faceFacts, idFacts } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { SIGNED_FOR_MS } from '../src/server.ts'
-import { readConfig, startVerifier, type Verifier } from '../src/service.ts'
+import { CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
 import { ID_TRIES } from '../src/store.ts'
 import { PaymentUnavailable } from '../src/stripe.ts'
 import {
@@ -162,7 +162,7 @@ async function face(h: Harness, person: string, n: bigint) {
   return { sessionId, stamp: res.body.stamp }
 }
 
-test('GET /: the name, and for each check the key that signs its stamps, as an address, and its facts recipe', async () => {
+test('GET /: the name, for each check the key that signs its stamps, as an address, and its facts recipe, and the consent screen', async () => {
   const seed = seedJson()
   const h = await start({ seed: seed.json })
   try {
@@ -177,6 +177,7 @@ test('GET /: the name, and for each check the key that signs its stamps, as an a
       face: { key: keys.face, facts: 'Poseidon([h(model), h(embedding)])' },
       id: { key: keys.id, facts: 'Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])' },
       h: RECIPES.h,
+      consent: CONSENT,
     })
     assert.deepEqual(h.verifier.keys, keys)
     assert.notEqual(keys.face, keys.id, 'two keys, one for each check')

@@ -2,7 +2,8 @@
 // entry, a file and a delete cost, each counted as at least a kilobyte, at the rate of where it is
 // kept; an entry larger than any inbox entry, paid by the byte, as entries up to a file's size are;
 // a write refused with no balance, joining too, and leaving and taking down never; a file paid by a
-// folder that names it; an inbox entry paid by its sender's folder, by its bytes, signed over its
+// folder that names it, once when two uploads of it come at once, and not at all when the bucket
+// does not take it; an inbox entry paid by its sender's folder, by its bytes, signed over its
 // id by the folder's main key or an access key listed with message, and paid once; a buy paid by a
 // ticket, or from a folder's balance by its main key or an access key listed with message, and paid
 // once; the credit key made at the first start; and one end to end, a folder, an
@@ -191,6 +192,44 @@ test('a file is paid by a folder whose current entry names it: the newest naming
     assert.match(short.message!, /costs 1 credit, and the folder holds 0 here/)
   } finally {
     await running.close()
+  }
+})
+
+test('a file is paid once the plug has stored it: two uploads of the same bytes at once pay once, and bytes the bucket does not take pay nothing', async () => {
+  const running = await start({ FILE_PER_KB: '1' })
+  // A bucket nothing answers at: storing any bytes there fails.
+  const down = await start({ FILE_PER_KB: '1', FILES: 's3', FILES_ENDPOINT: `http://127.0.0.1:${await freePort()}`, FILES_BUCKET: 'forest', FILES_ACCESS_KEY_ID: 'id', FILES_SECRET_ACCESS_KEY: 'secret' })
+  const logged = mock.method(console, 'error', () => {})
+  try {
+    const now = Date.now()
+    const photo = new Uint8Array(1000).fill(4)
+    const me = await folder()
+    await fund(running, me.address, 2)
+    assert.ok((await results(running, [entry(me, 'profile', profileOf(running), now), naming(me, 'photo/1', photo, 'image/png', now)])).every((r) => r.ok))
+    const spent = spending(running, me.address)
+    const both = await Promise.all([put(running, photo, 'image/png'), put(running, photo, 'image/png')])
+    assert.deepEqual(both.map((a) => a.ok), [true, true])
+    assert.deepEqual(both.map((a) => a.message ?? 'stored').sort(), ['already here', 'stored'], 'one stores them, the other finds them stored')
+    assert.equal(spent(), 1_000_000, 'paid once')
+
+    // The folder holds less than twice the price, so a price still reserved after a failure would
+    // leave too little for the next try.
+    const you = await folder()
+    await fund(down, you.address, 2)
+    assert.ok((await results(down, [entry(you, 'profile', profileOf(down), now), naming(you, 'photo/1', photo, 'image/png', now)])).every((r) => r.ok))
+    const paid = spending(down, you.address)
+    const sha = fileOf(photo, 'image/png').sha256
+    for (const _ of [1, 2]) {
+      const res = await fetch(`${down.url}/v1/files/${sha}`, { method: 'PUT', headers: { 'content-type': 'image/png' }, body: photo })
+      assert.deepEqual([res.status, await res.text()], [500, ''], 'not refused for its price: nothing stayed reserved')
+    }
+    assert.equal(paid(), 0, 'nothing paid')
+    assert.equal(logged.mock.callCount(), 2)
+    for (const call of logged.mock.calls) assert.match(String(call.arguments[0]), new RegExp(`^500 /v1/files/${sha}: `))
+  } finally {
+    logged.mock.restore()
+    await running.close()
+    await down.close()
   }
 })
 

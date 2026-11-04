@@ -27,13 +27,6 @@ export function marketFile(name: string): Market {
   return markets.market(name) ?? refuse(`${name} is not a market in the directory; markets lists them`)
 }
 
-/** The post fields that matter first: the file's `preview`, else description, price, then the place fields, of those it has. */
-export function previewOf(market: Market): string[] {
-  if (market.preview) return market.preview
-  const post = market.post
-  return [...['description', 'price'].filter((name) => name in post), ...Object.keys(post).filter((name) => post[name]!.type === 'place')]
-}
-
 /**
  * Each kind's fields in this market: a post's are the file's and contact; a review's, a vouch's and
  * a report's are the ones every market's hold, a review's with the file's own beside them. The file

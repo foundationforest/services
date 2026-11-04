@@ -4,7 +4,7 @@
 // profile's name, the shield, the score's chip, a row, the facts list's words, and the fold that says
 // what a profile's words and numbers mean.
 
-import type { Market } from '@foundationforest/markets'
+import { type Market, previewOf } from '@foundationforest/markets'
 
 import type { Check } from '../filter.ts'
 import type { ListedApp } from '../lists.ts'
@@ -58,15 +58,13 @@ export function messageHtml(message: Array<{ name: string; url: string }>): Raw 
 }
 
 /**
- * A market's post fields, in the order a post's page shows them: its preview's first, then the rest
- * in the market's order. A market with no preview has the markets manual's: description, price,
- * then the place fields, of those it has.
+ * A market's post fields, in the order a post's page shows them: those that matter first, as the
+ * markets' `previewOf` gives them, then the rest in the market's order.
  */
 export function fieldsOf(m: Market | undefined): string[] {
   if (!m) return []
-  const names = Object.keys(m.post)
-  const preview = m.preview ?? [...['description', 'price'].filter((n) => n in m.post), ...names.filter((n) => m.post[n]!.type === 'place')]
-  return [...preview, ...names.filter((n) => !preview.includes(n))]
+  const preview = previewOf(m)
+  return [...preview, ...Object.keys(m.post).filter((n) => !preview.includes(n))]
 }
 
 /** Each of a market's post fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */

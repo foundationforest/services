@@ -12,7 +12,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
     "sandbox": "node --disable-warning=ExperimentalWarning scripts/sandbox.ts",
     "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/verifier.test.ts test/facts.test.ts test/didit.test.ts test/face.test.ts test/gift.test.ts test/stripe.test.ts test/fetch.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/verifier.test.ts test/facts.test.ts test/didit.test.ts test/face.test.ts test/gift.test.ts test/stripe.test.ts test/fetch.test.ts test/readme.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

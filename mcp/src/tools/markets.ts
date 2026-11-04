@@ -2,7 +2,9 @@
 // it, with its preview, the kinds of entry it defines, each with its fields, and what each of their
 // types holds. Which of them an index lists is the index's to say; search passes its answers on.
 
-import { kindsOf, marketFile, markets, previewOf, typesOf } from '../markets.ts'
+import { previewOf } from '@foundationforest/markets'
+
+import { kindsOf, marketFile, markets, typesOf } from '../markets.ts'
 import type { Args, Param } from '../params.ts'
 
 export const name = 'markets'

@@ -117,8 +117,9 @@ hour.
 
 ### Its keys
 
-`GET /` gives its name, its two keys as addresses each with its facts recipe, and `h`, in canonical
-JSON (one exact way of writing it); with gifts, also
+`GET /` gives its name, its two keys as addresses each with its facts recipe, `h`, and `consent`, the
+text an app shows before the ID check ([The consent screen](#didit)), in canonical JSON (one exact
+way of writing it); with gifts, also
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is mixed from it
@@ -224,7 +225,8 @@ them, and pays nothing: the host lists its sponsor key and counts what its ticke
 
 A stamp number is decimal text, as the standard's `stampNumberOf` gives it: no sign, no leading zero,
 below BN254's scalar order. A payment's id is its Checkout Session's, `cs_test_…` or `cs_live_…`. A
-body with any other field is refused. CORS is open to any origin. Errors are `{"error": "<code>"}`:
+body with any other field is refused. CORS is open to any origin. Every code below is in
+`src/codes.ts`, which an app can import. Errors are `{"error": "<code>"}`:
 
 - **`400`:** `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`,
   `expected_exactly_payment`, `expected_exactly_payment_and_returnUrl`,
@@ -282,7 +284,8 @@ off this machine, a host or app that is not an origin, and a Stripe key or Price
 - **Retention:** the application's own window is unlimited, so a session that gave no stamp stays in
   Didit until someone deletes it in the console.
 
-**The consent screen.** Before the ID check the app shows this, word for word:
+**The consent screen.** `GET /` serves it as `consent`, and an app shows what it gets, before the ID
+check:
 
 > The check costs $5, paid to the Open Forest Foundation through Stripe, and covers up to three
 > tries. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way
@@ -297,9 +300,9 @@ off this machine, a host or app that is not an origin, and a Stripe key or Price
 > It gives you a stamp, with your name, date of birth and country beside it for your own records; a
 > profile that shows it says only that you were checked.
 
-**Data law:** the Open Forest Foundation is the responsible party for both checks, so three things
-sit outside this code: a processing agreement with Didit, the consent screen above, and Didit's
-retention setting. Paperwork and settings; nothing here does them.
+**Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
+outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
+setting; nothing here does them. The consent screen above is this code's, and an app shows it.
 
 ### Stripe
 
@@ -371,7 +374,8 @@ card; it refuses a live key.
 both checks and review, the ID check's payment and its tries, verifications made from the stamps and
 checked against the published keys, the facts vectors, stamps asked back, the seed, the sweep, the
 raw file, the face models on three portraits, both gifts' tickets taken by the host's own seller,
-the Stripe client's requests, what a failure at Stripe or Didit logs, and the fetch's retries.
+the Stripe client's requests, what a failure at Stripe or Didit logs, the fetch's retries, and this
+README's consent screen and codes, as the code has them.
 
 ## Promises
 

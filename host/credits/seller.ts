@@ -18,6 +18,7 @@ import { genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { checkSignature } from '@foundationforest/folders'
 import { base58, base64urlnopad } from '@scure/base'
 
+import type { Code } from '../src/codes.ts'
 import { CREDIT_TYPE, DIRECTORY_PATH, balanceMessage, referenceOf, ticketMessage } from './credit.ts'
 
 const { getPublicKeyBytes } = publicVerif
@@ -129,7 +130,7 @@ export function readBalance(text: string): { folder: string; key: string; signat
 
 /** What a service answers: a status, a body (JSON, or bytes with their type). */
 export type Answer = { status: number; body: unknown; type?: string }
-export const refuse = (error: string, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
+export const refuse = (error: Code, status = 400, detail?: string): Answer => ({ status, body: detail === undefined ? { error } : { error, detail } })
 
 /** A balance that could not pay, thrown inside the buy's transaction so it is rolled back. */
 class Short extends Error {}
