@@ -14,9 +14,7 @@
 #                the whole host, the plug's own tests and its storage's, its credits', and its credits
 #                client's alone against Cloudflare's own Privacy Pass issuer
 #   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
-#                starts, and mcp's reference app and test client it acts through; and its tests:
-#                the credits client against the host's own code selling for tickets, and alone
-#                against Cloudflare's own Privacy Pass issuer
+#                starts, and mcp's reference app and test client it acts through
 #   loop         the loop itself, `npm run e2e`: two people through the loop's own verifier, host,
 #                index and mcp on loopback, with no chain and no secret; it passes or fails the job
 #   mcp          its type-check and tests, on loopback: this repo's host (its plug), a stand-in index
@@ -131,11 +129,6 @@ jobs:
       - name: Type-check
         working-directory: e2e
         run: npm run check
-      - name: Test
-        working-directory: e2e
-        run: |
-          npm test | tee "$RUNNER_TEMP/tap"
-          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
 
   loop:
     runs-on: ubuntu-latest

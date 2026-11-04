@@ -21,8 +21,6 @@
     "noEmit": true
   },
   "include": [
-    "*.ts",
-    "credits",
-    "test"
+    "*.ts"
   ]
 }
