@@ -400,7 +400,7 @@ async function main() {
     price: { amount: '2', currency: 'USD', per: 'hour' },
     subjects: ['maths'],
     levels: ['secondary'],
-    place: { online: true },
+    mode: ['online'],
   }
   const beforePost = await held(tutor.address)
   assert.equal((await tutor.ai!.call('write', { label: tutor.label, path: 'post/maths', body: maths })).written, 'post/maths')

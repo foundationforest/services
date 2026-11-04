@@ -42,7 +42,8 @@ On the pages, a post in a list shows its profile's shield, an outline for a face
 for an ID check, and its rating with how many raters scored it as a chip, "9.2 ★ · 14", or New when
 no one has rated it. Its trust and its uniqueness are in a fold on its page and on each of its
 posts' pages, What these mean, with what each means; the About page says what they mean too. A
-choice's value is in words there, `like-new` as "Like new"; the JSON keeps it as written.
+choice's value is in words there, `like-new` as "Like new", or by its label where its market gives
+one, `xl` as "XL"; the JSON keeps it as written.
 
 ## The markets
 
@@ -73,9 +74,10 @@ Every filter may be left out:
 
 - `q`: words in the post, each a word's start, all of them;
 - `market`, `role`: only that market, only posts by that role;
-- `near=lat,lon` and `km`: a post with a place whose point is within `km` kilometres (10 unless
-  given); a post with no point, as one whose place is only an area or online, is left out, so to
-  find the posts in a town, also search its name with `q`, which finds it in a place's area;
+- `near=lat,lon` and `km`, how far the searcher would go (10 unless given): a post whose place's
+  circle touches that one, the distance between the two points at most `km` plus the place's
+  `radiusKm`; each result then carries `km`, that distance between the two points, and a post with
+  no place, as one online only, is left out. `q` also finds a place by its area, such as a town;
 - `minRating`: a profile rated at least this, from 1 to 10; one with no rating is left out;
 - `minReviews`: a profile scored by at least this many raters;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
@@ -84,10 +86,10 @@ A result is `{ "profile", "market", "role", "post": { "address", "body", "url", 
 "ratings", "trust", "uniqueness", "checks" }`: the post, with what its profile shows and its checks.
 The post's body holds its market's fields; `url` is its page; `photos` links to each file its fields
 name, at the first host its profile entry names, `<host>/v1/files/<sha256>`. This index keeps no
-bytes. Results are sorted by each profile's rating with one rater's worth of its market's average
-added, so a profile with few scores sits near the average; then by the newest post. A profile no one
-has rated sorts at its market's average. That is the order only: each result's `ratings` is as it
-is.
+bytes. With `near`, results come nearest first; otherwise, and among results as near, they are
+sorted by each profile's rating with one rater's worth of its market's average added, so a profile
+with few scores sits near the average; then by the newest post. A profile no one has rated sorts at
+its market's average. That is the order only: each result's `ratings` is as it is.
 
 ## A profile
 
@@ -133,10 +135,12 @@ is.
     GET https://index.forest.foundation/profiles/<address>/post/<id>.json
 
 A post's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
-"post", "checks", "ratings", "trust", "uniqueness", "fields", "types", "message" }`. `post` is as
-its profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message` are its
-profile's; `fields` is its market's post fields in the order the page shows them, the market's
-preview first; `types` is each one's type, as its market names it, a `file` field naming photos.
+"post", "checks", "ratings", "trust", "uniqueness", "fields", "types", "labels", "message" }`.
+`post` is as its profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message`
+are its profile's; `fields` is its market's post fields in the order the page shows them, the
+market's preview first; `types` is each one's type, as its market names it, a `file` field naming
+photos; `labels` is, for each choice field it holds, the labels its market gives the values it
+holds, such as `{ "size": { "xl": "XL" } }`.
 The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
 gives, in the writer's words, and `message`. A post that is not listed has its page too, with `why`.
 

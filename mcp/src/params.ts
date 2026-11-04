@@ -8,15 +8,11 @@ import type { Connection } from './connection.ts'
 
 export type Param = {
   name: string
-  type: 'string' | 'object' | 'integer' | 'number' | 'boolean'
+  type: 'string' | 'object' | 'boolean'
   description: string
   required?: boolean
   /** Whether it may also be null. */
   nullable?: boolean
-  /** The only values it takes. */
-  values?: string[]
-  /** The least an integer takes; 0 when omitted. */
-  minimum?: number
 }
 
 export type Args = { [name: string]: unknown }
@@ -45,7 +41,7 @@ export type Tool = {
   run: (args: Args, ctx: Ctx) => Promise<unknown>
 }
 
-const KINDS: { [type in Param['type']]: string } = { string: 'text', object: 'an object', integer: 'a whole number', number: 'a number', boolean: 'true or false' }
+const KINDS: { [type in Param['type']]: string } = { string: 'text', object: 'an object', boolean: 'true or false' }
 
 /** A tool's arguments, checked: every required one there, each of its type, and nothing else. */
 export function checkArgs(tool: Pick<Tool, 'name' | 'params'>, args: Args): Args {
@@ -57,19 +53,13 @@ export function checkArgs(tool: Pick<Tool, 'name' | 'params'>, args: Args): Args
       continue
     }
     if (value === null && p.nullable) continue
-    const least = p.minimum ?? 0
     const ok =
       p.type === 'string'
         ? typeof value === 'string'
-        : p.type === 'integer'
-          ? Number.isSafeInteger(value) && (value as number) >= least
-          : p.type === 'number'
-            ? typeof value === 'number' && Number.isFinite(value)
-            : p.type === 'boolean'
-              ? typeof value === 'boolean'
-              : value !== null && typeof value === 'object' && !Array.isArray(value)
-    if (!ok) refuse(`${p.name} is ${KINDS[p.type]}${p.type === 'integer' ? `, from ${least}` : ''}${p.nullable ? ', or null' : ''}`)
-    if (p.values && !p.values.includes(value as string)) refuse(`${p.name} is one of ${p.values.join(', ')}`)
+        : p.type === 'boolean'
+          ? typeof value === 'boolean'
+          : value !== null && typeof value === 'object' && !Array.isArray(value)
+    if (!ok) refuse(`${p.name} is ${KINDS[p.type]}${p.nullable ? ', or null' : ''}`)
   }
   return args
 }

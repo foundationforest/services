@@ -1,94 +1,19 @@
-// The credits buyer (host/client/client.ts). First against the host's own code, started here on loopback
-// as it runs (host/src/host.ts), which sells for its sponsors' tickets: bought from, collected,
-// finished and spent into a folder, as the loop and an app do. Then the client alone, against a
-// stand-in service made of Cloudflare's own Privacy Pass issuer and origin: the directory, the buy,
-// the credits finished and listed, a buy finished later from what the app keeps, and every answer
-// that must finish nothing. The host's own checks of a credit are tested in host/.
+// The credits client (client/client.ts) alone, against a stand-in service made of Cloudflare's own
+// Privacy Pass issuer and origin: the directory, the buy, the credits finished and listed, a buy
+// finished later from what the app keeps, and every answer that must finish nothing. The host's own
+// code selling and taking credits, through this client, is credits.test.ts.
 
 import assert from 'node:assert/strict'
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { after, test } from 'node:test'
+import { createHash } from 'node:crypto'
+import { test } from 'node:test'
 
 import { Token, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { base58, base64urlnopad as b64u } from '@scure/base'
 
-import { ticketMessage } from '../../host/credits/credit.ts'
-import { type RunningHost, readConfig, startHost } from '../../host/src/host.ts'
-import { CREDIT_TYPE, DIRECTORY_PATH, PAYMENT_HEADER, type Pending, buy, challengeOf, checkPending, creditList, finish, referenceOf, serviceOf } from '../../host/client/client.ts'
+import { CREDIT_TYPE, type Pending, buy, challengeOf, checkPending, creditList, finish, referenceOf, serviceOf } from '../client/client.ts'
 
 const { BLIND_RSA, BlindRSAMode, Issuer, Origin, getPublicKeyBytes } = publicVerif
 const T = Date.UTC(2026, 9, 9)
-
-// ---- The host, as it runs ----
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const { port } = server.address() as { port: number }
-  await new Promise<void>((resolve) => server.close(() => resolve()))
-  return port
-}
-
-const running: { host: RunningHost; dir: string }[] = []
-after(async () => {
-  for (const r of running) {
-    await r.host.close()
-    rmSync(r.dir, { recursive: true, force: true })
-  }
-})
-
-/** The host on loopback with these settings, as `npm start` reads them. */
-async function host(settings: Record<string, string>) {
-  const port = await freePort()
-  const origin = `http://127.0.0.1:${port}`
-  const dir = mkdtempSync(join(tmpdir(), 'e2e-credits-'))
-  const h = await startHost(readConfig({ DATA_DIR: dir, PUBLIC_ORIGIN: origin, PORT: String(port), ...settings }))
-  running.push({ host: h, dir })
-  return { origin, url: h.url }
-}
-
-const directoryAt = async (url: string) => (await fetch(`${url}${DIRECTORY_PATH}`)).json()
-const collect = async (service: { requestUri: string }, bytes: Uint8Array, payment: string) => {
-  const res = await fetch(service.requestUri, {
-    method: 'POST',
-    headers: { 'content-type': 'application/private-token-generic-batch-request', [PAYMENT_HEADER]: payment },
-    body: bytes as Uint8Array<ArrayBuffer>,
-  })
-  return { status: res.status, body: new Uint8Array(await res.arrayBuffer()) }
-}
-const spend = async (url: string, folder: string, credits: string[]) =>
-  (await fetch(`${url}/credits/spend`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder, credits }) })).json()
-const json = (bytes: Uint8Array) => JSON.parse(Buffer.from(bytes).toString('utf8'))
-const folder = () => base58.encode(randomBytes(32))
-const signature = () => base58.encode(randomBytes(64))
-
-test('a host that sells for tickets: a ticket buys, and any other proof does not', async () => {
-  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
-  const sponsor = base58.encode(publicKey.export({ format: 'der', type: 'spki' }).subarray(-32))
-  const h = await host({ SPONSORS: sponsor })
-  // The host's own URL is the origin it names: a credit carries its host, and a ticket its origin.
-  const service = serviceOf(h.origin, await directoryAt(h.url))
-  assert.deepEqual([service.price, service.unit], ['0.01', 'writes at this host'])
-
-  const b = await buy(service, 3)
-  const paid = await collect(service, b.buy, `solana ${signature()}`)
-  assert.deepEqual([paid.status, json(paid.body).error], [400, 'bad_payment'])
-
-  const ticket = `${sponsor}.3.${b64u.encode(sign(null, ticketMessage(h.origin, b.reference, 3), privateKey))}`
-  const answered = await collect(service, b.buy, `ticket ${ticket}`)
-  assert.equal(answered.status, 200)
-  const credits = await finish(b.pending, answered.body)
-  assert.equal(credits.length, 3)
-  const mine = folder()
-  assert.deepEqual(await spend(h.url, mine, creditList(credits)), { folder: mine, credits: 3 })
-  assert.equal((await spend(h.url, folder(), creditList(credits))).error, 'spent', 'a credit is spent once')
-})
-
-// ---- The client alone, against Cloudflare's issuer ----
 
 /** A stand-in service: an RSA-2048 credit key, Cloudflare's issuer for it, and its directory. */
 async function service(origin: string) {

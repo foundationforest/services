@@ -32,10 +32,8 @@ const VERSION = '0.0.0'
 
 /** A tool's input: its parameters, as a JSON Schema. */
 export function inputSchema(tool: Tool) {
-  const properties: { [name: string]: { type: string | string[]; description: string; enum?: string[]; minimum?: number } } = {}
-  for (const p of tool.params) {
-    properties[p.name] = { type: p.nullable ? [p.type, 'null'] : p.type, description: p.description, ...(p.values && { enum: p.values }), ...(p.type === 'integer' && { minimum: p.minimum ?? 0 }) }
-  }
+  const properties: { [name: string]: { type: string | string[]; description: string } } = {}
+  for (const p of tool.params) properties[p.name] = { type: p.nullable ? [p.type, 'null'] : p.type, description: p.description }
   const required = tool.params.filter((p) => p.required).map((p) => p.name)
   return { type: 'object' as const, properties, ...(required.length > 0 && { required }) }
 }

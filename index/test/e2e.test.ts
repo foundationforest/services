@@ -2,34 +2,21 @@
 // from a stand-in verifier key the index lists; an offer and a review; the index reading the host
 // on its own schedule, counting the review, and serving the rating and the trust it gives. Then
 // `rebuild`: every table dropped but when each proof and review was first seen and the signed
-// roots, read again, the same rating and trust; on a file from before the standard's folders, the
-// kept table's old column dropped, its rows kept, and the rest made fresh; in a process of its own,
-// as `npm run rebuild` runs it, the process ends once it is done; and `node src/main.ts rebuild`,
-// on a file from before the standard's folders with something still open, says so and exits.
+// roots, read again, the same rating and trust; in a process of its own, as `npm run rebuild` runs
+// it, the process ends once it is done; and `node src/main.ts rebuild`, with something still open,
+// says so and exits.
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { cpSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 
 import { ROOT } from '../src/index.ts'
 import { SEED_FILE } from '../src/seed.ts'
-import { FILE, openStore } from '../src/store.ts'
+import { openStore } from '../src/store.ts'
 import { MARKETS, at, cleanup, index, listsDir, verifier, post, profile, publishProfile, startHost, tmp } from './world.ts'
-
-/** A file from before the standard's folders in `dir`, with `seen`'s old column named `column`, and one row of it. */
-function oldFile(dir: string, column: string, seen: { profile: string; key: string; first: number }): void {
-  const old = new DatabaseSync(join(dir, FILE))
-  old.exec(`create table seen (profile text not null, key text not null, ${column} text not null, first integer not null, primary key (profile, key));
-    create table records (id text primary key, profile text not null, path text not null, time integer not null, text text not null);
-    create table leaves (n integer primary key, ${column} text not null, scope text not null, score integer not null, count integer not null);
-    create table profiles (address text primary key, body text not null, market text, role text, time integer not null, counted integer not null default 0, checks text not null default '[]', proofs text not null default '[]', tags text not null default '[]')`)
-  old.prepare('insert into seen values (?, ?, ?, ?)').run(seen.profile, seen.key, 'ab', seen.first)
-  old.close()
-}
 
 /** A child process's exit code once its output is all read, or 'still running' once `ms` pass, when it is killed. */
 function exitOf(child: ReturnType<typeof spawn>, ms: number): Promise<number | null | 'still running'> {
@@ -53,7 +40,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await publishProfile(host.url, tutor)
   await publishProfile(host.url, student)
   const offer = `${tutor.key.address}/post/maths`
-  await post(host.url, [at(tutor, 'post/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], place: { online: true }, price: { amount: '25', currency: 'USD', per: 'hour' } })])
+  await post(host.url, [at(tutor, 'post/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], mode: ['online'], price: { amount: '25', currency: 'USD', per: 'hour' } })])
   await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', post: offer })])
 
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
@@ -112,23 +99,6 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await host.close()
 })
 
-test('rebuild, on a file from before the standard\'s folders: seen keeps its rows without the old column, the rest made fresh', () => {
-  for (const column of ['tag', 'stamp']) {
-    const dir = tmp('old')
-    oldFile(dir, column, { profile: 'a profile', key: 'a key', first: 1 })
-    const store = openStore(dir)
-    store.drop()
-    assert.deepEqual({ ...store.db.prepare('select * from seen').get() }, { profile: 'a profile', key: 'a key', first: 1 }, column)
-    const columns = (table: string) => store.db.prepare(`select name from pragma_table_info('${table}')`).all().map((c) => c.name)
-    assert.deepEqual(columns('leaves'), ['n', 'profile', 'score'])
-    assert.ok(!columns('profiles').includes('tags'))
-    assert.deepEqual(columns('records'), [], 'the old table of entries is gone')
-    assert.ok(columns('entries').includes('text'))
-    store.close()
-    cleanup(dir)
-  }
-})
-
 test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a verification checked', async () => {
   const host = await startHost()
   const by = verifier()
@@ -152,7 +122,7 @@ test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the pr
   }
 })
 
-test('`node src/main.ts rebuild`, on a file from before the standard\'s folders and with something still open, says it rebuilt and exits, keeping when the proof was first seen', async () => {
+test('`node src/main.ts rebuild`, with something still open, says it rebuilt and exits, keeping when the proof was first seen', async () => {
   const host = await startHost()
   const by = verifier()
   const tutor = await profile('tutoring/tutor', [by])
@@ -169,10 +139,9 @@ test('`node src/main.ts rebuild`, on a file from before the standard\'s folders 
   symlinkSync(MARKETS, join(parent, 'markets'))
   // The data a deploy rebuilds: its seed, a root it signed, and the tutor's proof first seen long ago.
   const dataDir = tmp('old')
-  oldFile(dataDir, 'tag', { profile: tutor.key.address, key: by.key, first: 1 })
-  const old = new DatabaseSync(join(dataDir, FILE))
-  old.exec(`create table roots (root text primary key, time integer not null, signature text not null, leaves integer not null);
-    insert into roots values ('${'00'.repeat(32)}', 1, 'a signature', 1)`)
+  const old = openStore(dataDir)
+  old.db.prepare('insert into seen values (?, ?, ?)').run(tutor.key.address, by.key, 1)
+  old.db.prepare('insert into roots values (?, 1, ?, 1)').run('00'.repeat(32), 'a signature')
   old.close()
   writeFileSync(join(dataDir, SEED_FILE), JSON.stringify({ seed: 'ab'.repeat(32) }), { mode: 0o600 })
 
@@ -188,7 +157,7 @@ test('`node src/main.ts rebuild`, on a file from before the standard\'s folders 
     assert.equal(ended, 0)
     assert.match(out, /^rebuilt: read the hosts again, and ranked$/m)
     const store = openStore(dataDir)
-    assert.deepEqual({ ...store.db.prepare('select * from seen').get() }, { profile: tutor.key.address, key: by.key, first: 1 }, 'seen keeps its row, without the old column')
+    assert.deepEqual({ ...store.db.prepare('select * from seen').get() }, { profile: tutor.key.address, key: by.key, first: 1 }, 'seen keeps its row')
     assert.equal(store.db.prepare('select counted from profiles where address = ?').get(tutor.key.address)!.counted, 1, 'it read the profile, its verification checked')
     assert.equal(store.db.prepare('select count(*) n from roots where time = 1').get()!.n, 1, 'the old root is kept')
     store.close()

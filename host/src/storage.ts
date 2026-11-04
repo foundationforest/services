@@ -417,11 +417,6 @@ export class Storage {
     return folder === undefined ? this.folders().reduce((n, address) => n + one(address), 0) : one(folder)
   }
 
-  /** Every stored entry's and inbox entry's text. */
-  dump(): string[] {
-    return this.folders().flatMap((address) => (this.folder(address)!.q('SELECT text FROM entries UNION ALL SELECT text FROM inbox').all() as Array<{ text: string }>).map((r) => r.text))
-  }
-
   // ----------------------------------------------------------------------------------------
   // The inbox
 

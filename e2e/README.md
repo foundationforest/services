@@ -89,7 +89,7 @@ through a setting its start function takes, so the loop starts all four in its o
 A `services.json` that names any service by its origin is the deployed check instead: each one named
 is checked to answer, and no loop runs. The loop never runs against a deployed service: a deployed
 verifier checks real faces, which a script has none of; a deployed host takes only its own sponsors'
-tickets; a deployed index trusts only that verifier; and the deployed mcp has no connect page yet.
+tickets; and a deployed index trusts only that verifier.
 Against all four (each `https://<name>.forest.foundation`), the check reads the verifier's name and keys, the host's credit directory, the
 index's answer, and, through the MCP SDK's client with no login, the mcp's tools and markets.
 
@@ -107,7 +107,7 @@ index's answer, and, through the MCP SDK's client with no login, the mcp's tools
 ./standard.sh                                             # from the repo root: the standard and the markets, at their pins
 (cd verifier && npm ci) && (cd host && npm ci) && (cd index && npm ci) && (cd mcp && npm ci)
 cd e2e && npm ci
-npm run check && npm test                                 # what CI's e2e job runs
+npm run check                                             # what CI's e2e job runs
 npm run e2e                                               # the loop: what CI's loop job runs
 npm run e2e -- deployed.json                              # the deployed check, of what deployed.json names
 ```
@@ -116,8 +116,6 @@ No setting: no phrase, no RPC, no key. `e2e.ts` is the run, the AIs, the connect
 deployed check; `services.ts` starts, stops and checks the services. CI runs the loop on every pull
 request as its own job, `loop`, whose log says what each step did, with the addresses, keys, index
 numbers and balances it found; the loop's services stop with the run, so their pages are gone.
-`test/` covers the host's credits client against the host's own code selling for tickets, and alone
-against Cloudflare's own Privacy Pass issuer.
 
 ## Promises
 

@@ -31,7 +31,7 @@ read before the person connects anything; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a post's preview shows first) and `kinds` (the kinds of entry it defines, each with its fields) |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a post's preview shows first), `kinds` (the kinds of entry it defines, each with its fields, a post's `contact` among them) and `types` (what each type those fields use holds, in the markets' `build/types.json` words, such as how a place is given) |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
@@ -73,8 +73,8 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   `review`, `vouch`, `report`), the body checked against the profile entry's `market` before
   anything is signed, with the markets package's `checkEntry`, the index's own check, so a body
   refused here would not be listed: each field one the market names for the role (in a review, the
-  role of the profile it is about), of its type, a choice among its values, a `file` one the body
-  lists in `files`. Then `subject` an address, and the profile in a review's `post`. A body that does
+  role of the profile it is about), or a post's `contact`, held only where its `when` matches, of its
+  type, a choice among its values, a `file` one the body lists in `files`. Then `subject` an address, and the profile in a review's `post`. A body that does
   not fit is refused, naming the field.
 - **`write`, locked** (`locked: true`): at any path but `profile` and `key/…`, the body the person's
   own and unchecked, with no `files` (anyone fetches a file by its hash), locked to every key that

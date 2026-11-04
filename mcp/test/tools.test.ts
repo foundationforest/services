@@ -15,15 +15,20 @@
 // one of the person's own addresses.
 
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { after, before, describe, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type Body, entry, leave, nextTime, readFolder, readInbox, senderCounts, write } from '@foundationforest/folders'
 import { inboxEntry, lock, lockCount, openInbox, openLocked } from '@foundationforest/folders/locked'
 import { mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
+import { SHARED } from '@foundationforest/markets'
 import { WORD } from '../src/forest.ts'
 import { serve } from '../src/server.ts'
 import { HOW } from '../src/tools.ts'
 import { SKILL, TUTORING, type World, aiApp, lesson, logIn, world } from './setup.ts'
+
+/** The checkout's build/types.json, as the markets tool reads it. */
+const TYPES = JSON.parse(readFileSync(new URL('../../markets/build/types.json', import.meta.url), 'utf8'))
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
 
@@ -108,12 +113,16 @@ describe('reading, with no login', () => {
     }
   })
 
-  test('markets: every market, or one market’s file with its preview and kinds, each with its fields; a market not in the directory refused', async () => {
+  test('markets: every market, or one market’s file with its preview, kinds, each with its fields, and what their types hold; a market not in the directory refused', async () => {
     const all = await call('markets')
     assert.ok(all.markets.some((m: { name: string; roles: unknown[] }) => m.name === 'tutoring' && m.roles.length === 2))
     const one = await call('markets', { name: 'tutoring' })
     assert.deepEqual(Object.keys(one.kinds), ['post', 'review', 'vouch', 'report'])
-    assert.deepEqual(one.kinds.post, TUTORING.post, "a post's fields are the file's")
+    assert.deepEqual(one.kinds.post, { ...TUTORING.post, ...SHARED.post }, "a post's fields are the file's, and contact")
+    // Each type its fields use, in the checkout's own words, a place's rule among them.
+    assert.deepEqual(Object.keys(one.types), ['text', 'money', 'choice', 'number', 'place', 'hours'])
+    assert.equal(one.types.place, TYPES.$defs.place.description)
+    assert.match(one.types.place, /never a home's door/)
     assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'post'], 'the fields every review holds, the file adding none')
     assert.deepEqual(Object.keys(one.kinds.vouch), ['subject', 'text'])
     assert.deepEqual(one.market.preview, TUTORING.preview)
@@ -186,6 +195,8 @@ describe('acting for the person', () => {
       ['post/x', { ...lesson('x'), colour: 'red' }, /a post in tutoring has no field colour/],
       ['post/x', { price: 30 }, /price takes \{ amount, currency, per \}/],
       ['post/x', { subjects: ['knitting'] }, /subjects takes a list, each different, each one of /],
+      ['post/x', { ...lesson('x'), place: { area: 'Madrid', online: true } }, /place takes \{ lat, lon, radiusKm, area \}/],
+      ['post/x', { ...lesson('x'), mode: ['online'] }, /place is only for a post whose mode is in-person/],
       ['photo/x', { text: 'x' }, /photo is no kind of entry: the kinds are post, review, vouch, report/],
       ['post/a/b', lesson('x'), /one segment after the kind/],
       ['profile', { hosts: [w.host] }, /no access key writes profile/],

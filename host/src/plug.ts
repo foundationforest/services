@@ -304,11 +304,6 @@ export class Host {
     return this.storage.count(profile)
   }
 
-  /** Every stored entry's and inbox entry's text: what a host operator can see on its own disk. */
-  dump(): string[] {
-    return this.storage.dump()
-  }
-
   // ------------------------------------------------------------------------------------------
   // The inbox: Taking an inbox entry in, in the plug's order.
 

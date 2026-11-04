@@ -38,7 +38,8 @@ export const lesson = (description: string): Body => ({
   price: { amount: '30', currency: 'USD', per: 'hour' },
   subjects: ['maths', 'physics'],
   levels: ['secondary'],
-  place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid', online: true },
+  mode: ['in-person'],
+  place: { lat: '40.42', lon: '-3.70', radiusKm: 5, area: 'Madrid' },
   hours: { zone: 'Europe/Madrid', slots: [{ days: ['tuesday', 'thursday'], from: '18:00', to: '20:00' }] },
 })
 

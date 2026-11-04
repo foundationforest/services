@@ -1,11 +1,14 @@
 // `/search`: listed posts, each with what its profile shows (its ratings, trust, uniqueness and
 // checks), sorted by its ratings with one unit of its market's average added
-// (README.md, How it scores), then the newest post.
+// (README.md, How it scores), then the newest post; with near, nearest first.
 //
 //   q            words in the post, each a word's start, all of them (FTS5)
 //   market, role only that market, only posts by that role
-//   near, km     near=lat,lon: a post with a place within km kilometres of it (km is 10 unless given);
-//                a post that names no point is left out
+//   near, km     near=lat,lon and km, how far the searcher would go (10 unless given): a post with a
+//                place whose circle reaches that far, the distance between the two points at most km
+//                plus its radiusKm; each result then carries km, its distance between the two
+//                points, and results come nearest first, ties in the order above; a post with no
+//                place is left out
 //   minRating    a profile rated at least this; one with no rating is left out
 //   minReviews   a profile scored by at least this many raters
 //   limit        20 unless given, at most 100; offset skips that many
@@ -27,7 +30,8 @@ export const FILTERS = ['q', 'market', 'role', 'near', 'km', 'minRating', 'minRe
 export type SearchPage = {
   index: string
   total: number
-  results: Result[]
+  /** With near, each with `km`, its distance from that point. */
+  results: Array<Result & { km?: number }>
   /** Each filter as it was given, its text as written; one not given, or given empty, is left out. */
   query: { [filter: string]: string }
   /** Every market's name in the directory, the choices of the page's search box. */
@@ -54,13 +58,13 @@ export function km(a: { lat: number; lon: number }, b: { lat: number; lon: numbe
   return 2 * 6371.0088 * Math.asin(Math.sqrt(h))
 }
 
-/** Every point a post names, in a field of the place type: read by its shape, as the markets' types say. */
-function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: number }> {
-  const out: Array<{ lat: number; lon: number }> = []
+/** Every place a post names, in a field of the place type, its point and its radius: read by its shape, as the markets' types say. */
+function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: number; radiusKm: number }> {
+  const out: Array<{ lat: number; lon: number; radiusKm: number }> = []
   for (const v of Object.values(body)) {
     for (const p of Array.isArray(v) ? v : [v]) {
-      const o = p as { lat?: unknown; lon?: unknown; area?: unknown }
-      if (o && typeof o === 'object' && typeof o.lat === 'string' && typeof o.lon === 'string' && typeof o.area === 'string') out.push({ lat: Number(o.lat), lon: Number(o.lon) })
+      const o = p as { lat?: unknown; lon?: unknown; radiusKm?: unknown }
+      if (o && typeof o === 'object' && typeof o.lat === 'string' && typeof o.lon === 'string' && Number.isInteger(o.radiusKm)) out.push({ lat: Number(o.lat), lon: Number(o.lon), radiusKm: o.radiusKm as number })
     }
   }
   return out
@@ -79,12 +83,20 @@ export const search: Page<SearchPage> = {
     if (minRating !== null) where.push('and r.value >= ?'), params.push(minRating)
     const minReviews = number(q, 'minReviews')
     if (minReviews !== null) where.push('and coalesce(r.count, 0) >= ?'), params.push(minReviews)
-    let found = results(store, base, where.join(' '), params)
+    let found: Array<Result & { time: number; km?: number }> = results(store, base, where.join(' '), params)
     const near = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(q.get('near') ?? '')
     if (near) {
       const at = { lat: Number(near[1]), lon: Number(near[2]) }
       const within = number(q, 'km') ?? KM
-      found = found.filter((r) => pointsOf(r.post.body).some((p) => km(at, p) <= within))
+      // Two places match when their circles touch: the searcher's, of radius km, and the post's.
+      // A result's km is to one decimal, a hundred metres, finer than a rough point means.
+      found = found
+        .flatMap((r) => {
+          const reached = pointsOf(r.post.body).map((p) => ({ d: km(at, p), r: p.radiusKm })).filter((p) => p.d <= within + p.r)
+          return reached.length ? [{ ...r, d: Math.min(...reached.map((p) => p.d)) }] : []
+        })
+        .sort((a, b) => a.d - b.d)
+        .map(({ d, ...r }) => ({ ...r, km: Math.round(d * 10) / 10 }))
     }
     const limit = Math.min(Math.max(Math.trunc(number(q, 'limit') ?? LIMIT), 1), MAX_LIMIT)
     const offset = Math.max(Math.trunc(number(q, 'offset') ?? 0), 0)
