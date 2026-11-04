@@ -7,8 +7,8 @@
 # at /favicon.ico and /icon.svg, on the port Railway gives (PORT), on every address. Its two keys are
 # kept in DATA_DIR, a volume. It reads the foundation's index, its default, and the folders each
 # login acts in, on public hosts; APP_URL, the Forest app's connect page, is a variable of the
-# deploy, and until it is set, logins wait. A message carries a credit bought with the host's credits
-# client, so host/client comes too, with the host's packages it imports.
+# deploy, and without it, logins wait. A message is paid from its profile's balance with a payment
+# the host's credits client signs, so host/client comes too, with the host's packages it imports.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.
 FROM mirror.gcr.io/library/node:22.22.2-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
