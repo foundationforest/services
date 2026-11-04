@@ -3,8 +3,9 @@
 // client's address).
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
-//                       signs its stamps, as an address, and its facts recipe; what h is; and, with
-//                       gifts, {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
+//                       signs its stamps, as an address, and its facts recipe; what h is; `consent`,
+//                       the text an app shows before the ID check; and, with gifts,
+//                       {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
 //   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
 //                                                    person back to returnUrl, an app's own page, when
 //                                                    its origin is in APP_ORIGINS
@@ -26,13 +27,13 @@
 //                                                    `not_found` when none was signed for it
 //
 // A session Didit holds In Review answers 202 {waiting: "review"}: a person at the foundation decides
-// in Didit's console, and the app asks again. Errors are `{error: <code>}`: 400 a malformed body,
-// 402 a payment not paid, 403 a check that does not count (the code says why; `declined` and
-// `expired` mean the session will never pass, so the app starts a new one), 404 `not_found`, 409 a
-// session already used for another stamp number, or a payment used up, 413 a body over 4 KB, 502
-// Didit or Stripe failing the request (logged by its status and codes, `why`), 503 the ID check not
-// for sale (no Stripe). A refused or failed request uses nothing up: the same session can be sent
-// again.
+// in Didit's console, and the app asks again. Errors are `{error: <code>}`, each code in codes.ts:
+// 400 a malformed body, 402 a payment not paid, 403 a check that does not count (the code says why;
+// `declined` and `expired` mean the session will never pass, so the app starts a new one), 404
+// `not_found`, 409 a session already used for another stamp number, or a payment used up, 413 a body
+// over 4 KB, 502 Didit or Stripe failing the request (logged by its status and codes, `why`), 503 the
+// ID check not for sale (no Stripe). A refused or failed request uses nothing up: the same session
+// can be sent again.
 //
 // One payment opens up to ID_TRIES ID sessions (store.ts) and gives one ID stamp. The payment sent
 // with a stamp need not be the one that opened its session: each opens at most ID_TRIES and gives at
@@ -51,6 +52,7 @@ import { signStamp, stampToJson } from '@foundationforest/proofs'
 import type { ServiceKey } from '@foundationforest/keys'
 import { b64u } from '@foundationforest/folders'
 
+import type { Code } from './codes.ts'
 import { type Check, DiditUnavailable, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
@@ -62,9 +64,10 @@ import { PAYMENT, PaymentUnavailable, type Payments } from './stripe.ts'
 const MAX_BODY = 4096
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** An error answered as `{"error": "<code>"}`, by one of the codes in codes.ts. */
 class HttpError extends Error {
   readonly status: number
-  constructor(status: number, code: string) {
+  constructor(status: number, code: Code) {
     super(code)
     this.status = status
   }
@@ -119,7 +122,8 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 function fields(body: Record<string, unknown>, names: string[] = []): Record<string, string> {
   const keys = Object.keys(body)
   if (keys.length !== names.length || !names.every((n) => typeof body[n] === 'string')) {
-    throw new HttpError(400, names.length ? `expected_exactly_${names.join('_and_')}` : 'expected_empty_body')
+    // Each route's own names joined, every one of them in codes.ts, as its tests send it.
+    throw new HttpError(400, (names.length ? `expected_exactly_${names.join('_and_')}` : 'expected_empty_body') as Code)
   }
   return body as Record<string, string>
 }
@@ -450,7 +454,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
         if (error instanceof Waiting) return send(res, 202, { waiting: 'review' })
         if (error instanceof HttpError) return send(res, error.status, { error: error.message })
         log(`verifier: request failed (${errorKind(error)})`)
-        send(res, 500, { error: 'internal' })
+        send(res, 500, { error: 'internal' satisfies Code })
       }
     })()
   }

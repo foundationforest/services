@@ -54,6 +54,7 @@ import {
   publicKeyFromAddress,
   viewFolder,
 } from '@foundationforest/folders'
+import type { Code } from './codes.ts'
 import { type FileDriver, type Row, Storage, logLine } from './storage.ts'
 
 export { type FileDriver, type S3Options, rebuild } from './storage.ts'
@@ -152,7 +153,8 @@ export type { ReadOptions, Result }
 type Answer = Omit<Result, 'i'>
 type Page = { lines: string[]; cursor: number }
 
-const refusal = (err: unknown): Answer => ({ ok: false, error: err instanceof FolderError ? err.code : 'invalid', message: (err as Error).message })
+/** A line's refusal: its FolderError's code, the standard's, as it comes; or, for any other error, the plug's own `invalid`. */
+const refusal = (err: unknown): Answer => ({ ok: false, error: err instanceof FolderError ? err.code : ('invalid' satisfies Code), message: (err as Error).message })
 
 export class Host {
   /** Where it listens, once it does. */

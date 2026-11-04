@@ -166,7 +166,9 @@ by its id (`duplicate`) before its price, so sent again it costs nothing.
 | `GET /credits/balance/<folder>` | `{ folder, credits }` | `bad_request` |
 
 A credit route asked with another method answers `method` (405), and a POST body over 512 KB
-`too_big` (413).
+`too_big` (413). A line that fails in a way none of the standard's codes names answers `invalid`.
+This host's own codes, `invalid` and the credit routes', are in `src/codes.ts`, which an app can
+import; the standard's checks are the standard's to list.
 
 ## How we run it
 
@@ -253,8 +255,9 @@ on a failure. Give it a `SEED` whose two folders hold credits, or the rest is un
 costs `check/a` about 0.04 credits and `check/b` about 0.06.
 
 `test/` covers, on loopback: the host check against the plug and the whole host, paying; the plug
-and its storage, the S3 driver and its links among it; every price, payment and refusal above; and
-the credits client alone, against Cloudflare's own Privacy Pass issuer.
+and its storage, the S3 driver and its links among it; every price, payment and refusal above; the
+credits client alone, against Cloudflare's own Privacy Pass issuer; and this README's own codes, as
+`src/codes.ts` lists them.
 
 ## Promises
 

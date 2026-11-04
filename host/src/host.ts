@@ -32,7 +32,7 @@ import { join } from 'node:path'
 import { canDo, encodeEntry, encodeInbox, entryId, inboxId, unsignedOf } from '@foundationforest/folders'
 
 import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
-import { keyAt } from '../credits/seller.ts'
+import { keyAt, refuse } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
 import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
@@ -269,12 +269,12 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   }
   if (req.method !== 'POST' || (path !== BUY_PATH && path !== SPEND_PATH)) {
     req.resume()
-    send(res, { status: 405, body: { error: 'method' } })
+    send(res, refuse('method', 405))
     return true
   }
   readBytes(req)
     .then(async (bytes) => {
-      if (!bytes) return send(res, { status: 413, body: { error: 'too_big' } })
+      if (!bytes) return send(res, refuse('too_big', 413))
       if (path === BUY_PATH) return send(res, await credits.seller.collect(bytes, req.headers[PAYMENT_HEADER] as string | undefined))
       let body: unknown
       try {
