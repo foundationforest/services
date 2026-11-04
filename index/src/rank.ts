@@ -18,8 +18,8 @@
 //                average of its scores, shown as it is, with how many raters
 //   order        search sorts by the same average with marketWeight of the market's average added
 //
-// A rater's reviews of one subject (one per post) are one score, their mean; each review's weight is
-// that score's weight split equally among them. P weighs each score; the index shows no pickiness.
+// A rater's reviews of one subject (one per listing) are one score, their mean; each review's weight
+// is that score's weight split equally among them. P weighs each score; the index shows no pickiness.
 //
 // Settling: from T = u / 2 and P = 0.5, each round works out every trust, pickiness and rating from
 // the round before only, so the order of anything changes nothing. A round moves each trust and

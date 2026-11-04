@@ -1,7 +1,7 @@
 // Writing an entry in one of the person's folders, signed with its access key, to the hosts its
 // profile entry names. Public: at `<kind>/<id>`, a kind every market defines, the body checked
 // against its market with the markets package's checkEntry before anything is signed, and its
-// subject, and the profile its post names, checked to be addresses, which the markets manual leaves
+// subject, and the profile its listing names, checked to be addresses, which the markets manual leaves
 // to the standard. Locked: at any path but `profile` and `key/…`
 // (the person's notes about access keys), the body the person's own and unchecked, locked to every
 // key that may read the folder (lockKeysOf). Never `profile`: no access key writes it. Whether the
@@ -19,10 +19,10 @@ import type { Args, Ctx, Param } from '../params.ts'
 export const name = 'write'
 export const title = 'Write an entry'
 export const description =
-  "Write an entry in one of the person's profiles' folders, named by its label, signed with the access key this login holds for it, and written to the profile's hosts; a null body deletes the entry there. Public (the main way): at <kind>/<id>, a kind the profile's market defines, such as post/<id> or review/<id>, the body as the market defines that kind (read the market first); a body that does not fit is refused, naming the field. A review names its subject and the post it is about. Locked: at any path but profile and key/…, the body the person's own and unchecked, locked to every key that may read the folder, with no files. Never profile. Answers what was written, or each host's refusal. Needs the person's login."
+  "Write an entry in one of the person's profiles' folders, named by its label, signed with the access key this login holds for it, and written to the profile's hosts; a null body deletes the entry there. Public (the main way): at <kind>/<id>, a kind the profile's market defines, such as listing/<id> or review/<id>, the body as the market defines that kind (read the market first); a body that does not fit is refused, naming the field. A review names its subject and the listing it is about. Locked: at any path but profile and key/…, the body the person's own and unchecked, locked to every key that may read the folder, with no files. Never profile. Answers what was written, or each host's refusal. Needs the person's login."
 export const params: Param[] = [
   { name: 'label', type: 'string', required: true, description: "The person's profile it writes as, by its label: <market>/<role>, such as tutoring/tutor." },
-  { name: 'path', type: 'string', required: true, description: "Where in that profile's folder: <kind>/<id>, such as post/maths; the id is lowercase letters, digits, dots, underscores and dashes." },
+  { name: 'path', type: 'string', required: true, description: "Where in that profile's folder: <kind>/<id>, such as listing/maths; the id is lowercase letters, digits, dots, underscores and dashes." },
   { name: 'body', type: 'object', nullable: true, required: true, description: "What it says: the entry's fields, as the market defines them for its kind; null to delete the entry." },
   { name: 'locked', type: 'boolean', description: 'true: locked, so only the person and the keys that may read the folder open it.' },
 ]
@@ -52,8 +52,8 @@ async function checkPublic(ctx: Ctx, market: Market, role: string, path: string,
   if (body === null) return
   const why =
     markets.checkEntry(market.name, role, kind!, body, kind === 'review' ? await aboutRole(ctx, market, body) : undefined) ??
-    (kind === 'post' || publicKeyFromAddress(body.subject) ? null : `subject is the address of the profile the ${kind} is about`) ??
-    (kind !== 'review' || body.post === undefined || publicKeyFromAddress((body.post as string).split('/')[0]) ? null : "post is a post's address: <profile address>/post/<id>")
+    (kind === 'listing' || publicKeyFromAddress(body.subject) ? null : `subject is the address of the profile the ${kind} is about`) ??
+    (kind !== 'review' || body.listing === undefined || publicKeyFromAddress((body.listing as string).split('/')[0]) ? null : "listing is a listing's address: <profile address>/listing/<id>")
   if (why) refuse(why)
 }
 

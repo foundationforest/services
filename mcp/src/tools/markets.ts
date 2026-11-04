@@ -10,7 +10,7 @@ import type { Args, Param } from '../params.ts'
 export const name = 'markets'
 export const title = 'Markets'
 export const description =
-  "The markets in the markets directory this copy reads. With no name: every market, what the dealing is, and its roles, each with what it posts (offers, requests, or just posts); a profile is one market and one role. With a name: that market's file, its roles and the fields a post's preview shows first; the kinds of entry it defines (such as post and review) with the fields of each (each field's type, what it holds, the values of a choice, the roles it is for, and when it applies); and types, what each of those types holds, such as how a place is given. Read it before you write to a market. No login."
+  "The markets in the markets directory this copy reads. With no name: every market, what the dealing is, and its roles, each with what it lists (offers or requests); a profile is one market and one role. With a name: that market's file, its roles and the fields a listing's preview shows first; the kinds of entry it defines (such as listing and review) with the fields of each (each field's type, what it holds, the values of a choice, the roles it is for, and when it applies); and types, what each of those types holds, such as how a place is given. Read it before you write to a market. No login."
 export const params: Param[] = [{ name: 'name', type: 'string', description: 'A market, such as tutoring. Left out: every market.' }]
 export const login = false
 export const annotations = { readOnlyHint: true, openWorldHint: false }

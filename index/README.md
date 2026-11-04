@@ -14,9 +14,9 @@ no login. For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 ## How it works
 
 ```
-the hosts in lists/hosts.json ── entries ──────┐
-                                               ├──▶ filter ──▶ rank ──▶ pages, JSON, the tree
-the markets, at MARKETS ── what a post holds ──┘
+the hosts in lists/hosts.json ── entries ─────────┐
+                                                  ├──▶ filter ──▶ rank ──▶ pages, JSON, the tree
+the markets, at MARKETS ── what a listing holds ──┘
 ```
 
 One process. Every `READ_SECONDS` it makes a pass: it reads what is new on each host, then filters,
@@ -36,7 +36,7 @@ access key the profile entry lists with `write`, so this index sees what any rea
 | Path | What | A delete |
 |---|---|---|
 | `profile` | The profile entry: market and role, hosts, open key, pay addresses, access keys, proofs | |
-| `post/<id>` | A post | Keeps its last body, and that body's time, for good, marked deleted, so a review naming it still finds it; one deleted before this index read it keeps the last version a host still serves |
+| `listing/<id>` | A listing | Keeps its last body, and that body's time, for good, marked deleted, so a review naming it still finds it; one deleted before this index read it keeps the last version a host still serves |
 | `review/<id>` | A review | Removes it |
 | `vouch/<id>`, `report/<id>` | A vouch, a report | Removes it |
 
@@ -64,34 +64,35 @@ count, those before still do. A profile's page lists each proof with what this i
 `checks` lists the keys it counts for, once each. A profile that does not count has a page, but no
 rating and no trust, and its entries count for nothing.
 
-### Posts, reviews, vouches and reports
+### Listings and feedback
 
-A post is listed when its profile counts and it fits its market by the markets package's
+A listing is listed when its profile counts and it fits its market by the markets package's
 `checkEntry`, the markets manual's own check, which the mcp, the foundation's connector, over MCP
 (the way AI apps call outside tools), runs too before it signs one: each field one its market names
-for the role, or `contact`, which every post may hold, held only where its `when` matches, of its
+for the role, or `contact`, which every listing may hold, held only where its `when` matches, of its
 type in `types.json`, a choice among its values, a `money` field's `per` one its field lists or
 none, a `place` a point and a radius, a `many` field a list of different values, a `file` field one
 of the files the body lists in `files` (the standard's own field). A market's `preview` is for apps
-to ask first, and nothing enforces it. A post not listed is
+to ask first, and nothing enforces it. A listing not listed is
 kept, and its own page and its profile's say `why`: it does not fit (naming the field), its profile
 does not count, or it was deleted.
 
-A review says how a deal went and gives a score; a vouch says "I know this profile is real and
-honest"; a report says "this profile is fake or a scam". Each names the profile it is about as its
+Feedback is what people say about a profile, in three kinds: a review says how a deal went and
+gives a score; a vouch says "I know this profile is real and honest"; a report says "this profile is
+fake or a scam". Each names the profile it is about as its
 `subject`, and may add text. One counts when, in order:
 
 1. its writer counts here;
 2. it fits its writer's market by `checkEntry`: `subject` an address, `score` "1" to "10" with at
-   most one decimal, `text`, `post` a post's full address `<profile>/post/<id>` whose profile is an
-   address (a vouch and a report hold only `subject` and `text`), and the fields the market adds to
-   its reviews, a `file` among them naming one of the body's `files`;
+   most one decimal, `text`, `listing` a listing's full address `<profile>/listing/<id>` whose
+   profile is an address (a vouch and a report hold only `subject` and `text`), and the fields the
+   market adds to its reviews, a `file` among them naming one of the body's `files`;
 3. a review gives a score;
 4. it is about another profile, not its writer;
 5. writer and subject have the same `market`, so each market is ranked on its own;
 6. its subject counts here;
 7. it is the writer's latest of its kind about that profile, by its entry's time: one review per
-   writer, subject and post (or no post); one vouch and one report per writer and subject.
+   writer, subject and listing (or no listing); one vouch and one report per writer and subject.
 
 One that does not count says why, on both profiles' pages, and changes nothing.
 
@@ -109,9 +110,9 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 | **The report part** | `R = reportCut^r`, `r` the sum of the reports' weights: 1 with none; at `reportCut` 0.25 each full report leaves a quarter |
 | **Trust**, how much its own words and scores weigh | `uniqueness × V × R`: a newcomer's is half its uniqueness, and it never passes it. Each part moves without touching the other |
 | **Pickiness** | Each score on 0 to 1 as `(s − 1) / 9`; `P = 0.5 + 0.5 × Σ(Rt − s) / (1 + n)` over the `n` profiles it scored, `Rt` each one's current rating. Below others' ratings is tough, above is easy; few scores stay near 0.5. Shown nowhere |
-| **Ratings** | Each score weighs `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, so a tough rater's high scores count more and its low ones less, and an average rater's weigh half. A rater's reviews of one profile, one per post, are one score, their mean. A rating is the weighted average of its scores, 1 to 10, to one decimal, shown as it is with how many raters; none with no counted review. A review's `weight` is its score's weight, split among its rater's reviews of that profile |
+| **Ratings** | Each score weighs `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, so a tough rater's high scores count more and its low ones less, and an average rater's weigh half. A rater's reviews of one profile, one per listing, are one score, their mean. A rating is the weighted average of its scores, 1 to 10, to one decimal, shown as it is with how many raters; none with no counted review. A review's `weight` is its score's weight, split among its rater's reviews of that profile |
 | **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust at half its uniqueness and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
-| **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest post; with `near`, nearest first, then this. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest post. Order only: a profile's page shows its ratings as they are |
+| **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest listing; with `near`, nearest first, then this. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest listing. Order only: a profile's page shows its ratings as they are |
 
 At today's numbers, with trust from 0 to 100 as the pages show it:
 
@@ -171,7 +172,7 @@ made into a service key with no text (the standard's keys' `serviceKey`). Its ad
 name: the About page shows it, every page's JSON gives it as `index`, and it signs the statements
 and the roots.
 
-One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of posts;
+One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of listings;
 `src/store.ts`), beside the seed. Everything in it comes back from the hosts but two tables: when
 each verification was first seen, and every root it signed. Without the first, every proof would be
 first seen anew, after any key's `until`; without the roots, the reputation proofs people show would
@@ -184,7 +185,7 @@ Every page is HTML for people, drawn by one template (`src/pages/template.ts`) f
 object, which is also served at the same path with `.json`: the two never disagree. The pages look
 like the Forest app's public side, its colours light and dark and its font, Manrope, served from
 here, so a page asks no other site but the hosts for its photos. The HTML runs no script, and each
-page carries schema.org JSON-LD. A post's and a profile's page show the shield and a rating's chip;
+page carries schema.org JSON-LD. A listing's and a profile's page show the shield and a rating's chip;
 what those mean, with the profile's rating, trust and uniqueness, is in its fold What these mean, and
 on the About page. GET and HEAD only, open to any origin (`access-control-allow-origin: *`),
 `cache-control: public, max-age=30, stale-while-revalidate=300`. Every field, for programs:
@@ -192,21 +193,21 @@ on the About page. GET and HEAD only, open to any origin (`access-control-allow-
 
 | Path | JSON |
 |---|---|
-| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many posts each role has `listed` and each role's word for its posts (`offers`, `requests` or `posts`), and its lists, each key with its confidence; drawn as a search box, words and a market, and each market as one link, with its posts counted in those words |
+| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many listings each role has `listed` and each role's word for its listings (`offers` or `requests`), and its lists, each key with its confidence; drawn as a search box, words and a market, and each market as one link, with its listings counted in those words |
 | `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is, what it reads, what a profile's words and numbers mean, its address, and links to its JSON, `skill.md`, `llms.txt` and its source |
-| `/markets/<name>` | `{ index, market, posts: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and its listed posts by role, in search's order, each drawn as one link: its first photo, its description's first line, price and place, and its profile's shield and rating, or New |
-| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the post, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a post whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
-| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, posts, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer, as its market and role with its shield, "Verified by face" and its rating's chip, its `message` links, its posts and the reviews it received, each one link; its rating, trust and uniqueness in the fold What these mean, and everything else in one more. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each post, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
-| `/profiles/<address>/post/<id>` | `{ index, profile, market, role, post, checks, ratings, trust, uniqueness, fields, types, labels, message }`: one post, at its address under `/profiles`; `post` as its profile's page gives it, `fields` its market's post fields in the order the page draws them, the `preview`'s first, `types` each one's type, `labels` the labels its market gives the choice values it holds. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but those of type `file` (a choice by its label or in words, a place with no area on the map, linked to its point at openstreetmap.org), who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a post not listed has its page too, saying why |
+| `/markets/<name>` | `{ index, market, listings: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and the listings this index lists, by role, in search's order, each drawn as one link: its first photo, its description's first line, price and place, and its profile's shield and rating, or New |
+| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the listing, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a listing whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
+| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, listings, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer, as its market and role with its shield, "Verified by face" and its rating's chip, its `message` links, its listings and the reviews it received, each one link; its rating, trust and uniqueness in the fold What these mean, and everything else in one more. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each listing, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
+| `/profiles/<address>/listing/<id>` | `{ index, profile, market, role, listing, checks, ratings, trust, uniqueness, fields, types, labels, message }`: one listing, at its address under `/profiles`; `listing` as its profile's page gives it, `fields` its market's listing fields in the order the page draws them, the `preview`'s first, `types` each one's type, `labels` the labels its market gives the choice values it holds. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but those of type `file` (a choice by its label or in words, a place with no area on the map, linked to its point at openstreetmap.org), who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and its description's first line; a listing not listed has its page too, saying why |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
-| `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listed post |
+| `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listing it lists |
 | `/llms.txt`, `/skill.md` | Files here written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place |
 | `/fonts/<file>` | The pages' font, the files of `@fontsource-variable/manrope` as the package gives them, cached for a day |
 
-A `<result>` is `{ profile, market, role, post: { address, body, url, photos }, ratings, trust, uniqueness, checks }`, and with `near`,
+A `<result>` is `{ profile, market, role, listing: { address, body, url, photos }, ratings, trust, uniqueness, checks }`, and with `near`,
 `km`: the distance between the two points, to one decimal.
-A post, on every page, gives `url`, its own page, and `photos`: each file its fields name (a `file`
+A listing, on every page, gives `url`, its own page, and `photos`: each file its fields name (a `file`
 field, read by its shape) at the first host its profile entry names, `<host>/v1/files/<sha256>`
 ([the host's read](../host/README.md#its-api)), since the person's app writes every entry and file
 to each host its profile entry names. The index keeps no bytes.
@@ -262,9 +263,9 @@ DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 
 `test/` covers, on loopback, with this repo's host and real verifications and reputation proofs
 from the circuits' committed proving files: the filter, every guarantee How it scores gives (forty
-random graphs among them), which reviews, vouches and reports count, the markets' check, the tree
+random graphs among them), which feedback counts, the markets' check, the tree
 and the proofs' ages, every page's shape, header, footer and JSON-LD, the font served here and
-nothing asked of another site, every JSON field kept, each post's page, its fields without its file
+nothing asked of another site, every JSON field kept, each listing's page, its fields without its file
 fields, its photos' links and the apps it links to, the profile page's order and folds, the numbers
 only in a fold, the market, search and About pages, the seed, and the index end to end over HTTP,
 rebuilds included.

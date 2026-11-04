@@ -32,7 +32,7 @@ import { App, type Choice } from './app.ts'
 
 export const TUTORING = JSON.parse(readFileSync(new URL('../../markets/markets/tutoring.json', import.meta.url), 'utf8'))
 
-/** A post that fits tutoring's post fields. */
+/** A listing that fits tutoring's listing fields. */
 export const lesson = (description: string): Body => ({
   description,
   price: { amount: '30', currency: 'USD', per: 'hour' },
@@ -64,16 +64,16 @@ export const SKILL = '# A stand-in index\n\nEach answer here holds badge, a fiel
  * The stand-in index: its skill.md, and three answers in the index's JSON as it is now, each with
  * `badge`, a field the mcp has never seen. Its search answers with `asked` too: the filters it got.
  */
-async function standIn(stranger: string, post: string): Promise<{ url: string; server: Server; said: World['said'] }> {
+async function standIn(stranger: string, listing: string): Promise<{ url: string; server: Server; said: World['said'] }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face check' }]
   const shown = { ratings: { value: 9.2, count: 14 }, trust: 42, uniqueness: 75 }
-  const result = { profile: stranger, market: 'tutoring', role: 'tutor', post: { address: post, body: lesson('Physics, from the stranger.') }, ...shown, checks }
+  const result = { profile: stranger, market: 'tutoring', role: 'tutor', listing: { address: listing, body: lesson('Physics, from the stranger.') }, ...shown, checks }
   const badge = 'early'
   const said: World['said'] = {
     '/skill.md': SKILL,
     '/index.json': { index: 'stand-in', markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }], lists: {}, badge },
     '/search.json': { index: 'stand-in', total: 1, results: [result], badge },
-    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: { market: 'tutoring', role: 'tutor' }, checks, ...shown, posts: [], reviews: { received: [], given: [] }, proofs: [], badge },
+    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: { market: 'tutoring', role: 'tutor' }, checks, ...shown, listings: [], reviews: { received: [], given: [] }, proofs: [], badge },
   }
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x')
@@ -178,7 +178,7 @@ export async function logIn(c: { client: Client; transport: StreamableHTTPClient
 }
 
 /** A stranger: a tutoring tutor whose folder takes inbox entries, with its open key's identity. */
-export type Stranger = { address: string; post: string; posts: { [subject: string]: string }; tutor: MainKey; identity: string }
+export type Stranger = { address: string; listing: string; listings: { [subject: string]: string }; tutor: MainKey; identity: string }
 
 export type World = {
   mcp: Served
@@ -220,11 +220,11 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const pay = { solana: (await payAddresses(strangerSeed, 'tutoring/tutor')).solana }
   const profile = { market: 'tutoring', role: 'tutor', hosts, openKey: opening.openKey, pay }
   const subjects = ['physics', 'chemistry', 'biology']
-  const posted = subjects.map((s) => entry(tutor, `post/${s}`, lesson(`${s[0]!.toUpperCase()}${s.slice(1)}, from the stranger.`), now))
-  await write(hosts, [entry(tutor, 'profile', profile, now), ...posted])
-  const post = `${tutor.address}/post/physics`
+  const listed = subjects.map((s) => entry(tutor, `listing/${s}`, lesson(`${s[0]!.toUpperCase()}${s.slice(1)}, from the stranger.`), now))
+  await write(hosts, [entry(tutor, 'profile', profile, now), ...listed])
+  const listing = `${tutor.address}/listing/physics`
 
-  const index = await standIn(tutor.address, post)
+  const index = await standIn(tutor.address, listing)
   const page = await connectPage(app)
   const dataDir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
   const mcp = await serve({ ...(!options.noApp && { appUrl: page.url }), dataDir, read: { index: index.url }, clientFetch, hostFetch: fetch }, '127.0.0.1', 0)
@@ -241,7 +241,7 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
     app,
     seed,
     own,
-    stranger: { address: tutor.address, post, posts: Object.fromEntries(subjects.map((s) => [s, `${tutor.address}/post/${s}`])), tutor, identity: opening.identity },
+    stranger: { address: tutor.address, listing, listings: Object.fromEntries(subjects.map((s) => [s, `${tutor.address}/listing/${s}`])), tutor, identity: opening.identity },
     dataDir,
     close: async () => {
       await mcp.close()

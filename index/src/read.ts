@@ -8,7 +8,7 @@
 //
 //   profile      the current profile entry, if it has one: its market, role, hosts, open key, pay
 //                addresses, access keys and proofs
-//   post/<id>    a post; a delete keeps its last body here for good, marked deleted, so a review
+//   listing/<id> a listing; a delete keeps its last body here for good, marked deleted, so a review
 //                that names it still finds it
 //   review/<id>  a review; a delete removes it
 //   vouch/<id>   a vouch; a delete removes it
@@ -21,7 +21,7 @@ import { type Checked, encodeEntry, isLocked, MAX_FUTURE_MS, readPage, type Sign
 
 import type { Store } from './store.ts'
 
-const POST = /^post\/[^/]+$/
+const LISTING = /^listing\/[^/]+$/
 const REVIEW = /^review\/[^/]+$/
 /** Vouches and reports, each kind into its own table, as reviews are. */
 const SAID = [
@@ -82,21 +82,21 @@ function textOf(value: unknown): string {
 
 const live = (c: Checked | undefined) => (c && c.entry.body !== null && !isLocked(c.entry.body) ? c : undefined)
 
-/** Each folder viewed again from every entry held for it, at `now`, into profiles, posts, reviews, vouches and reports. */
+/** Each folder viewed again from every entry held for it, at `now`, into profiles, listings, reviews, vouches and reports. */
 export function viewAgain(store: Store, profiles: Iterable<string>, now: number): void {
   const { db } = store
   const entriesOf = db.prepare('select id, text from entries where profile = ?')
   const upsertProfile = db.prepare(`insert into profiles (address, body, market, role, time) values (?, ?, ?, ?, ?)
     on conflict (address) do update set body = excluded.body, market = excluded.market, role = excluded.role, time = excluded.time`)
   const dropProfile = db.prepare('delete from profiles where address = ?')
-  const postsOf = db.prepare('select address from posts where profile = ? and deleted = 0')
-  const upsertPost = db.prepare(`insert into posts (address, profile, body, time, deleted) values (?, ?, ?, ?, 0)
+  const listingsOf = db.prepare('select address from listings where profile = ? and deleted = 0')
+  const upsertListing = db.prepare(`insert into listings (address, profile, body, time, deleted) values (?, ?, ?, ?, 0)
     on conflict (address) do update set body = excluded.body, time = excluded.time, deleted = 0`)
-  const deletePost = db.prepare('update posts set deleted = 1 where address = ?')
-  const hasPost = db.prepare('select 1 from posts where address = ?')
-  const keepDeleted = db.prepare('insert into posts (address, profile, body, time, deleted) values (?, ?, ?, ?, 1)')
-  const dropText = db.prepare('delete from posts_text where address = ?')
-  const addText = db.prepare('insert into posts_text (address, text) values (?, ?)')
+  const deleteListing = db.prepare('update listings set deleted = 1 where address = ?')
+  const hasListing = db.prepare('select 1 from listings where address = ?')
+  const keepDeleted = db.prepare('insert into listings (address, profile, body, time, deleted) values (?, ?, ?, ?, 1)')
+  const dropText = db.prepare('delete from listings_text where address = ?')
+  const addText = db.prepare('insert into listings_text (address, text) values (?, ?)')
   const reviewsOf = db.prepare('select address from reviews where reviewer = ?')
   const upsertReview = db.prepare(`insert into reviews (address, reviewer, subject, body, time) values (?, ?, ?, ?, ?)
     on conflict (address) do update set subject = excluded.subject, body = excluded.body, time = excluded.time`)
@@ -123,16 +123,16 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
         dropProfile.run(profile)
       }
 
-      const posts = new Set<string>()
+      const listings = new Set<string>()
       const reviews = new Set<string>()
       const saidHere = new Set<string>()
       for (const [path, c] of view.current) {
         const it = live(c)
         if (!it) continue
         const address = `${profile}/${path}`
-        if (POST.test(path)) {
-          posts.add(address)
-          upsertPost.run(address, profile, JSON.stringify(it.entry.body), it.entry.time)
+        if (LISTING.test(path)) {
+          listings.add(address)
+          upsertListing.run(address, profile, JSON.stringify(it.entry.body), it.entry.time)
           dropText.run(address)
           addText.run(address, textOf(it.entry.body))
         } else if (REVIEW.test(path)) {
@@ -147,12 +147,12 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
           kind.upsert.run(address, profile, typeof subject === 'string' ? subject : null, JSON.stringify(it.entry.body), it.entry.time)
         }
       }
-      for (const r of postsOf.all(profile)) if (!posts.has(r.address as string)) deletePost.run(r.address as string)
-      // A post deleted before this index first read it: its last body is the newest version that
+      for (const r of listingsOf.all(profile)) if (!listings.has(r.address as string)) deleteListing.run(r.address as string)
+      // A listing deleted before this index first read it: its last body is the newest version that
       // counted until the delete replaced it, when a host still serves it.
       for (const [path, c] of view.current) {
         const address = `${profile}/${path}`
-        if (!POST.test(path) || live(c) || hasPost.get(address)) continue
+        if (!LISTING.test(path) || live(c) || hasListing.get(address)) continue
         const last = held.filter((h) => h.entry.path === path && view.ignored.get(h.id) === 'older' && live(h)).sort((a, b) => b.entry.time - a.entry.time || (a.id < b.id ? 1 : -1))[0]
         if (last) keepDeleted.run(address, profile, JSON.stringify(last.entry.body), last.entry.time)
       }

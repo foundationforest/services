@@ -69,8 +69,8 @@ export const urls = (base: string) => ({
   about: `${base}/about`,
   market: (name: string) => `${base}/markets/${encodeURIComponent(name)}`,
   profile: (address: string) => `${base}/profiles/${encodeURIComponent(address)}`,
-  /** A post's page, by its address, `<profile>/post/<id>`: the address is its path under /profiles. */
-  post: (address: string) => `${base}/profiles/${address.split('/').map(encodeURIComponent).join('/')}`,
+  /** A listing's page, by its address, `<profile>/listing/<id>`: the address is its path under /profiles. */
+  listing: (address: string) => `${base}/profiles/${address.split('/').map(encodeURIComponent).join('/')}`,
   search: (q: Record<string, string>) => `${base}/search${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ''}`,
 })
 
@@ -136,7 +136,7 @@ main{display:flex;flex-direction:column;gap:16px;padding-top:8px;padding-bottom:
 footer{padding-bottom:16px}footer p{border-top:1px solid var(--paper-2);padding-top:4px;font-size:14px}footer a{display:inline-flex;align-items:center;min-height:var(--touch);color:var(--ink);font-weight:700}
 .back{display:inline-flex;align-items:center;gap:4px;align-self:flex-start;min-height:var(--touch);margin-left:-4px;color:var(--ink-2)}
 .rows{display:grid;gap:8px}.row{display:flex;align-items:center;gap:12px;min-height:var(--touch);padding:10px 14px;border:1px solid var(--paper-2);border-radius:var(--radius);color:var(--ink)}
-.post-row,.said-row{min-height:64px}.row>.icon{color:var(--ink-2)}.grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.listing-row,.said-row{min-height:64px}.row>.icon{color:var(--ink-2)}.grow{flex:1;min-width:0;overflow-wrap:anywhere}
 .two{display:grid;gap:2px;flex:1;min-width:0}.two>strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
 .two>span{color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.two>.said-text{color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}.two>.why{white-space:normal}
 .aside{display:inline-flex;align-items:center;gap:8px;flex:none;color:var(--ink-2)}.thumb{width:48px;height:48px;border-radius:8px;object-fit:cover;flex:none;background:var(--paper-2)}

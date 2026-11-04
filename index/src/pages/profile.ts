@@ -1,19 +1,19 @@
 // `/profiles/<address>`: a profile this index holds a profile entry for. Its profile entry; each
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
-// ratings, trust and uniqueness) and the statement that signs them; its posts, listed or not and
+// ratings, trust and uniqueness) and the statement that signs them; its listings, listed or not and
 // why, each with its page and its photos; the reviews, vouches and reports it received and gave,
-// each with whether it counts and why not, a review with its weight; each post, review, vouch and
-// report with its entry's own time; the words it received and gave, each with its weight; and where
+// each with whether it counts and why not, a review with its weight; each listing, review, vouch
+// and report with its entry's own time; the words it received and gave, each with its weight; and where
 // to message it.
 //
 // The page is drawn for a buyer, as the app would show it: its name and shield, how it is verified
-// and its rating's chip, the button to message it, its posts and the reviews it received as rows;
+// and its rating's chip, the button to message it, its listings and the reviews it received as rows;
 // then a fold saying what its words and numbers mean, with its own, and one with everything else
 // this index read, the weight of each review it received among it.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, chipHtml, firstHost, meaningHtml, messageHtml, messageOf, namedHtml, personOf, type Post, postOf, postRowHtml, rowsHtml, scoreHtml, type Shown, shieldHtml, shownFor, verifiedText } from './common.ts'
+import { aggregateOf, chipHtml, firstHost, type Listing, listingOf, listingRowHtml, meaningHtml, messageHtml, messageOf, namedHtml, personOf, rowsHtml, scoreHtml, type Shown, shieldHtml, shownFor, verifiedText } from './common.ts'
 import { foldHtml, html, type Page, type Raw, short, urls } from './template.ts'
 
 export type ReviewEntry = {
@@ -36,8 +36,8 @@ export type ProfilePage = {
   address: string
   profile: { [key: string]: unknown }
   checks: Check[]
-  /** Each post with its entry's time, its page and its photos; a deleted one with its last body and that body's time. */
-  posts: Array<Post & { time: number; listed: boolean; why?: string }>
+  /** Each listing with its entry's time, its page and its photos; a deleted one with its last body and that body's time. */
+  listings: Array<Listing & { time: number; listed: boolean; why?: string }>
   reviews: Both<ReviewEntry>
   vouches: Both<SaidEntry>
   reports: Both<SaidEntry>
@@ -93,7 +93,7 @@ export const profile: Page<ProfilePage> = {
       | { address: string; body: string; checks: string; proofs: string }
       | undefined
     if (!found) return null
-    const posts = store.db.prepare('select address, body, time, listed, why from posts where profile = ? order by time desc, address').all(found.address) as Array<{
+    const listings = store.db.prepare('select address, body, time, listed, why from listings where profile = ? order by time desc, address').all(found.address) as Array<{
       address: string
       body: string
       time: number
@@ -115,9 +115,9 @@ export const profile: Page<ProfilePage> = {
       profile: entryBody,
       checks: parse(found.checks),
       ...shownFor(store, found.address),
-      posts: posts.map((p) => {
-        const { address, body, url, photos } = postOf(base, p.address, parse(p.body), host)
-        return { address, body, time: p.time, listed: p.listed === 1, ...(p.why !== null && !p.listed && { why: p.why }), url, photos }
+      listings: listings.map((l) => {
+        const { address, body, url, photos } = listingOf(base, l.address, parse(l.body), host)
+        return { address, body, time: l.time, listed: l.listed === 1, ...(l.why !== null && !l.listed && { why: l.why }), url, photos }
       }),
       reviews: { received: reviews('subject'), given: reviews('reviewer') },
       vouches: saidIn('vouches'),
@@ -139,8 +139,8 @@ export const profile: Page<ProfilePage> = {
     return html`<div class="lead"><h1 class="titled">${namedHtml(market, role)}${shieldHtml(o.checks)}</h1>
 <p class="line">${o.checks.length ? html`${verifiedText(o.checks)} · ${chipHtml(o)}` : 'Not verified here'}</p></div>
 ${messageHtml(o.message)}
-<section><h2>Posts</h2>
-${rowsHtml(o.posts.map((p) => postRowHtml(p, p.listed ? {} : { note: html`<span class="why red">Not listed: ${p.why}.</span>` })), 'None.')}</section>
+<section><h2>Listings</h2>
+${rowsHtml(o.listings.map((l) => listingRowHtml(l, l.listed ? {} : { note: html`<span class="why red">Not listed: ${l.why}.</span>` })), 'None.')}</section>
 <section><h2>Reviews received</h2>
 ${rowsHtml(o.reviews.received.map((r) => receivedHtml(r, base)), 'None.')}</section>
 ${meaningHtml('This profile', o)}

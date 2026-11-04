@@ -7,7 +7,7 @@ The Forest Foundation runs one copy of each service so Forest works from day one
 | Service | What it does for you | Address |
 |---|---|---|
 | [verifier](verifier/README.md) | Checks that you are one real person, by your face or your ID, and signs a stamp to your seed. Your profiles then prove they're verified without saying who you are. | verifier.forest.foundation |
-| [host](host/README.md) | Keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, a fraction of a cent for a small one, and a message from its sender's. Your first credits are a gift from the verifier, in your app's wallet. | host.forest.foundation |
+| [host](host/README.md) | Keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, a fraction of a cent for a small one, and a message from its sender's. Your first credits are a gift from the verifier, in your app's wallet. | host.forest.foundation |
 | [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | index.forest.foundation |
 | [mcp](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you: find people, post, review, message, within the access keys you give it. It keeps nothing of yours. | mcp.forest.foundation |
 
@@ -15,7 +15,7 @@ The loop ([`e2e/`](e2e/README.md)) runs two people through all four, end to end,
 
 ## Run a copy
 
-Each service's folder has its own `deploy/Dockerfile`, built from the repo root, and a README listing its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's folder; the verifier first fetches its face models (`npm run fetch -- models`).
+Each service's folder has its own `deploy/Dockerfile`, built from the repo root, and a README that lists its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's folder; the verifier first fetches its face models (`npm run fetch -- models`).
 
 ## The pins
 

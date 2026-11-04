@@ -1,5 +1,5 @@
 // The index's one file: `index.sqlite` in DATA_DIR, through Node's own SQLite (`node:sqlite`), with
-// FTS5 for the text of posts. A fresh schema, made when the file is new; no migrations. Everything
+// FTS5 for the text of listings. A fresh schema, made when the file is new; no migrations. Everything
 // in it comes back from the hosts but two tables, which `rebuild` keeps:
 //
 //   seen          when this index first saw a verification of each verifier key on each profile, for
@@ -32,7 +32,7 @@ create table if not exists roots (
 `
 
 /** Tables `rebuild` drops: each comes back from the hosts. */
-const DROPPED = ['hosts', 'entries', 'profiles', 'posts', 'posts_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'ratings', 'leaves']
+const DROPPED = ['hosts', 'entries', 'profiles', 'listings', 'listings_text', 'reviews', 'vouches', 'reports', 'words', 'checked', 'ratings', 'leaves']
 
 const SCHEMA = `
 create table if not exists hosts (url text primary key, cursor integer not null);
@@ -51,8 +51,8 @@ create table if not exists profiles (
   checks text not null default '[]',
   proofs text not null default '[]'
 );
--- Every post this index has read; a deleted one keeps its last body.
-create table if not exists posts (
+-- Every listing this index has read; a deleted one keeps its last body.
+create table if not exists listings (
   address text primary key,
   profile text not null,
   body text not null,
@@ -61,8 +61,8 @@ create table if not exists posts (
   listed integer not null default 0,
   why text
 );
-create index if not exists posts_profile on posts (profile);
-create virtual table if not exists posts_text using fts5 (address unindexed, text);
+create index if not exists listings_profile on listings (profile);
+create virtual table if not exists listings_text using fts5 (address unindexed, text);
 -- Every live review, and what this index made of it on the last pass.
 create table if not exists reviews (
   address text primary key,

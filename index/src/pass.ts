@@ -115,18 +115,18 @@ export async function runPass(ctx: Context, before: number | null, now: number):
     const setProfile = db.prepare('update profiles set counted = ?, checks = ? where address = ?')
     for (const [address, f] of filtered) setProfile.run(f.counted ? 1 : 0, JSON.stringify(f.checks), address)
 
-    const posts = db.prepare('select address, profile, body, deleted from posts').all() as Array<{ address: string; profile: string; body: string; deleted: number }>
-    const setPost = db.prepare('update posts set listed = ?, why = ? where address = ?')
-    for (const p of posts) {
-      const author = filtered.get(p.profile)
-      const why = p.deleted
+    const listings = db.prepare('select address, profile, body, deleted from listings').all() as Array<{ address: string; profile: string; body: string; deleted: number }>
+    const setListing = db.prepare('update listings set listed = ?, why = ? where address = ?')
+    for (const l of listings) {
+      const author = filtered.get(l.profile)
+      const why = l.deleted
         ? 'deleted'
         : !author
           ? 'its profile has no profile entry here'
           : !author.counted
             ? 'its profile does not count here'
-            : markets.checkEntry(author.market!, author.role!, 'post', parse(p.body))
-      setPost.run(why ? 0 : 1, why, p.address)
+            : markets.checkEntry(author.market!, author.role!, 'listing', parse(l.body))
+      setListing.run(why ? 0 : 1, why, l.address)
     }
 
     const setReview = db.prepare('update reviews set counted = ?, why = ?, weight = ? where address = ?')

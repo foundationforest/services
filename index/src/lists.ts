@@ -36,7 +36,7 @@ export type Lists = {
   /** How many days old a root, not the newest, may be for a reputation proof to show. */
   maxAgeDays: number
   indexes: ListedIndex[]
-  /** The apps a profile's page and a post's page link to, to message the profile (lists/apps.json); none without the file. */
+  /** The apps a profile's page and a listing's page link to, to message the profile (lists/apps.json); none without the file. */
   apps: ListedApp[]
   /** The numbers the ranking takes (config/scoring.json), each explained in README.md, How it scores. */
   scoring: Numbers

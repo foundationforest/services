@@ -8,8 +8,8 @@ import { join } from 'node:path'
 
 import { about } from './pages/about.ts'
 import { home } from './pages/home.ts'
+import { listing } from './pages/listing.ts'
 import { market } from './pages/market.ts'
-import { post } from './pages/post.ts'
 import { profile } from './pages/profile.ts'
 import { search } from './pages/search.ts'
 import { type Context, draw, esc, FONT_FILES, type Page, urls } from './pages/template.ts'
@@ -45,7 +45,7 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
       u.about,
       ...ctx.markets.directory.markets.map((m) => u.market(m.name)),
       ...(ctx.store.db.prepare('select address from profiles where counted = 1 order by address').all() as Array<{ address: string }>).map((p) => u.profile(p.address)),
-      ...(ctx.store.db.prepare('select address from posts where listed = 1 order by address').all() as Array<{ address: string }>).map((p) => u.post(p.address)),
+      ...(ctx.store.db.prepare('select address from listings where listed = 1 order by address').all() as Array<{ address: string }>).map((l) => u.listing(l.address)),
     ]
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${list.map((l) => `<url><loc>${esc(l)}</loc></url>\n`).join('')}</urlset>\n`
   }
@@ -72,14 +72,14 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     const twin = path === '/index.json' || (path.endsWith('.json') && path !== '/.json')
     const bare = path === '/index.json' ? '/' : twin ? path.slice(0, -'.json'.length) : path
     const [first, ...rest] = bare.split('/').slice(1).map((s) => decodeURIComponent(s))
-    // A post's page is its address under /profiles, `<profile>/post/<id>`. An id may end in .json,
-    // as a path's segment may; such a page's path is read as the twin of the post without it, as
-    // every path ending in .json is a twin.
-    const isPost = first === 'profiles' && rest.length === 3 && rest[1] === 'post'
-    const page = bare === '/' ? (home as Page<never>) : isPost ? (post as Page<never>) : PAGES[first ?? '']
+    // A listing's page is its address under /profiles, `<profile>/listing/<id>`. An id may end in
+    // .json, as a path's segment may; such a page's path is read as the twin of the listing without
+    // it, as every path ending in .json is a twin.
+    const isListing = first === 'profiles' && rest.length === 3 && rest[1] === 'listing'
+    const page = bare === '/' ? (home as Page<never>) : isListing ? (listing as Page<never>) : PAGES[first ?? '']
     const alone = ALONE.includes(first ?? '')
-    const params = alone ? [] : isPost ? [rest[0]!, rest[2]!] : rest
-    if (!page || (alone && rest.length) || (bare !== '/' && !alone && !isPost && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
+    const params = alone ? [] : isListing ? [rest[0]!, rest[2]!] : rest
+    if (!page || (alone && rest.length) || (bare !== '/' && !alone && !isListing && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
     const o = page.data(ctx, params, url.searchParams)
     if (o === null) return twin ? json({ error: 'not found' }, 404) : answer(404, TEXT, 'Nothing here.\n')
     if (twin) return json(o)

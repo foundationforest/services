@@ -1,5 +1,5 @@
 // What several pages share: what a profile shows (its ratings, trust, uniqueness and checks) as the
-// JSON gives it, a post as every page gives it (its page and its photos among it), a search or
+// JSON gives it, a listing as every page gives it (its page and its photos among it), a search or
 // market result, and how the HTML draws each from the object, in the pieces the Forest app draws: a
 // profile's name, the shield, the score's chip, a row, the facts list's words, and the fold that says
 // what a profile's words and numbers mean.
@@ -17,9 +17,9 @@ import { foldHtml, html, NEXT_ICON, type Raw, urls } from './template.ts'
  * rating, 0 and 0.
  */
 export type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number }
-/** A post as every page gives it: its address and body, its own page, and a link to each of its photos. */
-export type Post = { address: string; body: { [key: string]: unknown }; url: string; photos: string[] }
-export type Result = { profile: string; market: string; role: string; post: Post } & Shown & { checks: Check[] }
+/** A listing as every page gives it: its address and body, its own page, and a link to each of its photos. */
+export type Listing = { address: string; body: { [key: string]: unknown }; url: string; photos: string[] }
+export type Result = { profile: string; market: string; role: string; listing: Listing } & Shown & { checks: Check[] }
 
 const SHA256 = /^[0-9a-f]{64}$/
 
@@ -40,14 +40,14 @@ export function filesIn(body: { [key: string]: unknown }, name: string): string[
 }
 
 /**
- * The links to a post's photos, the files its fields name, at `host`, the profile entry's first
+ * The links to a listing's photos, the files its fields name, at `host`, the profile entry's first
  * host, by the host's own read, `<host>/v1/files/<sha256>`. The index keeps no bytes.
  */
 export function photosOf(body: { [key: string]: unknown }, host: string | undefined): string[] {
   return host ? [...new Set(Object.keys(body).flatMap((name) => filesIn(body, name)))].map((sha) => `${host}/v1/files/${sha}`) : []
 }
 
-export const postOf = (base: string, address: string, body: { [key: string]: unknown }, host: string | undefined): Post => ({ address, body, url: urls(base).post(address), photos: photosOf(body, host) })
+export const listingOf = (base: string, address: string, body: { [key: string]: unknown }, host: string | undefined): Listing => ({ address, body, url: urls(base).listing(address), photos: photosOf(body, host) })
 
 /** Where to message a profile: one link per app the lists name, its address in each. */
 export const messageOf = (apps: ListedApp[], address: string) => apps.map((a) => ({ name: a.name, url: a.message.replaceAll('{address}', encodeURIComponent(address)) }))
@@ -58,28 +58,28 @@ export function messageHtml(message: Array<{ name: string; url: string }>): Raw 
 }
 
 /**
- * A market's post fields, in the order a post's page shows them: those that matter first, as the
+ * A market's listing fields, in the order a listing's page shows them: those that matter first, as the
  * markets' `previewOf` gives them, then the rest in the market's order.
  */
 export function fieldsOf(m: Market | undefined): string[] {
   if (!m) return []
   const preview = previewOf(m)
-  return [...preview, ...Object.keys(m.post).filter((n) => !preview.includes(n))]
+  return [...preview, ...Object.keys(m.listing).filter((n) => !preview.includes(n))]
 }
 
-/** Each of a market's post fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
+/** Each of a market's listing fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
 export function typesOf(m: Market | undefined): { [field: string]: string } {
-  return m ? Object.fromEntries(Object.entries(m.post).map(([name, field]) => [name, field.type])) : {}
+  return m ? Object.fromEntries(Object.entries(m.listing).map(([name, field]) => [name, field.type])) : {}
 }
 
 /**
  * The labels of the values a body holds, for each of its market's choice fields that has some, as
- * its file gives them: `{ size: { xl: "XL" } }`. Only those the body holds, so a post's JSON stays
- * the size of the post.
+ * its file gives them: `{ size: { xl: "XL" } }`. Only those the body holds, so a listing's JSON
+ * stays the size of the listing.
  */
 export function labelsOf(m: Market | undefined, body: { [key: string]: unknown }): { [field: string]: { [value: string]: string } } {
   const out: { [field: string]: { [value: string]: string } } = {}
-  for (const [name, field] of Object.entries(m?.post ?? {})) {
+  for (const [name, field] of Object.entries(m?.listing ?? {})) {
     const labels = field.type === 'choice' ? field.labels : undefined
     if (!labels || !Object.hasOwn(body, name)) continue
     const held = (Array.isArray(body[name]) ? (body[name] as unknown[]) : [body[name]]).filter((v): v is string => typeof v === 'string' && Object.hasOwn(labels, v))
@@ -104,23 +104,24 @@ export function shownFor(store: Store, address: string): Shown & { statement?: s
 }
 
 /**
- * The listed posts, with their profiles, sorted as search sorts them: by the profile's ratings with
- * one unit of its market's average added (rank.ts), then the newest post. `where` narrows them.
+ * The listings this index lists, with their profiles, sorted as search sorts them: by the profile's
+ * ratings with one unit of its market's average added (rank.ts), then the newest listing. `where`
+ * narrows them.
  */
 export function results(store: Store, base: string, where = '', params: Array<string | number> = []): Array<Result & { time: number }> {
   const found = store.db
     .prepare(
-      `select p.address, p.profile, p.body, p.time, f.market, f.role, f.checks, f.body as entry, r.value, r.count, r.trust, r.uniqueness
-       from posts p join profiles f on f.address = p.profile left join ratings r on r.profile = p.profile
-       where p.listed = 1 ${where}
-       order by r.sort is null, r.sort desc, p.time desc, p.address`,
+      `select l.address, l.profile, l.body, l.time, f.market, f.role, f.checks, f.body as entry, r.value, r.count, r.trust, r.uniqueness
+       from listings l join profiles f on f.address = l.profile left join ratings r on r.profile = l.profile
+       where l.listed = 1 ${where}
+       order by r.sort is null, r.sort desc, l.time desc, l.address`,
     )
     .all(...params) as Array<ShownColumns & { address: string; profile: string; body: string; time: number; market: string; role: string; checks: string; entry: string }>
   return found.map((r) => ({
     profile: r.profile,
     market: r.market,
     role: r.role,
-    post: postOf(base, r.address, parse(r.body), firstHost(parse(r.entry))),
+    listing: listingOf(base, r.address, parse(r.body), firstHost(parse(r.entry))),
     ...shownOf(r),
     checks: parse(r.checks),
     time: r.time,
@@ -191,11 +192,11 @@ const within = (p: Place) => (p.radiusKm === 0 ? '' : `, within ${p.radiusKm} km
 /**
  * A place as text, in a row that is a link already: its area, or "on the map" with none, since its
  * point alone says nothing to a reader; then how far round it reaches. Links do not nest, so the
- * map is linked on the post's page only.
+ * map is linked on the listing's page only.
  */
 export const placeText = (p: Place) => `${typeof p.area === 'string' ? p.area : 'on the map'}${within(p)}`
 
-/** A place on a post's page, as `placeText`, its "on the map" a link to its point. */
+/** A place on a listing's page, as `placeText`, its "on the map" a link to its point. */
 export const placeHtml = (v: unknown): Raw =>
   html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}${typeof p.area === 'string' ? p.area : html`<a href="${mapUrl(p)}">on the map</a>`}${within(p)}`)}`
 
@@ -233,46 +234,46 @@ export function firstLine(text: string, max: number): string {
   return `${(cut.lastIndexOf(' ') > max / 2 ? cut.slice(0, cut.lastIndexOf(' ')) : cut).replace(/[\s,.;:]+$/, '')}…`
 }
 
-/** A post's price as words, "20 USD per hour", when it has one. */
+/** A listing's price as words, "20 USD per hour", when it has one. */
 export function priceText(body: { [key: string]: unknown }): string {
   const price = body.price as { amount?: unknown; currency?: unknown } | undefined
   return price && typeof price === 'object' && 'amount' in price && 'currency' in price ? valueText(price) : ''
 }
 
-/** A post's first place, read by its shape, in words. */
+/** A listing's first place, read by its shape, in words. */
 function firstPlaceText(body: { [key: string]: unknown }): string {
   const place = Object.values(body).find(isPlace)
   return place ? placeText(place) : ''
 }
 
-/** Who posted a post, as one row linking to its profile: the shield, the profile's name, its chip and a chevron. */
+/** Who posted a listing, as one row linking to its profile: the shield, the profile's name, its chip and a chevron. */
 export function postedByHtml(r: { profile: string; market: string | null; role: string | null; checks: Check[] } & Shown, base: string): Raw {
   return html`<a class="row" href="${urls(base).profile(r.profile)}">${shieldHtml(r.checks)}<span class="grow">${namedHtml(r.market, r.role)}</span>${r.checks.length ? chipHtml(r) : html`<span class="new">Not verified here</span>`}${NEXT_ICON}</a>`
 }
 
 /**
- * A post as a row, linking to its page, as the app draws one: its first photo, 48px, the
+ * A listing as a row, linking to its page, as the app draws one: its first photo, 48px, the
  * description's first line in bold, then its price and place in one quiet line; then `note`, a
  * quiet line that wraps, and `aside`, on the right. The photo's text is empty: the row's says it.
  */
-export function postRowHtml(post: Post, { aside, note }: { aside?: Raw; note?: Raw } = {}): Raw {
-  const description = typeof post.body.description === 'string' ? post.body.description : ''
-  const facts = [priceText(post.body), firstPlaceText(post.body)].filter(Boolean).join(' · ')
-  return html`<a class="row post-row" href="${post.url}">${post.photos[0] ? html`<img class="thumb" src="${post.photos[0]}" alt="" loading="lazy">` : ''}<span class="two"><strong>${firstLine(description, 140) || 'A post'}</strong>${facts ? html`<span>${facts}</span>` : ''}${note ?? ''}</span>${aside ? html`<span class="aside">${aside}</span>` : ''}</a>`
+export function listingRowHtml(listing: Listing, { aside, note }: { aside?: Raw; note?: Raw } = {}): Raw {
+  const description = typeof listing.body.description === 'string' ? listing.body.description : ''
+  const facts = [priceText(listing.body), firstPlaceText(listing.body)].filter(Boolean).join(' · ')
+  return html`<a class="row listing-row" href="${listing.url}">${listing.photos[0] ? html`<img class="thumb" src="${listing.photos[0]}" alt="" loading="lazy">` : ''}<span class="two"><strong>${firstLine(description, 140) || 'A listing'}</strong>${facts ? html`<span>${facts}</span>` : ''}${note ?? ''}</span>${aside ? html`<span class="aside">${aside}</span>` : ''}</a>`
 }
 
 /** Rows, stacked; with none, the line `none`, if given. */
 export const rowsHtml = (rows: Raw[], none = '') => (rows.length ? html`<div class="rows">${rows}</div>` : none ? html`<p>${none}</p>` : html``)
 
-/** One result, as a market page and the search page draw it: a post's row, with its profile's shield and chip. */
+/** One result, as a market page and the search page draw it: a listing's row, with its profile's shield and chip. */
 export function resultHtml(r: Result): Raw {
-  return postRowHtml(r.post, { aside: shownAside(r) })
+  return listingRowHtml(r.listing, { aside: shownAside(r) })
 }
 
 /**
  * What a profile's words and numbers mean, for a reader who lands on one page and reads nothing
- * else: what README.md, How it scores, says, in plain words. In the fold of a post's page and a
- * profile's, and on the About page.
+ * else: what README.md, How it scores, says, in plain words. In the fold of a listing's page and
+ * a profile's, and on the About page.
  */
 export const KEY = html`<p>The shield: a verifier checked the real person behind the profile, which proves it without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
 <p>9.2 ★ · 14: the profile's rating and how many raters scored it, the average of their scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
@@ -295,16 +296,16 @@ export function aggregateOf(s: Shown): { [key: string]: unknown } | null {
   return { '@type': 'AggregateRating', ratingValue: s.ratings.value, bestRating: 10, worstRating: 1, ratingCount: s.ratings.count }
 }
 
-/** A post as a schema.org Offer, at its page, with its photos and its seller's rating. */
+/** A listing as a schema.org Offer, at its page, with its photos and its seller's rating. */
 export function offerOf(r: Result, base: string): { [key: string]: unknown } {
-  const body = r.post.body
+  const body = r.listing.body
   const price = body.price as { amount?: string; currency?: string } | undefined
   const rating = aggregateOf(r)
   return {
     '@type': 'Offer',
-    identifier: r.post.address,
-    url: r.post.url,
-    ...(r.post.photos.length > 0 && { image: r.post.photos }),
+    identifier: r.listing.address,
+    url: r.listing.url,
+    ...(r.listing.photos.length > 0 && { image: r.listing.photos }),
     ...(typeof body.description === 'string' && { description: body.description }),
     seller: personOf(r.profile, base),
     ...(price?.amount && price.currency && { price: price.amount, priceCurrency: price.currency }),

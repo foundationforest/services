@@ -12,7 +12,7 @@ its proofs.
 
 - Everything is a plain GET, so any AI that can read the web can read and browse these pages by
   links, with nothing to install and no login: no key, no sign-up, no cookies. The home page links
-  each market, a market each of its posts, and a post its profile.
+  each market, a market each of its listings, and a listing its profile.
 - Every page has a JSON twin at the same address with `.json` on its path; the home page's is
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
@@ -38,10 +38,10 @@ Every profile this index counts shows three things, each ranked inside its own m
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
 
-On the pages, a post in a list shows its profile's shield, an outline for a face check and filled
+On the pages, a listing in a list shows its profile's shield, an outline for a face check and filled
 for an ID check, and its rating with how many raters scored it as a chip, "9.2 ★ · 14", or New when
 no one has rated it. Its trust and its uniqueness are in a fold on its page and on each of its
-posts' pages, What these mean, with what each means; the About page says what they mean too. A
+listings' pages, What these mean, with what each means; the About page says what they mean too. A
 choice's value is in words there, `like-new` as "Like new", or by its label where its market gives
 one, `xl` as "XL"; the JSON keeps it as written.
 
@@ -50,9 +50,9 @@ one, `xl` as "XL"; the JSON keeps it as written.
     GET https://index.forest.foundation/index.json
 
 `{ "index", "markets": [{ "name", "description", "roles", "listed", "words" }], "lists" }`: this
-index's address, every market in the markets directory it reads, with its roles, how many posts each
-role has `listed`, such as `{ "tutor": 3, "student": 1 }`, and each role's word for its posts,
-`offers`, `requests` or `posts`, such as `{ "tutor": "offers", "student": "requests" }`, and the
+index's address, every market in the markets directory it reads, with its roles, how many listings
+each role has `listed`, such as `{ "tutor": 3, "student": 1 }`, and each role's word for its
+listings, `offers` or `requests`, such as `{ "tutor": "offers", "student": "requests" }`, and the
 lists it reads by: `hosts`; `keys`,
 each verifier key it counts with its `verifier`, its `label` (such as face check) and its
 `confidence` from 0 to 1, that a profile it checked is one real person; `indexes`, whose reputation
@@ -60,9 +60,9 @@ proofs it shows; and `maxAgeDays`.
 
     GET https://index.forest.foundation/markets/tutoring.json
 
-`{ "index", "market", "posts": { "<role>": [<result>] } }`: the market's file as the directory holds
-it (its roles, its post fields, the fields a post's preview shows first, and the fields its reviews
-add), and its listed posts by role, in search's order.
+`{ "index", "market", "listings": { "<role>": [<result>] } }`: the market's file as the directory
+holds it (its roles, its listing fields, the fields a listing's preview shows first, and the fields
+its reviews add), and the listings this index lists, by role, in search's order.
 
 ## Search
 
@@ -72,24 +72,25 @@ add), and its listed posts by role, in search's order.
 it was given, such as `{ "q": "maths", "market": "tutoring" }`, and `markets` every market's name.
 Every filter may be left out:
 
-- `q`: words in the post, each a word's start, all of them;
-- `market`, `role`: only that market, only posts by that role;
-- `near=lat,lon` and `km`, how far the searcher would go (10 unless given): a post whose place's
+- `q`: words in the listing, each a word's start, all of them;
+- `market`, `role`: only that market, only listings by that role;
+- `near=lat,lon` and `km`, how far the searcher would go (10 unless given): a listing whose place's
   circle touches that one, the distance between the two points at most `km` plus the place's
-  `radiusKm`; each result then carries `km`, that distance between the two points, and a post with
-  no place, as one online only, is left out. `q` also finds a place by its area, such as a town;
+  `radiusKm`; each result then carries `km`, that distance between the two points, and a listing
+  with no place, as one online only, is left out. `q` also finds a place by its area, such as a
+  town;
 - `minRating`: a profile rated at least this, from 1 to 10; one with no rating is left out;
 - `minReviews`: a profile scored by at least this many raters;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
 
-A result is `{ "profile", "market", "role", "post": { "address", "body", "url", "photos" },
-"ratings", "trust", "uniqueness", "checks" }`: the post, with what its profile shows and its checks.
-The post's body holds its market's fields; `url` is its page; `photos` links to each file its fields
-name, at the first host its profile entry names, `<host>/v1/files/<sha256>`. This index keeps no
-bytes. With `near`, results come nearest first; otherwise, and among results as near, they are
-sorted by each profile's rating with one rater's worth of its market's average added, so a profile
-with few scores sits near the average; then by the newest post. A profile no one has rated sorts at
-its market's average. That is the order only: each result's `ratings` is as it is.
+A result is `{ "profile", "market", "role", "listing": { "address", "body", "url", "photos" },
+"ratings", "trust", "uniqueness", "checks" }`: the listing, with what its profile shows and its
+checks. The listing's body holds its market's fields; `url` is its page; `photos` links to each file
+its fields name, at the first host its profile entry names, `<host>/v1/files/<sha256>`. This index
+keeps no bytes. With `near`, results come nearest first; otherwise, and among results as near, they
+are sorted by each profile's rating with one rater's worth of its market's average added, so a
+profile with few scores sits near the average; then by the newest listing. A profile no one has
+rated sorts at its market's average. That is the order only: each result's `ratings` is as it is.
 
 ## A profile
 
@@ -107,18 +108,18 @@ its market's average. That is the order only: each result's `ratings` is as it i
   canonical JSON of `{ index, profile, ratings: { value, count }, trust, uniqueness, time }`,
   the rating's value as text; `signature` is its EdDSA-Poseidon signature over the statement's UTF-8
   bytes, by the key whose address is `index`, which the standard's keys check (`checkBytes`).
-- `posts`: each post, `{ "address", "body", "time", "listed", "url", "photos" }`, with `why` when it
-  is not listed (it does not fit its market, its profile does not count, or it was deleted: a
-  deleted post keeps its last body here, and that body's time, so a review that names it still finds
-  it). `time` is its entry's own time, in ms since 1970, a plain number: its writer's word, not when
-  this index read it.
+- `listings`: each listing, `{ "address", "body", "time", "listed", "url", "photos" }`, with `why`
+  when it is not listed (it does not fit its market, its profile does not count, or it was deleted:
+  a deleted listing keeps its last body here, and that body's time, so a review that names it still
+  finds it). `time` is its entry's own time, in ms since 1970, a plain number: its writer's word,
+  not when this index read it.
 - `reviews`: `received` and `given`, each `{ "reviewer", "address", "body", "time", "counted",
-  "why", "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `post` it is
-  about, and the fields its market adds. `time` is as for a post. `counted` says whether it counts
-  here; `why`, only when it does not, says why (its writer does not count, it gives no score, it is
-  about another market or its own writer, or a later one by the same writer about the same profile
-  and post counts instead). `weight` is how much its score weighs in the rating, split equally
-  across that rater's reviews of the profile.
+  "why", "weight" }`. A review's body holds its `subject`, its `score`, any `text`, the `listing` it
+  is about, and the fields its market adds. `time` is as for a listing. `counted` says whether it
+  counts here; `why`, only when it does not, says why (its writer does not count, it gives no score,
+  it is about another market or its own writer, or a later one by the same writer about the same
+  profile and listing counts instead). `weight` is how much its score weighs in the rating, split
+  equally across that rater's reviews of the profile.
 - `vouches` and `reports`: `received` and `given`, each `{ "writer", "address", "body", "time",
   "counted", "why" }`. A vouch says "I know this profile is real and honest"; a report says "this
   profile is fake or a scam"; each body holds its `subject` and any `text`. `time`, `counted` and
@@ -130,19 +131,20 @@ its market's average. That is the order only: each result's `ratings` is as it i
   `result` is `counts` or why not; a reputation proof's shows the `trust` it carries.
 - `message`: `[{ "name", "url" }]`, a link to message the profile from each app this index lists.
 
-## A post
+## A listing
 
-    GET https://index.forest.foundation/profiles/<address>/post/<id>.json
+    GET https://index.forest.foundation/profiles/<address>/listing/<id>.json
 
-A post's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
-"post", "checks", "ratings", "trust", "uniqueness", "fields", "types", "labels", "message" }`.
-`post` is as its profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and `message`
-are its profile's; `fields` is its market's post fields in the order the page shows them, the
-market's preview first; `types` is each one's type, as its market names it, a `file` field naming
-photos; `labels` is, for each choice field it holds, the labels its market gives the values it
-holds, such as `{ "size": { "xl": "XL" } }`.
+A listing's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
+"listing", "checks", "ratings", "trust", "uniqueness", "fields", "types", "labels", "message" }`.
+`listing` is as its profile's page gives it; `checks`, `ratings`, `trust`, `uniqueness` and
+`message` are its profile's; `fields` is its market's listing fields in the order the page shows
+them, the market's preview first; `types` is each one's type, as its market names it, a `file` field
+naming photos; `labels` is, for each choice field it holds, the labels its market gives the values
+it holds, such as `{ "size": { "xl": "XL" } }`.
 The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
-gives, in the writer's words, and `message`. A post that is not listed has its page too, with `why`.
+gives, in the writer's words, and `message`. A listing that is not listed has its page too, with
+`why`.
 
 ## About
 
@@ -168,7 +170,7 @@ A proof shows here against this index's newest root, or one it signed within `ma
 ## To act
 
 This index only reads. To message a profile, a person follows a `message` link to their app, or uses
-the `contact` a post gives. To post, review, vouch, report or message, the person's app signs with
-the profile's main key, or whoever holds an access key the profile entry lists signs with that key,
-within what the profile entry says it `can` do, and writes to the profile's hosts. An AI acts for the
-person with an access key their app hands it.
+the `contact` a listing gives. To post, review, vouch, report or message, the person's app signs
+with the profile's main key, or whoever holds an access key the profile entry lists signs with that
+key, within what the profile entry says it `can` do, and writes to the profile's hosts. An AI acts
+for the person with an access key their app hands it.

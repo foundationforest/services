@@ -6,12 +6,19 @@ together (`e2e/`). Read `README.md` and the README of the directory you work in 
 ## Words
 
 Use these words: seed (the secret on your device), the seed's number, main key, access key, note,
-profile, profile entry, entry, post, address, label, scope, verifier, verified, stamp, stamp number,
-facts, verification, reputation proof, check, folder, file, host, service key, connection,
-connector, private, envelope, encrypted (an envelope), locked, message, inbox, pay address, pay key,
-escrow, schedule, window, stop, payer, recipient, sponsor, receipt, deal, credit, credits, wallet, ticket,
-review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
+profile, profile entry, entry, listing, review, vouch, report, feedback, address, label, scope,
+verifier, verified, stamp, stamp number, facts, verification, reputation proof, check, folder, file,
+host, service key, connection, connector, private, envelope, encrypted (an envelope), locked,
+message, inbox, pay address, pay key, escrow, schedule, window, stop, payer, recipient, sponsor,
+receipt, deal, credit, credits, wallet, ticket, evidence, index, app, market, role, ramp. Plain
+words, no em-dashes.
 
+- entry: anything in a folder, the standard's word.
+- listing, review, vouch, report: the markets' kinds. A listing is an offer or a request, at
+  `listing/<id>`; the profile's role says which, by its `listings` value. "listing" means only that:
+  a host's list of entries is a list.
+- feedback: what people say about a profile, its reviews, vouches and reports. A word, never a kind.
+- post: only the everyday verb, to post a listing, a review, a vouch or a report.
 - A verifier is anyone who signs stamps; a person it signed a stamp to is verified, never "verified
   once". A stamp is what
   a verifier signs to a person's seed: their stamp number and its facts. A verification is what a
@@ -62,6 +69,8 @@ review, evidence, index, app, market, role, ramp. Plain words, no em-dashes.
 - Work in plan mode. One task per session.
 - One branch per piece. When a change spans pieces, each piece's branch goes into one integration
   branch, which goes into `main` once every piece is in. Open a pull request; never push to `main`.
+- A pull request's title says what changed, in plain words, readable on its own: no session codes
+  or item numbers. Each pull request lands as one commit under its title.
 - The promises in each README change only when Carlos says so in a chat.
 - One README per level: the repo's, and one in each directory; each starts with what it is and how
   it works.
