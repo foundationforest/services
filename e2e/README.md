@@ -9,7 +9,7 @@ anyone can; the main way is `npm run e2e`, with no chain and no secret.
 
 - **Each device** is the reference app, [`mcp/test/app.ts`](../mcp/test/app.ts), unchanged: it holds
   the seed and the stamp, keeps the Profiles folder (the empty label's folder, locked to a key only
-  the seed gives, listing the person's profiles and stamps), makes each profile with a verification,
+  the seed gives, which lists the person's profiles and stamps), makes each profile with a verification,
   signs with its main key, writes straight to the host, funds each folder from its wallet, and makes
   the AI's connection. What it has no method for, `e2e.ts` does with the standard's pieces: asking
   the stamp with its gift, collecting the gift's credits, and making the reputation proof.
@@ -42,26 +42,28 @@ checks what it did, and the run passes only if every step does.
    access key listed; its note at `key/<id>`, locked to the main key alone, naming the key and this
    mcp and holding the connection folder's key; and the connection found from the seed, its entry
    locked to its own key and the mcp's.
-6. **mcp:** the tutor's AI reads `markets` and writes a post, `post/maths`, 2 USD an hour, signed by
-   its access key and paid at its price; the student's AI finds it with `search` and messages the
-   tutor, the student's balance down by the message's price and its copy's, at `sent/<id>` in the
-   student's folder, each by its bytes, and the tutor's as it was; the tutor's AI reads its inbox
-   (the message counted, with the student's market, role and face check as the index shows them)
-   and replies the same way; the student's AI reads the reply.
-7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the post.
-8. **The index** shows both profiles counted under the face key, the post listed, the review counted,
-   and what its own ranking, with `index/config/scoring.json`, makes of it: today the tutor rated 10.0 by one, trust 44; the student no
-   rating, trust 38; each uniqueness 75. Each statement is signed and checked. No message appears in
-   its JSON.
+6. **mcp:** the tutor's AI reads `markets` and writes a listing, `listing/maths`, 2 USD an hour,
+   signed by its access key and paid at its price; the student's AI finds it with `search` and
+   messages the tutor, the student's balance down by the message's price and its copy's, at
+   `sent/<id>` in the student's folder, each by its bytes, and the tutor's as it was; the tutor's AI
+   reads its inbox (the message counted, with the student's market, role and face check as the index
+   shows them) and replies the same way; the student's AI reads the reply.
+7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the
+   listing.
+8. **The index** shows both profiles counted under the face key, the listing listed, the review
+   counted, and what its own ranking, with `index/config/scoring.json`, makes of it: today the tutor
+   rated 10.0 by one, trust 44; the student no rating, trust 38; each uniqueness 75. Each statement
+   is signed and checked. No message appears in its JSON.
 9. **The trust, carried:** the tutor's device finds its leaf, checks the signed root, and proves its
    tutoring trust onto the coach profile (the standard's reputation circuit), naming none of its
    profiles; the app funds the coach profile from the wallet with 2 credits and adds it, and the
    index shows the proof on the coach's page.
 10. **Added:** from the seed alone, the tutor's app adds the coach to the connection; with no new
     login, `my_profiles` shows both, and the AI writes and reads back a locked note as the coach.
-11. **Ended:** the app deletes the connection entry and ends each key, listing it with `until`, with
-    its note and its access entry deleted; the mcp answers the AI 401; what the keys wrote still
-    counts on the host and the index, and a new write by them is refused (`unlisted`).
+11. **Ended:** the app deletes the connection entry and ends each key, which its profile entry lists
+    with `until`, with its note and its access entry deleted; the mcp answers the AI 401; what the
+    keys wrote still counts on the host and the index, and a new write by them is refused
+    (`unlisted`).
 12. **A new device:** from the tutor's seed alone, the Profiles folder gives both profiles, each with
     its folder, and its stamp.
 13. **Addresses:** no answer either AI got holds one of its own person's addresses (profiles, pay

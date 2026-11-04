@@ -3,7 +3,8 @@
 // which comes with the server's instructions; none is named here.
 //
 // Beside the answer, with the person's login, `mine`: each address of a profile this login acts in
-// that the answer holds anywhere, with its label, so the AI never offers the person their own post.
+// that the answer holds anywhere, with its label, so the AI never offers the person their own
+// listing.
 // The answer itself stays the index's, whole, the person's addresses in it where the index put
 // them. Without a login, or with a connection gone or out of reach, `unmarked` says why.
 
@@ -15,7 +16,7 @@ import type { Args, Ctx, Param } from '../params.ts'
 export const name = 'search'
 export const title = 'Search'
 export const description =
-  "The index's search: the filters given, passed to it as they are, and its answer, untouched, as its word. Or, given a profile's address instead, that profile's page at the index, its whole answer: what it posts, its reviews, its ratings, trust and checks. Which filters the search takes, what each means and what each answer holds are the index's: its guide comes with these instructions. Every filter may be left out. With the person's login, mine maps each address in the answer that is one of the person's own profiles to its label: what it names is the person's own, never to offer them; without it, unmarked says why. No login needed."
+  "The index's search: the filters given, passed to it as they are, and its answer, untouched, as its word. Or, given a profile's address instead, that profile's page at the index, its whole answer: its listings, its reviews, its ratings, trust and checks. Which filters the search takes, what each means and what each answer holds are the index's: its guide comes with these instructions. Every filter may be left out. With the person's login, mine maps each address in the answer that is one of the person's own profiles to its label: what it names is the person's own, never to offer them; without it, unmarked says why. No login needed."
 export const params: Param[] = [
   { name: 'filters', type: 'object', description: "The filters, by the names the index's guide gives them, each value as text. Left out, with no address: the index's search with none." },
   { name: 'address', type: 'string', description: "A profile's address, in place of filters: that profile's page at the index." },

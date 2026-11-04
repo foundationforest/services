@@ -1,18 +1,17 @@
-// `/`, twin `/index.json`: the markets, each with how many posts each of its roles has listed and
-// each role's word for its posts, this index's address, and its lists; drawn as a search box and
+// `/`, twin `/index.json`: the markets, each with how many listings each of its roles has listed and
+// each role's word for its listings, this index's address, and its lists; drawn as a search box and
 // a row per market. The lists are drawn on the About page.
+
+import type { Role } from '@foundationforest/markets'
 
 import { listsOf, type ListsShown } from './about.ts'
 import { inWords } from './common.ts'
 import { html, type Page, type Raw, SEARCH_ICON, urls } from './template.ts'
 
-/** A role's word for its posts, as the markets directory gives it. */
-export type PostsWord = 'offers' | 'requests' | 'posts'
-
 export type Home = {
   index: string
-  /** Each market in the directory, its role words, how many posts each role has listed here, and each role's word for its posts. */
-  markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: PostsWord } }>
+  /** Each market in the directory, its role words, how many listings each role has listed here, and each role's word for its listings. */
+  markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: Role['listings'] } }>
   lists: ListsShown
 }
 
@@ -21,14 +20,14 @@ export type Home = {
  * the page's one green button. Filled with what was searched, when it is search's own page.
  */
 export function searchForm(base: string, markets: string[], asked: { q?: string; market?: string } = {}): Raw {
-  return html`<form class="search" action="${urls(base).search({})}" method="get"><label class="box">${SEARCH_ICON}<input name="q"${asked.q ? html` value="${asked.q}"` : ''} placeholder="Search posts" aria-label="Search posts"></label><select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}"${m === asked.market ? ' selected' : ''}>${inWords(m)}</option>`)}</select><button class="primary">Search</button></form>`
+  return html`<form class="search" action="${urls(base).search({})}" method="get"><label class="box">${SEARCH_ICON}<input name="q"${asked.q ? html` value="${asked.q}"` : ''} placeholder="Search listings" aria-label="Search listings"></label><select name="market" aria-label="Market"><option value="">Any market</option>${markets.map((m) => html`<option value="${m}"${m === asked.market ? ' selected' : ''}>${inWords(m)}</option>`)}</select><button class="primary">Search</button></form>`
 }
 
-/** How many posts each role has listed, in its own word: "1 offer · 2 requests"; a role with none is left out, and "None yet" when no role has any. */
+/** How many listings each role has listed, in its own word: "1 offer · 2 requests"; a role with none is left out, and "None yet" when no role has any. */
 export function countsText(m: Home['markets'][number]): string {
   const parts = m.roles.filter((r) => (m.listed[r] ?? 0) > 0).map((r) => {
     const n = m.listed[r]!
-    const word = m.words[r] ?? 'posts'
+    const word = m.words[r]!
     return `${n} ${n === 1 ? word.slice(0, -1) : word}`
   })
   return parts.join(' · ') || 'None yet'
@@ -36,7 +35,7 @@ export function countsText(m: Home['markets'][number]): string {
 
 export const home: Page<Home> = {
   data({ store, lists, markets, self }) {
-    const counted = store.db.prepare('select f.market, f.role, count(*) as n from posts p join profiles f on f.address = p.profile where p.listed = 1 group by f.market, f.role').all() as Array<{
+    const counted = store.db.prepare('select f.market, f.role, count(*) as n from listings l join profiles f on f.address = l.profile where l.listed = 1 group by f.market, f.role').all() as Array<{
       market: string
       role: string
       n: number
@@ -49,7 +48,7 @@ export const home: Page<Home> = {
         description: m.description,
         roles: m.roles.map((r) => r.role),
         listed: Object.fromEntries(m.roles.map((r) => [r.role, listed(m.name, r.role)])),
-        words: Object.fromEntries(m.roles.map((r) => [r.role, r.posts])),
+        words: Object.fromEntries(m.roles.map((r) => [r.role, r.listings])),
       })),
       lists: listsOf(lists, self),
     }

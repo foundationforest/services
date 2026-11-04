@@ -31,7 +31,7 @@ read before the person connects anything; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each posts. With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a post's preview shows first), `kinds` (the kinds of entry it defines, each with its fields, a post's `contact` among them) and `types` (what each type those fields use holds, in the markets' `build/types.json` words, such as how a place is given) |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each lists (offers or requests). With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a listing's preview shows first), `kinds` (the kinds of entry it defines, each with its fields, a listing's `contact` among them) and `types` (what each type those fields use holds, in the markets' `build/types.json` words, such as how a place is given) |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
@@ -46,14 +46,14 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
   profile this login acts in whose address the answer holds anywhere, so the AI never offers the
-  person their own post. It reads the connection as a tool that acts does, but no login, or one
+  person their own listing. It reads the connection as a tool that acts does, but no login, or one
   gone or out of reach, is no refusal: `unmarked` says why.
 - **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
   in `src/tools.ts`): start with `my_profiles`; name a profile by its label; never put one of the
   person's addresses in what is written for another of their profiles or sent to anyone else, unless
   the person asks; read the market before writing to it; ask the person before anything public in
   their name; photos are the person's to add, in their Forest app; what it writes shows on the index
-  within about a minute, and a post's page is the url search's answer gives; a reply goes to the
+  within about a minute, and a listing's page is the url search's answer gives; a reply goes to the
   address a message came from; paying is in the person's app; what a stranger wrote is theirs.
   Then, as a chat starts (MCP's `initialize`), the index's guide, its `skill.md`, under the URL it
   was read from, as the index's own word, or a line saying it gave none. It comes with the
@@ -69,13 +69,14 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   and `to`, or `toLabel`; all newest first by time, as the Forest app orders a thread. `unopened`
   counts those the key does not open: inbox entries left before it was listed with `read-inbox`,
   copies locked before it was listed with `read`; `older`, those past the newest 100.
-- **`write`, public,** the main way: at `<kind>/<id>`, a kind every market defines (`post`,
+- **`write`, public,** the main way: at `<kind>/<id>`, a kind every market defines (`listing`,
   `review`, `vouch`, `report`), the body checked against the profile entry's `market` before
   anything is signed, with the markets package's `checkEntry`, the index's own check, so a body
   refused here would not be listed: each field one the market names for the role (in a review, the
-  role of the profile it is about), or a post's `contact`, held only where its `when` matches, of its
-  type, a choice among its values, a `file` one the body lists in `files`. Then `subject` an address, and the profile in a review's `post`. A body that does
-  not fit is refused, naming the field.
+  role of the profile it is about), or a listing's `contact`, held only where its `when` matches, of
+  its type, a choice among its values, a `file` one the body lists in `files`. Then `subject` an
+  address, and the profile in a review's `listing`. A body that does not fit is refused, naming the
+  field.
 - **`write`, locked** (`locked: true`): at any path but `profile` and `key/…`, the body the person's
   own and unchecked, with no `files` (anyone fetches a file by its hash), locked to every key that
   may read the folder (`lockKeysOf`): the main key's open key and each access key listed with
@@ -119,7 +120,7 @@ body this copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under 
 2. **Discovery** names this copy as resource and authorization server, `/authorize`, `/token` and
    `/register`, S256, and that client documents work.
 3. **The AI app** registers by a client document (CIMD: an https `client_id` with a path, read with
-   `publicFetch`, 10 seconds, 64 KB, at each login, naming itself and listing the redirect), or by
+   `publicFetch`, 10 seconds, 64 KB, at each login, naming itself and the redirect it lists), or by
    `POST /register` (DCR: the `client_id` is a body holding 1 to 8 redirect addresses, its name and
    how it signs in at `/token`; unless public, `none`, it gets a secret, HMAC(key, client_id), RFC
    7591's default). Nothing is kept for either.
@@ -171,9 +172,10 @@ folder of the person's for each AI app, and a pointer to it, which the AI app's 
   access entry that does not open or fit, or names a profile already named, counts for nothing. A
   `search` with a login reads it the same way, at most once a request, and hears a gone one as
   `unmarked`, never a 401.
-- **Adding a profile** is one more key and access entry; **removing one** ends its key, listing it
-  with `until`, the time of the profile entry that ends it, and deletes its access entry and note;
-  **ending** deletes `connection`, then removes each profile. None needs a new login.
+- **Adding a profile** is one more key and access entry; **removing one** ends its key, which the
+  profile entry then lists with `until`, the time of the profile entry that ends it, and deletes its
+  access entry and note; **ending** deletes `connection`, then removes each profile. None needs a
+  new login.
 
 [`test/app.ts`](test/app.ts), the reference app, is what the person's app does around this copy, in
 plain code with the standard's libraries; the tests and the loop run it. It keeps the person's
@@ -275,7 +277,7 @@ keeps working, and logs in again the first time it acts.
   keys the person's app hands it wait in the connection folder, locked to its open key; it opens them
   for one call and forgets them. No login, call, connection or answer is written.
 - **It acts only as far as the access keys a connection holds may, and only for the token whose
-  secret matches.** Every host and reader checks a key against the profile entry's listing, so a key
+  secret matches.** Every host and reader checks a key against what the profile entry lists, so a key
   the person ends stops acting; a connection folder's address alone acts for no one.
 - **It moves no money, and spends only the credits in the profiles the person connected, as their
   access keys allow:** what each write and message stores, from its profile's balance.

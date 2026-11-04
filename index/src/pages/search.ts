@@ -1,14 +1,14 @@
-// `/search`: listed posts, each with what its profile shows (its ratings, trust, uniqueness and
-// checks), sorted by its ratings with one unit of its market's average added
-// (README.md, How it scores), then the newest post; with near, nearest first.
+// `/search`: the listings this index lists, each with what its profile shows (its ratings, trust,
+// uniqueness and checks), sorted by its ratings with one unit of its market's average added
+// (README.md, How it scores), then the newest listing; with near, nearest first.
 //
-//   q            words in the post, each a word's start, all of them (FTS5)
-//   market, role only that market, only posts by that role
-//   near, km     near=lat,lon and km, how far the searcher would go (10 unless given): a post with a
-//                place whose circle reaches that far, the distance between the two points at most km
+//   q            words in the listing, each a word's start, all of them (FTS5)
+//   market, role only that market, only listings by that role
+//   near, km     near=lat,lon and km, how far the searcher would go (10 unless given): a listing with
+//                a place whose circle reaches that far, the distance between the two points at most km
 //                plus its radiusKm; each result then carries km, its distance between the two
-//                points, and results come nearest first, ties in the order above; a post with no
-//                place is left out
+//                points, and results come nearest first, ties in the order above; a listing with
+//                no place is left out
 //   minRating    a profile rated at least this; one with no rating is left out
 //   minReviews   a profile scored by at least this many raters
 //   limit        20 unless given, at most 100; offset skips that many
@@ -58,7 +58,7 @@ export function km(a: { lat: number; lon: number }, b: { lat: number; lon: numbe
   return 2 * 6371.0088 * Math.asin(Math.sqrt(h))
 }
 
-/** Every place a post names, in a field of the place type, its point and its radius: read by its shape, as the markets' types say. */
+/** Every place a listing names, in a field of the place type, its point and its radius: read by its shape, as the markets' types say. */
 function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: number; radiusKm: number }> {
   const out: Array<{ lat: number; lon: number; radiusKm: number }> = []
   for (const v of Object.values(body)) {
@@ -76,7 +76,7 @@ export const search: Page<SearchPage> = {
     const where: string[] = []
     const params: Array<string | number> = []
     const words = match(q.get('q') ?? '')
-    if (words) where.push('and p.address in (select address from posts_text where posts_text match ?)'), params.push(words)
+    if (words) where.push('and l.address in (select address from listings_text where listings_text match ?)'), params.push(words)
     if (q.get('market')) where.push('and f.market = ?'), params.push(q.get('market')!)
     if (q.get('role')) where.push('and f.role = ?'), params.push(q.get('role')!)
     const minRating = number(q, 'minRating')
@@ -88,11 +88,11 @@ export const search: Page<SearchPage> = {
     if (near) {
       const at = { lat: Number(near[1]), lon: Number(near[2]) }
       const within = number(q, 'km') ?? KM
-      // Two places match when their circles touch: the searcher's, of radius km, and the post's.
+      // Two places match when their circles touch: the searcher's, of radius km, and the listing's.
       // A result's km is to one decimal, a hundred metres, finer than a rough point means.
       found = found
         .flatMap((r) => {
-          const reached = pointsOf(r.post.body).map((p) => ({ d: km(at, p), r: p.radiusKm })).filter((p) => p.d <= within + p.r)
+          const reached = pointsOf(r.listing.body).map((p) => ({ d: km(at, p), r: p.radiusKm })).filter((p) => p.d <= within + p.r)
           return reached.length ? [{ ...r, d: Math.min(...reached.map((p) => p.d)) }] : []
         })
         .sort((a, b) => a.d - b.d)

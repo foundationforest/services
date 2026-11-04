@@ -39,9 +39,9 @@ test('a review between two checked profiles, read from a host, counted, and serv
   const student = await profile('tutoring/student', [by])
   await publishProfile(host.url, tutor)
   await publishProfile(host.url, student)
-  const offer = `${tutor.key.address}/post/maths`
-  await post(host.url, [at(tutor, 'post/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], mode: ['online'], price: { amount: '25', currency: 'USD', per: 'hour' } })])
-  await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', post: offer })])
+  const offer = `${tutor.key.address}/listing/maths`
+  await post(host.url, [at(tutor, 'listing/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], mode: ['online'], price: { amount: '25', currency: 'USD', per: 'hour' } })])
+  await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', listing: offer })])
 
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
   // On its own schedule, a pass every second, as main.ts runs one every READ_SECONDS.
@@ -50,7 +50,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
     const res = await fetch(`${i.url}${path}`)
     return { status: res.status, body: (await res.json()) as T }
   }
-  type Profile = { checks: unknown[]; ratings: { value: number | null; count: number }; trust: number; uniqueness: number; posts: Array<{ listed: boolean }> }
+  type Profile = { checks: unknown[]; ratings: { value: number | null; count: number }; trust: number; uniqueness: number; listings: Array<{ listed: boolean }> }
   let p: Profile | undefined
   for (const until = Date.now() + 60_000; Date.now() < until; await new Promise((r) => setTimeout(r, 200))) {
     const got = await get<Profile>(`/profiles/${tutor.key.address}.json`)
@@ -66,18 +66,18 @@ test('a review between two checked profiles, read from a host, counted, and serv
   // uniqueness, 37.5, to 0.75 (1 - 0.5 x 0.5^0.28125), 44.
   const shown = { ratings: p.ratings, trust: p.trust, uniqueness: p.uniqueness }
   assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 44, uniqueness: 75 })
-  assert.equal(p.posts[0]!.listed, true)
-  const found = (await get<{ total: number; results: Array<{ post: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=tutoring&role=tutor')).body
+  assert.equal(p.listings[0]!.listed, true)
+  const found = (await get<{ total: number; results: Array<{ listing: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=tutoring&role=tutor')).body
   assert.equal(found.total, 1)
-  assert.equal(found.results[0]!.post.address, offer)
+  assert.equal(found.results[0]!.listing.address, offer)
   assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 44])
   const html = await (await fetch(`${i.url}/profiles/${tutor.key.address}`)).text()
   assert.ok(html.includes('<p class="line">Verified by face · <span class="chip">8.5 ★ · 1</span></p>'))
   assert.ok(html.includes('<p>This profile: rated 8.5 by 1, trust 44, uniqueness 75.</p>'))
-  // The post's own page, over HTTP, at its address under /profiles.
-  const postPage = await fetch(`${i.url}/profiles/${tutor.key.address}/post/maths`)
-  assert.equal(postPage.status, 200)
-  assert.ok((await postPage.text()).includes('<h1>Maths for secondary school, online.</h1><p class="price">25 USD per hour</p>'))
+  // The listing's own page, over HTTP, at its address under /profiles.
+  const listingPage = await fetch(`${i.url}/profiles/${tutor.key.address}/listing/maths`)
+  assert.equal(listingPage.status, 200)
+  assert.ok((await listingPage.text()).includes('<h1>Maths for secondary school, online.</h1><p class="price">25 USD per hour</p>'))
   // A leaf for each counted profile: the tutor's and the student's.
   const tree = (await get<{ root: string; leaves: number }>('/v1/reputation')).body
   assert.equal(tree.leaves, 2)

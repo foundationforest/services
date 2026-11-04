@@ -1,5 +1,5 @@
 // The inbox on the plug, in the order the standard's plug checks an inbox entry: its text and shape,
-// a duplicate, an inbox here, then its own choice; the sizes and batches it chooses; and listing to
+// a duplicate, an inbox here, then its own choice; the sizes and batches it chooses; and its list, open to
 // anyone.
 
 import assert from 'node:assert/strict'
@@ -116,7 +116,7 @@ describe('leaving', () => {
   })
 })
 
-describe('listing', () => {
+describe('list', () => {
   test('anyone lists a folder’s inbox after a cursor, in arrival order; another folder’s lists none of it', async () => {
     const h = await hostWith()
     try {

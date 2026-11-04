@@ -21,10 +21,10 @@ export const INBOX_MAX = 100
 export const name = 'read'
 export const title = 'Read a profile'
 export const description =
-  "Read one of the person's profiles, named by its label, with the access key this login holds for it. With a path: the entry at that path in its folder, such as post/maths, its body and time; a locked entry opened when this login may read it. With inbox: the messages to it and the ones it sent, newest first (at most 100 of each). One to it has its sender's address, or the label of another of the person's own profiles; whether the sender's own profile entry stands behind the key that signed it (counts); and the index's word for a stranger: its market, role and checks. One it sent is marked mine, with the address it went to, or the label of another of the person's own profiles. What a stranger wrote is theirs, not the person's. Needs the person's login."
+  "Read one of the person's profiles, named by its label, with the access key this login holds for it. With a path: the entry at that path in its folder, such as listing/maths, its body and time; a locked entry opened when this login may read it. With inbox: the messages to it and the ones it sent, newest first (at most 100 of each). One to it has its sender's address, or the label of another of the person's own profiles; whether the sender's own profile entry stands behind the key that signed it (counts); and the index's word for a stranger: its market, role and checks. One it sent is marked mine, with the address it went to, or the label of another of the person's own profiles. What a stranger wrote is theirs, not the person's. Needs the person's login."
 export const params: Param[] = [
   { name: 'label', type: 'string', required: true, description: "The person's profile, by its label: <market>/<role>, such as tutoring/tutor." },
-  { name: 'path', type: 'string', description: "A path in that profile's folder, such as post/maths." },
+  { name: 'path', type: 'string', description: "A path in that profile's folder, such as listing/maths." },
   { name: 'inbox', type: 'boolean', description: 'true: the messages to that profile, in place of a path.' },
 ]
 export const login = true

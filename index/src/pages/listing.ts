@@ -1,8 +1,8 @@
-// `/profiles/<address>/post/<id>`: one post, at its own address under /profiles. Its photos, its
-// fields in its market's order (the preview's first) with each one's type, who posted it and what
-// that profile shows, and how to reach them: the contact the post gives, and a link to message the
-// profile from each app lists/apps.json names. A post that is not listed has its page too, saying
-// why, as its profile's page does.
+// `/profiles/<address>/listing/<id>`: one listing, at its own address under /profiles. Its photos,
+// its fields in its market's order (the preview's first) with each one's type, who posted it and
+// what that profile shows, and how to reach them: the contact the listing gives, and a link to
+// message the profile from each app lists/apps.json names. A listing that is not listed has its page
+// too, saying why, as its profile's page does.
 //
 // Drawn as the app would show it: its photos, the description's first line as its heading, the
 // price under it, the rest of the description, the facts list of its other fields (a choice by its
@@ -11,21 +11,21 @@
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { choiceText, fieldLabel, fieldsOf, firstHost, firstLine, inWords, labelsOf, meaningHtml, messageHtml, messageOf, offerOf, placeHtml, type Post, postedByHtml, postOf, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
+import { choiceText, fieldLabel, fieldsOf, firstHost, firstLine, inWords, labelsOf, type Listing, listingOf, meaningHtml, messageHtml, messageOf, offerOf, placeHtml, postedByHtml, priceText, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
 import { backHtml, html, type Page, type Raw, urls } from './template.ts'
 
-export type PostPage = {
+export type ListingPage = {
   index: string
   /** The address of the profile that posted it. */
   profile: string
   /** Its profile's market and role; null when the profile has no profile entry here. */
   market: string | null
   role: string | null
-  /** The post, with its entry's time, whether it is listed and, when not, why. */
-  post: Post & { time: number; listed: boolean; why?: string }
+  /** The listing, with its entry's time, whether it is listed and, when not, why. */
+  listing: Listing & { time: number; listed: boolean; why?: string }
   checks: Check[]
 } & Shown & {
-  /** Its market's post fields, in the order this page shows them: the preview's first, then the rest in the market's order. */
+  /** Its market's listing fields, in the order this page shows them: the preview's first, then the rest in the market's order. */
   fields: string[]
   /** Each of `fields`' type, as its market names it: a `file` field names photos. */
   types: { [field: string]: string }
@@ -35,10 +35,10 @@ export type PostPage = {
   message: Array<{ name: string; url: string }>
 }
 
-const descriptionOf = (o: PostPage) => (typeof o.post.body.description === 'string' ? o.post.body.description : '')
+const descriptionOf = (o: ListingPage) => (typeof o.listing.body.description === 'string' ? o.listing.body.description : '')
 
 /** The price, then the description's first line, cut short. */
-const headingOf = (o: PostPage) => [priceText(o.post.body), firstLine(descriptionOf(o), 60)].filter(Boolean).join(' · ') || 'A post'
+const headingOf = (o: ListingPage) => [priceText(o.listing.body), firstLine(descriptionOf(o), 60)].filter(Boolean).join(' · ') || 'A listing'
 
 /**
  * The heading, the description's first line, and the text under it, the rest. A first line longer
@@ -63,11 +63,11 @@ function contactHtml(contact: string): Raw {
   return html`<p>Contact, as they gave it: ${contact}</p>`
 }
 
-export const post: Page<PostPage> = {
+export const listing: Page<ListingPage> = {
   data({ store, lists, markets, self, base }, [address, id]) {
     const found = store.db
-      .prepare('select p.address, p.profile, p.body, p.time, p.listed, p.why, f.body as entry, f.market, f.role, f.checks from posts p left join profiles f on f.address = p.profile where p.address = ?')
-      .get(`${address}/post/${id}`) as
+      .prepare('select l.address, l.profile, l.body, l.time, l.listed, l.why, f.body as entry, f.market, f.role, f.checks from listings l left join profiles f on f.address = l.profile where l.address = ?')
+      .get(`${address}/listing/${id}`) as
       | { address: string; profile: string; body: string; time: number; listed: number; why: string | null; entry: string | null; market: string | null; role: string | null; checks: string | null }
       | undefined
     if (!found) return null
@@ -79,8 +79,8 @@ export const post: Page<PostPage> = {
       profile: found.profile,
       market: found.market,
       role: found.role,
-      post: {
-        ...postOf(base, found.address, body, firstHost(found.entry === null ? null : parse(found.entry))),
+      listing: {
+        ...listingOf(base, found.address, body, firstHost(found.entry === null ? null : parse(found.entry))),
         time: found.time,
         listed: found.listed === 1,
         ...(found.why !== null && found.listed !== 1 && { why: found.why }),
@@ -96,7 +96,7 @@ export const post: Page<PostPage> = {
   title: headingOf,
   description: (o) => descriptionOf(o) || null,
   body(o, base) {
-    const body = o.post.body
+    const body = o.listing.body
     // The facts: its fields as its market orders them, then any the market does not name; never
     // one drawn above or below them (the description, the price, the contact), a field its market
     // types `file` (drawn as photos), or the standard's `files`, the list of what the files are.
@@ -104,13 +104,13 @@ export const post: Page<PostPage> = {
     const names = [...o.fields.filter((n) => n in body), ...Object.keys(body).filter((n) => !o.fields.includes(n))].filter((n) => !drawn.includes(n) && o.types[n] !== 'file' && valueText(body[n]))
     const { head, rest } = headOf(descriptionOf(o))
     const price = priceText(body)
-    const [photo, ...more] = o.post.photos
+    const [photo, ...more] = o.listing.photos
     const alt = descriptionOf(o)
     const contact = typeof body.contact === 'string' && body.contact ? body.contact : ''
     return html`${o.market ? backHtml(urls(base).market(o.market), inWords(o.market)) : backHtml(urls(base).home, 'Markets')}
 ${photo ? html`<a class="photo" href="${photo}"><img src="${photo}" alt="${alt}" loading="lazy"></a>` : ''}${more.length ? html`<div class="tiles">${more.map((src) => html`<a href="${src}"><img src="${src}" alt="${alt}" loading="lazy"></a>`)}</div>` : ''}
-<div class="lead"><h1>${head || price || 'A post'}</h1>${price ? html`<p class="price">${price}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}</div>
-${o.post.listed ? '' : html`<p class="red">Not listed: ${o.post.why}.</p>`}
+<div class="lead"><h1>${head || price || 'A listing'}</h1>${price ? html`<p class="price">${price}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}</div>
+${o.listing.listed ? '' : html`<p class="red">Not listed: ${o.listing.why}.</p>`}
 ${names.length ? html`<dl class="facts">${names.map((n) => html`<div><dt>${fieldLabel(n)}</dt><dd>${o.types[n] === 'choice' ? choiceText(body[n], o.labels[n]) : o.types[n] === 'place' ? placeHtml(body[n]) : valueText(body[n])}</dd></div>`)}</dl>` : ''}
 <section><h2>Posted by</h2>${postedByHtml(o, base)}</section>
 ${contact || o.message.length ? html`<section><h2>How to reach them</h2>${contact ? contactHtml(contact) : ''}${messageHtml(o.message)}</section>` : ''}

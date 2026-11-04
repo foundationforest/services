@@ -1,6 +1,6 @@
 # host
 
-The host keeps your profiles' folders (posts, reviews, photos, inbox) and serves them to anyone. A
+The host keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. A
 folder is a profile's entries on a host, each signed by its main key or an access key its profile
 entry lists. A small write costs a fraction of a cent, paid from the folder's balance of credits,
 prepaid units of this host's writes, and a message is paid the same way, from its sender's folder;

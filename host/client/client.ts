@@ -6,7 +6,7 @@
 //
 // The service, from its directory; the buy, and the reference its payment names it by; what a
 // payer signs, a sponsor's ticket or a folder's key paying from its balance, for a buy or for an
-// inbox entry; finishing the credits from the service's answer; listing them for a spend. It
+// inbox entry; finishing the credits from the service's answer; a list of them for a spend. It
 // reaches a host only through the fetch it is given. The blinding and the signatures are
 // Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in memory only, so
 // the buy here keeps it as bytes, to finish later, from what the app keeps. The host checks and

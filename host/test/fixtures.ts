@@ -35,7 +35,7 @@ export const profileBody = (subject: string, more: Body = {}): Body => ({
   ...more,
 })
 
-/** Alice's profile entry, listing `helper` with what it can do; with her open key, so her folder takes inbox entries. */
+/** Alice's profile entry, which lists `helper` with what it can do; with her open key, so her folder takes inbox entries. */
 export const aliceWith = (can: string[], subject = 'calculus'): Body =>
   profileBody(subject, { openKey: aliceOpening.openKey, keys: [{ key: helper.address, open: helper.openKey, can }] })
 
