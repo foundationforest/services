@@ -254,7 +254,8 @@ on a failure. Give it a `SEED` whose two folders hold credits, or the rest is un
 costs `check/a` about 0.04 credits and `check/b` about 0.06.
 
 `test/` covers, on loopback: the host check against the plug and the whole host, paying; the plug
-and its storage, the S3 driver and its links among it; and every price, payment and refusal above.
+and its storage, the S3 driver and its links among it; every price, payment and refusal above; and
+the credits client alone, against Cloudflare's own Privacy Pass issuer.
 
 ## Promises
 

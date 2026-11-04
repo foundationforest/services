@@ -3,8 +3,7 @@
 // Run: npm run bench.
 
 import { cpus } from 'node:os'
-import { verifySignature as zkVerify } from '@zk-kit/eddsa-poseidon'
-import { bytesMessage, serviceKey, unpackSignature } from '@foundationforest/keys'
+import { serviceKey } from '@foundationforest/keys'
 import { b64u, canonical, checkEntry, checkSignature, decodeEntry, encodeEntry, entry, signingInput, unsignedOf, viewFolder } from '@foundationforest/folders'
 import { Host } from '../src/plug.ts'
 
@@ -32,9 +31,6 @@ console.log(`machine: ${cpus()[0]?.model ?? 'unknown'}, node ${process.version};
 rate('canonical text of an entry', 20_000, () => canonical(one))
 rate('sign an entry (EdDSA-Poseidon on Baby Jubjub)', 1_000, (i) => entry(key, 'post/maths', offer, 1_790_000_000_000 + i))
 rate('check, Forest strict (key in the subgroup, R8 on curve)', 1_000, () => checkSignature(sig, message, key.address))
-const signature = unpackSignature(sig)!
-const hm = bytesMessage(message)
-rate('check, zk-kit (@zk-kit/eddsa-poseidon), for comparison', 10, () => zkVerify(hm, signature, key.publicKey))
 rate('read one entry off the wire (parse, canonical, strict check)', 1_000, () => decodeEntry(wire))
 
 // A host taking entries: 500 profiles, a profile entry and 4 offers each, in batches of 100.

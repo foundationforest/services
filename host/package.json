@@ -23,7 +23,6 @@
   "devDependencies": {
     "@foundationforest/keys": "file:../standard/keys",
     "@types/node": "22.20.2",
-    "@zk-kit/eddsa-poseidon": "1.0.4",
     "typescript": "5.9.3"
   }
 }

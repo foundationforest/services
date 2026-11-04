@@ -11,7 +11,8 @@
 #                verifications and a real reputation proof from the circuits' committed proving files,
 #                and the index end to end
 #   host         its type-check and its tests: the standard's host check against the plug and against
-#                the whole host, the plug's own tests and its storage's, and its credits'
+#                the whole host, the plug's own tests and its storage's, its credits', and its credits
+#                client's alone against Cloudflare's own Privacy Pass issuer
 #   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
 #                starts, and mcp's reference app and test client it acts through; and its tests:
 #                the credits client against the host's own code selling for tickets, and alone
