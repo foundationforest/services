@@ -2,11 +2,12 @@
 // profile entry names. Public: at `<kind>/<id>`, a kind every market defines, the body checked
 // against its market with the markets package's checkEntry before anything is signed, and its
 // subject, and the profile its listing names, checked to be addresses, which the markets manual leaves
-// to the standard. Locked: at any path but `profile` and `key/…`
-// (the person's notes about access keys), the body the person's own and unchecked, locked to every
-// key that may read the folder (lockKeysOf). Never `profile`: no access key writes it. Whether the
-// key may write is the hosts' to say: each one's refusal is passed on, so a key the person ended
-// hears `unlisted`.
+// to the standard; a subject among the connection's own profiles is refused, as the Forest app refuses
+// it, since nothing public links two profiles of one person for the index to catch. Locked: at any
+// path but `profile` and `key/…` (the person's notes about access keys), the body the person's own
+// and unchecked, locked to every key that may read the folder (lockKeysOf). Never `profile`: no
+// access key writes it. Whether the key may write is the hosts' to say: each one's refusal is passed
+// on, so a key the person ended hears `unlisted`.
 
 import { type Body, FolderError, type SignedEntry, entry, filesOf, lockKeysOf, nextTime, publicKeyFromAddress, write } from '@foundationforest/folders'
 import { lock } from '@foundationforest/folders/locked'
@@ -53,6 +54,7 @@ async function checkPublic(ctx: Ctx, market: Market, role: string, path: string,
   const why =
     markets.checkEntry(market.name, role, kind!, body, kind === 'review' ? await aboutRole(ctx, market, body) : undefined) ??
     (kind === 'listing' || publicKeyFromAddress(body.subject) ? null : `subject is the address of the profile the ${kind} is about`) ??
+    (kind === 'listing' || !(await ctx.connection()).profiles.some((p) => p.address === body.subject) ? null : `subject is one of the person's own profiles: a ${kind} is about someone else`) ??
     (kind !== 'review' || body.listing === undefined || publicKeyFromAddress((body.listing as string).split('/')[0]) ? null : "listing is a listing's address: <profile address>/listing/<id>")
   if (why) refuse(why)
 }

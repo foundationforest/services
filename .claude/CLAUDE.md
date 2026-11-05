@@ -28,8 +28,9 @@ em-dashes.
 - The verifier has two keys: its face key, which signs the face check's stamps, and its ID key,
   which signs the ID check's.
 - An access key is a key a profile hands out, to an AI app, a service or another person: its profile
-  entry lists each one with what it can do (`read`, `read-inbox`, `write`, `message`), and every
-  host and reader checks that. The seed and the main keys stay on the person's devices. A note is
+  entry lists each one with what it can do (`read`, `read-inbox`, `write`, `message`). Hosts and
+  readers check `write` and `message`; `read` and `read-inbox` work by envelopes, locked to the keys
+  listed with them. The seed and the main keys stay on the person's devices. A note is
   an access key's private note, as the standard names it: the entry at `key/<id>`, locked to the
   main key alone, saying who holds the key, since when, and whatever the app keeps; never anything
   else.
@@ -55,7 +56,8 @@ em-dashes.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
 - A folder is a profile's entries on a host, signed by its main key or an access key its profile
-  entry lists; this repo's folders are directories.
+  entry lists. A folder of code is a directory.
+- The seed is only a person's: the secret on their device. A service's own is its secret.
 - The foundation runs every service here, never Soil; the app is the Forest app. In prose it is the
   Forest Foundation; its registered name, the Open Forest Foundation, is only in legal text: the
   verifier's consent screen and its data-law line.

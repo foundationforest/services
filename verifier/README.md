@@ -71,8 +71,9 @@ payment gives one ID stamp, and up to three sessions to get it.
 
 No webhook: the verifier asks Stripe when the app comes back, so nothing waits on Stripe's redirect.
 The payment sent with a stamp need not be the one that opened its session: each payment opens at
-most three sessions and gives at most one stamp, which is all the rule needs, so nothing ever ties a
-payment to a session or a stamp number. Without `STRIPE_SECRET_KEY`, all three routes answer
+most three sessions and gives at most one stamp, which is all the rule needs, so the verifier keeps
+nothing that ties a payment to a session or a stamp number (Stripe's and Railway's own records
+could, as [Limits](#limits) says). Without `STRIPE_SECRET_KEY`, all three routes answer
 `503 not_for_sale`.
 
 ### The stamp
@@ -125,12 +126,12 @@ way of writing it); with gifts, also
 - **The name** never changes: everyone's stamp number here is derived from it
   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-recipe)).
 - **Two keys, one per check,** so a reader can trust or weigh them apart.
-- **One seed,** 32 random bytes made on its own machine at the first start that finds none (the
+- **One secret,** 32 random bytes made on its own machine at the first start that finds none (the
   standard's `newSeed`), kept in `verifier-seed.json` beside its database, readable by its own user
   only, so the two are kept or lost together. No person, phrase or variable holds it; nothing prints
   or logs it.
-- **Derived from the seed** with the standard's `hkdf` (a standard way to make many keys from one
-  secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key;
+- **Derived from its own secret** with the standard's `hkdf` (a standard way to make many keys from
+  one secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key;
   `sponsor`, the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change,
   since a new text would derive a new key. None of the keys holds money.
 
@@ -261,14 +262,19 @@ body with any other field is refused. CORS is open to any origin. Every code bel
 | `STRIPE_ID_PRICE` | required with the key | The Stripe Price the ID check sells, `price_…` | "Forest ID check", $5, `price_1UXRbDILoxkbMfX4cfwRfCOI` |
 | `HOST_URL` | none: no gift | The host whose credits the gifts pay for, `https://<host>` | https://host.forest.foundation |
 | `FACE_CREDITS`, `ID_CREDITS` | `10`, `100` | How many with a face stamp, and an ID stamp; 0 for none | the defaults, a cent of writes each |
-| `DATABASE_PATH` | `./data/verifier.sqlite` | The one file; the seed file is made beside it | on its volume, in a directory of its own |
+| `DATABASE_PATH` | `./data/verifier.sqlite` | The one file; its secret's file, `verifier-seed.json`, is made beside it | on its volume, in a directory of its own |
 | `PORT` | `8080` | | |
+
+**Another app** uses both checks as the Forest app does. The ID check needs a page on an origin in
+`APP_ORIGINS` to send the person back to, and so does a face check that sends them back: to add one,
+ask at support@forest.foundation, or open a pull request adding it to `APP_ORIGINS`'s Ours, above;
+the foundation sets it in Railway.
 
 It refuses to start without a required variable, so never without Didit: every stamp it signs counts
 with every reader that trusts its keys, and a stand-in that passed everyone would sign for anyone. It
-also refuses a seed file that is not a seed (quoting none of it), `FACE_MODEL=stand-in` with a Didit
-off this machine, a host or app that is not an origin, and a Stripe key or Price that is not one
-(quoting no key), or a key without a Price.
+also refuses a `verifier-seed.json` that does not hold a secret (quoting none of it),
+`FACE_MODEL=stand-in` with a Didit off this machine, a host or app that is not an origin, and a
+Stripe key or Price that is not one (quoting no key), or a key without a Price.
 
 ### Didit
 
@@ -321,28 +327,29 @@ setting; nothing here does them. The consent screen above is this code's, and an
   mark.
 - **A test-mode key** takes only Stripe's test cards, which anyone can look up, so it charges
   nobody, and a payment made under it is unknown to a live key: `not_paid` there.
+- **Paid and still waiting?** Write to support@forest.foundation.
 - **A live key** is a restricted one with only Checkout Sessions: Write, all the verifier uses, for
   a business at Stripe that is the foundation's, with a live Price in `STRIPE_ID_PRICE`.
 
 ### Public, secret, kept
 
 - **Public:** this code, these settings, its name and its two keys.
-- **Secret:** its seed, `DIDIT_API_KEY` and `STRIPE_SECRET_KEY`.
+- **Secret:** the secret its keys are derived from, `DIDIT_API_KEY` and `STRIPE_SECRET_KEY`.
 - **Kept, not published:** [What it keeps](#what-it-keeps), the stamp numbers given a gift among it.
-- **Logged:** its port, that it made a seed, an error's kind, what Didit did with a face it kept no
-  template of, and why Stripe or Didit failed: at each 502, and at a sweep beside how many deletions
-  Didit did not answer, the error's kind and, when one answered, its HTTP status and codes (Stripe's
-  error `type`, `code` and `param`; Didit's `code`), each only if it is lower case, digits, `_`, `.`
-  and brackets, at most 64 characters, and not shaped like a Stripe key or a Checkout Session's id.
-  Never what either said in words, a key, a session or a payment.
+- **Logged:** its port, that it made its secret, an error's kind, what Didit did with a face it kept
+  no template of, and why Stripe or Didit failed: at each 502, and at a sweep beside how many
+  deletions Didit did not answer, the error's kind and, when one answered, its HTTP status and codes
+  (Stripe's error `type`, `code` and `param`; Didit's `code`), each only if it is lower case,
+  digits, `_`, `.` and brackets, at most 64 characters, and not shaped like a Stripe key or a
+  Checkout Session's id. Never what either said in words, a key, a session or a payment.
 
 ### The image and the commands
 
 One replica, never more, since the sessions and fingerprints are one SQLite file; a volume for
-`DATABASE_PATH` and the seed, or a deploy loses who was signed for which stamp number, and the seed.
-Ours runs on Railway; any platform with Node 22.18 and a persistent disk will do. `deploy/Dockerfile`,
-built from the repo root: Node 22.22.2 and git, `standard.sh`, `npm ci`, `npm run fetch -- models`,
-then `npm start`.
+`DATABASE_PATH` and its secret, or a deploy loses who was signed for which stamp number, and the
+secret. Ours runs on Railway; any platform with Node 22.18 and a persistent disk will do.
+`deploy/Dockerfile`, built from the repo root: Node 22.22.2 and git, `standard.sh`, `npm ci`,
+`npm run fetch -- models`, then `npm start`.
 
 ```
 ./standard.sh                     # from the repo root: the standard, at its pin
@@ -354,9 +361,9 @@ npm start                         # with the settings above
 ```
 
 It uses `@foundationforest/keys`, `/proofs` and `/folders` through `file:` links; moving `STANDARD`
-can change their dependencies, so `npm install` here writes the lockfile again. By hand, its seed and
-file go in `data/`, which `.gitignore` covers. Against Didit's sandbox (an application that mocks
-every provider and never bills), after `npm run fetch -- models`:
+can change their dependencies, so `npm install` here writes the lockfile again. By hand, its secret
+and file go in `data/`, which `.gitignore` covers. Against Didit's sandbox (an application that
+mocks every provider and never bills), after `npm run fetch -- models`:
 
 ```
 DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox             # every session approved
@@ -364,32 +371,33 @@ DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox -- review_
 ```
 
 It runs both checks on the sandbox's two workflows, never reads `DIDIT_API_KEY`, refuses when the
-two are the same, and keeps its own seed and file in `data/sandbox/`. With `STRIPE_SECRET_KEY`,
+two are the same, and keeps its own secret and file in `data/sandbox/`. With `STRIPE_SECRET_KEY`,
 `STRIPE_ID_PRICE` and `APP_ORIGINS` set, the ID check is paid in Stripe's test mode, with a test
 card; it refuses a live key.
 
 `test/` covers, against a stand-in Didit and a stand-in Stripe, a real SQLite file and real HTTP:
 both checks and review, the ID check's payment and its tries, verifications made from the stamps and
-checked against the published keys, the facts vectors, stamps asked back, the seed, the sweep, the
+checked against the published keys, the facts vectors, stamps asked back, the secret, the sweep, the
 raw file, the face models on three portraits, both gifts' tickets taken by the host's own seller,
 the Stripe client's requests, what a failure at Stripe or Didit logs, the fetch's retries, and this
 README's consent screen and codes, as the code has them.
 
 ## Promises
 
-- **It keeps which check session gave which stamp number, and the stamp it signed, and nothing else
-  of a check; of a payment, only a hash, how many sessions it opened and whether it gave a stamp,
-  never beside a session or a stamp number.** No face, no embedding, no name, no birth date, no
-  document, and no time or session id in clear once a session is deleted in Didit; deleted bytes are
-  overwritten. A test reads the raw file for names, birth dates, embeddings, references, payment ids
-  and session ids.
+- **It keeps which check session gave which stamp number, the stamp it signed, and for the ID check
+  the fingerprint, kept with the stamp number, and nothing else of a check; of a payment, only a
+  hash, how many sessions it opened and whether it gave a stamp, never beside a session or a stamp
+  number.** No face, no embedding, no name, no birth date, no document, and no time or session id in
+  clear once a session is deleted in Didit; deleted bytes are overwritten. A test reads the raw file
+  for names, birth dates, embeddings, references, payment ids and session ids.
 - **It never logs a request, an address, a session, a stamp number or a stamp, and never writes down
   an address.** It logs an error's kind, never its message.
 - **It takes no key of the person's, has no sign-ups, and nothing it keeps ties a person to a
   profile.** An app sends a session and a stamp number, as a POST body, never in a URL, since hosting
   platforms log paths. No request names a profile: the verification is made on the person's device.
-- **It never signs for anyone, and a key's recipe never changes.** The face and ID keys sign stamps,
-  the sponsor key tickets, nothing else; a new recipe is a new key.
+- **It signs a stamp only for a check Didit approved, on that check's workflow, and a key's recipe
+  never changes.** It will not start without Didit; the face and ID keys sign stamps, the sponsor
+  key tickets, nothing else; a new recipe is a new key.
 - **It deletes every session in Didit an hour after its stamp is first signed, or at the first sweep
   after that which Didit answers, and no other.** Never one In Review. Each deletion asks Didit to
   keep only a template of the face.
@@ -399,8 +407,9 @@ README's consent screen and codes, as the code has them.
 - **Two people with one name and birthday:** the second pays, and is refused the ID check, with no
   review.
 - **One person whose documents spell the name differently** can hold two ID stamps.
-- **One person per verifier rests on Didit's face search;** a face approved from review is signed for
-  whatever stamp number the person brings.
+- **One person per check: the face check rests on Didit's face search, the ID check on the
+  document's fingerprint;** a face approved from review is signed for whatever stamp number the
+  person brings.
 - **A face template ends** after 3650 days at most; then a returning face is new to Didit.
 - **The checks share one face search,** so taking the ID check first sends the face check to review.
 - **After the hour, a lost answer loses the fields beside the stamp;** the stamp comes back.
@@ -412,8 +421,8 @@ README's consent screen and codes, as the code has them.
 - **The answer that signs a stamp says who the person is:** keep it as a key is kept.
 - **A country with no ISO numeric code enters as 0,** like one Didit did not read.
 - **A lost gift is lost:** another buy gets `given`.
-- **Losing the volume** means a new seed and keys, with no signed handover, and lets a person get a
-  second stamp number's ID stamp. The name, and so the stamp numbers, stay.
+- **Losing the volume** means a new secret and keys, with no signed handover, and lets a person get
+  a second stamp number's ID stamp. The name, and so the stamp numbers, stay.
 - **SFace's training data** (CASIA-WebFace, VGGFace2, MS-Celeb-1M) has research-only terms; no widely
   used face model's data is cleaner.
 - **The face test is three NASA portraits,** two of one person: it shows the model tells them apart,

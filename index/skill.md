@@ -4,9 +4,9 @@ Forest is open software for people to offer, pay and review each other through p
 profile is one person's identity in one market and role, its label, such as `tutoring/tutor`; its
 address is its name. This index ranks what is public: it reads the hosts it lists, keeps the
 profiles whose profile entry carries a verification that checks for a verifier key it lists (a
-verifier checked that a real person holds the seed behind the profile), ranks them, and serves what
-it finds. A profile that does not count here still has a page, with what this index made of each of
-its proofs.
+proof that the person behind the profile holds a stamp from a verifier this index counts as checking
+one real person), ranks them, and serves what it finds. A profile that does not count here still has
+a page, with what this index made of each of its proofs.
 
 ## How to read
 
@@ -165,7 +165,8 @@ carries it to another of their profiles. A leaf is one counted profile's, `{ "pr
 its address, and its trust, from 0 to 100, as its score, so a proof carrying several profiles shows
 their average.
 A proof shows here against this index's newest root, or one it signed within `maxAgeDays`, in
-`/index.json`'s `lists`.
+`/index.json`'s `lists`. It is only shown: the profile's own trust, uniqueness and ratings, and
+whether it counts, stay what its own verifications and words make them.
 
 ## To act
 

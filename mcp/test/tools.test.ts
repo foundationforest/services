@@ -186,7 +186,7 @@ describe('acting for the person', () => {
     assert.match((await call('read', { label: TUTOR })).refused, /a path, or inbox: true/)
   })
 
-  test('write, public: a listing, checked against the market, signed by the access key; refused naming the field', async () => {
+  test("write, public: a listing, checked against the market, signed by the access key; refused naming the field, or a subject among the person's own", async () => {
     assert.deepEqual(Object.keys(await call('write', { label: TUTOR, path: 'listing/maths', body: lesson('Maths, from the AI.') })), ['written', 'time', 'hosts'])
     const e = await at(TUTOR, 'listing/maths')
     assert.equal(e?.key, tutorKey, 'signed by this login’s access key, and current')
@@ -206,6 +206,9 @@ describe('acting for the person', () => {
       ['review/x', { subject: w.stranger.address, listing: 'physics' }, /listing takes a listing's address/],
       ['review/x', { subject: w.stranger.address, listing: 'nobody/listing/physics' }, /listing is a listing's address: <profile address>\/listing\/<id>/],
       ['vouch/x', { subject: w.stranger.address, score: '9' }, /a vouch in tutoring has no field score/],
+      ['review/x', { subject: w.own[STUDENT]!, score: '9' }, /subject is one of the person's own profiles: a review is about someone else/],
+      ['vouch/x', { subject: w.own[TUTOR]! }, /subject is one of the person's own profiles: a vouch is about someone else/],
+      ['report/x', { subject: w.own[STUDENT]!, text: 'x' }, /subject is one of the person's own profiles: a report is about someone else/],
     ]
     for (const [path, body, why] of refusals) assert.match((await call('write', { label: TUTOR, path, body })).refused, why, path)
     assert.equal(await at(TUTOR, 'listing/x'), null, 'nothing written')

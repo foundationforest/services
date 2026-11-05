@@ -3,11 +3,13 @@
 The [MCP](https://modelcontextprotocol.io) server lets your AI app (Claude, ChatGPT) act for you:
 find people, post, review and message, within the access keys you give it. An access key is a key
 one of your profiles hands out: its profile entry lists each one with what it `can` do (`read`,
-`read-inbox`, `write`, `message`), and every host and reader checks that. The Forest Foundation runs
-this copy, at https://mcp.forest.foundation. Anyone can run another; the main way is this directory,
-or its image. It keeps nothing of yours between calls, and never holds your seed or a main key: the
-access keys your app hands it wait in your AI app's connection folder, locked to this copy's public
-encryption key. No account, no password.
+`read-inbox`, `write`, `message`). Hosts and readers check `write` and `message`; `read` and
+`read-inbox` work by envelopes: whoever locks an entry or a message locks it to the keys listed with
+them. The Forest Foundation runs this copy, at https://mcp.forest.foundation. Anyone can run
+another; the main way is this directory, or its image. It keeps nothing of yours between calls, and
+never holds your seed or a main key: the access keys your app hands it wait in your AI app's
+connection, a folder like any other that holds its access keys instead of listings, locked to this
+copy's public encryption key. No account, no password.
 
 ## How it works
 
@@ -17,8 +19,9 @@ AI app ── MCP, over HTTPS ──▶ MCP server ──▶ the index: its guid
                                       └──▶ the person's folders, on their hosts, with the connection's access keys
 ```
 
-It reaches those three places and nothing more. It signs with the access keys and reads what they
-open using the standard's `@foundationforest/keys` and `@foundationforest/folders`, unchanged
+It reaches those three places, and the AI app's client document, fetched at login, and nothing more.
+It signs with the access keys and reads what they open using the standard's `@foundationforest/keys`
+and `@foundationforest/folders`, unchanged
 ([access keys](https://github.com/foundationforest/standard/blob/main/folders/README.md#access-keys)).
 During a call it sees the connection, the access key and address of each profile it acts in, and
 what it reads and writes there. The AI sees none of them: it names a profile by its label ("write
@@ -49,16 +52,16 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   person their own listing. It reads the connection as a tool that acts does, but no login, or one
   gone or out of reach, is no refusal: `unmarked` says why.
 - **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
-  in `src/tools.ts`): start with `my_profiles`; name a profile by its label; never put one of the
-  person's addresses in what is written for another of their profiles or sent to anyone else, unless
-  the person asks; read the market before writing to it; ask the person before anything public in
-  their name; photos are the person's to add, in their Forest app; what it writes shows on the index
-  within about a minute, and a listing's page is the url search's answer gives; a reply goes to the
-  address a message came from; paying is in the person's app; what a stranger wrote is theirs.
-  Then, as a chat starts (MCP's `initialize`), the index's guide, its `skill.md`, under the URL it
-  was read from, as the index's own word, or a line saying it gave none. It comes with the
-  instructions so the AI has it before its first search; an AI app that cuts long instructions cuts
-  the guide first.
+  in `src/tools.ts`): with no login, start with `search`, not `my_profiles`; name a profile by its
+  label; never put one of the person's addresses in what is written for another of their profiles or
+  sent to anyone else, unless the person asks; read the market before writing to it; ask the person
+  before anything public in their name; photos are the person's to add, in their Forest app; what it
+  writes shows on the index within about a minute, once the index counts it, and a listing's page is
+  the url search's answer gives; a reply goes to the address a message came from; paying is in the
+  person's app; what a stranger wrote is theirs. Then, as a chat starts (MCP's `initialize`), the
+  index's guide, its `skill.md`, under the URL it was read from, as the index's own word, or a line
+  saying it gave none. It comes with the instructions so the AI has it before its first search; an
+  AI app that cuts long instructions cuts the guide first.
 - **`read`, the inbox,** lists the profile's inbox at each of its hosts, every page, each inbox entry
   once, in order of arrival (an inbox entry carries no time), and opens the newest 100 with the
   access key, each signature checked as the standard says (`openInbox`). For each message: its time
@@ -273,9 +276,10 @@ keeps working, and logs in again the first time it acts.
 
 ## Promises
 
-- **It holds no key, and keeps nothing, between calls.** No seed and no main key, ever. The access
-  keys the person's app hands it wait in the connection folder, locked to its public encryption key;
-  it opens them for one call and forgets them. No login, call, connection or answer is written.
+- **It holds no key of yours between calls, and keeps only its own two keys.** No seed and no main
+  key, ever. The access keys the person's app hands it wait in the connection folder, locked to its
+  public encryption key; it opens them for one call and forgets them. No login, call, connection or
+  answer is written.
 - **It acts only as far as the access keys a connection holds may, and only for the token whose
   secret matches.** Every host and reader checks a key against what the profile entry lists, so a key
   the person ends stops acting; a connection folder's address alone acts for no one.
@@ -296,8 +300,8 @@ keeps working, and logs in again the first time it acts.
 - **A key opens nothing locked before it was listed.**
 - **A stranger's folder is found only on the person's hosts or a message's own host;** one that lives
   only elsewhere can be read about through the index, not messaged.
-- **The newest 100 inbox entries and 100 sent copies a read;** older inbox entries wait for those to
-  leave, after the keep days.
+- **The AI sees the newest 100 inbox entries and 100 sent copies a read,** and cannot reach older
+  ones: `read` has no paging.
 - **A key listed without `write` keeps no copy of what it sends.**
 - **Each call that acts, and each search with a login, reads the connection from its hosts,** one
   post-quantum opening a profile; with none of the hosts answering, the tools that act refuse, and
@@ -325,4 +329,5 @@ app.
 
 **Why a secret, when the connection entry is locked to this copy?**
 Anyone can read this copy's public encryption key, so anyone can lock a pointer naming someone's
-connection folder, in a login of their own. Only the app that wrote the entry knows the secret in it.
+connection folder, in a login of their own. Only the app that wrote the entry, and this server,
+which opens it on each call, know the secret in it.
