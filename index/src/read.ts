@@ -6,8 +6,8 @@
 // the current profile entry lists with write), so this index sees what any other reader of the same
 // entries sees:
 //
-//   profile      the current profile entry, if it has one: its market, role, hosts, open key, pay
-//                addresses, access keys and proofs
+//   profile      the current profile entry, if it has one: its market, role, hosts, public
+//                encryption key, pay addresses, access keys and proofs
 //   listing/<id> a listing; a delete keeps its last body here for good, marked deleted, so a review
 //                that names it still finds it
 //   review/<id>  a review; a delete removes it

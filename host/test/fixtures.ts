@@ -1,11 +1,11 @@
-// Shared test fixtures for the plug's tests: keys/'s test seed, a few keys, and ready-made bodies.
-// The keys come from keys/, as an app gets them.
+// Shared test fixtures for the host API's tests: keys/'s test seed, a few keys, and ready-made
+// bodies. The keys come from keys/, as an app gets them.
 
 import { readFileSync } from 'node:fs'
 import { accessKey, mainKey, openingHalf, serviceKey } from '@foundationforest/keys'
 import { type Body, type Key, type SignedEntry, type UnsignedEntry, canonical, hex, signAs, signingInput } from '@foundationforest/folders'
 
-/** keys/'s pinned vectors: its test seed (bytes 00 01 … 1f), its profiles and their opening halves. */
+/** keys/'s pinned vectors: its test seed (bytes 00 01 … 1f), its profiles and their encryption keys. */
 export const KEYS = JSON.parse(readFileSync(new URL('../../standard/keys/test/vectors.json', import.meta.url), 'utf8'))
 export const SEED = hex.decode(KEYS.seed)
 /** A second person. */
@@ -23,7 +23,7 @@ export const [aliceOpening, bobOpening] = await Promise.all([openingHalf(alice.s
 export const T0 = Date.UTC(2026, 9, 2, 12, 0, 0)
 export const MINUTE = 60_000
 export const DAY = 86_400_000
-/** The host a profile entry names: the plug takes a folder whose profile entry names another host, so any origin does. */
+/** The host a profile entry names: the host API takes a folder whose profile entry names another host, so any origin does. */
 export const HOSTS = ['https://host.example']
 
 /** A profile entry's body. `subjects`, a field a market adds, tells one version from another. */
@@ -35,7 +35,7 @@ export const profileBody = (subject: string, more: Body = {}): Body => ({
   ...more,
 })
 
-/** Alice's profile entry, which lists `helper` with what it can do; with her open key, so her folder takes inbox entries. */
+/** Alice's profile entry, which lists `helper` with what it can do; with her public encryption key, so her folder takes inbox entries. */
 export const aliceWith = (can: string[], subject = 'calculus'): Body =>
   profileBody(subject, { openKey: aliceOpening.openKey, keys: [{ key: helper.address, open: helper.openKey, can }] })
 

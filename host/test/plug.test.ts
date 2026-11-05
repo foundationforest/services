@@ -1,7 +1,7 @@
-// The plug's own choices over HTTP: what it keeps and for how long, how it answers the socket, what
-// it refuses, and the sizes, batches and pages it chooses; and a host's own choice for entries,
-// which may make joining cost but never leaving. What every host must do is the standard's host
-// check (check.test.ts).
+// The host API's own choices over HTTP: what it keeps and for how long, how it answers the socket,
+// what it refuses, and the sizes, batches and pages it chooses; and a host's own choice for
+// entries, which may make joining cost but never leaving. What every host must do is the standard's
+// host check (check.test.ts).
 
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'

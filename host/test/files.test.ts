@@ -1,6 +1,6 @@
-// Files on the plug: bytes are taken only while a current entry here names them, with their type and
-// size; bytes several folders name are stored once and kept while any names them, then for keep
-// days; and the sizes and types it takes, and its own choice by folder, are the host's.
+// Files on the host API: bytes are taken only while a current entry here names them, with their
+// type and size; bytes several folders name are stored once and kept while any names them, then for
+// keep days; and the sizes and types it takes, and its own choice by folder, are the host's.
 
 import assert from 'node:assert/strict'
 import { connect } from 'node:net'

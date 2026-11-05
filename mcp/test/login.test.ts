@@ -1,15 +1,16 @@
 // The login: reading with none; the challenge a call to a tool that acts for the person gets; the
-// metadata an AI app discovers, and the open key the connect page locks the connection to; the
-// login end to end through the stand-in connect page, by registration and by a client document,
-// each login its own connection folder and access keys, listed and noted in each profile ticked; a
-// profile added and one removed with no new login; a connection ended, refused at its next call;
-// and every way a login is refused: a pointer not locked to this copy, a pointer for another login,
-// one that is not one or too long, a login changed on the way, a person who says no, a code with the
-// wrong verifier or for another client, a pointer naming the person's connection folder without its
-// secret, one naming a folder with no connection, access entries past the first 100, a token this
-// copy did not give, a token from before connections, a token whose pointer no longer opens, and a
-// copy with no connect page. Hosts that do not answer are a refusal, not a new login. Nothing is
-// kept: a token works on another copy with the same two keys, and the data directory holds only them.
+// metadata an AI app discovers, and the public encryption key the connect page locks the connection
+// to; the login end to end through the stand-in connect page, by registration and by a client
+// document, each login its own connection folder and access keys, listed and noted in each profile
+// ticked; a profile added and one removed with no new login; a connection ended, refused at its
+// next call; and every way a login is refused: a pointer not locked to this copy, a pointer for
+// another login, one that is not one or too long, a login changed on the way, a person who says no,
+// a code with the wrong verifier or for another client, a pointer naming the person's connection
+// folder without its secret, one naming a folder with no connection, access entries past the first
+// 100, a token this copy did not give, a token from before connections, a token whose pointer no
+// longer opens, and a copy with no connect page. Hosts that do not answer are a refusal, not a new
+// login. Nothing is kept: a token works on another copy with the same two keys, and the data
+// directory holds only them.
 
 import assert from 'node:assert/strict'
 import { createHash, createHmac } from 'node:crypto'
@@ -61,12 +62,12 @@ const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 const hash = (request: string) => createHash('sha256').update(request).digest('hex')
 const randomSecret = () => b64u.encode(crypto.getRandomValues(new Uint8Array(32)))
 
-/** This copy's open key, which pointers and connections are locked to. */
+/** This copy's public encryption key, which pointers and connections are locked to. */
 async function openKey(): Promise<string> {
   return ((await (await fetch(`${w.mcp.origin}/open-key`)).json()) as { openKey: string }).openKey
 }
 
-/** A pointer for login request `r`, as anyone can lock one to this copy's open key. */
+/** A pointer for login request `r`, as anyone can lock one to this copy's public encryption key. */
 async function pointer(r: string, body: Body): Promise<string> {
   return (await lock({ request: hash(r), ...body }, [await openKey()])).private
 }
@@ -334,7 +335,8 @@ describe('refused', () => {
     await c.client.close()
     const { address } = await connectionOf(TUTOR)
     // Anyone can start a login of their own, and lock a pointer naming the folder to this copy's
-    // open key: /connected cannot tell, and gives a code. The secret is only in the entry.
+    // public encryption key: /connected cannot tell, and gives a code. The secret is only in the
+    // entry.
     const token = await tokenWith((r) => pointer(r, { folder: address, hosts: [w.host], secret: randomSecret() }))
     const res = await asked(token)
     assert.equal(res.status, 401)
@@ -405,7 +407,7 @@ describe('refused', () => {
     await logIn(c)
     const token = c.app.tokens()!.access_token
     await c.client.close()
-    // The same key that signs logins, a new opening half.
+    // The same key that signs logins, a new encryption key.
     const dir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
     copyFileSync(join(w.dataDir, 'mcp-key.json'), join(dir, 'mcp-key.json'))
     const other = await serve({ origin: w.mcp.origin, dataDir: dir, read: { index: w.index }, hostFetch: fetch }, '127.0.0.1', 0)

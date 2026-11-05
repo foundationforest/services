@@ -1,11 +1,11 @@
 // The hosted copy, as its image runs it: the command in deploy/Dockerfile, read from the file and run
 // in this directory, on loopback, with Railway's PORT set to a free port and the settings a deploy
 // gives it in the environment, here pointing at the test world.
-//   1. the MCP SDK's client finds the mcp there (../smoke.ts): its instructions and icon, every
-//      tool, no session, reading with no login, the challenge and the metadata, its open key, the
-//      same tools at /mcp, the icon's two files, and a login through the stand-in connect page, then
-//      my_profiles, which says it did not reach the connection's loopback host; a request whose URL
-//      is no path (`//`) gets 400, and it goes on answering;
+//   1. the MCP SDK's client finds the MCP server there (../smoke.ts): its instructions and icon,
+//      every tool, no session, reading with no login, the challenge and the metadata, its public
+//      encryption key, the same tools at /mcp, the icon's two files, and a login through the
+//      stand-in connect page, then my_profiles, which says it did not reach the connection's
+//      loopback host; a request whose URL is no path (`//`) gets 400, and it goes on answering;
 //   2. with no APP_URL, reading works and logins wait;
 //   3. with no DATA_DIR, it refuses to start.
 //

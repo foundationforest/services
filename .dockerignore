@@ -1,5 +1,6 @@
 # Each image fetches the standard and the markets itself (standard.sh) and installs its own
-# dependencies; no image copies the loop, and none takes what a service keeps when run by hand.
+# dependencies; no image copies the end-to-end test, and none takes what a service keeps when run by
+# hand.
 .git
 standard/
 markets/

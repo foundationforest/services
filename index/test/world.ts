@@ -1,4 +1,4 @@
-// A small Forest on loopback for the tests: this repo's host (its plug, host/src/plug.ts), a
+// A small Forest on loopback for the tests: this repo's host (its host API, host/src/plug.ts), a
 // stand-in verifier whose key the test's lists name, people with seeds, profiles with real
 // verifications made from the verification circuit's committed proving files, entries signed with
 // their main keys, and the index itself, with lists written to a directory of its own.
@@ -65,7 +65,7 @@ let clock = Date.now()
 /** An entry time later than every one before, so a newer entry always wins. */
 export const later = () => (clock = Math.max(clock + 1, Date.now()))
 
-/** This repo's host on loopback: its plug alone, which takes every write; the credits stand in front of it. */
+/** This repo's host on loopback: its host API alone, which takes every write; the credits stand in front of it. */
 export async function startHost(): Promise<{ url: string; close(): Promise<void> }> {
   const host = new Host()
   const url = await host.listen(0, '127.0.0.1')

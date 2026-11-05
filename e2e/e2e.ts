@@ -1,25 +1,25 @@
-// The loop: Forest end to end. Two people from two seeds, a tutor who sells and a student who buys.
-// Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds the seed and the
-// stamp, keeps the Profiles folder, makes each profile with its verification, and at the connect
-// page makes the AI's connection folder, with an access key for the profile ticked, and hands the
-// mcp the pointer to it. What it has no method for, the device does here with the standard's
-// pieces: the stamp and its gift asked for, the credits, the reputation proof. Each
-// person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in through the loop's connect
-// page and calling the mcp's tools, which read the connection and act in the person's folder with
-// that access key. Against the loop's own verifier, host, index and mcp, on loopback (services.ts),
-// with no chain and no secret.
+// The end-to-end test: Forest end to end. Two people from two seeds, a tutor who sells and a
+// student who buys. Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds
+// the seed and the stamp, keeps the Profiles folder, makes each profile with its verification, and
+// at the connect page makes the AI's connection folder, with an access key for the profile ticked,
+// and hands the MCP server the pointer to it. What it has no method for, the device does here with
+// the standard's pieces: the stamp and its gift asked for, the credits, the reputation proof. Each
+// person's AI is the MCP SDK's own client (mcp/test/setup.ts), logging in through the end-to-end
+// test's connect page and calling the MCP server's tools, which read the connection and act in the
+// person's folder with that access key. Against the end-to-end test's own verifier, host, index and
+// MCP server, on loopback (services.ts), with no chain and no secret.
 //
 //   ../standard.sh
 //   (cd ../verifier && npm ci) && (cd ../host && npm ci) && (cd ../index && npm ci) && (cd ../mcp && npm ci)
-//   npm ci && npm run e2e                      # the loop
+//   npm ci && npm run e2e                      # the end-to-end test
 //   npm run e2e -- <deployed.json>             # the deployed check: each service it names answers
 //
 //    1. keys: a seed each, and from it the profile's address and pay { solana, evm }, and the stamp
-//       number at the loop verifier (keys/'s stampNumberOf); the tutor's second profile,
-//       sports-coaching/coach;
-//    2. stamps: the loop verifier's face check (its stand-in Didit passes it), asked with the
-//       face stamp's gift, one buy at the host; a stamp for each, kept on the person's device, then
-//       asked back from the verifier by its stamp number;
+//       number at the end-to-end test's verifier (keys/'s stampNumberOf); the tutor's second
+//       profile, sports-coaching/coach;
+//    2. stamps: the end-to-end test's verifier's face check (its stand-in Didit passes it), asked
+//       with the face stamp's gift, one buy at the host; a stamp for each, kept on the person's
+//       device, then asked back from the verifier by its stamp number;
 //    3. credits: each buy collected at the host with the gift's ticket, finished, and spent into the
 //       wallet, the Profiles folder's balance;
 //    4. profiles: the stamp kept in the Profiles folder, the profile's folder funded from the wallet
@@ -28,29 +28,29 @@
 //    5. logins: each AI logs in through the connect page, where the person ticks their profile and
 //       their app makes the connection folder, funded from the wallet with one credit, lists an
 //       access key in the profile entry with every switch, writes its note and its access entry, and
-//       hands the mcp the pointer;
-//    6. mcp: the tutor's AI writes a listing, paid from the profile's balance; the student's finds it
-//       through the index's search and messages the tutor, paid from the student's balance by its
-//       bytes, the tutor's balance as it was; the tutor's reads the inbox, the student's market,
-//       role and checks as the index shows them, and replies the same way; the student's reads the
-//       reply;
+//       hands the MCP server the pointer;
+//    6. MCP server: the tutor's AI writes a listing, paid from the profile's balance; the student's
+//       finds it through the index's search and messages the tutor, paid from the student's balance
+//       by its bytes, the tutor's balance as it was; the tutor's reads the inbox, the student's
+//       market, role and checks as the index shows them, and replies the same way; the student's
+//       reads the reply;
 //    7. the review: the student's AI reviews the tutor, naming the listing;
-//    8. the loop index counts it all: both profiles, the listing, the review, and what each profile
-//       shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no message
-//       anywhere;
+//    8. the end-to-end test's index counts it all: both profiles, the listing, the review, and what
+//       each profile shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no
+//       message anywhere;
 //    9. the trust carried: the tutor's device finds its leaf by its profile, proves its trust onto
 //       its coach profile, and the index shows the proof;
 //   10. added: the tutor's app, from the seed alone, adds the coach profile to its AI's connection;
 //       with no new login, the AI acts as both, and writes a locked note as the coach;
-//   11. ended: the tutor's app ends the connection, its entry gone and both keys ended; the mcp
-//       refuses the AI's next call, 401; what the keys wrote still counts on the host and the
-//       index, and a new write by either is refused;
+//   11. ended: the tutor's app ends the connection, its entry gone and both keys ended; the MCP
+//       server refuses the AI's next call, 401; what the keys wrote still counts on the host and
+//       the index, and a new write by either is refused;
 //   12. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
 //       stamp;
 //   13. addresses: no answer either AI received holds one of its own person's addresses;
 //   14. balances: what each folder's credits came to.
-// Then, passed or failed, what the loop started stops, and the run exits 0 or 1. What it did is in
-// what it prints.
+// Then, passed or failed, what the end-to-end test started stops, and the run exits 0 or 1. What it
+// did is in what it prints.
 
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
@@ -89,9 +89,9 @@ const cfg = readServices(servicesFile)
 const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/setup/reputation.wasm'), zkey: join(repo, 'standard/proofs/reputation/setup/reputation.zkey') }
 /** The tutor's second profile, where it carries its trust: another market, from the same seed. */
 const COACH = 'sports-coaching/coach'
-/** How many of the host's credits the loop verifier's face stamp gives each person: its own default. */
+/** How many of the host's credits the end-to-end test's verifier's face stamp gives each person: its own default. */
 const CREDITS = 10
-/** And its ID stamp, which no one in the loop takes: its own default. */
+/** And its ID stamp, which no one in the end-to-end test takes: its own default. */
 const ID_CREDITS = 100
 /** What each person's app funds each profile with from the wallet, and the coach profile. */
 const PROFILE_CREDITS = 3
@@ -102,7 +102,7 @@ const CREDIT = 1_000_000
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 /** How long to wait for the index to show what was done: it reads every 5 seconds. */
 const INDEX_WAIT = 2 * 60_000
-/** The numbers the loop index ranks by: its own, from index/config. */
+/** The numbers the end-to-end test's index ranks by: its own, from index/config. */
 const SCORING = JSON.parse(readFileSync(join(repo, 'index/config/scoring.json'), 'utf8')) as Numbers
 
 const started = Date.now()
@@ -135,7 +135,7 @@ const post = (url: string, body: unknown) => json(url, { method: 'POST', headers
 /** A tool refused, in its words. */
 class Refused extends Error {}
 
-/** A person's AI: the MCP SDK's client on the mcp, logged in as the person let it, and every answer it got. */
+/** A person's AI: the MCP SDK's client on the MCP server, logged in as the person let it, and every answer it got. */
 class AI {
   readonly answers: string[] = []
   private readonly c: Awaited<ReturnType<typeof aiApp>>
@@ -152,7 +152,7 @@ class AI {
     return JSON.parse(text)
   }
 
-  /** The access token its login got: for the loop to ask the mcp with it directly. */
+  /** The access token its login got: for the end-to-end test to ask the MCP server with it directly. */
   token = () => this.c.app.tokens()!.access_token
 
   close = () => this.c.client.close()
@@ -160,8 +160,8 @@ class AI {
 
 /**
  * The connect page: a stand-in for the Forest app's, where the person whose turn it is ticks the
- * profiles their AI acts in, and their app makes the connection and hands back its pointer. One mcp
- * sends every login to one page, and the two people log in one after the other.
+ * profiles their AI acts in, and their app makes the connection and hands back its pointer. One MCP
+ * server sends every login to one page, and the two people log in one after the other.
  */
 async function connectPage(): Promise<{ url: string; at: { app: App; profiles: string[] } | null; close: () => void }> {
   const page: { url: string; at: { app: App; profiles: string[] } | null; close: () => void } = { url: '', at: null, close: () => server.close() }
@@ -194,7 +194,7 @@ type Person = {
   gift?: { buy: Uint8Array; pending: Pending; ticket: string }
   app?: App
   ai?: AI
-  /** The address of the access key the person's app handed the mcp for the profile. */
+  /** The address of the access key the person's app handed the MCP server for the profile. */
   key?: string
   /** The address of their AI's connection folder. */
   connection?: string
@@ -317,10 +317,11 @@ async function profile(p: Person, label: string, more: Body[] = []) {
  * A person's AI logs in: its first call to act gets the challenge, the person's browser goes
  * through the connect page, where they tick their profile, and their app makes the connection
  * folder, funded from the wallet with one credit, lists an access key in the profile entry with every switch, writes
- * its note and its access entry, and hands the mcp the pointer; the code becomes a login. Read back
- * from the host: one access key listed; its note, at a random id, locked to the main key alone,
- * found by opening the folder's notes, holding the connection folder's key; and the connection
- * folder, found from the seed, its entries locked to two keys, with one access entry, for that key.
+ * its note and its access entry, and hands the MCP server the pointer; the code becomes a login.
+ * Read back from the host: one access key listed; its note, at a random id, locked to the main key
+ * alone, found by opening the folder's notes, holding the connection folder's key; and the
+ * connection folder, found from the seed, its entries locked to two keys, with one access entry,
+ * for that key.
  */
 async function logInAs(p: Person) {
   const mcp = services!.mcp
@@ -391,7 +392,7 @@ async function main() {
   // 5. Logins: each AI acts in its person's profile, with every switch.
   for (const p of [tutor, student]) await logInAs(p)
 
-  // 6. mcp: every call through the AI's own client.
+  // 6. MCP server: every call through the AI's own client.
   const [market, tutorRole] = tutor.label.split('/') as [string, string]
   const read = await tutor.ai!.call('markets', { name: market })
   assert.ok(read.kinds.listing.price && read.kinds.review.listing, 'the tutor’s AI reads what a listing and a review hold')
@@ -459,9 +460,10 @@ async function main() {
   assert.deepEqual([reviewed?.body?.listing, reviewed?.key], [listingAddress, student.key], 'on the host, naming the listing, signed by the student’s access key')
   say('the review: the student’s AI scored the tutor 10, naming the listing')
 
-  // 8. The loop index counts it all. What each profile shows is what the index's own ranking makes
-  // of this one review, with its own numbers: each profile's face check counted, the review a rating
-  // and its writer's word about the tutor, a vouch; the student, whom no one rated, a newcomer.
+  // 8. The end-to-end test's index counts it all. What each profile shows is what the index's own
+  // ranking makes of this one review, with its own numbers: each profile's face check counted, the
+  // review a rating and its writer's word about the tutor, a vouch; the student, whom no one rated,
+  // a newcomer.
   const index = s.index
   const profilePage = (address: string) => json(`${index.url}/profiles/${address}.json`)
   const face = uniqueness([FACE_CONFIDENCE])
@@ -541,9 +543,9 @@ async function main() {
 
   // 11. Ended: the tutor's app ends the connection: its connection entry deleted, then each key it
   // holds ended, listed in its profile entry with until, with its note and its access entry deleted.
-  // The mcp answers the AI's next call 401, so it must log in again. What the keys wrote still
-  // counts, on the host and at the index; a new entry either signs is refused. The device holds the
-  // keys for that, opened from the connection's access entries before it ends, as it can.
+  // The MCP server answers the AI's next call 401, so it must log in again. What the keys wrote
+  // still counts, on the host and at the index; a new entry either signs is refused. The device
+  // holds the keys for that, opened from the connection's access entries before it ends, as it can.
   const access = (await tutor.app!.connections()).find((c) => c.address === tutor.connection)!.access
   const keys = await Promise.all(access.map(async (a) => ({ label: a.body.label as string, address: a.body.address as string, key: await accessKey(b64u.decode(a.body.key as string)) })))
   assert.deepEqual(keys.map((k) => k.label).sort(), [COACH, tutor.label].sort(), 'the connection holds both keys')
@@ -608,7 +610,7 @@ async function main() {
   )
 }
 
-/** The deployed check: each service the file names answers, and no loop runs. */
+/** The deployed check: each service the file names answers, and the end-to-end test does not run. */
 async function deployed() {
   say(`the deployed check: ${named(cfg).join(', ')}, as ${servicesFile} names them`)
   await checkDeployed(cfg, say)

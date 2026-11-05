@@ -1,17 +1,19 @@
 This repo is `services`: the foundation's copy of each service Forest's standard needs
 (github.com/foundationforest/standard, used here at the commit in `STANDARD`, with the markets,
-github.com/foundationforest/markets, at the commit in `MARKETS`), and the loop that tests them
-together (`e2e/`). Read `README.md` and the README of the directory you work in before any task.
+github.com/foundationforest/markets, at the commit in `MARKETS`), and the end-to-end test that runs
+them together (`e2e/`). Read `README.md` and the README of the directory you work in before any
+task.
 
 ## Words
 
-Use these words: seed (the secret on your device), the seed's number, main key, access key, note,
-profile, profile entry, entry, listing, review, vouch, report, feedback, address, label, scope,
-verifier, verified, stamp, stamp number, facts, verification, reputation proof, check, folder, file,
-host, service key, connection, connector, private, envelope, encrypted (an envelope), locked,
-message, inbox, pay address, pay key, escrow, schedule, window, stop, payer, recipient, sponsor,
-receipt, deal, credit, credits, wallet, ticket, evidence, index, app, market, role, ramp. Plain
-words, no em-dashes.
+Use these words: seed (the secret on your device), the seed's number, derive, main key, signing
+key, encryption key, public encryption key, access key, note, profile, profile entry, entry,
+listing, review, vouch, report, feedback, address, label, scope, verifier, verified, stamp, stamp
+number, facts, verification, reputation proof, check, folder, file, host, host API, service key, MCP
+server, end-to-end test, connection, private, envelope, encrypted (an envelope), locked, message,
+inbox, pay address, pay key, escrow, schedule, window, stop, payer, recipient, sponsor, receipt,
+deal, credit, credits, wallet, ticket, evidence, index, app, market, role, ramp. Plain words, no
+em-dashes.
 
 - entry: anything in a folder, the standard's word.
 - listing, review, vouch, report: the markets' kinds. A listing is an offer or a request, at
@@ -31,22 +33,25 @@ words, no em-dashes.
   an access key's private note, as the standard names it: the entry at `key/<id>`, locked to the
   main key alone, saying who holds the key, since when, and whatever the app keeps; never anything
   else.
-- A profile entry is the entry at `profile`, never a card: it holds the folder's hosts, its open key
-  and its access keys. A pay address is one of a profile's `pay` addresses, `{ solana, evm }`, each
-  from its pay key.
+- A profile entry is the entry at `profile`, never a card: it holds the folder's hosts, its public
+  encryption key and its access keys. A pay address is one of a profile's `pay` addresses,
+  `{ solana, evm }`, each from its pay key.
 - Check, never verify: a reader checks a proof or a signature. Main key, never profile key;
   address, never wallet, for a key ("a wallet app" is fine). The wallet is an app's Profiles
   folder's balance at a host: gifts and buys land there, and the app funds each folder from it.
 - Never: record, signer, permission, inbox key, blob, pull, tag, stamp proof, issuer, attributes,
   sealed, write key, read key, account (but in "no account"), card, registry, row, tier, standing,
-  policy,
-  seed scalar, keyed path, a signature's prefix. A string baked into a recipe, a circuit or a key's
-  text keeps its bytes even when its words grow old (the standard's three texts, `forest/profile/`,
-  `forest/verifier/` and `forest/pay/`, the circuits' signal names and files, the verifier's `face`,
-  `id`, `fingerprint` and `sponsor` texts): rename the code around it, never the string, and say
-  why in a comment beside it. Other projects' own words stay too (Privacy Pass's `issuer_name`,
-  snarkjs's verifier).
-- encrypted is for an envelope: what is locked to a key's open key. Locked, never sealed.
+  policy, seed scalar, keyed path, a signature's prefix, plug (it is the host API), mix (derive),
+  signing half, opening half and open key (signing key, encryption key, public encryption key), the
+  mcp (the MCP server), the loop (the end-to-end test), and connector for our service (an AI app's
+  own word for what it adds stays: its button, "Add custom connector", or "a connector added
+  before"). A string baked into a recipe, a circuit or a key's text keeps its bytes even when its
+  words grow old (the standard's three texts, `forest/profile/`, `forest/verifier/` and
+  `forest/pay/`, the circuits' signal names and files, the verifier's `face`, `id`, `fingerprint`
+  and `sponsor` texts): rename the code around it, never the string, and say why in a comment beside
+  it. Other projects' own words stay too (Privacy Pass's `issuer_name`, snarkjs's verifier).
+- encrypted is for an envelope: what is locked to a key's public encryption key. Locked, never
+  sealed.
 - A sponsor pays for someone else's credit buy with a ticket, or fronts an escrow's rent.
 - Whoever makes a token is "the dollar's maker", never its issuer.
 - A folder is a profile's entries on a host, signed by its main key or an access key its profile
@@ -54,7 +59,7 @@ words, no em-dashes.
 - The foundation runs every service here, never Soil; the app is the Forest app. In prose it is the
   Forest Foundation; its registered name, the Open Forest Foundation, is only in legal text: the
   verifier's consent screen and its data-law line.
-- The mcp is introduced once in each README that names it, as "a connector, over MCP".
+- Each README that names the MCP server introduces it once, as the MCP server.
 - No timing refs: no other repo's open issue or pull request, no date on a price, nothing true only
   for a while.
 - Every use case is "anyone can; the main way is X", never "X is one option" and never "X is the
@@ -103,5 +108,5 @@ words, no em-dashes.
   choice spends money.
 - No private key, no phrase and no keyed URL ever goes in the repo.
 - Run what `.github/workflows/checks.yml` runs before you push (Node 22.18 or later). A test that
-  skips fails CI: the summary must say `# skipped 0`. The slower check, mcp's smoke test against
-  the deployed copy, is in its README.
+  skips fails CI: the summary must say `# skipped 0`. The slower check, the MCP server's smoke
+  test against the deployed copy, is in its README.

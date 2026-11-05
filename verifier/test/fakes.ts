@@ -75,7 +75,7 @@ export function faceOf(name: string): Uint8Array {
   return out
 }
 
-/** A person's stamp number for the test verifier, as their app mixes it: from a fresh seed and the verifier's name. */
+/** A person's stamp number for the test verifier, as their app derives it: from a fresh seed and the verifier's name. */
 export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(randomBytes(32))), VERIFIER_NAME)
 
 /**

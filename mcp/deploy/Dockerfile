@@ -1,12 +1,12 @@
-# The foundation's hosted copy of the mcp (mcp/): node src/main.ts, from this directory. The build
-# context is the repo root; standard.sh fetches the standard at the commit in STANDARD, installs and
-# builds it, and fetches the markets at the commit in MARKETS, installing and building the markets
-# package the mcp reads them through; it needs git.
+# The foundation's hosted copy of the MCP server (mcp/): node src/main.ts, from this directory. The
+# build context is the repo root; standard.sh fetches the standard at the commit in STANDARD,
+# installs and builds it, and fetches the markets at the commit in MARKETS, installing and building
+# the markets package the MCP server reads them through; it needs git.
 #
-# It serves MCP at its root and at /mcp, the login, its open key at /open-key, and the icon
-# at /favicon.ico and /icon.svg, on the port Railway gives (PORT), on every address. Its two keys are
-# kept in DATA_DIR, a volume. It reads the foundation's index, its default, and the folders each
-# login acts in, on public hosts; APP_URL, the Forest app's connect page, is a variable of the
+# It serves MCP at its root and at /mcp, the login, its public encryption key at /open-key, and the
+# icon at /favicon.ico and /icon.svg, on the port Railway gives (PORT), on every address. Its two
+# keys are kept in DATA_DIR, a volume. It reads the foundation's index, its default, and the folders
+# each login acts in, on public hosts; APP_URL, the Forest app's connect page, is a variable of the
 # deploy, and without it, logins wait. A message is paid from its profile's balance with a payment
 # the host's credits client signs, so host/client comes too, with the host's packages it imports.
 # Node's official image from Google's Docker Hub mirror: Docker Hub's pull limit failed our builds.

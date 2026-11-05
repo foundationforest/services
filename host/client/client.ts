@@ -10,9 +10,9 @@
 // reaches a host only through the fetch it is given. The blinding and the signatures are
 // Cloudflare's privacypass-ts, unchanged; its type 2 client keeps the blinding in memory only, so
 // the buy here keeps it as bytes, to finish later, from what the app keeps. The host checks and
-// sells credits with its own code (../credits/), which reads this wire format from here. The e2e
-// loop and the reference app buy with this, the mcp pays for its messages with it, and so do the
-// host's and the verifier's tests.
+// sells credits with its own code (../credits/), which reads this wire format from here. The
+// end-to-end test and the reference app buy with this, the MCP server pays for its messages with
+// it, and so do the host's and the verifier's tests.
 
 import { AuthenticatorInput, Token, TokenChallenge, genericBatched, publicVerif } from '@cloudflare/privacypass-ts'
 import { type Payment, type Writer, decodeInbox, signAs, writerOf } from '@foundationforest/folders'

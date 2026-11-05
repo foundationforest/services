@@ -1,4 +1,4 @@
-// Test helpers: the plug on a loopback port, and a clock tests can move.
+// Test helpers: the host API on a loopback port, and a clock tests can move.
 
 import { Host, type HostOptions } from '../src/plug.ts'
 

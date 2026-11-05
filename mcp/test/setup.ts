@@ -1,9 +1,9 @@
-// What the tests act on, all on loopback: this repo's host (its plug, host/src/plug.ts), which the
-// person's app, the stranger and this copy write to; a stand-in index serving its skill.md and three
-// answers in the index's JSON as it is now, each with a field this copy has never seen, and a search
-// that answers with what it was asked; a stand-in for the app's connect page, where the reference
-// app (app.ts) makes the connection for the profiles the person ticks and hands back its pointer;
-// and this copy, started in-process, reading the index, reaching the loopback host.
+// What the tests act on, all on loopback: this repo's host (its host API, host/src/plug.ts), which
+// the person's app, the stranger and this copy write to; a stand-in index serving its skill.md and
+// three answers in the index's JSON as it is now, each with a field this copy has never seen, and a
+// search that answers with what it was asked; a stand-in for the app's connect page, where the
+// reference app (app.ts) makes the connection for the profiles the person ticks and hands back its
+// pointer; and this copy, started in-process, reading the index, reaching the loopback host.
 //
 // Two people:
 // - the person, whose app holds three profiles, tutoring/tutor, tutoring/student and
@@ -62,7 +62,8 @@ export const SKILL = '# A stand-in index\n\nEach answer here holds badge, a fiel
 
 /**
  * The stand-in index: its skill.md, and three answers in the index's JSON as it is now, each with
- * `badge`, a field the mcp has never seen. Its search answers with `asked` too: the filters it got.
+ * `badge`, a field the MCP server has never seen. Its search answers with `asked` too: the filters
+ * it got.
  */
 async function standIn(stranger: string, listing: string): Promise<{ url: string; server: Server; said: World['said'] }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face check' }]
@@ -177,7 +178,7 @@ export async function logIn(c: { client: Client; transport: StreamableHTTPClient
   return back
 }
 
-/** A stranger: a tutoring tutor whose folder takes inbox entries, with its open key's identity. */
+/** A stranger: a tutoring tutor whose folder takes inbox entries, with its encryption key's identity. */
 export type Stranger = { address: string; listing: string; listings: { [subject: string]: string }; tutor: MainKey; identity: string }
 
 export type World = {

@@ -1,7 +1,7 @@
 // The verifier end to end, in one process: a stand-in Didit, an embedder that knows people by name, a
 // real SQLite file, real HTTP, and stamps checked the way the standard checks them, a verification
-// made and checked against the key `GET /` publishes. One test runs the stand-in Didit the e2e loop runs
-// (test/fake-didit.ts) itself, with the stand-in embedding.
+// made and checked against the key `GET /` publishes. One test runs the stand-in Didit the
+// end-to-end test runs (test/fake-didit.ts) itself, with the stand-in embedding.
 //
 //   npm test
 

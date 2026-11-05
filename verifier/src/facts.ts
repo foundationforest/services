@@ -25,10 +25,10 @@
 // from and anyone can make it again.
 //
 // The fingerprint is how the verifier knows a person came to the ID check before without keeping who
-// they are: HMAC-SHA256, under a key mixed from the verifier's seed, of the standard's canonical JSON of
-// `{birth, name}`, written as above. A reader of the file without the key cannot test a guessed name
-// against it. The country is left out on purpose: a renewed document, or another country's, is the
-// same person.
+// they are: HMAC-SHA256, under a key derived from the verifier's seed, of the standard's canonical
+// JSON of `{birth, name}`, written as above. A reader of the file without the key cannot test a
+// guessed name against it. The country is left out on purpose: a renewed document, or another
+// country's, is the same person.
 
 import { createHash, createHmac } from 'node:crypto'
 

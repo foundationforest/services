@@ -1,6 +1,6 @@
-// The inbox on the plug, in the order the standard's plug checks an inbox entry: its text and shape,
-// a duplicate, an inbox here, then its own choice; the sizes and batches it chooses; and its list, open to
-// anyone.
+// The inbox on the host API, in the order the standard's host API checks an inbox entry: its text
+// and shape, a duplicate, an inbox here, then its own choice; the sizes and batches it chooses; and
+// its list, open to anyone.
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
@@ -10,7 +10,7 @@ import { DEFAULT_MAX_INBOX_BYTES, type Host, type HostOptions } from '../src/plu
 import { T0, alice, aliceBuyer, aliceOpening, aliceWith, bob, profileBody, stranger } from './fixtures.ts'
 import { startPlug } from './helpers.ts'
 
-/** Alice's profile entry: her open key, and `helper` listed with read-inbox. */
+/** Alice's profile entry: her public encryption key, and `helper` listed with read-inbox. */
 const ALICE = aliceWith(['read-inbox'])
 
 /** A host, at T0, holding Alice's profile entry. */

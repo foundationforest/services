@@ -1,16 +1,16 @@
-// The smoke test's client: the MCP SDK's own, against a copy of this mcp over Streamable HTTP. The
-// test (test/smoke.test.ts) runs it against the image's own command on loopback, with a login through
-// the stand-in connect page; after a deploy, `npm run smoke -- <url>` runs it against the deployed
-// copy, and checks what needs no person.
+// The smoke test's client: the MCP SDK's own, against a copy of this MCP server over Streamable
+// HTTP. The test (test/smoke.test.ts) runs it against the image's own command on loopback, with a
+// login through the stand-in connect page; after a deploy, `npm run smoke -- <url>` runs it against
+// the deployed copy, and checks what needs no person.
 //
 // What it checks: how Forest works comes first, as the server's instructions, with the mark as the
 // server's icon; there is no session; every tool is listed; reading works with no login; a call to
 // a tool that acts for the person, with no token, gets the 401 challenge, naming the metadata; the
-// metadata names this copy as the resource and its own authorization server; its open key is at
-// /open-key; an AI app can register; /authorize sends the person to the app's connect page, or says
-// logins wait; the same tools answer at /mcp; the icon is at /favicon.ico and /icon.svg. Given a way
-// through the connect page, also: the login, and my_profiles answering, with the profiles ticked or
-// with why the connection's hosts were not reached.
+// metadata names this copy as the resource and its own authorization server; its public encryption
+// key is at /open-key; an AI app can register; /authorize sends the person to the app's connect
+// page, or says logins wait; the same tools answer at /mcp; the icon is at /favicon.ico and
+// /icon.svg. Given a way through the connect page, also: the login, and my_profiles answering, with
+// the profiles ticked or with why the connection's hosts were not reached.
 
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'

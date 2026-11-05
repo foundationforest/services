@@ -1,7 +1,8 @@
 // The index's opinions: the lists in lists/ and the one file in config/, read once at start. Each is
 // a file anyone can read; README.md, How we run it, says what each holds today. A file that does not
 // read stops the start, naming the file and what is wrong. lists/apps.json alone may be missing: then
-// the pages link to no app, as a copy with lists of its own, such as the e2e loop's, gives none.
+// the pages link to no app, as a copy with lists of its own, such as the end-to-end test's, gives
+// none.
 
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'

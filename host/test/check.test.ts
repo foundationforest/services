@@ -1,9 +1,9 @@
-// The standard's host check (@foundationforest/folders/check) against this host: the plug alone,
-// which chooses nothing of its own, passes every check; the whole host, credits and all, refuses a
-// fresh seed's first write by its own choice, so the check stops there unchecked and nothing fails;
-// and given a seed whose two folders hold credits, and the payment `npm run check-host` gives it
-// (check-host.ts), each inbox entry paid from check/b's balance, it passes every check, the inbox's
-// included.
+// The standard's host check (@foundationforest/folders/check) against this host: the host API
+// alone, which chooses nothing of its own, passes every check; the whole host, credits and all,
+// refuses a fresh seed's first write by its own choice, so the check stops there unchecked and
+// nothing fails; and given a seed whose two folders hold credits, and the payment
+// `npm run check-host` gives it (check-host.ts), each inbox entry paid from check/b's balance, it
+// passes every check, the inbox's included.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'

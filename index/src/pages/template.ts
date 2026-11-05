@@ -97,8 +97,8 @@ const FONT = readFileSync(join(MANROPE, 'index.css'), 'utf8')
 
 /**
  * The Forest mark, the three chevrons and trunk the app's Mark draws (app src/mark.tsx), the same
- * strokes as the mcp's icon (mcp/src/icon.ts), copied here since this package and its image hold
- * only index/: stroke 4, in a 40-unit square, in the ink, so it follows light and dark.
+ * strokes as the MCP server's icon (mcp/src/icon.ts), copied here since this package and its image
+ * hold only index/: stroke 4, in a 40-unit square, in the ink, so it follows light and dark.
  */
 const MARK = `<svg class="mark" width="28" height="28" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="4" aria-hidden="true"><polyline points="8,12 20,3 32,12"/><polyline points="8,22 20,13 32,22"/><polyline points="8,32 20,23 32,32"/><line x1="20" y1="24" x2="20" y2="38"/></svg>`
 

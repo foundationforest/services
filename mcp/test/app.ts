@@ -1,17 +1,17 @@
 // A reference app: what a person's Forest app does around this copy, in plain code, with the
-// standard's pieces only, for the tests and the loop to run. It holds the person's seed and the
-// stamps it was given, and:
+// standard's pieces only, for the tests and the end-to-end test to run. It holds the person's seed
+// and the stamps it was given, and:
 //
 // - keeps the person's Profiles folder (folders/README.md, The Profiles folder), the empty label's:
 //   its profile entry, which holds only its hosts; a `label/<id>` entry for each profile it makes
 //   and a `stamp/<id>` entry for each stamp it keeps, each at a random id, locked to the folder's own
-//   open key alone;
+//   public encryption key alone;
 // - keeps the wallet, the Profiles folder's balance at each host, where gifts and buys land, and
 //   funds a folder from it (`fund`): a buy paid from the wallet with the Profiles folder's main key,
 //   its credits spent into that folder. The credits say nothing about who paid for them;
-// - makes a profile: its profile entry with its market and role, its hosts, its main key's open key
-//   (so it takes inbox entries), both pay addresses, a verification made on the device for each
-//   stamp it keeps, and any more proofs;
+// - makes a profile: its profile entry with its market and role, its hosts, its main key's public
+//   encryption key (so it takes inbox entries), both pay addresses, a verification made on the
+//   device for each stamp it keeps, and any more proofs;
 // - at the connect page, on the person's yes: makes the AI app's connection folder, named by a key
 //   made at random, its first write paid as the device chooses (`pay`): its profile entry, which
 //   holds only its hosts, and its `connection` entry, the AI app's name and a random secret. Then,
@@ -19,13 +19,15 @@
 //   with its switches (all four unless the person chose fewer); its note at `key/<id>`, a random id,
 //   locked to the main key alone, naming the key and holding the connection folder's key; and its
 //   `access/<id>` entry in the connection folder. The connection folder's entries are locked to its
-//   own key and the connector's open key, which it reads at the connector's /open-key. Then it hands
-//   back the pointer to the folder, locked to that open key alone;
+//   own key and the MCP server's public encryption key, which it reads at the MCP server's
+//   /open-key. Then it hands back the pointer to the folder, locked to that public encryption key
+//   alone;
 // - adds a profile to a connection, and ends one, each found from the seed alone, by opening the
 //   notes of every profile its Profiles folder lists;
 // - ends an access key: lists it in its profile entry with `until`, that profile entry's own time,
-//   and no open key, so what it wrote by then still counts and nothing more it signs does; and
-//   deletes its entry in the connection its note names, and its note, each found by opening them;
+//   and no public encryption key, so what it wrote by then still counts and nothing more it signs
+//   does; and deletes its entry in the connection its note names, and its note, each found by
+//   opening them;
 // - on a new device, finds the person's profiles and stamps from the seed alone, by opening every
 //   entry its Profiles folder holds.
 //
@@ -62,10 +64,10 @@ async function opened(view: View, kind: string, identity: string): Promise<Array
   return out
 }
 
-/** A connection the person's notes name: its folder's address and key, the connector it is for, the AI app's name, and its folder with each access entry, opened. */
+/** A connection the person's notes name: its folder's address and key, the MCP server it is for, the AI app's name, and its folder with each access entry, opened. */
 export type Found = { address: string; key: AccessKey; connector: string; name: string; view: View; access: Array<{ path: string; body: Body }> }
 
-/** The open key a connector publishes at /open-key. */
+/** The public encryption key an MCP server publishes at /open-key. */
 const openKeyOf = async (connector: string) => ((await (await fetch(new URL('/open-key', connector))).json()) as { openKey: string }).openKey
 
 /** A written batch, checked: every host took every entry, or why not. */
@@ -109,7 +111,7 @@ export class App {
     return { key, view: await readFolder(this.hosts, key.address, Date.now()) }
   }
 
-  /** An entry in the Profiles folder at `<kind>/<id>`, a random id, locked to its own open key alone; its profile entry first, when it has none. */
+  /** An entry in the Profiles folder at `<kind>/<id>`, a random id, locked to its own public encryption key alone; its profile entry first, when it has none. */
   private async inProfiles(kind: string, body: Body): Promise<void> {
     const { key, view } = await this.profilesFolder()
     const now = Date.now()
@@ -131,8 +133,8 @@ export class App {
 
   /**
    * A new profile, `<market>/<role>`, listed in the Profiles folder: its profile entry with its
-   * market, role and hosts, its open key, both pay addresses, a verification for each stamp this
-   * device keeps, then `proofs`. Gives back its address.
+   * market, role and hosts, its public encryption key, both pay addresses, a verification for each
+   * stamp this device keeps, then `proofs`. Gives back its address.
    */
   async addProfile(label: string, more: { proofs?: Body[] } = {}): Promise<string> {
     const [market, role] = label.split('/')
@@ -177,11 +179,11 @@ export class App {
   }
 
   /**
-   * The connect page: the person saw the AI app's name, from the request, and the connector, and
+   * The connect page: the person saw the AI app's name, from the request, and the MCP server, and
    * chose. On a yes: the connection folder, its key made at random, and for each profile ticked a
    * new access key, listed in its profile entry with what the person lets it do, its note, and its
-   * access entry; then the pointer, locked to the connector's open key. Gives back where the browser
-   * goes: the connector's /connected, with the request and the pointer.
+   * access entry; then the pointer, locked to the MCP server's public encryption key. Gives back
+   * where the browser goes: the MCP server's /connected, with the request and the pointer.
    */
   async connect(connector: string, request: string, choice: Choice): Promise<string> {
     const back = new URL('/connected', connector)
@@ -210,7 +212,7 @@ export class App {
   /**
    * A new access key for `label`, for a connection: listed in its profile entry with `can`, and its
    * note, holding the connection folder's key. Gives back its access entry, for the connection
-   * folder, locked to the folder's key and the connector's `openKey`.
+   * folder, locked to the folder's key and the MCP server's `openKey`.
    */
   private async grant(conn: { key: AccessKey; connector: string; name: string }, label: string, can: string[], openKey: string): Promise<SignedEntry> {
     const key = await newAccessKey()
@@ -270,9 +272,10 @@ export class App {
 
   /**
    * The access key at `address` ended in `label`'s profile entry: listed with `until`, the time of
-   * the profile entry that ends it, and without its open key, as nothing new is locked to it (a key
-   * that ended already keeps its own `until`); then its entry in the connection its note names, and
-   * its note, deleted. What it wrote by then still counts; a host takes nothing more it signs.
+   * the profile entry that ends it, and without its public encryption key, as nothing new is locked
+   * to it (a key that ended already keeps its own `until`); then its entry in the connection its
+   * note names, and its note, deleted. What it wrote by then still counts; a host takes nothing
+   * more it signs.
    */
   async endKey(label: string, address: string): Promise<void> {
     const ended = (k: Body, until: number): Body => {
