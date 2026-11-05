@@ -1,8 +1,8 @@
 // The hosted copy: MCP over Streamable HTTP at its root (and at /mcp, where connectors
-// added before point), the login (login.ts), its open key at /open-key, and the icon. Stateless:
-// each MCP request gets a fresh server, gone when it ends, and nothing about a call is kept; the
-// connection a token points to is read and opened at most once for the request that needs it, and
-// forgotten with it.
+// added before point), the login (login.ts), its public encryption key at /open-key, and the icon.
+// Stateless: each MCP request gets a fresh server, gone when it ends, and nothing about a call is
+// kept; the connection a token points to is read and opened at most once for the request that needs
+// it, and forgotten with it.
 //
 // Reading needs no login. A call to a tool that acts for the person with no token gets a 401 whose
 // challenge starts the AI app's login, and a token this copy did not give gets a 401 on any
@@ -126,7 +126,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
     if (pointer === null && acts) return login.challenge(res)
     // The connection, read and opened at most once a request, and forgotten with it: before a
     // request that acts for the person, and otherwise only when a tool asks for it. For a request
-    // that acts, a token whose pointer no longer opens, once this copy's opening half changed, or
+    // that acts, a token whose pointer no longer opens, once this copy's encryption key changed, or
     // whose connection is gone, is a login to make again; hosts that do not answer now are not.
     const own = new Map<string, string>()
     let reading: ReturnType<Login['connection']> | undefined

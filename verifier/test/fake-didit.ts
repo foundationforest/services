@@ -1,8 +1,8 @@
 // A stand-in for Didit, for tests on this machine only: the verifier's own test of both checks, and the
-// e2e loop's verifier (e2e/), since a script has no face. It answers the calls the verifier's Didit client
-// makes (verifier/src/didit.ts), in Didit's API v3 shape, for two workflows: the face check's and the ID
-// check's, the foundation's live ones unless FAKE_DIDIT_FACE_WORKFLOW_ID and FAKE_DIDIT_ID_WORKFLOW_ID
-// name others.
+// end-to-end test's verifier (e2e/), since a script has no face. It answers the calls the
+// verifier's Didit client makes (verifier/src/didit.ts), in Didit's API v3 shape, for two
+// workflows: the face check's and the ID check's, the foundation's live ones unless
+// FAKE_DIDIT_FACE_WORKFLOW_ID and FAKE_DIDIT_ID_WORKFLOW_ID name others.
 //
 //   POST /v3/session/                   opens a session on one of the two workflows: {session_id, url};
 //                                       a session on any other is a 400

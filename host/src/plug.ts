@@ -1,6 +1,6 @@
-// The plug: the seven requests every host answers (the standard's folders/README.md, Hosts), over
-// plain HTTP, a SQLite file per folder, and a file store (storage.ts). It is this host's own code;
-// the standard's host check (@foundationforest/folders/check) shows it fits the plug.
+// The host API: the seven requests every host answers (the standard's folders/README.md, Hosts),
+// over plain HTTP, a SQLite file per folder, and a file store (storage.ts). It is this host's own
+// code; the standard's host check (@foundationforest/folders/check) shows it answers the host API.
 //
 // It holds no keys, has no sign-up and asks for no login: an entry's signature is its only
 // credential. It is open: it takes signed entries for any folder and serves them to anyone; it takes
@@ -23,7 +23,7 @@
 //                                  that gives one, a redirect to a short-lived link to them there
 //
 // A write's payment, the standard's forest-payment header, goes to this host's choice for inbox
-// entries with each line's place in the request; the plug reads nothing in it.
+// entries with each line's place in the request; the host API reads nothing in it.
 //
 // How large an entry, an inbox entry or a file it takes, and how many lines a request or a page
 // holds, is this host's own choice (maxEntryBytes, maxInboxBytes, maxFileBytes, maxBatch,
@@ -153,7 +153,7 @@ export type { ReadOptions, Result }
 type Answer = Omit<Result, 'i'>
 type Page = { lines: string[]; cursor: number }
 
-/** A line's refusal: its FolderError's code, the standard's, as it comes; or, for any other error, the plug's own `invalid`. */
+/** A line's refusal: its FolderError's code, the standard's, as it comes; or, for any other error, the host API's own `invalid`. */
 const refusal = (err: unknown): Answer => ({ ok: false, error: err instanceof FolderError ? err.code : ('invalid' satisfies Code), message: (err as Error).message })
 
 export class Host {
@@ -192,7 +192,7 @@ export class Host {
   }
 
   // ------------------------------------------------------------------------------------------
-  // Entries: Taking an entry in, in the plug's order.
+  // Entries: Taking an entry in, in the host API's order.
 
   /** Take a request's entries (wire text), check each, store what becomes current at its path. */
   async accept(lines: string[]): Promise<Result[]> {
@@ -307,7 +307,7 @@ export class Host {
   }
 
   // ------------------------------------------------------------------------------------------
-  // The inbox: Taking an inbox entry in, in the plug's order.
+  // The inbox: Taking an inbox entry in, in the host API's order.
 
   /** Take a request's inbox entries (wire text), check each in the standard's order, store what passes. `payment` is the request's, for this host's choice. */
   async leave(lines: string[], payment?: string): Promise<Result[]> {
@@ -387,17 +387,18 @@ export class Host {
   // HTTP
 
   /**
-   * What a server answering the plug's requests is made with: the plug's timeout, looked at every
-   * second (Node looks every 30 by default, and every second keeps it near), and its header cap.
+   * What a server answering the host API's requests is made with: the host API's timeout, looked at
+   * every second (Node looks every 30 by default, and every second keeps it near), and its header
+   * cap.
    */
   serverOptions(): ServerOptions {
     return { requestTimeout: this.timeout, connectionsCheckingInterval: 1000, maxHeaderSize: MAX_HEADER_BYTES }
   }
 
   /**
-   * One request, answered as the plug answers it, on its own server (`listen`) or on one around it
-   * (host.ts). One that fails answers 500 and logs one line; one dropped while it arrived (408, or
-   * the asker gone) gets no 500, so it logs none.
+   * One request, answered as the host API answers it, on its own server (`listen`) or on one around
+   * it (host.ts). One that fails answers 500 and logs one line; one dropped while it arrived (408,
+   * or the asker gone) gets no 500, so it logs none.
    */
   serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
     return this.handle(req, res).catch((err: unknown) => {
@@ -407,7 +408,7 @@ export class Host {
     })
   }
 
-  /** Prune every hour, until close: `listen` starts it, and so does a server around the plug. */
+  /** Prune every hour, until close: `listen` starts it, and so does a server around the host API. */
   pruneEveryHour(): void {
     this.pruning ??= setInterval(() => void this.prune().catch(() => {}), DAY / 24).unref()
   }

@@ -1,14 +1,14 @@
-// The host's credits, through the whole host on loopback, its plug and its front: what joining, an
-// entry, a file and a delete cost, each counted as at least a kilobyte, at the rate of where it is
-// kept; an entry larger than any inbox entry, paid by the byte, as entries up to a file's size are;
-// a write refused with no balance, joining too, and leaving and taking down never; a file paid by a
-// folder that names it, once when two uploads of it come at once, and not at all when the bucket
-// does not take it; an inbox entry paid by its sender's folder, by its bytes, signed over its
-// id by the folder's main key or an access key listed with message, and paid once; a buy paid by a
-// ticket, or from a folder's balance by its main key or an access key listed with message, and paid
-// once; the credit key made at the first start; and one end to end, a folder, an
-// entry and a file, read back. The plug's own tests are plug.test.ts and its neighbours, and the
-// standard's host check is check.test.ts.
+// The host's credits, through the whole host on loopback, its host API and its front: what joining,
+// an entry, a file and a delete cost, each counted as at least a kilobyte, at the rate of where it
+// is kept; an entry larger than any inbox entry, paid by the byte, as entries up to a file's size
+// are; a write refused with no balance, joining too, and leaving and taking down never; a file paid
+// by a folder that names it, once when two uploads of it come at once, and not at all when the
+// bucket does not take it; an inbox entry paid by its sender's folder, by its bytes, signed over
+// its id by the folder's main key or an access key listed with message, and paid once; a buy paid
+// by a ticket, or from a folder's balance by its main key or an access key listed with message, and
+// paid once; the credit key made at the first start; and one end to end, a folder, an
+// entry and a file, read back. The host API's own tests are plug.test.ts and its neighbours, and
+// the standard's host check is check.test.ts.
 
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync, statSync } from 'node:fs'

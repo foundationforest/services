@@ -1,9 +1,9 @@
 // A message from one of the person's profiles to another profile: signed with the profile's access
-// key, locked to the open keys the recipient's profile entry gives for its inbox (inboxEntry), and
-// left with each host it names. It carries the sender's first host, so the recipient's app finds
-// the sender's folder. No host checks who signed the message inside, so this copy checks first that
-// the sender's profile entry lists the key with message, and it has not ended, as the recipient's
-// app will (senderCounts).
+// key, locked to the public encryption keys the recipient's profile entry gives for its inbox
+// (inboxEntry), and left with each host it names. It carries the sender's first host, so the
+// recipient's app finds the sender's folder. No host checks who signed the message inside, so this
+// copy checks first that the sender's profile entry lists the key with message, and it has not
+// ended, as the recipient's app will (senderCounts).
 //
 // Each host takes its price, by its bytes, from the sending profile's balance there: the request
 // carries a payment signed over the inbox entry's id by the same access key (the credits client's

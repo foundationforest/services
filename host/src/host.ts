@@ -1,21 +1,21 @@
-// The foundation's host: the plug (plug.ts, over storage.ts), run with this service's choices. It
-// takes anyone's entries, inbox entries and the files a current entry names, as the standard's plug
-// says; every number it uses is in `choice` below, in plug.ts's defaults, or a setting, and
-// README.md says each in words.
+// The foundation's host: the host API (plug.ts, over storage.ts), run with this service's choices.
+// It takes anyone's entries, inbox entries and the files a current entry names, as the standard's
+// host API says; every number it uses is in `choice` below, in plug.ts's defaults, or a setting,
+// and README.md says each in words.
 //
-// Around the plug, one thing only: a front that answers `GET /` with one line saying what this is,
-// sells and takes credits (credits.ts), and hands every other request, untouched, to the plug, in
-// the same process: one server, on one port.
+// Around the host API, one thing only: a front that answers `GET /` with one line saying what this
+// is, sells and takes credits (credits.ts), and hands every other request, untouched, to the host
+// API, in the same process: one server, on one port.
 //
 // Every write is paid for in credits, from its folder's balance here, at the price of what it
-// stores: the plug asks this host's choices (`entryChoice`, `fileChoice`, `inboxChoice`). An entry
-// is claimed by its id as its price is taken, so two copies pay once. A file's bytes are stored
-// first: their price is reserved on a folder whose current entry names them, then taken once the
-// plug answers that it stored them, or released; the front stores one upload of the same bytes at
-// a time. The plug asks about a folder's first profile entry, so joining costs a write, and never
-// about a later one, so leaving and updating are free. An inbox entry is paid like an entry, by its
-// bytes, from the balance of the folder its request's payment names, signed over its id by that
-// folder's key; nothing goes to the recipient. Reads are free.
+// stores: the host API asks this host's choices (`entryChoice`, `fileChoice`, `inboxChoice`). An
+// entry is claimed by its id as its price is taken, so two copies pay once. A file's bytes are
+// stored first: their price is reserved on a folder whose current entry names them, then taken once
+// the host API answers that it stored them, or released; the front stores one upload of the same
+// bytes at a time. The host API asks about a folder's first profile entry, so joining costs a
+// write, and never about a later one, so leaving and updating are free. An inbox entry is paid like
+// an entry, by its bytes, from the balance of the folder its request's payment names, signed over
+// its id by that folder's key; nothing goes to the recipient. Reads are free.
 //
 // Taking your own things down is free: a null body over a live entry costs nothing. A null body
 // where nothing stands is a write like any other.
@@ -42,7 +42,7 @@ export const LABEL =
   'A Forest host, run by the Forest Foundation: the code and the choices in foundationforest/services, ' +
   'host/README.md. Anyone can write here, paying in credits.\n'
 
-/** This host's choices: each number the plug takes as an option. */
+/** This host's choices: each number the host API takes as an option. */
 export const choice = {
   /** Days an entry that stopped being current or counting, an inbox entry, and a file no current entry names are kept. */
   keepDays: 30,
@@ -52,18 +52,18 @@ export const choice = {
   maxPageLines: 1000,
   /** Bytes one page holds at most, though always one line. */
   maxPageBytes: 4 * 1024 * 1024,
-  /** The largest file it takes. Its types are the plug's default: png, jpeg and mp4. */
+  /** The largest file it takes. Its types are the host API's default: png, jpeg and mp4. */
   maxFileBytes: 50_000_000,
   /**
    * The largest entry it takes, as large as a file: each write is paid by the byte, so its size
-   * needs no other cap. Inbox entries stay the plug's 65,536 bytes: a message, which anyone leaves
-   * in anyone's folder.
+   * needs no other cap. Inbox entries stay the host API's 65,536 bytes: a message, which anyone
+   * leaves in anyone's folder.
    */
   maxEntryBytes: 50_000_000,
 } as const satisfies HostOptions
 
 export type Config = {
-  /** The data directory: the plug's storage, and the credits' file and key in `credits/`. */
+  /** The data directory: the host API's storage, and the credits' file and key in `credits/`. */
   dir: string
   /** Where file bytes go: disk in `dir`, or a bucket. */
   files: FileDriver
@@ -137,9 +137,10 @@ export function readConfig(env: Record<string, string | undefined> = process.env
 }
 
 /**
- * An entry's price, from its own folder's balance: its canonical bytes, kept on the disk. The plug
- * asks about a folder's first profile entry too, so it is priced like any. A null body over a live
- * entry takes it down, for free. `host` is the plug the entry is going into, for what stands there.
+ * An entry's price, from its own folder's balance: its canonical bytes, kept on the disk. The host
+ * API asks about a folder's first profile entry too, so it is priced like any. A null body over a
+ * live entry takes it down, for free. `host` is the host API the entry is going into, for what
+ * stands there.
  */
 export function paidEntries(credits: Credits, host: () => Host): EntryChoice {
   return (entry) => {
@@ -151,9 +152,9 @@ export function paidEntries(credits: Credits, host: () => Host): EntryChoice {
 /**
  * An inbox entry's price, kept on the disk, from the balance of the folder its line's payment names:
  * the request's payment is `balance <folder>.<key>.<signature> …`, one for each line in order, each
- * signed over that line's inbox entry's id. No inbox entry's id is kept, as an entry's is: the plug
- * refuses one already here (`duplicate`) before it asks, and this choice never waits, so no other
- * request is taken between that check and the store, and an inbox entry here is paid once.
+ * signed over that line's inbox entry's id. No inbox entry's id is kept, as an entry's is: the host
+ * API refuses one already here (`duplicate`) before it asks, and this choice never waits, so no
+ * other request is taken between that check and the store, and an inbox entry here is paid once.
  */
 export function paidInbox(credits: Credits): InboxChoice {
   return (entry, _stored, { payment, line }) => {
@@ -163,10 +164,10 @@ export function paidInbox(credits: Credits): InboxChoice {
 }
 
 /**
- * A file's bytes, paid for once stored: the plug's own types, then their price, kept in the bucket,
- * reserved on the first of the folders naming them that can pay it, the newest naming entry first:
- * the folder whose app is uploading, almost always. The front takes it once they are stored, or
- * releases it.
+ * A file's bytes, paid for once stored: the host API's own types, then their price, kept in the
+ * bucket, reserved on the first of the folders naming them that can pay it, the newest naming entry
+ * first: the folder whose app is uploading, almost always. The front takes it once they are stored,
+ * or releases it.
  */
 export function paidFiles(credits: Credits): FileChoice {
   return async (file, folders) => {
@@ -183,11 +184,11 @@ export function paidFiles(credits: Credits): FileChoice {
 }
 
 /**
- * The plug, with a file's price settled from what the plug answers as it stores the bytes: its
- * handler stores them through `putFile`, so this one is the one it calls. One upload of the same
- * bytes is stored at a time, so a second finds them stored and pays nothing. The price paidFiles
- * reserved is taken once the plug answers that it stored them (`ok` and no message), or released
- * on any other answer, or when storing them fails.
+ * The host API, with a file's price settled from what the host API answers as it stores the bytes:
+ * its handler stores them through `putFile`, so this one is the one it calls. One upload of the
+ * same bytes is stored at a time, so a second finds them stored and pays nothing. The price
+ * paidFiles reserved is taken once the host API answers that it stored them (`ok` and no message),
+ * or released on any other answer, or when storing them fails.
  */
 class PaidHost extends Host {
   readonly #credits: Credits
@@ -248,7 +249,7 @@ async function readBytes(req: IncomingMessage): Promise<Uint8Array | undefined> 
   return new Uint8Array(Buffer.concat(chunks))
 }
 
-/** The credit routes (credits.ts); false for any other path, which goes to the plug. */
+/** The credit routes (credits.ts); false for any other path, which goes to the host API. */
 function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: ServerResponse): boolean {
   const routes = [DIRECTORY_PATH, BUY_PATH, SPEND_PATH]
   if (!routes.includes(path) && !path.startsWith(BALANCE_PATH)) return false
@@ -313,7 +314,7 @@ export async function startHost(config: Config): Promise<RunningHost> {
     inboxChoice: paidInbox(credits),
   })
 
-  // The plug's own server options, its request timeout among them, for every request here.
+  // The host API's own server options, its request timeout among them, for every request here.
   const server = createServer(host.serverOptions(), (req, res) => {
     // A URL no URL parser reads (`//`, `/\`) is refused here: thrown in this handler, it would stop
     // the process.

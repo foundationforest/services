@@ -1,28 +1,30 @@
-# Every service's checks, and the loop's, from a clean install, on every pull request and every push
-# to main. Each job first fetches the standard and the markets at their pins and builds the standard
-# (standard.sh), then installs what it uses.
+# Every service's checks, and the end-to-end test's, from a clean install, on every pull request and
+# every push to main. Each job first fetches the standard and the markets at their pins and builds
+# the standard (standard.sh), then installs what it uses.
 #
 #   verifier     its type-check (the stand-in Didit for tests included) and its tests: verifications
 #                made from its stamps and checked against its published keys, the facts vectors, the
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its gifts' tickets taken by the host's own seller, bought with
 #                the host's credits client
-#   index        its type-check and its tests, on loopback: this repo's host (its plug), real
+#   index        its type-check and its tests, on loopback: this repo's host (its host API), real
 #                verifications and a real reputation proof from the circuits' committed proving files,
 #                and the index end to end
-#   host         its type-check and its tests: the standard's host check against the plug and against
-#                the whole host, the plug's own tests and its storage's, its credits', and its credits
-#                client's alone against Cloudflare's own Privacy Pass issuer
-#   e2e          the loop's type-check, which reads the verifier's, host's, index's and mcp's code it
-#                starts, and mcp's reference app and test client it acts through
-#   loop         the loop itself, `npm run e2e`: two people through the loop's own verifier, host,
-#                index and mcp on loopback, with no chain and no secret; it passes or fails the job
-#   mcp          its type-check and tests, on loopback: this repo's host (its plug), a stand-in index
-#                and connect page, and its reference app; the login end to end through the MCP
+#   host         its type-check and its tests: the standard's host check against the host API and
+#                against the whole host, the host API's own tests and its storage's, its credits',
+#                and its credits client's alone against Cloudflare's own Privacy Pass issuer
+#   e2e          the end-to-end test's type-check, which reads the verifier's, host's, index's and
+#                the MCP server's code it starts, and the MCP server's reference app and test client
+#                it acts through
+#   loop         the end-to-end test itself, `npm run e2e`: two people through the end-to-end test's
+#                own verifier, host, index and MCP server on loopback, with no chain and no secret;
+#                it passes or fails the job
+#   mcp          its type-check and tests, on loopback: this repo's host (its host API), a stand-in
+#                index and connect page, and its reference app; the login end to end through the MCP
 #                SDK's client and the connection, every tool in the person's folders, and the
 #                image's own command
 #
-# Not here, and in mcp's README: its smoke test against the deployed copy.
+# Not here, and in the MCP server's README: its smoke test against the deployed copy.
 #
 # A test that finds a piece missing skips instead of failing. Here a skip fails the step: the TAP
 # summary must say "# skipped 0", so a missing piece never passes as green.

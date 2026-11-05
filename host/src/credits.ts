@@ -17,8 +17,8 @@
 //
 // An entry is claimed once, by its id, in the same transaction that takes its price: a second copy
 // in flight, or the same one sent again, costs nothing. A file's bytes are stored first and charged
-// after: their price is reserved from a balance before the plug stores them, taken once they are
-// stored, released if they are not.
+// after: their price is reserved from a balance before the host API stores them, taken once they
+// are stored, released if they are not.
 //
 // One SQLite file, its seller's: the spent list, the buys paid for, the bill, each folder's balance
 // in millionths of a credit and each entry's id it took a price for. A spend marks its credits spent
@@ -186,7 +186,7 @@ export class Credits {
    * `<folder>.<key>.<signature>`, signed over the inbox entry's id at this host (`inboxMessage`) by
    * the folder's main key, or an access key its profile entry here lists with message and no until.
    * Null when taken, else what to tell the sender. Nothing keeps which folder paid for which inbox
-   * entry: the plug refuses the same one again by its id before it asks its price.
+   * entry: the host API refuses the same one again by its id before it asks its price.
    */
   inbox(payment: string | undefined, id: string, price: number): string | null {
     if (payment === undefined) return `an inbox entry here is paid from a folder's balance, in the ${PAYMENT_HEADER} header as \`balance <folder>.<key>.<signature> …\`, one for each line in order`

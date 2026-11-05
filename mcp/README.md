@@ -1,20 +1,20 @@
 # mcp
 
-The mcp is a connector, over MCP (the Model Context Protocol, the way AI apps call outside tools). It
-lets your AI app (Claude, ChatGPT) act for you: find people, post, review and message, within the
-access keys you give it. An access key is a key one of your profiles hands out: its profile entry
-lists each one with what it `can` do (`read`, `read-inbox`, `write`, `message`), and every host and
-reader checks that. The Forest Foundation runs this copy, at https://mcp.forest.foundation. Anyone
-can run another; the main way is this directory, or its image. It keeps nothing of yours between
-calls, and never holds your seed or a main key: the access keys your app hands it wait in your AI
-app's connection folder, locked to this copy's open key. No account, no password.
+The [MCP](https://modelcontextprotocol.io) server lets your AI app (Claude, ChatGPT) act for you:
+find people, post, review and message, within the access keys you give it. An access key is a key
+one of your profiles hands out: its profile entry lists each one with what it `can` do (`read`,
+`read-inbox`, `write`, `message`), and every host and reader checks that. The Forest Foundation runs
+this copy, at https://mcp.forest.foundation. Anyone can run another; the main way is this directory,
+or its image. It keeps nothing of yours between calls, and never holds your seed or a main key: the
+access keys your app hands it wait in your AI app's connection folder, locked to this copy's public
+encryption key. No account, no password.
 
 ## How it works
 
 ```
-AI app ── MCP, over HTTPS ──▶ mcp ──▶ the index: its guide, its search, its profile pages
-                               ├──▶ the markets, at MARKETS
-                               └──▶ the person's folders, on their hosts, with the connection's access keys
+AI app ── MCP, over HTTPS ──▶ MCP server ──▶ the index: its guide, its search, its profile pages
+                                      ├──▶ the markets, at MARKETS
+                                      └──▶ the person's folders, on their hosts, with the connection's access keys
 ```
 
 It reaches those three places and nothing more. It signs with the access keys and reads what they
@@ -36,7 +36,7 @@ read before the person connects anything; four act for the person and need one.
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
 | `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
-| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the open keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key; then a copy in the profile's own folder, below |
+| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the public encryption keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key; then a copy in the profile's own folder, below |
 
 MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
 
@@ -79,10 +79,10 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   field.
 - **`write`, locked** (`locked: true`): at any path but `profile` and `key/…`, the body the person's
   own and unchecked, with no `files` (anyone fetches a file by its hash), locked to every key that
-  may read the folder (`lockKeysOf`): the main key's open key and each access key listed with
-  `read`. No access key writes `profile`. Whether the key may write is the hosts' to say, and each
-  host's refusal is passed on, so an ended key hears `unlisted`; a `message` is checked here first,
-  since only the recipient's app would see it does not count.
+  may read the folder (`lockKeysOf`): the main key's public encryption key and each access key
+  listed with `read`. No access key writes `profile`. Whether the key may write is the hosts' to
+  say, and each host's refusal is passed on, so an ended key hears `unlisted`; a `message` is
+  checked here first, since only the recipient's app would see it does not count.
 - **`message`, its copy:** once a host took the message, a copy in the sending profile's own folder,
   as the Forest app keeps one: at `sent/<id>`, 16 random bytes in hex, `{ to, time, body }`, locked
   to every key that may read the folder (`lockKeysOf`) and written as any entry, so the person's app
@@ -91,10 +91,10 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
 - **Other folders** (a recipient, a sender, a review's subject) are looked for at the hosts the
   person's own profiles use, and a message's own `host`, then every host the folder's profile entry
   names: that is where the profiles the person deals with live today, and a message names its
-  sender's host, so a reply finds it. A profile's address names no host, the index says where only
-  in its own format, which `search` never names, and following any host anyone names would reach any
-  address, so every host is reached with `publicFetch` (`src/public.ts`), which reaches only public
-  addresses and follows no redirect.
+  sender's host, so a reply finds it. A profile's address names no host, and the index says where
+  only in its own format, which `search` never names. Following any host anyone names would reach
+  any address, so every host is reached with `publicFetch` (`src/public.ts`), which reaches only
+  public addresses and follows no redirect.
 - **The person's own addresses.** In every answer of the four tools that act, each address of a
   profile in the connection becomes its label, and each pay address of a profile entry it read
   becomes `<label>'s <type> pay address`, wherever it appears. `search` only reads: its answer
@@ -128,9 +128,8 @@ body this copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under 
    `response_type=code`, an S256 `code_challenge`, and `resource` if given, then sends the browser to
    `APP_URL?connector=<origin>&request=<request>`, the request being base64url of
    `{ client, name, redirect, challenge, state?, resource, exp }`, a dot, its MAC, `exp` 10 minutes
-   ahead. Without `APP_URL`, it is a page
-   saying logins wait, and reading still works.
-5. **The connect page,** the app's, shows the AI app's name and the connector's origin; the person
+   ahead. Without `APP_URL`, it is a page saying logins wait, and reading still works.
+5. **The connect page,** the app's, shows the AI app's name and this copy's origin; the person
    ticks the profiles it acts in and what it may do. On a yes the app makes the connection and sends
    the browser to `<origin>/connected?request=<request>&pointer=<pointer>`; on a no, with
    `error=access_denied`.
@@ -138,21 +137,23 @@ body this copy wrote, in base64url JSON, a dot, then an HMAC-SHA256 of it under 
    and checks its shape and that it names this request; else a page saying so, and no code. It sends
    the browser to the redirect with `code`, `state` and `iss`; the code carries the pointer, still
    locked, with the client, redirect, challenge and resource, for 60 seconds.
-7. **`/token`** (`grant_type=authorization_code`) checks the code, the client and its secret, the redirect, `code_verifier` and
-   `resource`, and gives an access token carrying the pointer, still locked. It has no expiry and
-   no refresh token. A profile added to the connection needs no new login.
+7. **`/token`** (`grant_type=authorization_code`) checks the code, the client and its secret, the
+   redirect, `code_verifier` and `resource`, and gives an access token carrying the pointer, still
+   locked. It has no expiry and no refresh token. A profile added to the connection needs no new
+   login.
 
 ### The connection
 
 The connection is this service's own format, which an app follows to hand this copy access keys: a
 folder of the person's for each AI app, and a pointer to it, which the AI app's token carries.
 
-- **This copy's open key,** `GET /open-key`: `{ "openKey": "age1pq1…" }`, its opening half's age
-  post-quantum key, readable from any page, the same while the volume keeps `mcp-opening.json`.
+- **This copy's public encryption key,** `GET /open-key`: `{ "openKey": "age1pq1…" }`, age's
+  post-quantum kind, from its encryption key, readable from any page, the same while the volume
+  keeps `mcp-opening.json`.
 - **The connection folder** is an ordinary folder on the person's hosts, named by a key the app makes
   at random (keys/'s `newAccessKey()`, listed nowhere), so its name says and links nothing. Its
   profile entry holds only `hosts`; each other entry is locked, with folders/locked's `lock`, to the
-  folder's own open key and this copy's, and no other:
+  folder's own public encryption key and this copy's, and no other:
   - `connection`: `{ name: <the AI app's name>, secret: <32 random bytes, base64url> }`;
   - `access/<id>`, a random id, one a profile: `{ label, address, hosts, key: <its access key's 64
     bytes, base64url> }`.
@@ -161,8 +162,8 @@ folder of the person's for each AI app, and a pointer to it, which the AI app's 
   or `read-inbox`), and notes at `key/<id>`, locked to the main key alone, as `{ key, connection, …
   }`: `connection`, the folder's key, lets any of the person's devices find it from the seed; the
   rest is the app's (the reference app's: the AI app's name, this copy's origin, the time).
-- **The pointer** is an envelope's text, locked to this copy's open key alone, at most 4,096
-  characters: exactly `{ request: <SHA-256 of the request text, lowercase hex>, folder: <the
+- **The pointer** is an envelope's text, locked to this copy's public encryption key alone, at most
+  4,096 characters: exactly `{ request: <SHA-256 of the request text, lowercase hex>, folder: <the
   folder's address>, hosts: <its 1 to 8>, secret: <the connection entry's> }`. It comes back through
   the browser, in a URL a history or a proxy's log may keep, so naming the request makes it open
   that one login only.
@@ -178,21 +179,21 @@ folder of the person's for each AI app, and a pointer to it, which the AI app's 
   new login.
 
 [`test/app.ts`](test/app.ts), the reference app, is what the person's app does around this copy, in
-plain code with the standard's libraries; the tests and the loop run it. It keeps the person's
-Profiles folder (the empty label's, its `label/<id>` and `stamp/<id>` entries locked to its own open
-key), makes a profile with its market, role, hosts, open key, both pay addresses and a verification
-for each stamp, does the connect page's work, the connection folder's first write paid as the device
-chooses (`pay`), finds each connection from the seed by its notes, adds a profile or ends one, and on
-a new device finds the profiles and stamps from the Profiles folder. Its wallet, the Profiles
-folder's balance, takes gifts and buys, and funds a folder (`fund`): a buy paid from it by the
-Profiles folder's main key, spent into that folder.
+plain code with the standard's libraries; the tests and the end-to-end test run it. It keeps the
+person's Profiles folder (the empty label's, its `label/<id>` and `stamp/<id>` entries locked to its
+own public encryption key), makes a profile with its market, role, hosts, public encryption key,
+both pay addresses and a verification for each stamp, does the connect page's work, the connection
+folder's first write paid as the device chooses (`pay`), finds each connection from the seed by its
+notes, adds a profile or ends one, and on a new device finds the profiles and stamps from the
+Profiles folder. Its wallet, the Profiles folder's balance, takes gifts and buys, and funds a folder
+(`fund`): a buy paid from it by the Profiles folder's main key, spent into that folder.
 
 ## Its API
 
 | Route | What |
 |---|---|
 | `/`, `/mcp` | MCP over Streamable HTTP: [the six tools](#the-tools). `/mcp` is for connectors added before |
-| `GET /open-key` | This copy's open key |
+| `GET /open-key` | This copy's public encryption key |
 | `GET /.well-known/oauth-protected-resource` | The resource's metadata |
 | `GET /.well-known/oauth-authorization-server` | The authorization server's metadata |
 | `POST /register` | Registration (DCR) |
@@ -225,17 +226,15 @@ Profiles folder's main key, spent into that folder.
     any other read of the index, and the folders client's 60 for a host;
   - at most 4,194,304 bytes for an MCP request or an index's answer.
 - **Free,** with no rate limit. **Keeps** only its two keys, on the volume. **Logs** one line when it
-  starts, nothing for a request, and no address. Payments are the person's app's. The index and the hosts see this copy's network
-  address, not the person's.
-- **Public:** this code and its open key. **Secret:** its two keys.
-- **The icon:** the mark on paper, ink `#121A15` on `#EDEAE0`, three chevrons (`8,12 20,3 32,12`,
-  `8,22 20,13 32,22`, `8,32 20,23 32,32`) and a trunk (`20,24` to `20,38`), stroke 4, in a 56-unit
-  square with 8 of margin, drawn by `src/icon.ts` as the SVG the server's info declares and an ICO
-  of 16, 32, 48 and 64 pixels.
+  starts, nothing for a request, and no address. Payments are the person's app's. The index and the
+  hosts see this copy's network address, not the person's.
+- **Public:** this code and its public encryption key. **Secret:** its two keys.
+- **The icon:** the mark, drawn by `src/icon.ts` as the SVG the server declares and the ICO it
+  serves.
 
 | Variable | What it sets | Unless set |
 |---|---|---|
-| `DATA_DIR` | Where its two keys are kept: `mcp-key.json`, which signs its logins, and `mcp-opening.json`, its opening half's secret; 32 random bytes each, made at the first start, readable by its own user only | needed |
+| `DATA_DIR` | Where its two keys are kept: `mcp-key.json`, which signs its logins, and `mcp-opening.json`, its encryption key's secret; 32 random bytes each, made at the first start, readable by its own user only | needed |
 | `PUBLIC_URL` | Its origin: the resource and the authorization server | https://mcp.forest.foundation |
 | `APP_URL` | The app's connect page | none: logins wait |
 | `INDEX_URL` | The index whose `skill.md`, search and profile pages it passes on | https://index.forest.foundation |
@@ -252,12 +251,13 @@ npm run smoke -- https://mcp.forest.foundation
 
 Built from existing pieces, unchanged: the standard's keys and folders packages (and proofs, for the
 reference app), the markets package and its one check, the host's credits client,
-`@modelcontextprotocol/sdk`, `undici` for `publicFetch`, and Node's `crypto`. `test/` covers, on loopback, with this repo's host, a stand-in
-index whose answers carry a field this copy has never seen, and a stand-in connect page running the
-reference app: the login end to end through the MCP SDK's own client and every refusal on its way,
-every tool and its refusals, a key ended and the connection ended, `publicFetch`, and the image's
-own command. `npm run smoke` runs the same client (`smoke.ts`) against a deployed copy, without the login, which
-needs a person; CI does not, since a check that cannot reach it would skip.
+`@modelcontextprotocol/sdk`, `undici` for `publicFetch`, and Node's `crypto`. `test/` covers, on
+loopback, with this repo's host, a stand-in index whose answers carry a field this copy has never
+seen, and a stand-in connect page running the reference app: the login end to end through the MCP
+SDK's own client and every refusal on its way, every tool and its refusals, a key ended and the
+connection ended, `publicFetch`, and the image's own command. `npm run smoke` runs the same client
+(`smoke.ts`) against a deployed copy, without the login, which needs a person; CI does not, since a
+check that cannot reach it would skip.
 
 **Connect an AI app** at `https://mcp.forest.foundation`. Reading works at once; the first time the
 AI acts, the AI app sends the person to log in. A connector added before, at that address or `/mcp`,
@@ -274,8 +274,8 @@ keeps working, and logs in again the first time it acts.
 ## Promises
 
 - **It holds no key, and keeps nothing, between calls.** No seed and no main key, ever. The access
-  keys the person's app hands it wait in the connection folder, locked to its open key; it opens them
-  for one call and forgets them. No login, call, connection or answer is written.
+  keys the person's app hands it wait in the connection folder, locked to its public encryption key;
+  it opens them for one call and forgets them. No login, call, connection or answer is written.
 - **It acts only as far as the access keys a connection holds may, and only for the token whose
   secret matches.** Every host and reader checks a key against what the profile entry lists, so a key
   the person ends stops acting; a connection folder's address alone acts for no one.
@@ -324,5 +324,5 @@ token no store can retire would never expire either. Ending a connection is the 
 app.
 
 **Why a secret, when the connection entry is locked to this copy?**
-This copy's open key is public: anyone can lock a pointer naming someone's connection folder, in a
-login of their own. Only the app that wrote the entry knows the secret in it.
+Anyone can read this copy's public encryption key, so anyone can lock a pointer naming someone's
+connection folder, in a login of their own. Only the app that wrote the entry knows the secret in it.

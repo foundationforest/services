@@ -5,10 +5,10 @@ seed (the secret on your device that all your keys come from). Your profiles the
 verified without saying who you are, or which of your other profiles they go with. The Forest
 Foundation runs this copy, at https://verifier.forest.foundation. Anyone can sign stamps; the main
 way is a verifier like this one, and each reader decides which verifiers count. It keeps your stamp
-number, which check gave it, the stamp, for the ID check a keyed hash of your name and birthday, and
-of the ID check's payment a hash, never beside your stamp. Your face stays with Didit, its check
-provider, and how you paid with Stripe. The face check is free; the ID check is paid. No key of
-yours, no account.
+number, which check gave it and the stamp; for the ID check, a keyed hash of your name and birthday;
+and of the ID check's payment, a hash, never beside your stamp. Your face stays with Didit, its
+check provider, and how you paid with Stripe. The face check is free; the ID check is paid. No key
+of yours, no account.
 
 ## How it works
 
@@ -122,17 +122,17 @@ text an app shows before the ID check ([The consent screen](#didit)), in canonic
 way of writing it); with gifts, also
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
-- **The name** never changes: everyone's stamp number here is mixed from it
+- **The name** never changes: everyone's stamp number here is derived from it
   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-recipe)).
 - **Two keys, one per check,** so a reader can trust or weigh them apart.
 - **One seed,** 32 random bytes made on its own machine at the first start that finds none (the
   standard's `newSeed`), kept in `verifier-seed.json` beside its database, readable by its own user
   only, so the two are kept or lost together. No person, phrase or variable holds it; nothing prints
   or logs it.
-- **Mixed from the seed** with the standard's `hkdf` (a standard way to make many keys from one
-  secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key; `sponsor`,
-  the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change, since a new
-  text would mix a new key. None of the keys holds money.
+- **Derived from the seed** with the standard's `hkdf` (a standard way to make many keys from one
+  secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key;
+  `sponsor`, the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change,
+  since a new text would derive a new key. None of the keys holds money.
 
 ### Once a stamp is signed
 
@@ -191,20 +191,20 @@ weights is one any other verifier can run.
   8 seconds apart, each file checked by SHA-256 (`scripts/fetch.ts`). Neither is in the repo.
   `.github/workflows/face-models.yml` adds each listed model the release lacks, never replacing one.
 - `FACE_MODEL=stand-in`, only with a Didit on this machine (`test/fake-didit.ts`, run by the tests
-  and the loop), gives every photo one fixed embedding, under the model `stand-in`.
+  and the end-to-end test), gives every photo one fixed embedding, under the model `stand-in`.
 
 ### The gifts
 
 With `HOST_URL`, a stamp asked with a gift comes with the host's credits (prepaid units of its
-writes, [host](../host/README.md#credits)), once a stamp number from each check: `FACE_CREDITS` with
-a face stamp, `ID_CREDITS` with an ID stamp. The host signs them blind, so the verifier never sees
-them, and pays nothing: the host lists its sponsor key and counts what its tickets paid for.
+writes, [host](../host/README.md#credits)), once per stamp number from each check: `FACE_CREDITS`
+with a face stamp, `ID_CREDITS` with an ID stamp. The host signs them blind, so the verifier never
+sees them, and pays nothing: the host lists its sponsor key and counts what its tickets paid for.
 
 1. The app reads the gift in `GET /`, makes one buy at the host for exactly the check's credits
    (`buy`, in `host/client/`), and keeps what finishes it.
 2. It sends `"gift": "<the buy's reference>"` with `POST /face/stamp` or `POST /id/stamp`.
-3. Once a stamp number, the verifier keeps a hash of the buy and signs a ticket with its sponsor key
-   (`ticketMessage`, `src/ticket.ts`): that host, that buy, that many credits.
+3. Once per stamp number, the verifier keeps a hash of the buy and signs a ticket with its sponsor
+   key (`ticketMessage`, `src/ticket.ts`): that host, that buy, that many credits.
 4. The answer adds `"gift": {"ticket": …}`, or `{"error": …}`: `bad_gift` for anything but a buy's
    reference, `given` for another buy than this number's. The same buy again gets the same ticket.
    The gift never holds back the stamp.
@@ -311,9 +311,7 @@ setting; nothing here does them. The consent screen above is this code's, and an
 - **Three tries a payment:** a real person's ID check fails mostly to glare, blur or a moved face,
   which a second or third try fixes. Three keep Didit's share, up to $0.30 a session, under a fifth
   of the price after Stripe's fee; more would mostly help someone trying fake documents on Didit.
-- **How a person pays:** as the key's payment method settings at Stripe allow; the verifier names no
-  method. Ours has `card`, Apple Pay and Link on, and Bancontact, EPS and giropay, which Stripe offers
-  only for a payment in euros; Google Pay shows as unavailable, a setting of Stripe's own.
+- **How a person pays:** as the key's payment settings at Stripe allow; the verifier names no method.
 - **Its API version:** every request sends `Stripe-Version: 2026-10-28.endive`, the version its code
   and its stand-in follow, so a new default version at Stripe changes nothing here.
 - **What Stripe sees:** what the person pays with, their email, the name, country and, for some

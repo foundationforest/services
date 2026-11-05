@@ -1,17 +1,17 @@
 # services
 
-The Forest Foundation runs one copy of each service so Forest works from day one. Each is open source, so anyone can run another. None of them owns anything of yours: no seed, no main key, no money, no account.
+The Forest Foundation runs one copy of each service so Forest works from day one. Each is open source, so anyone can run another. None of them holds your seed or a main key, so none can take your profiles or your money.
 
 ## What we run
 
 | Service | What it does for you | Address |
 |---|---|---|
-| [verifier](verifier/README.md) | Checks that you are one real person, by your face or your ID, and signs a stamp to your seed. Your profiles then prove they're verified without saying who you are. | verifier.forest.foundation |
-| [host](host/README.md) | Keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, a fraction of a cent for a small one, and a message from its sender's. Your first credits are a gift from the verifier, in your app's wallet. | host.forest.foundation |
-| [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | index.forest.foundation |
-| [mcp](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you: find people, post, review, message, within the access keys you give it. It keeps nothing of yours. | mcp.forest.foundation |
+| [verifier](verifier/README.md) | Checks that you are one real person, by your face or your ID, and signs a stamp to your seed. Your profiles then prove they're verified without saying who you are. | [verifier.forest.foundation](https://verifier.forest.foundation) |
+| [host](host/README.md) | Keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, a fraction of a cent for a small one, and a message from its sender's. Your first credits are a gift from the verifier, in your app's wallet. | [host.forest.foundation](https://host.forest.foundation) |
+| [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | [index.forest.foundation](https://index.forest.foundation) |
+| [MCP server](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you: find people, post, review, message, within the access keys you give it. It keeps nothing of yours. | mcp.forest.foundation |
 
-The loop ([`e2e/`](e2e/README.md)) runs two people through all four, end to end, on every change. None of the services touches a chain: payments come later, with the standard's escrow.
+The end-to-end test ([`e2e/`](e2e/README.md)) runs two people through all four on every change. None of the services touches a chain: payments come later, with the standard's escrow.
 
 ## Run a copy
 
@@ -29,4 +29,4 @@ Each service's folder has its own `deploy/Dockerfile`, built from the repo root,
 
 ## FAQ
 
-**Why one repo for four services?** They share one pin of the standard, one CI and one loop. Each folder still stands alone, with its own package, image and README.
+**Why one repo for four services?** They share one pin of the standard, one CI and one end-to-end test. Each folder still stands alone, with its own package, image and README.

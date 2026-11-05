@@ -3,18 +3,19 @@
 // (README.md, The connection):
 //
 // - the connection folder: an ordinary folder on the person's hosts, named by a key the app makes
-//   at random. Each of its locked entries is locked to that key's open key and this copy's:
-//     connection:  { name: <the AI app's name>, secret: <32 random bytes, base64url> }
+//   at random. Each of its locked entries is locked to that key's public encryption key and this
+//     copy's: connection:  { name: <the AI app's name>, secret: <32 random bytes, base64url> }
 //     access/<id>: { label, address, hosts, key: <the access key's 64 bytes, base64url> }, one a
 //                  profile, at a random id;
-// - the pointer, what the app hands /connected and the token carries, locked to this copy's open
-//   key alone: { request: <SHA-256 of the login request>, folder: <its address>, hosts, secret }.
+// - the pointer, what the app hands /connected and the token carries, locked to this copy's public
+//   encryption key alone: { request: <SHA-256 of the login request>, folder: <its address>, hosts,
+//   secret }.
 //
 // Each call that acts for the person opens the pointer, reads the folder from its hosts, opens its
 // connection entry and checks that its secret is the pointer's, then opens the access entries, at
 // most MAX_ACCESS; it keeps none of it after the call. The secret is what ties a pointer to the folder's own app: this
-// copy's open key is public, so anyone can lock a pointer naming someone's folder, and only the
-// keys the entry is locked to read the secret in it.
+// copy's public encryption key is public, so anyone can lock a pointer naming someone's folder, and
+// only the keys the entry is locked to read the secret in it.
 //
 // `request` ties the pointer to one login: a pointer seen on its way back, in a browser's history
 // or a proxy's log, opens no other login, since every other login's request is another text.

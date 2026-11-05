@@ -5,7 +5,8 @@
 // hand the request on to a private one.
 //
 // Node only: it uses undici and Node's DNS. The standard's folders held it until the standard's
-// #121; it is kept here as it was, for the mcp and the loop, which runs the mcp's code.
+// #121; it is kept here as it was, for the MCP server and the end-to-end test, which runs the MCP
+// server's code.
 
 import { type LookupAddress, lookup as dnsLookup } from 'node:dns'
 import { BlockList, isIP } from 'node:net'

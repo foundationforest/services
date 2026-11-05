@@ -1,10 +1,11 @@
-// The pages: the four JSON answers the mcp reads, every field they gave kept and the fields added
-// beside them, each entry's time on a profile's page, each page drawn from its JSON twin alone, the
-// JSON-LD every page carries, the header and footer, the font served here and nothing asked of
-// another site, a listing's own page and its twin, its facts without its file fields, its photos linked
-// at its profile entry's first host, the apps a page links to for messaging a profile, the profile
-// page's order and its folds, the numbers only in a fold, the market page's sections, the About
-// page, search's filters, sort and form, and every URL the files for AI agents name.
+// The pages: the four JSON answers the MCP server reads, every field they gave kept and the fields
+// added beside them, each entry's time on a profile's page, each page drawn from its JSON twin
+// alone, the JSON-LD every page carries, the header and footer, the font served here and nothing
+// asked of another site, a listing's own page and its twin, its facts without its file fields, its
+// photos linked at its profile entry's first host, the apps a page links to for messaging a
+// profile, the profile page's order and its folds, the numbers only in a fold, the market page's
+// sections, the About page, search's filters, sort and form, and every URL the files for AI agents
+// name.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'

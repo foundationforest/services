@@ -4,10 +4,10 @@
 // registers by a client document (CIMD) or by registration (DCR), and sends the person to
 // /authorize. From there the person goes to the app's connect page (APP_URL), where, on their yes,
 // their app makes the AI app's connection folder, an access key for each profile they ticked, lists
-// it in that profile's entry, and hands back a pointer to the folder, locked to this copy's open key
-// (connection.ts); back at /connected, this copy opens the pointer, checks it is for this login, and
-// gives the AI app a code, which /token turns into an access token carrying the pointer, still
-// locked. Each call that acts for the person then reads the connection it points to.
+// it in that profile's entry, and hands back a pointer to the folder, locked to this copy's public
+// encryption key (connection.ts); back at /connected, this copy opens the pointer, checks it is for
+// this login, and gives the AI app a code, which /token turns into an access token carrying the
+// pointer, still locked. Each call that acts for the person then reads the connection it points to.
 //
 // Nothing is stored: a registered client's id, a login request, a code and a token are each a body
 // this copy wrote, with an HMAC-SHA256 under its own 32-byte key, kept in DATA_DIR. Only this copy
@@ -146,7 +146,7 @@ export class Login {
     return token.pointer
   }
 
-  /** What /open-key answers: the open key a person's app locks the pointer and the connection to, readable from the app's own page. */
+  /** What /open-key answers: the public encryption key a person's app locks the pointer and the connection to, readable from the app's own page. */
   openKey(res: ServerResponse): void {
     json(res, 200, { openKey: this.opening.openKey }, { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=300' })
   }

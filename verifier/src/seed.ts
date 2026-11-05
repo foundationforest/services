@@ -1,5 +1,5 @@
-// The verifier's seed: 32 random bytes that every key the verifier uses is mixed from. The seed itself
-// signs nothing.
+// The verifier's seed: 32 random bytes that every key the verifier uses is derived from. The seed
+// itself signs nothing.
 //
 // It is made on the verifier's own machine, the first time the verifier starts without one (the
 // standard's `newSeed`), and kept in one file beside its database (`verifier-seed.json` in
@@ -7,7 +7,7 @@
 // for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the verifier's own
 // user only. Nothing prints or logs it.
 //
-// What is mixed from it, with the standard's `hkdf`, the same every time:
+// What is derived from it, with the standard's `hkdf`, the same every time:
 //
 //   face          the face key: a service key (the standard's `serviceKey`) from these 32 bytes,
 //                 which `signStamp` takes, and which sign every face stamp
@@ -27,7 +27,7 @@ import { base58, hex } from '@foundationforest/folders'
 /** The seed file's name, in the database's directory. */
 export const SEED_FILE = 'verifier-seed.json'
 
-/** The texts each key is mixed under. */
+/** The texts each key is derived under. */
 export const INFO = {
   face: 'face',
   id: 'id',
@@ -39,7 +39,7 @@ export const INFO = {
 export type Ed25519Key = { address: string; sign(message: Uint8Array): Uint8Array }
 
 export type Seed = {
-  /** 32 bytes the standard's `hkdf` mixes from the seed under `info`. */
+  /** 32 bytes the standard's `hkdf` derives from the seed under `info`. */
   mix(info: string): Promise<Uint8Array>
   /** The Ed25519 key whose secret is `mix(info)`. */
   ed25519(info: string): Promise<Ed25519Key>
@@ -56,7 +56,7 @@ export function ed25519(secret: Uint8Array): Ed25519Key {
   return { address: base58.encode(publicKey), sign: (message) => new Uint8Array(sign(null, message, key)) }
 }
 
-/** The seed from its 32 bytes. The bytes stay inside, for mixing. */
+/** The seed from its 32 bytes. The bytes stay inside, for deriving. */
 export function seedFrom(bytes: Uint8Array): Seed {
   const secret = new Uint8Array(bytes)
   return {

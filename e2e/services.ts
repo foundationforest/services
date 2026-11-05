@@ -1,21 +1,23 @@
-// What a run runs against (services.json), and the loop's own copy of each service, on loopback,
-// from this repo's folders. With every service null, as committed, the loop runs on its own copies.
-// A file that names any service by its origin is the deployed check instead: each one named is
-// checked to answer, and no loop runs. A deployed verifier checks real faces, and a script has none;
-// a deployed index trusts only that verifier; a deployed host takes only its own sponsors' tickets;
-// and the deployed mcp logs an AI in only through the Forest app's connect page, where a person says
-// yes.
+// What a run runs against (services.json), and the end-to-end test's own copy of each service, on
+// loopback, from this repo's folders. With every service null, as committed, the end-to-end test
+// runs on its own copies. A file that names any service by its origin is the deployed check
+// instead: each one named is checked to answer, and the end-to-end test does not run. A deployed
+// verifier checks real faces, and a script has none; a deployed index trusts only that verifier; a
+// deployed host takes only its own sponsors' tickets; and the deployed MCP server logs an AI in
+// only through the Forest app's connect page, where a person says yes.
 //
 //   the verifier   verifier/src, with the stand-in Didit its tests run (verifier/test/fake-didit.ts,
 //                  a process of its own) and the stand-in face model; its own name and seed in a
-//                  directory of its own; its gifts, credits at the loop's host
-//   the host       host/src, as `npm start` runs it, the plug and the credits, taking the loop
-//                  verifier's sponsor's tickets
-//   the index      index/src, with lists of its own: the host it reads, the loop verifier's two keys
-//                  (the face check at 0.75, the ID check at 0.95, as the foundation's index lists
-//                  them), and its own reputation proofs; its numbers are index/config's
-//   the mcp        mcp/src, reading the loop's index and the markets, with `appUrl` as its connect
-//                  page, the loop's stand-in for the Forest app's, and reaching the host on loopback
+//                  directory of its own; its gifts, credits at the end-to-end test's host
+//   the host       host/src, as `npm start` runs it, the host API and the credits, taking the
+//                  end-to-end test's verifier's sponsor's tickets
+//   the index      index/src, with lists of its own: the host it reads, the end-to-end test's
+//                  verifier's two keys (the face check at 0.75, the ID check at 0.95, as the
+//                  foundation's index lists them), and its own reputation proofs; its numbers are
+//                  index/config's
+//   the MCP server mcp/src, reading the end-to-end test's index and the markets, with `appUrl` as
+//                  its connect page, the end-to-end test's stand-in for the Forest app's, and
+//                  reaching the host on loopback
 //
 // Each process of its own gets only the settings it needs.
 
@@ -61,9 +63,9 @@ export function readServices(path: string): Services {
 /** The services a file names by their origins: what the deployed check checks. */
 export const named = (s: Services): string[] => SERVICES.filter((name) => s[name] !== null)
 
-/** The loop verifier's name, which each person's stamp number at it is mixed from: one no real verifier has. */
+/** The end-to-end test's verifier's name, which each person's stamp number at it is derived from: one no real verifier has. */
 export const VERIFIER_NAME = 'verifier.e2e-loop.invalid'
-/** The confidence the loop index's lists give the loop verifier's face key, as the index's own lists give the foundation's. */
+/** The confidence the end-to-end test's index's lists give the end-to-end test's verifier's face key, as the index's own lists give the foundation's. */
 export const FACE_CONFIDENCE = 0.75
 /** The stand-in Didit's two workflows. */
 const FACE_WORKFLOW = '00000000-0000-4000-8000-00000000f0ce'
@@ -73,7 +75,7 @@ export type Running = {
   verifier: { url: string; name: string; keys: { face: string; id: string }; sponsor: string }
   host: string
   index: { url: string; address: string }
-  /** The loop's own mcp: its origin, the connector a person's app locks the connection for. */
+  /** The end-to-end test's own MCP server: its origin, the server a person's app locks the connection for. */
   mcp: string
   stop(): Promise<void>
 }
@@ -113,8 +115,9 @@ const stopped = (child: ChildProcess) =>
 
 /**
  * The deployed check: each service `s` names answers. The verifier says its name and its two keys;
- * the host its credit directory; the index its home page's twin; the mcp, through the MCP SDK's
- * client with no login, lists its tools and reads the markets. Throws at the first that does not.
+ * the host its credit directory; the index its home page's twin; the MCP server, through the MCP
+ * SDK's client with no login, lists its tools and reads the markets. Throws at the first that does
+ * not.
  */
 export async function checkDeployed(s: Services, say: (line: string) => void): Promise<void> {
   if (s.verifier) {
@@ -148,10 +151,10 @@ export async function checkDeployed(s: Services, say: (line: string) => void): P
 }
 
 /**
- * The loop's own verifier, host, index and mcp, on loopback. The host's port is picked first, so
- * the verifier's gift names its origin, and the host takes the tickets of the verifier's sponsor
- * key. `appUrl` is the connect page the mcp sends a person's browser to. `stop` ends what the loop
- * started and deletes its directory, whatever happened.
+ * The end-to-end test's own verifier, host, index and MCP server, on loopback. The host's port is
+ * picked first, so the verifier's gift names its origin, and the host takes the tickets of the
+ * verifier's sponsor key. `appUrl` is the connect page the MCP server sends a person's browser to.
+ * `stop` ends what the end-to-end test started and deletes its directory, whatever happened.
  */
 export async function startServices(o: { appUrl: string; say: (line: string) => void }): Promise<Running> {
   const dir = mkdtempSync(join(tmpdir(), 'forest-e2e-'))
@@ -176,7 +179,7 @@ export async function startServices(o: { appUrl: string; say: (line: string) => 
     const host = `http://127.0.0.1:${hostPort}`
 
     // The verifier: the stand-in Didit first, then the verifier, which makes its seed in its
-    // directory, with its gifts at the loop's host.
+    // directory, with its gifts at the end-to-end test's host.
     const diditPort = await freePort()
     const didit = child('stand-in Didit', process.execPath, ['--disable-warning=ExperimentalWarning', 'test/fake-didit.ts'], join(repo, 'verifier'), {
       FAKE_DIDIT_PORT: String(diditPort),
@@ -201,7 +204,7 @@ export async function startServices(o: { appUrl: string; say: (line: string) => 
     closers.push(() => verifier.close())
     if (!verifier.sponsor) throw new Error('the loop verifier gives no gift')
 
-    // The host, taking the loop verifier's sponsor's tickets.
+    // The host, taking the end-to-end test's verifier's sponsor's tickets.
     const h = await startHost(hostConfig({ DATA_DIR: join(dir, 'host'), PUBLIC_ORIGIN: host, PORT: String(hostPort), SPONSORS: verifier.sponsor }))
     closers.push(() => h.close())
 
@@ -224,9 +227,9 @@ export async function startServices(o: { appUrl: string; say: (line: string) => 
     const index = await startIndex({ dataDir: join(dir, 'index'), publicUrl: indexUrl, readSeconds: 5, listsRoot: lists, port: indexPort, hostname: '127.0.0.1', log: log('loop index') })
     closers.push(() => index.close())
 
-    // The mcp: reading the loop's index, its logins through the loop's connect page, and reaching
-    // hosts with a plain fetch, since the loop's own host is on loopback, which the mcp's publicFetch
-    // refuses.
+    // The MCP server: reading the end-to-end test's index, its logins through the end-to-end test's
+    // connect page, and reaching hosts with a plain fetch, since the end-to-end test's own host is
+    // on loopback, which the MCP server's publicFetch refuses.
     const mcp = await serve({ appUrl: o.appUrl, dataDir: join(dir, 'mcp'), read: { index: indexUrl }, hostFetch: fetch }, '127.0.0.1', 0)
     closers.push(() => mcp.close())
 
