@@ -2,14 +2,15 @@
 
 The index reads the hosts, counts verified profiles only, and ranks them by reputation in each
 market: pages for people, JSON for programs, free. A profile counts when it carries a verification (a
-proof, made on the person's device, that a verifier checked the one real person behind its seed) for
-a verifier key this index lists. Every index ranks what is public, each by its own opinions. The
-Forest Foundation runs this copy, at https://index.forest.foundation. Anyone can run another; the
-main way is this code with lists of its own. It holds opinions and nothing of the person's: which
-hosts it reads, which verifier keys count and how much, and every number it ranks by are files here,
-and everything it ranks is public on a host. It holds no key but its own, and there is no account.
-Any AI that can read the web can read and browse these pages by links, with nothing to install and
-no login. For AI agents: [`skill.md`](skill.md) and [`llms.txt`](llms.txt).
+proof, made on the person's device, that its seed holds a stamp) from a verifier this index counts
+as checking one real person: one whose key `lists/verifiers.json` lists. Every index ranks what is
+public, each by its own opinions. The Forest Foundation runs this copy, at
+https://index.forest.foundation. Anyone can run another; the main way is this code with lists of its
+own. It holds opinions and nothing of the person's: which hosts it reads, which verifier keys count
+and how much, and every number it ranks by are files here, and everything it ranks is public on a
+host. It holds no key but its own, and there is no account. Any AI that can read the web can read
+and browse these pages by links, with nothing to install and no login. For AI agents:
+[`skill.md`](skill.md) and [`llms.txt`](llms.txt).
 
 ## How it works
 
@@ -40,8 +41,9 @@ access key the profile entry lists with `write`, so this index sees what any rea
 | `review/<id>` | A review | Removes it |
 | `vouch/<id>`, `report/<id>` | A vouch, a report | Removes it |
 
-A locked entry, which only the keys it was locked to open, is left alone; one dated ahead of the
-clock waits until it is due. **The markets** come through the markets package,
+A locked entry, which only the keys it was locked to open, is left alone; one dated more than ten
+minutes ahead of the index's clock is held back until it is not, as every reader's view holds it
+(the standard's `viewFolder`, `MAX_FUTURE_MS`). **The markets** come through the markets package,
 `@foundationforest/markets`: `directory.json` and each market's file, from the checkout of
 [foundationforest/markets](https://github.com/foundationforest/markets) at the commit in
 `../MARKETS`, never over the network. It reads nothing else.
@@ -109,7 +111,7 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 
 | Part | How |
 |---|---|
-| **Uniqueness**, how sure it is the profile is one real person | `1 − Π(1 − c)` over the keys its verifications count for, each key once, `c` its confidence: 0.75 with a face check, 0.9875 with an ID check too. Each check is one more chance to catch someone who is not one person, so a second raises it, never past 1 |
+| **Uniqueness**, how sure it is the profile is one real person | `1 − Π(1 − c)` over the keys its verifications count for, each key once, `c` its confidence; on the pages, 0 to 100: 75 with a face check, 99 with an ID check too. Each check is one more chance to catch someone who is not one person, so a second raises it, never past 1 |
 | **Words** | Each writer's one word about each profile it wrote about in its market: a report if its latest counted entry about it is a report, else a vouch, since it rated or vouched for it. A rating of 1 is a vouch: its writer dealt with the profile. A word weighs its giver's uniqueness times trust, at most 1 |
 | **The vouch part** | `V = 1 − 0.5 × vouchStep^v`, `v` the sum of the vouches' weights: 0.5 with none; at `vouchStep` 0.5 each full vouch closes half of what is left to 1, never reaching it |
 | **The report part** | `R = reportCut^r`, `r` the sum of the reports' weights: 1 with none; at `reportCut` 0.25 each full report leaves a quarter |
@@ -119,12 +121,12 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 | **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust at half its uniqueness and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
 | **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest listing; with `near`, nearest first, then this. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest listing. Order only: a profile's page shows its ratings as they are |
 
-At today's numbers, with trust from 0 to 100 as the pages show it:
+At today's numbers, with trust and uniqueness from 0 to 100 as the pages show them:
 
 | Who | Trust |
 |---|---|
 | A newcomer with a face check (uniqueness 75) | 38 |
-| A profile of uniqueness 1, with no word / one full vouch / one full report | 50 / 75 / 13 |
+| A profile of uniqueness 100, with no word / one full vouch / one full report | 50 / 75 / 13 |
 | A face vouched for by one face no one has said a word about | 44 |
 | Two faces who rated each other | 45 each |
 | Five faces each vouching for a sixth | 61 |
@@ -164,25 +166,27 @@ After each pass, the index builds its trusts into a tree in the standard's forma
 
 A reputation proof on a profile entry carries the trust it proves, its `score`, and shows with that
 `trust` when its index is one `lists/indexes.json` names, its root is that index's newest or one
-signed within `maxAgeDays`, and it checks (the proofs package's `checkReputation`, answer kept). The
-newest root always counts, since a tree that has not moved still says what its proofs say; a root's
-age runs from when this index last signed it, as a root that comes back is signed again. This index
-knows only its own roots.
+signed within `maxAgeDays`, and it checks (the proofs package's `checkReputation`, answer kept). It
+is only shown: the profile's page lists it with the trust it proves, and whether the profile counts,
+its trust, uniqueness, ratings and leaf stay what its own verifications and words make them
+(`src/rank.ts` reads no proof). The newest root always counts, since a tree that has not moved still
+says what its proofs say; a root's age runs from when this index last signed it, as a root that
+comes back is signed again. This index knows only its own roots.
 
 ### Its key, and where it keeps things
 
-The index's key is its seed (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes at its
-first start, in `DATA_DIR/index-seed.json`, readable by its own user only, never printed or logged,
-made into a service key with no text (the standard's keys' `serviceKey`). Its address is the index's
-name: the About page shows it, every page's JSON gives it as `index`, and it signs the statements
-and the roots.
+The index's key is its own secret (`src/seed.ts`): 32 random bytes the standard's `newSeed` makes at
+its first start, in `DATA_DIR/index-seed.json`, readable by its own user only, never printed or
+logged, made into a service key with no text (the standard's keys' `serviceKey`). Its address is the
+index's name: the About page shows it, every page's JSON gives it as `index`, and it signs the
+statements and the roots.
 
 One SQLite file, `DATA_DIR/index.sqlite` (`node:sqlite`, with FTS5 for the text of listings;
-`src/store.ts`), beside the seed. Everything in it comes back from the hosts but two tables: when
+`src/store.ts`), beside the secret. Everything in it comes back from the hosts but two tables: when
 each verification was first seen, and every root it signed. Without the first, every proof would be
 first seen anew, after any key's `until`; without the roots, the reputation proofs people show would
 stop showing. `npm run rebuild` drops every other table, makes each again with this code's schema,
-reads the hosts again, ranks, and exits; the seed is never touched.
+reads the hosts again, ranks, and exits; the secret is never touched.
 
 ## Its API
 
@@ -240,22 +244,22 @@ holds its own.
   serve a page fails that read; the next pass tries again.
 - **What it keeps:** every entry its hosts served that checks, each proof check's answer, every root,
   and when each proof was first seen.
-- **Logs:** its address at start, that it made a seed, a host failing, how many entries a host served
-  that did not check, a pass that failed, and a failed request's path and error.
-- **Public:** its pages, JSON, signed statements and tree. **Secret:** its seed.
+- **Logs:** its address at start, that it made its secret, a host failing, how many entries a host
+  served that did not check, a pass that failed, and a failed request's path and error.
+- **Public:** its pages, JSON, signed statements and tree. **Secret:** its key.
 - **Where:** one replica of `deploy/Dockerfile`, built from the repo root, `DATA_DIR` on a volume.
 
 ### Settings
 
 | Variable | Default | What |
 |---|---|---|
-| `DATA_DIR` | required | The seed and the one file, on a volume |
+| `DATA_DIR` | required | Its secret and the one file, on a volume |
 | `PUBLIC_URL` | `https://index.forest.foundation` | Where the pages are published: an origin |
 | `READ_SECONDS` | `30` | Seconds between the end of one pass and the start of the next |
 | `PORT` | `8080` | |
 
-A setting, a list or the config file that does not read, or a seed file that is not a seed, stops
-the start, naming what is wrong.
+A setting, a list or the config file that does not read, or an `index-seed.json` that does not hold
+a secret, stops the start, naming what is wrong.
 
 ```
 ./standard.sh                                              # from the repo root: the standard and the markets, at their pins
@@ -271,7 +275,7 @@ random graphs among them), which feedback counts, the markets' check, the tree
 and the proofs' ages, every page's shape, header, footer and JSON-LD, the font served here and
 nothing asked of another site, every JSON field kept, each listing's page, its fields without its file
 fields, its photos' links and the apps it links to, the profile page's order and folds, the numbers
-only in a fold, the market, search and About pages, the seed, and the index end to end over HTTP,
+only in a fold, the market, search and About pages, the secret, and the index end to end over HTTP,
 rebuilds included.
 
 ## Promises

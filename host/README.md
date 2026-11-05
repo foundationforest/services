@@ -11,8 +11,8 @@ passes the standard's host check
 keeps copies: the entries signed for each profile (a locked one as an envelope only the keys it was
 locked to open), its inbox entries, locked too, and the files its current entries name. Anyone can
 copy a folder out; the main way is the person's app reading every entry and file and writing them to
-another host. The only thing here no key signed is a folder's balance of credits. No key of yours,
-no account.
+another host. The only things here no key signed are a folder's balance of credits and an inbox
+entry's outside: its sender signs inside the lock. No key of yours, no account.
 
 ## How it works
 
@@ -130,7 +130,9 @@ who paid for it.
 **A folder's balance** is kept in millionths of a credit. Anyone can add credits to any folder, a
 whole credit each; the main way is the person's own app, right after a buy. A spend marks them spent
 and adds them in one transaction, all or none; the spent list ties no credit to a folder. The
-folder's writes, the messages it sends and the buys it pays for draw from it. Credits move between
+folder's writes, the messages it sends and the buys it pays for draw from it. Its main key pays from
+it, and so does an access key its profile entry here lists with `message`: for what it sends, and
+for any buy, so such a key can spend the whole balance. Credits move between
 folders only as blind credits and are never refunded; each is a cent of writes here, and nothing
 anywhere else.
 
@@ -188,9 +190,11 @@ Every number is set in this directory: `src/host.ts` (`choice`), `src/plug.ts` (
   | ÷ 0.6 | $30.00 | $3.08 |
   | 1,000 bytes, in credits | **0.003** | **0.00031**, 0.000308 rounded up |
 
-  A write is paid once and kept as long as we run the host; the 10 years is how we price it, since
-  storage keeps getting cheaper. A 1 kB entry costs 0.003, a 200 kB photo 0.062, a 50 MB video 15.5,
-  and a message its bytes, about 0.003 a kilobyte: about 0.015 for a short one locked to two keys.
+  A write is paid once. A current entry, and the files current entries name, stay as long as we run
+  the host; an inbox entry, or a version another replaced, goes after 30 days. The 10 years is how
+  we price a write, since storage keeps getting cheaper. A 1 kB entry costs 0.003, a 200 kB photo
+  0.062, a 50 MB video 15.5, and a message its bytes, about 0.003 a kilobyte: about 0.015 for a
+  short one locked to two keys.
 - **Buying:** at most **1,000** credits a buy, **100** a spend. `SPONSORS`: the verifier's sponsor.
 - **Sizes:** entries up to **50,000,000 bytes**, as large as a file, since each write is paid by the
   byte; inbox entries up to **65,536**, a message's. **100** lines a request, its body at most a
@@ -270,9 +274,9 @@ codes, as `src/codes.ts` lists them.
 - **Taking your own things down, and leaving, are free; joining costs a write.** A delete of a live
   entry costs nothing. A folder's first entry costs a write, whatever it is; later profile entries,
   which leave this host or update the list, the host API never asks about.
-- **No sign-ups, and no address logs.** A folder's balance is a number next to its address, and an
-  entry's signature is its only proof. Neither part logs or keeps an address, and it logs no request
-  but one it answers 500: its path and the error's message, any address taken out.
+- **No sign-ups, and no network-address logs.** A folder's balance is a number next to its address,
+  and an entry's signature is its only proof. Neither part logs or keeps a network address, and it
+  logs no request but one it answers 500: its path and the error's message, any address taken out.
 - **A credit says nothing about who paid for it, as long as the host gave everyone the same key.**
   It signed the credit blind and never saw its nonce.
 - **A credit is spent once, a buy's credits are signed once, and a write is paid once.** A second

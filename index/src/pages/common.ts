@@ -275,7 +275,7 @@ export function resultHtml(r: Result): Raw {
  * else: what README.md, How it scores, says, in plain words. In the fold of a listing's page and
  * a profile's, and on the About page.
  */
-export const KEY = html`<p>The shield: a verifier checked the real person behind the profile, which proves it without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
+export const KEY = html`<p>The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile, which the profile proves without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
 <p>9.2 ★ · 14: the profile's rating and how many raters scored it, the average of their scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
 <p>Trust, 0 to 100: how much the profile's own scores and words weigh. A new profile starts at half its uniqueness; vouches and ratings raise it, reports lower it. Uniqueness, 0 to 100: how sure this index is that the profile is one real person.</p>
 <p>Each profile is one person in one market and role, and nothing here links one person's profiles.</p>`

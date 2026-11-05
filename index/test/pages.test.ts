@@ -511,7 +511,7 @@ test("the profile page, for a buyer: its name and shield, how it is verified and
   assert.ok(html.slice(0, meaning).includes(`<a class="row said-row" href="${BASE}/profiles/${addressOf('uncounted')}"><span class="chip">1 ★</span><span class="two"><span class="why">Does not count: `))
   // What these mean: its own numbers, then the key.
   assert.ok(at(`<p>This profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`) > meaning)
-  assert.ok(at('<p>The shield: a verifier checked the real person behind the profile') > meaning)
+  assert.ok(at('<p>The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile') > meaning)
   // Everything else is in the last fold, and only there: each review's weight among it.
   const inFold = [`<code>${a}</code>`, '<h2>Reviews given</h2>', '<h2>Vouches and reports received</h2>', '<h2>Vouches and reports given</h2>', '<h2>Words</h2>', '<h2>Proofs</h2>', '<h2>Signed statement</h2>', `<code>${esc(o.statement!)}</code>`, `<code>${o.signature}</code>`, 'Counts, weight ']
   for (const text of inFold) assert.ok(at(text) > fold && at(text) < end, text)
@@ -592,7 +592,7 @@ test('the About page and its twin: what this index is, what it reads, what the n
     `<code>${by.key}</code>, the face check of ${by.name}, confidence 0.75`,
     `Reputation proofs it shows: Test index (<code>${i.address}</code>), against an index's newest root or one it signed in the last 30 days.`,
     '<h2>What the numbers mean</h2>',
-    'The shield: a verifier checked the real person behind the profile',
+    'The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile',
     'Uniqueness, 0 to 100: how sure this index is that the profile is one real person.',
     '<h2>Its address</h2>',
     `<p><code>${i.address}</code>: the address of this index's key`,

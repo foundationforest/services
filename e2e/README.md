@@ -75,12 +75,12 @@ Then, passed or failed, the services stop, and the run exits 0 or 1.
 ### The end-to-end test's own copies, and the deployed check
 
 As committed, `services.json` names every service `null`, so the end-to-end test starts its own copy
-of each on loopback from this repo's folders (`services.ts`), each from its own start function and
-code, unchanged, with only the settings it needs:
+of each on loopback from this repo's directories (`services.ts`), each from its own start function
+and code, unchanged, with only the settings it needs:
 
 | Service | The end-to-end test's own copy |
 |---|---|
-| verifier | `verifier/`'s code, with the stand-in Didit its tests run and the stand-in face model; its own name, `verifier.e2e-loop.invalid`, and seed; its gifts, 10 credits with a face stamp, at the end-to-end test's host |
+| verifier | `verifier/`'s code, with the stand-in Didit its tests run and the stand-in face model; its own name, `verifier.e2e-loop.invalid`, and secret; its gifts, 10 credits with a face stamp, at the end-to-end test's host |
 | host | `host/`'s code as `npm start` runs it, its `SPONSORS` the end-to-end test's verifier's sponsor key; its port is picked first, so the gift can name it |
 | index | `index/`'s code with lists of its own: the host, the end-to-end test's verifier's keys at 0.75 and 0.95, its own proofs against a root up to 30 days old; its numbers from `index/config/` |
 | MCP server | `mcp/`'s code, reading the end-to-end test's index and the markets, the end-to-end test's connect page as `APP_URL`, and a plain fetch for hosts, since `publicFetch` refuses loopback |
