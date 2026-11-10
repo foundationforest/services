@@ -1,6 +1,6 @@
 // Every URL the index answers, GET and HEAD only, open to any origin, with no login and no request
 // log. Each page answers at its path as HTML, and at the same path with `.json` as the object it is
-// drawn from (pages/template.ts). The rest is JSON or text only, and the pages' font.
+// drawn from (pages/template.ts). The rest is JSON or text only, and the pages' fonts.
 
 import { createServer, type Server } from 'node:http'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -12,7 +12,7 @@ import { listing } from './pages/listing.ts'
 import { market } from './pages/market.ts'
 import { profile } from './pages/profile.ts'
 import { search } from './pages/search.ts'
-import { type Context, draw, esc, FONT_FILES, type Page, urls } from './pages/template.ts'
+import { type Context, draw, esc, FONT_FILES, type Page, siteOf, urls } from './pages/template.ts'
 import { newestRoot, servedLeaves } from './tree.ts'
 
 /** The address llms.txt and skill.md are written for; each copy serves them with its own PUBLIC_URL. */
@@ -32,11 +32,13 @@ export type Web = { handle(request: Request): Response }
 /** The pages over `ctx`, published at `base`. `root` is this directory, which holds llms.txt and skill.md. */
 export function web(reads: Omit<Context, 'base'>, base: string, root: string): Web {
   const ctx: Context = { ...reads, base }
+  const site = siteOf(ctx.markets, ctx.lists.apps)
   const files = Object.fromEntries(['llms.txt', 'skill.md'].map((f) => [f, readFileSync(join(root, f), 'utf8').replaceAll(WRITTEN_FOR, base)]))
-  // The font's files as its package gives them, Manrope, the Forest app's, which every page's style
-  // names at /fonts/. Cached for a day, not for good: their names carry no version, so a newer
-  // package serves new bytes under the same name.
-  const fonts = Object.fromEntries(readdirSync(FONT_FILES).filter((f) => f.endsWith('.woff2')).map((f) => [f, new Uint8Array(readFileSync(join(FONT_FILES, f)))]))
+  // The fonts' files as their packages give them, Figtree and Bricolage Grotesque, the Forest app's,
+  // which every page's style names at /fonts/; the two packages name their files apart. Cached for a
+  // day, not for good: their names carry no version, so a newer package serves new bytes under the
+  // same name.
+  const fonts = Object.fromEntries(FONT_FILES.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.woff2')).map((f) => [f, new Uint8Array(readFileSync(join(dir, f)))])))
 
   function sitemap(): string {
     const u = urls(base)
@@ -84,7 +86,7 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     if (o === null) return twin ? json({ error: 'not found' }, 404) : answer(404, TEXT, 'Nothing here.\n')
     if (twin) return json(o)
     const pageUrl = `${base}${bare === '/' ? '/' : bare}${url.search}`
-    return answer(200, 'text/html; charset=utf-8', draw(page, o, base, pageUrl))
+    return answer(200, 'text/html; charset=utf-8', draw(page, o, base, pageUrl, site))
   }
 
   return {

@@ -1,15 +1,17 @@
 // What several pages share: what a profile shows (its ratings, trust, uniqueness and checks) as the
 // JSON gives it, a listing as every page gives it (its page and its photos among it), a search or
-// market result, and how the HTML draws each from the object, in the pieces the Forest app draws: a
-// profile's name, the shield, the score's chip, a row, the facts list's words, and the fold that says
-// what a profile's words and numbers mean.
+// market result, and how the HTML draws each from the object, in the parts the Forest app draws: a
+// profile's avatar, name and badge, its rating, a listing's card, a result's card, the words of a
+// field's value, and the fold that says what a profile's numbers mean.
 
 import { type Market, previewOf } from '@foundationforest/markets'
 
+import { colorIn, iconOf } from '../avatar.ts'
 import type { Check } from '../filter.ts'
 import type { ListedApp } from '../lists.ts'
 import { parse, type Store } from '../store.ts'
-import { foldHtml, html, NEXT_ICON, type Raw, urls } from './template.ts'
+import { icon } from './icons.ts'
+import { html, type Raw, type Site, urls } from './template.ts'
 
 /**
  * What a profile shows: its ratings, from 1 to 10 to one decimal, with how many raters scored it;
@@ -51,11 +53,6 @@ export const listingOf = (base: string, address: string, body: { [key: string]: 
 
 /** Where to message a profile: one link per app the lists name, its address in each. */
 export const messageOf = (apps: ListedApp[], address: string) => apps.map((a) => ({ name: a.name, url: a.message.replaceAll('{address}', encodeURIComponent(address)) }))
-
-/** A button to message the profile from each app: the first app's green, the page's one, any other outlined; nothing when this index lists none. */
-export function messageHtml(message: Array<{ name: string; url: string }>): Raw {
-  return message.length ? html`<div class="buttons">${message.map((m, i) => html`<a class="${i ? 'button' : 'button primary'}" href="${m.url}">Message in the ${m.name}</a>`)}</div>` : html``
-}
 
 /**
  * A market's listing fields, in the order a listing's page shows them: those that matter first, as the
@@ -128,52 +125,86 @@ export function results(store: Store, base: string, where = '', params: Array<st
   }))
 }
 
-/** "Verified by face", "Verified by face and ID": each check's label, without its " check". */
-export function verifiedText(checks: Check[]): string {
-  const ways = checks.map((c) => c.label.replace(/ check$/, ''))
-  if (!ways.length) return 'Not verified here'
-  return `Verified by ${ways.length > 1 ? `${ways.slice(0, -1).join(', ')} and ${ways.at(-1)}` : ways[0]}`
-}
-
 /** A market's name or a choice's value in words, as the markets manual writes them, hyphens as spaces and a capital first letter: `home-cleaning` is "Home cleaning", `like-new` "Like new". */
 export function inWords(name: string): string {
   const words = name.replaceAll('-', ' ')
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** A profile's name as the app writes it: its market in words, in bold, then its role, quiet, no symbol between: "Clothing seller". */
-export function namedHtml(market: string | null, role: string | null): Raw {
-  if (!market) return html`A profile`
-  return html`<span class="named"><strong>${inWords(market)}</strong>${role ? html` <span class="role">${role}</span>` : ''}</span>`
-}
-
-/**
- * How a profile is verified, as the app shows it, by its strongest check: an outline shield for a
- * face check, filled in the ink with its tick in the paper's color for an ID check; none when this
- * index counts no check for it. Its words, "Verified by face and ID", are its name. "ID check" is
- * the name lists/verifiers.json gives the ID key's check, this index's own word for it.
- */
-export function shieldHtml(checks: Check[]): Raw {
-  if (!checks.length) return html``
-  const words = verifiedText(checks)
-  return html`<svg class="${checks.some((c) => c.label === 'ID check') ? 'icon shield id' : 'icon shield'}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${words}"><title>${words}</title><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6z"/><polyline points="9,12 11.2,14.2 15.5,9.8"/></svg>`
-}
-
-/** A profile's rating on its sand chip, with how many raters scored it, "9.0 ★ · 2", or "New" when no one has rated it yet. */
-export function chipHtml(s: Shown): Raw {
-  return s.ratings.value === null ? html`<span class="new">New</span>` : html`<span class="chip">${s.ratings.value.toFixed(1)} ★ · ${s.ratings.count}</span>`
-}
-
-/** A review's score on its chip, as its writer gave it: "8.5 ★". */
-export const scoreHtml = (score: unknown) => html`<span class="chip">${typeof score === 'string' ? score : '–'} ★</span>`
-
-/** What a profile shows, on the right of a row: its shield and its chip, or that it is not verified here. */
-export const shownAside = (s: Shown & { checks: Check[] }) => (s.checks.length ? html`${shieldHtml(s.checks)}${chipHtml(s)}` : html`<span>Not verified here</span>`)
-
 /** A field's name as words: `pastWork` is "Past work". */
 export function fieldLabel(name: string): string {
   const words = name.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`)
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** A plural word for `n` of them: "offer" for one, "offers" for any other number. */
+export const wordFor = (n: number, word: string) => (n === 1 ? word.replace(/s$/, '') : word)
+
+/** How many, in a role's word for its listings or another plural: "1 offer", "3 requests". */
+export const countText = (n: number, word: string) => `${n} ${wordFor(n, word)}`
+
+/** A role's word for its listings, from its market's file: `offers` or `requests`; none for a role the market does not name. */
+export const wordOf = (site: Site, market: string | null, role: string | null) => (market ? site.markets.market(market)?.roles.find((r) => r.role === role)?.listings : undefined)
+
+/**
+ * A market's avatar, the app's: its icon on its color, by the rule the app shares (../avatar.ts), or
+ * its name's first letter when the table names no icon for it. Solid for the market itself and for
+ * a role that offers; light (`look`) for a role that requests. Hidden from screen readers: the name
+ * beside it says it.
+ */
+export function avatarHtml(site: Site, market: string | null, o: { look?: boolean; size?: 'xs' | 'lg' } = {}): Raw {
+  if (!market) return html``
+  return html`<span class="${['av', o.size, o.look && 'look'].filter(Boolean).join(' ')}" style="--h:${colorOf(site, market)}" aria-hidden="true">${marketIcon(market)}</span>`
+}
+
+/** A market's color, by the rule the app shares: the directory's, else its first choice. */
+export const colorOf = (site: Site, market: string) => colorIn(site.colors, market)
+
+/** A market's icon, filled, or its name's first letter when the table names none for it. */
+export function marketIcon(market: string): Raw {
+  const name = iconOf(market)
+  return name ? icon(name, 'fill') : html`<span class="letter">${market.charAt(0).toUpperCase()}</span>`
+}
+
+/** A profile's avatar: solid when its role's listings are offers, light when they are requests. */
+export const profileAvatar = (site: Site, market: string | null, role: string | null, size?: 'xs' | 'lg') => avatarHtml(site, market, { look: wordOf(site, market, role) !== 'offers', ...(size && { size }) })
+
+/**
+ * The two badges, by the check each stands for, as lists/verifiers.json names the foundation
+ * verifier's two checks: an ID check's solid, an ID card on the forest green; a face check's light,
+ * a face on mint.
+ */
+const BADGES: { [label: string]: { words: string; id: boolean } } = { 'ID check': { words: 'Verified with ID', id: true }, 'face check': { words: 'Verified with a selfie', id: false } }
+
+/**
+ * How a profile is verified, by its strongest check: one of the app's two badges, its words its
+ * label and its title. A check another index's list names otherwise takes the light badge, in the
+ * check's own words. None when this index counts no check for it.
+ */
+export function badgeHtml(checks: Check[], big = false): Raw {
+  if (!checks.length) return html``
+  const label = ['ID check', 'face check'].find((l) => checks.some((c) => c.label === l)) ?? checks[0]!.label
+  const badge = Object.hasOwn(BADGES, label) ? BADGES[label]! : { words: `Verified: ${label}`, id: false }
+  return html`<span class="${['vb', badge.id && 'id', big && 'lg'].filter(Boolean).join(' ')}" role="img" aria-label="${badge.words}" title="${badge.words}">${icon(badge.id ? 'identification-card' : 'smiley', 'fill')}</span>`
+}
+
+/** A profile's name as the app writes it: its market in words, then its role, "Clothing seller". */
+export const nameText = (market: string | null, role: string | null) => (market ? `${inWords(market)}${role ? ` ${role}` : ''}` : 'A profile')
+
+/** A profile's name, its role quiet, its badge beside it. */
+export function nameHtml(market: string | null, role: string | null, checks: Check[]): Raw {
+  return html`<span class="nm">${market ? html`${inWords(market)}${role ? html` <span class="role">${role}</span>` : ''}` : 'A profile'}${badgeHtml(checks)}</span>`
+}
+
+/**
+ * A profile's rating: the star, its value to one decimal and how many raters scored it, "(12)"; the
+ * New chip when no one has rated it yet; that it is not verified here when this index counts no
+ * check for it.
+ */
+export function rateHtml(s: Shown & { checks: Check[] }): Raw {
+  if (!s.checks.length) return html`<span class="xs">Not verified here</span>`
+  if (s.ratings.value === null) return html`<span class="chip sm">New</span>`
+  return html`<span class="rate">${icon('star', 'fill')}${s.ratings.value.toFixed(1)}</span><span class="xs">(${s.ratings.count})</span>`
 }
 
 /** A place, read by its shape: its point and its radius, and its area if it has one. */
@@ -186,19 +217,43 @@ const isPlace = (v: unknown): v is Place => {
 /** Where a place's point is on openstreetmap.org, marked. */
 export const mapUrl = (p: Place) => `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=15/${p.lat}/${p.lon}`
 
-/** How far round a place reaches, after its area: nothing for radius 0, that exact spot. */
-const within = (p: Place) => (p.radiusKm === 0 ? '' : `, within ${p.radiusKm} km`)
+/** A place as the app writes it (app src/show.ts): its area, then how far round it reaches; nothing more for radius 0, that exact spot. */
+export function placeText(p: Place): string {
+  const area = typeof p.area === 'string' ? p.area : ''
+  if (p.radiusKm === 0) return area || 'An exact spot'
+  return area ? `${area}, within ${p.radiusKm} km` : `Within ${p.radiusKm} km`
+}
+
+/** A place on a listing's page: each one a link to its point on the map, in placeText's words, with the arrow of a link that opens another site. */
+export const placeHtml = (v: unknown): Raw =>
+  html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}<a href="${mapUrl(p)}">${placeText(p)}${icon('arrow-up-right', 'bold', 'xs')}</a>`)}`
 
 /**
- * A place as text, in a row that is a link already: its area, or "on the map" with none, since its
- * point alone says nothing to a reader; then how far round it reaches. Links do not nest, so the
- * map is linked on the listing's page only.
+ * Money as people write a price, as the app does (app src/show.ts, priceParts), in English's number
+ * format, this page having no reader's own: the amount in its currency, $30, €12.50, as written when
+ * the amount is no number or the currency no code, 30 coins; and what it is for, "per hour", or
+ * nothing for the whole deal. None for a value that is not money.
  */
-export const placeText = (p: Place) => `${typeof p.area === 'string' ? p.area : 'on the map'}${within(p)}`
+export function priceParts(money: unknown): { amount: string; per: string } | null {
+  if (!money || typeof money !== 'object' || Array.isArray(money) || !('amount' in money) || !('currency' in money)) return null
+  const m = money as { amount: unknown; currency: unknown; per?: unknown }
+  const n = Number(m.amount)
+  let amount = `${String(m.amount)} ${String(m.currency)}`
+  if (typeof m.amount === 'string' && m.amount.trim() !== '' && Number.isFinite(n)) {
+    try {
+      amount = new Intl.NumberFormat('en', { style: 'currency', currency: String(m.currency), trailingZeroDisplay: 'stripIfInteger' }).format(n)
+    } catch {
+      // Not a currency code: as it was written.
+    }
+  }
+  return { amount, per: typeof m.per === 'string' && m.per ? `per ${m.per}` : '' }
+}
 
-/** A place on a listing's page, as `placeText`, its "on the map" a link to its point. */
-export const placeHtml = (v: unknown): Raw =>
-  html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}${typeof p.area === 'string' ? p.area : html`<a href="${mapUrl(p)}">on the map</a>`}${within(p)}`)}`
+/** Money in one line: "$30 per hour". */
+const moneyText = (money: unknown) => {
+  const p = priceParts(money)
+  return p ? [p.amount, p.per].filter(Boolean).join(' ') : ''
+}
 
 /** A field's value as words on a page: each of the markets' nine types, read by its shape. */
 export function valueText(v: unknown): string {
@@ -207,7 +262,7 @@ export function valueText(v: unknown): string {
   if (Array.isArray(v)) return v.map(valueText).join(', ')
   if (v && typeof v === 'object') {
     const o = v as { [key: string]: unknown }
-    if ('amount' in o && 'currency' in o) return `${o.amount} ${o.currency}${o.per ? ` per ${o.per}` : ''}`
+    if ('amount' in o && 'currency' in o) return moneyText(o)
     if (isPlace(o)) return placeText(o)
     if ('sha256' in o) return `a file (${o.type}, ${o.size} bytes)`
     if ('from' in o && 'to' in o) return `${o.from} to ${o.to}`
@@ -226,6 +281,14 @@ export function valueText(v: unknown): string {
 export const choiceText = (v: unknown, labels: { [value: string]: string } = {}) =>
   (Array.isArray(v) ? v : [v]).map((x) => (Object.hasOwn(labels, String(x)) ? labels[String(x)]! : inWords(String(x)))).join(', ')
 
+/** A field's value as words, by its market's type for it: a choice by its labels, a file as nothing (it is drawn as a photo), the rest by its shape. */
+function fieldText(m: Market | undefined, name: string, value: unknown): string {
+  if (value === undefined || value === null) return ''
+  const field = m?.listing[name]
+  if (field?.type === 'file') return ''
+  return field?.type === 'choice' ? choiceText(value, field.labels) : valueText(value)
+}
+
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */
 export function firstLine(text: string, max: number): string {
   const line = text.split('\n')[0]!.trim()
@@ -234,57 +297,82 @@ export function firstLine(text: string, max: number): string {
   return `${(cut.lastIndexOf(' ') > max / 2 ? cut.slice(0, cut.lastIndexOf(' ')) : cut).replace(/[\s,.;:]+$/, '')}…`
 }
 
-/** A listing's price as words, "20 USD per hour", when it has one. */
-export function priceText(body: { [key: string]: unknown }): string {
-  const price = body.price as { amount?: unknown; currency?: unknown } | undefined
-  return price && typeof price === 'object' && 'amount' in price && 'currency' in price ? valueText(price) : ''
-}
+/** A listing's price as words, "$20 per hour", when it has one. */
+export const priceText = (body: { [key: string]: unknown }): string => moneyText(body.price)
 
-/** A listing's first place, read by its shape, in words. */
-function firstPlaceText(body: { [key: string]: unknown }): string {
-  const place = Object.values(body).find(isPlace)
-  return place ? placeText(place) : ''
-}
-
-/** Who posted a listing, as one row linking to its profile: the shield, the profile's name, its chip and a chevron. */
-export function postedByHtml(r: { profile: string; market: string | null; role: string | null; checks: Check[] } & Shown, base: string): Raw {
-  return html`<a class="row" href="${urls(base).profile(r.profile)}">${shieldHtml(r.checks)}<span class="grow">${namedHtml(r.market, r.role)}</span>${r.checks.length ? chipHtml(r) : html`<span class="new">Not verified here</span>`}${NEXT_ICON}</a>`
+/** A listing's price as a card and its page draw it: the amount, and what it is for under it. */
+export function priceHtml(body: { [key: string]: unknown }): Raw {
+  const p = priceParts(body.price)
+  return p ? html`<span class="price"><span class="d">${p.amount}</span>${p.per ? html`<span class="xs">${p.per}</span>` : ''}</span>` : html``
 }
 
 /**
- * A listing as a row, linking to its page, as the app draws one: its first photo, 48px, the
- * description's first line in bold, then its price and place in one quiet line; then `note`, a
- * quiet line that wraps, and `aside`, on the right. The photo's text is empty: the row's says it.
+ * A listing's card's two lines, as the app writes them (app src/show.ts, cardLines): its title, its
+ * description's first line, else its preview's first field it holds; and one quiet line, the next of
+ * its preview's fields it holds, but its description, its price and its photos.
  */
-export function listingRowHtml(listing: Listing, { aside, note }: { aside?: Raw; note?: Raw } = {}): Raw {
-  const description = typeof listing.body.description === 'string' ? listing.body.description : ''
-  const facts = [priceText(listing.body), firstPlaceText(listing.body)].filter(Boolean).join(' · ')
-  return html`<a class="row listing-row" href="${listing.url}">${listing.photos[0] ? html`<img class="thumb" src="${listing.photos[0]}" alt="" loading="lazy">` : ''}<span class="two"><strong>${firstLine(description, 140) || 'A listing'}</strong>${facts ? html`<span>${facts}</span>` : ''}${note ?? ''}</span>${aside ? html`<span class="aside">${aside}</span>` : ''}</a>`
+export function cardLines(m: Market | undefined, body: { [key: string]: unknown }): { title: string; line: string } {
+  const shown = (m ? previewOf(m) : [])
+    .filter((name) => name !== 'price' && name !== 'description' && m!.listing[name] && m!.listing[name]!.type !== 'file')
+    .map((name) => fieldText(m, name, body[name]))
+    .filter(Boolean)
+  const description = typeof body.description === 'string' ? firstLine(body.description, 140) : ''
+  const [title = 'A listing', line = ''] = description ? [description, ...shown] : shown
+  return { title, line }
 }
 
-/** Rows, stacked; with none, the line `none`, if given. */
-export const rowsHtml = (rows: Raw[], none = '') => (rows.length ? html`<div class="rows">${rows}</div>` : none ? html`<p>${none}</p>` : html``)
+/** A listing's first photo, small, at the start of its card; its text empty, since the card's says it. */
+const thumbHtml = (l: Listing) => (l.photos[0] ? html`<img class="thumb" src="${l.photos[0]}" alt="" loading="lazy">` : '')
 
-/** One result, as a market page and the search page draw it: a listing's row, with its profile's shield and chip. */
-export function resultHtml(r: Result): Raw {
-  return listingRowHtml(r.listing, { aside: shownAside(r) })
+/**
+ * One result, as search and a market's page draw it: a card linking to the listing's page, its
+ * photo, title, quiet line, distance when searching near, and price; then, under a hairline, its
+ * profile's avatar, name and badge, and its rating.
+ */
+export function resultHtml(site: Site, r: Result & { km?: number }): Raw {
+  const { title, line } = cardLines(site.markets.market(r.market), r.listing.body)
+  return html`<a class="rcard" href="${r.listing.url}"><span class="top">${thumbHtml(r.listing)}<span class="what"><span class="title">${title}</span>${line ? html`<span class="s">${line}</span>` : ''}${r.km === undefined ? '' : html`<span class="xs">${r.km} km</span>`}</span>${priceHtml(r.listing.body)}</span><span class="who">${profileAvatar(site, r.market, r.role, 'xs')}${nameHtml(r.market, r.role, r.checks)}<span class="grow"></span>${rateHtml(r)}</span></a>`
+}
+
+/** A profile's own listing, as its page draws it: a card linking to the listing's page, its photo, title, quiet line and price, and why it is not listed, when it is not. */
+export function listingCardHtml(site: Site, market: string | null, l: Listing & { listed: boolean; why?: string }): Raw {
+  const { title, line } = cardLines(market ? site.markets.market(market) : undefined, l.body)
+  return html`<a class="card lcard" href="${l.url}">${thumbHtml(l)}<span class="what"><span class="title">${title}</span>${line ? html`<span class="s">${line}</span>` : ''}${l.listed ? '' : html`<span class="s red">Not listed: ${l.why}.</span>`}</span>${priceHtml(l.body)}</a>`
 }
 
 /**
- * What a profile's words and numbers mean, for a reader who lands on one page and reads nothing
- * else: what README.md, How it scores, says, in plain words. In the fold of a listing's page and
- * a profile's, and on the About page.
+ * How to message a profile from the apps this index lists: the first one's button, the page's one
+ * forest-green, in `words`; each other as a quiet link under it. Nothing when this index lists none.
  */
-export const KEY = html`<p>The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile, which the profile proves without saying who. An outline shield is a face check; a filled one, an ID check. Its words say which: Verified by face, or by face and ID.</p>
-<p>9.2 ★ · 14: the profile's rating and how many raters scored it, the average of their scores from 1 to 10, weighted toward raters with more uniqueness and trust. New: no one has rated it yet.</p>
-<p>Trust, 0 to 100: how much the profile's own scores and words weigh. A new profile starts at half its uniqueness; vouches and ratings raise it, reports lower it. Uniqueness, 0 to 100: how sure this index is that the profile is one real person.</p>
-<p>Each profile is one person in one market and role, and nothing here links one person's profiles.</p>`
+export function messageHtml(message: Array<{ name: string; url: string }>, words: string): Raw {
+  const [first, ...more] = message
+  if (!first) return html``
+  return html`<a class="btn primary" href="${first.url}">${icon('paper-plane-tilt', 'bold')}${words}</a>${more.length ? html`<div class="also">${more.map((m) => html`<a href="${m.url}">Message in the ${m.name}</a>`)}</div>` : ''}`
+}
 
-/** The fold "What these mean": `who`'s rating with its raters, trust and uniqueness, the only place a page shows them, then the key. */
-export function meaningHtml(who: string, s: Shown): Raw {
-  const rated = s.ratings.value === null ? 'no rating' : `rated ${s.ratings.value.toFixed(1)} by ${s.ratings.count}`
-  return foldHtml('What these mean', html`<p>${who}: ${rated}, trust ${s.trust}, uniqueness ${s.uniqueness}.</p>
-${KEY}`)
+/**
+ * The fold "What these mean": a profile's rating, trust and uniqueness, each with one plain line,
+ * the only place a page shows the last two; what README.md, How it scores, says, in plain words.
+ * Drawn closed; from 900px the stylesheet shows it open (`wide`).
+ */
+export function numbersHtml(s: Shown): Raw {
+  const n = s.ratings.count
+  const rating =
+    s.ratings.value === null
+      ? html`<div class="num"><span class="d">–</span><p class="s">No rating: no one this index counts has rated it.</p></div>`
+      : html`<div class="num"><span class="d">${s.ratings.value.toFixed(1)}</span><p class="s">The average of ${n} ${n === 1 ? "person's" : "people's"} reviews, from 1 to 10, each weighed by how much this index trusts them.</p></div>`
+  return html`<details class="fold wide mean"><summary>${icon('info')}<span class="grow">What these mean</span>${icon('caret-down')}</summary><div class="fbody">${rating}
+<div class="num"><span class="d">${s.trust}</span><p class="s">Trust, 0 to 100: how much its own reviews count. Vouches and ratings raise it, reports lower it.</p></div>
+<div class="num"><span class="d">${s.uniqueness}</span><p class="s">Uniqueness, 0 to 100: how sure this index is that it's one real person.</p></div></div></details>`
+}
+
+/** Dates in English, in UTC, the one zone a page with no script can give every reader. */
+const DAY = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+
+/** An entry's own time as its date, "Nov 6, 2026": its writer's word, as the JSON gives it. Nothing for a time no date holds. */
+export function dateHtml(ms: number): Raw {
+  const d = new Date(ms)
+  return Number.isNaN(d.getTime()) ? html`` : html`<time datetime="${d.toISOString().slice(0, 10)}">${DAY.format(d)}</time>`
 }
 
 /** A Person node for a profile, by its page. */
