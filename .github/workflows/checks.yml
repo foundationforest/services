@@ -1,6 +1,7 @@
 # Every service's checks, and the end-to-end test's, from a clean install, on every pull request and
-# every push to main. Each job first fetches the standard and the markets at their pins and builds
-# the standard (standard.sh), then installs what it uses.
+# every push to main, and in each run of markets.yml, against the commit that moves MARKETS. Each job
+# but markets first fetches the standard and the markets at their pins and builds the standard
+# (standard.sh), then installs what it uses.
 #
 #   verifier     its type-check (the stand-in Didit for tests included) and its tests: verifications
 #                made from its stamps and checked against its published keys, the facts vectors, the
@@ -23,6 +24,8 @@
 #                index and connect page, and its reference app; the login end to end through the MCP
 #                SDK's client and the connection, every tool in the person's folders, and the
 #                image's own command
+#   markets      the tests of .github/markets.ts, which writes the description of the pull request
+#                markets.yml opens
 #
 # Not here, and in the MCP server's README: its smoke test against the deployed copy.
 #
@@ -35,6 +38,12 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: The commit to check, the one that moves MARKETS; empty on a pull request or a push
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -52,6 +61,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -74,6 +85,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -96,6 +109,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -117,6 +132,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -137,6 +154,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -157,6 +176,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -172,4 +193,19 @@ jobs:
         working-directory: mcp
         run: |
           npm test | tee "$RUNNER_TEMP/tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/tap"
+
+  markets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Test
+        run: |
+          node --disable-warning=ExperimentalWarning --test .github/markets.test.ts | tee "$RUNNER_TEMP/tap"
           grep -qx '# skipped 0' "$RUNNER_TEMP/tap"

@@ -17,6 +17,8 @@ The end-to-end test ([`e2e/`](e2e/README.md)) runs two people through all four o
 
 A pin is the one commit of another repo that every service here uses: `STANDARD` holds the standard's, `MARKETS` the markets'. A change upstream reaches the services only when a pin moves, in a pull request of its own.
 
+`MARKETS` moves by itself once a day, when the markets' main passes every check here ([`markets.yml`](.github/workflows/markets.yml)); to move it now, Run workflow on [its page](https://github.com/foundationforest/services/actions/workflows/markets.yml).
+
 ## Run a copy
 
 Each service's directory has its own `deploy/Dockerfile`, built from the repo root, and a README that lists its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's directory; the verifier first fetches its face models (`npm run fetch -- models`).
