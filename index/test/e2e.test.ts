@@ -72,12 +72,13 @@ test('a review between two checked profiles, read from a host, counted, and serv
   assert.equal(found.results[0]!.listing.address, offer)
   assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 44])
   const html = await (await fetch(`${i.url}/profiles/${tutor.key.address}`)).text()
-  assert.ok(html.includes('<p class="line">Verified by face · <span class="chip">8.5 ★ · 1</span></p>'))
-  assert.ok(html.includes('<p>This profile: rated 8.5 by 1, trust 44, uniqueness 75.</p>'))
+  assert.ok(html.includes('Tutoring tutor<span class="vb lg" role="img" aria-label="Verified with a selfie"'))
+  assert.match(html, /<span class="rated"><span class="rate"><svg[^>]*>.*?<\/svg>8\.5<\/span><span class="s">1 review<\/span><\/span>/)
+  for (const n of ['8.5', '44', '75']) assert.ok(html.includes(`<div class="num"><span class="d">${n}</span>`), n)
   // The listing's own page, over HTTP, at its address under /profiles.
   const listingPage = await fetch(`${i.url}/profiles/${tutor.key.address}/listing/maths`)
   assert.equal(listingPage.status, 200)
-  assert.ok((await listingPage.text()).includes('<h1>Maths for secondary school, online.</h1><p class="price">25 USD per hour</p>'))
+  assert.ok((await listingPage.text()).includes('<h1>Maths for secondary school, online.</h1><p class="cost"><span class="d big">$25</span> <span class="s">per hour</span></p>'))
   // A leaf for each counted profile: the tutor's and the student's.
   const tree = (await get<{ root: string; leaves: number }>('/v1/reputation')).body
   assert.equal(tree.leaves, 2)

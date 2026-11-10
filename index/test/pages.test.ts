@@ -1,11 +1,11 @@
 // The pages: the four JSON answers the MCP server reads, every field they gave kept and the fields
-// added beside them, each entry's time on a profile's page, each page drawn from its JSON twin
-// alone, the JSON-LD every page carries, the header and footer, the font served here and nothing
-// asked of another site, a listing's own page and its twin, its facts without its file fields, its
-// photos linked at its profile entry's first host, the apps a page links to for messaging a
-// profile, the profile page's order and its folds, the numbers only in a fold, the market page's
-// sections, the About page, search's filters, sort and form, and every URL the files for AI agents
-// name.
+// added beside them, each entry's time on a profile's page, each page drawn from its JSON twin and
+// the site's fixed parts alone, the JSON-LD every page carries, the top bar and the foot, the fonts
+// served here and nothing asked of another site, the forms with no script, a listing's own page and
+// its twin, its fields without its file fields, its photos linked at its profile entry's first host,
+// the apps a page links to for messaging a profile, the badges and the avatars and their colors, the
+// profile page's order and its folds, the numbers only in a fold, the market page's sides, the About
+// page, search's filters, sort, chips and form, and every URL the files for AI agents name.
 
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
@@ -14,9 +14,10 @@ import { join } from 'node:path'
 import { after, before, test } from 'node:test'
 
 import { checkBytes, unpackSignature } from '@foundationforest/keys'
-import type { Market } from '@foundationforest/markets'
+import { loadMarkets, type Market } from '@foundationforest/markets'
 import { b64u, base58 } from '@foundationforest/folders'
 
+import { colorIn, colorsFor } from '../src/avatar.ts'
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
 import { fieldsOf, inWords, photosOf, placeHtml, valueText } from '../src/pages/common.ts'
@@ -26,11 +27,19 @@ import { listing as listingPage, type ListingPage } from '../src/pages/listing.t
 import { profile as profilePage, type ProfilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
 import { about } from '../src/pages/about.ts'
-import { draw, esc, type Page } from '../src/pages/template.ts'
+import { draw, esc, type Page, short, siteOf } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 import { at, index, listsDir, verifier, MARKETS, page, post, profile, publishProfile, startHost, TEST_APPS, twin } from './world.ts'
 
 const BASE = 'https://index.test.example'
+/** The site's fixed parts, as the index draws its pages with them: the markets, and the apps the test lists name. */
+const SITE = siteOf(loadMarkets(MARKETS), TEST_APPS)
+/** Each market's color, by the rule the app shares, over the directory in its order. */
+const DIRECTORY = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string; roles: Array<{ role: string; listings: string }> }> }
+const COLORS = colorsFor(DIRECTORY.markets.map((m) => m.name))
+const colorOf = (market: string) => colorIn(COLORS, market)
+/** An entry's time as its date on a page, in UTC. */
+const dateOf = (ms: number) => `<time datetime="${new Date(ms).toISOString().slice(0, 10)}">${new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }).format(ms)}</time>`
 /** The first host the seller's profile entry names: its photos are linked there, though this index reads another. */
 const PHOTOS = 'https://photos.test.example'
 const COAT = ['04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', 'a'.repeat(64)]
@@ -100,6 +109,8 @@ const both = (old: string[], added: string[]) => [...old, ...added].sort()
 const addressOf = (name: string) => people[name]!.key.address
 /** A page's main part: what it draws from its object, without the head's JSON-LD, which repeats some of it. */
 const mainOf = (html: string) => /<main>[\s\S]*<\/main>/.exec(html)![0]
+/** An icon as the pages draw it, its drawing left out. */
+const ICON = (name: string) => new RegExp(`<svg class="i[^"]*" data-icon="${name}"[^>]*>.*?</svg>`)
 
 test('the four answers the mcp reads, in their shapes: every field they gave, and those added beside them', async () => {
   const home = (await twin<{ index: string; markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: string } }> }>(i, '/index.json')).body
@@ -186,7 +197,7 @@ test("each listing, review, vouch and report on a profile's page gives its entry
   for (const t of seen.values()) assert.ok(Number.isSafeInteger(t), `${t}`)
 })
 
-test("every page is drawn from its twin's object, and its JSON-LD passes schema.org's vocabulary", async () => {
+test("every page is drawn from its twin's object and the site's fixed parts, runs no script, and its JSON-LD passes schema.org's vocabulary", async () => {
   const pages: Array<[string, Page<never>]> = [
     ['/', home as Page<never>],
     ['/about', about as Page<never>],
@@ -209,23 +220,34 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
     assert.equal(served.status, 200, path)
     const [bare, query] = path.split('?')
     const o = (await twin<never>(i, `${bare === '/' ? '/index' : bare}.json${query ? `?${query}` : ''}`)).body
-    assert.equal(served.text, draw(module, o, BASE, `${BASE}${path}`), path)
+    assert.equal(served.text, draw(module, o, BASE, `${BASE}${path}`, SITE), path)
     const ld = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(served.text)![1]!
     assert.deepEqual(validateJsonLd(JSON.parse(ld)), [], path)
-    // No script but the JSON-LD; the Forest mark and About in the header; the footer's one line,
-    // without the index's address.
+    // No script but the JSON-LD, and no handler on any element; every form a GET to search. The top
+    // bar: the Forest mark and its name, a search box on every page but home, About, and the first
+    // app's own address. The foot: this index's web address, how it ranks, the twin and the source.
     assert.equal(served.text.match(/<script/g)!.length, 1, path)
-    assert.match(served.text, /<header><a class="home" href="https:\/\/index\.test\.example\/"><svg class="mark"[^>]*>.*<\/svg>Forest index<\/a><a href="https:\/\/index\.test\.example\/about">About<\/a><\/header>/, path)
+    assert.ok(!/\son[a-z]+=/i.test(served.text.replace(/<script[\s\S]*?<\/script>/, '')), path)
+    for (const form of served.text.match(/<form[^>]*>/g) ?? []) assert.match(form, /^<form class="[^"]+" (?:id="filters" )?action="https:\/\/index\.test\.example\/search" method="get"/, path)
+    const header = /<header class="ibar">[\s\S]*?<\/header>/.exec(served.text)![0]
+    assert.match(header, /^<header class="ibar"><a class="ibrand" href="https:\/\/index\.test\.example\/"><svg class="mark"[^>]*>.*?<\/svg>Forest index<\/a>/, path)
+    assert.equal(header.includes('<form'), bare !== '/', path)
+    assert.ok(header.endsWith(`<a class="btn text fit" href="${BASE}/about">About</a><a class="btn soft sm open" href="https://app.test.example/">Open the app</a></header>`), path)
     const twinUrl = `${BASE}${bare === '/' ? '/index' : bare}.json${query ? `?${esc(query)}` : ''}`
-    assert.equal(/<footer>[\s\S]*<\/footer>/.exec(served.text)![0], `<footer><p>Run by the Forest Foundation · <a href="${BASE}/about">About</a> · <a href="${twinUrl}">JSON</a></p></footer>`, path)
-    // Nothing asked of another site: no stylesheet or script by link, and the style names only the font here.
+    assert.equal(
+      /<footer[\s\S]*<\/footer>/.exec(served.text)![0],
+      `<footer class="ifoot"><span>Ranked by index.test.example</span><a href="${BASE}/about">How it ranks</a><a href="${twinUrl}">JSON</a><a href="https://github.com/foundationforest/services/tree/main/index">Source</a></footer>`,
+      path,
+    )
+    // Nothing asked of another site: no stylesheet or script by link, and the style names only the fonts here.
     assert.ok(!/<link rel="stylesheet"|<script src/.test(served.text), path)
     const style = /<style>([\s\S]*?)<\/style>/.exec(served.text)![1]!
     const named = [...style.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1]!)
     assert.ok(named.length > 0 && named.every((u) => u.startsWith('/fonts/')), `${path}: ${named.join(' ')}`)
     for (const u of named) fonts.add(u)
   }
-  // Every file the style names is served here, as the font it is.
+  // Every file the style names is served here, as the font it is: Figtree and Bricolage Grotesque.
+  assert.ok(['figtree-latin-wght-normal', 'bricolage-grotesque-latin-opsz-normal'].every((f) => [...fonts].some((u) => u.includes(f))), [...fonts].join(' '))
   for (const u of fonts) {
     const res = i.pages.handle(new Request(`${BASE}${u}`))
     assert.equal(res.status, 200, u)
@@ -237,18 +259,26 @@ test("every page is drawn from its twin's object, and its JSON-LD passes schema.
   assert.equal((await page(i, '/fonts/../package.json')).status, 404)
 })
 
-test('trust and uniqueness only in a fold or on About; a row shows the shield and the chip, or New', async () => {
-  const outsideFolds = (html: string) => mainOf(html).replace(/<details>[\s\S]*?<\/details>/g, '')
+test('trust and uniqueness only in a fold; a result shows its profile\'s avatar, name and badge, and its rating, or New', async () => {
+  const outsideFolds = (html: string) => mainOf(html).replace(/<details[\s\S]*?<\/details>/g, '')
   for (const path of ['/', '/markets/tutoring', '/markets/clothing', '/search?q=maths', `/profiles/${addressOf('a')}`, `/profiles/${addressOf('a')}/listing/a`, `/profiles/${addressOf('uncounted')}`]) {
     const html = outsideFolds((await page(i, path)).text)
     assert.ok(!/trust|uniqueness/i.test(html), path)
   }
   const tutors = mainOf((await page(i, '/markets/tutoring')).text)
-  // a, rated 9.0 by two, verified by face: its shield, outlined, and its chip; c, rated by no one: New.
-  assert.ok(tutors.includes(`<span class="aside"><svg class="icon shield" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Verified by face"><title>Verified by face</title>`))
-  assert.ok(tutors.includes('<span class="chip">9.0 ★ · 2</span></span></a>'))
-  const rowOf = (html: string, url: string) => new RegExp(`<a class="row listing-row" href="${url}">.*?</a>`).exec(html)![0]
-  assert.ok(rowOf(tutors, `${BASE}/profiles/${addressOf('c')}/listing/c`).endsWith('<span class="new">New</span></span></a>'))
+  const cardOf = (html: string, url: string) => new RegExp(`<a class="rcard" href="${url}">.*?</a>`).exec(html)![0]
+  // a, rated 9.0 by two, verified with a selfie: its avatar, solid since tutors offer, its name, the
+  // selfie badge with its words, and its rating with how many raters; c, rated by no one: New.
+  const a = cardOf(tutors, `${BASE}/profiles/${addressOf('a')}/listing/a`)
+  assert.ok(
+    a.includes(`<span class="who"><span class="av xs" style="--h:${colorOf('tutoring')}" aria-hidden="true"><svg class="i" data-icon="graduation-cap"`) &&
+      a.includes('<span class="nm">Tutoring <span class="role">tutor</span><span class="vb" role="img" aria-label="Verified with a selfie" title="Verified with a selfie"><svg class="i" data-icon="smiley"'),
+    a,
+  )
+  assert.match(a, /<span class="rate"><svg class="i" data-icon="star"[^>]*>.*?<\/svg>9\.0<\/span><span class="xs">\(2\)<\/span><\/span><\/a>$/)
+  assert.ok(cardOf(tutors, `${BASE}/profiles/${addressOf('c')}/listing/c`).endsWith('<span class="chip sm">New</span></span></a>'))
+  // A student's request: its avatar light, since students request.
+  assert.ok(cardOf(tutors, `${BASE}/profiles/${addressOf('s1')}/listing/need`).includes(`<span class="av xs look" style="--h:${colorOf('tutoring')}" aria-hidden="true">`))
 })
 
 test("search: words, market, role, a place, a rating, raters, pages; sorted by ratings with the market's average added", async () => {
@@ -351,60 +381,65 @@ test("a listing's page and its twin: its fields in its market's order with their
   assert.deepEqual(new Set(fieldsOf(cleaning)), new Set(Object.keys(cleaning.listing)))
 
   const html = (await page(i, `/profiles/${a}/listing/a`)).text
-  assert.match(html, /<title>30 USD per hour · Maths and physics, in Madrid\.<\/title>/)
+  assert.match(html, /<title>\$30 per hour · Maths and physics, in Madrid\.<\/title>/)
   assert.match(html, /<meta name="description" content="Maths and physics, in Madrid\.">/)
   const at = (text: string) => {
     const n = html.indexOf(text)
     assert.ok(n >= 0, text)
     return n
   }
-  // A back link to its market; the description's first line, the price under it; the facts, which
-  // the description and the price are not among; who posted it, in a row; the contact, then the app.
+  // A way back to its market; the description's first line, the price under it; its fields, which
+  // the description and the price are not among, the contact last; who posted it, in a card linking
+  // to their profile; the button to message them, in the role's word.
   const order = [
-    `<a class="back" href="${BASE}/markets/tutoring">`,
-    '<h1>Maths and physics, in Madrid.</h1><p class="price">30 USD per hour</p></div>',
-    '<dl class="facts"><div><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
-    '<div><dt>Mode</dt><dd>In person</dd></div><div><dt>Place</dt><dd>Madrid, within 5 km</dd></div>',
-    `<h2>Posted by</h2><a class="row" href="${BASE}/profiles/${a}"><svg class="icon shield"`,
-    '<span class="grow"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></span><span class="chip">9.0 ★ · 2</span>',
-    '<h2>How to reach them</h2><a class="button" href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000</a>',
-    `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
-    '<details><summary>What these mean',
-    `<p>Its profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`,
+    `<a class="round clear back" href="${BASE}/markets/tutoring" aria-label="Back">`,
+    '<h1>Maths and physics, in Madrid.</h1><p class="cost"><span class="d big">$30</span> <span class="s">per hour</span></p>',
+    '<dl class="card divide"><div class="kv"><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
+    '<div class="kv"><dt>Mode</dt><dd>In person</dd></div><div class="kv"><dt>Place</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.42&amp;mlon=-3.70#map=15/40.42/-3.70">Madrid, within 5 km<svg',
+    '<div class="kv"><dt>Contact</dt><dd><a href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000<svg',
+    `<a class="card poster" href="${BASE}/profiles/${a}"><span class="av" style="--h:${colorOf('tutoring')}" aria-hidden="true">`,
+    '<span class="nm">Tutoring <span class="role">tutor</span><span class="vb" role="img" aria-label="Verified with a selfie"',
+    '<span class="rated"><span class="rate">',
+    `<div class="foot"><a class="btn primary" href="https://app.test.example/message?to=${a}"><svg class="i" data-icon="paper-plane-tilt"`,
+    'Message the tutor</a></div>',
   ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
-  for (const text of ['<dt>Contact</dt>', '<dt>Description</dt>', '<dt>Price</dt>']) assert.ok(!html.includes(text), text)
-  // One green button on the page, the first app's.
+  for (const text of ['<dt>Description</dt>', '<dt>Price</dt>', '<details']) assert.ok(!mainOf(html).includes(text), text)
+  // One forest-green button on the page, the first app's.
   assert.equal(mainOf(html).match(/class="[^"]*primary/g)!.length, 1)
 
-  // A link's label has no scheme and no trailing slash; an email address is a button to write to
-  // it, labelled with the address alone, with or without its mailto:. A listing that is not listed has
+  // A link's words have no scheme and no trailing slash; an email address is a link to write to
+  // it, its words the address alone, with or without its mailto:. A listing that is not listed has
   // its page, saying why.
-  assert.ok((await page(i, `/profiles/${addressOf('b')}/listing/b`)).text.includes('<a class="button" href="http://example.com/maths/" rel="nofollow ugc">example.com/maths</a>'))
-  assert.ok((await page(i, `/profiles/${addressOf('seller')}/listing/coat`)).text.includes('<a class="button" href="mailto:seller@example.com" rel="nofollow ugc">seller@example.com</a>'))
-  assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('<a class="button" href="mailto:s1@example.com" rel="nofollow ugc">s1@example.com</a>'))
+  assert.ok((await page(i, `/profiles/${addressOf('b')}/listing/b`)).text.includes('<dt>Contact</dt><dd><a href="http://example.com/maths/" rel="nofollow ugc">example.com/maths<svg'))
+  assert.ok((await page(i, `/profiles/${addressOf('seller')}/listing/coat`)).text.includes('<dt>Contact</dt><dd><a href="mailto:seller@example.com" rel="nofollow ugc">seller@example.com</a></dd>'))
+  assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('<dt>Contact</dt><dd><a href="mailto:s1@example.com" rel="nofollow ugc">s1@example.com</a></dd>'))
+  // A student asks: its avatar is light, and its button says the student.
+  assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('<span class="av look"'))
+  assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('Message the student</a>'))
   const u = await twin<ListingPage>(i, `/profiles/${addressOf('uncounted')}/listing/u.json`)
   assert.deepEqual([u.status, u.body.listing.listed, u.body.listing.why], [200, false, 'its profile does not count here'])
-  assert.match((await page(i, `/profiles/${addressOf('uncounted')}/listing/u`)).text, /<p class="red">Not listed: its profile does not count here\.<\/p>[\s\S]*<span class="new">Not verified here<\/span>/)
+  assert.match((await page(i, `/profiles/${addressOf('uncounted')}/listing/u`)).text, /<p class="red">Not listed: its profile does not count here\.<\/p>[\s\S]*<span class="nm">Tutoring <span class="role">tutor<\/span><\/span><span class="rated"><span class="xs">Not verified here<\/span>/)
 
-  // The facts leave out every field its market types file, whatever it is called: the repairer's
-  // past work is a photo, and its licences a fact.
+  // The fields leave out every one its market types file, whatever it is called: the repairer's
+  // past work is a photo, and its licences a field.
   const taps = (await twin<ListingPage>(i, `/profiles/${addressOf('repairer')}/listing/taps.json`)).body
   assert.deepEqual([taps.listing.listed, taps.types.pastWork, taps.listing.photos], [true, 'file', [`${host.url}/v1/files/${COAT[0]}`]])
   const tapsHtml = (await page(i, `/profiles/${addressOf('repairer')}/listing/taps`)).text
   assert.ok(!tapsHtml.includes('<dt>Past work</dt>') && !tapsHtml.includes('<dt>Files</dt>'))
-  assert.ok(tapsHtml.includes('<div><dt>Licences</dt><dd>Gas</dd></div>'))
-  // A place with no area: on the map, linked to its point; in a row, which is a link already, the
-  // same words with no link.
-  assert.ok(tapsHtml.includes('<div><dt>Base</dt><dd><a href="https://www.openstreetmap.org/?mlat=37.39&amp;mlon=-5.98#map=15/37.39/-5.98">on the map</a>, within 10 km</dd></div>'))
-  assert.ok(mainOf((await page(i, '/markets/home-repair')).text).includes('<span>on the map, within 10 km</span>'))
-  // Radius 0 is that exact spot: its area alone, or the map alone.
+  assert.ok(tapsHtml.includes('<div class="kv"><dt>Licences</dt><dd>Gas</dd></div>'))
+  // A place: a link to its point on the map, its area if it has one, then how far round it reaches.
+  // On a card, which is a link already, the quiet line is the market's next field, as in the app.
+  assert.ok(tapsHtml.includes('<div class="kv"><dt>Base</dt><dd><a href="https://www.openstreetmap.org/?mlat=37.39&amp;mlon=-5.98#map=15/37.39/-5.98">Within 10 km<svg'))
+  assert.ok(mainOf((await page(i, '/markets/home-repair')).text).includes('<span class="title">Leaks and taps fixed.</span><span class="s">Plumbing</span>'))
+  // Radius 0 is that exact spot: its area alone, or that it is an exact spot.
   const spot = { lat: '40.42', lon: '-3.70', radiusKm: 0 }
   assert.equal(valueText({ ...spot, area: 'Court 3' }), 'Court 3')
-  assert.equal(String(placeHtml(spot)), '<a href="https://www.openstreetmap.org/?mlat=40.42&amp;mlon=-3.70#map=15/40.42/-3.70">on the map</a>')
+  assert.match(String(placeHtml(spot)), /^<a href="https:\/\/www\.openstreetmap\.org\/\?mlat=40\.42&amp;mlon=-3\.70#map=15\/40\.42\/-3\.70">An exact spot<svg[^>]*>.*<\/svg><\/a>$/)
 
   // Every place that shows the listing links to its page.
-  for (const where of ['/markets/tutoring', '/search?q=maths', `/profiles/${a}`]) assert.ok((await page(i, where)).text.includes(`<a class="row listing-row" href="${BASE}/profiles/${a}/listing/a">`), where)
+  for (const where of ['/markets/tutoring', '/search?q=maths']) assert.ok((await page(i, where)).text.includes(`<a class="rcard" href="${BASE}/profiles/${a}/listing/a">`), where)
+  assert.ok((await page(i, `/profiles/${a}`)).text.includes(`<a class="card lcard" href="${BASE}/profiles/${a}/listing/a">`))
   // Its JSON-LD: the Offer at the listing's own page.
   const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)
   assert.deepEqual([ld['@graph'][0]['@type'], ld['@graph'][0].mainEntity['@type'], ld['@graph'][0].mainEntity.url], ['ItemPage', 'Offer', `${BASE}/profiles/${a}/listing/a`])
@@ -430,19 +465,21 @@ test("photos: each file a listing's fields name, linked at its profile entry's f
   for (const text of ['<dt>Photos</dt>', '<dt>Files</dt>', 'a file (', `<dd>${COAT[0]}`]) assert.ok(!html.includes(text), text)
   // A choice's value in words, as the markets manual writes them, or by its label where its field
   // has one; its JSON carries the labels of the values it holds, no other. Its place, by its area.
-  assert.ok(html.includes('<div><dt>Kind</dt><dd>Coat</dd></div>'))
-  assert.ok(html.includes('<div><dt>Condition</dt><dd>Like new</dd></div>'))
-  assert.ok(html.includes('<div><dt>Size</dt><dd>XL</dd></div>'))
+  assert.ok(html.includes('<div class="kv"><dt>Kind</dt><dd>Coat</dd></div>'))
+  assert.ok(html.includes('<div class="kv"><dt>Condition</dt><dd>Like new</dd></div>'))
+  assert.ok(html.includes('<div class="kv"><dt>Size</dt><dd>XL</dd></div>'))
   assert.deepEqual(o.labels, { size: { xl: 'XL' } })
-  assert.ok(html.includes('<div><dt>Location</dt><dd>Madrid, within 2 km</dd></div>'))
-  // The first large, the rest small under it.
-  assert.ok(html.includes(`<a class="photo" href="${links[0]}"><img src="${links[0]}"`))
-  assert.ok(html.includes(`<div class="tiles"><a href="${links[1]}"><img src="${links[1]}"`))
-  // A row shows the first, 48px, its text empty since the row's says it.
+  assert.ok(html.includes('<div class="kv"><dt>Location</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.50&amp;mlon=-3.70#map=15/40.50/-3.70">Madrid, within 2 km<svg'))
+  // In one row that scrolls sideways, on the market's color while they load; on a laptop, the
+  // first big and the rest small under it, by the stylesheet alone. Its price in euros.
+  assert.ok(html.includes(`<div class="gal" style="--h:${colorOf('clothing')}"><a href="${links[0]}"><img src="${links[0]}"`))
+  assert.ok(html.includes(`</a><a href="${links[1]}"><img src="${links[1]}"`))
+  assert.ok(html.includes('<p class="cost"><span class="d big">€40</span></p>'))
+  // A card shows the first, its text empty since the card's says it.
   for (const where of ['/markets/clothing', '/search?q=coat', `/profiles/${seller}`]) {
-    const row = mainOf((await page(i, where)).text)
-    assert.ok(row.includes(`<img class="thumb" src="${links[0]}" alt="" loading="lazy">`), where)
-    assert.ok(!row.includes(links[1]!), where)
+    const card = mainOf((await page(i, where)).text)
+    assert.ok(card.includes(`<img class="thumb" src="${links[0]}" alt="" loading="lazy">`), where)
+    assert.ok(!card.includes(links[1]!), where)
   }
   // The JSON-LD's Offer carries the same links.
   const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)
@@ -466,7 +503,11 @@ test('the apps a page links to for messaging a profile: lists/apps.json, none wi
     const a = addressOf('a')
     assert.deepEqual((await twin<ProfilePage>(none, `/profiles/${a}.json`)).body.message, [])
     assert.deepEqual((await twin<ListingPage>(none, `/profiles/${a}/listing/a.json`)).body.message, [])
-    for (const path of [`/profiles/${a}`, `/profiles/${a}/listing/a`]) assert.ok(!(await page(none, path)).text.includes('Message in the'), path)
+    // Neither a button to message the profile nor the top bar's app.
+    for (const path of ['/', `/profiles/${a}`, `/profiles/${a}/listing/a`]) {
+      const text = (await page(none, path)).text
+      assert.ok(!text.includes('app.test.example') && !text.includes('Open the app') && !text.includes('btn primary" href'), path)
+    }
   } finally {
     await none.close()
   }
@@ -483,96 +524,143 @@ test('the apps a page links to for messaging a profile: lists/apps.json, none wi
   for (const apps of bad) await assert.rejects(index({ ...keysList, apps }), /^Error: lists\/apps\.json: /, JSON.stringify(apps))
 })
 
-test("the profile page, for a buyer: its name and shield, how it is verified and its chip, the message button, its listings and the reviews it got; then two folds", async () => {
+test('the profile page, for a buyer: its header with its avatar, name, badge and rating, the message button; the numbers fold; its offers and the reviews and vouches it got; then everything', async () => {
   const a = addressOf('a')
   const html = mainOf((await page(i, `/profiles/${a}`)).text)
   const o = (await twin<ProfilePage>(i, `/profiles/${a}.json`)).body
-  const meaning = html.indexOf('<details><summary>What these mean')
-  const fold = html.indexOf('<details><summary>Everything this index read about this profile')
+  const meaning = html.indexOf('<details class="fold wide mean"><summary>')
+  const lists = html.indexOf('<div class="lists">')
+  const fold = html.indexOf('<details class="fold all"><summary>')
   const end = html.indexOf('</details>', fold)
-  assert.ok(meaning > 0 && fold > meaning && end > fold)
+  assert.ok(meaning > 0 && lists > meaning && fold > lists && end > fold)
   const at = (text: string) => {
     const n = html.indexOf(text)
     assert.ok(n >= 0, text)
     return n
   }
   const order = [
-    '<h1 class="titled"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span><svg class="icon shield"',
-    '<p class="line">Verified by face · <span class="chip">9.0 ★ · 2</span></p>',
-    `<a class="button primary" href="https://app.test.example/message?to=${a}">Message in the Forest app</a>`,
-    '<h2>Listings</h2>',
-    `<a class="row listing-row" href="${BASE}/profiles/${a}/listing/a"><span class="two"><strong>Maths and physics, in Madrid.</strong><span>30 USD per hour · Madrid, within 5 km</span></span></a>`,
-    '<h2>Reviews received</h2>',
-    `<a class="row said-row" href="${BASE}/profiles/${addressOf('s1')}"><span class="chip">9 ★</span><span class="two"><span class="said-text">Very clear.</span></span></a>`,
+    `<div class="head tint profile-head" style="--h:${colorOf('tutoring')}"><a class="round back" href="${BASE}/markets/tutoring" aria-label="Back">`,
+    `<span class="av lg" style="--h:${colorOf('tutoring')}" aria-hidden="true">`,
+    '<h1 class="h2 titled">Tutoring tutor<span class="vb lg" role="img" aria-label="Verified with a selfie" title="Verified with a selfie">',
+    '<span class="rated"><span class="rate">',
+    '9.0</span><span class="s">2 reviews</span></span>',
+    `<a class="btn primary" href="https://app.test.example/message?to=${a}">`,
+    'Message</a></div>',
+    '<h2>Offers</h2>',
+    `<a class="card lcard" href="${BASE}/profiles/${a}/listing/a"><span class="what"><span class="title">Maths and physics, in Madrid.</span><span class="s">Maths, Physics</span></span><span class="price"><span class="d">$30</span><span class="xs">per hour</span></span></a>`,
+    '<h2>Reviews</h2>',
   ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
-  assert.ok(at(order.at(-1)!) < meaning)
-  // A review that does not count says why, in its row.
-  assert.ok(html.slice(0, meaning).includes(`<a class="row said-row" href="${BASE}/profiles/${addressOf('uncounted')}"><span class="chip">1 ★</span><span class="two"><span class="why">Does not count: `))
-  // What these mean: its own numbers, then the key.
-  assert.ok(at(`<p>This profile: rated 9.0 by 2, trust ${o.trust}, uniqueness 75.</p>`) > meaning)
-  assert.ok(at('<p>The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile') > meaning)
+  assert.ok(at(order[6]!) < meaning && at(order[7]!) > meaning)
+  // The numbers fold: its rating with how many people's reviews, its trust and its uniqueness.
+  const numbers = html.slice(meaning, lists)
+  for (const text of ['<span class="d">9.0</span><p class="s">The average of 2 people&#39;s reviews', `<span class="d">${o.trust}</span><p class="s">Trust, 0 to 100`, '<span class="d">75</span><p class="s">Uniqueness, 0 to 100']) assert.ok(numbers.includes(text), text)
+  // The reviews and vouches it received, newest first, each linking to its writer, with its date.
+  const cards = html.slice(lists, fold).match(/<a class="card said"[\s\S]*?<\/a>/g)!
+  const s1 = addressOf('s1')
+  const review = cards.find((c) => c.includes(s1))!
+  assert.match(review, new RegExp(`^<a class="card said" href="${BASE}/profiles/${s1}"><span class="line"><span class="rate"><svg class="i" data-icon="star"[^>]*>.*?</svg>9</span><span class="grow"></span><span class="xs">${dateOf(times.get(`${s1}/review/a`)!)}</span></span><span class="text">Very clear\\.</span><span class="xs">From ${short(s1)}</span></a>$`))
+  assert.equal(cards.length, 4)
+  assert.ok(cards[0]!.includes('<span class="chip mint"><svg class="i" data-icon="handshake"') && cards[0]!.includes('Vouch</span>'))
+  // One that does not count says why, in its card.
+  assert.ok(cards[1]!.includes(`href="${BASE}/profiles/${addressOf('uncounted')}"`) && cards[1]!.includes('<span class="s red">Does not count: '))
   // Everything else is in the last fold, and only there: each review's weight among it.
-  const inFold = [`<code>${a}</code>`, '<h2>Reviews given</h2>', '<h2>Vouches and reports received</h2>', '<h2>Vouches and reports given</h2>', '<h2>Words</h2>', '<h2>Proofs</h2>', '<h2>Signed statement</h2>', `<code>${esc(o.statement!)}</code>`, `<code>${o.signature}</code>`, 'Counts, weight ']
+  const inFold = [`<code>${a}</code>`, '<h3>Reviews received</h3>', '<h3>Reviews given</h3>', '<h3>Vouches and reports received</h3>', '<h3>Vouches and reports given</h3>', '<h3>Words</h3>', '<h3>Proofs</h3>', '<h3>Signed statement</h3>', `<code>${esc(o.statement!)}</code>`, `<code>${o.signature}</code>`, 'Counts, weight ']
   for (const text of inFold) assert.ok(at(text) > fold && at(text) < end, text)
-  assert.ok(html.indexOf('<h2>Reviews received</h2>', fold) > fold)
-  // A profile no verification counts for, in words, with no shield, chip or New.
+  // A profile no verification counts for: no badge, no rating, and 0 and 0 in its fold.
   const u = mainOf((await page(i, `/profiles/${addressOf('uncounted')}`)).text)
-  assert.ok(u.includes('<h1 class="titled"><span class="named"><strong>Tutoring</strong> <span class="role">tutor</span></span></h1>\n<p class="line">Not verified here</p>'))
-  assert.ok(u.includes('<p>This profile: no rating, trust 0, uniqueness 0.</p>'))
-  // An ID check fills the shield: here the same key, listed as an ID key.
+  assert.ok(u.includes('<h1 class="h2 titled">Tutoring tutor</h1><span class="rated"><span class="s">Not verified here</span></span>'))
+  assert.ok(u.includes('<span class="d">–</span><p class="s">No rating: no one this index counts has rated it.</p>'))
+  assert.equal(u.match(/<span class="d">0<\/span>/g)!.length, 2)
+  // An ID check gives the solid badge with an ID card: here the same key, listed as an ID key.
   const both = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'ID check', confidence: 0.95 }] })
   try {
     await both.pass()
-    assert.ok((await page(both, `/profiles/${a}`)).text.includes('<svg class="icon shield id" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Verified by ID">'))
+    const text = (await page(both, `/profiles/${a}`)).text
+    assert.ok(text.includes('<span class="vb id lg" role="img" aria-label="Verified with ID" title="Verified with ID"><svg class="i" data-icon="identification-card"'))
+    assert.ok(!text.includes('Verified with a selfie'))
   } finally {
     await both.close()
   }
 })
 
-test('the home page: what it is for, a search box with every market, and a row per market with its listings counted in its roles\' words', async () => {
+test('the home page: the question, one search box, and a tile per market in its color, with its listings counted in its roles\' words', async () => {
   const html = mainOf((await page(i, '/')).text)
-  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; description: string }> }
-  assert.ok(html.startsWith('<main>\n<div class="lead"><h1>Find verified people</h1><p>Offers and requests, ranked by their reviews.</p></div>'))
-  assert.match(html, /<form class="search" action="https:\/\/index\.test\.example\/search" method="get"><label class="box"><svg class="icon"[^>]*>.*?<\/svg><input name="q" placeholder="Search listings" aria-label="Search listings"><\/label><select name="market" aria-label="Market"><option value="">Any market<\/option>/)
-  for (const m of directory.markets) assert.ok(html.includes(`<option value="${m.name}">${inWords(m.name)}</option>`), m.name)
-  assert.ok(html.includes('<option value="home-cleaning">Home cleaning</option>'))
+  assert.ok(html.startsWith('<main>\n<h1 class="hello">What are you looking for?</h1>'))
+  assert.match(html, /<form class="ask" action="https:\/\/index\.test\.example\/search" method="get" role="search"><label class="inp find"><svg class="i" data-icon="magnifying-glass"[^>]*>.*?<\/svg><input type="search" name="q" placeholder="A maths tutor, a wool coat, a plumber" aria-label="A maths tutor, a wool coat, a plumber"><\/label><button class="btn primary fit" type="submit">Search<\/button><\/form>/)
+  assert.equal(html.match(/<form/g)!.length, 1)
   assert.equal(html.match(/class="[^"]*primary/g)!.length, 1)
-  const rowOf = (name: string) => new RegExp(`<a class="row" href="${BASE}/markets/${name}">.*?</a>`).exec(html)![0]
-  assert.equal(rowOf('tutoring'), `<a class="row" href="${BASE}/markets/tutoring"><span class="two"><strong>Tutoring</strong><span>${esc(directory.markets.find((m) => m.name === 'tutoring')!.description)}</span></span><span class="aside">3 offers · 1 request</span></a>`)
+  const tileOf = (name: string) => new RegExp(`<a class="tile tint" style="--h:[^"]*" href="${BASE}/markets/${name}">.*?</a>`).exec(html)![0]
+  // Every market in the directory, in its order, each on its own color, its icon in it.
+  assert.deepEqual([...html.matchAll(/<a class="tile tint" style="--h:([^"]*)" href="[^"]*\/markets\/([^"]*)">/g)].map((m) => [m[2], m[1]]), DIRECTORY.markets.map((m) => [m.name, colorOf(m.name)]))
+  assert.match(tileOf('tutoring'), /<span class="hue" aria-hidden="true"><svg class="i" data-icon="graduation-cap"[^>]*>.*?<\/svg><\/span><span>Tutoring<span class="xs">3 offers<br>1 request<\/span><\/span><\/a>$/)
   // A role with none is left out; a market with none at all says so.
-  assert.ok(rowOf('clothing').endsWith('<span class="aside">1 offer</span></a>'))
-  assert.ok(rowOf('tennis-matches').endsWith('<span class="aside">None yet</span></a>'))
-  // What this index reads is on the About page now.
-  assert.ok(!html.includes('What this index reads') && !html.includes(i.address))
+  assert.ok(tileOf('clothing').endsWith('<span>Clothing<span class="xs">1 offer</span></span></a>'))
+  assert.ok(tileOf('tennis-matches').endsWith('<span>Tennis matches<span class="xs">None yet</span></span></a>'))
+  // What this index reads is on the About page.
+  assert.ok(!html.includes('What it reads') && !html.includes(i.address))
 })
 
-test('the search page: the home page\'s search box, filled with what was searched, then its rows', async () => {
-  const empty = /<form[\s\S]*?<\/form>/.exec((await page(i, '/search?near=40.4,-3.7&km=50')).text)![0]
-  assert.deepEqual([...empty.matchAll(/name="(\w+)"/g)].map((m) => m[1]), ['q', 'market'])
-  assert.ok(empty.includes('<input name="q" placeholder') && !empty.includes(' selected'))
+test('the search page: its search box filled, the filters as chips and as one GET form, how many and in what order, then its cards', async () => {
   const html = mainOf((await page(i, '/search?q=maths&market=tutoring')).text)
-  assert.ok(html.startsWith(`<main>\n<a class="back" href="${BASE}/"><svg`))
-  assert.ok(html.includes('<input name="q" value="maths" placeholder="Search listings" aria-label="Search listings">'))
-  assert.ok(html.includes('<option value="tutoring" selected>Tutoring</option>'))
-  assert.equal(html.match(/ selected/g)!.length, 1)
-  assert.ok(html.includes('<p>3 found.</p>'))
-  assert.equal(html.match(/<a class="row listing-row"/g)!.length, 3)
+  // A way back and the search box, holding the words and carrying the market along; the top bar's the same.
+  assert.ok(html.startsWith(`<main>\n<div class="bar"><a class="round clear back" href="${BASE}/" aria-label="Back">`))
+  const box = '<input type="search" name="q" value="maths" placeholder="Search listings" aria-label="Search listings"></label><input type="hidden" name="market" value="tutoring"></form>'
+  assert.ok(html.includes(box))
+  assert.ok((await page(i, '/search?q=maths&market=tutoring')).text.includes(`<header class="ibar">`) && /<header[\s\S]*<\/header>/.exec((await page(i, '/search?q=maths&market=tutoring')).text)![0].includes(box))
+  // The chips: the market, with its avatar and a link that removes it; a rating to add; More, which opens the form.
+  const chips = /<nav class="fchips"[\s\S]*?<\/nav>/.exec(html)![0]
+  assert.ok(chips.includes(`<a class="fchip on" href="${BASE}/search?q=maths" aria-label="Remove Tutoring"><span class="av xs" style="--h:${colorOf('tutoring')}" aria-hidden="true">`))
+  assert.ok(chips.includes(`<a class="fchip" href="${BASE}/search?q=maths&amp;market=tutoring&amp;minRating=8">`))
+  assert.ok(chips.includes('<a class="fchip" href="#filters">') && !chips.includes('Near'))
+  // The form: the words and the market carried along; each market a link that keeps the rest and
+  // drops the side; the side, once a market is chosen, none picked here; the rating; Apply.
+  const form = /<form class="filters"[\s\S]*?<\/form>/.exec(html)![0]
+  assert.ok(form.startsWith(`<form class="filters" id="filters" action="${BASE}/search" method="get" aria-label="Filters"><input type="hidden" name="q" value="maths"><input type="hidden" name="market" value="tutoring">`))
+  assert.ok(form.includes(`<a class="radio" href="${BASE}/search?q=maths"><span class="r"></span>All</a>`))
+  assert.ok(form.includes(`<a class="radio" href="${BASE}/search?q=maths&amp;market=tutoring" aria-current="true"><span class="r"></span>Tutoring</a>`))
+  assert.ok(form.includes(`<a class="radio" href="${BASE}/search?q=maths&amp;market=clothing"><span class="r"></span>Clothing</a>`))
+  assert.deepEqual([...form.matchAll(/<input type="radio" name="(\w+)" value="([^"]*)"( checked)?>/g)].map((m) => `${m[1]}=${m[2]}${m[3] ? '*' : ''}`), ['role=tutor', 'role=student', 'minRating=*', 'minRating=8', 'minRating=9'])
+  assert.ok(!form.includes('name="near"') && form.endsWith('<button class="btn plain sm" type="submit">Apply</button></form>'))
+  // How many, in the words of what was asked; no side, so listings; then a card for each.
+  assert.ok(html.includes('<p class="s"><b>3</b> listings for &quot;maths&quot; in Tutoring, best first</p></div>'))
+  assert.equal(html.match(/<a class="rcard"/g)!.length, 3)
+  // A side: its word, and a link to the other side; its radio picked.
+  const tutors = mainOf((await page(i, '/search?q=maths&market=tutoring&role=tutor')).text)
+  assert.ok(tutors.includes(`<p class="s"><b>2</b> offers for &quot;maths&quot; in Tutoring, best first</p><a class="btn text fit" href="${BASE}/search?q=maths&amp;market=tutoring&amp;role=student">Requests</a>`))
+  assert.ok(tutors.includes('<input type="radio" name="role" value="tutor" checked>'))
+  // Near shows only when the address carries a point: its chip removes it, and the form asks how far.
+  const near = mainOf((await page(i, '/search?near=40.4,-3.7&km=50&minRating=7.5')).text)
+  assert.ok(near.includes(`<a class="fchip on" href="${BASE}/search?minRating=7.5" aria-label="Remove near">`) && near.includes('Near 40.4, -3.7'))
+  assert.ok(near.includes('<input type="hidden" name="near" value="40.4,-3.7">') && near.includes('<option value="50" selected>50 km</option>'))
+  assert.ok(near.includes('<input type="radio" name="minRating" value="7.5" checked>'))
+  assert.ok(near.includes('<b>1</b> listing, nearest first'))
   // What was searched is text in the box, never markup.
-  assert.ok((await page(i, '/search?q=%22%3E%3Cb%3E')).text.includes('<input name="q" value="&quot;&gt;&lt;b&gt;" placeholder'))
+  assert.ok((await page(i, '/search?q=%22%3E%3Cb%3E')).text.includes('<input type="search" name="q" value="&quot;&gt;&lt;b&gt;" placeholder'))
 })
 
-test("a market's page: a way back, its name in words, and a section per role titled by its word for its listings", async () => {
+test("a market's page: a header on its tint, its avatar, name, counts and description; a side per role, each with the tabs, a search box for that side, and its cards", async () => {
   const clothing = mainOf((await page(i, '/markets/clothing')).text)
-  assert.ok(clothing.startsWith(`<main>\n<a class="back" href="${BASE}/"><svg class="icon"`))
-  assert.ok(clothing.includes('Markets</a>\n<div class="lead"><h1>Clothing</h1><p>People sell clothes'))
-  assert.match(clothing, /<section><h2>Offers<\/h2><div class="rows"><a class="row listing-row" href="[^"]+\/listing\/coat">/)
-  assert.ok(clothing.includes('<section><h2>Requests</h2><p>No requests yet.</p></section>'))
-  assert.ok(mainOf((await page(i, '/markets/tennis-matches')).text).includes('<section><h2>Requests</h2><p>No requests yet.</p></section>'))
+  assert.ok(clothing.startsWith(`<main>\n<div class="head tint" style="--h:${colorOf('clothing')}"><a class="round back" href="${BASE}/" aria-label="Back">`))
+  assert.ok(clothing.includes(`<div class="me"><span class="av lg" style="--h:${colorOf('clothing')}" aria-hidden="true"><svg class="i" data-icon="t-shirt"`))
+  assert.ok(clothing.includes('<h1>Clothing</h1><span class="s">1 offer</span></div></div>\n<p>People sell clothes'))
+  // Each side at its own anchor; the tabs link to them, the side's own marked; the stylesheet shows
+  // the one the address names, the first when none.
+  const sides = [...clothing.matchAll(/<section class="side" id="(\w+)" aria-label="([^"]+)">/g)].map((m) => [m[1], m[2]])
+  assert.deepEqual(sides, [['seller', 'Seller offers'], ['buyer', 'Buyer requests']])
+  assert.ok(clothing.includes('<nav class="ptabs" aria-label="Sides"><a href="#seller" aria-current="true">Seller offers</a><a href="#buyer">Buyer requests</a></nav>'))
+  assert.ok(clothing.includes('<nav class="ptabs" aria-label="Sides"><a href="#seller">Seller offers</a><a href="#buyer" aria-current="true">Buyer requests</a></nav>'))
+  // A search box for each side, carrying its market and role.
+  assert.ok(clothing.includes('placeholder="Search clothing" aria-label="Search clothing"></label><input type="hidden" name="market" value="clothing"><input type="hidden" name="role" value="seller"></form>'))
+  assert.match(clothing, /<section class="side" id="seller"[\s\S]*?<div class="list"><a class="rcard" href="[^"]+\/listing\/coat">/)
+  assert.ok(clothing.includes('<p>No requests yet.</p></section>'))
+  // One role: no tabs.
+  const tennis = mainOf((await page(i, '/markets/tennis-matches')).text)
+  assert.ok(!tennis.includes('ptabs') && tennis.includes('<p>No requests yet.</p></section>') && tennis.includes('<span class="s">None yet</span>'))
   assert.ok(mainOf((await page(i, '/markets/home-cleaning')).text).includes('<h1>Home cleaning</h1>'))
 })
 
-test('the About page and its twin: what this index is, what it reads, what the numbers mean, its address, and its links', async () => {
+test('the About page and its twin: what this index is, its links, then what it reads and its address', async () => {
   const { status, body: o } = await twin<{ index: string; lists: unknown }>(i, '/about.json')
   assert.equal(status, 200)
   assert.deepEqual(keysOf(o), ['index', 'lists'])
@@ -586,20 +674,19 @@ test('the About page and its twin: what this index is, what it reads, what the n
   }
   const order = [
     '<h1>About this index</h1>',
-    'Anyone can run another index; the main way is this code with lists of its own.',
-    '<h2>What this index reads</h2>',
-    `Hosts, each read in full: ${host.url}.`,
-    `<code>${by.key}</code>, the face check of ${by.name}, confidence 0.75`,
-    `Reputation proofs it shows: Test index (<code>${i.address}</code>), against an index's newest root or one it signed in the last 30 days.`,
-    '<h2>What the numbers mean</h2>',
-    'The shield: a verifier this index counts as checking one real person signed a stamp to the person behind the profile',
-    'Uniqueness, 0 to 100: how sure this index is that the profile is one real person.',
-    '<h2>Its address</h2>',
-    `<p><code>${i.address}</code>: the address of this index's key`,
-    `<a class="row" href="${BASE}/index.json">`,
-    `<a class="row" href="${BASE}/skill.md">`,
-    `<a class="row" href="${BASE}/llms.txt">`,
-    '<a class="row" href="https://github.com/foundationforest/services/tree/main/index">',
+    'It reads every listing, review, vouch and report on the hosts it lists, and ranks them with open rules. It runs no ads, and nobody can pay to be higher.',
+    "A profile counts once it's verified as one real person.",
+    'Anyone can run another index with its own lists and rules, starting from this code.',
+    `<a class="li" href="${BASE}/index.json">`,
+    'Everything as JSON',
+    `<a class="li" href="${BASE}/skill.md">`,
+    '<a class="li" href="https://github.com/foundationforest/services/tree/main/index">',
+    '<h2>What it reads</h2>',
+    `<code>${host.url}</code>`,
+    `The face check of ${by.name}, confidence 0.75: <code>${by.key}</code>`,
+    `Test index: <code>${i.address}</code>`,
+    'or one it signed in the last 30 days.',
+    `<span class="s">Its address</span><code>${i.address}</code>`,
   ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
 })
