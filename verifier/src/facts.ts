@@ -6,49 +6,55 @@
 // new key):
 //
 //   face key   Poseidon([h(model), h(embedding)])
-//   ID key     Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])
+//   ID key     Poseidon([h(model), h(embedding), fieldsRoot])
 //
 // Poseidon is the standard's, circomlib's, through poseidon-lite 0.3.0 as keys/ uses it; h(x) is
 // SHA-256 of x's bytes, read as a big-endian integer, reduced mod BN254's scalar order (`BN254_R`).
 //
-//   model            the face model's name, as UTF-8 (`opencv-sface-2021dec`, face.ts)
-//   embedding        the 512 bytes the face model gives for the check's selfie
-//   name             the name Didit reads on the document, first and last, else the full name; NFKC,
-//                    lower case, one space between words; as UTF-8
-//   birthDays        days from 1970-01-01 to the birth date (YYYY-MM-DD), negative before it, reduced
-//                    into the field as h is
-//   countryNumeric   the document's country, Didit's `issuing_state` (ISO 3166-1 alpha-3), as its ISO
-//                    3166-1 numeric code; 0 when it has none (Kosovo) or none was read, so a gap in
-//                    the table never turns a person away
+//   model        the face model's name, as UTF-8 (`opencv-sface-2021dec`, face.ts)
+//   embedding    the 512 bytes the face model gives for the check's selfie
+//   fieldsRoot   the root of a Poseidon Merkle tree of depth FIELDS_DEPTH over the document's fields
+//                (didit.ts reads them): one leaf Poseidon([h(name), h(value)]) for each, in the order
+//                of their names, then leaves of 0; each node Poseidon([left, right]), the pair hash
+//                the standard's reputation tree uses. That tree is Semaphore's, whose depth grows
+//                with its leaves, so a fixed depth is built here: every path has FIELDS_DEPTH
+//                siblings, so a circuit can prove one field and show none of the others.
 //
-// The stamp carries these fields beside facts (server.ts), so the person keeps what it was made
-// from and anyone can make it again.
+// The stamp carries `fields` beside facts (server.ts), the fields as text (`fieldsText`), so the
+// person keeps what it was made from and anyone can make it again.
 //
 // The fingerprint is how the verifier knows a person came to the ID check before without keeping who
 // they are: HMAC-SHA256, under a key derived from the verifier's seed, of the standard's canonical
-// JSON of `{birth, name}`, written as above. A reader of the file without the key cannot test a
-// guessed name against it. The country is left out on purpose: a renewed document, or another
-// country's, is the same person.
+// JSON of `{birth, name}`: the name Didit reads, first and last, else the full name, in Unicode NFKC,
+// lower case, one space between words; the birth date as YYYY-MM-DD. A reader of the file without the
+// key cannot test a guessed name against it. The country is left out on purpose: a renewed document,
+// or another country's, is the same person.
 
 import { createHash, createHmac } from 'node:crypto'
 
 import { BN254_R, isFieldElement } from '@foundationforest/keys'
 import { canonical } from '@foundationforest/folders'
-import countries from 'i18n-iso-countries'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
-import { poseidon5 } from 'poseidon-lite/poseidon5'
+import { poseidon3 } from 'poseidon-lite/poseidon3'
 
 import type { Document } from './didit.ts'
+
+/**
+ * The fields tree's depth: 2^8 = 256 leaves. Didit documents 17 top-level text fields and about 140
+ * in `extra_fields`, most of them driving-licence classes; all of them fit at once.
+ */
+export const FIELDS_DEPTH = 8
 
 /** The recipes, as `GET /` names them. */
 export const RECIPES = {
   face: 'Poseidon([h(model), h(embedding)])',
-  id: 'Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])',
+  id: 'Poseidon([h(model), h(embedding), fieldsRoot])',
   h: 'SHA-256 of the bytes, read as a big-endian integer, mod the BN254 scalar order',
+  fieldsRoot: `the root of a Poseidon Merkle tree of depth ${FIELDS_DEPTH} over the fields beside the stamp: one leaf Poseidon([h(name), h(value)]) for each, in the order of their names, then leaves of 0; each node Poseidon([left, right])`,
 } as const
 
-/** What the ID check reads of a person, written one way: what its facts and fingerprint are made from. */
-export type Person = { name: string; birth: string; country: number }
+/** What the ID check reads of a person, written one way: what its fingerprint is made from. */
+export type Person = { name: string; birth: string }
 
 /** h(x): SHA-256 of x's bytes (text as UTF-8), read as a big-endian integer, reduced into the field. */
 export function h(x: Uint8Array | string): bigint {
@@ -60,6 +66,39 @@ export function faceFacts(model: string, embedding: Uint8Array): bigint {
   return poseidon2([h(model), h(embedding)])
 }
 
+/** The fields' names in the order their leaves take: JavaScript's sort, by UTF-16 code units, as RFC 8785 orders keys. */
+const names = (fields: Document) => Object.keys(fields).sort()
+
+/**
+ * The fields as text: RFC 8785 for this one shape, a flat object of text, written out here since the
+ * standard's canonical JSON takes only `[a-z][a-zA-Z0-9]*` keys and Didit's names have `_` and `.`.
+ * Its keys in the leaves' order; each key and value as JSON.stringify writes a string, which is RFC
+ * 8785's form.
+ */
+export function fieldsText(fields: Document): string {
+  return `{${names(fields).map((name) => `${JSON.stringify(name)}:${JSON.stringify(fields[name])}`).join(',')}}`
+}
+
+/** The fields tree's root (RECIPES.fieldsRoot). Refuses more fields than the tree has leaves. */
+export function fieldsRoot(fields: Document): bigint {
+  if (names(fields).length > 2 ** FIELDS_DEPTH) throw new RangeError(`a document's fields fit in 2^${FIELDS_DEPTH} leaves`)
+  let level = names(fields).map((name) => poseidon2([h(name), h(fields[name]!)]))
+  // The empty subtree at each height: a leaf of 0, then the hash of two of the height below.
+  let empty = 0n
+  for (let height = 0; height < FIELDS_DEPTH; height++) {
+    const next: bigint[] = []
+    for (let i = 0; i < level.length; i += 2) next.push(poseidon2([level[i]!, level[i + 1] ?? empty]))
+    level = next
+    empty = poseidon2([empty, empty])
+  }
+  return level[0] ?? empty
+}
+
+/** The ID key's facts: Poseidon([h(model), h(embedding), fieldsRoot]). */
+export function idFacts(model: string, embedding: Uint8Array, fields: Document): bigint {
+  return poseidon3([h(model), h(embedding), fieldsRoot(fields)])
+}
+
 /** Days from 1970-01-01 to a YYYY-MM-DD date, or null for anything that is not a real date. */
 export function daysOf(birth: string): number | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(birth)) return null
@@ -69,29 +108,17 @@ export function daysOf(birth: string): number | null {
   return new Date(ms).toISOString().slice(0, 10) === birth ? ms / 86_400_000 : null
 }
 
-/** The ID key's facts: Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric]). */
-export function idFacts(model: string, embedding: Uint8Array, person: Person): bigint {
-  const days = BigInt(daysOf(person.birth)!)
-  return poseidon5([h(model), h(embedding), h(person.name), ((days % BN254_R) + BN254_R) % BN254_R, BigInt(person.country)])
-}
-
 /** One way to write a name: Unicode NFKC, lower case, one space between words. */
 const oneWay = (name: string) => name.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean).join(' ')
-
-/** An ISO 3166-1 alpha-3 code's numeric code, as a number; 0 for none. */
-export function countryNumeric(alpha3: string): number {
-  const code = alpha3.trim().toUpperCase()
-  const numeric = /^[A-Z]{3}$/.test(code) ? countries.alpha3ToNumeric(code) : undefined
-  return numeric ? Number(numeric) : 0
-}
 
 /** The person a document step read, written one way; null when the name or a real birth date is missing. */
 export function person(document: Document | null): Person | null {
   if (!document) return null
-  const name = oneWay(document.firstName.trim() && document.lastName.trim() ? `${document.firstName} ${document.lastName}` : document.fullName)
-  const birth = document.birth.trim()
+  const [first = '', last = '', full = ''] = [document.first_name, document.last_name, document.full_name]
+  const name = oneWay(first.trim() && last.trim() ? `${first} ${last}` : full)
+  const birth = (document.date_of_birth ?? '').trim()
   if (!name || daysOf(birth) === null) return null
-  return { name, birth, country: countryNumeric(document.country) }
+  return { name, birth }
 }
 
 /** The fingerprint of a person: HMAC-SHA256 under `key` of canonical `{birth, name}`. */

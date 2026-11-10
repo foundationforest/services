@@ -5,29 +5,35 @@
 // decided, the selfie the session took, to compute the face's embedding (face.ts), and, an hour
 // after the session's stamp is signed, to delete it. From a
 // decision it reads the session's workflow, its status, the status of each step (liveness; for the ID
-// check also the document and the face match), the selfie's address, and, from the document step, the
-// name, the birth date and the document's country. Everything else Didit returns is dropped the
-// moment the answer is parsed. Nothing Didit says is stored as it is (store.ts keeps hashes only).
+// check also the document and the face match), the selfie's address, and, from the document step,
+// the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from
+// (facts.ts). Everything else Didit returns is dropped the moment the answer is parsed. Nothing
+// Didit says is stored as it is (store.ts keeps hashes only).
 //
 // Whether a face was seen before is Didit's to say: the face workflow searches every face it has
 // seen and sends a known one to review, where a person at the foundation decides in Didit's console.
 // While a session is In Review the verifier answers that it is waiting, and the app asks again.
 //
 // An hour after a session's stamp is first signed, the verifier's sweep deletes it (`deleteSession`,
-// server.ts's `sweep`), so Didit no longer holds
-// its selfie, its liveness video, its document's images, what it read or its decision. Each deletion
-// asks Didit to keep one image-free face template, anchored to the session's own `vendor_data`, for
-// FACE_RETENTION_DAYS: its face search goes on seeing the face, so a face that comes back still goes
-// to review. Didit drops the template with the session unless asked, and gives every kept template
-// an end. Only a session whose stamp is signed is deleted, so never one In Review.
+// server.ts's `sweep`), so Didit no longer holds its selfie, its liveness video, its document's
+// images or its decision. Its console's list of users still shows, for a deleted ID session, the
+// full name, birth date and country, so it can tell when someone comes back; a kept face template
+// matches only while its user is there. Each deletion asks Didit to keep one image-free face
+// template, anchored to the session's own `vendor_data`, for FACE_RETENTION_DAYS: its face search
+// goes on seeing the face, so a face that comes back still goes to review. Didit drops the template
+// with the session unless asked, and gives every kept template an end. Only a session whose stamp is
+// signed is deleted, so never one In Review.
 //
-// Didit's API as read in October 2026 (docs.didit.me: creating and retrieving a session, and the
-// liveness and document reports): version 3, `x-api-key` header, `POST /v3/session/`
+// Didit's API as read in October 2026 (docs.didit.me: creating and retrieving a session, the
+// liveness and document reports, and the ID verification report as its Data models page lists it):
+// version 3, `x-api-key` header, `POST /v3/session/`
 // (with `callback`, the page Didit sends the person to when the check is done),
 // `GET /v3/session/{id}/decision/` and `DELETE /v3/session/{id}/delete/` (200 with
 // `face_retention_outcome`, 404 for a session already gone). A liveness step's `reference_image` is a signed URL to the
-// selfie, valid for hours. A document step reads `first_name`, `last_name`, `full_name`,
-// `date_of_birth` (YYYY-MM-DD) and `issuing_state` (ISO 3166-1 alpha-3). A refusal's body varies by
+// selfie, valid for hours. A document step's report (`id_verifications[]`) holds the text read on the
+// document (DOCUMENT_FIELDS, and `extra_fields`, its document-specific ones), dates as YYYY-MM-DD
+// and countries as ISO 3166-1 alpha-3, beside the step's own status, signed URLs to its images and
+// video, scores, Didit's own derivations and other sessions' matches. A refusal's body varies by
 // endpoint; a stable `code` sits beside `detail`, Didit's own words, when it sends one. The thrown
 // error keeps the status and that code, for the log line (server.ts), and never `detail`.
 //
@@ -40,8 +46,53 @@ import { randomUUID } from 'node:crypto'
 /** The two checks: by face, and by a government document with a live face. */
 export type Check = 'face' | 'id'
 
-/** What a document step read, as Didit gives it. */
-export type Document = { firstName: string; lastName: string; fullName: string; birth: string; country: string }
+/**
+ * What a document step read on the document: each text field, by Didit's name, its value as Didit
+ * gives it; each of `extra_fields` as `extra_fields.<its key>`, the name Didit's own workflow rules
+ * give it. A field Didit did not read is absent.
+ */
+export type Document = Record<string, string>
+
+/**
+ * The text a document step's report reads on the document, by Didit's names. Not these: the step's
+ * own status, node, method and assurance; every image and video (signed URLs); its scores; what
+ * Didit works out itself (`age`, `issuing_state_name`, `formatted_address`, `parsed_address`); the
+ * same text again in machine form (`mrz`, `barcodes`, `extracted_data`); and other sessions'
+ * matches.
+ */
+export const DOCUMENT_FIELDS = [
+  'address',
+  'date_of_birth',
+  'date_of_issue',
+  'document_number',
+  'document_subtype',
+  'document_type',
+  'expiration_date',
+  'first_name',
+  'full_name',
+  'gender',
+  'issuing_state',
+  'last_name',
+  'marital_status',
+  'nationality',
+  'personal_number',
+  'place_of_birth',
+  'region',
+] as const
+
+/** Text a field can hold: a string, not empty, with no lone surrogate, so it has one UTF-8 spelling to hash. */
+const isText = (value: unknown): value is string => typeof value === 'string' && value !== '' && value.isWellFormed()
+
+/** What a document step's report read on the document (`Document`): its text fields, and those of its `extra_fields`. */
+export function fieldsOf(step: Record<string, unknown>): Document {
+  const fields: Document = {}
+  for (const name of DOCUMENT_FIELDS) if (isText(step[name])) fields[name] = step[name]
+  const extra = step.extra_fields
+  if (typeof extra === 'object' && extra !== null && !Array.isArray(extra)) {
+    for (const [key, value] of Object.entries(extra)) if (isText(value)) fields[`extra_fields.${key}`] = value
+  }
+  return fields
+}
 
 /** What the verifier reads from a session's decision. */
 export type Decision = {
@@ -144,15 +195,7 @@ export function parseDecision(body: unknown): Decision {
     documents: documents.map(status),
     faceMatches: reports(json.face_matches).map(status),
     faceImage: text(liveness[0]?.reference_image) || null,
-    document: first
-      ? {
-          firstName: text(first.first_name),
-          lastName: text(first.last_name),
-          fullName: text(first.full_name),
-          birth: text(first.date_of_birth),
-          country: text(first.issuing_state),
-        }
-      : null,
+    document: first ? fieldsOf(first) : null,
   }
 }
 

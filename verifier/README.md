@@ -6,9 +6,9 @@ verified without saying who you are, or which of your other profiles they go wit
 Foundation runs this copy, at https://verifier.forest.foundation. Anyone can sign stamps; the main
 way is a verifier like this one, and each reader decides which verifiers count. It keeps your stamp
 number, which check gave it and the stamp; for the ID check, a keyed hash of your name and birthday;
-and of the ID check's payment, a hash, never beside your stamp. Your face stays with Didit, its
-check provider, and how you paid with Stripe. The face check is free; the ID check is paid. No key
-of yours, no account.
+and of the ID check's payment, a hash, never beside your stamp. Your face, and from the ID check
+your name, birthday and country, stay with Didit, its check provider, and how you paid with Stripe.
+The face check is free; the ID check is paid. No key of yours, no account.
 
 ## How it works
 
@@ -33,7 +33,7 @@ Both are Didit sessions. The app drives them; the verifier only asks Didit what 
 | Open | `POST /face/session` opens a session on the face workflow and answers the page the person uses | `POST /id/session` with the payment, on the ID workflow |
 | The person | Didit checks for a live person and compares the face with every face it has seen | Didit also reads a government document and matches the live face to its photo |
 | Ask | The app sends the session and its stamp number to `POST /face/stamp` | `POST /id/stamp`, with the payment |
-| Approved | The verifier fetches the selfie, computes its embedding ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a stamp from the face key | Every document, liveness and face-match step passed too; then the fingerprint, and a stamp from the ID key |
+| Approved | The verifier fetches the selfie, computes its embedding ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a stamp from the face key | Every document, liveness and face-match step passed too; then the fingerprint, and the stamp number's ID stamp |
 
 - **In Review** means Didit has seen the face before: the verifier answers `202 {"waiting":"review"}`,
   keeps nothing, and the app asks again later. A person at the foundation decides in Didit's
@@ -45,9 +45,10 @@ Both are Didit sessions. The app drives them; the verifier only asks Didit what 
 - **The fingerprint** is HMAC-SHA256 (a keyed hash), under the fingerprint key, of the standard's
   canonical JSON of `{birth, name}`: the name Didit reads, first and last, else the full name, in
   Unicode NFKC, lower case, one space between words; the birth date as `YYYY-MM-DD`. Kept next to
-  another stamp number: refused, `duplicate_document`. Next to the same one: signed again, so a lost
-  ID stamp comes back. The country is left out, since a renewed or another country's document is the
-  same person. Without the key, a guessed name and birthday cannot be tested against the file.
+  another stamp number: refused, `duplicate_document`. Next to the same one: its first ID stamp,
+  given back ([The stamp](#the-stamp)). The country is left out, since a renewed or another
+  country's document is the same person. Without the key, a guessed name and birthday cannot be
+  tested against the file.
 - **`vendor_data`** on each session is a fresh random id after a prefix naming only the check, so it
   names nobody; Didit's face search compares a face with those under other `vendor_data`.
 
@@ -65,9 +66,10 @@ payment gives one ID stamp, and up to three sessions to get it.
    `402 not_paid`, and the app asks again whenever it likes. Each session opened takes one of the
    payment's three tries, and one Didit does not open gives its try back; after three,
    `409 payment_used`.
-4. The app sends the payment again with `POST /id/stamp`. The first stamp it gives uses it up: no
-   more sessions and no more stamps from it (`409 payment_used`). A refused stamp uses nothing, and
-   a session sent again within its hour uses no payment.
+4. The app sends the payment again with `POST /id/stamp`. The first stamp it gives, a new one or the
+   first ID stamp given back, uses it up: no more sessions and no more stamps from it
+   (`409 payment_used`). A refused stamp uses nothing, and a session sent again within its hour uses
+   no payment.
 
 No webhook: the verifier asks Stripe when the app comes back, so nothing waits on Stripe's redirect.
 The payment sent with a stamp need not be the one that opened its session: each payment opens at
@@ -84,23 +86,33 @@ it in the standard's JSON form, with what its facts were made from beside it:
 ```
 face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","verifierName":"<its name>",
         "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},"model":"opencv-sface-2021dec","embedding":"<base64url>"}
-ID:    the same, from the ID key, and "name":"ada lovelace","birth":"1815-12-10","country":826
+ID:    the same, from the ID key, and "fields":"{\"date_of_birth\":\"1815-12-10\",\"first_name\":\"Ada\",…}"
 ```
 
 | Key | Its facts, fixed for good: a new recipe is a new key |
 |---|---|
 | face key | `Poseidon([h(model), h(embedding)])` |
-| ID key | `Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])` |
+| ID key | `Poseidon([h(model), h(embedding), fieldsRoot])` |
 
 - **Poseidon:** a hash made for zero-knowledge proofs, circomlib's, through `poseidon-lite` 0.3.0, as
   the standard's keys use it. **`h(x)`:** SHA-256 of x's bytes, as a big-endian integer, mod BN254's
   scalar order (the size of the numbers the proofs work in).
 - **`model`:** the face model's name, UTF-8. A face's numbers mean nothing without the program that
   made them; with the name, anyone can run the same model. **`embedding`:** the 512 bytes the model
-  gives for the selfie. **`name`:** as the fingerprint writes it.
-- **`birthDays`:** days from 1970-01-01, negative before it, reduced as h is. **`countryNumeric`:**
-  the document's country (Didit's `issuing_state`) as its ISO 3166-1 numeric code, or 0 when it has
-  none, as for Kosovo, or when Didit read none.
+  gives for the selfie.
+- **`fields`:** every text field Didit read on the document, by Didit's names, as it read them, in
+  one string of canonical JSON (RFC 8785): `document_type`, `document_subtype`, `document_number`,
+  `personal_number`, `first_name`, `last_name`, `full_name`, `date_of_birth`, `date_of_issue`,
+  `expiration_date`, `issuing_state`, `nationality`, `place_of_birth`, `address`, `gender`,
+  `marital_status`, `region`, and each of `extra_fields`, a document's own (a profession, a driving
+  licence's classes), as `extra_fields.<its key>`. A field Didit did not read is absent. Never an
+  image or a video, the step's status, what Didit works out itself (`age`, `issuing_state_name`,
+  `formatted_address`, `parsed_address`), or the same text again in machine form (`mrz`,
+  `barcodes`).
+- **`fieldsRoot`:** the root of a Poseidon Merkle tree of depth 8, 256 leaves: one leaf
+  `Poseidon([h(name), h(value)])` for each field, in the order of their names, as `fields` lists
+  them, then leaves of 0; each node `Poseidon([left, right])`. Every path has 8 steps, so one field
+  can be proved against the root without the others; nothing here makes such a proof.
 
 The fields beside a stamp are the person's: anyone they show them to can make the facts again.
 Nothing in the standard reads them, and the verification keeps the facts private. Facts are exact;
@@ -110,17 +122,19 @@ gives the facts, and compare it with your live face using the same model. So a f
 with light and age leaves its stamp good. Nothing here runs such a check yet.
 
 **Asked back:** `POST /stamp` with a stamp number answers, for each key, the first stamp it signed
-for that number, its own fields only, or `null`. A later check answers its own new stamp, but the
-first stays the one handed back, so nobody else who knows the number can change it; either gives the
-same verification. Handing it back is safe: a verification needs the seed behind the number. The
-fields beside a stamp come only in the answer that signed it, and again from that session within its
-hour.
+for that number, its own fields only, or `null`. A later face check answers its own new stamp, but
+the first stays the one handed back, so nobody else who knows the number can change it; either gives
+the same verification. A later ID check answers the first ID stamp, its own fields only: one ID
+stamp a person, ever. At each start the verifier forgets any kept ID stamp its ID key did not sign,
+so that stamp number's next ID check keeps a new one. Handing a stamp back is safe: a verification
+needs the seed behind the number. The fields beside a stamp come only in the answer that signed it,
+and again from that session within its hour.
 
 ### Its keys
 
-`GET /` gives its name, its two keys as addresses each with its facts recipe, `h`, and `consent`, the
-text an app shows before the ID check ([The consent screen](#didit)), in canonical JSON (one exact
-way of writing it); with gifts, also
+`GET /` gives its name, its two keys as addresses each with its facts recipe, `h`, `fieldsRoot`, and
+`consent`, the text an app shows before the ID check ([The consent screen](#didit)), in canonical
+JSON (one exact way of writing it); with gifts, also
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is derived from it
@@ -131,9 +145,10 @@ way of writing it); with gifts, also
   only, so the two are kept or lost together. No person, phrase or variable holds it; nothing prints
   or logs it.
 - **Derived from its own secret** with the standard's `hkdf` (a standard way to make many keys from
-  one secret): under `face`, the face key; `id`, the ID key; `fingerprint`, the fingerprint key;
-  `sponsor`, the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change,
-  since a new text would derive a new key. None of the keys holds money.
+  one secret): under `face`, the face key; `id-fields`, the ID key, a text of its own for its recipe;
+  `fingerprint`, the fingerprint key; `sponsor`, the sponsor key, an Ed25519 key that signs the
+  gifts' tickets. The texts never change, since a new text would derive a new key. None of the keys
+  holds money.
 
 ### Once a stamp is signed
 
@@ -143,12 +158,14 @@ way of writing it); with gifts, also
 - **Every minute,** the sweep deletes in Didit each session first signed an hour ago or more
   (`DELETE /v3/session/{id}/delete/`), and forgets its id and time once Didit has. One Didit does not
   answer is tried at the next sweep. Never a session In Review, declined or unfinished.
-- **What goes:** the selfie, the liveness video, the document's images, what Didit read on it (name,
-  date of birth, document number, nationality, dates), and its decision.
+- **What goes:** the selfie, the liveness video, the document's images, the rest of what Didit read
+  on it (document number, nationality, dates), and its decision.
 - **What stays:** each deletion asks Didit to keep one template of the face
   (`retain_face_embeddings`), whatever the application's setting: numbers, no image, no name, used
   only for this application's face search, so a face that comes back still goes to review. Didit
-  ends every kept template; the verifier asks for 3650 days, the longest it allows.
+  ends every kept template; the verifier asks for 3650 days, the longest it allows. Didit's list of
+  users also still shows, for a deleted ID session, the full name, birth date and country, so it can
+  tell when someone comes back; a template matches only while its user is there.
 
 ### What it keeps
 
@@ -299,12 +316,13 @@ check:
 > checks your face and a government ID with Didit, its provider, to make sure each person is checked
 > once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document
 > number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest
-> deletes them at Didit, which keeps only a template of your face, for up to ten years, so it can
-> tell if the same face comes back. Forest keeps none of this: only a one-way fingerprint of your
-> name and date of birth next to your stamp number, so the same person is not checked twice, and the
-> stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it.
-> It gives you a stamp, with your name, date of birth and country beside it for your own records; a
-> profile that shows it says only that you were checked.
+> deletes them at Didit, which still keeps your full name, date of birth and country, and a template
+> of your face for up to ten years, so it can tell if you come back. Forest keeps none of this: only
+> a one-way fingerprint of your name and date of birth next to your stamp number, so the same person
+> is not checked twice, and the stamp it signed you, a one-way hash of what the check saw, so it can
+> hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside
+> it (your name, date of birth, document number and the rest), for you to keep; a profile that shows
+> it says only that you were checked.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
@@ -377,10 +395,11 @@ card; it refuses a live key.
 
 `test/` covers, against a stand-in Didit and a stand-in Stripe, a real SQLite file and real HTTP:
 both checks and review, the ID check's payment and its tries, verifications made from the stamps and
-checked against the published keys, the facts vectors, stamps asked back, the secret, the sweep, the
-raw file, the face models on three portraits, both gifts' tickets taken by the host's own seller,
-the Stripe client's requests, what a failure at Stripe or Didit logs, the fetch's retries, and this
-README's consent screen and codes, as the code has them.
+checked against the published keys, the facts vectors and the fields tree leaf by leaf, what is read
+of Didit's ID report, stamps asked back and given back, the secret, the sweep, the raw file, the
+face models on three portraits, both gifts' tickets taken by the host's own seller, the Stripe
+client's requests, what a failure at Stripe or Didit logs, the fetch's retries, and this README's
+consent screen and codes, as the code has them.
 
 ## Promises
 
@@ -410,16 +429,21 @@ README's consent screen and codes, as the code has them.
 - **One person per check: the face check rests on Didit's face search, the ID check on the
   document's fingerprint;** a face approved from review is signed for whatever stamp number the
   person brings.
+- **A person can hold a face stamp on one seed and an ID stamp on another,** since the ID check finds
+  repeats by the document alone. Time solves it: an index trusts a profile more the more verifiers
+  stand behind its seed.
 - **A face template ends** after 3650 days at most; then a returning face is new to Didit.
 - **The checks share one face search,** so taking the ID check first sends the face check to review.
-- **After the hour, a lost answer loses the fields beside the stamp;** the stamp comes back.
+- **After the hour, a lost answer loses the fields beside the stamp for good:** the stamp comes back,
+  from `POST /stamp` or a new ID check, without them.
+- **A stamp describes the document as it was on the day of the check:** with one ID stamp a person,
+  a renewed document never gives a new one.
 - **Stamps signed before this code kept them do not come back:** `not_found`, and the person checks
   again.
 - **For that hour, `to_delete` names the session:** whoever reads the file can ask Didit about it.
 - **A deletion Didit does not answer** leaves the session there, images and all, till a later sweep.
 - **It trusts Didit's decision,** and relies on the workflow settings above, which it cannot see.
 - **The answer that signs a stamp says who the person is:** keep it as a key is kept.
-- **A country with no ISO numeric code enters as 0,** like one Didit did not read.
 - **A lost gift is lost:** another buy gets `given`.
 - **Losing the volume** means a new secret and keys, with no signed handover, and lets a person get
   a second stamp number's ID stamp. The name, and so the stamp numbers, stay.
@@ -438,6 +462,10 @@ README's consent screen and codes, as the code has them.
 No. We hold your stamp number, made from your seed and our name; your profiles' keys are made from
 your seed and their labels. Only your seed connects the two, and it never leaves your device. A
 verification shows that we signed a stamp to the seed behind it, never which stamp number.
+
+**Why are an ID stamp's fields one string, not an object?**
+A stamp's own keys are lower-case words, so it fits inside an entry, and Didit's names, such as
+`date_of_birth`, are not. One string keeps Didit's names and the exact text each leaf was made from.
 
 **Could someone rebuild this verifier from public data?**
 Its name, keys and code are public. Which session and person went with which stamp number is not, so

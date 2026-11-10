@@ -11,7 +11,9 @@
 //
 //   face          the face key: a service key (the standard's `serviceKey`) from these 32 bytes,
 //                 which `signStamp` takes, and which sign every face stamp
-//   id            the ID key, a service key the same way, which signs every ID stamp
+//   id-fields     the ID key, a service key the same way, which signs every ID stamp: its facts are
+//                 made from every field of the document (facts.ts). Never `id`, the text of the
+//                 recipe before it: a new recipe takes a new text
 //   fingerprint   the key of the ID check's fingerprints (facts.ts)
 //   sponsor       the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
 //
@@ -30,7 +32,7 @@ export const SEED_FILE = 'verifier-seed.json'
 /** The texts each key is derived under. */
 export const INFO = {
   face: 'face',
-  id: 'id',
+  id: 'id-fields',
   fingerprint: 'fingerprint',
   sponsor: 'sponsor',
 } as const

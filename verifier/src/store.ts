@@ -54,6 +54,15 @@ export type Remembered = 'ok' | 'session_used' | 'duplicate_document' | 'not_pai
 /** What the file keeps of a stamp, beside its stamp number and key: its facts and its signature. */
 export type KeptStamp = { facts: bigint; signature: StampSignature }
 
+/** A stamp as the file keeps it: its facts, and its signature as r8 (x then y) and s. */
+function keptStamp(row: Record<string, unknown>): KeptStamp {
+  const r8 = row.r8 as Uint8Array
+  return {
+    facts: fromBytes32(row.facts as Uint8Array),
+    signature: { R8: [fromBytes32(r8.subarray(0, 32)), fromBytes32(r8.subarray(32))], S: fromBytes32(row.s as Uint8Array) },
+  }
+}
+
 export class Store {
   readonly #db: DatabaseSync
   readonly #session: StatementSync
@@ -62,6 +71,8 @@ export class Store {
   readonly #addFingerprint: StatementSync
   readonly #addStamp: StatementSync
   readonly #stamps: StatementSync
+  readonly #stampsOf: StatementSync
+  readonly #dropStamp: StatementSync
   /** Each check's gift: give one, and the buy one was given for. */
   readonly #gifts: Record<Check, { give: StatementSync; given: StatementSync }>
   readonly #signedAt: StatementSync
@@ -94,6 +105,8 @@ export class Store {
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (fingerprint, stamp_number) VALUES (?, ?)')
     this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
     this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ?')
+    this.#stampsOf = this.#db.prepare('SELECT stamp_number, facts, r8, s FROM stamps WHERE kind = ?')
+    this.#dropStamp = this.#db.prepare('DELETE FROM stamps WHERE stamp_number = ? AND kind = ?')
     const gifts = (table: string) => ({ give: this.#db.prepare(`INSERT OR IGNORE INTO ${table} (stamp_number, buy) VALUES (?, ?)`), given: this.#db.prepare(`SELECT buy FROM ${table} WHERE stamp_number = ?`) })
     this.#gifts = { face: gifts('gifts'), id: gifts('id_gifts') }
     this.#signedAt = this.#db.prepare('SELECT signed_at FROM to_delete WHERE session_id = ?')
@@ -171,14 +184,22 @@ export class Store {
   /** The stamps kept for this stamp number, by key: the first each key signed for it. */
   stamps(stampNumber: bigint): Partial<Record<Check, KeptStamp>> {
     const kept: Partial<Record<Check, KeptStamp>> = {}
-    for (const row of this.#stamps.all(toBytes32(stampNumber))) {
-      const r8 = row.r8 as Uint8Array
-      kept[row.kind as Check] = {
-        facts: fromBytes32(row.facts as Uint8Array),
-        signature: { R8: [fromBytes32(r8.subarray(0, 32)), fromBytes32(r8.subarray(32))], S: fromBytes32(row.s as Uint8Array) },
-      }
-    }
+    for (const row of this.#stamps.all(toBytes32(stampNumber))) kept[row.kind as Check] = keptStamp(row)
     return kept
+  }
+
+  /**
+   * Forgets each stamp kept for this check that `signed` says its key did not sign, so that stamp
+   * number's next check keeps a new one; how many it forgot.
+   */
+  dropUnsigned(kind: Check, signed: (stampNumber: bigint, stamp: KeptStamp) => boolean): number {
+    let dropped = 0
+    for (const row of this.#stampsOf.all(kind)) {
+      if (signed(fromBytes32(row.stamp_number as Uint8Array), keptStamp(row))) continue
+      this.#dropStamp.run(row.stamp_number as Uint8Array, kind)
+      dropped++
+    }
+    return dropped
   }
 
   /** The sessions first signed at `before` or earlier and not yet deleted in Didit, oldest first. */

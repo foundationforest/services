@@ -33,13 +33,16 @@ export const passed = (person: string, over: Partial<Decision> = {}): Decision =
   ...over,
 })
 
-/** A document as Didit reads one. */
-export const doc = (lastName: string, over: Partial<Document> = {}): Document => ({
-  firstName: 'Ada',
-  lastName,
-  fullName: `Ada ${lastName}`,
-  birth: '1990-04-01',
-  country: 'GBR',
+/** A document as Didit reads one: its text fields, by Didit's names. */
+export const doc = (lastName: string, over: Document = {}): Document => ({
+  first_name: 'Ada',
+  last_name: lastName,
+  full_name: `Ada ${lastName}`,
+  date_of_birth: '1990-04-01',
+  issuing_state: 'GBR',
+  document_type: 'Passport',
+  document_number: 'AB1234567',
+  address: '12 St James Square, London',
   ...over,
 })
 

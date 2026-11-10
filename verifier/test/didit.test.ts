@@ -114,25 +114,59 @@ test('a decision is read from GET /v3/session/{id}/decision/ and cut down', asyn
   assert.equal(judge(decision, WORKFLOW), null, 'an uppercase APPROVED counts')
 })
 
-test("an ID check's decision: the document's name, birth date and country, and the face match; nothing else", () => {
+test("an ID check's decision: every text field read on the document, by Didit's names, and the face match; nothing else", () => {
+  // A report shaped as Didit's Data models page gives one (docs.didit.me, ID verification).
+  const report = {
+    status: 'Approved',
+    node_id: 'ocr',
+    verification_method: 'document',
+    assurance: 'documentary',
+    wallet_provider: null,
+    document_type: 'Passport',
+    document_subtype: 'PASSPORT_GENERIC',
+    document_number: 'AB1234567',
+    personal_number: '99999999R',
+    portrait_image: 'https://media.example/portrait.jpg?signature=1',
+    front_image: 'https://media.example/front.jpg?signature=1',
+    front_video: 'https://media.example/front.mp4?signature=1',
+    back_image: null,
+    back_video: null,
+    full_front_image: 'https://media.example/full_front.jpg?signature=1',
+    full_back_image: null,
+    front_image_camera_front: 'https://media.example/camera.jpg?signature=1',
+    back_image_camera_front: null,
+    front_image_quality_score: { focus_score: 91, overall_score: 88.5 },
+    document_liveness: { portrait_replace: { score: 96.46, bucket: 'approve' } },
+    date_of_birth: '1990-05-12',
+    age: 35,
+    expiration_date: '2032-05-11',
+    date_of_issue: '2022-05-11',
+    issuing_state: 'ESP',
+    issuing_state_name: 'Spain',
+    first_name: 'María',
+    last_name: 'García López',
+    full_name: 'María García López',
+    gender: 'F',
+    address: 'Calle Mayor 1, 28001 Madrid',
+    formatted_address: 'Calle Mayor 1, 28001 Madrid, Spain',
+    parsed_address: { street_1: 'Calle Mayor 1', city: 'Madrid', postal_code: '28001', country: 'ES' },
+    place_of_birth: 'Madrid',
+    marital_status: null,
+    nationality: 'ESP',
+    region: '',
+    extra_fields: { profession: 'Ingeniera', 'DL Class': 'B', blood_group: 7, dl_categories: ['B'] },
+    mrz: { document_number: 'AB1234567', surname: 'GARCIA', given_names: 'MARIA' },
+    barcodes: [{ type: 'PDF417', data: 'ANSI 636000' }],
+    extracted_data: { first_name: 'MARIA' },
+    extra_files: ['https://media.example/extra.jpg?signature=1'],
+    matches: [{ session_id: '11111111-2222-3333-4444-555555555555', user_details: { name: 'Someone Else' } }],
+    document_selfie_face_matches: null,
+    warnings: [],
+  }
   const decision = parseDecision(
     decisionBody({
       features: 'OCR + LIVENESS + FACE_MATCH',
-      id_verifications: [
-        {
-          node_id: 'ocr',
-          status: 'Approved',
-          first_name: 'Ada',
-          last_name: 'Lovelace',
-          full_name: 'Ada Lovelace',
-          date_of_birth: '1990-04-01',
-          issuing_state: 'GBR',
-          issuing_state_name: 'United Kingdom',
-          document_number: 'X123',
-          portrait_image: 'https://example.com/portrait.jpg',
-          warnings: [],
-        },
-      ],
+      id_verifications: [report, { ...report, first_name: 'Otra' }],
       liveness_checks: [
         {
           node_id: 'liveness',
@@ -152,13 +186,34 @@ test("an ID check's decision: the document's name, birth date and country, and t
     workflowId: WORKFLOW,
     status: 'APPROVED',
     liveness: [{ status: 'Approved' }],
-    documents: [{ status: 'Approved' }],
+    documents: [{ status: 'Approved' }, { status: 'Approved' }],
     faceMatches: [{ status: 'Approved' }],
     faceImage: 'https://example.com/selfie.jpg',
-    document: { firstName: 'Ada', lastName: 'Lovelace', fullName: 'Ada Lovelace', birth: '1990-04-01', country: 'GBR' },
+    // The first document step's text, as Didit read it; a field with no text (null, empty, a number, a list) is absent.
+    document: {
+      address: 'Calle Mayor 1, 28001 Madrid',
+      date_of_birth: '1990-05-12',
+      date_of_issue: '2022-05-11',
+      document_number: 'AB1234567',
+      document_subtype: 'PASSPORT_GENERIC',
+      document_type: 'Passport',
+      expiration_date: '2032-05-11',
+      'extra_fields.DL Class': 'B',
+      'extra_fields.profession': 'Ingeniera',
+      first_name: 'María',
+      full_name: 'María García López',
+      gender: 'F',
+      issuing_state: 'ESP',
+      last_name: 'García López',
+      nationality: 'ESP',
+      personal_number: '99999999R',
+      place_of_birth: 'Madrid',
+    },
   })
-  assert.equal(JSON.stringify(decision).includes('X123'), false, 'the document number is not read')
-  assert.equal(JSON.stringify(decision).includes('11111111-2222'), false, 'nor the sessions Didit found the face in')
+  const text = JSON.stringify(decision)
+  for (const never of ['media.example', 'Spain', 'Madrid, Spain', 'GARCIA', 'ANSI', '11111111-2222', 'Someone Else', 'ocr', 'documentary']) {
+    assert.equal(text.includes(never), false, `${never} is not read`)
+  }
   assert.equal(judge(decision, WORKFLOW, 'id'), null)
 })
 

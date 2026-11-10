@@ -21,7 +21,8 @@
 //   POST /id/stamp      {sessionId, stampNumber, payment}
 //                                                 -> 200 {stamp}            a stamp from the ID key, for a
 //                                                    payment that gave none yet, and its gift asked as
-//                                                    the face stamp's is
+//                                                    the face stamp's is; for a stamp number that has
+//                                                    one, the first, its own fields only
 //   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
 //                                                    a stamp or null, its own fields only; 404
 //                                                    `not_found` when none was signed for it
@@ -56,9 +57,9 @@ import type { Code } from './codes.ts'
 import { type Check, DiditUnavailable, type FaceCheck, judge } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
-import { decimal, faceFacts, fingerprint, idFacts, person } from './facts.ts'
+import { decimal, faceFacts, fieldsText, fingerprint, idFacts, person } from './facts.ts'
 import type { Ed25519Key } from './seed.ts'
-import { type Store, paymentHash } from './store.ts'
+import { type KeptStamp, type Store, paymentHash } from './store.ts'
 import { PAYMENT, PaymentUnavailable, type Payments } from './stripe.ts'
 
 const MAX_BODY = 4096
@@ -387,9 +388,16 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return [200, answer]
   }
 
+  /** A kept stamp as JSON, with its own fields only: the fields beside it were never kept. */
+  const keptToJson = (check: Check, stampNumber: bigint, stamp: KeptStamp) =>
+    stampToJson({ stampNumber, ...stamp, verifierName: deps.verifierName, verifier: deps.stampKeys[check].address })
+
   /**
-   * A stamp from the ID key, for this stamp number, from an ID check Didit approved, for a payment that
-   * gave no stamp yet, when the person's fingerprint was signed for no other stamp number.
+   * The ID stamp for this stamp number, from an ID check Didit approved, for a payment that gave no
+   * stamp yet, when the person's fingerprint was signed for no other stamp number. One ID stamp a
+   * person, ever: a later check for the same stamp number gives back the first, its own fields only,
+   * since its fields were never kept; the session that signed it, sent again within its hour, gives it
+   * with its fields beside it.
    */
   async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     forSale()
@@ -404,25 +412,26 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     kept(store.check({ sessionId, stampNumber, since: since(), fingerprint: print, payment }))
     const embedded = await embedding(id, decision.faceImage)
     const model = embedder.model
-    const facts = idFacts(model, embedded, who)
-    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts, verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), name: who.name, birth: who.birth, country: who.country })
+    const document = decision.document!
+    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts: idFacts(model, embedded, document), verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), fields: fieldsText(document) })
     kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, fingerprint: print, payment }))
-    return [200, { stamp: stampToJson(stamp), ...(gift && { gift: giveGift('id', stampNumber, gift.reference) }) }]
+    // Read after `remember`, whose transaction keeps only the first ID stamp a stamp number gets. The
+    // same facts mean the same embedding and fields: this stamp, so its fields go with it.
+    const first = store.stamps(stampNumber).id!
+    const answer = first.facts === stamp.facts ? stampToJson(stamp) : keptToJson('id', stampNumber, first)
+    return [200, { stamp: answer, ...(gift && { gift: giveGift('id', stampNumber, gift.reference) }) }]
   }
 
   /**
-   * The stamps kept for a stamp number, one for each key, each with its own fields only: the fields
-   * beside it were never kept. A stamp is no use without the seed behind its number.
+   * The stamps kept for a stamp number, one for each key, each with its own fields only. A stamp is no
+   * use without the seed behind its number.
    */
   async function stampBack(body: Record<string, unknown>): Promise<[number, unknown]> {
     const stampNumber = decimal(fields(body, ['stampNumber']).stampNumber)
     if (stampNumber === null) throw new HttpError(400, 'bad_stamp_number')
     const kept = store.stamps(stampNumber)
     if (!kept.face && !kept.id) throw new HttpError(404, 'not_found')
-    const back = (check: Check) => {
-      const stamp = kept[check]
-      return stamp ? stampToJson({ stampNumber, ...stamp, verifierName: deps.verifierName, verifier: deps.stampKeys[check].address }) : null
-    }
+    const back = (check: Check) => (kept[check] ? keptToJson(check, stampNumber, kept[check]) : null)
     return [200, { face: back('face'), id: back('id') }]
   }
 
