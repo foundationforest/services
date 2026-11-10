@@ -2,7 +2,8 @@
 // proof on it with what this index made of it; the checks it counts for; what it shows (its
 // ratings, trust and uniqueness) and the statement that signs them; its listings, listed or not and
 // why, each with its page and its photos; the reviews, vouches and reports it received and gave,
-// each with whether it counts and why not, a review with its weight; each listing, review, vouch
+// each with whether it counts and why not, a review with its weight, and each with the other
+// profile's market, role and checks, its writer's or its subject's; each listing, review, vouch
 // and report with its entry's own time; the words it received and gave, each with its weight; and where
 // to message it.
 //
@@ -15,10 +16,15 @@
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, badgeHtml, colorOf, countText, dateHtml, firstHost, inWords, type Listing, listingCardHtml, listingOf, messageHtml, messageOf, nameText, numbersHtml, personOf, profileAvatar, type Shown, shownFor, wordOf } from './common.ts'
+import { aggregateOf, badgeHtml, colorOf, countText, dateHtml, firstHost, inWords, type Listing, listingCardHtml, listingOf, messageHtml, messageOf, nameHtml, nameText, numbersHtml, personOf, profileAvatar, type Shown, shownFor, wordOf } from './common.ts'
 import { icon } from './icons.ts'
 import { backHtml, html, type Page, type Raw, short, urls } from './template.ts'
 
+/**
+ * The other profile on an entry: its writer on one received, its subject on one given. Its market,
+ * role and checks as the profiles table holds them; null, null and none with no profile entry here.
+ */
+export type Other = { market: string | null; role: string | null; checks: Check[] }
 export type ReviewEntry = {
   reviewer: string
   address: string
@@ -28,9 +34,9 @@ export type ReviewEntry = {
   counted: boolean
   why?: string
   weight: number
-}
+} & Other
 /** A vouch or a report. */
-export type SaidEntry = { writer: string; address: string; body: { [key: string]: unknown }; time: number; counted: boolean; why?: string }
+export type SaidEntry = { writer: string; address: string; body: { [key: string]: unknown }; time: number; counted: boolean; why?: string } & Other
 /** A writer's one word about a profile: its giver's uniqueness times trust, from 0 to 1, is its weight. */
 export type WordEntry = { writer: string; subject: string; word: 'vouch' | 'report'; weight: number }
 type Both<T> = { received: T[]; given: T[] }
@@ -53,7 +59,13 @@ export type ProfilePage = {
   message: Array<{ name: string; url: string }>
 }
 
-type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number }
+/** The other profile's columns, from a left join on the profiles table: all null with no profile entry. */
+type OtherColumns = { market: string | null; role: string | null; checks: string | null }
+const otherOf = (r: OtherColumns): Other => ({ market: r.market, role: r.role, checks: r.checks === null ? [] : parse(r.checks) })
+
+// The other profile's fields come after every field an entry gave before them, so each of those
+// keeps its place.
+type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number } & OtherColumns
 const entry = (r: ReviewColumns): ReviewEntry => {
   const body = parse<{ [key: string]: unknown }>(r.body)
   return {
@@ -64,10 +76,11 @@ const entry = (r: ReviewColumns): ReviewEntry => {
     counted: r.counted === 1,
     ...(r.why !== null && { why: r.why }),
     weight: r.weight,
+    ...otherOf(r),
   }
 }
-type SaidColumns = { address: string; writer: string; body: string; time: number; counted: number; why: string | null }
-const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), time: r.time, counted: r.counted === 1, ...(r.why !== null && { why: r.why }) })
+type SaidColumns = { address: string; writer: string; body: string; time: number; counted: number; why: string | null } & OtherColumns
+const said = (r: SaidColumns): SaidEntry => ({ writer: r.writer, address: r.address, body: parse(r.body), time: r.time, counted: r.counted === 1, ...(r.why !== null && { why: r.why }), ...otherOf(r) })
 
 const counts = (r: { counted: boolean; why?: string }, more = '') => html`<p>${r.counted ? `Counts${more}.` : html`<span class="red">Does not count: ${r.why}.</span>`}</p>`
 
@@ -99,11 +112,27 @@ export const profile: Page<ProfilePage> = {
       listed: number
       why: string | null
     }>
-    const reviews = (column: string) =>
-      (store.db.prepare(`select address, reviewer, subject, body, time, counted, why, weight from reviews where ${column} = ? order by time desc, address`).all(found.address) as ReviewColumns[]).map(entry)
+    // Each with the other profile, `other` its column: the writer of one received, the subject of one given.
+    const reviews = (column: string, other: string) =>
+      (
+        store.db
+          .prepare(
+            `select e.address, e.reviewer, e.subject, e.body, e.time, e.counted, e.why, e.weight, f.market, f.role, f.checks
+             from reviews e left join profiles f on f.address = e.${other} where e.${column} = ? order by e.time desc, e.address`,
+          )
+          .all(found.address) as ReviewColumns[]
+      ).map(entry)
     const saidIn = (table: string) => {
-      const of = (column: string) => (store.db.prepare(`select address, writer, body, time, counted, why from ${table} where ${column} = ? order by time desc, address`).all(found.address) as SaidColumns[]).map(said)
-      return { received: of('subject'), given: of('writer') }
+      const of = (column: string, other: string) =>
+        (
+          store.db
+            .prepare(
+              `select e.address, e.writer, e.body, e.time, e.counted, e.why, f.market, f.role, f.checks
+               from ${table} e left join profiles f on f.address = e.${other} where e.${column} = ? order by e.time desc, e.address`,
+            )
+            .all(found.address) as SaidColumns[]
+        ).map(said)
+      return { received: of('subject', 'writer'), given: of('writer', 'subject') }
     }
     const words = (column: string) => store.db.prepare(`select writer, subject, word, weight from words where ${column} = ? order by weight desc, writer, subject`).all(found.address) as WordEntry[]
     const entryBody = parse<{ [key: string]: unknown }>(found.body)
@@ -118,7 +147,7 @@ export const profile: Page<ProfilePage> = {
         const { address, body, url, photos } = listingOf(base, l.address, parse(l.body), host)
         return { address, body, time: l.time, listed: l.listed === 1, ...(l.why !== null && !l.listed && { why: l.why }), url, photos }
       }),
-      reviews: { received: reviews('subject'), given: reviews('reviewer') },
+      reviews: { received: reviews('subject', 'reviewer'), given: reviews('reviewer', 'subject') },
       vouches: saidIn('vouches'),
       reports: saidIn('reports'),
       words: { received: words('subject'), given: words('writer') },
@@ -129,7 +158,9 @@ export const profile: Page<ProfilePage> = {
   title: (o) => `Forest index: ${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ')} ${short(o.address)}`,
   // A review's and a vouch's card shows its entry's own time as its date, in UTC, the one zone a page
   // with no script can give every reader; the time is its writer's word, as the JSON says. Its writer
-  // is shown by address: the JSON names no more of them.
+  // is drawn as a result's profile is, its avatar, name and badge, from the market, role and checks
+  // the JSON gives beside it; one with no profile entry here as "A profile", nameHtml's own word,
+  // with no avatar and no badge.
   body(o, base, site) {
     const subjectOf = (r: { body: { [key: string]: unknown } }) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     const wordHtml = (w: WordEntry, other: string) => html`<li>${w.word}, <a href="${urls(base).profile(other)}">${short(other)}</a>, weight ${w.weight.toFixed(2)}</li>`
@@ -149,7 +180,7 @@ export const profile: Page<ProfilePage> = {
     const saidHtml = ({ r, writer, vouch }: (typeof said)[number]) =>
       html`<a class="card said" href="${urls(base).profile(writer)}"><span class="line">${
         vouch ? html`<span class="chip mint">${icon('handshake', 'bold')}Vouch</span>` : html`<span class="rate">${icon('star', 'fill')}${typeof r.body.score === 'string' ? r.body.score : '–'}</span>`
-      }<span class="grow"></span><span class="xs">${dateHtml(r.time)}</span></span>${typeof r.body.text === 'string' && r.body.text ? html`<span class="text">${r.body.text}</span>` : ''}<span class="xs">From ${short(writer)}</span>${
+      }<span class="grow"></span><span class="xs">${dateHtml(r.time)}</span></span>${typeof r.body.text === 'string' && r.body.text ? html`<span class="text">${r.body.text}</span>` : ''}<span class="who">${profileAvatar(site, r.market, r.role, 'xs')}${nameHtml(r.market, r.role, r.checks)}</span>${
         r.counted ? '' : html`<span class="s red">Does not count: ${r.why}.</span>`
       }</a>`
     return html`<div class="${market ? 'head tint profile-head' : 'head profile-head'}"${market ? html` style="--h:${colorOf(site, market)}"` : ''}>${backHtml(market ? urls(base).market(market) : urls(base).home)}

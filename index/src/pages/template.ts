@@ -164,7 +164,7 @@ main{width:100%;max-width:32rem;margin:0 auto;padding:0 20px 24px;flex:1 0 auto;
 .thumb{width:64px;height:64px;border-radius:16px;object-fit:cover;flex:none;background:var(--sunk)}
 .rcard{display:flex;flex-direction:column;gap:12px;padding:14px 16px;border-radius:22px;background:var(--card);box-shadow:var(--shadow)}
 .rcard .top,.lcard{display:flex;gap:12px;align-items:flex-start}.lcard{padding:14px 16px}
-.rcard .who{display:flex;align-items:center;gap:8px;padding-top:10px;border-top:1px solid var(--line);font-size:14px}.rcard .nm{font-size:14px}.rcard .rate,.poster .rate{font-size:14px}
+.who{display:flex;align-items:center;gap:8px;font-size:14px}.rcard .who{padding-top:10px;border-top:1px solid var(--line)}.rcard .nm,.said .nm{font-size:14px}.rcard .rate,.poster .rate{font-size:14px}
 .said{display:flex;flex-direction:column;gap:10px;padding:14px 16px}.said .line{display:flex;align-items:center;gap:8px}.said .rate{font-size:17px}
 .said .text{font-size:15.5px;line-height:1.4;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
 details.fold{border-radius:22px;background:var(--card);box-shadow:var(--shadow)}

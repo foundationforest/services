@@ -27,7 +27,7 @@ import { listing as listingPage, type ListingPage } from '../src/pages/listing.t
 import { profile as profilePage, type ProfilePage } from '../src/pages/profile.ts'
 import { search } from '../src/pages/search.ts'
 import { about } from '../src/pages/about.ts'
-import { draw, esc, type Page, short, siteOf } from '../src/pages/template.ts'
+import { draw, esc, type Page, siteOf } from '../src/pages/template.ts'
 import { validateJsonLd } from './schemaorg/validate.ts'
 import { at, index, listsDir, verifier, MARKETS, page, post, profile, publishProfile, startHost, TEST_APPS, twin } from './world.ts'
 
@@ -57,6 +57,9 @@ before(async () => {
     people[name] = await profile(label, [by])
   }
   people.uncounted = await profile('tutoring/tutor')
+  // A profile with no profile entry here: it is never published, so a review about it names a
+  // subject this index holds nothing of.
+  const ghost = await profile('tutoring/tutor')
   for (const [name, p] of Object.entries(people)) await publishProfile(host.url, p, name === 'seller' ? { hosts: [PHOTOS, host.url] } : {})
   const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
@@ -88,6 +91,8 @@ before(async () => {
     // Its writer does not count, so neither changes a rating, a trust or search's order.
     at(uncounted!, 'vouch/a', { subject: a!.key.address, text: 'Real.' }),
     at(uncounted!, 'report/a', { subject: a!.key.address }),
+    // About a profile with no profile entry here, so it counts for nothing.
+    at(s2!, 'review/ghost', { subject: ghost.key.address, score: '5' }),
   ]
   for (const e of written) times.set(`${e.profile}/${e.path}`, e.time)
   await post(host.url, written)
@@ -106,6 +111,8 @@ const SHOWN = ['ratings', 'trust', 'uniqueness']
 const LISTING = ['address', 'body']
 const LISTING_ADDED = ['photos', 'url']
 const both = (old: string[], added: string[]) => [...old, ...added].sort()
+/** Added beside every field a review, a vouch and a report gave: the other profile's market, role and checks. */
+const OTHER = ['checks', 'market', 'role']
 const addressOf = (name: string) => people[name]!.key.address
 /** A page's main part: what it draws from its object, without the head's JSON-LD, which repeats some of it. */
 const mainOf = (html: string) => /<main>[\s\S]*<\/main>/.exec(html)![0]
@@ -155,12 +162,12 @@ test('the four answers the mcp reads, in their shapes: every field they gave, an
   assert.deepEqual(p.message, [{ name: 'Forest app', url: `https://app.test.example/message?to=${addressOf('a')}` }])
   const reviews = p.reviews as { received: Array<{ [k: string]: unknown }>; given: unknown[] }
   assert.deepEqual(keysOf(reviews), ['given', 'received'])
-  for (const r of reviews.received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'reviewer', 'time', 'weight', ...(r.counted ? [] : ['why'])].sort())
+  for (const r of reviews.received) assert.deepEqual(keysOf(r), both(['address', 'body', 'counted', 'reviewer', 'time', 'weight', ...(r.counted ? [] : ['why'])].sort(), OTHER))
   for (const kind of ['vouches', 'reports', 'words']) assert.deepEqual(keysOf(p[kind] as object), ['given', 'received'])
   for (const kind of ['vouches', 'reports']) {
     const received = (p[kind] as { received: Array<{ [k: string]: unknown }> }).received
     assert.equal(received.length, 1, kind)
-    for (const r of received) assert.deepEqual(keysOf(r), ['address', 'body', 'counted', 'time', 'writer', ...(r.counted ? [] : ['why'])].sort())
+    for (const r of received) assert.deepEqual(keysOf(r), both(['address', 'body', 'counted', 'time', 'writer', ...(r.counted ? [] : ['why'])].sort(), OTHER))
   }
   const words = (p.words as { received: Array<{ [k: string]: unknown }> }).received
   assert.deepEqual(words.map((w) => [keysOf(w), w.word]), [0, 1].map(() => [['subject', 'weight', 'word', 'writer'], 'vouch']))
@@ -195,6 +202,25 @@ test("each listing, review, vouch and report on a profile's page gives its entry
   assert.deepEqual([...seen.keys()].sort(), [...times.keys()].sort())
   assert.deepEqual(new Set([...seen.keys()].map((a) => a.split('/')[1])), new Set(['listing', 'review', 'vouch', 'report']))
   for (const t of seen.values()) assert.ok(Number.isSafeInteger(t), `${t}`)
+})
+
+test("each review, vouch and report on a profile's page gives the other profile's market, role and checks: its writer's on one received, its subject's on one given", async () => {
+  const pageOf = async (name: string) => (await twin<ProfilePage>(i, `/profiles/${addressOf(name)}.json`)).body
+  const [a, s1, s2, u] = await Promise.all(['a', 's1', 's2', 'uncounted'].map(pageOf))
+  const of = (r: { market: unknown; role: unknown; checks: unknown }) => ({ market: r.market, role: r.role, checks: r.checks })
+  const find = <T extends { address: string }>(list: T[], address: string) => list.find((r) => r.address === address)!
+  // A counted writer: its checks are those its own page gives.
+  assert.deepEqual(s1!.checks, [{ verifier: by.name, key: by.key, label: 'face check' }])
+  assert.deepEqual(of(find(a!.reviews.received, `${addressOf('s1')}/review/a`)), { market: 'tutoring', role: 'student', checks: s1!.checks })
+  // A writer that does not count: its market and role, and no checks.
+  const fromU = [find(a!.reviews.received, `${addressOf('uncounted')}/review/a`), find(a!.vouches.received, `${addressOf('uncounted')}/vouch/a`), find(a!.reports.received, `${addressOf('uncounted')}/report/a`)]
+  for (const r of fromU) assert.deepEqual(of(r), { market: 'tutoring', role: 'tutor', checks: [] }, r.address)
+  // One given: its subject's, here a's.
+  const toA = [find(s1!.reviews.given, `${addressOf('s1')}/review/a`), find(u!.reviews.given, `${addressOf('uncounted')}/review/a`), find(u!.vouches.given, `${addressOf('uncounted')}/vouch/a`), find(u!.reports.given, `${addressOf('uncounted')}/report/a`)]
+  assert.ok(a!.checks.length)
+  for (const r of toA) assert.deepEqual(of(r), { market: 'tutoring', role: 'tutor', checks: a!.checks }, r.address)
+  // A subject with no profile entry here: null, null and none.
+  assert.deepEqual(of(find(s2!.reviews.given, `${addressOf('s2')}/review/ghost`)), { market: null, role: null, checks: [] })
 })
 
 test("every page is drawn from its twin's object and the site's fixed parts, runs no script, and its JSON-LD passes schema.org's vocabulary", async () => {
@@ -559,8 +585,15 @@ test('the profile page, for a buyer: its header with its avatar, name, badge and
   const cards = html.slice(lists, fold).match(/<a class="card said"[\s\S]*?<\/a>/g)!
   const s1 = addressOf('s1')
   const review = cards.find((c) => c.includes(s1))!
-  assert.match(review, new RegExp(`^<a class="card said" href="${BASE}/profiles/${s1}"><span class="line"><span class="rate"><svg class="i" data-icon="star"[^>]*>.*?</svg>9</span><span class="grow"></span><span class="xs">${dateOf(times.get(`${s1}/review/a`)!)}</span></span><span class="text">Very clear\\.</span><span class="xs">From ${short(s1)}</span></a>$`))
+  // Its writer as a result's profile is drawn: its avatar, light since students request, its market
+  // and role, and its badge.
+  const WHO_S1 = `<span class="who"><span class="av xs look" style="--h:${colorOf('tutoring')}" aria-hidden="true">${ICON('graduation-cap').source}</span><span class="nm">Tutoring <span class="role">student</span><span class="vb" role="img" aria-label="Verified with a selfie" title="Verified with a selfie">${ICON('smiley').source}</span></span></span>`
+  assert.match(review, new RegExp(`^<a class="card said" href="${BASE}/profiles/${s1}"><span class="line"><span class="rate"><svg class="i" data-icon="star"[^>]*>.*?</svg>9</span><span class="grow"></span><span class="xs">${dateOf(times.get(`${s1}/review/a`)!)}</span></span><span class="text">Very clear\\.</span>${WHO_S1}</a>$`))
   assert.equal(cards.length, 4)
+  // A writer that does not count: its avatar, solid since tutors offer, its market and role, and no badge.
+  const fromU = cards.filter((c) => c.includes(`href="${BASE}/profiles/${addressOf('uncounted')}"`))
+  assert.equal(fromU.length, 2)
+  for (const c of fromU) assert.ok(c.includes(`<span class="who"><span class="av xs" style="--h:${colorOf('tutoring')}" aria-hidden="true">`) && c.includes('<span class="nm">Tutoring <span class="role">tutor</span></span></span>') && !c.includes('class="vb'), c)
   assert.ok(cards[0]!.includes('<span class="chip mint"><svg class="i" data-icon="handshake"') && cards[0]!.includes('Vouch</span>'))
   // One that does not count says why, in its card.
   assert.ok(cards[1]!.includes(`href="${BASE}/profiles/${addressOf('uncounted')}"`) && cards[1]!.includes('<span class="s red">Does not count: '))
