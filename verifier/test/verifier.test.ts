@@ -17,12 +17,13 @@ import { fileURLToPath } from 'node:url'
 import { hkdf, seedNumber, serviceKey, stampNumberOf } from '@foundationforest/keys'
 import { checkVerification, proveVerification, stampFromJson, stampSigned } from '@foundationforest/proofs'
 import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
+import { poseidon3 } from 'poseidon-lite/poseidon3'
 
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
 import { DiditClient, DiditUnavailable } from '../src/didit.ts'
-import { RECIPES, faceFacts, idFacts } from '../src/facts.ts'
+import { RECIPES, faceFacts, fieldsRoot, fieldsText, h as hash, idFacts } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { SIGNED_FOR_MS } from '../src/server.ts'
 import { CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
@@ -153,6 +154,9 @@ const faceStamp = (h: Harness, sessionId: string, n: bigint) => h.post('/face/st
 /** An ID stamp asked with `payment`, or else the one its session was opened with. */
 const idStamp = (h: Harness, sessionId: string, n: bigint, payment = h.paidFor.get(sessionId)) => h.post('/id/stamp', { sessionId, stampNumber: n.toString(), payment })
 const about = async (h: Harness) => (await fetch(h.verifier.url + '/')).json()
+/** A stamp's own fields: what the verifier keeps of it, and hands back. */
+const own = ({ stampNumber, facts, verifier, verifierName, signature }: Record<string, unknown>) => ({ stampNumber, facts, verifier, verifierName, signature })
+const stampBack = (h: Harness, n: bigint) => h.post('/stamp', { stampNumber: n.toString() })
 
 /** A face stamp for `person`, as an app gets one. */
 async function face(h: Harness, person: string, n: bigint) {
@@ -171,12 +175,16 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     assert.equal(res.headers.get('access-control-allow-origin'), '*')
     const text = await res.text()
     assert.equal(canonical(parseCanonical(text)), text, 'canonical JSON')
-    const keys = { face: serviceKey(await hkdf(seed.bytes, 'face')).address, id: serviceKey(await hkdf(seed.bytes, 'id')).address }
+    // A new recipe is a new key: the ID key's text is `id-fields`, never `id`, which derived the key of the recipe before.
+    const keys = { face: serviceKey(await hkdf(seed.bytes, 'face')).address, id: serviceKey(await hkdf(seed.bytes, 'id-fields')).address }
+    assert.notEqual(keys.id, serviceKey(await hkdf(seed.bytes, 'id')).address)
     assert.deepEqual(JSON.parse(text), {
       name: VERIFIER_NAME,
       face: { key: keys.face, facts: 'Poseidon([h(model), h(embedding)])' },
-      id: { key: keys.id, facts: 'Poseidon([h(model), h(embedding), h(name), birthDays, countryNumeric])' },
+      id: { key: keys.id, facts: 'Poseidon([h(model), h(embedding), fieldsRoot])' },
       h: RECIPES.h,
+      fieldsRoot:
+        'the root of a Poseidon Merkle tree of depth 8 over the fields beside the stamp: one leaf Poseidon([h(name), h(value)]) for each, in the order of their names, then leaves of 0; each node Poseidon([left, right])',
       consent: CONSENT,
     })
     assert.deepEqual(h.verifier.keys, keys)
@@ -216,21 +224,27 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a ver
   }
 })
 
-test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields beside it, and a verification for that key only', async () => {
+test('an ID stamp: signed by the ID key, its facts the ID recipe over the fields beside it, and a verification for that key only', async () => {
   const h = await start()
   try {
     const seed = new Uint8Array(randomBytes(32))
     const n = stampNumberOf(seedNumber(seed), VERIFIER_NAME)
-    const res = await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace', { firstName: ' ADA ', lastName: 'LoveLace' }))), n)
+    const read = doc('Lovelace', { first_name: ' ADA ', last_name: 'LoveLace', 'extra_fields.profession': 'Mathematician' })
+    const res = await idStamp(h, await h.idSession(passedId('ada', read)), n)
     assert.equal(res.status, 200, JSON.stringify(res.body))
     const json = res.body.stamp
-    assert.deepEqual(Object.keys(json).sort(), ['birth', 'country', 'embedding', 'facts', 'model', 'name', 'signature', 'stampNumber', 'verifier', 'verifierName'])
-    assert.deepEqual([json.name, json.birth, json.country], ['ada lovelace', '1990-04-01', 826], 'the name written one way, the birth date, the country as its ISO numeric code')
+    assert.deepEqual(Object.keys(json).sort(), ['embedding', 'facts', 'fields', 'model', 'signature', 'stampNumber', 'verifier', 'verifierName'])
+    const fields = JSON.parse(json.fields)
+    assert.deepEqual(fields, read, "every field Didit read, as it read it, by Didit's names")
+    assert.equal(fieldsText(fields), json.fields, 'as text, in canonical JSON')
     const published = await about(h)
     const stamp = stampFromJson(json)
     assert.equal(stamp.verifier, published.id.key, 'the ID key GET / publishes')
     assert.ok(stampSigned(stamp))
-    assert.equal(stamp.facts, idFacts('test-model', faceOf('ada'), { name: 'ada lovelace', birth: '1990-04-01', country: 826 }))
+    // The root made again from the fields beside the stamp, whatever order they are read in.
+    const reversed = Object.fromEntries(Object.entries(fields).reverse())
+    assert.equal(stamp.facts, poseidon3([hash(json.model), hash(b64u.decode(json.embedding)), fieldsRoot(reversed)]), 'Poseidon([h(model), h(embedding), fieldsRoot])')
+    assert.equal(stamp.facts, idFacts('test-model', faceOf('ada'), read))
 
     const label = 'tutoring/buyer'
     const proof = await proveVerification({ seed, stamp, label, artifacts: ARTIFACTS })
@@ -238,35 +252,40 @@ test('an ID stamp: signed by the ID key, its facts the ID recipe, the fields bes
     assert.equal(await check(published.id.key), true)
     assert.equal(await check(published.face.key), false, 'an ID stamp is no face stamp')
 
-    // A country with no ISO numeric code enters as 0: the person is not turned away.
-    const kosovo = await idStamp(h, await h.idSession(passedId('besa', doc('Krasniqi', { country: 'XKX' }))), await stampNumber())
-    assert.equal(kosovo.status, 200, JSON.stringify(kosovo.body))
-    assert.equal(kosovo.body.stamp.country, 0)
+    // A field Didit did not read is simply absent: the person is not turned away.
+    const { issuing_state: _, ...countryless } = doc('Krasniqi')
+    const without = await idStamp(h, await h.idSession(passedId('besa', countryless)), await stampNumber())
+    assert.equal(without.status, 200, JSON.stringify(without.body))
+    assert.deepEqual(JSON.parse(without.body.stamp.fields), countryless)
+    assert.equal(stampFromJson(without.body.stamp).facts, idFacts('test-model', faceOf('besa'), countryless))
   } finally {
     await h.verifier.close()
   }
 })
 
-test('one name and birth date, one stamp number: refused for another, signed again for the same', async () => {
+test('one ID stamp a person, ever: refused for another stamp number, and for the same one the first stamp, given back', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await stampNumber(), await stampNumber()]
     const first = await h.idSession(passedId('ada', doc('Lovelace')))
-    assert.equal((await idStamp(h, first, n1)).status, 200)
+    const signed = await idStamp(h, first, n1)
+    assert.equal(signed.status, 200)
 
     // The same name and birth date, written another way, from another country's document, for another stamp number: refused.
-    const same = doc('lovelace ', { firstName: '  ADA', country: 'IRL' })
-    assert.deepEqual(await idStamp(h, await h.idSession(passedId('ada', same)), n2), { status: 403, body: { error: 'duplicate_document' } })
-    // For the same stamp number, from a new session: signed again.
-    const again = await idStamp(h, await h.idSession(passedId('ada', same)), n1)
-    assert.equal(again.status, 200, JSON.stringify(again.body))
-    assert.equal(again.body.stamp.stampNumber, n1.toString())
-    // The first session, sent again within its hour: the same stamp; after it, used.
-    assert.equal((await idStamp(h, first, n1)).status, 200)
+    const renewed = doc('lovelace ', { first_name: '  ADA', issuing_state: 'IRL', document_number: 'CD7654321' })
+    assert.deepEqual(await idStamp(h, await h.idSession(passedId('ada', renewed)), n2), { status: 403, body: { error: 'duplicate_document' } })
+    // For the same stamp number, from a new session: the first stamp back, its own fields only, never a new one.
+    const later = await h.idSession(passedId('ada', renewed))
+    const again = await idStamp(h, later, n1)
+    assert.deepEqual(again, { status: 200, body: { stamp: own(signed.body.stamp) } })
+    assert.deepEqual((await stampBack(h, n1)).body.id, own(signed.body.stamp), 'the one POST /stamp gives')
+    assert.deepEqual((await idStamp(h, later, n1)).body, again.body, 'and that session, sent again, the same')
+    // The first session, sent again within its hour: its stamp, with its fields; after it, used.
+    assert.deepEqual((await idStamp(h, first, n1)).body, signed.body)
     h.later(SIGNED_FOR_MS)
     assert.deepEqual(await idStamp(h, first, n1), { status: 409, body: { error: 'session_used' } })
     // Ada Lovelace born another day is someone else.
-    assert.equal((await idStamp(h, await h.idSession(passedId('ada2', doc('Lovelace', { birth: '1815-12-10' }))), n2)).status, 200)
+    assert.equal((await idStamp(h, await h.idSession(passedId('ada2', doc('Lovelace', { date_of_birth: '1815-12-10' }))), n2)).status, 200)
   } finally {
     await h.verifier.close()
   }
@@ -425,9 +444,9 @@ test('refusals, malformed requests, and Didit not answering', async () => {
       [{ faceMatches: [] }, 'no_face_match'],
       [{ faceMatches: [{ status: 'In Review' }] }, 'face_match_not_passed'],
       [{ document: null }, 'no_document_data'],
-      [{ document: doc('x', { birth: '01/04/1990' }) }, 'no_document_data'],
-      [{ document: doc('x', { birth: '1990-02-30' }) }, 'no_document_data'],
-      [{ document: doc('', { firstName: '', fullName: ' ' }) }, 'no_document_data'],
+      [{ document: doc('x', { date_of_birth: '01/04/1990' }) }, 'no_document_data'],
+      [{ document: doc('x', { date_of_birth: '1990-02-30' }) }, 'no_document_data'],
+      [{ document: doc('', { first_name: '', full_name: ' ' }) }, 'no_document_data'],
       [{ faceImage: null }, 'no_face'],
     ]
     for (const [over, error] of idRefused) {
@@ -662,31 +681,33 @@ test('the file keeps which session gave which stamp number and which check it wa
     const [n1, n2] = [await stampNumber(), await stampNumber()]
     const a = await face(h, 'alice', n1)
     const b = await face(h, 'bob', n2)
-    const id = await h.idSession(passedId('alice', doc('Lovelace')))
+    const id = await h.idSession(passedId('alice', doc('Lovelace', { 'extra_fields.profession': 'Analyst' })))
     const res = await idStamp(h, id, n1)
     assert.equal(res.status, 200)
+    // A later check for the same stamp number gives the first stamp back, and writes nothing of its own document either.
+    const later = await h.idSession(passedId('alice', doc('Lovelace', { document_number: 'CD7654321', place_of_birth: 'Marylebone' })))
+    assert.deepEqual((await idStamp(h, later, n1)).body.stamp, own(res.body.stamp))
     const open = await h.knownPayment()
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
     await h.verifier.close()
 
     assertKept(h.dbPath, {
-      sessions: [[a.sessionId, n1, 'face'], [b.sessionId, n2, 'face'], [id, n1, 'id']],
+      sessions: [[a.sessionId, n1, 'face'], [b.sessionId, n2, 'face'], [id, n1, 'id'], [later, n1, 'id']],
       fingerprints: [[1, n1]],
       // Of a payment, its hash, its tries and whether it gave a stamp: nothing beside a session or a stamp number.
-      payments: [[h.paidFor.get(id)!, ID_TRIES, true], [open, 1, false]],
-      // The stamp's facts and signature are kept; the fields beside it are not.
-      never: ['Lovelace', 'lovelace', '1990-04-01', 'test-model', a.stamp.embedding, res.body.stamp.embedding],
+      payments: [[h.paidFor.get(id)!, ID_TRIES, true], [h.paidFor.get(later)!, ID_TRIES, true], [open, 1, false]],
+      // The stamp's facts and signature are kept; the fields beside it are not, nor any of them.
+      never: [
+        ...['Lovelace', 'lovelace', '1990-04-01', 'AB1234567', 'CD7654321', '12 St James Square', 'Marylebone', 'Analyst', 'date_of_birth', 'document_number'],
+        ...['test-model', a.stamp.embedding, res.body.stamp.embedding, res.body.stamp.fields],
+      ],
     })
     assert.equal(readFileSync(h.dbPath).includes(Buffer.from(faceOf('alice'))), false, 'no embedding')
   } finally {
     await h.verifier.close().catch(() => {})
   }
 })
-
-/** A stamp's own fields: what the verifier keeps of it, and hands back. */
-const own = ({ stampNumber, facts, verifier, verifierName, signature }: Record<string, unknown>) => ({ stampNumber, facts, verifier, verifierName, signature })
-const stampBack = (h: Harness, n: bigint) => h.post('/stamp', { stampNumber: n.toString() })
 
 test('a stamp asked back by its stamp number is the one signed, its own fields only, for both keys, and after its session is deleted in Didit', async () => {
   const dbPath = join(tempDir(), 'verifier.sqlite')
@@ -908,7 +929,7 @@ test('the seed: made on the first start beside the database, kept there, the sam
   assert.match(contents, /^\{"seed":"[0-9a-f]{64}"\}$/)
   const seed = parseSeed(contents, 'the seed file')
   assert.equal(JSON.parse(published).face.key, serviceKey(await seed.mix('face')).address, 'GET / names the face key mixed from it')
-  assert.equal(JSON.parse(published).id.key, serviceKey(await seed.mix('id')).address, 'and the ID key')
+  assert.equal(JSON.parse(published).id.key, serviceKey(await seed.mix('id-fields')).address, 'and the ID key')
   assert.deepEqual(first.logs, [], 'and the seed is never logged')
 
   const second = await start({ dbPath })
@@ -1014,7 +1035,9 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
       const idStamp = await post(verifier, '/id/stamp', { sessionId: id.body.sessionId, stampNumber: n.toString(), payment })
       assert.equal(idStamp.status, 200, JSON.stringify(idStamp.body))
       assert.equal(idStamp.body.stamp.verifier, verifier.keys.id)
-      assert.deepEqual([idStamp.body.stamp.birth, idStamp.body.stamp.country], ['1990-01-01', 826])
+      const fields = JSON.parse(idStamp.body.stamp.fields)
+      assert.deepEqual([fields.date_of_birth, fields.issuing_state], ['1990-01-01', 'GBR'])
+      assert.equal(stampFromJson(idStamp.body.stamp).facts, idFacts('stand-in', b64u.decode(idStamp.body.stamp.embedding), fields))
       assert.ok(stampSigned(stampFromJson(idStamp.body.stamp)))
     }
     // An hour on, the sweep deletes every signed session in Didit, asking it to keep the face template.

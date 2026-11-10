@@ -24,7 +24,7 @@ import { type Payments, StripeClient } from './stripe.ts'
  * and test/readme.test.ts holds the two together.
  */
 export const CONSENT =
-  'The check costs $5, paid to the Open Forest Foundation through Stripe, and covers up to three tries. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes them at Didit, which keeps only a template of your face, for up to ten years, so it can tell if the same face comes back. Forest keeps none of this: only a one-way fingerprint of your name and date of birth next to your stamp number, so the same person is not checked twice, and the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a stamp, with your name, date of birth and country beside it for your own records; a profile that shows it says only that you were checked.'
+  'The check costs $5, paid to the Open Forest Foundation through Stripe, and covers up to three tries. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes them at Didit, which still keeps your full name, date of birth and country, and a template of your face for up to ten years, so it can tell if the same face comes back. Forest keeps none of this: only a one-way fingerprint of your name and date of birth next to your stamp number, so the same person is not checked twice, and the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep; a profile that shows it says only that you were checked.'
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
@@ -174,6 +174,7 @@ export async function startVerifier(
     face: { key: keys.face, facts: RECIPES.face },
     id: { key: keys.id, facts: RECIPES.id },
     h: RECIPES.h,
+    fieldsRoot: RECIPES.fieldsRoot,
     consent: CONSENT,
     ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
   })
