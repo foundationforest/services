@@ -2,6 +2,6 @@
   "about": "The verifier keys this index counts. Each key, by its address, belongs to a verifier by name: the verifier name its verifications must carry. Beside it: what the key's check is called on the pages, its confidence, from 0 to 1, that a profile it checked is one real person, and, for a key that leaked, until: proofs this index first saw after that time do not count. A profile's uniqueness is 1 minus the product of (1 - confidence) over the keys its verifications count for. A profile counts only with a verification for a key listed here. This is this index's opinion: another index counts other keys. These are the two keys of the foundation's verifier, under its name verifier.forest.foundation: its face key (face check, 0.75) and its ID key (ID check, 0.95).",
   "keys": [
     { "key": "4H5vL1ymZQ8cp7kCmjZw1vWcGPnHYxnMJ9TtjvnhujGu", "verifier": "verifier.forest.foundation", "label": "face check", "confidence": 0.75 },
-    { "key": "H1SJ6Fxn7GVpGVEZscXt55yZ66NqdZ6bKYuZwioUf9Xd", "verifier": "verifier.forest.foundation", "label": "ID check", "confidence": 0.95 }
+    { "key": "AbmjkNZy9MUXVfJx189tMxAwGfKqukBBarvTrXYADgYu", "verifier": "verifier.forest.foundation", "label": "ID check", "confidence": 0.95 }
   ]
 }
