@@ -125,9 +125,10 @@ with light and age leaves its stamp good. Nothing here runs such a check yet.
 for that number, its own fields only, or `null`. A later face check answers its own new stamp, but
 the first stays the one handed back, so nobody else who knows the number can change it; either gives
 the same verification. A later ID check answers the first ID stamp, its own fields only: one ID
-stamp a person, ever. Handing it back is safe: a verification needs the seed behind the number. The
-fields beside a stamp come only in the answer that signed it, and again from that session within its
-hour.
+stamp a person, ever. At each start the verifier forgets any kept ID stamp its ID key did not sign,
+so that stamp number's next ID check keeps a new one. Handing a stamp back is safe: a verification
+needs the seed behind the number. The fields beside a stamp come only in the answer that signed it,
+and again from that session within its hour.
 
 ### Its keys
 
@@ -163,7 +164,8 @@ JSON (one exact way of writing it); with gifts, also
   (`retain_face_embeddings`), whatever the application's setting: numbers, no image, no name, used
   only for this application's face search, so a face that comes back still goes to review. Didit
   ends every kept template; the verifier asks for 3650 days, the longest it allows. Didit's list of
-  users also still shows, for a deleted ID session, the full name, birth date and country.
+  users also still shows, for a deleted ID session, the full name, birth date and country, so it can
+  tell when someone comes back; a template matches only while its user is there.
 
 ### What it keeps
 
@@ -315,12 +317,12 @@ check:
 > once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document
 > number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest
 > deletes them at Didit, which still keeps your full name, date of birth and country, and a template
-> of your face for up to ten years, so it can tell if the same face comes back. Forest keeps none of
-> this: only a one-way fingerprint of your name and date of birth next to your stamp number, so the
-> same person is not checked twice, and the stamp it signed you, a one-way hash of what the check
-> saw, so it can hand it back if you lose it. It gives you a stamp, with every text field read from
-> your ID beside it (your name, date of birth, document number and the rest), for you to keep; a
-> profile that shows it says only that you were checked.
+> of your face for up to ten years, so it can tell if you come back. Forest keeps none of this: only
+> a one-way fingerprint of your name and date of birth next to your stamp number, so the same person
+> is not checked twice, and the stamp it signed you, a one-way hash of what the check saw, so it can
+> hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside
+> it (your name, date of birth, document number and the rest), for you to keep; a profile that shows
+> it says only that you were checked.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a

@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { generateKeyPairSync, randomBytes } from 'node:crypto'
+import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -15,7 +15,7 @@ import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { hkdf, seedNumber, serviceKey, stampNumberOf } from '@foundationforest/keys'
-import { checkVerification, proveVerification, stampFromJson, stampSigned } from '@foundationforest/proofs'
+import { checkVerification, proveVerification, signStamp, stampFromJson, stampSigned } from '@foundationforest/proofs'
 import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 import { poseidon3 } from 'poseidon-lite/poseidon3'
 
@@ -23,11 +23,11 @@ import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
 import { DiditClient, DiditUnavailable } from '../src/didit.ts'
-import { RECIPES, faceFacts, fieldsRoot, fieldsText, h as hash, idFacts } from '../src/facts.ts'
+import { RECIPES, faceFacts, fieldsRoot, fieldsText, fingerprint, h as hash, idFacts, person } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { SIGNED_FOR_MS } from '../src/server.ts'
 import { CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
-import { ID_TRIES } from '../src/store.ts'
+import { ID_TRIES, Store } from '../src/store.ts'
 import { PaymentUnavailable } from '../src/stripe.ts'
 import {
   FACE_WORKFLOW,
@@ -743,6 +743,37 @@ test('a stamp asked back by its stamp number is the one signed, its own fields o
     h = await start({ dbPath })
     assert.deepEqual(await stampBack(h, n), back)
     assert.deepEqual(h.logs, [])
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('at start, a kept ID stamp the ID key did not sign is forgotten, and its stamp number’s next ID check keeps a new one', async () => {
+  const seed = seedJson()
+  const dbPath = join(tempDir(), 'verifier.sqlite')
+  const n = await stampNumber()
+  // An ID stamp kept for n from the key the text `id` derives, the recipe before this one, next to its person's fingerprint.
+  const file = new Store(dbPath)
+  const before = signStamp(await hkdf(seed.bytes, 'id'), { stampNumber: n, facts: 5n, verifierName: VERIFIER_NAME })
+  const print = fingerprint(await hkdf(seed.bytes, 'fingerprint'), person(doc('Lovelace'))!)
+  assert.equal(file.remember({ sessionId: randomUUID(), stampNumber: n, kind: 'id', since: 0, signedAt: Date.now(), stamp: before, fingerprint: print }), 'ok')
+  file.close()
+
+  let h = await start({ seed: seed.json, dbPath })
+  try {
+    assert.deepEqual(await stampBack(h, n), { status: 404, body: { error: 'not_found' } }, 'forgotten')
+    const signedFace = await face(h, 'ada', n)
+    const res = await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace'))), n)
+    assert.equal(res.status, 200, JSON.stringify(res.body))
+    assert.equal(res.body.stamp.verifier, h.verifier.keys.id)
+    assert.notEqual(res.body.stamp.facts, '5')
+    assert.deepEqual(JSON.parse(res.body.stamp.fields), doc('Lovelace'), 'a new stamp, with its fields')
+    assert.ok(stampSigned(stampFromJson(res.body.stamp)))
+
+    // Started again: the stamps its own keys signed stay.
+    await h.verifier.close()
+    h = await start({ dbPath })
+    assert.deepEqual((await stampBack(h, n)).body, { face: own(signedFace.stamp), id: own(res.body.stamp) })
   } finally {
     await h.verifier.close().catch(() => {})
   }

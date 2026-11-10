@@ -17,7 +17,8 @@
 // An hour after a session's stamp is first signed, the verifier's sweep deletes it (`deleteSession`,
 // server.ts's `sweep`), so Didit no longer holds its selfie, its liveness video, its document's
 // images or its decision. Its console's list of users still shows, for a deleted ID session, the
-// full name, birth date and country. Each deletion asks Didit to keep one image-free face
+// full name, birth date and country, so it can tell when someone comes back; a kept face template
+// matches only while its user is there. Each deletion asks Didit to keep one image-free face
 // template, anchored to the session's own `vendor_data`, for FACE_RETENTION_DAYS: its face search
 // goes on seeing the face, so a face that comes back still goes to review. Didit drops the template
 // with the session unless asked, and gives every kept template an end. Only a session whose stamp is
