@@ -191,28 +191,41 @@ reads the hosts again, ranks, and exits; the secret is never touched.
 ## Its API
 
 Every page is HTML for people, drawn by one template (`src/pages/template.ts`) from the page's JSON
-object, which is also served at the same path with `.json`: the two never disagree. The pages look
-like the Forest app's public side, its colours light and dark and its font, Manrope, served from
-here, so a page asks no other site but the hosts for its photos. The HTML runs no script, and each
-page carries schema.org JSON-LD. A listing's and a profile's page show the shield and a rating's chip;
-what those mean, with the profile's rating, trust and uniqueness, is in its fold What these mean, and
-on the About page. GET and HEAD only, open to any origin (`access-control-allow-origin: *`),
-`cache-control: public, max-age=30, stale-while-revalidate=300`. Every field, for programs:
-[`skill.md`](skill.md).
+object, which is also served at the same path with `.json`: the two never disagree. Beside the
+object, a page is drawn only with what stays fixed while the index runs: the markets at `MARKETS`,
+for each market's color, icon and fields, and `lists/apps.json`, for the app it opens.
+
+The pages look like the Forest app: its colors, light and dark by the device's setting, its shapes,
+and its fonts, Figtree for words and Bricolage Grotesque for titles, prices and scores, served from
+here, with Phosphor's icons drawn into each page, so a page asks no other site but the hosts for
+their photos. The HTML runs no script: filters are links and one GET form, a market's sides are
+links to anchors, and a fold is HTML's own. Each page carries schema.org JSON-LD.
+
+- **A profile's avatar** is its market's icon on its market's color: solid when its role's listings
+  are offers, light when they are requests. Which color and icon each market takes is one rule,
+  `src/avatar.ts`, which imports nothing, so the Forest app imports the same file.
+- **A badge** says how a profile is verified, by its strongest check: a face on mint, "Verified with
+  a selfie", for a face check; an ID on forest green, "Verified with ID", for an ID check.
+- **A rating** shows as a star, its value and how many raters scored it, or New.
+- **A profile's rating, trust and uniqueness** are in its page's fold What these mean, open on a
+  laptop.
+
+GET and HEAD only, open to any origin (`access-control-allow-origin: *`), `cache-control: public,
+max-age=30, stale-while-revalidate=300`. Every field, for programs: [`skill.md`](skill.md).
 
 | Path | JSON |
 |---|---|
-| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many listings each role has `listed` and each role's word for its listings (`offers` or `requests`), and its lists, each key with its confidence; drawn as a search box and one link per market, its listings counted in its words |
-| `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is and reads, what a profile's words and numbers mean, its address, and links to its JSON, `skill.md`, `llms.txt` and source |
-| `/markets/<name>` | `{ index, market, listings: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and the listings this index lists, by role, in search's order, each one link with its first photo, first line, price, place, and its profile's shield and rating, or New |
-| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the listing, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a listing whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; its form asks words and a market, filled from `query`, and the rest are in the query alone |
-| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, listings, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer: its market and role, shield, "Verified by face" and rating chip, `message` links, its listings and the reviews it received; its rating, trust and uniqueness in the fold What these mean, the rest in a second fold. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each listing, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
-| `/profiles/<address>/listing/<id>` | `{ index, profile, market, role, listing, checks, ratings, trust, uniqueness, fields, types, labels, message }`: one listing, at its address under `/profiles`; `listing` as its profile's page gives it, `fields` its market's listing fields in the order the page draws them, the `preview`'s first, `types` each one's type, `labels` the labels its market gives the choice values it holds. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but `file` ones (a choice by its label or in words, a place with no area as a link to its point at openstreetmap.org), who posted it, and how to reach them: its `contact` as written, then `message`. Its title is its price and first line; a listing not listed has its page too, saying why |
+| `/`, twin `/index.json` | `{ index, markets: [{ name, description, roles, listed, words }], lists }`: its address, every market in the directory with its role words, how many listings each role has `listed` and each role's word for its listings (`offers` or `requests`), and its lists, each key with its confidence; drawn as one search box and a link per market, on its color, its listings counted in its words |
+| `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is, links to its JSON, `skill.md` and source, then what it reads and its address |
+| `/markets/<name>` | `{ index, market, listings: { <role>: [<result>] } }`: the market's file verbatim, its `preview` among it, and the listings this index lists, by role, in search's order; drawn as the market's avatar, name, counts and description, then each role's listings at an anchor of their own, with a search box for them, each listing one link with its first photo, its first line, the next of its market's `preview` fields it holds, its price, and its profile's avatar, name, badge and rating, or New |
+| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the listing, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a listing whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; drawn with the words in its search box, and the filters as links and one form: the market, the listings' side once a market is chosen, how far once `near` is given, and the rating; `near` itself comes only in the query |
+| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, listings, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer: its avatar, market and role, badge, rating and how many reviews count, the first `message` link as its button and the rest as links, its listings and the reviews and vouches it received, each with its entry's date in UTC; its rating, trust and uniqueness in the fold What these mean, the rest in a second fold. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each listing, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`; each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
+| `/profiles/<address>/listing/<id>` | `{ index, profile, market, role, listing, checks, ratings, trust, uniqueness, fields, types, labels, message }`: one listing, at its address under `/profiles`; `listing` as its profile's page gives it, `fields` its market's listing fields in the order the page draws them, the `preview`'s first, `types` each one's type, `labels` the labels its market gives the choice values it holds. Drawn as its photos, its description's first line as its heading, its price, the rest of its description, its other fields but `file` ones (a choice by its label or in words, a place as a link to its point at openstreetmap.org), its `contact` as written, who posted it, and the first `message` link as its button. Its title is its price and first line; a listing not listed has its page too, saying why |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
 | `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listing it lists |
 | `/llms.txt`, `/skill.md` | Files here written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place |
-| `/fonts/<file>` | The pages' font, the files of `@fontsource-variable/manrope` as the package gives them, cached for a day |
+| `/fonts/<file>` | The pages' fonts, the files of `@fontsource-variable/figtree` and `@fontsource-variable/bricolage-grotesque` as the packages give them, cached for a day |
 
 A `<result>` is `{ profile, market, role, listing: { address, body, url, photos }, ratings, trust, uniqueness, checks }`, and with `near`,
 `km`: the distance between the two points, to one decimal.
@@ -272,9 +285,10 @@ DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 `test/` covers, on loopback, with this repo's host and real verifications and reputation proofs
 from the circuits' committed proving files: the filter, every guarantee How it scores gives (forty
 random graphs among them), which feedback counts, the markets' check, the tree
-and the proofs' ages, every page's shape, header, footer and JSON-LD, the font served here and
-nothing asked of another site, every JSON field kept, each listing's page, its fields without its file
-fields, its photos' links and the apps it links to, the profile page's order and folds, the numbers
+and the proofs' ages, every page's shape, top bar, foot and JSON-LD, its forms with no script, the
+fonts served here and nothing asked of another site, every JSON field kept, each listing's page, its
+fields without its file fields, its photos' links and the apps it links to, the badges, the avatars
+and each market's color against the app's own rule, the profile page's order and folds, the numbers
 only in a fold, the market, search and About pages, the secret, and the index end to end over HTTP,
 rebuilds included.
 
@@ -309,6 +323,8 @@ rebuilds included.
 - **Everything after reading is computed again each pass,** in one process, each proof checked once;
   one sitemap file; a profile's page lists every entry about it; search reads every match before it
   pages.
+- **Near is a point:** a page with no script can't find one for a town's name, so the pages filter
+  by place only when the link carries one; a town's name in the words finds listings by their area.
 - **Browsing by links goes market by market,** and filters live in the query, which some AI
   readers drop.
 - **Pages in English only.**

@@ -38,10 +38,10 @@ Every profile this index counts shows three things, each ranked inside its own m
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
 
-On the pages, a listing in a list shows its profile's shield, an outline for a face check and filled
-for an ID check, and its rating with how many raters scored it as a chip, "9.2 ★ · 14", or New when
-no one has rated it. Its trust and its uniqueness are in a fold on its page and on each of its
-listings' pages, What these mean, with what each means; the About page says what they mean too. A
+On the pages, a listing in a list shows its profile's badge, "Verified with a selfie" for a face
+check and "Verified with ID" for an ID check, and its rating with how many raters scored it, "★ 9.2
+(14)", or New when no one has rated it. Its trust and its uniqueness are in a fold on its profile's page, What
+these mean, with what each means. A review's date there is its entry's `time`, in UTC. A
 choice's value is in words there, `like-new` as "Like new", or by its label where its market gives
 one, `xl` as "XL"; the JSON keeps it as written.
 
@@ -151,8 +151,8 @@ gives, in the writer's words, and `message`. A listing that is not listed has it
     GET https://index.forest.foundation/about.json
 
 `{ "index", "lists" }`: this index's address and the lists it reads by, as `/index.json` gives them.
-Its page says what this index is, what it reads, what a profile's words and numbers mean, and links
-to this file, `llms.txt`, the JSON and the source.
+Its page says what this index is, links to the JSON, this file and the source, and lists what it
+reads and its address.
 
 ## The tree
 
