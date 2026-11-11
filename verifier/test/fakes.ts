@@ -168,6 +168,8 @@ export class FakeFaceCheck implements FaceCheck {
  * or cancelled. A test pays one with `pay`.
  */
 export class FakePayments implements Payments {
+  /** Its payments are `cs_test_…`, as a test key's are. */
+  readonly test = true
   readonly returnUrls = new Map<string, string>()
   readonly #holds = new Map<string, { at: number; state: 'held' | 'taken' | 'cancelled' }>()
   readonly #clock: () => number
