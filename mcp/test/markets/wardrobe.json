@@ -1,0 +1,16 @@
+{
+  "name": "wardrobe",
+  "description": "People sell clothes and shoes they own, picked up in person or shipped.",
+  "status": "live",
+  "roles": [
+    { "role": "seller", "listings": "offers" },
+    { "role": "buyer", "listings": "requests" }
+  ],
+  "listing": {
+    "description": { "type": "text", "description": "The item and anything to know about it." },
+    "price": { "type": "money", "description": "The price of the item, without shipping." },
+    "photos": { "type": "file", "description": "Photos of the item.", "many": true, "roles": ["seller"] },
+    "size": { "type": "choice", "description": "The size, by the letter on the label.", "values": ["s", "m", "l", "xl"], "labels": { "xl": "XL" } },
+    "location": { "type": "place", "description": "Where the item is; in a request, where the buyer is.", "radiusKm": 2 }
+  }
+}

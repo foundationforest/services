@@ -1,0 +1,21 @@
+{
+  "name": "lessons",
+  "description": "Tutors teach school subjects one on one, paid per hour or per session, in person or online.",
+  "status": "beta",
+  "roles": [
+    { "role": "tutor", "listings": "offers" },
+    { "role": "student", "listings": "requests" }
+  ],
+  "listing": {
+    "description": { "type": "text", "description": "The lessons: what is taught, and how." },
+    "price": { "type": "money", "description": "The price per hour, per session, or for a whole course.", "per": ["hour", "session"] },
+    "subjects": { "type": "choice", "description": "The school subjects the lessons are for.", "values": ["maths", "physics", "chemistry", "biology"], "many": true },
+    "languages": { "type": "choice", "description": "By ISO 639-1 code, the languages the lessons are given in.", "values": ["en", "es", "fr"], "labels": { "en": "English", "es": "Spanish", "fr": "French" }, "many": true },
+    "levels": { "type": "choice", "description": "The levels the lessons are for.", "values": ["primary", "secondary", "university", "adult"], "many": true },
+    "minutes": { "type": "number", "description": "How long one session lasts.", "unit": "minutes" },
+    "mode": { "type": "choice", "description": "How sessions are held: in person, online, or both.", "values": ["in-person", "online"], "many": true },
+    "place": { "type": "place", "description": "Where sessions can be held: anywhere in the circle the person will go.", "radiusKm": 5, "when": { "mode": ["in-person"] } },
+    "hours": { "type": "hours", "description": "When sessions can be held, each week." }
+  },
+  "preview": ["subjects", "description", "price", "mode", "place"]
+}

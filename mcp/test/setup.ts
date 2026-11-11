@@ -3,19 +3,21 @@
 // three answers in the index's JSON as it is now, each with a field this copy has never seen, and a
 // search that answers with what it was asked; a stand-in for the app's connect page, where the
 // reference app (app.ts) makes the connection for the profiles the person ticks and hands back its
-// pointer; and this copy, started in-process, reading the index, reaching the loopback host.
+// pointer; and this copy, started in-process, reading the index and markets of the tests' own,
+// test/markets/, so no test depends on what a market in the pinned checkout holds, reaching the
+// loopback host.
 //
 // Two people:
-// - the person, whose app holds three profiles, tutoring/tutor, tutoring/student and
-//   clothing/seller;
-// - a stranger, a tutoring/tutor with three offers, physics, chemistry and biology, whose folder
+// - the person, whose app holds three profiles, lessons/tutor, lessons/student and
+//   wardrobe/seller;
+// - a stranger, a lessons/tutor with three offers, physics, chemistry and biology, whose folder
 //   takes inbox entries.
 //
 // And an AI app: the MCP SDK's own client, with an OAuth provider that follows the browser's
 // redirects through the login, by registration (DCR) or by a client document (CIMD).
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { type Server, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -30,9 +32,31 @@ import { Host } from '../../host/src/plug.ts'
 import { type Served, serve } from '../src/server.ts'
 import { App, type Choice } from './app.ts'
 
-export const TUTORING = JSON.parse(readFileSync(new URL('../../markets/markets/tutoring.json', import.meta.url), 'utf8'))
+/**
+ * A markets checkout of the tests' own, as the markets package reads one: each market in
+ * test/markets/, directory.json written from them in name order as the markets' check writes it,
+ * and the pinned checkout's build/types.json, the format the types hold. Every copy a test starts
+ * reads it, as `marketsDir`.
+ */
+export const MARKETS = (() => {
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-markets-'))
+  const own = new URL('./markets/', import.meta.url)
+  mkdirSync(join(dir, 'markets'))
+  mkdirSync(join(dir, 'build'))
+  copyFileSync(new URL('../../markets/build/types.json', import.meta.url), join(dir, 'build/types.json'))
+  const markets = readdirSync(own)
+    .sort()
+    .map((file) => {
+      copyFileSync(new URL(file, own), join(dir, 'markets', file))
+      return JSON.parse(readFileSync(new URL(file, own), 'utf8')) as { name: string; description: string; status: string; roles: unknown[] }
+    })
+  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, description, status, roles }) => ({ name, description, status, roles })) }))
+  return dir
+})()
 
-/** A listing that fits tutoring's listing fields. */
+export const LESSONS = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8'))
+
+/** A listing that fits lessons' listing fields. */
 export const lesson = (description: string): Body => ({
   description,
   price: { amount: '30', currency: 'USD', per: 'hour' },
@@ -43,8 +67,8 @@ export const lesson = (description: string): Body => ({
   hours: { zone: 'Europe/Madrid', slots: [{ days: ['tuesday', 'thursday'], from: '18:00', to: '20:00' }] },
 })
 
-/** What the person ticks at the connect page, unless a test says otherwise: their two tutoring profiles, every switch. */
-export const CHOICE: Choice = { profiles: ['tutoring/tutor', 'tutoring/student'] }
+/** What the person ticks at the connect page, unless a test says otherwise: their two lessons profiles, every switch. */
+export const CHOICE: Choice = { profiles: ['lessons/tutor', 'lessons/student'] }
 
 /** Where the AI app is sent back to, and where it keeps its client document: never fetched over the network. */
 export const REDIRECT = 'https://ai-app.example/callback'
@@ -68,13 +92,13 @@ export const SKILL = '# A stand-in index\n\nEach answer here holds badge, a fiel
 async function standIn(stranger: string, listing: string): Promise<{ url: string; server: Server; said: World['said'] }> {
   const checks = [{ verifier: 'verifier.forest.foundation', key: '7XtHEJ8gL8hMm4TbSpjtx4fvjsT4zz7FRdYW6V1nF3GC', label: 'face check' }]
   const shown = { ratings: { value: 9.2, count: 14 }, trust: 42, uniqueness: 75 }
-  const result = { profile: stranger, market: 'tutoring', role: 'tutor', listing: { address: listing, body: lesson('Physics, from the stranger.') }, ...shown, checks }
+  const result = { profile: stranger, market: 'lessons', role: 'tutor', listing: { address: listing, body: lesson('Physics, from the stranger.') }, ...shown, checks }
   const badge = 'early'
   const said: World['said'] = {
     '/skill.md': SKILL,
-    '/index.json': { index: 'stand-in', markets: [{ name: 'tutoring', description: TUTORING.description, roles: ['tutor', 'student'] }], lists: {}, badge },
+    '/index.json': { index: 'stand-in', markets: [{ name: 'lessons', description: LESSONS.description, roles: ['tutor', 'student'] }], lists: {}, badge },
     '/search.json': { index: 'stand-in', total: 1, results: [result], badge },
-    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: { market: 'tutoring', role: 'tutor' }, checks, ...shown, listings: [], reviews: { received: [], given: [] }, proofs: [], badge },
+    [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: { market: 'lessons', role: 'tutor' }, checks, ...shown, listings: [], reviews: { received: [], given: [] }, proofs: [], badge },
   }
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x')
@@ -178,7 +202,7 @@ export async function logIn(c: { client: Client; transport: StreamableHTTPClient
   return back
 }
 
-/** A stranger: a tutoring tutor whose folder takes inbox entries, with its encryption key's identity. */
+/** A stranger: a lessons tutor whose folder takes inbox entries, with its encryption key's identity. */
 export type Stranger = { address: string; listing: string; listings: { [subject: string]: string }; tutor: MainKey; identity: string }
 
 export type World = {
@@ -211,15 +235,15 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const seed = newSeed()
   const app = new App({ seed, hosts })
   const own: World['own'] = {}
-  for (const label of ['tutoring/tutor', 'tutoring/student', 'clothing/seller']) own[label] = await app.addProfile(label)
+  for (const label of ['lessons/tutor', 'lessons/student', 'wardrobe/seller']) own[label] = await app.addProfile(label)
 
   const strangerSeed = newSeed()
-  const tutor = await mainKey(strangerSeed, 'tutoring/tutor')
+  const tutor = await mainKey(strangerSeed, 'lessons/tutor')
   const opening = await openingHalf(tutor.secret)
   const now = Date.now()
   // Only its Solana pay address: a profile's pay may list any of the chains.
-  const pay = { solana: (await payAddresses(strangerSeed, 'tutoring/tutor')).solana }
-  const profile = { market: 'tutoring', role: 'tutor', hosts, openKey: opening.openKey, pay }
+  const pay = { solana: (await payAddresses(strangerSeed, 'lessons/tutor')).solana }
+  const profile = { market: 'lessons', role: 'tutor', hosts, openKey: opening.openKey, pay }
   const subjects = ['physics', 'chemistry', 'biology']
   const listed = subjects.map((s) => entry(tutor, `listing/${s}`, lesson(`${s[0]!.toUpperCase()}${s.slice(1)}, from the stranger.`), now))
   await write(hosts, [entry(tutor, 'profile', profile, now), ...listed])
@@ -228,7 +252,7 @@ export async function world(options: { noApp?: boolean } = {}): Promise<World> {
   const index = await standIn(tutor.address, listing)
   const page = await connectPage(app)
   const dataDir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
-  const mcp = await serve({ ...(!options.noApp && { appUrl: page.url }), dataDir, read: { index: index.url }, clientFetch, hostFetch: fetch }, '127.0.0.1', 0)
+  const mcp = await serve({ ...(!options.noApp && { appUrl: page.url }), dataDir, read: { index: index.url }, clientFetch, hostFetch: fetch, marketsDir: MARKETS }, '127.0.0.1', 0)
 
   return {
     mcp,

@@ -45,14 +45,18 @@ export const colorIn = (colors: Record<string, string>, market: string): string 
 
 /** The markets with an icon of their own, each by its Phosphor name. */
 export const ICONS: Readonly<Record<string, string>> = {
-  tutoring: 'graduation-cap',
-  clothing: 't-shirt',
-  electronics: 'laptop',
+  'freelance-design': 'palette',
+  'freelance-software': 'code',
+  'freelance-video': 'film-strip',
+  goods: 'tag',
   'home-cleaning': 'broom',
   'home-repair': 'wrench',
-  'software-development': 'code',
+  'language-exchange': 'translate',
   'sports-coaching': 'soccer-ball',
-  'tennis-matches': 'tennis-ball',
+  'stays-free': 'couch',
+  'stays-work': 'barn',
+  tours: 'map-trifold',
+  tutoring: 'graduation-cap',
 }
 
 /** A market's icon, by its Phosphor name, or null: its avatar then shows its first letter. */

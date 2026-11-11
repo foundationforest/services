@@ -173,7 +173,7 @@ details.fold>summary>.i:last-child{color:var(--ink3)}details.fold[open]>summary>
 .fbody{display:flex;flex-direction:column;gap:12px;padding:0 16px 16px}.fbody h3{margin-top:4px}
 .num{display:flex;gap:12px;align-items:baseline}.num .d{font-size:22px;min-width:52px;flex:none}
 .head{display:flex;flex-direction:column;gap:16px;margin:0 -20px;padding:8px 16px 20px;border-radius:0 0 30px 30px}
-.head .me{display:flex;align-items:center;gap:14px}.head .me>div{display:flex;flex-direction:column;gap:6px;min-width:0}.head p{font-size:15.5px;line-height:1.45}
+.head .me{display:flex;align-items:center;gap:14px}.head .me>div{display:flex;flex-direction:column;gap:6px;min-width:0}.head .me .chip{align-self:flex-start}.head p{font-size:15.5px;line-height:1.45}
 .titled{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.rated{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .hello{font-size:32px;line-height:1.08;margin-top:8px}
 .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
@@ -190,6 +190,7 @@ details.fold>summary>.i:last-child{color:var(--ink3)}details.fold[open]>summary>
 .pick input{position:absolute;width:1px;height:1px;opacity:0}.pick:has(:focus-visible){outline:2px solid var(--forest);outline-offset:2px}
 .filters{display:none;flex-direction:column;gap:20px;padding:16px;border-radius:22px;background:var(--card);box-shadow:var(--shadow)}.filters:target{display:flex}
 .group{display:flex;flex-direction:column;gap:8px}.group .s a{color:var(--forest);font-weight:600}.chips{display:flex;flex-wrap:wrap;gap:8px}
+.range{display:flex;align-items:center;gap:8px}.range .inp{flex:1;min-width:0}
 .radio{display:flex;align-items:center;gap:10px;min-height:32px;font-size:15px}.radio .r{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--edge);flex:none}.radio[aria-current]{font-weight:700}.radio[aria-current] .r{box-shadow:inset 0 0 0 5px var(--forest)}
 .seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--sunk)}
 .seg label{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;min-height:40px;border-radius:11px;font-size:15px;font-weight:600;color:var(--ink2);cursor:pointer}

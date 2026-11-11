@@ -49,7 +49,8 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
 
     const markets = (await client.callTool({ name: 'markets', arguments: {} })) as Result
     assert.notEqual(markets.isError, true, `reading needs no login: ${text(markets)}`)
-    assert.ok(JSON.parse(text(markets)).markets.some((m: { name: string }) => m.name === 'tutoring'))
+    const listed = JSON.parse(text(markets)).markets as Array<{ name: string; status: string }>
+    assert.ok(listed.length > 0 && listed.every((m) => m.status === 'live' || m.status === 'beta'), 'the directory, each market live or beta')
 
     const challenge = await fetch(url, {
       method: 'POST',

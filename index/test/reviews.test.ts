@@ -19,11 +19,11 @@ after(async () => {
 })
 
 test('reviews: who counts, the latest per writer, subject and listing, and why the rest do not', async () => {
-  const tutor = await profile('tutoring/tutor', [by])
-  const student = await profile('tutoring/student', [by])
-  const another = await profile('tutoring/student', [by])
-  const stranger = await profile('tutoring/student')
-  const coach = await profile('sports-coaching/coach', [by])
+  const tutor = await profile('lessons/tutor', [by])
+  const student = await profile('lessons/student', [by])
+  const another = await profile('lessons/student', [by])
+  const stranger = await profile('lessons/student')
+  const coach = await profile('matches/player', [by])
   for (const p of [tutor, student, another, stranger, coach]) await publishProfile(host.url, p)
   const maths = `${tutor.key.address}/listing/maths`
   const made = at(tutor, 'listing/maths', { description: 'Maths, any level.', subjects: ['maths'] })
@@ -60,7 +60,7 @@ test('reviews: who counts, the latest per writer, subject and listing, and why t
   assert.equal(got(another, 'maths').counted, true)
   assert.deepEqual([got(student, 'first').counted, got(student, 'first').why], [false, WHY.later])
   assert.deepEqual([got(another, 'bare').counted, got(another, 'bare').why], [false, WHY.score])
-  assert.equal(got(another, 'odd').why, 'a review in tutoring has no field stars')
+  assert.equal(got(another, 'odd').why, 'a review in lessons has no field stars')
   assert.equal(got(another, 'nowhere').why, "listing is not a listing's address: its profile is no address")
   const a = (await twin<ProfilePage>(i, `/profiles/${another.key.address}.json`)).body
   assert.equal(a.reviews.given.find((r) => r.address.endsWith('/review/nobody'))!.why, 'subject is not an address')
@@ -88,11 +88,11 @@ test('reviews: who counts, the latest per writer, subject and listing, and why t
 })
 
 test("vouches and reports: who counts, the latest per writer and subject, why the rest do not, and each writer's word", async () => {
-  const tutor = await profile('tutoring/tutor', [by])
-  const student = await profile('tutoring/student', [by])
-  const another = await profile('tutoring/student', [by])
-  const stranger = await profile('tutoring/student')
-  const coach = await profile('sports-coaching/coach', [by])
+  const tutor = await profile('lessons/tutor', [by])
+  const student = await profile('lessons/student', [by])
+  const another = await profile('lessons/student', [by])
+  const stranger = await profile('lessons/student')
+  const coach = await profile('matches/player', [by])
   for (const p of [tutor, student, another, stranger, coach]) await publishProfile(host.url, p)
   const about = (text?: string, more: { [key: string]: unknown } = {}) => ({ subject: tutor.key.address, ...(text && { text }), ...more })
   // In this order, each later than the one before: the student vouches, vouches again and then
@@ -120,7 +120,7 @@ test("vouches and reports: who counts, the latest per writer and subject, why th
   assert.deepEqual([vouch(student, 'second').counted, vouch(student, 'first').counted, vouch(student, 'first').why], [true, false, vouchWhy.later])
   assert.equal(report(student, 'scam').counted, true)
   assert.equal(report(another, 'early').counted, true)
-  assert.equal(vouch(another, 'odd').why, 'a vouch in tutoring has no field score')
+  assert.equal(vouch(another, 'odd').why, 'a vouch in lessons has no field score')
   assert.equal(vouch(stranger, 'maths').why, vouchWhy.writer)
   assert.equal(vouch(coach, 'tutor').why, vouchWhy.market)
   assert.deepEqual([vouch(tutor, 'me').counted, vouch(tutor, 'me').why], [false, 'it is a vouch of its own writer'])

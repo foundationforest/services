@@ -52,7 +52,7 @@ async function fund(running: RunningHost, folder: string, count: number, origin 
   assert.equal((await spend(running.url, folder, await credits(running, count, origin))).status, 200)
 }
 
-const folder = async () => mainKey(newSeed(), 'tutoring/seller')
+const folder = async () => mainKey(newSeed(), 'lessons/seller')
 type Folder = Awaited<ReturnType<typeof folder>>
 const balance = (running: RunningHost, folder: string) => running.credits.balance(folder)
 /** What a folder spent since the last time this was asked, in millionths of a credit. */
@@ -68,7 +68,7 @@ function spending(running: RunningHost, folder: string): () => number {
 }
 const results = async (running: RunningHost, entries: SignedEntry[]) => (await write([running.url], entries))[0]!.results
 const put = async (running: RunningHost, bytes: Uint8Array, type: string) => (await upload([running.url], bytes, type))[0]!
-const profileOf = (running: RunningHost, more: Body = {}): Body => ({ market: 'tutoring', role: 'seller', hosts: [running.url], ...more })
+const profileOf = (running: RunningHost, more: Body = {}): Body => ({ market: 'lessons', role: 'seller', hosts: [running.url], ...more })
 /** An entry naming these bytes. */
 const naming = (me: Folder, path: string, bytes: Uint8Array, type: string, time: number) => entry(me, path, { files: [fileOf(bytes, type)] }, time)
 

@@ -1,6 +1,6 @@
 # The standard at the commit in STANDARD, and the markets at the commit in MARKETS, fetched by standard.sh
-standard/
-markets/
+/standard/
+/markets/
 
 node_modules/
 

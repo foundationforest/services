@@ -1,0 +1,24 @@
+{
+  "name": "wardrobe",
+  "description": "People sell clothes and shoes they own, picked up in person or shipped.",
+  "status": "live",
+  "roles": [
+    { "role": "seller", "listings": "offers" },
+    { "role": "buyer", "listings": "requests" }
+  ],
+  "listing": {
+    "description": { "type": "text", "description": "The item and anything to know about it." },
+    "price": { "type": "money", "description": "The price of the item, without shipping." },
+    "photos": { "type": "file", "description": "Photos of the item.", "many": true, "roles": ["seller"] },
+    "wearer": { "type": "choice", "description": "Who the item is made for.", "values": ["women", "men"], "many": true },
+    "kind": { "type": "choice", "description": "What the item is.", "values": ["coat", "jumper", "shoes"] },
+    "size": { "type": "choice", "description": "The size of adult clothes, by the letter on the label.", "values": ["s", "m", "l", "xl"], "labels": { "xl": "XL" }, "when": { "kind": ["coat", "jumper"] } },
+    "footLength": { "type": "number", "description": "The length of foot the shoes fit, as the label prints it after CM.", "unit": "centimetres", "when": { "kind": ["shoes"] } },
+    "condition": { "type": "choice", "description": "The item's condition.", "values": ["new-with-tags", "like-new", "good"] },
+    "location": { "type": "place", "description": "Where the item is; in a request, where the buyer is.", "radiusKm": 2 }
+  },
+  "preview": ["photos", "description", "price", "size", "footLength", "condition", "location"],
+  "review": {
+    "asDescribed": { "type": "choice", "description": "Whether the item was as the listing said.", "values": ["yes", "no"], "roles": ["seller"] }
+  }
+}

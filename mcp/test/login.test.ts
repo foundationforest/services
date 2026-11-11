@@ -24,7 +24,7 @@ import { accessKey, mainKey, newAccessKey, openingHalf } from '@foundationforest
 import { MAX_ACCESS, MAX_POINTER } from '../src/connection.ts'
 import { serve } from '../src/server.ts'
 import { App } from './app.ts'
-import { AiApp, CHOICE, REDIRECT, type World, aiApp, browse, clientFetch, logIn, world } from './setup.ts'
+import { AiApp, CHOICE, MARKETS, REDIRECT, type World, aiApp, browse, clientFetch, logIn, world } from './setup.ts'
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
 const text = (r: unknown) => (r as Result).content[0]!.text
@@ -55,9 +55,9 @@ async function connected(query: { [name: string]: string }): Promise<{ status: n
   return { status: res.status, text: await res.text(), location: res.headers.get('location') }
 }
 
-const TUTOR = 'tutoring/tutor'
-const STUDENT = 'tutoring/student'
-const SELLER = 'clothing/seller'
+const TUTOR = 'lessons/tutor'
+const STUDENT = 'lessons/student'
+const SELLER = 'wardrobe/seller'
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 const hash = (request: string) => createHash('sha256').update(request).digest('hex')
 const randomSecret = () => b64u.encode(crypto.getRandomValues(new Uint8Array(32)))
@@ -109,7 +109,7 @@ describe('discovery', () => {
     const { client } = await aiApp(w.mcp.origin)
     const markets = (await client.callTool({ name: 'markets', arguments: {} })) as Result
     assert.notEqual(markets.isError, true, text(markets))
-    assert.ok(JSON.parse(text(markets)).markets.some((m: { name: string }) => m.name === 'tutoring'))
+    assert.ok(JSON.parse(text(markets)).markets.some((m: { name: string }) => m.name === 'lessons'))
     await client.close()
   })
 
@@ -141,7 +141,7 @@ describe('discovery', () => {
     assert.equal(res.headers.get('access-control-allow-origin'), '*')
     const { openKey } = (await res.json()) as { openKey: string }
     assert.match(openKey, OPEN_KEY)
-    const again = await serve({ dataDir: w.dataDir, read: { index: w.index } }, '127.0.0.1', 0)
+    const again = await serve({ dataDir: w.dataDir, read: { index: w.index }, marketsDir: MARKETS }, '127.0.0.1', 0)
     try {
       assert.deepEqual(await (await fetch(`${again.url}/open-key`)).json(), { openKey })
     } finally {
@@ -197,22 +197,22 @@ describe('the login, end to end', () => {
   })
 
   test('by a client document (CIMD), each login its own access keys', async () => {
-    const before = (await w.app.keys('tutoring/student')).length
+    const before = (await w.app.keys('lessons/student')).length
     const c = await aiApp(w.mcp.origin, new AiApp('cimd'))
     await logIn(c)
     assert.ok(c.app.authorization!.searchParams.get('client_id')!.startsWith('https://'))
-    assert.equal((await w.app.keys('tutoring/student')).length, before + 1)
+    assert.equal((await w.app.keys('lessons/student')).length, before + 1)
     assert.equal(((await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result).isError, undefined)
     await c.client.close()
   })
 
   test('the person chooses fewer switches, and which profiles', async () => {
-    w.choose({ profiles: ['clothing/seller'], can: ['write'] })
+    w.choose({ profiles: ['wardrobe/seller'], can: ['write'] })
     try {
       const c = await aiApp(w.mcp.origin)
       await logIn(c)
-      assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [{ label: 'clothing/seller', can: ['write'] }] })
-      const [listed] = await w.app.keys('clothing/seller')
+      assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [{ label: 'wardrobe/seller', can: ['write'] }] })
+      const [listed] = await w.app.keys('wardrobe/seller')
       assert.deepEqual(listed!.can, ['write'])
       assert.equal(listed!.open, undefined, 'a key that may not read gives no open key')
       await c.client.close()
@@ -232,7 +232,7 @@ describe('a connection, changed with no new login', () => {
     await device.addToConnection(folder.address, SELLER)
     assert.equal((await entriesOf(folder, 'access')).length, 3, 'one access entry more')
     const mine = async () => JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))).profiles
-    assert.deepEqual(await mine(), [SELLER, STUDENT, TUTOR].map((label) => ({ label, can: SWITCHES })))
+    assert.deepEqual(await mine(), [STUDENT, TUTOR, SELLER].map((label) => ({ label, can: SWITCHES })), 'by label')
     const wrote = (await c.client.callTool({ name: 'write', arguments: { label: SELLER, path: 'notes/added', body: { text: 'Added with no new login.' }, locked: true } })) as Result
     assert.equal(JSON.parse(text(wrote)).written, 'notes/added')
     const sellerKey = (await w.app.keys(SELLER)).at(-1)!.key
@@ -244,7 +244,7 @@ describe('a connection, changed with no new login', () => {
     assert.deepEqual([ended?.until, 'open' in ended!], [profile.time, false], 'its key ended, at the time of the profile entry that ends it, with no open key')
     assert.equal((await entriesOf(folder, 'access')).length, 2, 'its access entry deleted')
     assert.equal(await w.app.note(STUDENT, studentKey), undefined, 'and its note')
-    assert.deepEqual((await mine()).map((p: { label: string }) => p.label), [SELLER, TUTOR])
+    assert.deepEqual((await mine()).map((p: { label: string }) => p.label), [TUTOR, SELLER])
     await c.client.close()
   })
 
@@ -341,7 +341,7 @@ describe('refused', () => {
     const res = await asked(token)
     assert.equal(res.status, 401)
     assert.match(res.headers.get('www-authenticate')!, /error="invalid_token"/)
-    assert.doesNotMatch(await res.text(), /tutoring/)
+    assert.doesNotMatch(await res.text(), /lessons/)
   })
 
   test('a pointer naming a folder that holds no connection: refused the same', async () => {
@@ -367,7 +367,7 @@ describe('refused', () => {
     await logIn(c)
     const folder = await connectionOf(TUTOR)
     const key = await newAccessKey()
-    const stray = { label: 'clothing/seller', address: w.own[SELLER]!, hosts: [w.host], key: b64u.encode(key.secret) }
+    const stray = { label: 'wardrobe/seller', address: w.own[SELLER]!, hosts: [w.host], key: b64u.encode(key.secret) }
     await write([w.host], [
       entry(folder.key, 'access/0000000000000000000000000000000a', await lock(stray, [folder.key.openKey]), Date.now()),
       entry(folder.key, 'access/0000000000000000000000000000000b', await lock({ ...stray, can: SWITCHES }, [folder.key.openKey, await openKey()]), Date.now()),
@@ -410,7 +410,7 @@ describe('refused', () => {
     // The same key that signs logins, a new encryption key.
     const dir = mkdtempSync(join(tmpdir(), 'forest-mcp-'))
     copyFileSync(join(w.dataDir, 'mcp-key.json'), join(dir, 'mcp-key.json'))
-    const other = await serve({ origin: w.mcp.origin, dataDir: dir, read: { index: w.index }, hostFetch: fetch }, '127.0.0.1', 0)
+    const other = await serve({ origin: w.mcp.origin, dataDir: dir, read: { index: w.index }, marketsDir: MARKETS, hostFetch: fetch }, '127.0.0.1', 0)
     try {
       const res = await asked(token, other.url)
       assert.equal(res.status, 401)
@@ -441,11 +441,11 @@ test('nothing kept: a token one copy gave works on another with the same two key
   await logIn(c)
   const token = c.app.tokens()!.access_token
   await c.client.close()
-  const other = await serve({ origin: w.mcp.origin, dataDir: w.dataDir, read: { index: w.index }, clientFetch, hostFetch: fetch }, '127.0.0.1', 0)
+  const other = await serve({ origin: w.mcp.origin, dataDir: w.dataDir, read: { index: w.index }, marketsDir: MARKETS, clientFetch, hostFetch: fetch }, '127.0.0.1', 0)
   try {
     const res = await asked(token, other.url)
     assert.equal(res.status, 200)
-    assert.match(await res.text(), /tutoring\/tutor/)
+    assert.match(await res.text(), /lessons\/tutor/)
   } finally {
     await other.close()
   }

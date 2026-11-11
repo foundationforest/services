@@ -35,8 +35,8 @@ function exitOf(child: ReturnType<typeof spawn>, ms: number): Promise<number | n
 test('a review between two checked profiles, read from a host, counted, and served', async () => {
   const host = await startHost()
   const by = verifier()
-  const tutor = await profile('tutoring/tutor', [by])
-  const student = await profile('tutoring/student', [by])
+  const tutor = await profile('lessons/tutor', [by])
+  const student = await profile('lessons/student', [by])
   await publishProfile(host.url, tutor)
   await publishProfile(host.url, student)
   const offer = `${tutor.key.address}/listing/maths`
@@ -67,12 +67,12 @@ test('a review between two checked profiles, read from a host, counted, and serv
   const shown = { ratings: p.ratings, trust: p.trust, uniqueness: p.uniqueness }
   assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 44, uniqueness: 75 })
   assert.equal(p.listings[0]!.listed, true)
-  const found = (await get<{ total: number; results: Array<{ listing: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=tutoring&role=tutor')).body
+  const found = (await get<{ total: number; results: Array<{ listing: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=lessons&role=tutor')).body
   assert.equal(found.total, 1)
   assert.equal(found.results[0]!.listing.address, offer)
   assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 44])
   const html = await (await fetch(`${i.url}/profiles/${tutor.key.address}`)).text()
-  assert.ok(html.includes('Tutoring tutor<span class="vb lg" role="img" aria-label="Verified with a selfie"'))
+  assert.ok(html.includes('Lessons tutor<span class="vb lg" role="img" aria-label="Verified with a selfie"'))
   assert.match(html, /<span class="rated"><span class="rate"><svg[^>]*>.*?<\/svg>8\.5<\/span><span class="s">1 review<\/span><\/span>/)
   for (const n of ['8.5', '44', '75']) assert.ok(html.includes(`<div class="num"><span class="d">${n}</span>`), n)
   // The listing's own page, over HTTP, at its address under /profiles.
@@ -103,7 +103,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
 test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the process once it is done, with a verification checked', async () => {
   const host = await startHost()
   const by = verifier()
-  const tutor = await profile('tutoring/tutor', [by])
+  const tutor = await profile('lessons/tutor', [by])
   await publishProfile(host.url, tutor)
   const dataDir = tmp('rebuild')
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
@@ -126,7 +126,7 @@ test('rebuild, in a process of its own as `npm run rebuild` runs it, ends the pr
 test('`node src/main.ts rebuild`, with something still open, says it rebuilt and exits, keeping when the proof was first seen', async () => {
   const host = await startHost()
   const by = verifier()
-  const tutor = await profile('tutoring/tutor', [by])
+  const tutor = await profile('lessons/tutor', [by])
   await publishProfile(host.url, tutor)
   // main.ts reads the lists in its own directory, so it runs from a copy of this one whose lists
   // name the loopback host and the test's verifier key, with the markets beside it as in the repo.

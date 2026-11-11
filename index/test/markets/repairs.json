@@ -1,0 +1,19 @@
+{
+  "name": "repairs",
+  "description": "People fix things in other people's homes, paid per hour or per job.",
+  "status": "beta",
+  "roles": [
+    { "role": "repairer", "listings": "offers" },
+    { "role": "client", "listings": "requests" }
+  ],
+  "listing": {
+    "description": { "type": "text", "description": "The work: what is fixed, and how." },
+    "price": { "type": "money", "description": "The price per hour, or for the whole job.", "per": ["hour"] },
+    "repairs": { "type": "choice", "description": "The kinds of work.", "values": ["plumbing", "electrical", "carpentry"], "many": true },
+    "base": { "type": "place", "description": "The area the repairer works in.", "radiusKm": 10, "roles": ["repairer"] },
+    "home": { "type": "place", "description": "Where the home is.", "radiusKm": 1, "roles": ["client"] },
+    "licences": { "type": "text", "description": "Licences the repairer holds.", "roles": ["repairer"] },
+    "pastWork": { "type": "file", "description": "Photos of past jobs.", "many": true, "roles": ["repairer"] }
+  },
+  "preview": ["repairs", "description", "price", "base", "home"]
+}

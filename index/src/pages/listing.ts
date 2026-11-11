@@ -1,18 +1,20 @@
 // `/profiles/<address>/listing/<id>`: one listing, at its own address under /profiles. Its photos,
-// its fields in its market's order (the preview's first) with each one's type, who posted it and
-// what that profile shows, and how to reach them: the contact the listing gives, and a link to
-// message the profile from each app lists/apps.json names. A listing that is not listed has its page
-// too, saying why, as its profile's page does.
+// its fields in its market's order (the preview's first) with each one's type and each number's
+// unit, who posted it and what that profile shows, and how to reach them: the contact the listing
+// gives, and a link to message the profile from each app lists/apps.json names. A listing that is
+// not listed has its page too, saying why, as its profile's page does.
 //
 // Drawn as the app would show it: its photos in a row that scrolls sideways, the description's first
 // line as its heading, the price under it, the rest of the description, its other fields as label
-// and value (a choice by its labels, a place as a link to its point on the map, the contact last),
-// who posted it in one card linking to their profile, and the button to message them at the foot.
-// On a laptop, the photos on the left, a big one with small ones under it, and the rest on the right.
+// and value (a choice by its labels, a number in its unit, a place as a link to its point on the
+// map, the contact last), who posted it in one card linking to their profile, and the button to
+// message them at the foot; a listing whose market has left the directory says so, and its back
+// link goes home. On a laptop, the photos on the left, a big one with small ones under it, and the
+// rest on the right.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { choiceText, colorOf, fieldLabel, fieldsOf, firstHost, firstLine, labelsOf, type Listing, listingOf, messageHtml, messageOf, nameHtml, offerOf, placeHtml, priceParts, priceText, profileAvatar, rateHtml, type Result, type Shown, shownFor, typesOf, valueText } from './common.ts'
+import { choiceText, colorOf, fieldLabel, fieldsOf, firstHost, firstLine, goneHtml, isGone, labelsOf, type Listing, listingOf, messageHtml, messageOf, nameHtml, numberText, offerOf, placeHtml, priceParts, priceText, profileAvatar, rateHtml, type Result, type Shown, shownFor, typesOf, unitsOf, valueText } from './common.ts'
 import { icon } from './icons.ts'
 import { backHtml, html, type Page, type Raw, urls } from './template.ts'
 
@@ -31,6 +33,8 @@ export type ListingPage = {
   fields: string[]
   /** Each of `fields`' type, as its market names it: a `file` field names photos. */
   types: { [field: string]: string }
+  /** Each of `fields`' number fields' unit, as its market names it: `{ minutes: "minutes" }`. */
+  units: { [field: string]: string }
   /** For each choice field it holds, the labels its market gives the values it holds, such as `{ size: { xl: "XL" } }`. */
   labels: { [field: string]: { [value: string]: string } }
   /** Where to message its profile: one link per app this index lists. */
@@ -92,6 +96,7 @@ export const listing: Page<ListingPage> = {
       ...shown,
       fields: fieldsOf(m),
       types: typesOf(m),
+      units: unitsOf(m),
       labels: labelsOf(m, body),
       message: messageOf(lists.apps, found.profile),
     }
@@ -109,17 +114,17 @@ export const listing: Page<ListingPage> = {
     const price = priceParts(body.price)
     const alt = descriptionOf(o)
     const contact = typeof body.contact === 'string' && body.contact ? body.contact : ''
-    const value = (n: string) => (o.types[n] === 'choice' ? choiceText(body[n], o.labels[n]) : o.types[n] === 'place' ? placeHtml(body[n]) : valueText(body[n]))
+    const value = (n: string) => (o.types[n] === 'choice' ? choiceText(body[n], o.labels[n]) : o.types[n] === 'place' ? placeHtml(body[n]) : o.units[n] ? numberText(body[n], o.units[n]) : valueText(body[n]))
     const facts = [...names.map((n) => html`<div class="kv"><dt>${fieldLabel(n)}</dt><dd>${value(n)}</dd></div>`), ...(contact ? [html`<div class="kv"><dt>Contact</dt><dd>${contactHtml(contact)}</dd></div>`] : [])]
     const photos = o.listing.photos.length
       ? html`<div class="gal"${o.market ? html` style="--h:${colorOf(site, o.market)}"` : ''}>${o.listing.photos.map((src) => html`<a href="${src}"><img src="${src}" alt="${alt}" loading="lazy"></a>`)}</div>`
       : null
     const info = html`<div class="info"><h1>${head || price?.amount || 'A listing'}</h1>${price ? html`<p class="cost"><span class="d big">${price.amount}</span>${price.per ? html` <span class="s">${price.per}</span>` : ''}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}
-${o.listing.listed ? '' : html`<p class="red">Not listed: ${o.listing.why}.</p>`}
+${o.listing.listed ? '' : html`<p class="red">Not listed: ${o.listing.why}.</p>`}${isGone(site, o.market) ? goneHtml(o.market) : ''}
 ${facts.length ? html`<dl class="card divide">${facts}</dl>` : ''}
 <a class="card poster" href="${urls(base).profile(o.profile)}">${profileAvatar(site, o.market, o.role)}<span class="what">${nameHtml(o.market, o.role, o.checks)}<span class="rated">${rateHtml(o)}</span></span>${icon('caret-right')}</a>
 ${o.message.length ? html`<div class="foot">${messageHtml(o.message, o.role ? `Message the ${o.role}` : 'Message')}</div>` : ''}</div>`
-    return html`<div class="bar">${backHtml(o.market ? urls(base).market(o.market) : urls(base).home, true)}</div>
+    return html`<div class="bar">${backHtml(o.market && !isGone(site, o.market) ? urls(base).market(o.market) : urls(base).home, true)}</div>
 ${photos ? html`<div class="split">${photos}${info}</div>` : info}`
   },
   ld(o, base, url) {

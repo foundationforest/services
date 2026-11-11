@@ -38,25 +38,23 @@ import { readConfig as verifierConfig, startVerifier } from '../verifier/src/ser
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..')
 
-/** services.json: each service's origin, or null; the market the two people deal in. */
+/** services.json: each service's origin, or null. */
 export type Services = {
   verifier: string | null
   host: string | null
   index: string | null
   mcp: string | null
-  market: string
 }
 
 const SERVICES = ['verifier', 'host', 'index', 'mcp'] as const
 
-/** services.json at `path`, checked: each service null or an origin, and the market named. */
+/** services.json at `path`, checked: each service null or an origin. */
 export function readServices(path: string): Services {
   const s = JSON.parse(readFileSync(path, 'utf8')) as { [key: string]: unknown }
   for (const name of SERVICES) {
     const v = s[name]
     if (v !== null && !(typeof v === 'string' && URL.canParse(v) && new URL(v).origin === v)) throw new Error(`${path}: ${name} is null or an origin`)
   }
-  if (typeof s.market !== 'string' || !s.market) throw new Error(`${path}: market is needed`)
   return s as Services
 }
 

@@ -44,7 +44,8 @@ test('each icon the table names is a Phosphor icon, regular and filled; a market
   for (const name of Object.values(ICONS)) {
     for (const file of [`regular/${name}.svg`, `fill/${name}-fill.svg`]) assert.ok(existsSync(fileURLToPath(import.meta.resolve(`@phosphor-icons/core/assets/${file}`))), file)
   }
-  assert.equal(iconOf('tutoring'), 'graduation-cap')
+  assert.ok(Object.keys(ICONS).length > 0)
+  for (const [market, name] of Object.entries(ICONS)) assert.equal(iconOf(market), name, market)
   assert.equal(iconOf('knitting'), null)
   const site = siteOf(markets, [])
   assert.equal(String(avatarHtml(site, 'knitting', { size: 'lg' })), `<span class="av lg" style="--h:${PALETTE[fnv1a('knitting') % 10]}" aria-hidden="true"><span class="letter">K</span></span>`)
