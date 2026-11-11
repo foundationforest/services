@@ -1,10 +1,10 @@
 // `npm run sandbox`: the verifier, run by hand against Didit's sandbox application, which mocks every
 // provider and never bills. Its key is DIDIT_SANDBOX_API_KEY, the sandbox application's own (a Didit
-// key belongs to one application); this script never reads DIDIT_API_KEY, the live one, and refuses
-// to start when the two are the same.
+// key belongs to one application), for both checks; this script never uses DIDIT_FACE_API_KEY or
+// DIDIT_ID_API_KEY, the live ones, and refuses to start when it is either.
 //
 //   DIDIT_SANDBOX_API_KEY=… npm run sandbox               each session it opens comes to `approve`
-//   DIDIT_SANDBOX_API_KEY=… npm run sandbox -- review_…   or to another of Didit's sandbox scenarios
+//   DIDIT_SANDBOX_API_KEY=… npm run sandbox -- decline_…  or to another of Didit's sandbox scenarios
 //
 // It runs both checks on the sandbox application's two workflows, with the SFace model (`npm run
 // fetch -- models` first) and its own seed and file in data/sandbox/. PORT, VERIFIER_NAME, APP_ORIGINS,
@@ -22,7 +22,7 @@ export const SANDBOX = { face: '8b1307a1-6076-41a9-93ba-e050dff5273b', id: '4471
 
 const apiKey = process.env.DIDIT_SANDBOX_API_KEY
 if (!apiKey) throw new Error('DIDIT_SANDBOX_API_KEY is not set: the sandbox application’s own Didit key')
-if (apiKey === process.env.DIDIT_API_KEY) throw new Error('DIDIT_SANDBOX_API_KEY is the same as DIDIT_API_KEY: the sandbox takes the sandbox application’s key, never the live one')
+if (apiKey === process.env.DIDIT_FACE_API_KEY || apiKey === process.env.DIDIT_ID_API_KEY) throw new Error('DIDIT_SANDBOX_API_KEY is a live key: the sandbox takes the sandbox application’s key, never a live one')
 const scenario = process.argv[2] || 'approve'
 
 const { PORT, VERIFIER_NAME, APP_ORIGINS, HOST_URL, FACE_CREDITS, ID_CREDITS, STRIPE_SECRET_KEY, STRIPE_ID_PRICE } = process.env
@@ -36,8 +36,9 @@ const config = readConfig({
   ID_CREDITS,
   STRIPE_SECRET_KEY,
   STRIPE_ID_PRICE,
-  DIDIT_API_KEY: apiKey,
+  DIDIT_FACE_API_KEY: apiKey,
   DIDIT_FACE_WORKFLOW_ID: SANDBOX.face,
+  DIDIT_ID_API_KEY: apiKey,
   DIDIT_ID_WORKFLOW_ID: SANDBOX.id,
   DATABASE_PATH: 'data/sandbox/verifier.sqlite',
 })

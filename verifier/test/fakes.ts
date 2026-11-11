@@ -9,7 +9,7 @@ import { seedNumber, stampNumberOf } from '@foundationforest/keys'
 import { fromBytes32 } from '@foundationforest/proofs'
 import { hex } from '@foundationforest/folders'
 
-import type { Check, Decision, Document, FaceCheck } from '../src/didit.ts'
+import type { Check, Decision, Document, FaceCheck, User } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
 import { paymentHash, sessionHash } from '../src/store.ts'
 import type { Payments } from '../src/stripe.ts'
@@ -28,6 +28,8 @@ export const passed = (person: string, over: Partial<Decision> = {}): Decision =
   liveness: [{ status: 'Approved' }],
   documents: [],
   faceMatches: [],
+  risks: [],
+  matches: [],
   faceImage: selfie(person),
   document: null,
   ...over,
@@ -82,9 +84,10 @@ export function faceOf(name: string): Uint8Array {
 export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(randomBytes(32))), VERIFIER_NAME)
 
 /**
- * Didit, as far as the verifier sees it. A test says what each session came to with `set`. With
- * `hold`, decisions wait until the test lets them go, so two requests can both be waiting at once.
- * A photo is its selfie address's last part, the person's name.
+ * Didit, as far as the verifier sees it. A test says what each session came to with `set`, and who
+ * each user a match names is with `users`. With `hold`, decisions wait until the test lets them go, so
+ * two requests can both be waiting at once. A photo is its selfie address's last part, the person's
+ * name.
  */
 export class FakeFaceCheck implements FaceCheck {
   readonly sessions = new Map<string, Decision>()
@@ -97,10 +100,14 @@ export class FakeFaceCheck implements FaceCheck {
   created = 0
   /** The callback each session was opened with, by session id. */
   readonly callbacks = new Map<string, string | undefined>()
-  /** Each session deleted, in order; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with the face. */
+  /** Each session deleted, in order, and those deleted keeping the face; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with a face it was asked to keep. */
   readonly deleted: string[] = []
+  readonly keptFaces: string[] = []
   deleteDown = false
   outcome = 'retained_with_user'
+  /** Each Didit user, by `vendor_data`; with `usersDown`, Didit does not answer for one. */
+  readonly users = new Map<string, User>()
+  usersDown = false
   #gate: Promise<void> | undefined
 
   async createSession({ callback }: { callback?: string } = {}) {
@@ -135,11 +142,18 @@ export class FakeFaceCheck implements FaceCheck {
     }
   }
 
-  async deleteSession(sessionId: string) {
+  async deleteSession(sessionId: string, keepFace: boolean) {
     if (this.deleteDown) throw this.fail
     if (!this.sessions.delete(sessionId)) return 'gone'
     this.deleted.push(sessionId)
+    if (!keepFace) return 'deleted'
+    this.keptFaces.push(sessionId)
     return this.outcome
+  }
+
+  async user(vendorData: string) {
+    if (this.usersDown) throw this.fail
+    return this.users.get(vendorData) ?? null
   }
 
   async photo(url: string) {
@@ -150,16 +164,24 @@ export class FakeFaceCheck implements FaceCheck {
 
 /**
  * Stripe, as far as the verifier sees it: the Checkout pages it made, each with the page it sends the
- * person back to, and which were paid. A test pays one with `pay`.
+ * person back to, and each payment's hold: when it was held, by `clock`, and whether it is held, taken
+ * or cancelled. A test pays one with `pay`.
  */
 export class FakePayments implements Payments {
   readonly returnUrls = new Map<string, string>()
-  readonly #paid = new Set<string>()
+  readonly #holds = new Map<string, { at: number; state: 'held' | 'taken' | 'cancelled' }>()
+  readonly #clock: () => number
   down = false
   /** What Stripe not answering throws. */
   fail: Error = new Error('down')
-  /** How many times Stripe was asked whether a payment was paid. */
+  /** How many times Stripe was asked whether a payment holds its money. */
   asked = 0
+  /** The `before` of each search for old holds. */
+  readonly searched: number[] = []
+
+  constructor(clock: () => number = Date.now) {
+    this.#clock = clock
+  }
 
   async checkout(returnUrl: string) {
     if (this.down) throw this.fail
@@ -169,13 +191,46 @@ export class FakePayments implements Payments {
   }
 
   pay(payment: string) {
-    this.#paid.add(payment)
+    this.#holds.set(payment, { at: this.#clock(), state: 'held' })
   }
 
-  async paid(payment: string) {
+  /** What became of a payment's hold. */
+  state(payment: string) {
+    return this.#holds.get(payment)?.state
+  }
+
+  async held(payment: string) {
     this.asked++
     if (this.down) throw this.fail
-    return this.#paid.has(payment)
+    const hold = this.#holds.get(payment)
+    return hold && hold.state !== 'cancelled' ? hold.at : null
+  }
+
+  async capture(payment: string) {
+    if (this.down) throw this.fail
+    const hold = this.#holds.get(payment)
+    if (!hold || hold.state === 'cancelled') return false
+    hold.state = 'taken'
+    return true
+  }
+
+  async cancel(payment: string) {
+    if (this.down) throw this.fail
+    const hold = this.#holds.get(payment)
+    if (hold?.state === 'held') hold.state = 'cancelled'
+  }
+
+  async cancelOld(before: number) {
+    if (this.down) throw this.fail
+    this.searched.push(before)
+    let cancelled = 0
+    for (const hold of this.#holds.values()) {
+      if (hold.state === 'held' && hold.at < before) {
+        hold.state = 'cancelled'
+        cancelled++
+      }
+    }
+    return { cancelled, failed: 0 }
   }
 }
 
@@ -189,26 +244,32 @@ export function seedJson(): { json: string; bytes: Uint8Array } {
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
 const TABLES = [
-  'CREATE TABLE fingerprints (fingerprint BLOB PRIMARY KEY, stamp_number BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
   'CREATE TABLE payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
   'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID',
   'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
 ]
 
-/** What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; the ones not yet deleted in Didit; how many fingerprints for each stamp number; the stamp numbers given each check's gift; each payment that opened an ID session, with its tries and whether it gave a stamp. */
-export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; fingerprints: [number, bigint][]; gifts?: bigint[]; idGifts?: bigint[]; payments?: [string, number, boolean][]; never: string[] }
+/**
+ * What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; of
+ * those, the ones not yet deleted in Didit; the sessions opened that gave no stamp and are not yet
+ * deleted, each with the payment that opened it while it is open, or null; the stamp numbers given
+ * each check's gift; each payment that opened an ID session, with its tries and whether it is used up.
+ */
+export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; opened?: [string, string | null][]; gifts?: bigint[]; idGifts?: bigint[]; payments?: [string, number, boolean][]; never: string[] }
 
 /**
  * The file holds seven tables and nothing else: each session that gave a stamp as the hash of its id,
  * next to its stamp number and its check; one stamp for each stamp number and check those sessions
- * gave; the sessions not yet deleted in Didit, by id; each fingerprint next to its stamp number; the
- * stamp numbers given each check's gift, each with a hash of its buy; each payment as the hash of its
- * id, with its tries and whether it gave a stamp, and nothing else. None of `never` (names, birth
- * dates, embeddings, a gift's buy) is anywhere in its bytes, no payment id and no other session id is
- * in the clear, and no journal is left beside it.
+ * gave; those not yet deleted in Didit, by id; the sessions opened that gave no stamp and are not yet
+ * deleted, by id, each with the hash of the payment that opened it or none; the stamp numbers given
+ * each check's gift, each with a hash of its buy; each payment as the hash of its id, with its tries
+ * and whether it is used up, and nothing else. None of `never` (names, birth dates, embeddings, a
+ * gift's buy) is anywhere in its bytes, no payment id and no other session id is in the clear, and no
+ * journal is left beside it.
  */
 export function assertKept(path: string, expected: Expected): void {
   for (const side of sideFiles(path)) assert.equal(existsSync(side), false, `no ${side} is left`)
@@ -220,11 +281,12 @@ export function assertKept(path: string, expected: Expected): void {
   for (const [sessionId] of expected.sessions) {
     if (!toDelete.includes(sessionId)) assert.equal(file.includes(Buffer.from(sessionId)), false, 'no deleted session id is in the clear')
   }
+  const opened = expected.opened ?? []
 
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'six tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'seven tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -244,12 +306,13 @@ export function assertKept(path: string, expected: Expected): void {
       .map((r) => r.session_id as string)
       .sort()
     assert.deepEqual(pending, [...toDelete].sort(), 'by id, only the sessions not yet deleted in Didit')
-    const prints = db
-      .prepare('SELECT stamp_number FROM fingerprints')
+    const open = db
+      .prepare('SELECT session_id, payment FROM opened')
       .all()
-      .map((r) => fromBytes32(r.stamp_number as Uint8Array))
+      .map((r) => `${r.session_id} ${r.payment ? Buffer.from(r.payment as Uint8Array).toString('hex') : 'none'}`)
       .sort()
-    assert.deepEqual(prints, expected.fingerprints.flatMap(([count, n]) => Array(count).fill(n)).sort(), 'each person, as a fingerprint next to their stamp number')
+    const wantOpen = opened.map(([id, payment]) => `${id} ${payment ? Buffer.from(paymentHash(payment)).toString('hex') : 'none'}`).sort()
+    assert.deepEqual(open, wantOpen, 'by id, the sessions opened that gave no stamp and are not yet deleted, each beside its payment only while that is open')
     for (const [table, given] of [['gifts', expected.gifts], ['id_gifts', expected.idGifts]] as const) {
       const gifts = db
         .prepare(`SELECT stamp_number FROM ${table}`)

@@ -25,6 +25,7 @@ export const CODES = [
   'unknown_session',
   'wrong_workflow',
   'declined',
+  'face_seen',
   'expired',
   'not_approved',
   'no_liveness',
