@@ -13,7 +13,8 @@
 #                and the index end to end
 #   host         its type-check and its tests: the standard's host check against the host API and
 #                against the whole host, the host API's own tests and its storage's, its credits',
-#                and its credits client's alone against Cloudflare's own Privacy Pass issuer
+#                its credits client's alone against Cloudflare's own Privacy Pass issuer, and its
+#                morning email's, against a stand-in Resend
 #   e2e          the end-to-end test's type-check, which reads the verifier's, host's, index's and
 #                the MCP server's code it starts, and the MCP server's reference app and test client
 #                it acts through
