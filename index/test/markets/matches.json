@@ -1,7 +1,9 @@
 {
   "name": "matches",
-  "description": "Players find someone to play a match with, for no money.",
+  "summary": "Players find someone to play a match with.",
+  "description": "No money passes between them.",
   "status": "beta",
+  "number": 2,
   "roles": [
     { "role": "player", "listings": "requests" }
   ],

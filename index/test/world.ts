@@ -31,7 +31,8 @@ export const tmp = (name: string) => mkdtempSync(join(tmpdir(), `index-${name}-`
 /**
  * A markets checkout of the tests' own, as the markets package reads one: each market in
  * test/markets/, directory.json written from them in name order as the markets' check writes it,
- * and the pinned checkout's build/types.json, the format the types hold.
+ * and the pinned checkout's build/types.json, the format the types hold. Wardrobe's number is 11, so
+ * the colors' cycle through ten is tested; matches names no icon, so its first letter is.
  */
 export const MARKETS = (() => {
   const dir = tmp('markets')
@@ -43,9 +44,9 @@ export const MARKETS = (() => {
     .sort()
     .map((file) => {
       copyFileSync(join(own, file), join(dir, 'markets', file))
-      return JSON.parse(readFileSync(join(own, file), 'utf8')) as { name: string; description: string; status: string; roles: unknown[] }
+      return JSON.parse(readFileSync(join(own, file), 'utf8')) as { name: string; summary: string; description: string; status: string; icon?: string; number: number; roles: unknown[] }
     })
-  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, description, status, roles }) => ({ name, description, status, roles })) }))
+  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, summary, description, status, icon, number, roles }) => ({ name, summary, description, status, ...(icon && { icon }), number, roles })) }))
   return dir
 })()
 

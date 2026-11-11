@@ -34,7 +34,7 @@ read before the person connects anything; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its status (`live` or `beta`), its roles and what each lists (offers or requests). With a name, that market, from its file as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, each field once: `market` (the file's name, description, status and roles, and `preview`, the fields a listing's preview shows first), `kinds` (the kinds of entry it defines, each with every field it takes: the file's, each number's `unit` and each choice's `labels` among them, and those every market's hold, such as a listing's `contact`), `keys` (what each key of the file, `market`, and of its fields, `field`, means, in the markets' `build/market.schema.json` words: that any field may be left out, that `many` makes a list, that `radiusKm` is where a new place starts, that `roles` on a review field names the profile reviewed) and `types` (each type those fields use, whole, as the markets' `build/types.json` defines it, such as a place's `lat`, `lon`, `radiusKm` and `area`): what the manual says a program hands an AI with a market |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market, from its file as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, each field once: `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first), `kinds` (the kinds of entry it defines, each with every field it takes: the file's, each number's `unit` and `range` and each choice's `labels` among them, and those every market's hold, such as a listing's `contact`), `keys` (what each key of the file, `market`, and of its fields, `field`, means, in the markets' `build/market.schema.json` words: that any field may be left out, that a listing's price is always a list, that `many` makes a list, that a range may leave out an end, that `radiusKm` is where a new place starts, that `roles` on a review field names the profile reviewed) and `types` (each type those fields use, whole, as the markets' `build/types.json` defines it, such as a place's `lat`, `lon`, `radiusKm` and `area`, a range's `from` and `to`, and a price's `count`): what the manual says a program hands an AI with a market |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
@@ -45,10 +45,11 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
 
 - **An index's answers pass through whole.** `search` passes on whatever filters it is given, so
   any index can take what it likes, and the AI learns what it holds from the index's own guide. Its
-  description names one kind, the filters the foundation's index takes on a market's own fields
-  once `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and
-  `<field>.max`, in its unit), so an AI app that cuts the guide still finds, say, a language
-  exchange by `speaks` and `learns`.
+  description names the filters the foundation's index takes on a market's own fields once
+  `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in
+  its unit, matching a number or a range that overlaps them) and on prices (`price.currency`,
+  `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app that cuts the guide still
+  finds, say, a language exchange by `speaks` and `learns`.
   Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
@@ -58,7 +59,9 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
 - **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
   in `src/tools.ts`): with no login, start with `search`, not `my_profiles`; name a profile by its
   label; never put one of the person's addresses in what is written for another of their profiles or
-  sent to anyone else, unless the person asks; read the market before writing to it; before the
+  sent to anyone else, unless the person asks; read the market before writing to it; a listing's
+  price is a list of every price the person charges, each with its per and, for a pack, its count,
+  and a number field with range takes `{ from, to }`, either end left out for no limit; before the
   person writes in a beta market, tell them it works, at their own risk, and may change; ask the
   person before anything public in their name; photos are the person's to add, in their Forest app;
   what it writes shows on the index within about a minute, once the index counts it, and a

@@ -17,9 +17,13 @@ a page, with what this index made of each of its proofs.
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
   new one. The index reads its hosts again 30 seconds after each pass ends.
-- In entries, money and decimals are text: a price `{ "amount": "30", "currency": "USD", "per": "hour" }`,
-  a score `"8.5"`, a point's degrees `"40.42"`. In this index's JSON, a rating, a trust and a
-  uniqueness are plain numbers; in its signed `statement`, a rating is text.
+- In entries, money and decimals are text: a score `"8.5"`, a point's degrees `"40.42"`, and a
+  listing's `price`, always a list of its prices, such as
+  `[{ "amount": "30", "currency": "USD", "per": "hour" }, { "amount": "1300", "currency": "MXN", "per": "lesson", "count": 5 }]`,
+  where `count` is how many of its `per` the amount buys, 1 when left out. A number field that takes
+  a range may hold `{ "from": "9", "to": "11" }`, or one end, `{ "from": "18" }` for 18 and over. In
+  this index's JSON, a rating, a trust and a uniqueness are plain numbers; in its signed
+  `statement`, a rating is text.
 
 ## What each profile shows
 
@@ -44,20 +48,23 @@ check and "Verified with ID" for an ID check, and its rating with how many rater
 these mean, with what each means. A review's date there is its entry's `time`, in UTC. A
 choice's value is in words there, `like-new` as "Like new", or by its label where its market gives
 one, `xl` as "XL" or a language's code `es` as "Spanish"; a number is in its field's unit, as
-written, `"45"` as "45 minutes"; the JSON keeps each as written.
+written, `"45"` as "45 minutes", and a range so, "9 to 11 years", "18 years and over"; a price is in
+its own currency, for a pack with its count, "MX$1,300 for 5 lessons". A listing's page shows every
+price, and a listing in a list its first, with how many more. The JSON keeps each as written.
 
 ## The markets
 
     GET https://index.forest.foundation/index.json
 
-`{ "index", "markets": [{ "name", "description", "status", "roles", "listed", "words" }], "lists" }`:
-this index's address, every market in the markets directory it reads, with its `status`, `live` or
-`beta` (beta: it works, at your own risk, and may change; its tile and its page say so), its roles,
-how many listings each role has `listed`, such as `{ "tutor": 3, "student": 1 }`, and each role's word for its
-listings, `offers` or `requests`, such as `{ "tutor": "offers", "student": "requests" }`, and the
-lists it reads by: `hosts`; `keys`,
-each verifier key it counts with its `verifier`, its `label` (such as face check) and its
-`confidence` from 0 to 1, that a profile it checked is one real person; `indexes`, whose reputation
+`{ "index", "markets": [{ "name", "summary", "description", "status", "roles", "listed", "words" }], "lists" }`:
+this index's address, every market in the markets directory it reads, with its `summary`, the one
+line that says what the dealing is, its `description`, what an AI needs to know of it beyond that,
+its `status`, `live` or `beta` (beta: it works, at your own risk, and may change; its tile and its
+page say so), its roles, how many listings each role has `listed`, such as
+`{ "tutor": 3, "student": 1 }`, and each role's word for its listings, `offers` or `requests`, such
+as `{ "tutor": "offers", "student": "requests" }`, and the lists it reads by: `hosts`; `keys`, each
+verifier key it counts with its `verifier`, its `label` (such as face check) and its `confidence`
+from 0 to 1, that a profile it checked is one real person; `indexes`, whose reputation
 proofs it shows; and `maxAgeDays`.
 
     GET https://index.forest.foundation/markets/<name>.json
@@ -87,18 +94,29 @@ Every filter may be left out:
 - with `market`, its listing fields, by their names in its file: a `choice` field as
   `<field>=<value>`, a listing whose field holds that value (for a field that holds a list, one of
   its values), such as `speaks=es&learns=en`; a `number` field as `<field>.min` and `<field>.max`,
-  in the field's `unit`, either one alone for an open end, such as `minutes.min=45`. A listing
-  without the field is left out once it is filtered on. Without `market`, a field is no filter;
+  in the field's `unit`, either one alone for an open end, such as `minutes.min=45`: a listing
+  whose number, or range, overlaps them, a range's missing end limiting nothing, so `ages.min=30`
+  finds 18 and over. A listing without the field is left out once it is filtered on. Without
+  `market`, a field is no filter;
+- `price.currency`, with `price.per`, `price.min` and `price.max`, in any market: a listing with a
+  price in that currency for that `per`, or for the whole deal when `price.per` is left out, whose
+  amount divided by its `count`, what one of its `per` costs, is at least `price.min` and at most
+  `price.max`, such as `price.currency=MXN&price.per=lesson&price.max=300`, which finds 1,300 MXN
+  for 5 lessons, 260 a lesson. Prices compare only within one currency and one `per`, so without
+  `price.currency` neither bound is a filter;
+- `sort=price`, with `price.currency`: the cheapest first, by the least of those prices, then the
+  order below;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
 
 A result is `{ "profile", "market", "role", "listing": { "address", "body", "url", "photos" },
 "ratings", "trust", "uniqueness", "checks" }`: the listing, with what its profile shows and its
 checks. The listing's body holds its market's fields; `url` is its page; `photos` links to each file
 its fields name, at the first host its profile entry names, `<host>/v1/files/<sha256>`. This index
-keeps no bytes. With `near`, results come nearest first; otherwise, and among results as near, they
-are sorted by each profile's rating with one rater's worth of its market's average added, so a
-profile with few scores sits near the average; then by the newest listing. A profile no one has
-rated sorts at its market's average. That is the order only: each result's `ratings` is as it is.
+keeps no bytes. With `sort=price`, results come cheapest first; with `near`, nearest first;
+otherwise, and among results as cheap or as near, they are sorted by each profile's rating with one
+rater's worth of its market's average added, so a profile with few scores sits near the average;
+then by the newest listing. A profile no one has rated sorts at its market's average. That is the
+order only: each result's `ratings` is as it is.
 
 ## A profile
 

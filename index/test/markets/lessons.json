@@ -1,18 +1,22 @@
 {
   "name": "lessons",
-  "description": "Tutors teach school subjects one on one, paid per hour or per session, in person or online.",
+  "summary": "Tutors teach school subjects one on one.",
+  "description": "Lessons are paid per hour, per session or per lesson, in person or online.",
   "status": "beta",
+  "icon": "graduation-cap",
+  "number": 1,
   "roles": [
     { "role": "tutor", "listings": "offers" },
     { "role": "student", "listings": "requests" }
   ],
   "listing": {
     "description": { "type": "text", "description": "The lessons: what is taught, and how." },
-    "price": { "type": "money", "description": "The price per hour, per session, or for a whole course.", "per": ["hour", "session"] },
+    "price": { "type": "money", "description": "Each price, per hour, per session or per lesson, with a count for a pack of lessons, or for a whole course.", "per": ["hour", "session", "lesson"] },
     "subjects": { "type": "choice", "description": "The school subjects the lessons are for.", "values": ["maths", "physics", "chemistry", "biology"], "many": true },
     "languages": { "type": "choice", "description": "By ISO 639-1 code, the languages the lessons are given in.", "values": ["en", "es", "fr"], "labels": { "en": "English", "es": "Spanish", "fr": "French" }, "many": true },
     "levels": { "type": "choice", "description": "The levels the lessons are for.", "values": ["primary", "secondary", "university", "adult"], "many": true },
     "minutes": { "type": "number", "description": "How long one session lasts.", "unit": "minutes" },
+    "ages": { "type": "number", "description": "The students' ages the lessons are for, in years, or from one age to another, such as 9 to 11.", "unit": "years", "range": true },
     "mode": { "type": "choice", "description": "How sessions are held: in person, online, or both.", "values": ["in-person", "online"], "many": true },
     "place": { "type": "place", "description": "Where sessions can be held: anywhere in the circle the person will go.", "radiusKm": 5, "when": { "mode": ["in-person"] } },
     "hours": { "type": "hours", "description": "When sessions can be held, each week." }

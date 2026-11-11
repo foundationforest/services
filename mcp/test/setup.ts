@@ -48,18 +48,22 @@ export const MARKETS = (() => {
     .sort()
     .map((file) => {
       copyFileSync(new URL(file, own), join(dir, 'markets', file))
-      return JSON.parse(readFileSync(new URL(file, own), 'utf8')) as { name: string; description: string; status: string; roles: unknown[] }
+      return JSON.parse(readFileSync(new URL(file, own), 'utf8')) as { name: string; summary: string; description: string; status: string; icon?: string; number: number; roles: unknown[] }
     })
-  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, description, status, roles }) => ({ name, description, status, roles })) }))
+  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, summary, description, status, icon, number, roles }) => ({ name, summary, description, status, ...(icon && { icon }), number, roles })) }))
   return dir
 })()
 
 export const LESSONS = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8'))
 
-/** A listing that fits lessons' listing fields. */
+/** A listing that fits lessons' listing fields: two prices, one a pack of 5 lessons, and its ages a range with no top. */
 export const lesson = (description: string): Body => ({
   description,
-  price: { amount: '30', currency: 'USD', per: 'hour' },
+  price: [
+    { amount: '30', currency: 'USD', per: 'hour' },
+    { amount: '1300', currency: 'MXN', per: 'lesson', count: 5 },
+  ],
+  ages: { from: '12' },
   subjects: ['maths', 'physics'],
   levels: ['secondary'],
   mode: ['in-person'],
@@ -96,7 +100,7 @@ async function standIn(stranger: string, listing: string): Promise<{ url: string
   const badge = 'early'
   const said: World['said'] = {
     '/skill.md': SKILL,
-    '/index.json': { index: 'stand-in', markets: [{ name: 'lessons', description: LESSONS.description, roles: ['tutor', 'student'] }], lists: {}, badge },
+    '/index.json': { index: 'stand-in', markets: [{ name: 'lessons', summary: LESSONS.summary, description: LESSONS.description, roles: ['tutor', 'student'] }], lists: {}, badge },
     '/search.json': { index: 'stand-in', total: 1, results: [result], badge },
     [`/profiles/${stranger}.json`]: { index: 'stand-in', address: stranger, profile: { market: 'lessons', role: 'tutor' }, checks, ...shown, listings: [], reviews: { received: [], given: [] }, proofs: [], badge },
   }

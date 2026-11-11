@@ -415,10 +415,10 @@ async function main() {
   const [market, sellerRole] = seller.label.split('/') as [string, string]
   const read = await seller.ai!.call('markets', { name: market })
   assert.ok(read.kinds.listing.description && read.kinds.review.listing && read.keys.field.type, 'the seller’s AI reads what a listing and a review hold, and what each key means')
-  // A description, and a price where the market has one, with no per, which an amount may always leave out.
+  // A description, and a price where the market has one: a list of one, with no per, which an amount may always leave out.
   const offer = {
     description: 'A test listing, written by an AI through the MCP server by the end-to-end test.',
-    ...(read.kinds.listing.price?.type === 'money' && { price: { amount: '2', currency: 'USD' } }),
+    ...(read.kinds.listing.price?.type === 'money' && { price: [{ amount: '2', currency: 'USD' }] }),
   }
   const beforeListing = await held(seller.address)
   assert.equal((await seller.ai!.call('write', { label: seller.label, path: 'listing/offer', body: offer })).written, 'listing/offer')

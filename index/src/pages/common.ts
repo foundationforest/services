@@ -2,16 +2,17 @@
 // JSON gives it, a listing as every page gives it (its page and its photos among it), a search or
 // market result, and how the HTML draws each from the object, in the parts the Forest app draws: a
 // profile's avatar, name and badge, its rating, a listing's card, a result's card, the words of a
-// field's value, a number in its unit, a beta market's chip and line, the line for a market gone from
-// the directory, and the fold that says what a profile's numbers mean.
+// field's value, a number or a range in its unit, each price with its count, a beta market's chip
+// and line, the line for a market gone from the directory, and the fold that says what a profile's
+// numbers mean.
 
 import { type Market, previewOf } from '@foundationforest/markets'
 
-import { colorIn, iconOf } from '../avatar.ts'
+import { colorFor } from '../avatar.ts'
 import type { Check } from '../filter.ts'
 import type { ListedApp } from '../lists.ts'
 import { parse, type Store } from '../store.ts'
-import { icon } from './icons.ts'
+import { icon, marketIconOf } from './icons.ts'
 import { html, type Raw, type Site, urls } from './template.ts'
 
 /**
@@ -168,23 +169,26 @@ export const isGone = (site: Site, market: string | null): market is string => m
 export const goneHtml = (market: string): Raw => html`<p class="s">Its market, ${inWords(market)}, is no longer in the markets directory, so nothing here counts.</p>`
 
 /**
- * A market's avatar, the app's: its icon on its color, by the rule the app shares (../avatar.ts), or
- * its name's first letter when the table names no icon for it. Solid for the market itself and for
- * a role that offers; light (`look`) for a role that requests. Hidden from screen readers: the name
- * beside it says it.
+ * A market's avatar: its icon on its color, the icon its market file names and the color its number
+ * gives (../avatar.ts), or its name's first letter when it names none. Solid for the market itself
+ * and for a role that offers; light (`look`) for a role that requests. Hidden from screen readers:
+ * the name beside it says it.
  */
 export function avatarHtml(site: Site, market: string | null, o: { look?: boolean; size?: 'xs' | 'lg' } = {}): Raw {
   if (!market) return html``
-  return html`<span class="${['av', o.size, o.look && 'look'].filter(Boolean).join(' ')}" style="--h:${colorOf(site, market)}" aria-hidden="true">${marketIcon(market)}</span>`
+  return html`<span class="${['av', o.size, o.look && 'look'].filter(Boolean).join(' ')}" style="--h:${colorOf(site, market)}" aria-hidden="true">${marketIcon(site, market)}</span>`
 }
 
-/** A market's color, by the rule the app shares: the directory's, else its first choice. */
-export const colorOf = (site: Site, market: string) => colorIn(site.colors, market)
+/** A market's color, by its number in its market file (../avatar.ts); a market the directory no longer lists has none. */
+export const colorOf = (site: Site, market: string) => colorFor(site.markets.market(market)?.number)
 
-/** A market's icon, filled, or its name's first letter when the table names none for it. */
-export function marketIcon(market: string): Raw {
-  const name = iconOf(market)
-  return name ? icon(name, 'fill') : html`<span class="letter">${market.charAt(0).toUpperCase()}</span>`
+/**
+ * A market's icon, filled, the one its market file names; its name's first letter when it names
+ * none, or one this index's copy of Phosphor lacks (icons.ts).
+ */
+export function marketIcon(site: Site, market: string): Raw {
+  const name = site.markets.market(market)?.icon
+  return (name && marketIconOf(name)) || html`<span class="letter">${market.charAt(0).toUpperCase()}</span>`
 }
 
 /** A profile's avatar: solid when its role's listings are offers, light when they are requests. */
@@ -250,30 +254,52 @@ export const placeHtml = (v: unknown): Raw =>
   html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}<a href="${mapUrl(p)}">${placeText(p)}${icon('arrow-up-right', 'bold', 'xs')}</a>`)}`
 
 /**
- * Money as people write a price, as the app does (app src/show.ts, priceParts), in English's number
- * format, this page having no reader's own: the amount in its currency, $30, €12.50, as written when
- * the amount is no number or the currency no code, 30 coins; and what it is for, "per hour", or
- * nothing for the whole deal. None for a value that is not money.
+ * An amount in its currency, as people write a price, as the app does (app src/show.ts, priceParts),
+ * in English's number format, this page having no reader's own: $30, €12.50, MX$1,300; as written
+ * when the amount is no number or the currency no code, 30 coins.
  */
-export function priceParts(money: unknown): { amount: string; per: string } | null {
-  if (!money || typeof money !== 'object' || Array.isArray(money) || !('amount' in money) || !('currency' in money)) return null
-  const m = money as { amount: unknown; currency: unknown; per?: unknown }
-  const n = Number(m.amount)
-  let amount = `${String(m.amount)} ${String(m.currency)}`
-  if (typeof m.amount === 'string' && m.amount.trim() !== '' && Number.isFinite(n)) {
+export function amountText(amount: unknown, currency: unknown): string {
+  const n = Number(amount)
+  if (typeof amount === 'string' && amount.trim() !== '' && Number.isFinite(n)) {
     try {
-      amount = new Intl.NumberFormat('en', { style: 'currency', currency: String(m.currency), trailingZeroDisplay: 'stripIfInteger' }).format(n)
+      return new Intl.NumberFormat('en', { style: 'currency', currency: String(currency), trailingZeroDisplay: 'stripIfInteger' }).format(n)
     } catch {
       // Not a currency code: as it was written.
     }
   }
-  return { amount, per: typeof m.per === 'string' && m.per ? `per ${m.per}` : '' }
+  return `${String(amount)} ${String(currency)}`
 }
 
-/** Money in one line: "$30 per hour". */
-const moneyText = (money: unknown) => {
+/** A word for several of a `per`: "lessons", "classes", a person's "people". */
+export const perPlural = (per: string) => (per === 'person' ? 'people' : /(s|x|z|ch|sh)$/.test(per) ? `${per}es` : `${per}s`)
+
+/**
+ * Money as people write a price: its amount in its currency (amountText); and what it is for, "per
+ * hour", or for a pack, its count of its per, "for 5 lessons", or nothing for the whole deal. None
+ * for a value that is not money.
+ */
+export function priceParts(money: unknown): { amount: string; per: string } | null {
+  if (!money || typeof money !== 'object' || Array.isArray(money) || !('amount' in money) || !('currency' in money)) return null
+  const m = money as { amount: unknown; currency: unknown; per?: unknown; count?: unknown }
+  const per = typeof m.per === 'string' && m.per ? m.per : ''
+  const count = Number.isInteger(m.count) ? (m.count as number) : 1
+  return { amount: amountText(m.amount, m.currency), per: !per ? '' : count > 1 ? `for ${count} ${perPlural(per)}` : `per ${per}` }
+}
+
+/** Money in one line: "$30 per hour", "MX$1,300 for 5 lessons". */
+export const moneyText = (money: unknown) => {
   const p = priceParts(money)
   return p ? [p.amount, p.per].filter(Boolean).join(' ') : ''
+}
+
+/**
+ * Each price a listing gives, in its writer's order: its price is always a list of them in the
+ * markets' format; one held as a single money, as before it, is a list of one. Only those that are
+ * money.
+ */
+export function pricesOf(body: { [key: string]: unknown }): Array<{ amount: string; currency: string; per?: string; count?: number }> {
+  const held = body.price === undefined ? [] : Array.isArray(body.price) ? body.price : [body.price]
+  return held.filter((m): m is { amount: string; currency: string; per?: string; count?: number } => priceParts(m) !== null && typeof m.amount === 'string' && typeof m.currency === 'string')
 }
 
 /** A field's value as words on a page: each of the markets' nine types, read by its shape. */
@@ -308,12 +334,26 @@ export function unitText(unit: string, n: string): string {
   return n !== '1' ? words : words === 'people' ? 'person' : words.replace(/s$/, '')
 }
 
-/** A number field's value as stored, in its unit: "45 minutes"; each of a list in its unit, joined by commas. */
+/**
+ * One number or one range in its unit: "45 minutes"; a range from one number to another, "9 to 11
+ * years", or with an end left out, for no limit that way, "18 years and over", "11 years and under".
+ */
+function oneNumber(v: unknown, unit: string): string {
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    const { from, to } = v as { from?: unknown; to?: unknown }
+    if (typeof from === 'string' && typeof to === 'string') return `${from} to ${to} ${unitText(unit, to)}`
+    if (typeof from === 'string') return `${from} ${unitText(unit, from)} and over`
+    if (typeof to === 'string') return `${to} ${unitText(unit, to)} and under`
+  }
+  const n = valueText(v)
+  return n ? `${n} ${unitText(unit, n)}` : ''
+}
+
+/** A number field's value as stored, in its unit, a number or a range (oneNumber); each of a list so, joined by commas. */
 export const numberText = (v: unknown, unit: string) =>
   (Array.isArray(v) ? v : [v])
-    .map(valueText)
+    .map((x) => oneNumber(x, unit))
     .filter(Boolean)
-    .map((n) => `${n} ${unitText(unit, n)}`)
     .join(', ')
 
 /** A field's value as words, by its market's type for it: a choice by its labels, a number in its unit, a file as nothing (it is drawn as a photo), the rest by its shape. */
@@ -332,13 +372,17 @@ export function firstLine(text: string, max: number): string {
   return `${(cut.lastIndexOf(' ') > max / 2 ? cut.slice(0, cut.lastIndexOf(' ')) : cut).replace(/[\s,.;:]+$/, '')}…`
 }
 
-/** A listing's price as words, "$20 per hour", when it has one. */
-export const priceText = (body: { [key: string]: unknown }): string => moneyText(body.price)
+/** A listing's first price as words, "$20 per hour", when it has one. */
+export const priceText = (body: { [key: string]: unknown }): string => moneyText(pricesOf(body)[0])
 
-/** A listing's price as a card and its page draw it: the amount, and what it is for under it. */
+/**
+ * A listing's price as a card draws it: its first price, the amount, and what it is for under it,
+ * then how many more it gives, "+2 more", which its own page shows.
+ */
 export function priceHtml(body: { [key: string]: unknown }): Raw {
-  const p = priceParts(body.price)
-  return p ? html`<span class="price"><span class="d">${p.amount}</span>${p.per ? html`<span class="xs">${p.per}</span>` : ''}</span>` : html``
+  const [first, ...more] = pricesOf(body)
+  const p = priceParts(first)
+  return p ? html`<span class="price"><span class="d">${p.amount}</span>${p.per ? html`<span class="xs">${p.per}</span>` : ''}${more.length ? html`<span class="xs">+${more.length} more</span>` : ''}</span>` : html``
 }
 
 /**
@@ -419,10 +463,18 @@ export function aggregateOf(s: Shown): { [key: string]: unknown } | null {
   return { '@type': 'AggregateRating', ratingValue: s.ratings.value, bestRating: 10, worstRating: 1, ratingCount: s.ratings.count }
 }
 
-/** A listing as a schema.org Offer, at its page, with its photos and its seller's rating. */
+/**
+ * A listing as a schema.org Offer, at its page, with its photos, each of its prices, and its
+ * seller's rating. A price with a per is a price for its count of it, as its reference quantity.
+ */
 export function offerOf(r: Result, base: string): { [key: string]: unknown } {
   const body = r.listing.body
-  const price = body.price as { amount?: string; currency?: string } | undefined
+  const prices = pricesOf(body).map((p) => ({
+    '@type': 'UnitPriceSpecification',
+    price: p.amount,
+    priceCurrency: p.currency,
+    ...(typeof p.per === 'string' && { referenceQuantity: { '@type': 'QuantitativeValue', value: Number.isInteger(p.count) ? p.count : 1, unitText: p.per } }),
+  }))
   const rating = aggregateOf(r)
   return {
     '@type': 'Offer',
@@ -431,7 +483,7 @@ export function offerOf(r: Result, base: string): { [key: string]: unknown } {
     ...(r.listing.photos.length > 0 && { image: r.listing.photos }),
     ...(typeof body.description === 'string' && { description: body.description }),
     seller: personOf(r.profile, base),
-    ...(price?.amount && price.currency && { price: price.amount, priceCurrency: price.currency }),
+    ...(prices.length > 0 && { priceSpecification: prices }),
     ...(rating && { aggregateRating: rating }),
   }
 }

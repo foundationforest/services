@@ -45,12 +45,12 @@ new one, never stops it. Every step checks what it did, and the run passes only 
    MCP server and holding the connection folder's key; and the connection found from the seed, its
    entry locked to its own key and the MCP server's.
 6. **The MCP server:** the seller's AI reads `markets` and writes a listing, `listing/offer`, a
-   description, and 2 USD when the market has a price, signed by its access key and paid at its
-   price; the buyer's AI finds it with `search` and messages the seller, the buyer's balance down by
-   the message's price and its copy's, at `sent/<id>` in the buyer's folder, each by its bytes, and
-   the seller's as it was; the seller's AI reads its inbox (the message counted, with the buyer's
-   market, role and face check as the index shows them) and replies the same way; the buyer's AI
-   reads the reply.
+   description, and a price of 2 USD, a list of one, when the market has a price, signed by its
+   access key and paid at its price; the buyer's AI finds it with `search` and messages the seller,
+   the buyer's balance down by the message's price and its copy's, at `sent/<id>` in the buyer's
+   folder, each by its bytes, and the seller's as it was; the seller's AI reads its inbox (the
+   message counted, with the buyer's market, role and face check as the index shows them) and
+   replies the same way; the buyer's AI reads the reply.
 7. **The review:** the buyer's AI writes `review/offer`, scoring the seller 10 and naming the
    listing.
 8. **The index** shows both profiles counted under the face key, the listing listed, the review
