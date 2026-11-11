@@ -35,7 +35,7 @@ import { createServer } from 'node:http'
 
 const port = Number(process.env.FAKE_DIDIT_PORT || 8090)
 const faceWorkflow = process.env.FAKE_DIDIT_FACE_WORKFLOW_ID || '2faaca36-58b4-49d7-90d7-2b9cf002d173'
-const idWorkflow = process.env.FAKE_DIDIT_ID_WORKFLOW_ID || 'bfbdb912-d2f5-41d8-827c-4304e8209d24'
+const idWorkflow = process.env.FAKE_DIDIT_ID_WORKFLOW_ID || '4ddd9ce6-5d8c-4984-9833-5e2b612f30b2'
 
 /** Each session it opened, oldest first: its workflow, its status, and for an ID session the name it makes up. */
 const opened = new Map<string, { workflow: string; status: string; seen: boolean; lastName?: string }>()
