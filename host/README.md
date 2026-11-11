@@ -11,8 +11,10 @@ passes the standard's host check
 keeps copies: the entries signed for each profile (a locked one as an envelope only the keys it was
 locked to open), its inbox entries, locked too, and the files its current entries name. Anyone can
 copy a folder out; the main way is the person's app reading every entry and file and writing them to
-another host. The only things here no key signed are a folder's balance of credits and an inbox
-entry's outside: its sender signs inside the lock. No key of yours, no account.
+another host. The only things here no key signed are a folder's balance of credits, an inbox
+entry's outside (its sender signs inside the lock) and, if you turn it on, the morning email: once a
+day, in your morning, a count of what's new on the profiles you chose, sent to your email address,
+never what a message says ([Email](#email)). No key of yours, no account.
 
 ## How it works
 
@@ -23,9 +25,11 @@ host's code lives with whoever runs it, and the host check keeps it honest.
   answers. It checks every entry, inbox entry and file as the standard says before it keeps
   anything.
 - **The front** (`src/host.ts`), the only part the internet reaches, answers `GET /` with one line
-  saying what this is, answers the credit routes, and hands every other request, untouched, to the
-  host API: one server, on one port. The credits stand in front of the host API, never inside it:
-  the host API knows only the three hooks it asks, so each part is tested, and changes, alone.
+  saying what this is, answers the credit routes and, with Resend's key, the email routes
+  (`src/email.ts`), and hands every other request, untouched, to the host API: one server, on one
+  port. The credits stand in front of the host API, never inside it: the host API knows only the
+  three hooks it asks, so each part is tested, and changes, alone. The email stands there too, and
+  reads what the host API holds as any reader does.
 
 **Who writes.** The host API takes an entry signed by the folder's main key, or by an access key the
 folder's current profile entry here lists with `write`; any other key is refused (`unlisted`), and
@@ -62,6 +66,7 @@ bucket, a read is a redirect to a short-lived link straight to the bytes there.
 | `files/`, or a bucket | The files, on disk or, with `FILES=s3`, in any S3-compatible bucket. It serves only the bytes `host.sqlite` lists as stored |
 | `credits/credits.sqlite` | The spent list, the reference of each buy it was paid for, its sponsors' bill, the balances, and the id of each entry it took a price for |
 | `credits/key.der` | The credit key |
+| `email/email.sqlite` | The morning email's: each email address turned on, and what goes with it ([Email](#email)) |
 
 - A new number, an entry's or an inbox entry's, is the larger of the last plus 1 and the clock in
   microseconds, so a rebuilt `host.sqlite` or folder file never reuses one, unless the clock is set
@@ -152,6 +157,64 @@ folder's balance, or refuses it (`refused`, with the price and the balance); not
 recipient. It keeps nothing of which folder paid for which inbox entry: one already here is refused
 by its id (`duplicate`) before its price, so sent again it costs nothing.
 
+### Email
+
+The morning email is off until a person turns it on, in their app. Then, once a day in their
+morning, this host emails them a count of what's new on the profiles they chose, with a button that
+opens the app, and never what a message says: the host cannot open one. The host sends it, since it
+already sees what arrives, through Resend's API.
+
+**Turning it on,** in two calls:
+
+1. The app sends an email address, a time zone and the profiles to count, each signed by its main
+   key over `forest email\n<origin>\n<profile>\n<email address>` (`client/email.ts`), so nobody
+   gets counts for profiles that are not theirs. Each is a folder here whose profile entry names a
+   market and a role, which name it in the email. The host emails a 6-digit code, and answers an id.
+2. The app sends the id and the code. A code works for 15 minutes, and five wrong ones delete it.
+
+The id is the app's, and in every stop link: with it the app changes the profiles and the time zone,
+which needs no code, or turns it off. A profile counts for one email address at a time: confirming
+one, or a change, takes its profiles away from any other, and one left with none is deleted. So a
+new email address is turned on as the first was, with a new code, and the old one goes once it
+confirms.
+
+**Each morning,** between 8:00 and 9:00 in the person's time zone, looking every quarter hour, the
+host counts what arrived since its last email to that address (at first, since it was confirmed),
+at most the 30 days it keeps an inbox entry:
+
+| What | Counted |
+|---|---|
+| Messages | The inbox entries that arrived for each profile |
+| Reviews, vouches, reports | The entries this host took at `review/<id>`, `vouch/<id>` or `report/<id>`, in any folder, whose `subject` is one of the profiles: once each, a changed one again, a deleted one not |
+
+Something new: one email. Nothing new: none. One a day at most, by the day where the person is, and
+Resend's idempotency key, `<id>/<that day>`, takes that day's email once.
+
+**The email** is from `Forest <notify@forest.foundation>`, its subject `3 new on Forest`: "You have
+3 new messages and 1 review.", then "On your Tutoring tutor and Goods seller.", each profile with
+something new named by its market and role; an Open Forest button to the app; and at the foot "You
+turned this on in Forest. Stop these emails". Light HTML, with a text version. Its stop link opens a
+page with one Stop button, and its `List-Unsubscribe` header gives a mail app's own one-tap
+Unsubscribe (RFC 8058).
+
+**What it keeps,** in `email/email.sqlite`, and nothing else:
+
+| What | For how long |
+|---|---|
+| For each email address turned on: its id, the email address, its time zone, the profiles' addresses, when it was confirmed and when it last sent | Until it is turned off |
+| Until it is confirmed: its code, when that was sent, and the wrong tries | Until it is confirmed; all of it is deleted if that is not within 15 minutes |
+| In memory only: when codes went to each email address | A day, so nobody floods one; a restart forgets it |
+
+- **With email on, this host learns which profiles are one person's, and that person's email
+  address.** It publishes neither: readers and indexes still see each profile on its own.
+- **Turning it off deletes all of it,** at once, from the app or the stop link: the file overwrites
+  what it deletes (SQLite's `secure_delete`), so none of it stays there. Only the times codes went
+  stay in memory, up to a day: forgetting them at a stop would let anyone stop and start past the
+  limits.
+- **It keeps no count:** each morning it works them out from the inbox entries and entries it holds
+  anyway.
+- **Resend sees each email it sends:** the email address, the counts and the profiles' names.
+
 ## Its API
 
 | Route | What | Refused |
@@ -168,9 +231,15 @@ by its id (`duplicate`) before its price, so sent again it costs nothing.
 | `POST /credits/buy` | A buy's bytes, as `application/private-token-generic-batch-request`, with `Forest-Payment`, a ticket or a balance; answers its blind signatures | `not_a_buy`, `too_many` (over `MAX_BUY`), `bad_payment`, `not_paid` (402, with what to pay) |
 | `POST /credits/spend` | `{ folder, credits }`, 1 to 100 credits in base64url, all into that folder or none; answers `{ folder, credits }`, the balance, up to six decimals | `bad_request`, `credit` (402: one does not hold, or twice), `spent` (409) |
 | `GET /credits/balance/<folder>` | `{ folder, credits }` | `bad_request` |
+| `POST /email` | `{ email, timeZone, profiles: [{ profile, sig }] }`: emails a code to the email address; answers `{ id }` | `bad_request`, `not_signed` (a profile's main key did not sign it for this email address here), `not_here` (no folder here with a market and a role), `too_soon` (429: past the limits on codes), `not_sent` (502: Resend did not take it) |
+| `POST /email/confirm` | `{ id, code }`: turns it on; answers `{ id }` | `bad_request`, `code` (wrong, or expired) |
+| `POST /email/<id>` | `{ timeZone, profiles }`, listed as for `POST /email`: changes them, with no code; answers `{ id }` | `unknown` (404), `bad_request`, `not_signed`, `not_here` |
+| `GET /email/stop/<id>` | A page with one Stop button | |
+| `POST /email/stop/<id>` | Turns it off, deleting all of it; answers a page saying so, whatever the id | |
 
-A credit route asked with another method answers `method` (405), and a POST body over 512 KB
-`too_big` (413). A line that fails in a way none of the standard's codes names answers `invalid`.
+A credit or email route asked with another method answers `method` (405), and a POST body over
+512 KB, 64 KB for an email route, `too_big` (413). The email routes are here only with
+`RESEND_API_KEY`; without it, they are the host API's 404. A line that fails in a way none of the standard's codes names answers `invalid`.
 This host's own codes, `invalid` and the credit routes', are in `src/codes.ts`, which an app can
 import; the standard's checks are the standard's to list.
 
@@ -178,7 +247,7 @@ import; the standard's checks are the standard's to list.
 
 Every number is set in this directory: `src/host.ts` (`choice`), `src/plug.ts` (its `DEFAULT_*`,
 `MAX_HEADER_BYTES`), `src/credits.ts` (`MILLIONTHS`, `KILOBYTE`, `SPEND_MAX`), `src/storage.ts`
-(`LINK_SECONDS`), or a setting.
+(`LINK_SECONDS`), `src/email.ts` (`emailChoice`), or a setting.
 
 - **One credit is one US cent,** and a price is our cost divided by 0.6: 40% of it is our margin.
   The cost is keeping a gigabyte 10 years at Railway's prices:
@@ -216,16 +285,22 @@ Every number is set in this directory: `src/host.ts` (`choice`), `src/plug.ts` (
   names. It refuses no write by its own choice but for its price, an inbox entry's included: no
   other rate limit. **Who may read:** anyone, any folder and any inbox, for free; the
   main way is an index reading every page, or an app reading one profile.
+- **The morning email:** from `Forest <notify@forest.foundation>`, through Resend with a
+  sending-only key, its button to https://app.forest.foundation. It looks every **15 minutes** and
+  sends between **8:00 and 9:00** where the person is. A code works for **15 minutes**, and **5**
+  wrong ones delete it; codes go to one email address at most once a **minute** and **5** times a
+  day, and **100** an hour from the whole host. At most **50** profiles an email address. When
+  Resend answers 429, it asks again up to **3** times.
 - **Public:** every entry here (a locked one as an envelope), every file, any folder's balance, the
-  directory. **Secret:** the credit key and the bucket's key. **Kept, not published:** what
-  `credits/credits.sqlite` holds.
+  directory. **Secret:** the credit key, the bucket's key and Resend's key. **Kept, not published:**
+  what `credits/credits.sqlite` and `email/email.sqlite` hold.
 - **Where:** Railway, one replica of `deploy/Dockerfile` built from the repo root, the data
   directory on its volume, files in a Railway bucket (`FILES=s3`).
 
 ### Settings
 
-The credit key is a file on the volume, never a setting; the settings hold only the bucket's key and
-this host's choices. One that cannot be read (a partial bucket, a price not decimal text) stops it.
+The credit key is a file on the volume, never a setting; the settings hold only the bucket's key,
+Resend's key and this host's choices. One that cannot be read (a partial bucket, a price not decimal text) stops it.
 
 | Setting | Default | What |
 |---|---|---|
@@ -242,6 +317,9 @@ this host's choices. One that cannot be read (a partial bucket, a price not deci
 | `FILE_PER_KB` | `0.00031` | Each 1,000 bytes of a file, in the bucket, the same |
 | `MAX_BUY` | `1000` | The most credits one buy may ask for |
 | `SPONSORS` | none | The sponsors whose tickets pay for a buy, by address, comma-separated |
+| `RESEND_API_KEY` | none: no email | Resend's API key, `re_…`, a sending-only one. A secret |
+| `EMAIL_FROM` | `Forest <notify@forest.foundation>` | Who the morning email is from: an address at a domain Resend sends for |
+| `APP_URL` | `https://app.forest.foundation` | Where the email's button goes |
 
 ### Run it
 
@@ -252,6 +330,7 @@ npm run check && npm test
 DATA_DIR=./data PUBLIC_ORIGIN=http://127.0.0.1:8080 npm start
 npm run bench                         # its speed on this machine
 SEED=<64 hex characters> npm run check-host -- https://host.forest.foundation
+SEED=<64 hex characters> npm run check-email -- https://host.example you@example.com
 ```
 
 `check-host` runs the standard's host check, unchanged, against any host (`check-host.ts`): it
@@ -260,10 +339,15 @@ each inbox entry from `check/b`'s balance, and prints each check ok, unchecked o
 on a failure. Give it a `SEED` whose two folders hold credits, or the rest is unchecked. Each run
 costs `check/a` about 0.04 credits and `check/b` about 0.06.
 
+`check-email`, for developers, turns the morning email on at any host for `check/a` of `SEED`, asks
+for the code it emails, and leaves `check/a` one message from `check/b`, paid from its balance, so
+the next morning brings "1 new on Forest" (`check-email.ts`).
+
 `test/` covers, on loopback: the host check against the host API and the whole host, paying; the
 host API and its storage, the S3 driver and its links among it; every price, payment and refusal
-above; the credits client alone, against Cloudflare's own Privacy Pass issuer; and this README's own
-codes, as `src/codes.ts` lists them.
+above; the credits client alone, against Cloudflare's own Privacy Pass issuer; the morning email,
+on a clock the tests move, against a stand-in Resend; and this README's own codes, as
+`src/codes.ts` lists them.
 
 ## Promises
 
@@ -274,9 +358,11 @@ codes, as `src/codes.ts` lists them.
 - **Taking your own things down, and leaving, are free; joining costs a write.** A delete of a live
   entry costs nothing. A folder's first entry costs a write, whatever it is; later profile entries,
   which leave this host or update the list, the host API never asks about.
-- **No sign-ups, and no network-address logs.** A folder's balance is a number next to its address,
-  and an entry's signature is its only proof. Neither part logs or keeps a network address, and it
-  logs no request but one it answers 500: its path and the error's message, any address taken out.
+- **No sign-ups, and no network-address logs.** Reading and writing need nothing but your keys: a
+  folder's balance is a number next to its address, and an entry's signature is its only proof. The
+  morning email is the one optional extra, off until you turn it on. Neither part logs or keeps a
+  network address, and it logs no request but one it answers 500: its path and the error's message,
+  any address taken out.
 - **A credit says nothing about who paid for it, as long as the host gave everyone the same key.**
   It signed the credit blind and never saw its nonce.
 - **A credit is spent once, a buy's credits are signed once, and a write is paid once.** A second
@@ -318,6 +404,12 @@ codes, as `src/codes.ts` lists them.
   its entries later from that folder's own read, or the feed from the start.
 - **One machine, one replica:** more is a change to `src/storage.ts` first.
 - **Railway's own request logs exist.**
+- **The morning email counts only what this host takes:** a review written to another host, or a
+  message left only there, is not in it.
+- **Every inbox entry counts as a message,** a stranger's too: its sender is locked inside, so which
+  to show is the app's.
+- **A morning the host is down for sends nothing;** the next morning counts it.
+- **The limits on codes are in memory:** a restart forgets them.
 
 ## FAQ
 
@@ -341,6 +433,19 @@ at Cloudflare. The cost: 354 bytes a credit rather than 146, and one RSA signatu
 
 **Why is a credit never refunded?**
 A refund pays someone back, so the host would need to know whom, and a credit names nobody.
+
+**Why does the host send the email, and not the app?**
+Something has to run each morning while the app is closed, and the host already does: it sees each
+inbox entry and entry as it arrives, so it counts them without keeping a copy of anything.
+
+**Why does the stop link open a page, and not stop at once?**
+Mail scanners open every link in an email before the person does, so a link that stopped at once
+would stop the emails of people who never tapped it. A mail app's own Unsubscribe button, from the
+`List-Unsubscribe` header, stops them in one tap.
+
+**Why one email address per profile?**
+So a new email address needs no route of its own: it is turned on as the first was, and takes the
+profiles once its code confirms. And a person never gets two emails about one profile.
 
 **Can I run it at home?**
 Yes, once it is reachable with an address and HTTPS, which at home means a tunnel.

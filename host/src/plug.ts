@@ -257,6 +257,15 @@ export class Host {
     return this.page(this.storage.entriesAfter(after, options.profile), after)
   }
 
+  /**
+   * Every folder's stored entries after a cursor, each with its number, in the order taken, not
+   * paged: for code in this process that needs each entry's number, the morning email (email.ts).
+   * Read it to the end before anything waits.
+   */
+  entriesAfter(after = 0): Iterable<Row> {
+    return this.storage.entriesAfter(after)
+  }
+
   private page(rows: Iterable<Row>, after: number): Page {
     const lines: string[] = []
     let cursor = after

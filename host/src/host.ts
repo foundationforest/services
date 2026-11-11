@@ -4,8 +4,9 @@
 // and README.md says each in words.
 //
 // Around the host API, one thing only: a front that answers `GET /` with one line saying what this
-// is, sells and takes credits (credits.ts), and hands every other request, untouched, to the host
-// API, in the same process: one server, on one port.
+// is, sells and takes credits (credits.ts), turns the morning email on and off (email.ts) when it
+// has Resend's key, and hands every other request, untouched, to the host API, in the same process:
+// one server, on one port.
 //
 // Every write is paid for in credits, from its folder's balance here, at the price of what it
 // stores: the host API asks this host's choices (`entryChoice`, `fileChoice`, `inboxChoice`). An
@@ -35,6 +36,7 @@ import { PAYMENT_HEADER, challengeOf } from '../credits/credit.ts'
 import { keyAt, refuse } from '../credits/seller.ts'
 
 import { type Answer, BALANCE_PATH, BUY_PATH, Credits, DIRECTORY_PATH, SPEND_PATH, millionthsOf } from './credits.ts'
+import { Email, type EmailConfig, ID, STOPPED_PAGE, STOP_PAGE } from './email.ts'
 import { type EntryChoice, type FileChoice, type FileDriver, Host, type HostOptions, type InboxChoice, defaultFileChoice, logFailure } from './plug.ts'
 
 /** What `GET /` says: what this is, for anyone who opens it. */
@@ -78,6 +80,8 @@ export type Config = {
   sponsors: string[]
   /** What a kilobyte costs, in credits as decimal text: `entry` on the disk, `file` in the bucket. */
   rates: { entry: string; file: string }
+  /** The morning email, with Resend's key; none without it. */
+  email?: EmailConfig
 }
 
 /** The bucket's settings, with FILES=s3; the first four are needed. */
@@ -125,6 +129,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   millionthsOf('ENTRY_PER_KB', rates.entry)
   millionthsOf('FILE_PER_KB', rates.file)
   return {
+    ...emailConfig(env),
     dir,
     files: fileDriver(env),
     port: whole('PORT', env.PORT || '8080'),
@@ -134,6 +139,16 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     sponsors: (env.SPONSORS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     rates,
   }
+}
+
+/** The morning email's settings: none without RESEND_API_KEY. Neither error quotes the key. */
+function emailConfig(env: Record<string, string | undefined>): { email?: EmailConfig } {
+  const key = env.RESEND_API_KEY?.trim()
+  if (!key) return {}
+  if (!/^re_\S+$/.test(key)) throw new Error('RESEND_API_KEY is a Resend API key: re_…')
+  const app = (env.APP_URL || 'https://app.forest.foundation').trim()
+  if (!URL.canParse(app) || !['https:', 'http:'].includes(new URL(app).protocol)) throw new Error('APP_URL is the app’s address: https://…')
+  return { email: { key, from: (env.EMAIL_FROM || 'Forest <notify@forest.foundation>').trim(), app } }
 }
 
 /**
@@ -225,12 +240,16 @@ export type RunningHost = {
   url: string
   host: Host
   credits: Credits
+  /** The morning email, when it has Resend's key. */
+  email?: Email
   server: Server
   close(): Promise<void>
 }
 
 /** A credit route's body read whole: a buy of the most credits is a little over 260 bytes each. */
 const MAX_CREDIT_BODY = 512 * 1024
+/** An email route's body read whole: the most profiles, each signed, are under 10 KB. */
+const MAX_EMAIL_BODY = 64 * 1024
 const CORS = { 'access-control-allow-origin': '*' }
 
 function send(res: ServerResponse, answered: Answer): void {
@@ -238,12 +257,12 @@ function send(res: ServerResponse, answered: Answer): void {
   res.writeHead(answered.status, { ...CORS, 'content-type': answered.type ?? 'application/json' }).end(body)
 }
 
-async function readBytes(req: IncomingMessage): Promise<Uint8Array | undefined> {
+async function readBytes(req: IncomingMessage, max = MAX_CREDIT_BODY): Promise<Uint8Array | undefined> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     size += (chunk as Buffer).length
-    if (size > MAX_CREDIT_BODY) return undefined
+    if (size > max) return undefined
     chunks.push(chunk as Buffer)
   }
   return new Uint8Array(Buffer.concat(chunks))
@@ -296,7 +315,66 @@ function creditRoute(credits: Credits, path: string, req: IncomingMessage, res: 
   return true
 }
 
-export async function startHost(config: Config): Promise<RunningHost> {
+const EMAIL_STOP = /^\/email\/stop\/([^/]+)$/
+const EMAIL_CHANGE = /^\/email\/([^/]+)$/
+
+/** A JSON body, or undefined for one that is not. */
+function jsonOf(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(Buffer.from(bytes).toString('utf8'))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The email routes (email.ts), with the morning email on; false for any other path, which goes to
+ * the host API. The stop link's GET only shows its button: a mail scanner opens every link in an
+ * email, and stops nothing. An email address is only ever in a body, never in a path, which front
+ * doors log.
+ */
+function emailRoute(email: Email | undefined, path: string, req: IncomingMessage, res: ServerResponse): boolean {
+  const stop = EMAIL_STOP.exec(path)?.[1]
+  const change = stop === undefined && path !== '/email/confirm' ? EMAIL_CHANGE.exec(path)?.[1] : undefined
+  if (!email || (path !== '/email' && path !== '/email/confirm' && !(stop ?? change)?.match(ID))) return false
+  if (req.method === 'OPTIONS') {
+    req.resume()
+    res.writeHead(204, { ...CORS, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': 'content-type', 'access-control-max-age': '86400' }).end()
+    return true
+  }
+  if (stop && (req.method === 'GET' || req.method === 'POST')) {
+    req.resume()
+    if (req.method === 'POST') email.stop(stop)
+    send(res, req.method === 'GET' ? STOP_PAGE : STOPPED_PAGE)
+    return true
+  }
+  if (req.method !== 'POST' || stop) {
+    req.resume()
+    send(res, refuse('method', 405))
+    return true
+  }
+  readBytes(req, MAX_EMAIL_BODY)
+    .then(async (bytes) => {
+      if (!bytes) return send(res, refuse('too_big', 413))
+      const body = jsonOf(bytes)
+      send(res, path === '/email' ? await email.on(body) : path === '/email/confirm' ? email.confirm(body) : email.change(change!, body))
+    })
+    .catch((err: unknown) => {
+      if (!res.headersSent && !res.destroyed) {
+        // The id is the key to that email address's emails: never in the log.
+        logFailure(change ? '/email/<id>' : path, err)
+        res.writeHead(500, CORS)
+      }
+      res.end()
+    })
+  return true
+}
+
+/**
+ * The whole host. `test`, for tests only: a clock the host API and the morning email share, whose
+ * mornings the test runs itself (`email.morning()`), and a stand-in Resend.
+ */
+export async function startHost(config: Config, test: { now?: () => number; resendUrl?: string } = {}): Promise<RunningHost> {
   const creditsDir = join(config.dir, 'credits')
   mkdirSync(creditsDir, { recursive: true })
   const creditKey = await keyAt(join(creditsDir, 'key.der'))
@@ -308,11 +386,13 @@ export async function startHost(config: Config): Promise<RunningHost> {
   const host: Host = new PaidHost(credits, {
     dir: config.dir,
     files: config.files,
+    ...(test.now && { now: test.now }),
     ...choice,
     entryChoice: paidEntries(credits, () => host),
     fileChoice: paidFiles(credits),
     inboxChoice: paidInbox(credits),
   })
+  const email = config.email && new Email({ ...config.email, dir: join(config.dir, 'email'), origin: config.origin, host, now: test.now, resendUrl: test.resendUrl })
 
   // The host API's own server options, its request timeout among them, for every request here.
   const server = createServer(host.serverOptions(), (req, res) => {
@@ -329,6 +409,7 @@ export async function startHost(config: Config): Promise<RunningHost> {
       return void res.end(req.method === 'HEAD' ? undefined : LABEL)
     }
     if (creditRoute(credits, path, req, res)) return
+    if (emailRoute(email, path, req, res)) return
     void host.serve(req, res)
   })
   await new Promise<void>((resolve, reject) => {
@@ -336,17 +417,21 @@ export async function startHost(config: Config): Promise<RunningHost> {
     server.listen(config.port, resolve)
   })
   host.pruneEveryHour()
+  // A test's clock is not the real one, so a test runs its own mornings.
+  if (!test.now) email?.everyQuarterHour()
 
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     host,
     credits,
+    ...(email && { email }),
     server,
     async close() {
       await new Promise<void>((resolve) => {
         server.close(() => resolve())
         server.closeAllConnections()
       })
+      email?.close()
       await host.close()
       credits.close()
     },

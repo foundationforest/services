@@ -26,6 +26,7 @@
     "credits",
     "client",
     "test",
-    "check-host.ts"
+    "check-host.ts",
+    "check-email.ts"
   ]
 }

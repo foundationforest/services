@@ -1,5 +1,5 @@
 // The host's own codes, in one list: the host API's `invalid` and the front's, answered as
-// `{"error": "<code>"}` by a credit route. The code answers none of its own that is not here (they
+// `{"error": "<code>"}` by a credit route or an email route. The code answers none of its own that is not here (they
 // take a `Code`), README.md's Its API says each, and test/readme.test.ts holds the two together. An
 // app imports the list to say each code in its own words. It imports nothing, so an app in a
 // browser imports it as it is. The rest of the host API's codes are the standard's checks, which
@@ -19,6 +19,13 @@ export const CODES = [
   'spent',
   'method',
   'too_big',
+  // The front's morning email (email.ts).
+  'not_signed',
+  'not_here',
+  'too_soon',
+  'code',
+  'unknown',
+  'not_sent',
 ] as const
 
 /** One of the host's own codes. */
