@@ -729,6 +729,17 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
       assert.deepEqual(await idStamp(h, session, await stampNumber()), { status: 403, body: { error: 'declined' } })
       assert.equal(h.payments.state(last), i < ID_TRIES - 1 ? 'held' : 'cancelled', `try ${i + 1}`)
     }
+    // Only its newest session ends it: an older one refused after the last was opened leaves the hold
+    // for that one, which may still pass.
+    const late = await h.paid()
+    const lateTries = []
+    for (let i = 0; i < ID_TRIES; i++) lateTries.push(await h.idSession(passedId('fay', doc('Fay'), { status: 'Declined' }), late))
+    h.ids.set(lateTries.at(-1)!, passedId('fay', doc('Fay')))
+    for (const older of lateTries.slice(0, -1)) assert.deepEqual(await idStamp(h, older, await stampNumber()), { status: 403, body: { error: 'declined' } })
+    assert.equal(h.payments.state(late), 'held', 'an older try ends nothing')
+    assert.equal((await idStamp(h, lateTries.at(-1)!, await stampNumber())).status, 200, 'and the newest gives its stamp')
+    assert.equal(h.payments.state(late), 'taken')
+
     // An unfinished try, or a session that is none of the ID check's, ends nothing.
     const unfinished = await h.paid()
     const sessions = []

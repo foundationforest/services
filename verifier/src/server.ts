@@ -41,7 +41,8 @@
 // One payment opens up to ID_TRIES ID sessions in its first day (store.ts), and gives one ID stamp,
 // from one of the sessions it opened. Its $5 is only held until then: taken when it gives a new ID
 // stamp; cancelled when it gives an ID stamp back, when its check is refused as a person seen before,
-// when its last try is refused, and by the hourly search two days after it was held (`sweepHolds`).
+// when its newest session, its last try, is refused, and by the hourly search two days after it was
+// held (`sweepHolds`).
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
@@ -482,7 +483,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
    * stamp, and the hold is taken. One ID stamp a person, ever. The session that signed it, sent again
    * within its hour, gives it with its fields beside it, using nothing. A refusal that ends the
    * payment cancels its hold: a person seen before, always; any other refusal of a session that will
-   * never pass, once the payment has no try left.
+   * never pass, only for the payment's newest session, its last try, so an older one asked about later
+   * never cancels a hold whose newest session may still pass.
    */
   async function idStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     const payments = forSale()
@@ -495,7 +497,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       return await signId({ sessionId, stampNumber, payment, hash, again, gift })
     } catch (error) {
       const ends = error instanceof HttpError && error.status === 403 && !NOT_A_TRY.has(error.message)
-      if (!again && ends && (error.message === 'duplicate_document' || store.triesLeft(hash) === 0)) {
+      if (!again && ends && (error.message === 'duplicate_document' || store.lastTry(sessionId))) {
         store.useUp(hash)
         await cancel(payments, payment)
       }

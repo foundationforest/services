@@ -94,8 +94,9 @@ The hold is cancelled, and the payment used up:
 
 - when it gives an ID stamp back;
 - when its check is refused as a person seen before, `duplicate_document`;
-- when its last try is refused as a session that will never pass: any `403` but `not_approved`,
-  `unknown_session` and `wrong_workflow`;
+- when its newest session, its last try, is refused as a session that will never pass: any `403` but
+  `not_approved`, `unknown_session` and `wrong_workflow`. An older session refused later ends
+  nothing, since the newest may still pass;
 - by the hourly search: every hour, the sweep asks Stripe for the holds it made two days ago or more
   that still hold the money (`status:'requires_capture' AND metadata['check']:'id' AND created<…`),
   checks each one's own status, since a search can lag a minute behind, and cancels it.
@@ -208,7 +209,7 @@ One SQLite file (a database in a single file), seven tables:
 | `sessions` | The SHA-256 of each session id that gave a stamp, with the stamp number and which check (`face` or `id`) | A session gives its stamp to one stamp number, and again only within its hour |
 | `stamps` | The first stamp each key signed for each stamp number: the number, the key, the facts, the signature | A lost stamp comes back |
 | `to_delete` | The id of each session that gave a stamp and is not yet deleted in Didit, its check, and when it was first signed | The hour, and the sweep. It goes once Didit has deleted it |
-| `opened` | The id of each session opened that gave no stamp and is not yet deleted in Didit, its check, when it opened, and for an ID session the SHA-256 of its payment while that payment is not used up | The day, the sweep, and a payment's stamp from its own sessions only. It goes once Didit has deleted it, or moves to `to_delete` |
+| `opened` | The id of each session opened that gave no stamp and is not yet deleted in Didit, its check, when it opened, and for an ID session which of its payment's tries it is and the SHA-256 of that payment while it is not used up | The day, the sweep, a payment's stamp from its own sessions only, and its last try. It goes once Didit has deleted it, or moves to `to_delete` |
 | `gifts`, `id_gifts` | Each stamp number given its face stamp's gift, or its ID stamp's, with a hash of the buy | One gift a person from each check; the same buy gets the same ticket |
 | `payments` | The SHA-256 of each payment that opened an ID session, how many sessions it opened, and whether it is used up | One payment, three sessions at most and one ID stamp |
 

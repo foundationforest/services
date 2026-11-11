@@ -10,11 +10,12 @@
 //                  hour after, and the sweep deletes it in Didit, keeping its face template, once the
 //                  hour is over; it goes once Didit has deleted the session
 //   opened         for each session the verifier opened that gave no stamp and is not yet deleted in
-//                  Didit: its id, which check it was, when it opened, and for an ID session the
-//                  SHA-256 of the payment that opened it, while that payment is not used up, so it is
-//                  stamped only with that payment, and the sweep deletes it in Didit, face and all, a
-//                  day after it opened; it goes once Didit has deleted the session, or moves to
-//                  `to_delete` once it gives a stamp
+//                  Didit: its id, which check it was, when it opened, and for an ID session which of its
+//                  payment's tries it was and the SHA-256 of that payment, while it is not used up, so
+//                  it is stamped only with that payment, its refusal ends the payment only when it was
+//                  the last try, and the sweep deletes it in Didit, face and all, a day after it opened;
+//                  it goes once Didit has deleted the session, or moves to `to_delete` once it gives a
+//                  stamp
 //   gifts          each stamp number given its face stamp's gift (gift.ts), with a hash of the buy it
 //                  was given for, so a person gets one, and the same buy asked again gets the same
 //                  ticket
@@ -83,6 +84,7 @@ export class Store {
   readonly #deleted: StatementSync
   readonly #addOpened: StatementSync
   readonly #opener: StatementSync
+  readonly #tryOf: StatementSync
   readonly #stale: StatementSync
   readonly #closed: StatementSync
   readonly #unlink: StatementSync
@@ -101,7 +103,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID;
       DROP TABLE IF EXISTS fingerprints;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
@@ -119,8 +121,10 @@ export class Store {
     this.#addToDelete = this.#db.prepare('INSERT OR IGNORE INTO to_delete (session_id, kind, signed_at) VALUES (?, ?, ?)')
     this.#due = this.#db.prepare('SELECT session_id, kind FROM to_delete WHERE signed_at <= ? ORDER BY signed_at')
     this.#deleted = this.#db.prepare('DELETE FROM to_delete WHERE session_id = ?')
-    this.#addOpened = this.#db.prepare('INSERT OR IGNORE INTO opened (session_id, kind, opened_at, payment) VALUES (?, ?, ?, ?)')
+    // An ID session's try: how many its payment has opened, this one among them.
+    this.#addOpened = this.#db.prepare('INSERT OR IGNORE INTO opened (session_id, kind, opened_at, payment, try) VALUES (?, ?, ?, ?, (SELECT tries FROM payments WHERE hash = ?))')
     this.#opener = this.#db.prepare('SELECT payment FROM opened WHERE session_id = ?')
+    this.#tryOf = this.#db.prepare('SELECT try FROM opened WHERE session_id = ?')
     this.#stale = this.#db.prepare('SELECT session_id, kind FROM opened WHERE opened_at <= ? ORDER BY opened_at')
     this.#closed = this.#db.prepare('DELETE FROM opened WHERE session_id = ?')
     this.#unlink = this.#db.prepare('UPDATE opened SET payment = NULL WHERE payment = ?')
@@ -214,9 +218,14 @@ export class Store {
     return dropped
   }
 
-  /** A session the verifier opened, at `at`; for an ID session, with the payment that opened it. */
+  /** A session the verifier opened, at `at`; for an ID session, after its try was taken, with the payment that opened it. */
   opened(sessionId: string, kind: Check, at: number, payment?: Uint8Array): void {
-    this.#addOpened.run(sessionId, kind, at, payment ?? null)
+    this.#addOpened.run(sessionId, kind, at, payment ?? null, payment ?? null)
+  }
+
+  /** Whether this session took its payment's last try: the newest the payment can open. */
+  lastTry(sessionId: string): boolean {
+    return this.#tryOf.get(sessionId)?.try === ID_TRIES
   }
 
   /** The payment that opened this session, while it is not used up. */
