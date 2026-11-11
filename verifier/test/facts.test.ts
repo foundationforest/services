@@ -15,7 +15,7 @@ import { b64u, hex } from '@foundationforest/folders'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
 import { poseidon3 } from 'poseidon-lite/poseidon3'
 
-import { FIELDS_DEPTH, faceFacts, fieldsRoot, fieldsText, h, idFacts, person } from '../src/facts.ts'
+import { FIELDS_DEPTH, faceFacts, fieldsRoot, fieldsText, h, idFacts, person, samePerson, words } from '../src/facts.ts'
 
 const vectors = JSON.parse(readFileSync(new URL('vectors.json', import.meta.url), 'utf8'))
 
@@ -82,14 +82,33 @@ test('the fields: their order does not matter, a missing one is simply absent, a
   assert.throws(() => fieldsRoot({ ...full, first_name: 'Ada' }), RangeError, 'one more than 2^8')
 })
 
-test('the person, for the fingerprint: the name read first and last, else in full, written one way, and a real birth date', () => {
-  // NFKC folds the full-width letters and the combining accent into one way of writing it.
-  assert.deepEqual(person({ first_name: '\uff2a\uff4f\uff53e\u0301', last_name: 'MAR\u00cdA  N\u00fa\u00f1ez', date_of_birth: '1990-04-01' }), { name: 'josé maría núñez', birth: '1990-04-01' })
-  assert.deepEqual(person({ first_name: ' Ada ', full_name: 'Augusta Ada King', date_of_birth: '1815-12-10' }), { name: 'augusta ada king', birth: '1815-12-10' }, 'no last name: the full name')
-  assert.deepEqual(person({ full_name: 'Besa  Krasniqi', date_of_birth: '1970-01-01', issuing_state: 'XKX' }), { name: 'besa krasniqi', birth: '1970-01-01' })
+test('who an ID check read: the words of its first and full name, NFKD, marks removed, lower case, letters only, and a real birth date', () => {
+  // NFKD folds the full-width letters and splits the accents off, which go.
+  assert.deepEqual(words('\uff2a\uff4f\uff53e\u0301 MAR\u00cdA'), ['jose', 'maria'])
+  assert.deepEqual(words("  O'Brien-Núñez\tÅsa 3rd "), ['o', 'brien', 'nunez', 'asa', 'rd'], 'anything but a letter parts words')
+  assert.deepEqual(words(null), [])
+  assert.deepEqual(person({ first_name: 'María José', last_name: 'López', full_name: 'María José López', date_of_birth: '1990-04-01' }), { first: ['maria', 'jose'], full: ['maria', 'jose', 'lopez'], birth: '1990-04-01' })
+  assert.deepEqual(person({ full_name: 'Besa  Krasniqi', date_of_birth: ' 1970-01-01 ', issuing_state: 'XKX' }), { first: [], full: ['besa', 'krasniqi'], birth: '1970-01-01' }, 'a full name alone will do')
   for (const birth of ['1990-02-30', '01/04/1990', '0099-01-01']) assert.equal(person({ full_name: 'Ada Lovelace', date_of_birth: birth }), null, birth)
-  assert.equal(person({ date_of_birth: '1990-04-01' }), null, 'no name')
+  assert.equal(person({ last_name: 'Lovelace', date_of_birth: '1990-04-01' }), null, 'no first or full name')
+  assert.equal(person({ first_name: '—', date_of_birth: '1990-04-01' }), null, 'no letter in it')
   assert.equal(person(null), null)
+})
+
+test('the same person: the same birth date, and every word of the first name in their full name, or every word of their full name in this one', () => {
+  const read = (first: string, full: string, birth = '1990-01-01') => person({ first_name: first, full_name: full, date_of_birth: birth })!
+  const user = (fullName: string | null, birth: string | null = '1990-01-01') => ({ fullName, birth })
+  assert.equal(samePerson(read('Carlos', 'Carlos Islas Garza'), user('Carlos Islas')), true)
+  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('Carlos Islas Garza')), true)
+  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('carlos islas', ' 1990-01-01 ')), true)
+  assert.equal(samePerson(read('Eva', 'Eva Islas'), user('Ana Islas')), false, 'twins')
+  assert.equal(samePerson(read('María Fernanda', 'María Fernanda López'), user('María José López')), false)
+  assert.equal(samePerson(read('Carlos', 'Carlos Islas', '1991-01-01'), user('Carlos Islas')), false, 'another birth date')
+  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('Carlos Islas', null)), false, 'no birth date')
+  assert.equal(samePerson(read('Lena', 'Lena Ortiz'), user(null)), true, 'no name: the birth date alone')
+  assert.equal(samePerson(read('Lena', 'Lena Ortiz'), user(' — ')), true, 'a name with no letter is none')
+  assert.equal(samePerson(person({ full_name: 'Besa Krasniqi', date_of_birth: '1990-01-01' })!, user('Besa Krasniqi Berisha')), false, 'no first name read: only the other way')
+  assert.equal(samePerson(person({ full_name: 'Besa Krasniqi Berisha', date_of_birth: '1990-01-01' })!, user('Besa Krasniqi')), true)
 })
 
 test('poseidon-lite is the standard’s Poseidon: it makes the stamp number keys/ makes, and pins', () => {

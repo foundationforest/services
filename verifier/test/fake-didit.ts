@@ -9,10 +9,12 @@
 //   GET  /v3/session/{id}/decision/     what the session came to, by the `sandbox_scenario` it was
 //                                       opened with, as Didit's sandbox application does: `review_…` is
 //                                       In Review, `decline_…` Declined, anything else (or none) Approved;
-//                                       one liveness step of that status, with a selfie; on the ID
-//                                       workflow, one document step and one face match of that status
-//                                       too, the document read as a name made up for that session, a
-//                                       fixed birth date and GBR. A session it never opened is a 404.
+//                                       one liveness step of that status, with a selfie, matching no face,
+//                                       and for a scenario that names `duplicated_face`, its risk
+//                                       DUPLICATED_FACE; on the ID workflow, one document step and one
+//                                       face match of that status too, the document read as a name made
+//                                       up for that session, a fixed birth date and GBR. A session it
+//                                       never opened is a 404.
 //   DELETE /v3/session/{id}/delete/     deletes the session: its decision and its photo are gone; 200
 //                                       {session_id, face_retention_outcome}, `retained_with_user` when
 //                                       the body asks to retain the face (`retain_face_embeddings`), else
@@ -20,6 +22,7 @@
 //   GET  /photo/{id}                    the selfie: a few bytes that are no photo. The verifier runs with
 //                                       FACE_MODEL=stand-in beside it, one embedding for everyone, so
 //                                       nothing reads them as a face.
+//   GET  /v3/users/{vendor_data}/       a 404: no session matches a face, so the verifier asks of no user.
 //
 // So every check passes unless a scenario says otherwise, each ID check for a person no one has seen.
 // It listens on 127.0.0.1 only, and the verifier takes the stand-in embedding only with a Didit on
@@ -35,7 +38,7 @@ const faceWorkflow = process.env.FAKE_DIDIT_FACE_WORKFLOW_ID || '2faaca36-58b4-4
 const idWorkflow = process.env.FAKE_DIDIT_ID_WORKFLOW_ID || 'bfbdb912-d2f5-41d8-827c-4304e8209d24'
 
 /** Each session it opened, oldest first: its workflow, its status, and for an ID session the name it makes up. */
-const opened = new Map<string, { workflow: string; status: string; lastName?: string }>()
+const opened = new Map<string, { workflow: string; status: string; seen: boolean; lastName?: string }>()
 const decision = /^\/v3\/session\/([0-9a-f-]{36})\/decision\/$/
 const deletion = /^\/v3\/session\/([0-9a-f-]{36})\/delete\/$/
 const photo = /^\/photo\/([0-9a-f-]{36})$/
@@ -59,7 +62,8 @@ const server = createServer((req, res) => {
       const workflow = String(body.workflow_id ?? '')
       if (workflow !== faceWorkflow && workflow !== idWorkflow) return send(400, { workflow_id: ['Workflow not found.'] })
       const id = randomUUID()
-      const session = { workflow, status: statusOf(String(body.sandbox_scenario ?? '')) }
+      const scenario = String(body.sandbox_scenario ?? '')
+      const session = { workflow, status: statusOf(scenario), seen: scenario.includes('duplicated_face') }
       opened.set(id, workflow === idWorkflow ? { ...session, lastName: `Standin ${randomBytes(6).toString('hex')}` } : session)
       return send(201, { session_id: id, url: `https://fake-didit.invalid/session/${id}`, status: 'Not Started', workflow_id: workflow })
     }
@@ -89,7 +93,15 @@ const server = createServer((req, res) => {
         id_verifications: session.lastName
           ? [{ ...step, first_name: 'Sam', last_name: session.lastName, full_name: `Sam ${session.lastName}`, date_of_birth: '1990-01-01', issuing_state: 'GBR' }]
           : null,
-        liveness_checks: [{ ...step, method: 'PASSIVE', reference_image: `http://127.0.0.1:${port}/photo/${match[1]}`, matches: [] }],
+        liveness_checks: [
+          {
+            ...step,
+            ...(session.seen && { warnings: [{ feature: 'LIVENESS', risk: 'DUPLICATED_FACE', log_type: 'error' }] }),
+            method: 'PASSIVE',
+            reference_image: `http://127.0.0.1:${port}/photo/${match[1]}`,
+            matches: [],
+          },
+        ],
         face_matches: session.lastName ? [step] : null,
       })
     }

@@ -14,7 +14,7 @@ import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
 import { RECIPES } from './facts.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
-import { SWEEP_EVERY_MS, errorKind, handler, sweep } from './server.ts'
+import { HOLDS_EVERY_MS, SWEEP_EVERY_MS, errorKind, handler, sweep, sweepHolds } from './server.ts'
 import { Store } from './store.ts'
 import { type Payments, StripeClient } from './stripe.ts'
 
@@ -25,14 +25,17 @@ import { type Payments, StripeClient } from './stripe.ts'
  * and test/readme.test.ts holds the two together.
  */
 export const CONSENT =
-  'The check costs $5, paid to the Open Forest Foundation through Stripe, and covers up to three tries. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes them at Didit, which still keeps your full name, date of birth and country, and a template of your face for up to ten years, so it can tell if you come back. Forest keeps none of this: only a one-way fingerprint of your name and date of birth next to your stamp number, so the same person is not checked twice, and the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep; a profile that shows it says only that you were checked.'
+  'The check holds $5 through Stripe for the Open Forest Foundation and covers up to three tries in a day: the $5 is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no photo) for up to ten years, so it can tell if you come back; a try that gives no stamp is deleted a day after it began, its face with it. Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep; a profile that shows it says only that you were checked.'
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
   verifierName: string
-  diditApiKey: string
+  /** The face check's Didit application's key: each check is its own application, since a face search sees only its own. */
+  diditFaceApiKey: string
   /** The face check's workflow: liveness, with Didit's face search. */
   diditFaceWorkflowId: string
+  /** The ID check's Didit application's key. */
+  diditIdApiKey: string
   /** The ID check's workflow: document, liveness and face match. */
   diditIdWorkflowId: string
   diditBaseUrl: string
@@ -84,7 +87,7 @@ function whole(name: string, value: string, min: number): number {
  * no variable: it is the seed file beside the database (`SEED_FILE`).
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const missing = ['DIDIT_API_KEY', 'DIDIT_FACE_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID'].filter((name) => !env[name])
+  const missing = ['DIDIT_FACE_API_KEY', 'DIDIT_FACE_WORKFLOW_ID', 'DIDIT_ID_API_KEY', 'DIDIT_ID_WORKFLOW_ID'].filter((name) => !env[name])
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
 
   let gift: Gift | undefined
@@ -110,8 +113,9 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   }
   return {
     verifierName: env.VERIFIER_NAME || VERIFIER_NAME,
-    diditApiKey: env.DIDIT_API_KEY!,
+    diditFaceApiKey: env.DIDIT_FACE_API_KEY!,
     diditFaceWorkflowId: env.DIDIT_FACE_WORKFLOW_ID!,
+    diditIdApiKey: env.DIDIT_ID_API_KEY!,
     diditIdWorkflowId: env.DIDIT_ID_WORKFLOW_ID!,
     diditBaseUrl,
     faceModel,
@@ -133,7 +137,11 @@ export type Verifier = {
   sponsor?: string
   /** Whether this start made the verifier's seed, finding none beside the database. */
   madeSeed: boolean
-  /** Deletes in Didit the sessions signed an hour ago or more, as the sweep does every minute. */
+  /**
+   * What the sweep does every minute: deletes in Didit the sessions signed an hour ago or more, and
+   * those that gave no stamp and opened a day ago or more; and, an hour after its last answered search,
+   * cancels the old holds at Stripe.
+   */
   sweep(): Promise<void>
   /** Stops taking requests, and closes the file. */
   close(): Promise<void>
@@ -159,11 +167,10 @@ export async function startVerifier(
   const { seed, made: madeSeed } = loadOrMakeSeed(join(dirname(config.databasePath), SEED_FILE))
   const stampKeys = { face: serviceKey(await seed.mix(INFO.face)), id: serviceKey(await seed.mix(INFO.id)) }
   const keys = { face: stampKeys.face.address, id: stampKeys.id.address }
-  const fingerprintKey = await seed.mix(INFO.fingerprint)
   const sponsor = await seed.ed25519(INFO.sponsor)
-  const didit = { apiKey: config.diditApiKey, baseUrl: config.diditBaseUrl }
-  const faceCheck = overrides.faceCheck ?? new DiditClient({ ...didit, workflowId: config.diditFaceWorkflowId, check: 'face' })
-  const idCheck = overrides.idCheck ?? new DiditClient({ ...didit, workflowId: config.diditIdWorkflowId, check: 'id' })
+  const baseUrl = config.diditBaseUrl
+  const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey: config.diditFaceApiKey, baseUrl, workflowId: config.diditFaceWorkflowId, check: 'face' })
+  const idCheck = overrides.idCheck ?? new DiditClient({ apiKey: config.diditIdApiKey, baseUrl, workflowId: config.diditIdWorkflowId, check: 'id' })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
   const payments = overrides.payments ?? (config.stripe && new StripeClient(config.stripe))
 
@@ -191,7 +198,6 @@ export async function startVerifier(
       store,
       embedder,
       stampKeys,
-      fingerprintKey,
       about,
       gift,
       appOrigins: config.appOrigins,
@@ -200,10 +206,16 @@ export async function startVerifier(
       now: overrides.now,
     }),
   )
-  // One sweep at a time: a slow Didit never has two deleting the same sessions.
+  // One sweep at a time: a slow Didit never has two deleting the same sessions. The holds' search
+  // runs at the first sweep and an hour after each one Stripe answered.
+  const clock = overrides.now ?? Date.now
+  let searchedAt = -Infinity
   let sweeping: Promise<void> | undefined
   const sweepNow = () =>
-    (sweeping ??= sweep({ store, checks: { face: faceCheck, id: idCheck }, now: overrides.now, log: overrides.log }).finally(() => {
+    (sweeping ??= (async () => {
+      await sweep({ store, checks: { face: faceCheck, id: idCheck }, now: clock, log: overrides.log })
+      if (payments && clock() - searchedAt >= HOLDS_EVERY_MS && (await sweepHolds({ payments, now: clock, log: overrides.log }))) searchedAt = clock()
+    })().finally(() => {
       sweeping = undefined
     }))
   const log = overrides.log ?? ((line: string) => console.log(line))

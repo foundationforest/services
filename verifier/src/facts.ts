@@ -1,4 +1,4 @@
-// What a stamp's facts are made from, and the ID check's fingerprint.
+// What a stamp's facts are made from, and whether an ID check read the same person as a Didit user.
 //
 // A stamp is the standard's (proofs/verification/README.md, "The stamp and the verification"): the
 // person's stamp number and one field element, `facts`, signed with the standard's `signStamp`.
@@ -23,21 +23,19 @@
 // The stamp carries `fields` beside facts (server.ts), the fields as text (`fieldsText`), so the
 // person keeps what it was made from and anyone can make it again.
 //
-// The fingerprint is how the verifier knows a person came to the ID check before without keeping who
-// they are: HMAC-SHA256, under a key derived from the verifier's seed, of the standard's canonical
-// JSON of `{birth, name}`: the name Didit reads, first and last, else the full name, in Unicode NFKC,
-// lower case, one space between words; the birth date as YYYY-MM-DD. A reader of the file without the
-// key cannot test a guessed name against it. The country is left out on purpose: a renewed document,
-// or another country's, is the same person.
+// Who an ID check read is how the verifier knows a person came to it before, while keeping nothing
+// of who they are: Didit's face search finds the faces like this one, and the verifier compares what
+// this check read with each matched face's Didit user (`samePerson`). A name alone never decides,
+// so strangers with one name and birth date both pass; a face alone never decides, so twins pass.
+// The country is left out on purpose: a renewed document, or another country's, is the same person.
 
-import { createHash, createHmac } from 'node:crypto'
+import { createHash } from 'node:crypto'
 
 import { BN254_R, isFieldElement } from '@foundationforest/keys'
-import { canonical } from '@foundationforest/folders'
 import { poseidon2 } from 'poseidon-lite/poseidon2'
 import { poseidon3 } from 'poseidon-lite/poseidon3'
 
-import type { Document } from './didit.ts'
+import type { Document, User } from './didit.ts'
 
 /**
  * The fields tree's depth: 2^8 = 256 leaves. Didit documents 17 top-level text fields and about 140
@@ -53,8 +51,8 @@ export const RECIPES = {
   fieldsRoot: `the root of a Poseidon Merkle tree of depth ${FIELDS_DEPTH} over the fields beside the stamp: one leaf Poseidon([h(name), h(value)]) for each, in the order of their names, then leaves of 0; each node Poseidon([left, right])`,
 } as const
 
-/** What the ID check reads of a person, written one way: what its fingerprint is made from. */
-export type Person = { name: string; birth: string }
+/** Who an ID check read: the words of its first name and of its full name, and its birth date as YYYY-MM-DD. */
+export type Person = { first: string[]; full: string[]; birth: string }
 
 /** h(x): SHA-256 of x's bytes (text as UTF-8), read as a big-endian integer, reduced into the field. */
 export function h(x: Uint8Array | string): bigint {
@@ -108,22 +106,31 @@ export function daysOf(birth: string): number | null {
   return new Date(ms).toISOString().slice(0, 10) === birth ? ms / 86_400_000 : null
 }
 
-/** One way to write a name: Unicode NFKC, lower case, one space between words. */
-const oneWay = (name: string) => name.normalize('NFKC').toLowerCase().split(/\s+/).filter(Boolean).join(' ')
+/** The words of a name: Unicode NFKD, its marks removed, lower case, letters only. */
+export const words = (name: string | null | undefined): string[] =>
+  (name ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().match(/\p{L}+/gu) ?? []
 
-/** The person a document step read, written one way; null when the name or a real birth date is missing. */
+/** Who a document step read; null when it read no name, first or full, or no real birth date. */
 export function person(document: Document | null): Person | null {
   if (!document) return null
-  const [first = '', last = '', full = ''] = [document.first_name, document.last_name, document.full_name]
-  const name = oneWay(first.trim() && last.trim() ? `${first} ${last}` : full)
+  const [first, full] = [words(document.first_name), words(document.full_name)]
   const birth = (document.date_of_birth ?? '').trim()
-  if (!name || daysOf(birth) === null) return null
-  return { name, birth }
+  if ((first.length === 0 && full.length === 0) || daysOf(birth) === null) return null
+  return { first, full, birth }
 }
 
-/** The fingerprint of a person: HMAC-SHA256 under `key` of canonical `{birth, name}`. */
-export function fingerprint(key: Uint8Array, person: Person): Uint8Array {
-  return new Uint8Array(createHmac('sha256', key).update(canonical({ birth: person.birth, name: person.name })).digest())
+/** Every one of `some`, at least one, is among `all`. */
+const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word))
+
+/**
+ * Whether this check read the same person as a Didit user its face matched: the same birth date, and
+ * names that fit, every word of this check's first name in the user's full name, or every word of
+ * the user's full name in this check's. A user with no name: the birth date alone decides.
+ */
+export function samePerson(person: Person, user: User): boolean {
+  if (user.birth?.trim() !== person.birth) return false
+  const theirs = words(user.fullName)
+  return theirs.length === 0 || within(person.first, theirs) || within(theirs, person.full)
 }
 
 /** A field element as decimal text, as the apps write a stamp number: no sign, no leading zero. */
