@@ -163,13 +163,17 @@ and again from that session within its hour.
 
 ### Its keys
 
-`GET /` gives its name, its two keys as addresses each with its facts recipe, `h`, `fieldsRoot`, and
-`consent`, the text an app shows before the ID check ([The consent screen](#didit)), in canonical
-JSON (one exact way of writing it); with gifts, also
+`GET /` gives, in canonical JSON (one exact way of writing it): its name; its two keys as addresses,
+each with its facts recipe, and the ID key with `forSale` and `testPayments`; `h`; `fieldsRoot`;
+`consent`, the text an app shows before the ID check ([The consent screen](#didit)); and with gifts,
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is derived from it
   ([keys](https://github.com/foundationforest/standard/blob/main/keys/README.md#the-recipe)).
+- **`forSale` and `testPayments`,** each `true` or `false`, say whether the ID check is for sale,
+  which it is with `STRIPE_SECRET_KEY`, and whether its payments run on a test key, `sk_test_…` or
+  `rk_test_…`, which charges nobody ([Stripe](#stripe)), so an app shows both before anyone taps.
+  Without a key both are `false`; they change only when the verifier starts with another key.
 - **Two keys, one per check,** so a reader can trust or weigh them apart.
 - **One secret,** 32 random bytes made on its own machine at the first start that finds none (the
   standard's `newSeed`), kept in `verifier-seed.json` beside its database, readable by its own user
@@ -446,8 +450,9 @@ birth dates among them), the ID check's hold, its tries, its cancels and its clo
 Didit clients' requests, verifications made from the stamps and checked against the published keys,
 the facts vectors and the fields tree leaf by leaf, what is read of Didit's ID report, stamps asked
 back and given back, the secret, the sweep, the raw file, the face models on three portraits, both
-gifts' tickets taken by the host's own seller, what a failure at Stripe or Didit logs, the fetch's
-retries, and this README's consent screen and codes, as the code has them.
+gifts' tickets taken by the host's own seller, what `GET /` says of the ID check's sale, what a
+failure at Stripe or Didit logs, the fetch's retries, and this README's consent screen and codes, as
+the code has them.
 
 ## Promises
 

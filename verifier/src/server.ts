@@ -3,8 +3,10 @@
 // client's address).
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
-//                       signs its stamps, as an address, and its facts recipe; what h is; `consent`,
-//                       the text an app shows before the ID check; and, with gifts,
+//                       signs its stamps, as an address, and its facts recipe; for the ID check also
+//                       `forSale` and `testPayments`, whether it is for sale and whether its payments
+//                       run on a test key; what h is; `consent`, the text an app shows before the ID
+//                       check; and, with gifts,
 //                       {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
 //   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
 //                                                    person back to returnUrl, an app's own page, when

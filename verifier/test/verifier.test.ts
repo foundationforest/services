@@ -89,7 +89,8 @@ type Harness = {
 
 /**
  * The verifier, with `seed` in its seed file beside the database when given; with none there, it
- * makes one. Its ID check is for sale, through a stand-in Stripe, unless `forSale` is false.
+ * makes one. Its ID check is for sale, through a stand-in Stripe, unless `forSale` is false: then
+ * through Stripe itself if its settings give a key, and otherwise not.
  */
 async function start(options: { env?: Record<string, string | undefined>; seed?: string; dbPath?: string; forSale?: boolean } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'verifier.sqlite')
@@ -185,7 +186,7 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     assert.deepEqual(JSON.parse(text), {
       name: VERIFIER_NAME,
       face: { key: keys.face, facts: 'Poseidon([h(model), h(embedding)])' },
-      id: { key: keys.id, facts: 'Poseidon([h(model), h(embedding), fieldsRoot])' },
+      id: { key: keys.id, facts: 'Poseidon([h(model), h(embedding), fieldsRoot])', forSale: true, testPayments: true },
       h: RECIPES.h,
       fieldsRoot:
         'the root of a Poseidon Merkle tree of depth 8 over the fields beside the stamp: one leaf Poseidon([h(name), h(value)]) for each, in the order of their names, then leaves of 0; each node Poseidon([left, right])',
@@ -196,6 +197,24 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     assert.equal((await fetch(h.verifier.url + '/', { method: 'POST' })).status, 405)
   } finally {
     await h.verifier.close()
+  }
+})
+
+test('GET /: whether the ID check is for sale, and whether its payments run on a test key, as its Stripe key says, before anyone asks Stripe', async () => {
+  for (const [key, forSale, testPayments] of [
+    [undefined, false, false],
+    ['sk_test_51standin', true, true],
+    ['rk_test_51standin', true, true],
+    ['sk_live_51standin', true, false],
+    ['rk_live_51standin', true, false],
+  ] as const) {
+    const h = await start({ forSale: false, env: { STRIPE_SECRET_KEY: key, STRIPE_ID_PRICE: key && 'price_1standin' } })
+    try {
+      const { id } = await about(h)
+      assert.deepEqual({ forSale: id.forSale, testPayments: id.testPayments }, { forSale, testPayments }, key ?? 'no key')
+    } finally {
+      await h.verifier.close()
+    }
   }
 })
 

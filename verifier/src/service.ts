@@ -183,7 +183,11 @@ export async function startVerifier(
   const about = canonical({
     name: config.verifierName,
     face: { key: keys.face, facts: RECIPES.face },
-    id: { key: keys.id, facts: RECIPES.id },
+    // Beside the ID key, as the ID check is the one sold: whether it is for sale, through the same
+    // Stripe its routes use, so this never says so while they answer `not_for_sale`; and whether its
+    // payments run on a test key. Both always there, false without a key, so an app reads them with
+    // no rule for one left out.
+    id: { key: keys.id, facts: RECIPES.id, forSale: payments !== undefined, testPayments: payments?.test ?? false },
     h: RECIPES.h,
     fieldsRoot: RECIPES.fieldsRoot,
     consent: CONSENT,

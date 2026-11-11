@@ -47,6 +47,8 @@ export const PAYMENT = /^cs_(test|live)_[A-Za-z0-9]{1,200}$/
 const MARK = 'id'
 
 export interface Payments {
+  /** Whether its key is a test key, `sk_test_…` or `rk_test_…`: its payments take only Stripe's test cards, and charge nobody. */
+  readonly test: boolean
   /** A Checkout page for one ID check, sending the person back to `returnUrl`: the payment's id, and the page. */
   checkout(returnUrl: string): Promise<{ payment: string; url: string }>
   /**
@@ -120,12 +122,14 @@ function intentOf(value: unknown): Intent | null {
 type Settled = 'done' | 'succeeded' | 'canceled'
 
 export class StripeClient implements Payments {
+  readonly test: boolean
   readonly #secretKey: string
   readonly #price: string
   readonly #baseUrl: string
 
   /** `baseUrl` is for tests, against a stand-in on this machine; it is no setting. */
   constructor(options: { secretKey: string; price: string; baseUrl?: string }) {
+    this.test = /^(sk|rk)_test_/.test(options.secretKey)
     this.#secretKey = options.secretKey
     this.#price = options.price
     this.#baseUrl = (options.baseUrl ?? 'https://api.stripe.com').replace(/\/+$/, '')
