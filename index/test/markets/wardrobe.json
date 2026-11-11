@@ -1,7 +1,10 @@
 {
   "name": "wardrobe",
-  "description": "People sell clothes and shoes they own, picked up in person or shipped.",
+  "summary": "People sell clothes and shoes they own.",
+  "description": "Items are picked up in person or shipped.",
   "status": "live",
+  "icon": "coat-hanger",
+  "number": 11,
   "roles": [
     { "role": "seller", "listings": "offers" },
     { "role": "buyer", "listings": "requests" }

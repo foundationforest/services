@@ -1,6 +1,7 @@
 // The markets, read through the markets package from the tests' own (world.ts): a listing that does
 // not fit its market (the package's checkEntry, whose own tests are the markets repo's) is kept, not
-// listed, and says why, a place in the shape before the markets' point and radius among them; a
+// listed, and says why, a place in the shape before the markets' point and radius among them, a
+// single price where a price is always a list, and a range that runs backwards; a
 // field holding several places, found near any of them; and a profile whose market has left the
 // directory, out of search, its pages saying so.
 
@@ -29,6 +30,8 @@ test('a listing that does not fit its market is kept, not listed, and its profil
     at(tutor, 'listing/good', { description: 'Maths, any level.', subjects: ['maths'] }),
     at(tutor, 'listing/odd', { description: 'Maths.', colour: 'red' }),
     at(tutor, 'listing/old', { description: 'Maths, in Madrid.', mode: ['in-person'], place: { lat: '40.42', lon: '-3.70', precisionKm: 1, area: 'Madrid', online: true } }),
+    at(tutor, 'listing/one', { description: 'Maths.', price: { amount: '30', currency: 'USD', per: 'hour' } }),
+    at(tutor, 'listing/back', { description: 'Maths.', ages: { from: '11', to: '9' } }),
     at(student, 'listing/physics', { description: 'Help with physics, please.', subjects: ['physics'] }),
   ])
   const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
@@ -46,6 +49,11 @@ test('a listing that does not fit its market is kept, not listed, and its profil
   assert.deepEqual(odd.body, { description: 'Maths.', colour: 'red' })
   const old = t.listings.find((p) => p.address.endsWith('/listing/old'))!
   assert.deepEqual([old.listed, old.why], [false, 'place takes { lat, lon, radiusKm, area }: lat and lon as decimal text, radiusKm in whole kilometres, and area a name if wanted'])
+  const why = (id: string) => t.listings.find((p) => p.address.endsWith(`/listing/${id}`))!
+  assert.equal(why('one').listed, false)
+  assert.match(why('one').why!, /^price takes a list of one or more, each different, each \{ amount, currency, per, count \}/)
+  assert.equal(why('back').listed, false)
+  assert.match(why('back').why!, /^ages takes .*from no more than to/)
   assert.equal(t.listings.find((p) => p.address.endsWith('/listing/good'))!.listed, true)
   assert.equal('why' in t.listings.find((p) => p.address.endsWith('/listing/good'))!, false)
   await i.close()

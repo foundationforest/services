@@ -5,16 +5,16 @@
 // not listed has its page too, saying why, as its profile's page does.
 //
 // Drawn as the app would show it: its photos in a row that scrolls sideways, the description's first
-// line as its heading, the price under it, the rest of the description, its other fields as label
-// and value (a choice by its labels, a number in its unit, a place as a link to its point on the
-// map, the contact last), who posted it in one card linking to their profile, and the button to
-// message them at the foot; a listing whose market has left the directory says so, and its back
-// link goes home. On a laptop, the photos on the left, a big one with small ones under it, and the
-// rest on the right.
+// line as its heading, each of its prices under it, with its count for a pack, the rest of the
+// description, its other fields as label and value (a choice by its labels, a number or a range in
+// its unit, a place as a link to its point on the map, the contact last), who posted it in one card
+// linking to their profile, and the button to message them at the foot; a listing whose market has
+// left the directory says so, and its back link goes home. On a laptop, the photos on the left, a
+// big one with small ones under it, and the rest on the right.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { choiceText, colorOf, fieldLabel, fieldsOf, firstHost, firstLine, goneHtml, isGone, labelsOf, type Listing, listingOf, messageHtml, messageOf, nameHtml, numberText, offerOf, placeHtml, priceParts, priceText, profileAvatar, rateHtml, type Result, type Shown, shownFor, typesOf, unitsOf, valueText } from './common.ts'
+import { choiceText, colorOf, fieldLabel, fieldsOf, firstHost, firstLine, goneHtml, isGone, labelsOf, type Listing, listingOf, messageHtml, messageOf, nameHtml, numberText, offerOf, placeHtml, priceParts, pricesOf, priceText, profileAvatar, rateHtml, type Result, type Shown, shownFor, typesOf, unitsOf, valueText } from './common.ts'
 import { icon } from './icons.ts'
 import { backHtml, html, type Page, type Raw, urls } from './template.ts'
 
@@ -43,7 +43,7 @@ export type ListingPage = {
 
 const descriptionOf = (o: ListingPage) => (typeof o.listing.body.description === 'string' ? o.listing.body.description : '')
 
-/** The price, then the description's first line, cut short. */
+/** The first price, then the description's first line, cut short. */
 const headingOf = (o: ListingPage) => [priceText(o.listing.body), firstLine(descriptionOf(o), 60)].filter(Boolean).join(' · ') || 'A listing'
 
 /**
@@ -111,7 +111,7 @@ export const listing: Page<ListingPage> = {
     const drawn = ['description', 'price', 'contact', 'files']
     const names = [...o.fields.filter((n) => n in body), ...Object.keys(body).filter((n) => !o.fields.includes(n))].filter((n) => !drawn.includes(n) && o.types[n] !== 'file' && valueText(body[n]))
     const { head, rest } = headOf(descriptionOf(o))
-    const price = priceParts(body.price)
+    const prices = pricesOf(body).map(priceParts)
     const alt = descriptionOf(o)
     const contact = typeof body.contact === 'string' && body.contact ? body.contact : ''
     const value = (n: string) => (o.types[n] === 'choice' ? choiceText(body[n], o.labels[n]) : o.types[n] === 'place' ? placeHtml(body[n]) : o.units[n] ? numberText(body[n], o.units[n]) : valueText(body[n]))
@@ -119,7 +119,7 @@ export const listing: Page<ListingPage> = {
     const photos = o.listing.photos.length
       ? html`<div class="gal"${o.market ? html` style="--h:${colorOf(site, o.market)}"` : ''}>${o.listing.photos.map((src) => html`<a href="${src}"><img src="${src}" alt="${alt}" loading="lazy"></a>`)}</div>`
       : null
-    const info = html`<div class="info"><h1>${head || price?.amount || 'A listing'}</h1>${price ? html`<p class="cost"><span class="d big">${price.amount}</span>${price.per ? html` <span class="s">${price.per}</span>` : ''}</p>` : ''}${rest ? html`<p class="text">${rest}</p>` : ''}
+    const info = html`<div class="info"><h1>${head || prices[0]?.amount || 'A listing'}</h1>${prices.map((p) => html`<p class="cost"><span class="d big">${p!.amount}</span>${p!.per ? html` <span class="s">${p!.per}</span>` : ''}</p>`)}${rest ? html`<p class="text">${rest}</p>` : ''}
 ${o.listing.listed ? '' : html`<p class="red">Not listed: ${o.listing.why}.</p>`}${isGone(site, o.market) ? goneHtml(o.market) : ''}
 ${facts.length ? html`<dl class="card divide">${facts}</dl>` : ''}
 <a class="card poster" href="${urls(base).profile(o.profile)}">${profileAvatar(site, o.market, o.role)}<span class="what">${nameHtml(o.market, o.role, o.checks)}<span class="rated">${rateHtml(o)}</span></span>${icon('caret-right')}</a>

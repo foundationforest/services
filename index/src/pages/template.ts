@@ -11,8 +11,8 @@
 // imported: its colors, light and dark by the device's setting, since a page with no script has no
 // switch; its shapes, chips and badges; Figtree for words and Bricolage Grotesque for titles, prices
 // and scores, from the packages the app uses, served by this index at /fonts/ (web.ts); Phosphor's
-// icons, drawn into the page (icons.ts); each market's color and icon by the rule the app shares
-// (../avatar.ts). Phone first, one column; from 900px, a top bar and the laptop's columns.
+// icons, drawn into the page (icons.ts); each market's icon from its market file, and its color from
+// its number (../avatar.ts). Phone first, one column; from 900px, a top bar and the laptop's columns.
 
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url'
 
 import type { Markets } from '@foundationforest/markets'
 
-import { colorsFor } from '../avatar.ts'
 import type { ListedApp, Lists } from '../lists.ts'
 import type { Store } from '../store.ts'
 import { esc, html, Raw } from './html.ts'
@@ -31,11 +30,10 @@ export { esc, html, Raw } from './html.ts'
 /** What a page reads the store with, and `base`, where the pages are published, for the links its JSON gives. */
 export type Context = { store: Store; lists: Lists; markets: Markets; self: string; base: string }
 
-/** The site's fixed parts every page is drawn with: the markets, each market's color, and the apps. */
-export type Site = { markets: Markets; colors: Record<string, string>; apps: ListedApp[] }
+/** The site's fixed parts every page is drawn with: the markets, each market's icon and number among them, and the apps. */
+export type Site = { markets: Markets; apps: ListedApp[] }
 
-/** The site's fixed parts, each market's color by the directory's order. */
-export const siteOf = (markets: Markets, apps: ListedApp[]): Site => ({ markets, colors: colorsFor(markets.directory.markets.map((m) => m.name)), apps })
+export const siteOf = (markets: Markets, apps: ListedApp[]): Site => ({ markets, apps })
 
 export type Page<T> = {
   /** The page's name, which the stylesheet lays it out by. */
@@ -191,7 +189,7 @@ details.fold>summary>.i:last-child{color:var(--ink3)}details.fold[open]>summary>
 .filters{display:none;flex-direction:column;gap:20px;padding:16px;border-radius:22px;background:var(--card);box-shadow:var(--shadow)}.filters:target{display:flex}
 .group{display:flex;flex-direction:column;gap:8px}.group .s a{color:var(--forest);font-weight:600}.chips{display:flex;flex-wrap:wrap;gap:8px}
 .range{display:flex;align-items:center;gap:8px}.range .inp{flex:1;min-width:0}
-.radio{display:flex;align-items:center;gap:10px;min-height:32px;font-size:15px}.radio .r{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--edge);flex:none}.radio[aria-current]{font-weight:700}.radio[aria-current] .r{box-shadow:inset 0 0 0 5px var(--forest)}
+.radio{display:flex;align-items:center;gap:10px;min-height:32px;font-size:15px}.radio .r{width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--edge);flex:none}.radio[aria-current]{font-weight:700}.radio[aria-current] .r{box-shadow:inset 0 0 0 5px var(--forest)}.radio .xs{display:block;font-weight:400}
 .seg{display:flex;gap:4px;padding:4px;border-radius:14px;background:var(--sunk)}
 .seg label{position:relative;flex:1;display:inline-flex;align-items:center;justify-content:center;min-height:40px;border-radius:11px;font-size:15px;font-weight:600;color:var(--ink2);cursor:pointer}
 .found{display:flex;flex-direction:column;gap:12px}.count{display:flex;align-items:center;gap:8px}.count .s{flex:1}.count b{color:var(--ink)}

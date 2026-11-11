@@ -1,7 +1,10 @@
 {
   "name": "repairs",
-  "description": "People fix things in other people's homes, paid per hour or per job.",
+  "summary": "People fix things in other people's homes.",
+  "description": "Repairs are paid per hour or per job.",
   "status": "beta",
+  "icon": "wrench",
+  "number": 3,
   "roles": [
     { "role": "repairer", "listings": "offers" },
     { "role": "client", "listings": "requests" }

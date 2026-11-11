@@ -40,7 +40,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   await publishProfile(host.url, tutor)
   await publishProfile(host.url, student)
   const offer = `${tutor.key.address}/listing/maths`
-  await post(host.url, [at(tutor, 'listing/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], mode: ['online'], price: { amount: '25', currency: 'USD', per: 'hour' } })])
+  await post(host.url, [at(tutor, 'listing/maths', { description: 'Maths for secondary school, online.', subjects: ['maths'], levels: ['secondary'], mode: ['online'], price: [{ amount: '25', currency: 'USD', per: 'hour' }] })])
   await post(host.url, [at(student, 'review/maths', { subject: tutor.key.address, score: '8.5', text: 'Patient and clear.', listing: offer })])
 
   const keys = [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }]
