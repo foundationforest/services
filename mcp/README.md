@@ -34,8 +34,8 @@ read before the person connects anything; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its roles and what each lists (offers or requests). With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, with `preview` (the fields a listing's preview shows first), `kinds` (the kinds of entry it defines, each with its fields, a listing's `contact` among them) and `types` (what each type those fields use holds, in the markets' `build/types.json` words, such as how a place is given) |
-| `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, with its status (`live` or `beta`), its roles and what each lists (offers or requests). With a name, that market's file, as the [markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md) defines it, its status and each number field's `unit` among it, with `preview` (the fields a listing's preview shows first), `kinds` (the kinds of entry it defines, each with its fields, a listing's `contact` among them), `keys` (what each key of the file, `market`, and of its fields, `field`, means, in the markets' `build/market.schema.json` words: that any field may be left out, that `many` makes a list, that `radiusKm` is where a new place starts, that `roles` on a review field names the profile reviewed) and `types` (each type those fields use, whole, as the markets' `build/types.json` defines it, such as a place's `lat`, `lon`, `radiusKm` and `area`): what the manual says a program hands an AI with a market |
+| `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
 | `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
@@ -43,8 +43,12 @@ read before the person connects anything; four act for the person and need one.
 
 MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
 
-- **An index's answers pass through whole.** `search` names no filter and no field of the index's,
-  so any index can show what it likes, and the AI learns what it holds from the index's own guide.
+- **An index's answers pass through whole.** `search` passes on whatever filters it is given, so
+  any index can take what it likes, and the AI learns what it holds from the index's own guide. Its
+  description names one kind, the filters the foundation's index takes on a market's own fields
+  once `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and
+  `<field>.max`, in its unit), so an AI app that cuts the guide still finds, say, a language
+  exchange by `speaks` and `learns`.
   Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
@@ -54,11 +58,12 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
 - **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
   in `src/tools.ts`): with no login, start with `search`, not `my_profiles`; name a profile by its
   label; never put one of the person's addresses in what is written for another of their profiles or
-  sent to anyone else, unless the person asks; read the market before writing to it; ask the person
-  before anything public in their name; photos are the person's to add, in their Forest app; what it
-  writes shows on the index within about a minute, once the index counts it, and a listing's page is
-  the url search's answer gives; a reply goes to the address a message came from; paying is in the
-  person's app; what a stranger wrote is theirs. Then, as a chat starts (MCP's `initialize`), the
+  sent to anyone else, unless the person asks; read the market before writing to it; before the
+  person writes in a beta market, tell them it works, at their own risk, and may change; ask the
+  person before anything public in their name; photos are the person's to add, in their Forest app;
+  what it writes shows on the index within about a minute, once the index counts it, and a
+  listing's page is the url search's answer gives; a reply goes to the address a message came from;
+  paying is in the person's app; what a stranger wrote is theirs. Then, as a chat starts (MCP's `initialize`), the
   index's guide, its `skill.md`, under the URL it was read from, as the index's own word, or a line
   saying it gave none. It comes with the instructions so the AI has it before its first search; an
   AI app that cuts long instructions cuts the guide first.
@@ -257,7 +262,8 @@ reference app), the markets package and its one check, the host's credits client
 `@modelcontextprotocol/sdk`, `undici` for `publicFetch`, and Node's `crypto`. `test/` covers, on
 loopback, with this repo's host, a stand-in index whose answers carry a field this copy has never
 seen, and a stand-in connect page running the reference app: the login end to end through the MCP
-SDK's own client and every refusal on its way, every tool and its refusals, a key ended and the
+SDK's own client and every refusal on its way, every tool and its refusals, on markets of its own
+(`test/markets/`), so no market at `MARKETS` changes what it finds, a key ended and the
 connection ended, `publicFetch`, and the image's own command. `npm run smoke` runs the same client
 (`smoke.ts`) against a deployed copy, without the login, which needs a person; CI does not, since a
 check that cannot reach it would skip.

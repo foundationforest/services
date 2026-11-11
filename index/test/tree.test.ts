@@ -28,9 +28,9 @@ type Served = { index: string; root: string; time: number; signature: string; le
 type Leaves = { root: string; leaves: Array<{ profile: string; score: number }> }
 
 test('the tree, its signed root, and a reputation proof on a profile, by its root\'s age', async () => {
-  const tutor = await profile('tutoring/tutor', [first, second])
-  const students = [await profile('tutoring/student', [first]), await profile('tutoring/student', [first]), await profile('tutoring/student', [first])]
-  const later = await profile('tutoring/student', [first])
+  const tutor = await profile('lessons/tutor', [first, second])
+  const students = [await profile('lessons/student', [first]), await profile('lessons/student', [first]), await profile('lessons/student', [first])]
+  const later = await profile('lessons/student', [first])
   for (const p of [tutor, ...students, later]) await publishProfile(host.url, p)
   await post(host.url, students.map((s) => at(s, 'review/one', { subject: tutor.key.address, score: '9' })))
 
@@ -65,9 +65,9 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const prove = async (ls: Leaves['leaves'], against: Served) => {
     const r = await proveReputation({
       seed: tutor.seed,
-      labels: ['tutoring/tutor'],
+      labels: ['lessons/tutor'],
       leaves: asLeaves(ls),
-      profileLabel: 'tutoring/tutor',
+      profileLabel: 'lessons/tutor',
       artifacts: REPUTATION_FILES,
     })
     return { circuit: 'reputation', index: i.address, root: against.root, time: against.time, signature: against.signature, score: Number(r.score), proof: b64u.encode(proofBytes(r.proof)) }

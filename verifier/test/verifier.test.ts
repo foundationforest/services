@@ -217,7 +217,7 @@ test('a face stamp: signed by the face key, its facts the face recipe, and a ver
     assert.equal(stamp.facts, faceFacts('test-model', faceOf('alice')), 'Poseidon([h(model), h(embedding)])')
 
     // The stamp does what it is for: a verification, made with the standard's own code, that holds for its verifier.
-    const label = 'tutoring/seller'
+    const label = 'lessons/seller'
     const proof = await proveVerification({ seed, stamp, label, artifacts: ARTIFACTS })
     const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.face.key), true)
@@ -250,7 +250,7 @@ test('an ID stamp: signed by the ID key, its facts the ID recipe over the fields
     assert.equal(stamp.facts, poseidon3([hash(json.model), hash(b64u.decode(json.embedding)), fieldsRoot(reversed)]), 'Poseidon([h(model), h(embedding), fieldsRoot])')
     assert.equal(stamp.facts, idFacts('test-model', faceOf('ada'), read))
 
-    const label = 'tutoring/buyer'
+    const label = 'lessons/buyer'
     const proof = await proveVerification({ seed, stamp, label, artifacts: ARTIFACTS })
     const check = (verifier: string) => checkVerification({ proof: proof.proof, verifier, verifierName: VERIFIER_NAME, label, profile: proof.address })
     assert.equal(await check(published.id.key), true)

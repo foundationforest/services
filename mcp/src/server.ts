@@ -14,6 +14,7 @@
 
 import { type IncomingMessage, type Server as HttpServer, type ServerResponse, createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { loadMarkets } from '@foundationforest/markets'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
@@ -94,6 +95,8 @@ export type Settings = {
   clientFetch?: typeof fetch
   /** How hosts are reached: publicFetch (public.ts) unless told otherwise. */
   hostFetch?: typeof fetch
+  /** The markets checkout it reads: the one beside this directory unless told otherwise. */
+  marketsDir?: string
 }
 
 /** A copy serving: its origin, and where it listens. */
@@ -106,6 +109,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
   const known = { origin: settings.origin ?? '', ...(settings.appUrl && { appUrl: settings.appUrl }), clientFetch: settings.clientFetch ?? publicFetch }
   const login = new Login(key, opening, known)
   const hostFetch = settings.hostFetch ?? publicFetch
+  const markets = loadMarkets(settings.marketsDir)
 
   async function mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const pointer = login.bearer(req)
@@ -138,6 +142,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
     if (pointer !== null && acts && (await read(pointer)) === 'gone') return login.challenge(res, GONE)
     const ctx: Ctx = {
       ...settings.read,
+      markets,
       hostFetch,
       own,
       connection: async (): Promise<Connection> => {

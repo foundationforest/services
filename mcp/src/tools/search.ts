@@ -1,6 +1,8 @@
 // The index's search, the filters given passed to it as they are, or one profile's page there; its
 // answer untouched. Which filters it takes and what its answers hold are the index's, in its guide,
-// which comes with the server's instructions; none is named here.
+// which comes with the server's instructions. The description names one kind, the filters the
+// foundation's index takes on a market's own fields, so an AI app that cuts the guide from long
+// instructions still finds a listing by them; this copy passes them on as any other.
 //
 // Beside the answer, with the person's login, `mine`: each address of a profile this login acts in
 // that the answer holds anywhere, with its label, so the AI never offers the person their own
@@ -16,7 +18,7 @@ import type { Args, Ctx, Param } from '../params.ts'
 export const name = 'search'
 export const title = 'Search'
 export const description =
-  "The index's search: the filters given, passed to it as they are, and its answer, untouched, as its word. Or, given a profile's address instead, that profile's page at the index, its whole answer: its listings, its reviews, its ratings, trust and checks. Which filters the search takes, what each means and what each answer holds are the index's: its guide comes with these instructions. Every filter may be left out. With the person's login, mine maps each address in the answer that is one of the person's own profiles to its label: what it names is the person's own, never to offer them; without it, unmarked says why. No login needed."
+  "The index's search: the filters given, passed to it as they are, and its answer, untouched, as its word. Or, given a profile's address instead, that profile's page at the index, its whole answer: its listings, its reviews, its ratings, trust and checks. Which filters the search takes, what each means and what each answer holds are the index's: its guide comes with these instructions. The foundation's index takes, beside words, a market and a role, a filter on each field of that market's listings once market is given, by the field's name in the market's file: a choice as <field>=<value>, a listing whose field holds that value, such as { \"market\": \"language-exchange\", \"speaks\": \"es\", \"learns\": \"en\" }; a number as <field>.min and <field>.max, in the field's unit, either one alone for an open end, such as { \"minutes.min\": \"45\" }. Every filter may be left out. With the person's login, mine maps each address in the answer that is one of the person's own profiles to its label: what it names is the person's own, never to offer them; without it, unmarked says why. No login needed."
 export const params: Param[] = [
   { name: 'filters', type: 'object', description: "The filters, by the names the index's guide gives them, each value as text. Left out, with no address: the index's search with none." },
   { name: 'address', type: 'string', description: "A profile's address, in place of filters: that profile's page at the index." },

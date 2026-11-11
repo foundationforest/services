@@ -11,9 +11,9 @@ export const SEED = hex.decode(KEYS.seed)
 /** A second person. */
 export const OTHER_SEED = new Uint8Array(32).fill(7)
 
-export const alice = await mainKey(SEED, 'tutoring/seller')
-export const aliceBuyer = await mainKey(SEED, 'tutoring/buyer') // the same person, another label
-export const bob = await mainKey(OTHER_SEED, 'tutoring/buyer') // someone else
+export const alice = await mainKey(SEED, 'lessons/seller')
+export const aliceBuyer = await mainKey(SEED, 'lessons/buyer') // the same person, another label
+export const bob = await mainKey(OTHER_SEED, 'lessons/buyer') // someone else
 /** A key that is no one's main key here: what tries to sign for a profile it is not. */
 export const stranger = serviceKey(new Uint8Array(32).fill(99))
 /** An access key Alice's profile entry may list: keys/'s, from 32 bytes of 0x2b then 32 of 0x2c. */
@@ -28,7 +28,7 @@ export const HOSTS = ['https://host.example']
 
 /** A profile entry's body. `subjects`, a field a market adds, tells one version from another. */
 export const profileBody = (subject: string, more: Body = {}): Body => ({
-  market: 'tutoring',
+  market: 'lessons',
   role: 'seller',
   hosts: HOSTS,
   subjects: [subject],

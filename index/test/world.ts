@@ -1,10 +1,11 @@
 // A small Forest on loopback for the tests: this repo's host (its host API, host/src/plug.ts), a
 // stand-in verifier whose key the test's lists name, people with seeds, profiles with real
 // verifications made from the verification circuit's committed proving files, entries signed with
-// their main keys, and the index itself, with lists written to a directory of its own.
+// their main keys, and the index itself, with lists written to a directory of its own and markets
+// of its own: test/markets/, so no test depends on what a market in the pinned checkout holds.
 
 import { randomBytes } from 'node:crypto'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,7 +17,6 @@ import { Host } from '../../host/src/plug.ts'
 import { type Index, ROOT, startIndex } from '../src/index.ts'
 
 export const STANDARD = join(ROOT, '../standard')
-export const MARKETS = join(ROOT, '../markets')
 export const VERIFICATION_FILES = {
   wasm: join(STANDARD, 'proofs/verification/setup/verification.wasm'),
   zkey: join(STANDARD, 'proofs/verification/setup/verification.zkey'),
@@ -27,6 +27,27 @@ export const REPUTATION_FILES = {
 }
 
 export const tmp = (name: string) => mkdtempSync(join(tmpdir(), `index-${name}-`))
+
+/**
+ * A markets checkout of the tests' own, as the markets package reads one: each market in
+ * test/markets/, directory.json written from them in name order as the markets' check writes it,
+ * and the pinned checkout's build/types.json, the format the types hold.
+ */
+export const MARKETS = (() => {
+  const dir = tmp('markets')
+  const own = join(ROOT, 'test/markets')
+  mkdirSync(join(dir, 'markets'))
+  mkdirSync(join(dir, 'build'))
+  copyFileSync(join(ROOT, '../markets/build/types.json'), join(dir, 'build/types.json'))
+  const markets = readdirSync(own)
+    .sort()
+    .map((file) => {
+      copyFileSync(join(own, file), join(dir, 'markets', file))
+      return JSON.parse(readFileSync(join(own, file), 'utf8')) as { name: string; description: string; status: string; roles: unknown[] }
+    })
+  writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, description, status, roles }) => ({ name, description, status, roles })) }))
+  return dir
+})()
 
 /** A verifier: a name and a key that signs stamps. */
 export type Verifier = { name: string; privateKey: Uint8Array; key: string }

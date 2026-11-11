@@ -29,18 +29,18 @@ const keys = () => [
 ]
 
 test('a profile counts only with a verification that checks, for a listed key, under its name, for its own market and role', async () => {
-  const good = await profile('tutoring/tutor', [listed])
-  const changed = await profile('tutoring/tutor', [listed])
+  const good = await profile('lessons/tutor', [listed])
+  const changed = await profile('lessons/tutor', [listed])
   changed.proofs[0]!.proof = changed.proofs[0]!.proof.slice(0, 40) + (changed.proofs[0]!.proof[40] === 'A' ? 'B' : 'A') + changed.proofs[0]!.proof.slice(41)
-  const unlisted = await profile('tutoring/tutor', [verifier('unlisted.example')])
-  const wrongName = await profile('tutoring/tutor', [other])
-  const wrongLabel = await profile('tutoring/tutor')
-  wrongLabel.proofs = (await profile('tutoring/student', [listed], wrongLabel.seed)).proofs
+  const unlisted = await profile('lessons/tutor', [verifier('unlisted.example')])
+  const wrongName = await profile('lessons/tutor', [other])
+  const wrongLabel = await profile('lessons/tutor')
+  wrongLabel.proofs = (await profile('lessons/student', [listed], wrongLabel.seed)).proofs
   const noMarket = await profile('knitting/maker', [listed])
-  const noRole = await profile('tutoring/seller', [listed])
-  const afterUntil = await profile('tutoring/tutor', [leaked])
-  const twice = await profile('tutoring/tutor', [listed, listed])
-  const both = await profile('tutoring/tutor', [listed, id])
+  const noRole = await profile('lessons/seller', [listed])
+  const afterUntil = await profile('lessons/tutor', [leaked])
+  const twice = await profile('lessons/tutor', [listed, listed])
+  const both = await profile('lessons/tutor', [listed, id])
   const all = { good, changed, unlisted, wrongName, wrongLabel, noMarket, noRole, afterUntil, twice, both }
   for (const p of Object.values(all)) await publishProfile(host.url, p)
 
@@ -66,9 +66,9 @@ test('a profile counts only with a verification that checks, for a listed key, u
   assert.equal(await why(changed), 'it does not check')
   assert.equal(await why(unlisted), 'its key is not one this index lists')
   assert.match(await why(wrongName), /^its verifier name is not someone\.else\.example/)
-  assert.match(await why(wrongLabel), /^its label is not tutoring\/tutor/)
+  assert.match(await why(wrongLabel), /^its label is not lessons\/tutor/)
   assert.match(await why(noMarket), /knitting\/maker, are not a market and one of its roles in the directory/)
-  assert.match(await why(noRole), /tutoring\/seller, are not a market and one of its roles/)
+  assert.match(await why(noRole), /lessons\/seller, are not a market and one of its roles/)
   assert.match(await why(afterUntil), /^this index first saw it after 2020-01-01T00:00:00.000Z/)
 
   // When it first saw each is kept by the profile's key and the verifier's: one row for the pair,

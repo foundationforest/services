@@ -14,7 +14,7 @@ import { lock } from '@foundationforest/folders/locked'
 import type { Market } from '@foundationforest/markets'
 import { folderAt, how, ownFolder, ownProfile, profileEntryOf } from '../act.ts'
 import { refuse } from '../forest.ts'
-import { KINDS, marketFile, markets } from '../markets.ts'
+import { KINDS, marketFile } from '../markets.ts'
 import type { Args, Ctx, Param } from '../params.ts'
 
 export const name = 'write'
@@ -52,7 +52,7 @@ async function checkPublic(ctx: Ctx, market: Market, role: string, path: string,
   if (rest.length !== 1) refuse(`an entry of a kind sits at ${kind}/<id>, one segment after the kind`)
   if (body === null) return
   const why =
-    markets.checkEntry(market.name, role, kind!, body, kind === 'review' ? await aboutRole(ctx, market, body) : undefined) ??
+    ctx.markets.checkEntry(market.name, role, kind!, body, kind === 'review' ? await aboutRole(ctx, market, body) : undefined) ??
     (kind === 'listing' || publicKeyFromAddress(body.subject) ? null : `subject is the address of the profile the ${kind} is about`) ??
     (kind === 'listing' || !(await ctx.connection()).profiles.some((p) => p.address === body.subject) ? null : `subject is one of the person's own profiles: a ${kind} is about someone else`) ??
     (kind !== 'review' || body.listing === undefined || publicKeyFromAddress((body.listing as string).split('/')[0]) ? null : "listing is a listing's address: <profile address>/listing/<id>")
@@ -71,7 +71,7 @@ export async function run(args: Args, ctx: Ctx) {
     if (body !== null && filesOf(body).length) refuse('a locked entry carries no files: anyone fetches a file by its hash')
     if (body !== null) body = await lock(body, lockKeysOf(profile)).catch((err: Error) => refuse(`not an entry: ${err.message}`))
   } else {
-    const market: Market = typeof profile.market === 'string' ? marketFile(profile.market) : refuse(`${me.label}'s profile entry names no market, so a public entry has no kind to fit: lock it`)
+    const market: Market = typeof profile.market === 'string' ? marketFile(ctx.markets, profile.market) : refuse(`${me.label}'s profile entry names no market, so a public entry has no kind to fit: lock it`)
     await checkPublic(ctx, market, text(profile.role), path, body)
   }
   let signed: SignedEntry

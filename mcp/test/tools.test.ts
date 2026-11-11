@@ -1,7 +1,7 @@
 // Every tool, through the MCP SDK's own client, as an AI app calls it after the person logged in:
 // the six and their marks; how Forest works first, then the index's guide; the markets; the index's
 // answers whole, a field and a filter this copy has never seen among them. Then, in the person's
-// two tutoring profiles, with the access keys their app keeps in the connection: my_profiles by
+// two lessons profiles, with the access keys their app keeps in the connection: my_profiles by
 // label, with the switches each profile entry lists; search, the person's own profiles in the
 // index's answer mapped to their labels (mine), and unmarked with no login; read of an entry,
 // public and locked, and of the inbox, each message opened and its sender checked, one from before
@@ -16,6 +16,7 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type Body, entry, leave, nextTime, readFolder, readInbox, senderCounts, write } from '@foundationforest/folders'
@@ -25,7 +26,7 @@ import { SHARED } from '@foundationforest/markets'
 import { WORD } from '../src/forest.ts'
 import { serve } from '../src/server.ts'
 import { HOW } from '../src/tools.ts'
-import { SKILL, TUTORING, type World, aiApp, lesson, logIn, world } from './setup.ts'
+import { LESSONS, MARKETS, SKILL, type World, aiApp, lesson, logIn, world } from './setup.ts'
 
 /** The checkout's build/types.json, as the markets tool reads it. */
 const TYPES = JSON.parse(readFileSync(new URL('../../markets/build/types.json', import.meta.url), 'utf8'))
@@ -39,8 +40,8 @@ let tutorKey: string
 /** Every answer an AI app got in this file from a tool that acts for the person. */
 const answers: string[] = []
 
-const TUTOR = 'tutoring/tutor'
-const STUDENT = 'tutoring/student'
+const TUTOR = 'lessons/tutor'
+const STUDENT = 'lessons/student'
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
 const ACTS = ['my_profiles', 'read', 'write', 'message']
 
@@ -97,13 +98,19 @@ describe('reading, with no login', () => {
     assert.equal(byName.write!.destructiveHint, true)
     assert.equal(byName.message!.destructiveHint, false)
     assert.equal(byName.message!.openWorldHint, true)
+    // Search says how a market's own fields filter, at the foundation's index; the markets say each one's status.
+    const descriptions = Object.fromEntries(tools.map((t) => [t.name, t.description ?? '']))
+    assert.match(descriptions.search!, /a choice as <field>=<value>.*a number as <field>\.min and <field>\.max, in the field's unit/)
+    assert.match(descriptions.markets!, /its status \(live, or beta: it works, at your own risk, and may change\)/)
+    // Before the person writes in a beta market, the AI tells them.
+    assert.ok(HOW.includes('- A market is live or beta. Before the person writes in a beta market, tell them it works, at their own risk, and may change.'))
   })
 
   test("how Forest works first, then the index's guide, its own word, read as a chat starts", async () => {
     const instructions = client.getInstructions()!
     assert.ok(instructions.startsWith(HOW))
     assert.ok(instructions.includes(`from ${w.index}/skill.md:\n\n${SKILL}`))
-    const lost = await serve({ dataDir: w.dataDir, read: { index: 'http://127.0.0.1:9' } }, '127.0.0.1', 0)
+    const lost = await serve({ dataDir: w.dataDir, read: { index: 'http://127.0.0.1:9' }, marketsDir: MARKETS }, '127.0.0.1', 0)
     try {
       const { client: other } = await aiApp(lost.origin)
       assert.match(other.getInstructions()!, /The index gave no guide \(http:\/\/127\.0\.0\.1:9\/skill\.md: .*\): read its answers as they come\.$/)
@@ -113,25 +120,50 @@ describe('reading, with no login', () => {
     }
   })
 
-  test('markets: every market, or one market’s file with its preview, kinds, each with its fields, and what their types hold; a market not in the directory refused', async () => {
+  test('markets: every market with its status, or one market’s file with its preview, kinds, each with its fields, what each key means, and each type its fields use, whole; a market not in the directory refused', async () => {
     const all = await call('markets')
-    assert.ok(all.markets.some((m: { name: string; roles: unknown[] }) => m.name === 'tutoring' && m.roles.length === 2))
-    const one = await call('markets', { name: 'tutoring' })
+    assert.deepEqual(all.markets, JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')).markets, 'the directory as it is')
+    assert.deepEqual(all.markets.map((m: { name: string; status: string }) => [m.name, m.status]), [['lessons', 'beta'], ['wardrobe', 'live']])
+    const one = await call('markets', { name: 'lessons' })
+    assert.deepEqual(Object.keys(one), ['market', 'kinds', 'keys', 'types'])
+    assert.equal(one.market.status, 'beta')
     assert.deepEqual(Object.keys(one.kinds), ['listing', 'review', 'vouch', 'report'])
-    assert.deepEqual(one.kinds.listing, { ...TUTORING.listing, ...SHARED.listing }, "a listing's fields are the file's, and contact")
-    // Each type its fields use, in the checkout's own words, a place's rule among them.
+    assert.deepEqual(one.kinds.listing, { ...LESSONS.listing, ...SHARED.listing }, "a listing's fields are the file's, and contact")
+    // A number's unit, and a choice's labels, as the file gives them.
+    assert.equal(one.kinds.listing.minutes.unit, 'minutes')
+    assert.deepEqual(one.kinds.listing.languages.labels, { en: 'English', es: 'Spanish', fr: 'French' })
+    // Each type its fields use, as the checkout's types.json defines it: its shape, not only its words.
     assert.deepEqual(Object.keys(one.types), ['text', 'money', 'choice', 'number', 'place', 'hours'])
-    assert.equal(one.types.place, TYPES.$defs.place.description)
-    assert.match(one.types.place, /never a home's door/)
-    assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'listing'], 'the fields every review holds, the file adding none')
+    assert.deepEqual(one.types.place, TYPES.$defs.place)
+    assert.deepEqual(Object.keys(one.types.place.properties), ['lat', 'lon', 'radiusKm', 'area'])
+    assert.match(one.types.place.description, /never a home's door/)
+    // What each key means, in the markets' schema's words: the file's own keys, and each key its
+    // fields use, in the schema's order. What an AI given the file alone guesses: that any field may
+    // be left out, that many makes a list, that radiusKm is where a new place starts, and that roles
+    // on a review field names the profile reviewed.
+    assert.deepEqual(Object.keys(one.keys), ['market', 'field'])
+    assert.deepEqual(Object.keys(one.keys.market), ['name', 'description', 'status', 'roles', 'listing', 'preview', 'review'])
+    assert.deepEqual(Object.keys(one.keys.field), ['type', 'description', 'values', 'labels', 'per', 'radiusKm', 'unit', 'many', 'roles', 'when'])
+    assert.match(one.keys.market.listing, /A listing may leave out any of them/)
+    assert.match(one.keys.market.status, /Beta: works, at your own risk/)
+    assert.match(one.keys.field.many, /The field holds a list of its type/)
+    assert.match(one.keys.field.radiusKm, /the radius, in whole kilometres, a new place starts at/)
+    assert.match(one.keys.field.roles, /in review, the roles of the profile the review is about/)
+    assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'listing', 'paid'], 'the fields every review holds, then the file’s own')
     assert.deepEqual(Object.keys(one.kinds.vouch), ['subject', 'text'])
-    assert.deepEqual(one.market.preview, TUTORING.preview)
+    assert.deepEqual(one.market.preview, LESSONS.preview)
     assert.ok(one.market.listing.price)
+    // A market with no preview and no review of its own: both meant all the same, a preview given;
+    // only the keys its fields use.
+    const other = await call('markets', { name: 'wardrobe' })
+    assert.deepEqual([other.market.status, other.market.preview], ['live', ['description', 'price', 'location']])
+    assert.deepEqual(Object.keys(other.keys.market), ['name', 'description', 'status', 'roles', 'listing', 'preview', 'review'])
+    assert.deepEqual(Object.keys(other.keys.field), ['type', 'description', 'values', 'labels', 'radiusKm', 'many', 'roles'])
     assert.match((await call('markets', { name: 'knitting' })).refused, /knitting is not a market in the directory/)
   })
 
   test("search: the index's search, filters passed as they are, badge among them; or a profile's page; each whole", async () => {
-    const filters = { q: 'physics', market: 'tutoring', badge: 'early' }
+    const filters = { q: 'physics', market: 'lessons', badge: 'early' }
     const found = await call('search', { filters })
     assert.deepEqual(found.index, { ...said(`/search.json?${new URLSearchParams(filters)}`), answer: { ...(w.said['/search.json'] as object), asked: filters } })
     assert.equal(found.index.answer.badge, 'early', 'a field this copy has never seen, passed on')
@@ -139,24 +171,24 @@ describe('reading, with no login', () => {
     const page = await call('search', { address: w.stranger.address })
     assert.deepEqual(page.index, said(`/profiles/${w.stranger.address}.json`))
     assert.match((await call('search', { address: 'nobody' })).refused, /nobody is not a profile's address/)
-    const nobody = (await mainKey(new Uint8Array(32).fill(5), 'tutoring/tutor')).address
+    const nobody = (await mainKey(new Uint8Array(32).fill(5), 'lessons/tutor')).address
     assert.match((await call('search', { address: nobody, filters: {} })).refused, /filters, or an address, not both/)
     assert.match((await call('search', { address: nobody })).refused, /the index gave nothing for/)
   })
 })
 
 describe('acting for the person', () => {
-  test('my_profiles: the two tutoring profiles, by label, with every switch their profile entries list; no address', async () => {
+  test('my_profiles: the two lessons profiles, by label, with every switch their profile entries list; no address', async () => {
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: SWITCHES }] })
   })
 
   test("search, with the login: mine maps each of the person's own profiles the index's answer holds to its label, the answer whole; with none, unmarked", async () => {
     const tutor = w.own[TUTOR]!
-    const ours = { profile: tutor, market: 'tutoring', role: 'tutor', listing: { address: `${tutor}/listing/maths`, body: lesson('Maths, from the AI.'), url: `${w.index}/profiles/${tutor}/listing/maths` } }
+    const ours = { profile: tutor, market: 'lessons', role: 'tutor', listing: { address: `${tutor}/listing/maths`, body: lesson('Maths, from the AI.'), url: `${w.index}/profiles/${tutor}/listing/maths` } }
     const search = w.said['/search.json'] as { results: unknown[] }
     const page = `/profiles/${tutor}.json`
     w.said['/search.json'] = { ...search, results: [...search.results, ours] }
-    w.said[page] = { index: 'stand-in', address: tutor, profile: { market: 'tutoring', role: 'tutor' } }
+    w.said[page] = { index: 'stand-in', address: tutor, profile: { market: 'lessons', role: 'tutor' } }
     try {
       const found = await call('search', { filters: { q: 'maths' } })
       assert.deepEqual(found.index.answer.results, [...search.results, ours], "the index's answer whole, the person's address in it where the index put it")
@@ -178,11 +210,11 @@ describe('acting for the person', () => {
 
   test('read of an entry: the profile entry, its pay addresses by label; one missing; a path that is none; a profile this login does not hold', async () => {
     const shown = await call('read', { label: TUTOR, path: 'profile' })
-    assert.equal(shown.body.market, 'tutoring')
+    assert.equal(shown.body.market, 'lessons')
     assert.deepEqual(shown.body.pay, { solana: `${TUTOR}'s solana pay address`, evm: `${TUTOR}'s evm pay address` })
     assert.deepEqual(await call('read', { label: TUTOR, path: 'listing/none' }), { path: 'listing/none', found: false })
     assert.match((await call('read', { label: TUTOR, path: 'Listing/x' })).refused, /Listing\/x is no path/)
-    assert.match((await call('read', { label: 'clothing/seller', path: 'profile' })).refused, /clothing\/seller is not a profile this login acts in/)
+    assert.match((await call('read', { label: 'wardrobe/seller', path: 'profile' })).refused, /wardrobe\/seller is not a profile this login acts in/)
     assert.match((await call('read', { label: TUTOR })).refused, /a path, or inbox: true/)
   })
 
@@ -192,7 +224,7 @@ describe('acting for the person', () => {
     assert.equal(e?.key, tutorKey, 'signed by this login’s access key, and current')
     assert.equal((await call('read', { label: TUTOR, path: 'listing/maths' })).body.description, 'Maths, from the AI.')
     const refusals: Array<[string, Body | null, RegExp]> = [
-      ['listing/x', { ...lesson('x'), colour: 'red' }, /a listing in tutoring has no field colour/],
+      ['listing/x', { ...lesson('x'), colour: 'red' }, /a listing in lessons has no field colour/],
       ['listing/x', { price: 30 }, /price takes \{ amount, currency, per \}/],
       ['listing/x', { subjects: ['knitting'] }, /subjects takes a list, each different, each one of /],
       ['listing/x', { ...lesson('x'), place: { area: 'Madrid', online: true } }, /place takes \{ lat, lon, radiusKm, area \}/],
@@ -205,7 +237,7 @@ describe('acting for the person', () => {
       ['review/x', { subject: w.stranger.address, score: '11' }, /score takes a number from "1" to "10"/],
       ['review/x', { subject: w.stranger.address, listing: 'physics' }, /listing takes a listing's address/],
       ['review/x', { subject: w.stranger.address, listing: 'nobody/listing/physics' }, /listing is a listing's address: <profile address>\/listing\/<id>/],
-      ['vouch/x', { subject: w.stranger.address, score: '9' }, /a vouch in tutoring has no field score/],
+      ['vouch/x', { subject: w.stranger.address, score: '9' }, /a vouch in lessons has no field score/],
       ['review/x', { subject: w.own[STUDENT]!, score: '9' }, /subject is one of the person's own profiles: a review is about someone else/],
       ['vouch/x', { subject: w.own[TUTOR]! }, /subject is one of the person's own profiles: a vouch is about someone else/],
       ['report/x', { subject: w.own[STUDENT]!, text: 'x' }, /subject is one of the person's own profiles: a report is about someone else/],
@@ -246,7 +278,7 @@ describe('acting for the person', () => {
     const hello = box.messages.find((m: { body: { text: string } }) => m.body.text.startsWith('Hello from a stranger'))
     assert.deepEqual(
       { from: hello.from, counts: hello.counts, index: hello.index },
-      { from: w.stranger.address, counts: true, index: { url: `${w.index}/profiles/${w.stranger.address}.json`, word: WORD, market: 'tutoring', role: 'tutor', checks: (w.said[`/profiles/${w.stranger.address}.json`] as { checks: unknown }).checks } },
+      { from: w.stranger.address, counts: true, index: { url: `${w.index}/profiles/${w.stranger.address}.json`, word: WORD, market: 'lessons', role: 'tutor', checks: (w.said[`/profiles/${w.stranger.address}.json`] as { checks: unknown }).checks } },
     )
   })
 
@@ -280,32 +312,32 @@ describe('acting for the person', () => {
     const toTutor = (await call('read', { label: STUDENT, inbox: true })).messages.find((m: { body: { text: string } }) => m.body.text === 'From the student.')
     assert.deepEqual([toTutor.mine, toTutor.toLabel, toTutor.to], [true, TUTOR, undefined], "a copy to another of the person's profiles, shown by its label")
 
-    const nobody = (await mainKey(new Uint8Array(32).fill(5), 'tutoring/tutor')).address
+    const nobody = (await mainKey(new Uint8Array(32).fill(5), 'lessons/tutor')).address
     assert.match((await call('message', { label: TUTOR, to: nobody, body: { text: 'x' } })).refused, /no host this copy knows holds/)
   })
 
-  test('another login, writing only, in the clothing profile: a photo named in files, and not; no message', async () => {
-    w.choose({ profiles: ['clothing/seller'], can: ['write'] })
+  test('another login, writing only, in the wardrobe profile: a photo named in files, and not; no message', async () => {
+    w.choose({ profiles: ['wardrobe/seller'], can: ['write'] })
     const c = await aiApp(w.mcp.origin)
     try {
       await logIn(c)
       const photo = { sha256: '04ea806c667cd600b86061122fb9a7192c76405d58e14d63d29c51825dc7ec86', type: 'image/jpeg', size: 48213 }
       const coat = { description: 'A wool coat.', photos: [photo.sha256] }
-      assert.match((await call('write', { label: 'clothing/seller', path: 'listing/coat', body: coat }, c.client)).refused, /photos names a file the body's files do not list/)
-      assert.equal((await call('write', { label: 'clothing/seller', path: 'listing/coat', body: { ...coat, files: [photo] } }, c.client)).written, 'listing/coat')
-      assert.match((await call('message', { label: 'clothing/seller', to: w.stranger.address, body: { text: 'x' } }, c.client)).refused, /may not message as clothing\/seller/)
+      assert.match((await call('write', { label: 'wardrobe/seller', path: 'listing/coat', body: coat }, c.client)).refused, /photos names a file the body's files do not list/)
+      assert.equal((await call('write', { label: 'wardrobe/seller', path: 'listing/coat', body: { ...coat, files: [photo] } }, c.client)).written, 'listing/coat')
+      assert.match((await call('message', { label: 'wardrobe/seller', to: w.stranger.address, body: { text: 'x' } }, c.client)).refused, /may not message as wardrobe\/seller/)
     } finally {
       w.choose({ profiles: [TUTOR, STUDENT] })
       await c.client.close()
     }
   })
 
-  test('another login, messaging only, in the clothing profile: it sends, and the hosts keep no copy', async () => {
-    w.choose({ profiles: ['clothing/seller'], can: ['message'] })
+  test('another login, messaging only, in the wardrobe profile: it sends, and the hosts keep no copy', async () => {
+    w.choose({ profiles: ['wardrobe/seller'], can: ['message'] })
     const c = await aiApp(w.mcp.origin)
     try {
       await logIn(c)
-      const sent = await call('message', { label: 'clothing/seller', to: w.stranger.address, body: { text: 'Is the coat still yours?' } }, c.client)
+      const sent = await call('message', { label: 'wardrobe/seller', to: w.stranger.address, body: { text: 'Is the coat still yours?' } }, c.client)
       assert.deepEqual([sent.sent, sent.hosts, sent.copy], [true, 1, null])
       assert.match(sent.why, /^no host took the copy: .*\(unlisted: /)
       const { message } = await openInbox((await readInbox(w.host, w.stranger.address)).entries.at(-1)!.entry, w.stranger.identity)
@@ -328,7 +360,7 @@ describe('acting for the person', () => {
     await write([w.host], [entry(main, 'profile', { ...body, keys }, time)])
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }, { label: TUTOR, can: [] }] })
     assert.match((await call('write', { label: TUTOR, path: 'listing/chemistry', body: lesson('Chemistry.') })).refused, /no host took it: .*\(unlisted: /)
-    assert.match((await call('message', { label: TUTOR, to: w.stranger.address, body: { text: 'x' } })).refused, /may not message as tutoring\/tutor: .*or the key has ended/)
+    assert.match((await call('message', { label: TUTOR, to: w.stranger.address, body: { text: 'x' } })).refused, /may not message as lessons\/tutor: .*or the key has ended/)
     for (const path of ['listing/physics', 'listing/maths']) assert.equal((await at(TUTOR, path))?.key, tutorKey, `${path}, which it wrote before it ended, still counts`)
   })
 
@@ -338,7 +370,7 @@ describe('acting for the person', () => {
     assert.equal((await w.app.keys(TUTOR)).find((k) => k.key === tutorKey)?.until, before, 'listed still, its until as it was')
     assert.equal(await w.app.note(TUTOR, tutorKey), undefined, 'its note deleted')
     assert.deepEqual(await call('my_profiles'), { profiles: [{ label: STUDENT, can: SWITCHES }] })
-    assert.match((await call('write', { label: TUTOR, path: 'listing/chemistry', body: lesson('Chemistry.') })).refused, /tutoring\/tutor is not a profile this login acts in/)
+    assert.match((await call('write', { label: TUTOR, path: 'listing/chemistry', body: lesson('Chemistry.') })).refused, /lessons\/tutor is not a profile this login acts in/)
     assert.equal((await at(TUTOR, 'listing/physics'))?.key, tutorKey)
   })
 

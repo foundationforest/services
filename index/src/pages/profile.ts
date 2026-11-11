@@ -11,12 +11,13 @@
 // avatar, its name and badge, its rating and how many reviews count, and the button to message it;
 // then a fold saying what its numbers mean, with its own; its listings and the reviews and vouches
 // it received, as cards; and one fold with everything else this index read, the weight of each
-// review it received among it. On a laptop, the header and the folds on the left, the cards on the
-// right.
+// review it received among it. A profile whose market has left the directory says so in its
+// header, and its back link goes home. On a laptop, the header and the folds on the left, the cards
+// on the right.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, badgeHtml, colorOf, countText, dateHtml, firstHost, inWords, type Listing, listingCardHtml, listingOf, messageHtml, messageOf, nameHtml, nameText, numbersHtml, personOf, profileAvatar, type Shown, shownFor, wordOf } from './common.ts'
+import { aggregateOf, badgeHtml, colorOf, countText, dateHtml, firstHost, goneHtml, inWords, isGone, type Listing, listingCardHtml, listingOf, messageHtml, messageOf, nameHtml, nameText, numbersHtml, personOf, profileAvatar, type Shown, shownFor, wordOf } from './common.ts'
 import { icon } from './icons.ts'
 import { backHtml, html, type Page, type Raw, short, urls } from './template.ts'
 
@@ -183,9 +184,9 @@ export const profile: Page<ProfilePage> = {
       }<span class="grow"></span><span class="xs">${dateHtml(r.time)}</span></span>${typeof r.body.text === 'string' && r.body.text ? html`<span class="text">${r.body.text}</span>` : ''}<span class="who">${profileAvatar(site, r.market, r.role, 'xs')}${nameHtml(r.market, r.role, r.checks)}</span>${
         r.counted ? '' : html`<span class="s red">Does not count: ${r.why}.</span>`
       }</a>`
-    return html`<div class="${market ? 'head tint profile-head' : 'head profile-head'}"${market ? html` style="--h:${colorOf(site, market)}"` : ''}>${backHtml(market ? urls(base).market(market) : urls(base).home)}
+    return html`<div class="${market ? 'head tint profile-head' : 'head profile-head'}"${market ? html` style="--h:${colorOf(site, market)}"` : ''}>${backHtml(market && !isGone(site, market) ? urls(base).market(market) : urls(base).home)}
 <div class="me">${profileAvatar(site, market, role, 'lg')}<div><h1 class="h2 titled">${nameText(market, role)}${badgeHtml(o.checks, true)}</h1><span class="rated">${rated}</span></div></div>
-${messageHtml(o.message, 'Message')}</div>
+${isGone(site, market) ? goneHtml(market) : ''}${messageHtml(o.message, 'Message')}</div>
 ${numbersHtml(o)}
 <div class="lists"><h2>${word ? inWords(word) : 'Listings'}</h2>
 ${o.listings.length ? html`<div class="list">${o.listings.map((l) => listingCardHtml(site, market, l))}</div>` : html`<p>None yet.</p>`}

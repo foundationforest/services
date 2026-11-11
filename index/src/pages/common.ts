@@ -2,7 +2,8 @@
 // JSON gives it, a listing as every page gives it (its page and its photos among it), a search or
 // market result, and how the HTML draws each from the object, in the parts the Forest app draws: a
 // profile's avatar, name and badge, its rating, a listing's card, a result's card, the words of a
-// field's value, and the fold that says what a profile's numbers mean.
+// field's value, a number in its unit, a beta market's chip and line, the line for a market gone from
+// the directory, and the fold that says what a profile's numbers mean.
 
 import { type Market, previewOf } from '@foundationforest/markets'
 
@@ -67,6 +68,11 @@ export function fieldsOf(m: Market | undefined): string[] {
 /** Each of a market's listing fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
 export function typesOf(m: Market | undefined): { [field: string]: string } {
   return m ? Object.fromEntries(Object.entries(m.listing).map(([name, field]) => [name, field.type])) : {}
+}
+
+/** Each of a market's number fields' unit, as its file names it: `{ minutes: "minutes" }`. */
+export function unitsOf(m: Market | undefined): { [field: string]: string } {
+  return m ? Object.fromEntries(Object.entries(m.listing).flatMap(([name, field]) => (field.unit ? [[name, field.unit]] : []))) : {}
 }
 
 /**
@@ -145,6 +151,21 @@ export const countText = (n: number, word: string) => `${n} ${wordFor(n, word)}`
 
 /** A role's word for its listings, from its market's file: `offers` or `requests`; none for a role the market does not name. */
 export const wordOf = (site: Site, market: string | null, role: string | null) => (market ? site.markets.market(market)?.roles.find((r) => r.role === role)?.listings : undefined)
+
+/** What beta means, as a market page says it under its description. */
+export const BETA = 'Beta: it works, at your own risk, and may change.'
+
+/** The chip a beta market carries, on its tile and its page, saying what beta means when pointed at. */
+export const betaChip = html`<span class="chip sm" title="${BETA}">Beta</span>`
+
+/**
+ * Whether a profile's market has left the directory: a profile entry names one the markets at
+ * MARKETS no longer list. Such a profile counts for nothing (filter.ts), and its pages say why.
+ */
+export const isGone = (site: Site, market: string | null): market is string => market !== null && !site.markets.market(market)
+
+/** The line a profile's or a listing's page shows when its market has left the directory. */
+export const goneHtml = (market: string): Raw => html`<p class="s">Its market, ${inWords(market)}, is no longer in the markets directory, so nothing here counts.</p>`
 
 /**
  * A market's avatar, the app's: its icon on its color, by the rule the app shares (../avatar.ts), or
@@ -281,12 +302,26 @@ export function valueText(v: unknown): string {
 export const choiceText = (v: unknown, labels: { [value: string]: string } = {}) =>
   (Array.isArray(v) ? v : [v]).map((x) => (Object.hasOwn(labels, String(x)) ? labels[String(x)]! : inWords(String(x)))).join(', ')
 
-/** A field's value as words, by its market's type for it: a choice by its labels, a file as nothing (it is drawn as a photo), the rest by its shape. */
+/** A unit in words for `n` of it: hyphens as spaces, and one of it without the plural's s, a person for people: "45 minutes", "1 night", "2 square metres". */
+export function unitText(unit: string, n: string): string {
+  const words = unit.replaceAll('-', ' ')
+  return n !== '1' ? words : words === 'people' ? 'person' : words.replace(/s$/, '')
+}
+
+/** A number field's value as stored, in its unit: "45 minutes"; each of a list in its unit, joined by commas. */
+export const numberText = (v: unknown, unit: string) =>
+  (Array.isArray(v) ? v : [v])
+    .map(valueText)
+    .filter(Boolean)
+    .map((n) => `${n} ${unitText(unit, n)}`)
+    .join(', ')
+
+/** A field's value as words, by its market's type for it: a choice by its labels, a number in its unit, a file as nothing (it is drawn as a photo), the rest by its shape. */
 function fieldText(m: Market | undefined, name: string, value: unknown): string {
   if (value === undefined || value === null) return ''
   const field = m?.listing[name]
   if (field?.type === 'file') return ''
-  return field?.type === 'choice' ? choiceText(value, field.labels) : valueText(value)
+  return field?.type === 'choice' ? choiceText(value, field.labels) : field?.unit ? numberText(value, field.unit) : valueText(value)
 }
 
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */

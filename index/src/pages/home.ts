@@ -1,17 +1,18 @@
-// `/`, twin `/index.json`: the markets, each with how many listings each of its roles has listed and
-// each role's word for its listings, this index's address, and its lists; drawn as the question, one
-// search box, and a tile per market. The lists are drawn on the About page.
+// `/`, twin `/index.json`: the markets, each with its status, how many listings each of its roles
+// has listed and each role's word for its listings, this index's address, and its lists; drawn as the
+// question, one search box, and a tile per market, a beta one marked so. The lists are drawn on the
+// About page.
 
-import type { Role } from '@foundationforest/markets'
+import type { Role, Status } from '@foundationforest/markets'
 
 import { listsOf, type ListsShown } from './about.ts'
-import { colorOf, countText, inWords, marketIcon } from './common.ts'
+import { betaChip, colorOf, countText, inWords, marketIcon } from './common.ts'
 import { html, type Page, searchBox, urls } from './template.ts'
 
 export type Home = {
   index: string
-  /** Each market in the directory, its role words, how many listings each role has listed here, and each role's word for its listings. */
-  markets: Array<{ name: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: Role['listings'] } }>
+  /** Each market in the directory, its status, its role words, how many listings each role has listed here, and each role's word for its listings. */
+  markets: Array<{ name: string; description: string; status: Status; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: Role['listings'] } }>
   lists: ListsShown
 }
 
@@ -35,6 +36,7 @@ export const home: Page<Home> = {
       markets: markets.directory.markets.map((m) => ({
         name: m.name,
         description: m.description,
+        status: m.status,
         roles: m.roles.map((r) => r.role),
         listed: Object.fromEntries(m.roles.map((r) => [r.role, listed(m.name, r.role)])),
         words: Object.fromEntries(m.roles.map((r) => [r.role, r.listings])),
@@ -45,11 +47,12 @@ export const home: Page<Home> = {
   title: () => 'Forest index: markets',
   body(o, base, site) {
     // A tile's icon is the market's avatar's, in its color on the tile's tint of it, as the app's
-    // market tiles draw it; the tile's name says what it is.
+    // market tiles draw it; the tile's name says what it is, with a chip when the market is beta.
+    // A live market has none: live is the usual case.
     return html`<h1 class="hello">What are you looking for?</h1>
 ${searchBox(base, { placeholder: 'A maths tutor, a wool coat, a plumber', button: true })}
 <h2>Markets</h2>
-<div class="tiles">${o.markets.map((m) => html`<a class="tile tint" style="--h:${colorOf(site, m.name)}" href="${urls(base).market(m.name)}"><span class="hue" aria-hidden="true">${marketIcon(m.name)}</span><span>${inWords(m.name)}<span class="xs">${countsOf(m).map((line, i) => html`${i ? html`<br>` : ''}${line}`)}</span></span></a>`)}</div>`
+<div class="tiles">${o.markets.map((m) => html`<a class="tile tint" style="--h:${colorOf(site, m.name)}" href="${urls(base).market(m.name)}"><span class="hue" aria-hidden="true">${marketIcon(m.name)}</span><span>${inWords(m.name)}${m.status === 'beta' ? html` ${betaChip}` : ''}<span class="xs">${countsOf(m).map((line, i) => html`${i ? html`<br>` : ''}${line}`)}</span></span></a>`)}</div>`
   },
   ld(o, base, url) {
     return {

@@ -9,9 +9,9 @@ Every page has a JSON twin at the same address with `.json` on its path. Any AI 
 - [Read skill](https://index.forest.foundation/skill.md): every field and filter in plain words: how to search, read a market and a profile, and what ratings, trust and uniqueness mean
 - [Markets](https://index.forest.foundation/index.json): every market, this index's address, and the lists it reads by
 - [About](https://index.forest.foundation/about.json): this index's address and the lists it reads by; [its page](https://index.forest.foundation/about) says what this index is, what it reads and its address
-- [A market](https://index.forest.foundation/markets/tutoring.json): its file, its preview among the rest, and the listings this index lists, by role
+- A market, at `https://index.forest.foundation/markets/<name>`, its twin with `.json`: its file, its status and its preview among the rest, and the listings this index lists, by role
 - A listing, at `https://index.forest.foundation/profiles/<address>/listing/<id>`, its twin with `.json`: its photos, its fields in its market's order, who posted it and what that profile shows, and how to reach them
-- [Search](https://index.forest.foundation/search.json?q=maths&market=tutoring): listings matching words and filters, by their ratings with the market's average added, so few scores sit near it; near a point, the listings whose place reaches it, nearest first, each with its distance in km
+- [Search](https://index.forest.foundation/search.json?q=maths&market=tutoring): listings matching words and filters, a market's own fields among them, by their ratings with the market's average added, so few scores sit near it; near a point, the listings whose place reaches it, nearest first, each with its distance in km
 - [Sitemap](https://index.forest.foundation/sitemap.xml): the home page, each market, each counted profile, and each listing this index lists
 - [Reputation tree](https://index.forest.foundation/v1/reputation): this index's signed root, and [every leaf](https://index.forest.foundation/v1/reputation/leaves), each a profile's trust, for carrying a trust from one's own profiles without naming them
 

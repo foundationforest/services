@@ -1,8 +1,7 @@
 {
-  "about": "What a run of the loop runs against. With every service null, as committed, the loop runs on its own copy of each, started on loopback from this repo (services.ts). A file that names any service by its origin is the deployed check instead: each one named is checked to answer, and no loop runs. market is the market the two people deal in.",
+  "about": "What a run of the end-to-end test runs against. With every service null, as committed, it runs on its own copy of each, started on loopback from this repo (services.ts). A file that names any service by its origin is the deployed check instead: each one named is checked to answer, and the test itself does not run.",
   "verifier": null,
   "host": null,
   "index": null,
-  "mcp": null,
-  "market": "tutoring"
+  "mcp": null
 }

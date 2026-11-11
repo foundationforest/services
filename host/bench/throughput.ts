@@ -38,7 +38,7 @@ const host = new Host({ now: () => 1_790_000_000_000 })
 const lines: string[] = []
 for (let p = 0; p < 500; p++) {
   const k = serviceKey(new Uint8Array(32).map((_, j) => (p * 13 + j * 7 + 1) & 255))
-  lines.push(encodeEntry(entry(k, 'profile', { market: 'tutoring', role: 'seller', hosts: ['https://host.example'] }, 1_790_000_000_000)))
+  lines.push(encodeEntry(entry(k, 'profile', { market: 'lessons', role: 'seller', hosts: ['https://host.example'] }, 1_790_000_000_000)))
   for (let o = 0; o < 4; o++) lines.push(encodeEntry(entry(k, `listing/${o}`, offer, 1_790_000_000_000 + o)))
 }
 let start = performance.now()

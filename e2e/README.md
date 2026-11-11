@@ -21,12 +21,14 @@ chain and no secret.
 
 ### What one run does
 
-A tutor who sells and a student who buys, each from a seed of their own, in `tutoring`. Every step
-checks what it did, and the run passes only if every step does.
+A seller who offers and a buyer who asks, each from a seed of their own, in a market the directory
+at `MARKETS` holds. The run names no market: it picks the first in the directory with a role whose
+listings are offers, one whose listings are requests, and a description, so a market changing, or a
+new one, never stops it. Every step checks what it did, and the run passes only if every step does.
 
-1. **Keys:** each seed's profile, `tutoring/tutor` or `tutoring/student`, with its address and pay
-   addresses `{ solana, evm }`, and its stamp number at the end-to-end test's verifier's name; the
-   tutor's seed also gives `sports-coaching/coach`.
+1. **Keys:** each seed's profile, in the role that offers or the one that requests, with its address
+   and pay addresses `{ solana, evm }`, and its stamp number at the end-to-end test's verifier's
+   name; the seller's seed also gives a second profile, in the directory's first other market.
 2. **Stamps:** each takes the face check, asking with the gift: one buy of the verifier's 10 credits
    with the host's credits client (`host/client/`). Each stamp is checked (signature, face key, stamp
    number, verifier name), the gift's ticket too, then asked back by its stamp number (`POST /stamp`)
@@ -36,35 +38,36 @@ checks what it did, and the run passes only if every step does.
 4. **Profiles:** each funds the profile's folder from the wallet with 3 credits, a buy paid from its
    balance, and adds the profile. Read back, the profile entry holds the market, role, public
    encryption key and pay addresses, and a verification that checks.
-5. **Logins:** each AI's first act gets the challenge; the person ticks their tutoring profile, and
+5. **Logins:** each AI's first act gets the challenge; the person ticks their profile, and
    the app makes the connection folder (funded from the wallet with one credit), an access key with
    all four switches, its note and its access entry, and hands over the pointer. Read back: one
    access key listed; its note at `key/<id>`, locked to the main key alone, naming the key and this
    MCP server and holding the connection folder's key; and the connection found from the seed, its
    entry locked to its own key and the MCP server's.
-6. **The MCP server:** the tutor's AI reads `markets` and writes a listing, `listing/maths`, 2 USD
-   an hour, signed by its access key and paid at its price; the student's AI finds it with `search`
-   and messages the tutor, the student's balance down by the message's price and its copy's, at
-   `sent/<id>` in the student's folder, each by its bytes, and the tutor's as it was; the tutor's AI
-   reads its inbox (the message counted, with the student's market, role and face check as the index
-   shows them) and replies the same way; the student's AI reads the reply.
-7. **The review:** the student's AI writes `review/maths`, scoring the tutor 10 and naming the
+6. **The MCP server:** the seller's AI reads `markets` and writes a listing, `listing/offer`, a
+   description, and 2 USD when the market has a price, signed by its access key and paid at its
+   price; the buyer's AI finds it with `search` and messages the seller, the buyer's balance down by
+   the message's price and its copy's, at `sent/<id>` in the buyer's folder, each by its bytes, and
+   the seller's as it was; the seller's AI reads its inbox (the message counted, with the buyer's
+   market, role and face check as the index shows them) and replies the same way; the buyer's AI
+   reads the reply.
+7. **The review:** the buyer's AI writes `review/offer`, scoring the seller 10 and naming the
    listing.
 8. **The index** shows both profiles counted under the face key, the listing listed, the review
-   counted, and what its own ranking, with `index/config/scoring.json`, makes of it: today the tutor
-   rated 10.0 by one, trust 44; the student no rating, trust 38; each uniqueness 75. Each statement
-   is signed and checked. No message appears in its JSON.
-9. **The trust, carried:** the tutor's device finds its leaf, checks the signed root, and proves its
-   tutoring trust onto the coach profile (the standard's reputation circuit), naming none of its
-   profiles; the app funds the coach profile from the wallet with 2 credits and adds it, and the
-   index shows the proof on the coach's page.
-10. **Added:** from the seed alone, the tutor's app adds the coach to the connection; with no new
-    login, `my_profiles` shows both, and the AI writes and reads back a locked note as the coach.
+   counted, and what its own ranking, with `index/config/scoring.json`, makes of it: today the seller
+   rated 10.0 by one, trust 44; the buyer no rating, trust 38; each uniqueness 75. Each statement is
+   signed and checked. No message appears in its JSON.
+9. **The trust, carried:** the seller's device finds its leaf, checks the signed root, and proves
+   its trust onto the second profile (the standard's reputation circuit), naming none of its
+   profiles; the app funds the second profile from the wallet with 2 credits and adds it, and the
+   index shows the proof on its page.
+10. **Added:** from the seed alone, the seller's app adds the second profile to the connection; with
+    no new login, `my_profiles` shows both, and the AI writes and reads back a locked note as it.
 11. **Ended:** the app deletes the connection entry and ends each key, which its profile entry lists
     with `until`, with its note and its access entry deleted; the MCP server answers the AI 401;
     what the keys wrote still counts on the host and the index, and a new write by them is refused
     (`unlisted`).
-12. **A new device:** from the tutor's seed alone, the Profiles folder gives both profiles, each with
+12. **A new device:** from the seller's seed alone, the Profiles folder gives both profiles, each with
     its folder, and its stamp.
 13. **Addresses:** no answer either AI got holds one of its own person's addresses (profiles, pay
     addresses, Profiles folder, connection folder); each reads the other's, as it must.
@@ -103,7 +106,7 @@ tools and markets.
 |---|---|
 | `npm run e2e` | The end-to-end test, on loopback |
 | `npm run e2e -- <file>` | The run `<file>` names, in `services.json`'s form |
-| `services.json` | `verifier`, `host`, `index`, `mcp`: each an origin, or `null` for the end-to-end test's own copy; `market`: the market the two people deal in |
+| `services.json` | `verifier`, `host`, `index`, `mcp`: each an origin, or `null` for the end-to-end test's own copy |
 
 ## How we run it
 
@@ -138,14 +141,14 @@ balances it found; its services stop with the run, so their pages are gone.
 - **The connect page is a stand-in,** ticking every switch: a run says nothing of the Forest app's.
 - **The deployed check is not the end-to-end test:** it says each deployed service answers, nothing
   more.
-- **No payment, and one review:** no money moves, and only the student rates.
+- **No payment, and one review:** no money moves, and only the buyer rates.
 - **One host:** both people are on it, so each finds the other's folder there.
 - **Each wait on the index is up to 2 minutes;** the end-to-end test's index reads every 5 seconds.
 
 ## FAQ
 
-**Why is the tutor's trust 44, and the student's 38?**
-A newcomer's trust is half its uniqueness: 38, the student, whom no one rated. The student's review
-is also its word about the tutor, a vouch weighing 0.75 times 0.375, which lifts the tutor to 44.
+**Why is the seller's trust 44, and the buyer's 38?**
+A newcomer's trust is half its uniqueness: 38, the buyer, whom no one rated. The buyer's review is
+also its word about the seller, a vouch weighing 0.75 times 0.375, which lifts the seller to 44.
 The end-to-end test works this out with the index's own ranking and numbers, and checks the index
 shows it.

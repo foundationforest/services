@@ -2,6 +2,7 @@
 // parameters, whether it acts for the person, the hints AI apps group tools by, and its work. A
 // tool that acts for the person needs a login; one that reads what is public does not.
 
+import type { Markets } from '@foundationforest/markets'
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js'
 import { type Context, refuse } from './forest.ts'
 import type { Connection } from './connection.ts'
@@ -17,8 +18,10 @@ export type Param = {
 
 export type Args = { [name: string]: unknown }
 
-/** What a tool works with: the index it reads, how it reaches hosts, and, for a call with a login, the person's connection. */
+/** What a tool works with: the index and the markets it reads, how it reaches hosts, and, for a call with a login, the person's connection. */
 export type Ctx = Context & {
+  /** The markets this copy reads: the directory, each market's file, and checkEntry. */
+  markets: Markets
   /** The fetch every host is reached with: one that reaches only public addresses, unless told otherwise. */
   hostFetch: typeof fetch
   /** The connection the call's token points to, read and opened in memory for this request; refused with no login, or when its hosts did not answer. */

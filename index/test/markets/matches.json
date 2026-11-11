@@ -1,0 +1,18 @@
+{
+  "name": "matches",
+  "description": "Players find someone to play a match with, for no money.",
+  "status": "beta",
+  "roles": [
+    { "role": "player", "listings": "requests" }
+  ],
+  "listing": {
+    "description": { "type": "text", "description": "The match the player wants to play." },
+    "courts": { "type": "place", "description": "The courts the player can play at, each a circle.", "radiusKm": 1, "many": true },
+    "time": { "type": "moment", "description": "When to play: a time, or a span when the player is free." },
+    "level": { "type": "choice", "description": "The player's level.", "values": ["beginner", "intermediate", "advanced"] }
+  },
+  "preview": ["description", "time", "courts", "level"],
+  "review": {
+    "showedUp": { "type": "choice", "description": "Whether the player came to the match as agreed.", "values": ["yes", "no"] }
+  }
+}

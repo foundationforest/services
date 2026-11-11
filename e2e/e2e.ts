@@ -1,5 +1,6 @@
-// The end-to-end test: Forest end to end. Two people from two seeds, a tutor who sells and a
-// student who buys. Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds
+// The end-to-end test: Forest end to end. Two people from two seeds, a seller who offers and a
+// buyer who asks, in a market of the directory at MARKETS picked by its roles, never named (MARKET
+// below). Each one's device is the reference app (mcp/test/app.ts), unchanged: it holds
 // the seed and the stamp, keeps the Profiles folder, makes each profile with its verification, and
 // at the connect page makes the AI's connection folder, with an access key for the profile ticked,
 // and hands the MCP server the pointer to it. What it has no method for, the device does here with
@@ -15,8 +16,8 @@
 //   npm run e2e -- <deployed.json>             # the deployed check: each service it names answers
 //
 //    1. keys: a seed each, and from it the profile's address and pay { solana, evm }, and the stamp
-//       number at the end-to-end test's verifier (keys/'s stampNumberOf); the tutor's second
-//       profile, sports-coaching/coach;
+//       number at the end-to-end test's verifier (keys/'s stampNumberOf); the seller's second
+//       profile, in another market;
 //    2. stamps: the end-to-end test's verifier's face check (its stand-in Didit passes it), asked
 //       with the face stamp's gift, one buy at the host; a stamp for each, kept on the person's
 //       device, then asked back from the verifier by its stamp number;
@@ -29,23 +30,23 @@
 //       their app makes the connection folder, funded from the wallet with one credit, lists an
 //       access key in the profile entry with every switch, writes its note and its access entry, and
 //       hands the MCP server the pointer;
-//    6. MCP server: the tutor's AI writes a listing, paid from the profile's balance; the student's
-//       finds it through the index's search and messages the tutor, paid from the student's balance
-//       by its bytes, the tutor's balance as it was; the tutor's reads the inbox, the student's
-//       market, role and checks as the index shows them, and replies the same way; the student's
+//    6. MCP server: the seller's AI writes a listing, paid from the profile's balance; the buyer's
+//       finds it through the index's search and messages the seller, paid from the buyer's balance
+//       by its bytes, the seller's balance as it was; the seller's reads the inbox, the buyer's
+//       market, role and checks as the index shows them, and replies the same way; the buyer's
 //       reads the reply;
-//    7. the review: the student's AI reviews the tutor, naming the listing;
+//    7. the review: the buyer's AI reviews the seller, naming the listing;
 //    8. the end-to-end test's index counts it all: both profiles, the listing, the review, and what
 //       each profile shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no
 //       message anywhere;
-//    9. the trust carried: the tutor's device finds its leaf by its profile, proves its trust onto
-//       its coach profile, and the index shows the proof;
-//   10. added: the tutor's app, from the seed alone, adds the coach profile to its AI's connection;
-//       with no new login, the AI acts as both, and writes a locked note as the coach;
-//   11. ended: the tutor's app ends the connection, its entry gone and both keys ended; the MCP
+//    9. the trust carried: the seller's device finds its leaf by its profile, proves its trust onto
+//       its second profile, and the index shows the proof;
+//   10. added: the seller's app, from the seed alone, adds the second profile to its AI's connection;
+//       with no new login, the AI acts as both, and writes a locked note as the second profile;
+//   11. ended: the seller's app ends the connection, its entry gone and both keys ended; the MCP
 //       server refuses the AI's next call, 401; what the keys wrote still counts on the host and
 //       the index, and a new write by either is refused;
-//   12. a new device: from the tutor's seed alone, the Profiles folder gives its two profiles and its
+//   12. a new device: from the seller's seed alone, the Profiles folder gives its two profiles and its
 //       stamp;
 //   13. addresses: no answer either AI received holds one of its own person's addresses;
 //   14. balances: what each folder's credits came to.
@@ -87,15 +88,33 @@ const repo = join(here, '..')
 const servicesFile = process.argv[2] ? resolve(process.argv[2]) : join(here, 'services.json')
 const cfg = readServices(servicesFile)
 const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/setup/reputation.wasm'), zkey: join(repo, 'standard/proofs/reputation/setup/reputation.zkey') }
-/** The tutor's second profile, where it carries its trust: another market, from the same seed. */
-const COACH = 'sports-coaching/coach'
+/** A market as the directory lists it. */
+type Listed = { name: string; roles: Array<{ role: string; listings: string }> }
+/** The directory at MARKETS, and a market's file, its listing fields, from the checkout standard.sh made. */
+const DIRECTORY = JSON.parse(readFileSync(join(repo, 'markets/directory.json'), 'utf8')) as { markets: Listed[] }
+const fileOf = (m: Listed) => JSON.parse(readFileSync(join(repo, `markets/markets/${m.name}.json`), 'utf8')) as { listing: { [field: string]: { type: string } } }
+/**
+ * Where the two people deal, read from the directory and never named, so a market changing or a new
+ * one never stops the end-to-end test: the first market with a role that offers and one that
+ * requests, whose listings hold a description to search by. The seller takes the first role that
+ * offers, the buyer the first that requests.
+ */
+const MARKET = DIRECTORY.markets.find((m) => m.roles.some((r) => r.listings === 'offers') && m.roles.some((r) => r.listings === 'requests') && fileOf(m).listing.description?.type === 'text') ?? none('no market in the directory has a role that offers, one that requests, and a description')
+const SIDES = { seller: MARKET.roles.find((r) => r.listings === 'offers')!.role, buyer: MARKET.roles.find((r) => r.listings === 'requests')!.role }
+/** Stops the run, saying why. */
+function none(why: string): never {
+  throw new Error(why)
+}
+/** The seller's second profile, where it carries its trust: the first other market in the directory, in its first role, from the same seed. */
+const OTHER = DIRECTORY.markets.find((m) => m.name !== MARKET.name) ?? none('the directory holds one market: the second profile needs another')
+const SECOND = `${OTHER.name}/${OTHER.roles[0]!.role}`
 /** How many of the host's credits the end-to-end test's verifier's face stamp gives each person: its own default. */
 const CREDITS = 10
 /** And its ID stamp, which no one in the end-to-end test takes: its own default. */
 const ID_CREDITS = 100
-/** What each person's app funds each profile with from the wallet, and the coach profile. */
+/** What each person's app funds each profile with from the wallet, and the second profile. */
 const PROFILE_CREDITS = 3
-const COACH_CREDITS = 2
+const SECOND_CREDITS = 2
 /** A credit, in millionths: the unit a balance is kept in. */
 const CREDIT = 1_000_000
 /** What the person's app lets each AI do in the profile ticked, unless the person chooses fewer: every switch. */
@@ -181,7 +200,7 @@ async function connectPage(): Promise<{ url: string; at: { app: App; profiles: s
 // ---- A person, as their device holds them ----
 
 type Person = {
-  role: 'tutor' | 'student'
+  role: 'seller' | 'buyer'
   label: string
   /** The seed, which the device keeps behind its unlock; here, in memory for the run. */
   seed: Uint8Array
@@ -202,7 +221,7 @@ type Person = {
 
 async function person(role: Person['role']): Promise<Person> {
   const seed = newSeed()
-  const label = `${cfg.market}/${role}`
+  const label = `${MARKET.name}/${SIDES[role]}`
   return {
     role,
     label,
@@ -363,22 +382,22 @@ async function main() {
   say(`verifier ${s.verifier.url} (${s.verifier.name}, face key ${s.verifier.keys.face}, ID key ${s.verifier.keys.id}, sponsor ${s.verifier.sponsor}), host ${s.host}, index ${s.index.url} (${s.index.address}), mcp ${s.mcp}`)
 
   // 1. Keys.
-  const tutor = await person('tutor')
-  const student = await person('student')
-  people.push(tutor, student)
-  const coach = { address: (await mainKey(tutor.seed, COACH)).address, pay: await payAddresses(tutor.seed, COACH) }
-  say(`two people, each from a seed: tutor ${tutor.address}, student ${student.address}, and the tutor's coach profile ${coach.address}`)
+  const seller = await person('seller')
+  const buyer = await person('buyer')
+  people.push(seller, buyer)
+  const second = { address: (await mainKey(seller.seed, SECOND)).address, pay: await payAddresses(seller.seed, SECOND) }
+  say(`two people, each from a seed: seller ${seller.address}, buyer ${buyer.address}, and the seller's second profile ${second.address}`)
 
   // 2. Stamps, each asked with its gift.
-  for (const p of [tutor, student]) await faceStamp(p)
+  for (const p of [seller, buyer]) await faceStamp(p)
 
   // 3. Credits: the gift's buys, collected with their tickets, land in each wallet.
-  for (const p of [tutor, student]) await collectGift(p)
+  for (const p of [seller, buyer]) await collectGift(p)
 
   // 4. Profiles: the stamp kept in the Profiles folder, paid from its own balance, the wallet; the
   // profile's folder funded from the wallet; then the profile. Each app funds its AI's connection
   // folder from the wallet too, as it makes it (pay).
-  for (const p of [tutor, student]) {
+  for (const p of [seller, buyer]) {
     p.app = new App({ seed: p.seed, hosts: [s.host], pay: (folder) => p.app!.fund(folder, 1) })
     const wallet = (await mainKey(p.seed, '')).address
     await p.app.keep(p.stamp!)
@@ -390,28 +409,26 @@ async function main() {
   }
 
   // 5. Logins: each AI acts in its person's profile, with every switch.
-  for (const p of [tutor, student]) await logInAs(p)
+  for (const p of [seller, buyer]) await logInAs(p)
 
   // 6. MCP server: every call through the AI's own client.
-  const [market, tutorRole] = tutor.label.split('/') as [string, string]
-  const read = await tutor.ai!.call('markets', { name: market })
-  assert.ok(read.kinds.listing.price && read.kinds.review.listing, 'the tutor’s AI reads what a listing and a review hold')
-  const maths = {
-    description: 'Maths for secondary school, one hour online. A test listing, written by an AI through mcp by e2e.',
-    price: { amount: '2', currency: 'USD', per: 'hour' },
-    subjects: ['maths'],
-    levels: ['secondary'],
-    mode: ['online'],
+  const [market, sellerRole] = seller.label.split('/') as [string, string]
+  const read = await seller.ai!.call('markets', { name: market })
+  assert.ok(read.kinds.listing.description && read.kinds.review.listing && read.keys.field.type, 'the seller’s AI reads what a listing and a review hold, and what each key means')
+  // A description, and a price where the market has one, with no per, which an amount may always leave out.
+  const offer = {
+    description: 'A test listing, written by an AI through the MCP server by the end-to-end test.',
+    ...(read.kinds.listing.price?.type === 'money' && { price: { amount: '2', currency: 'USD' } }),
   }
-  const beforeListing = await held(tutor.address)
-  assert.equal((await tutor.ai!.call('write', { label: tutor.label, path: 'listing/maths', body: maths })).written, 'listing/maths')
-  const listingAddress = `${tutor.address}/listing/maths`
-  const onHost = (await readFolder([s.host], tutor.address, Date.now())).current.get('listing/maths')?.entry
-  assert.equal(onHost?.body?.description, maths.description, 'on the host, and current')
-  assert.equal(onHost?.key, tutor.key, 'signed by the access key the tutor’s app handed over')
+  const beforeListing = await held(seller.address)
+  assert.equal((await seller.ai!.call('write', { label: seller.label, path: 'listing/offer', body: offer })).written, 'listing/offer')
+  const listingAddress = `${seller.address}/listing/offer`
+  const onHost = (await readFolder([s.host], seller.address, Date.now())).current.get('listing/offer')?.entry
+  assert.equal(onHost?.body?.description, offer.description, 'on the host, and current')
+  assert.equal(onHost?.key, seller.key, 'signed by the access key the seller’s app handed over')
   const listingPrice = await entryPrice(Buffer.byteLength(encodeEntry(onHost!)))
-  assert.equal(await held(tutor.address), beforeListing - listingPrice, 'paid from the profile’s balance, at its price')
-  say(`mcp: the tutor's AI wrote ${listingAddress}, signed by its access key, paid from the profile's balance: ${listingPrice / CREDIT} credits`)
+  assert.equal(await held(seller.address), beforeListing - listingPrice, 'paid from the profile’s balance, at its price')
+  say(`mcp: the seller's AI wrote ${listingAddress}, signed by its access key, paid from the profile's balance: ${listingPrice / CREDIT} credits`)
 
   /**
    * A message the AI of `from` sends `to`, and its copy in the sender's folder, as the Forest app
@@ -431,46 +448,46 @@ async function main() {
   }
 
   const found = await waitFor('the listing in the index’s search, through the mcp', INDEX_WAIT, async () => {
-    const out = await student.ai!.call('search', { filters: { q: 'maths', market, role: tutorRole } })
+    const out = await buyer.ai!.call('search', { filters: { q: 'test listing', market, role: sellerRole } })
     return (out.index.answer.results as Array<{ profile: string; listing: { address: string } }> | undefined)?.find((r) => r.listing.address === listingAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
-  const paid = await message(student, found.profile, text)
-  say(`mcp: the student’s AI found the listing in the index’s search, and messaged the tutor, paid from the student's balance by its bytes: ${paid.price / CREDIT} credits, and ${paid.copyPrice / CREDIT} for its copy, and the tutor's balance as it was`)
+  const paid = await message(buyer, found.profile, text)
+  say(`mcp: the buyer’s AI found the listing in the index’s search, and messaged the seller, paid from the buyer's balance by its bytes: ${paid.price / CREDIT} credits, and ${paid.copyPrice / CREDIT} for its copy, and the seller's balance as it was`)
 
   type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
-  const asked = await waitFor('the index to show the student, beside its message', INDEX_WAIT, async () => {
-    const m = ((await tutor.ai!.call('read', { label: tutor.label, inbox: true })).messages as Message[]).find((x) => x.body.text === text)
+  const asked = await waitFor('the index to show the buyer, beside its message', INDEX_WAIT, async () => {
+    const m = ((await seller.ai!.call('read', { label: seller.label, inbox: true })).messages as Message[]).find((x) => x.body.text === text)
     return m?.index?.checks?.some((c) => c.key === s.verifier.keys.face) ? m : null
   })
-  assert.equal(asked.from, student.address, 'from the student’s profile')
+  assert.equal(asked.from, buyer.address, 'from the buyer’s profile')
   assert.equal(asked.counts, true, 'whose profile entry lists the key that signed it with message')
-  assert.deepEqual([asked.index!.market, asked.index!.role], [cfg.market, 'student'], 'the student’s market and role, as the index shows them')
+  assert.deepEqual([asked.index!.market, asked.index!.role], [MARKET.name, SIDES.buyer], 'the buyer’s market and role, as the index shows them')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
-  await message(tutor, asked.from!, replyText)
-  say('mcp: the tutor’s AI read it, counted, with the student’s market, role and face check as the index shows them, and replied, paid the same way')
-  const replied = ((await student.ai!.call('read', { label: student.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
-  assert.deepEqual([replied?.from, replied?.counts], [tutor.address, true], 'the student’s AI reads the tutor’s reply')
-  say('mcp: the student’s AI read the reply')
+  await message(seller, asked.from!, replyText)
+  say('mcp: the seller’s AI read it, counted, with the buyer’s market, role and face check as the index shows them, and replied, paid the same way')
+  const replied = ((await buyer.ai!.call('read', { label: buyer.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
+  assert.deepEqual([replied?.from, replied?.counts], [seller.address, true], 'the buyer’s AI reads the seller’s reply')
+  say('mcp: the buyer’s AI read the reply')
 
-  // 7. The review, written by the student's AI, naming the listing.
+  // 7. The review, written by the buyer's AI, naming the listing.
   const review = { subject: found.profile, score: '10', text: 'Clear and patient. A test review.', listing: listingAddress }
-  assert.equal((await student.ai!.call('write', { label: student.label, path: 'review/maths', body: review })).written, 'review/maths')
-  const reviewed = (await readFolder([s.host], student.address, Date.now())).current.get('review/maths')?.entry
-  assert.deepEqual([reviewed?.body?.listing, reviewed?.key], [listingAddress, student.key], 'on the host, naming the listing, signed by the student’s access key')
-  say('the review: the student’s AI scored the tutor 10, naming the listing')
+  assert.equal((await buyer.ai!.call('write', { label: buyer.label, path: 'review/offer', body: review })).written, 'review/offer')
+  const reviewed = (await readFolder([s.host], buyer.address, Date.now())).current.get('review/offer')?.entry
+  assert.deepEqual([reviewed?.body?.listing, reviewed?.key], [listingAddress, buyer.key], 'on the host, naming the listing, signed by the buyer’s access key')
+  say('the review: the buyer’s AI scored the seller 10, naming the listing')
 
   // 8. The end-to-end test's index counts it all. What each profile shows is what the index's own
   // ranking makes of this one review, with its own numbers: each profile's face check counted, the
-  // review a rating and its writer's word about the tutor, a vouch; the student, whom no one rated,
+  // review a rating and its writer's word about the seller, a vouch; the buyer, whom no one rated,
   // a newcomer.
   const index = s.index
   const profilePage = (address: string) => json(`${index.url}/profiles/${address}.json`)
   const face = uniqueness([FACE_CONFIDENCE])
   const ranked = rank(
-    [{ address: tutor.address, uniqueness: face }, { address: student.address, uniqueness: face }],
-    [{ writer: student.address, subject: tutor.address, score: 10 }],
-    [{ writer: student.address, subject: tutor.address, kind: 'rating', time: 0, address: `${student.address}/review/maths` }],
+    [{ address: seller.address, uniqueness: face }, { address: buyer.address, uniqueness: face }],
+    [{ writer: buyer.address, subject: seller.address, score: 10 }],
+    [{ writer: buyer.address, subject: seller.address, kind: 'rating', time: 0, address: `${buyer.address}/review/offer` }],
     SCORING,
   )
   const want = (address: string) => ({
@@ -481,132 +498,132 @@ async function main() {
   type Shown = { ratings: { value: number | null; count: number }; trust: number; uniqueness: number; statement: string; signature: string }
   const shownOf = (v: Shown) => ({ ratings: v.ratings, trust: v.trust, uniqueness: v.uniqueness })
   const describe = (w: ReturnType<typeof shownOf>) => `rated ${w.ratings.value} by ${w.ratings.count}, trust ${w.trust}, uniqueness ${w.uniqueness}`
-  say(`the index: waiting for both profiles, the listing, the review, the tutor ${describe(want(tutor.address))}, the student ${describe(want(student.address))}`)
+  say(`the index: waiting for both profiles, the listing, the review, the seller ${describe(want(seller.address))}, the buyer ${describe(want(buyer.address))}`)
   const shown = await waitFor('the index to show it all', INDEX_WAIT, async () => {
-    const [t, st] = await Promise.all([profilePage(tutor.address), profilePage(student.address)])
+    const [t, st] = await Promise.all([profilePage(seller.address), profilePage(buyer.address)])
     if (t.status !== 200 || st.status !== 200) return null
-    for (const [v, w] of [[t.body, want(tutor.address)], [st.body, want(student.address)]] as const) {
+    for (const [v, w] of [[t.body, want(seller.address)], [st.body, want(buyer.address)]] as const) {
       if (!v.checks.some((c: { key: string }) => c.key === s.verifier.keys.face)) return null
       if (JSON.stringify(shownOf(v)) !== JSON.stringify(w)) return null
     }
-    const got = t.body.reviews.received.find((r: { address: string }) => r.address === `${student.address}/review/maths`)
+    const got = t.body.reviews.received.find((r: { address: string }) => r.address === `${buyer.address}/review/offer`)
     if (!got?.counted) return null
     if (!t.body.listings.some((l: { address: string; listed: boolean }) => l.address === listingAddress && l.listed)) return null
-    return { tutor: t.body as Shown, student: st.body as Shown }
+    return { seller: t.body as Shown, buyer: st.body as Shown }
   })
-  for (const v of [shown.tutor, shown.student]) {
+  for (const v of [shown.seller, shown.buyer]) {
     const signature = unpackSignature(b64u.decode(v.signature))
     assert.ok(signature && checkBytes(index.address, new TextEncoder().encode(v.statement), signature), 'what each profile shows, signed by the index')
   }
   assert.equal(JSON.stringify(shown).includes(text) || JSON.stringify(shown).includes(replyText), false, 'no message is anywhere in the index')
-  say(`the index counts it all: the tutor ${describe(shownOf(shown.tutor))}, the student ${describe(shownOf(shown.student))}, each statement signed; the review counted`)
+  say(`the index counts it all: the seller ${describe(shownOf(shown.seller))}, the buyer ${describe(shownOf(shown.buyer))}, each statement signed; the review counted`)
 
-  // 9. The trust carried to the coach profile, proven on the device. The tutor's leaf holds its
+  // 9. The trust carried to the second profile, proven on the device. The seller's leaf holds its
   // trust, by its profile: the index's tree, as its README says.
-  const tree = await waitFor('the tutor’s leaf in the index’s tree', INDEX_WAIT, async () => {
+  const tree = await waitFor('the seller’s leaf in the index’s tree', INDEX_WAIT, async () => {
     const [t, l] = await Promise.all([json(`${index.url}/v1/reputation`), json(`${index.url}/v1/reputation/leaves`)])
     if (t.status !== 200 || l.status !== 200 || t.body.root !== l.body.root) return null
-    const mine = l.body.leaves.find((x: { profile: string }) => x.profile === tutor.address)
-    return mine?.score === shown.tutor.trust ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { profile: string; score: number }[] } : null
+    const mine = l.body.leaves.find((x: { profile: string }) => x.profile === seller.address)
+    return mine?.score === shown.seller.trust ? { served: t.body as { index: string; root: string; time: number; signature: string }, leaves: l.body.leaves as { profile: string; score: number }[] } : null
   })
   const leaves = tree.leaves.map((l) => ({ profile: pointOf(l.profile), score: BigInt(l.score) }))
   const root = buildTree(leaves).root
   const rootSignature = b64u.decode(tree.served.signature)
   assert.equal(hex.encode(toBytes32(root)), tree.served.root, 'the leaves served make the root served')
   assert.ok(checkBytes(index.address, signedBytes(root, tree.served.time), unpackSignature(rootSignature)!), 'signed by the index')
-  const carried = await proveReputation({ seed: tutor.seed, labels: [tutor.label], leaves, profileLabel: COACH, artifacts: REPUTATION_FILES })
-  assert.equal(carried.address, coach.address, 'proven onto the coach profile')
-  assert.equal(Number(carried.score), shown.tutor.trust, 'carrying the tutor’s trust')
-  assert.ok(await checkReputation({ proof: carried.proof, root, score: carried.score, profile: coach.address, index: index.address, time: tree.served.time, signature: rootSignature }), 'it checks')
+  const carried = await proveReputation({ seed: seller.seed, labels: [seller.label], leaves, profileLabel: SECOND, artifacts: REPUTATION_FILES })
+  assert.equal(carried.address, second.address, 'proven onto the second profile')
+  assert.equal(Number(carried.score), shown.seller.trust, 'carrying the seller’s trust')
+  assert.ok(await checkReputation({ proof: carried.proof, root, score: carried.score, profile: second.address, index: index.address, time: tree.served.time, signature: rootSignature }), 'it checks')
   const reputation = { circuit: 'reputation', index: tree.served.index, root: tree.served.root, time: tree.served.time, signature: tree.served.signature, score: Number(carried.score), proof: b64u.encode(reputationBytes(carried.proof)) }
-  await tutor.app!.fund(coach.address, COACH_CREDITS)
-  await profile(tutor, COACH, [reputation])
-  say(`tutor: its leaf found among ${leaves.length}, its trust, ${carried.score}, proven onto ${coach.address}, funded from its wallet with ${COACH_CREDITS} credits`)
-  await waitFor('the index to show the proof on the coach profile', INDEX_WAIT, async () => {
-    const v = await profilePage(coach.address)
+  await seller.app!.fund(second.address, SECOND_CREDITS)
+  await profile(seller, SECOND, [reputation])
+  say(`seller: its leaf found among ${leaves.length}, its trust, ${carried.score}, proven onto ${second.address}, funded from its wallet with ${SECOND_CREDITS} credits`)
+  await waitFor('the index to show the proof on the second profile', INDEX_WAIT, async () => {
+    const v = await profilePage(second.address)
     const x = v.status === 200 ? v.body.proofs?.find((p: { circuit: string }) => p.circuit === 'reputation') : null
-    return x?.result === 'shown' && x.trust === shown.tutor.trust ? x : null
+    return x?.result === 'shown' && x.trust === shown.seller.trust ? x : null
   })
-  say('the index shows the carried trust on the coach profile')
+  say('the index shows the carried trust on the second profile')
 
-  // 10. Added: the tutor's app, finding the connection from the seed alone, adds the coach profile
+  // 10. Added: the seller's app, finding the connection from the seed alone, adds the second profile
   // to it, with every switch: one access key more, its note, its access entry. With no new login,
-  // the tutor's AI acts as both, and writes a locked note as the coach.
-  await new App({ seed: tutor.seed, hosts: [s.host] }).addToConnection(tutor.connection!, COACH)
-  assert.deepEqual((await tutor.ai!.call('my_profiles')).profiles, [COACH, tutor.label].map((label) => ({ label, can: SWITCHES })), 'with no new login, both, by their labels')
-  const coachKey = (await tutor.app!.keys(COACH))[0]!.key
+  // the seller's AI acts as both, and writes a locked note as the second profile.
+  await new App({ seed: seller.seed, hosts: [s.host] }).addToConnection(seller.connection!, SECOND)
+  assert.deepEqual((await seller.ai!.call('my_profiles')).profiles, [SECOND, seller.label].sort().map((label) => ({ label, can: SWITCHES })), 'with no new login, both, by their labels')
+  const secondKey = (await seller.app!.keys(SECOND))[0]!.key
   const plan = { text: 'Football on Saturdays. A test note, locked, written by an AI through mcp by e2e.' }
-  assert.equal((await tutor.ai!.call('write', { label: COACH, path: 'notes/plan', body: plan, locked: true })).locked, true)
-  assert.deepEqual((await tutor.ai!.call('read', { label: COACH, path: 'notes/plan' })).body, plan, 'and reads it back')
-  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan')?.entry.key, coachKey, 'on the host, signed by the coach’s access key')
-  say(`added: the tutor's app added ${COACH} to its AI's connection, from the seed alone; with no new login, the AI wrote a locked note as the coach, signed by its access key ${coachKey}`)
+  assert.equal((await seller.ai!.call('write', { label: SECOND, path: 'notes/plan', body: plan, locked: true })).locked, true)
+  assert.deepEqual((await seller.ai!.call('read', { label: SECOND, path: 'notes/plan' })).body, plan, 'and reads it back')
+  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get('notes/plan')?.entry.key, secondKey, 'on the host, signed by the second profile’s access key')
+  say(`added: the seller's app added ${SECOND} to its AI's connection, from the seed alone; with no new login, the AI wrote a locked note as the second profile, signed by its access key ${secondKey}`)
 
-  // 11. Ended: the tutor's app ends the connection: its connection entry deleted, then each key it
+  // 11. Ended: the seller's app ends the connection: its connection entry deleted, then each key it
   // holds ended, listed in its profile entry with until, with its note and its access entry deleted.
   // The MCP server answers the AI's next call 401, so it must log in again. What the keys wrote
   // still counts, on the host and at the index; a new entry either signs is refused. The device
   // holds the keys for that, opened from the connection's access entries before it ends, as it can.
-  const access = (await tutor.app!.connections()).find((c) => c.address === tutor.connection)!.access
+  const access = (await seller.app!.connections()).find((c) => c.address === seller.connection)!.access
   const keys = await Promise.all(access.map(async (a) => ({ label: a.body.label as string, address: a.body.address as string, key: await accessKey(b64u.decode(a.body.key as string)) })))
-  assert.deepEqual(keys.map((k) => k.label).sort(), [COACH, tutor.label].sort(), 'the connection holds both keys')
-  await tutor.app!.endConnection(tutor.connection!)
-  for (const label of [tutor.label, COACH]) {
-    const listed = await tutor.app!.keys(label)
+  assert.deepEqual(keys.map((k) => k.label).sort(), [SECOND, seller.label].sort(), 'the connection holds both keys')
+  await seller.app!.endConnection(seller.connection!)
+  for (const label of [seller.label, SECOND]) {
+    const listed = await seller.app!.keys(label)
     assert.ok(listed.length === 1 && listed[0]!.until !== undefined && listed[0]!.open === undefined, `${label}'s key, ended, with no open key`)
   }
-  assert.equal(await tutor.app!.note(tutor.label, tutor.key!), undefined, 'and no note about it')
-  assert.deepEqual(await tutor.app!.connections(), [], 'and no connection')
+  assert.equal(await seller.app!.note(seller.label, seller.key!), undefined, 'and no note about it')
+  assert.deepEqual(await seller.app!.connections(), [], 'and no connection')
   const ended = await fetch(s.mcp, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${tutor.ai!.token()}` },
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${seller.ai!.token()}` },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
   })
   assert.equal(ended.status, 401, 'the mcp refuses the ended connection’s token')
   const why = ended.headers.get('www-authenticate') ?? ''
   assert.match(why, /error="invalid_token", error_description="the connection this login points to is gone"/)
-  const next = await tutor.ai!.call('write', { label: tutor.label, path: 'listing/physics', body: { ...maths, description: 'Physics. A test listing after the connection ended.' } }).then(
+  const next = await seller.ai!.call('write', { label: seller.label, path: 'listing/more', body: { ...offer, description: 'Another test listing, after the connection ended.' } }).then(
     () => assert.fail('the mcp acted for an ended connection'),
     (err: Error) => err,
   )
   assert.ok(!(next instanceof Refused), `the AI's next call is refused before any tool, so it must log in again: ${next.message}`)
-  assert.equal((await readFolder([s.host], tutor.address, Date.now())).current.get('listing/maths')?.entry.key, tutor.key, 'the listing its key wrote still counts')
-  assert.equal((await readFolder([s.host], coach.address, Date.now())).current.get('notes/plan')?.entry.key, coachKey, 'and so does the coach’s note')
+  assert.equal((await readFolder([s.host], seller.address, Date.now())).current.get('listing/offer')?.entry.key, seller.key, 'the listing its key wrote still counts')
+  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get('notes/plan')?.entry.key, secondKey, 'and so does the second profile’s note')
   for (const k of keys) {
     const [o] = await write([s.host], [entry({ profile: k.address, key: k.key }, 'notes/after', { text: 'After the key ended. A test entry.' }, Date.now())])
     assert.equal(o!.results[0]?.error, 'unlisted', `the host refuses a new entry by ${k.label}'s ended key`)
   }
-  await waitFor('the index to read the tutor’s key ended, and still list its listing', INDEX_WAIT, async () => {
-    const t = await profilePage(tutor.address)
-    const listed = (t.body?.profile?.keys as Body[] | undefined)?.find((k) => k.key === tutor.key)
+  await waitFor('the index to read the seller’s key ended, and still list its listing', INDEX_WAIT, async () => {
+    const t = await profilePage(seller.address)
+    const listed = (t.body?.profile?.keys as Body[] | undefined)?.find((k) => k.key === seller.key)
     return listed?.until !== undefined && t.body.listings.some((l: { address: string; listed: boolean }) => l.address === listingAddress && l.listed) ? true : null
   })
-  say(`ended: the tutor's app ended its AI's connection; the mcp answered its next call 401 (${why.split('error_description=')[1]}); the listing and the note its keys wrote still count, on the host and at the index, and the host refused a new entry by either key`)
+  say(`ended: the seller's app ended its AI's connection; the MCP server answered its next call 401 (${why.split('error_description=')[1]}); the listing and the note its keys wrote still count, on the host and at the index, and the host refused a new entry by either key`)
 
-  // 12. A new device: the tutor's seed alone gives its Profiles folder, its two profiles and its stamp.
-  const device = await App.find(tutor.seed, [s.host])
-  assert.deepEqual(device.labels, [COACH, tutor.label].sort(), 'both its profiles')
-  for (const label of device.labels) assert.ok(await profileEntry((await mainKey(tutor.seed, label)).address), `${label}'s folder, on the host`)
+  // 12. A new device: the seller's seed alone gives its Profiles folder, its two profiles and its stamp.
+  const device = await App.find(seller.seed, [s.host])
+  assert.deepEqual(device.labels, [SECOND, seller.label].sort(), 'both its profiles')
+  for (const label of device.labels) assert.ok(await profileEntry((await mainKey(seller.seed, label)).address), `${label}'s folder, on the host`)
   assert.equal(device.stamps.length, 1)
-  assert.equal(stampFromJson(JSON.parse(device.stamps[0]!)).signature.S, tutor.stamp!.signature.S, 'its stamp, the one signed')
-  say(`a new device found ${device.labels.join(' and ')}, and the stamp, from the tutor's seed alone`)
+  assert.equal(stampFromJson(JSON.parse(device.stamps[0]!)).signature.S, seller.stamp!.signature.S, 'its stamp, the one signed')
+  say(`a new device found ${device.labels.join(' and ')}, and the stamp, from the seller's seed alone`)
 
   // 13. No answer either AI received holds one of its own person's addresses: each profile's, the
-  // coach's included, each pay address, the Profiles folder's, and their connection folder's. An AI acting for one person reads
+  // the second profile's included, each pay address, the Profiles folder's, and their connection folder's. An AI acting for one person reads
   // the other's addresses, as it must to message and review them.
-  for (const [p, labels] of [[tutor, [tutor.label, COACH]], [student, [student.label]]] as const) {
+  for (const [p, labels] of [[seller, [seller.label, SECOND]], [buyer, [buyer.label]]] as const) {
     const own = (await addressesOf(p, [...labels])).map((a) => a.toLowerCase())
     const answers = p.ai!.answers.map((a) => a.toLowerCase())
     const held = own.filter((a) => answers.some((answer) => answer.includes(a)))
     assert.deepEqual(held, [], `an answer ${p.role}'s AI got holds one of ${p.role}'s own addresses`)
   }
-  say(`no answer holds the person's own addresses: ${tutor.ai!.answers.length} answers to the tutor's AI, ${student.ai!.answers.length} to the student's`)
+  say(`no answer holds the person's own addresses: ${seller.ai!.answers.length} answers to the seller's AI, ${buyer.ai!.answers.length} to the buyer's`)
 
   // 14. Balances.
   const left = async (folder: string) => (await json(`${s.host}/credits/balance/${folder}`)).body.credits as number
   say(
-    `balances: the tutor's folder ${await left(tutor.address)} credits, the student's ${await left(student.address)}, the coach's ${await left(coach.address)}; ` +
-      `the Profiles folders ${await left((await mainKey(tutor.seed, '')).address)} and ${await left((await mainKey(student.seed, '')).address)}; ` +
-      `the connection folders ${await left(tutor.connection!)} and ${await left(student.connection!)}`,
+    `balances: the seller's folder ${await left(seller.address)} credits, the buyer's ${await left(buyer.address)}, the second profile's ${await left(second.address)}; ` +
+      `the Profiles folders ${await left((await mainKey(seller.seed, '')).address)} and ${await left((await mainKey(buyer.seed, '')).address)}; ` +
+      `the connection folders ${await left(seller.connection!)} and ${await left(buyer.connection!)}`,
   )
 }
 

@@ -1,7 +1,8 @@
 // `/markets/<name>`: the market's file, verbatim from the pinned directory, and the listings this
 // index lists, by role, each with what its profile shows, sorted as search sorts them (search.ts).
-// Drawn as a header on the market's tint: its avatar, its name in words, its counts and its
-// description; then one side per role, each with the tabs, a search box for that side, and its
+// Drawn as a header on the market's tint: its avatar, its name in words, a chip when it is beta, its
+// counts and its description, and for a beta market the line saying what beta means; then one side
+// per role, each with the tabs, a search box for that side, and its
 // results.
 //
 // The page reads no query, and its body is drawn from its JSON alone, so its tabs are links to each
@@ -10,7 +11,7 @@
 
 import type { Market } from '@foundationforest/markets'
 
-import { avatarHtml, colorOf, countText, inWords, offerOf, type Result, resultHtml, results } from './common.ts'
+import { avatarHtml, BETA, betaChip, colorOf, countText, inWords, offerOf, type Result, resultHtml, results } from './common.ts'
 import { backHtml, html, type Page, searchBox, urls } from './template.ts'
 
 export type MarketPage = { index: string; market: unknown; listings: { [role: string]: Result[] } }
@@ -32,8 +33,8 @@ export const market: Page<MarketPage> = {
     // "Tutor offers", "Student requests": a role and its word, never a plural of a role.
     const tab = (r: Market['roles'][number]) => `${inWords(r.role)} ${r.listings}`
     return html`<div class="head tint" style="--h:${colorOf(site, m.name)}">${backHtml(urls(base).home)}
-<div class="me">${avatarHtml(site, m.name, { size: 'lg' })}<div><h1>${inWords(m.name)}</h1><span class="s">${counts.join(', ') || 'None yet'}</span></div></div>
-<p>${m.description}</p></div>
+<div class="me">${avatarHtml(site, m.name, { size: 'lg' })}<div><h1>${inWords(m.name)}</h1>${m.status === 'beta' ? betaChip : ''}<span class="s">${counts.join(', ') || 'None yet'}</span></div></div>
+<p>${m.description}</p>${m.status === 'beta' ? html`\n<p class="s">${BETA}</p>` : ''}</div>
 ${m.roles.map(
   (r) => html`<section class="side" id="${r.role}" aria-label="${tab(r)}">${m.roles.length > 1 ? html`<nav class="ptabs" aria-label="Sides">${m.roles.map((t) => html`<a href="#${t.role}"${t.role === r.role ? html` aria-current="true"` : ''}>${tab(t)}</a>`)}</nav>` : ''}
 ${searchBox(base, { placeholder: `Search ${inWords(m.name).toLowerCase()}`, keep: { market: m.name, role: r.role } })}
