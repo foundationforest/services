@@ -307,7 +307,7 @@ body with any other field is refused. CORS is open to any origin. Every code bel
 | `DIDIT_FACE_API_KEY` | required | From the face check's Didit application. A secret | the foundation's, for "Forest face" |
 | `DIDIT_FACE_WORKFLOW_ID` | required | The face check's workflow; a session on another is refused | "Forest face", `2faaca36-58b4-49d7-90d7-2b9cf002d173` |
 | `DIDIT_ID_API_KEY` | required | From the ID check's Didit application, or the face check's key with both workflows in one application, whose one face search the two checks then share. A secret | the foundation's, for "Forest ID" |
-| `DIDIT_ID_WORKFLOW_ID` | required | The ID check's workflow; the same | "Forest ID", in its own application |
+| `DIDIT_ID_WORKFLOW_ID` | required | The ID check's workflow; the same | "Forest ID", `4ddd9ce6-5d8c-4984-9833-5e2b612f30b2` |
 | `DIDIT_BASE_URL` | `https://verification.didit.me` | For a stand-in Didit | the default |
 | `FACE_MODEL` | `sface` | Or `stand-in`, with `DIDIT_BASE_URL` on loopback | `sface` |
 | `APP_ORIGINS` | none: no `returnUrl` | Where Didit and Stripe may send a person back, by origin, comma-separated | the Forest app, https://app.forest.foundation |
