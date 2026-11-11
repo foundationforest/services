@@ -120,15 +120,22 @@ describe('reading, with no login', () => {
     }
   })
 
-  test('markets: every market with its status, or one market’s file with its preview, kinds, each with its fields, what each key means, and each type its fields use, whole; a market not in the directory refused', async () => {
+  test('markets: every market with its status, or one market with its preview, kinds, each with its fields, each field once, what each key means, and each type its fields use, whole; a market not in the directory refused', async () => {
     const all = await call('markets')
     assert.deepEqual(all.markets, JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')).markets, 'the directory as it is')
     assert.deepEqual(all.markets.map((m: { name: string; status: string }) => [m.name, m.status]), [['lessons', 'beta'], ['wardrobe', 'live']])
     const one = await call('markets', { name: 'lessons' })
     assert.deepEqual(Object.keys(one), ['market', 'kinds', 'keys', 'types'])
-    assert.equal(one.market.status, 'beta')
+    // The market is the file but its fields, which kinds gives: each field once.
+    const { listing, review, ...file } = LESSONS
+    assert.deepEqual(one.market, file)
+    const text = JSON.stringify(one)
+    for (const [key, field] of Object.entries({ ...listing, ...review } as { [key: string]: { description: string } })) {
+      assert.equal(text.split(JSON.stringify(field.description)).length - 1, 1, `${key} once`)
+    }
     assert.deepEqual(Object.keys(one.kinds), ['listing', 'review', 'vouch', 'report'])
     assert.deepEqual(one.kinds.listing, { ...LESSONS.listing, ...SHARED.listing }, "a listing's fields are the file's, and contact")
+    assert.deepEqual(one.kinds.review, { ...SHARED.review, ...LESSONS.review }, "a review's are those every review holds, and the file's")
     // A number's unit, and a choice's labels, as the file gives them.
     assert.equal(one.kinds.listing.minutes.unit, 'minutes')
     assert.deepEqual(one.kinds.listing.languages.labels, { en: 'English', es: 'Spanish', fr: 'French' })
@@ -151,11 +158,10 @@ describe('reading, with no login', () => {
     assert.match(one.keys.field.roles, /in review, the roles of the profile the review is about/)
     assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'listing', 'paid'], 'the fields every review holds, then the file’s own')
     assert.deepEqual(Object.keys(one.kinds.vouch), ['subject', 'text'])
-    assert.deepEqual(one.market.preview, LESSONS.preview)
-    assert.ok(one.market.listing.price)
     // A market with no preview and no review of its own: both meant all the same, a preview given;
     // only the keys its fields use.
     const other = await call('markets', { name: 'wardrobe' })
+    assert.deepEqual(Object.keys(other.market), ['name', 'description', 'status', 'roles', 'preview'])
     assert.deepEqual([other.market.status, other.market.preview], ['live', ['description', 'price', 'location']])
     assert.deepEqual(Object.keys(other.keys.market), ['name', 'description', 'status', 'roles', 'listing', 'preview', 'review'])
     assert.deepEqual(Object.keys(other.keys.field), ['type', 'description', 'values', 'labels', 'radiusKm', 'many', 'roles'])
