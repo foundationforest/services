@@ -77,7 +77,33 @@ export const CHECKS: Check[] = [
       return found.some((p) => p.name === 'Madrid' && p.country === 'ES') ? null : 'Madrid, Spain is not among them'
     },
   },
+  // Another name, in its own language or script, finds the place and is the name shown.
+  ...(
+    [
+      ['münchen', 'München', 'Munich', 48.13743, 11.57549],
+      ['roma', 'Roma', 'Rome', 41.89193, 12.51133],
+      ['wien', 'Wien', 'Vienna', 48.20849, 16.37208],
+      ['lisboa', 'Lisboa', 'Lisbon', 38.72509, -9.1498],
+      ['nueva york', 'Nueva York', 'New York City', 40.71427, -74.00597],
+      ['cologne', 'Cologne', 'Köln', 50.93333, 6.95],
+      ['bombay', 'Bombay', 'Mumbai', 19.07283, 72.88261],
+      ['москва', 'Москва', 'Moscow', 55.75204, 37.61781],
+      ['東京', '東京', 'Tokyo', 35.6895, 139.69171],
+      ['القاهرة', 'القاهرة', 'Cairo', 30.06263, 31.24967],
+    ] as const
+  ).map(([q, shown, city, lat, lon]) => first(`"${q}" is ${city}, shown as ${shown}`, (p) => p.find(q), (p) => p.name === shown && km(p, point(lat, lon)) < 1)),
+  // The name each place stands alone with, in a listing.
+  ...(
+    [
+      ['del valle', point(25.66, -100.37), 'Del Valle, San Pedro Garza García'],
+      ['chamberi', undefined, 'Chamberí, Madrid'],
+      ['kreuzberg', undefined, 'Kreuzberg, Berlin'],
+      ['shibuya', undefined, 'Shibuya, Tokyo'],
+      ['monterrey', undefined, 'Monterrey, Nuevo León'],
+    ] as const
+  ).map(([q, near, name]) => first(`"${q}" stands alone as ${name}`, (p) => p.find(q, { near }), (p) => p.place.name === name)),
   counted('the Mexico data holds about 141,000 colonias', 'colonias', 134_000, 148_000),
   counted('the world holds about 237,000 towns and city sections', 'towns', 225_000, 250_000),
   counted('in about 246 countries', 'countries', 240, 250),
+  counted('with about 970,000 other names', 'names', 920_000, 1_025_000),
 ]
