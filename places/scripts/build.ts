@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
 
 import { fold } from '../src/fold.ts'
-import { BANDS, FILE, openPlaces, type Places, SCHEMA } from '../src/places.ts'
+import { BANDS, FILE, NEAR_KM, openPlaces, type Places, SCHEMA } from '../src/places.ts'
 
 export const SOURCES = {
   geonames: 'https://download.geonames.org/export',
@@ -41,7 +41,7 @@ export const MEXICO_STATES: { [name: string]: string } = {
 
 export type Check = { name: string; run(places: Places): string | null }
 export type Source = { url: string; bytes: number; sha256: string; modified: string | null }
-export type Counts = { towns: number; countries: number; colonias: number; gone: number; colonias_without_area: number }
+export type Counts = { towns: number; countries: number; colonias: number; names: number; gone: number; colonias_without_area: number }
 
 const KM_PER_DEGREE = (Math.PI / 180) * 6371.0088
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000
@@ -55,6 +55,42 @@ export function contextOf(name: string, parts: Array<string | undefined>): strin
 }
 
 export const bandOf = (people: number) => BANDS.findLastIndex((b) => people >= b.people)
+
+type Town = { name: string; lat: number; lon: number; section: boolean; cc: string; people: number }
+
+/**
+ * Each city section's city: the place with the most people within NEAR_KM of it, in its country,
+ * that is not a section itself, as GeoNames gives a section no city. Found through a grid of
+ * one-degree squares, each section looking in its own and the eight round it.
+ */
+export function citiesOf(towns: Town[]): Map<Town, string> {
+  const square = (lat: number, lon: number) => `${Math.floor(lat)},${Math.floor(lon)}`
+  const grid = new Map<string, Town[]>()
+  for (const t of towns) {
+    if (t.section) continue
+    const key = square(t.lat, t.lon)
+    const list = grid.get(key)
+    if (list) list.push(t)
+    else grid.set(key, [t])
+  }
+  const cities = new Map<Town, string>()
+  for (const s of towns) {
+    if (!s.section) continue
+    let best: Town | undefined
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++)
+        for (const t of grid.get(square(s.lat + i, s.lon + j)) ?? [])
+          if (t.cc === s.cc && kmBetween(s, t) <= NEAR_KM && (!best || t.people > best.people || (t.people === best.people && t.name < best.name))) best = t
+    if (best) cities.set(s, best.name)
+  }
+  return cities
+}
+
+const kmBetween = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => {
+  const r = Math.PI / 180
+  const h = Math.sin(((b.lat - a.lat) * r) / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(((b.lon - a.lon) * r) / 2) ** 2
+  return 2 * 6371.0088 * Math.asin(Math.sqrt(h))
+}
 
 type Sum = { km2: number; lat: number; lon: number }
 
@@ -140,36 +176,58 @@ export async function build(o: { dir: string; sources?: typeof SOURCES; states?:
   rmSync(next, { force: true })
   const db = new DatabaseSync(next)
   db.exec(SCHEMA)
-  const put = db.prepare('insert into places (id, name, context, folded, lat, lon, radiusKm, country, band, people) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+  const put = db.prepare('insert into places (id, name, context, folded, lat, lon, radiusKm, country, band, people, within) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
   const spot = db.prepare('insert into spots (id, minLat, maxLat, minLon, maxLon) values (?, ?, ?, ?, ?)')
+  const other = db.prepare('insert into names (place, name, folded, uses) values (?, ?, ?, ?)')
   let id = 0
-  function add(name: string, context: string, lat: number, lon: number, radiusKm: number, country: string, band: number, people: number) {
+  function add(name: string, context: string, lat: number, lon: number, radiusKm: number, country: string, band: number, people: number, within: Array<string | undefined>) {
     id++
     lat = round4(lat)
     lon = round4(lon)
-    put.run(id, name, context, fold(name), lat, lon, radiusKm, country, band, people)
+    put.run(id, name, context, fold(name), lat, lon, radiusKm, country, band, people, within.filter(Boolean).join('\n'))
     spot.run(id, lat, lat, lon, lon)
+    return id
   }
 
-  const counts: Counts = { towns: 0, countries: 0, colonias: 0, gone: 0, colonias_without_area: 0 }
-  db.exec('begin')
-  const seenCountries = new Set<string>()
-  for (const l of cities) {
-    const [, name, , , lat, lon, , feature, cc, , a1, a2] = l as [string, string, string, string, string, string, string, string, string, string, string, string]
+  const counts: Counts = { towns: 0, countries: 0, colonias: 0, names: 0, gone: 0, colonias_without_area: 0 }
+  const towns = cities.flatMap((l) => {
+    const [, name, , names, lat, lon, , feature, cc, , a1, a2] = l as [string, string, string, string, string, string, string, string, string, string, string, string]
     if (GONE.has(feature)) {
       counts.gone++
-      continue
+      return []
     }
-    const people = Number(l[14]) || 0
-    const band = bandOf(people)
     const region = admin1.get(`${cc}.${a1}`)
-    add(name, contextOf(name, [admin2.get(`${cc}.${a1}.${a2}`), cc === 'MX' && region ? state(region) : region, countries.get(cc)]), Number(lat), Number(lon), BANDS[band]!.km, cc, band, people)
-    seenCountries.add(cc)
+    const people = Number(l[14]) || 0
+    return [{ name, names, lat: Number(lat), lon: Number(lon), section: feature === 'PPLX', cc, people, district: admin2.get(`${cc}.${a1}.${a2}`), state: cc === 'MX' && region ? state(region) : region }]
+  })
+  const cityOf = citiesOf(towns)
+  // How many towns use each spelling, as their own name or another, for choosing which to show.
+  const uses = new Map<string, number>()
+  for (const t of towns) for (const name of new Set([t.name, ...t.names.split(',')])) if (name) uses.set(name, (uses.get(name) ?? 0) + 1)
+  db.exec('begin')
+  const seenCountries = new Set<string>()
+  for (const t of towns) {
+    const band = bandOf(t.people)
+    const country = countries.get(t.cc)
+    // A town stands alone with its state, or its country; a city section with its city first.
+    const place = add(t.name, contextOf(t.name, [t.district, t.state, country]), t.lat, t.lon, BANDS[band]!.km, t.cc, band, t.people, [t.section ? cityOf.get(t) : undefined, t.state, country])
+    // Its other names, each once, but those its own name already matches.
+    const own = fold(t.name)
+    const kept = new Set<string>()
+    for (const name of t.names.split(',')) {
+      const folded = fold(name)
+      if (!folded || folded === own || kept.has(name)) continue
+      kept.add(name)
+      other.run(place, name, folded, uses.get(name)!)
+      counts.names++
+    }
+    seenCountries.add(t.cc)
     counts.towns++
   }
   counts.countries = seenCountries.size
   // A colonia: its name, municipio, state and code from the postal file, never its point, and its
-  // point and size from its postal area. Merged when name, municipio and code repeat.
+  // point and size from its postal area. Merged when name, municipio and code repeat. It stands
+  // alone with its municipio.
   const seen = new Set<string>()
   for (const [, code, name, st, , municipio] of postal as string[][]) {
     const key = `${name}\t${municipio}\t${code}`
@@ -181,19 +239,21 @@ export async function build(o: { dir: string; sources?: typeof SOURCES; states?:
       continue
     }
     const radiusKm = Math.max(1, Math.ceil(Math.sqrt(area.km2 / Math.PI)))
-    add(name!, contextOf(name!, [municipio, state(st!), countries.get('MX'), code]), area.lat / area.km2, area.lon / area.km2, radiusKm, 'MX', 0, 0)
+    add(name!, contextOf(name!, [municipio, state(st!), countries.get('MX'), code]), area.lat / area.km2, area.lon / area.km2, radiusKm, 'MX', 0, 0, [municipio, state(st!), countries.get('MX')])
     counts.colonias++
   }
   db.exec('commit')
-  db.exec("insert into words (words) values ('rebuild')")
-  db.exec("insert into words (words) values ('optimize')")
+  for (const index of ['words', 'others']) {
+    db.exec(`insert into ${index} (${index}) values ('rebuild')`)
+    db.exec(`insert into ${index} (${index}) values ('optimize')`)
+  }
   const about = db.prepare('insert into about (key, value) values (?, ?)')
   about.run('built', JSON.stringify(new Date().toISOString()))
   about.run('counts', JSON.stringify(counts))
   about.run('sources', JSON.stringify(got))
   db.exec('vacuum')
   db.close()
-  log(`${counts.towns} towns in ${counts.countries} countries, ${counts.colonias} colonias; left out: ${counts.gone} places no longer there, ${counts.colonias_without_area} colonias with no postal area`)
+  log(`${counts.towns} towns in ${counts.countries} countries with ${counts.names} other names, ${counts.colonias} colonias; left out: ${counts.gone} places no longer there, ${counts.colonias_without_area} colonias with no postal area`)
 
   const places = openPlaces(next)
   const failed = (o.checks ?? []).flatMap((c) => {

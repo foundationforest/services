@@ -13,9 +13,9 @@ import { build, type Check } from '../scripts/build.ts'
 
 const tsv = (lines: Array<Array<string | number>>) => lines.map((r) => r.join('\t')).join('\n') + '\n'
 
-/** A cities500 line: GeoNames' 19 columns. */
-const city = (id: number, name: string, lat: number, lon: number, feature: string, cc: string, a1: string, a2: string, people: number) =>
-  [id, name, name, '', lat, lon, 'P', feature, cc, '', a1, a2, '', '', people, '', '', '', '2026-01-01']
+/** A cities500 line: GeoNames' 19 columns, its other names comma-separated. */
+const city = (id: number, name: string, lat: number, lon: number, feature: string, cc: string, a1: string, a2: string, people: number, others = '') =>
+  [id, name, name, others, lat, lon, 'P', feature, cc, '', a1, a2, '', '', people, '', '', '', '2026-01-01']
 
 export const CITIES = tsv([
   city(1, 'Monterrey', 25.68435, -100.31721, 'PPLA', 'MX', '19', '039', 1135512),
@@ -23,7 +23,7 @@ export const CITIES = tsv([
   city(3, 'San Nicolás de los Garza', 25.74167, -100.30222, 'PPL', 'MX', '19', '046', 412199),
   city(4, 'San Nicolás', 16.5, -93.0, 'PPL', 'MX', '05', '107', 600),
   city(5, 'San Pedro Garza García', 25.66158, -100.4034, 'PPL', 'MX', '19', '019', 132128),
-  city(6, 'Mexico City', 19.42847, -99.12766, 'PPLC', 'MX', '09', '', 12294193),
+  city(6, 'Mexico City', 19.42847, -99.12766, 'PPLC', 'MX', '09', '', 12294193, 'CDMX,Ciudad de Mexico,Ciudad de México,Mexico City'),
   city(7, 'Chamberí', 40.43404, -3.70379, 'PPLX', 'ES', '29', 'M', 145934),
   city(8, 'Madrid', 40.4165, -3.70256, 'PPLC', 'ES', '29', 'M', 3255944),
   city(9, 'Madrid', 4.73245, -74.26419, 'PPLA2', 'CO', '33', '25430', 135000),
@@ -31,6 +31,21 @@ export const CITIES = tsv([
   city(11, 'Sant Cugat del Vallès', 41.4706, 2.0861, 'PPL', 'ES', '56', 'B', 90000),
   city(12, 'Ciudad Perdida', 20.0, -100.0, 'PPLQ', 'MX', '19', '039', 5000),
   city(13, 'Matei', -16.69, 179.99, 'PPL', 'FJ', '03', '', 700),
+  // Other names: in other languages and scripts, a code, a machine spelling in lower case, one
+  // spelled as the main name, and one twice.
+  city(14, 'Munich', 48.13743, 11.57549, 'PPLA', 'DE', '02', '091', 1505005, 'MUC,Monaco di Baviera,Muenchen,Munchen,München,München,myunhen'),
+  city(15, 'Ottobrunn bei München', 48.0649, 11.6633, 'PPL', 'DE', '02', '091', 21000),
+  city(16, 'Rome', 41.89193, 12.51133, 'PPLC', 'IT', '07', 'RM', 2318895, 'Rom,Roma,Rome,Róma,roma'),
+  city(24, 'Roma', -29.4467, 27.7081, 'PPL', 'LS', '', '', 9000),
+  city(17, 'La Romana', 18.42733, -68.97285, 'PPLA', 'DO', '12', '', 208437),
+  city(18, 'Tokyo', 35.6895, 139.69171, 'PPLC', 'JP', '40', '', 9733276, 'Tokio,東京,東京都'),
+  city(19, 'Shibuya', 35.6589, 139.70665, 'PPLX', 'JP', '40', '', 230609),
+  // Two of one band, the whole name typed, one by its own name and one by another.
+  city(20, 'Aldea', 16.2, -93.1, 'PPL', 'MX', '05', '107', 600),
+  city(21, 'Pueblo', 16.3, -93.2, 'PPL', 'MX', '05', '107', 700, 'Aldea'),
+  // A section with no place within 30 km but sections, and a town with no state.
+  city(22, 'Barrio Solo', -17.3, 178.4, 'PPLX', 'FJ', '03', '', 900),
+  city(23, 'Levuka', -17.68, 178.83, 'PPL', 'FJ', '', '', 1100),
 ])
 export const ADMIN1 = tsv([
   ['MX.19', 'Nuevo León', 'Nuevo Leon', 3522542],
@@ -40,6 +55,10 @@ export const ADMIN1 = tsv([
   ['ES.56', 'Catalonia', 'Catalonia', 3336901],
   ['CO.33', 'Cundinamarca', 'Cundinamarca', 3685413],
   ['FJ.03', 'Northern', 'Northern', 2194370],
+  ['DE.02', 'Bavaria', 'Bavaria', 2951839],
+  ['IT.07', 'Lazio', 'Lazio', 3174976],
+  ['DO.12', 'La Romana', 'La Romana', 3500956],
+  ['JP.40', 'Tokyo', 'Tokyo', 1850144],
 ])
 export const ADMIN2 = tsv([
   ['MX.19.039', 'Monterrey', 'Monterrey', 1],
@@ -49,12 +68,19 @@ export const ADMIN2 = tsv([
   ['ES.29.M', 'Provincia de Madrid', 'Provincia de Madrid', 5],
   ['ES.56.B', 'Província de Barcelona', 'Provincia de Barcelona', 6],
   ['CO.33.25430', 'Madrid', 'Madrid', 7],
+  ['DE.02.091', 'Upper Bavaria', 'Upper Bavaria', 8],
+  ['IT.07.RM', 'Città metropolitana di Roma Capitale', 'Citta metropolitana di Roma Capitale', 9],
 ])
 export const COUNTRIES = '# GeoNames country info\n#ISO\tISO3\tISO-Numeric\tfips\tCountry\n' + tsv([
   ['MX', 'MEX', 484, 'MX', 'Mexico'],
   ['ES', 'ESP', 724, 'SP', 'Spain'],
   ['CO', 'COL', 170, 'CO', 'Colombia'],
   ['FJ', 'FJI', 242, 'FJ', 'Fiji'],
+  ['DE', 'DEU', 276, 'GM', 'Germany'],
+  ['IT', 'ITA', 380, 'IT', 'Italy'],
+  ['DO', 'DOM', 214, 'DR', 'Dominican Republic'],
+  ['JP', 'JPN', 392, 'JA', 'Japan'],
+  ['LS', 'LSO', 426, 'LT', 'Lesotho'],
 ])
 
 /** A postal-file line: its point is always 0, 0. */

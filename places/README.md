@@ -1,18 +1,19 @@
 # places
 
 places turns words into places: a town, a section of a city or, in Mexico, a colonia, each with
-its point, its size in whole kilometres, its name, a line saying where it is, and its country. No
-one types a point or a place's name by hand, and an app and a person's AI asking the same words get
-the same answer. Anyone can ask, with a plain GET and no login; the main way is an app or an AI
-filling a listing's place. This is the Forest Foundation's copy. Anyone can run another; the main
-way is this code, whose one script builds the same file from the same public data. It keeps that
-one file, built from GeoNames and Correos de México's postal areas, and nothing of anyone's: the
-service stores nothing and logs no question.
+its point, its size in whole kilometres, its name, a line saying where it is, its country, and the
+place as a listing holds it. Words in any language or script find a place by any of its names. A
+listing's place is a circle, a name and a country, which a person's AI can write itself; places is
+an optional helper for an app's "type a place" box, so a person picks a place instead of typing a
+point. Anyone can ask a copy, with a plain GET and no login, and anyone can run one; the main way
+is this code, whose one script builds the same file from the same public data. The Forest
+Foundation does not run a copy. A copy keeps that one file, built from GeoNames and Correos de
+México's postal areas, and nothing of anyone's: the service stores nothing and logs no question.
 
 ## How it works
 
 ```
-GeoNames: towns, their states and countries ──────┐
+GeoNames: towns, their other names, states ───────┐
 GeoNames: Mexico's postal file (colonias' names) ─┼──▶ npm run build ──▶ places.sqlite ──▶ find, name
 Correos de México: postal areas (points, sizes) ──┘    (checks it first)  (read-only)
 ```
@@ -25,7 +26,7 @@ checks fail writes no file. The service (`src/`) opens that file read-only and a
 
 | What | Source | Gives |
 |---|---|---|
-| Towns and city sections | GeoNames' `cities500.zip`: every populated place of 500 people or more, and each seat of an administrative area | name, point, people, country |
+| Towns and city sections | GeoNames' `cities500.zip`: every populated place of 500 people or more, and each seat of an administrative area | name, other names, point, people, country |
 | Where each is | GeoNames' `admin1CodesASCII.txt`, `admin2Codes.txt` and `countryInfo.txt` | its state, municipio or district, and country's names |
 | Mexico's colonias | GeoNames' postal file for Mexico, `zip/MX.zip` | name, municipio, state, postal code. Never its points |
 | Each colonia's point and size | Correos de México's postal areas, "Códigos postales por entidad federativa" on datos.gob.mx | the area its postal code covers |
@@ -36,7 +37,9 @@ its edition 11 (2025-01-15), under CC BY 4.0, as
 datos.gob.mx, one GeoJSON file a state, at its tag `2025.1`, commit `8b32f43`.
 
 - **A town** is every place in `cities500` but those GeoNames marks as no longer there: abandoned
-  (`PPLQ`), historical (`PPLH`) and destroyed (`PPLW`). Its size is its band, by its people:
+  (`PPLQ`), historical (`PPLH`) and destroyed (`PPLW`). It keeps every other name GeoNames gives it,
+  in any language or script, its codes and spellings among them, once each, but those its own name
+  already matches. Its size is its band, by its people:
 
   | People | Band | `radiusKm` |
   |---|---|---|
@@ -57,26 +60,43 @@ datos.gob.mx, one GeoJSON file a state, at its tag `2025.1`, commit `8b32f43`.
   name or the part before it left out: "San Pedro Garza García, Nuevo León, Mexico, 66220". Mexico's
   states have one name each: "Ciudad de México" for GeoNames' "Mexico City" and the postal file's
   "Distrito Federal", and "Coahuila", "Michoacán" and "Veracruz" for the postal file's long names.
+- **Alone, in a listing,** a colonia's name goes with its municipio, "Del Valle, San Pedro
+  Garza García"; a city section's with its city, "Chamberí, Madrid"; a town's with its state,
+  "Monterrey, Nuevo León". GeoNames gives a section no city, so its city is the place with the most
+  people within 30 km of it, in its country, that is not a section itself; with none, its state. A
+  part that is the name itself gives way to the next: the state, then the country.
 - **The checks** ask the file what the service would be asked, such as "del valle" near San Pedro
-  Garza García giving Del Valle, 66220, within a kilometre of its centre, and the counts of towns,
-  countries and colonias; `scripts/checks.ts` lists them all.
+  Garza García giving Del Valle, 66220, within a kilometre of its centre, "москва" giving Moscow,
+  and the counts of towns, countries and colonias; `scripts/checks.ts` lists them all.
 
 ### Finding
 
-Each word matches the start of a word in a place's name or its context, whatever its accents and
-capitals, and every word must match. **The order:** a match in the name comes before one that
+Each word matches the start of a word, whatever its accents and capitals, and every word must
+match: in a place's own name, in one of its other names, or in its own name and its context
+together. **The order:** a name, its own or another, holding every word comes before a match that
 needs the context; then, with a point, a place within 30 km before one farther, a bigger band, the
-whole name typed before part of it, and the nearest; with none, a place of 200,000 people or more,
-the whole name typed, a bigger band, and the most people; then by name. Up to 8 places.
+whole name typed before part of it, its own name before another, and the nearest; with none, a
+place of 200,000 people or more, the whole name typed, its own name before another, a bigger band,
+and the most people; then by name. Up to 8 places.
 
 Near a person, a bigger place is likelier meant than a small namesake: San Pedro Garza García before
 a colonia named San Pedro. Far from anyone, a namesake is likelier than a town that only starts with
 the words: a Del Valle before Sant Cugat del Vallès, unless the town is big, as San Nicolás de los
-Garza is.
+Garza is. A whole name typed counts before whose name it is: "münchen" is Munich, by its other name
+München, before Ottobrunn bei München, whose own name only holds the word.
+
+**When another name matched,** it is the name shown, so a person gets the place in their own words
+and no one needs to know their language. A name the words typed differ from only by accents or
+capitals comes first, shown as GeoNames spells it: "ciudad de mexico" shows Ciudad de México. Then
+one written with capitals, where its script has them, since GeoNames' names all in lower case are
+machine spellings; among names that differ only so, the spelling most of GeoNames' towns use, then
+the one with accents, so "roma" shows Roma, the name of many towns, not the Hungarian Róma; else
+the shortest. Its own name matching, even as the start of a word, is shown instead: "rom" gives
+Rome.
 
 **Naming a point** gives up to 8 places whose points are nearest it, nearest first; places at one
-point by band, then people, then name. A colonia's point is its postal area's centre, so the colonias of one
-area come together and the person picks.
+point by band, then people, then name. A colonia's point is its postal area's centre, so the
+colonias of one area come together and the person picks.
 
 Every point it is given is rounded to two decimals, about a kilometre, before anything reads it.
 
@@ -88,13 +108,20 @@ with a new image.
 
 | Path | Answer |
 |---|---|
-| `/` | `{ built, counts, sources, find, name, credit }`: when the file was built, `counts` its `towns`, `countries`, `colonias`, the places left out as no longer there (`gone`) and the colonias with no postal area (`colonias_without_area`), and `sources` each file it read: `{ url, bytes, sha256, modified }`, `modified` the source's Last-Modified |
+| `/` | `{ built, counts, sources, find, name, credit }`: when the file was built, `counts` its `towns`, `countries`, `colonias`, the towns' other `names`, the places left out as no longer there (`gone`) and the colonias with no postal area (`colonias_without_area`), and `sources` each file it read: `{ url, bytes, sha256, modified }`, `modified` the source's Last-Modified |
 | `/v1/find?q=<words>`, with `country=<XX>` and `near=<lat>,<lon>` if wanted | `{ places, credit }`: up to 8, best first. `country` two letters (ISO 3166), in any case |
 | `/v1/name?near=<lat>,<lon>` | `{ places, credit }`: up to 8, nearest first |
 
-A place is `{ name, context, lat, lon, radiusKm, country }`: `lat` and `lon` in degrees to four
-decimals, `radiusKm` in whole kilometres, `country` two letters. In a listing's `place` (the
-markets' type), `lat` and `lon` go as decimal text, `radiusKm` as it is and the name as `area`.
+A place is `{ name, context, lat, lon, radiusKm, country, place }`: `name` the name that matched,
+`lat` and `lon` in degrees to four decimals, `radiusKm` in whole kilometres, `country` two letters
+in capitals, for showing a list. `place` is the same place as a listing holds it, in the markets'
+place, `{ lat, lon, radiusKm, name, country }`: `lat` and `lon` as decimal text, a name that stands
+alone, for an app to write as it comes:
+
+```json
+{ "lat": "40.434", "lon": "-3.7038", "radiusKm": 3, "name": "Chamberí, Madrid", "country": "ES" }
+```
+
 `credit` names GeoNames and Correos de México, each under CC BY 4.0.
 
 Errors are `{ "error": "<code>" }`:
@@ -114,17 +141,19 @@ Errors are `{ "error": "<code>" }`:
   `npm run build` run inside it, so the file is in the image and there is no volume; started as
   `node src/main.ts`. Its build downloads about 340 MB, so it is built again only when `places/`
   changes.
-- **Where:** one replica of the image; a copy that answers more runs more replicas, each with the
-  same file.
+- **Where:** to run a copy as the foundation runs its other services, a Railway service from this
+  repo with `RAILWAY_DOCKERFILE_PATH=places/deploy/Dockerfile`, watch path `places/**`, one replica
+  (a copy that answers more runs more, each with the same file), no volume, no variable to set (it
+  reads `PORT`, which Railway sets, and `DATA_DIR`, whose default is where the image keeps the
+  file), and a public domain to `PORT`.
 - **Free,** with no rate limit. **Stores** nothing. **Logs** one line when it starts, and for a
   request that fails its error's kind only, never its path, its question or the error's message.
 - **Its numbers, and why:**
   - 8 places an answer: enough for a person to pick from;
-  - 30 km is near: a city and its suburbs;
+  - 30 km is near: a city and its suburbs, and as far as a city section looks for its city;
   - 200,000 people is big: a town that size outranks a namesake when no point is given;
-  - 2 letters at least: one letter matches about 170,000 places and takes about 120 ms in the
-    file alone; two letters about 70,000, and about 50 ms over HTTP, 150 at most. Most words take
-    under 10 ms;
+  - 2 letters at least: one letter matches about 170,000 places; two match about 100,000 names
+    and take about 120 ms, 220 at most. Most words take under 5 ms;
   - 100 characters at most, and points to two decimals;
   - a source that answers 429 or 5xx asked again up to 5 times, after the wait it asks for or 10,
     20, 40 and 80 seconds: GitHub's raw files answer 429 to many downloads from one address.
@@ -148,9 +177,11 @@ npm start
 
 `test/` covers, on loopback, with a small world of its own in the sources' formats: the whole build
 (what it keeps and leaves out, each centre and size against squares worked out by hand, holes,
-parts, codes as numbers, context lines, bands, the checks that stop it, a busy source), and the
-service over HTTP (matching, both orders, a country, rounding, naming a point across 180 degrees and
-from a pole, the credit, headers, every error, and that it writes and logs nothing).
+parts, codes as numbers, other names, context lines, names alone, bands, the checks that stop
+it, a busy source), and the service over HTTP (matching, other names in two scripts and the one
+shown, both orders, a country, rounding, naming a point across 180 degrees and from a pole, each
+answer's place against the markets' patterns, the credit, headers, every error, and that it writes
+and logs nothing).
 
 ## Promises
 
@@ -170,8 +201,14 @@ from a pole, the credit, headers, every error, and that it writes and logs nothi
 - **Colonias of one postal area share its point and size,** about five an area.
 - **A centre can fall outside its area:** 594 of the 36,182 postal areas bend or come in parts.
 - **A town's size is its band,** from its people, not its area.
-- **Main names only:** GeoNames' other names for a place are not searched, so "munchen" does not
-  find Munich, nor "roma" Rome.
+- **Another name is matched alone,** never with the context: "münchen germany" finds no Munich.
+- **Only the names GeoNames gives:** a colonia has its one name; a town missing a name people use is
+  not found by it.
+- **A section's city is the biggest place near it,** which can be a neighbouring city, and a name
+  that stands alone puts other names with the state or city in GeoNames' own word, often English:
+  "München, Bavaria".
+- **Kosovo's places carry `XK`,** GeoNames' code, which the markets' countries list does not hold:
+  the 77 of them make a place no listing takes until it does.
 - **Words match from their start:** no spelling mistakes, no middle of a word.
 - **Only colonias GeoNames' postal file holds,** and of those, 3,692 whose postal code has no area,
   or an area of none, are left out.
@@ -192,7 +229,7 @@ So the circle is at least as big as the area. Del Valle's postal area, 66220, is
 of 1.07 km: rounded to the nearest, 1 km, its circle would cover less than the area.
 
 **Why a service, and not a file in the app?**
-The file is about 74 MB, and an app and a person's AI must get the same answer.
+The file is about 130 MB, too big for an app to carry.
 
 **Why the copy of Correos de México's areas, and not datos.gob.mx?**
 The copy holds Correos de México's edition 11 as GeoJSON, one file a state, at a commit that never

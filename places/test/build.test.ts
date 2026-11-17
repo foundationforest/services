@@ -15,7 +15,7 @@ const KM_PER_DEGREE = (Math.PI / 180) * 6371.0088
 const squareKm2 = (side: number, lat0: number) => side * side * Math.cos((lat0 * Math.PI) / 180) * KM_PER_DEGREE ** 2
 const radius = (km2: number) => Math.max(1, Math.ceil(Math.sqrt(km2 / Math.PI)))
 
-type Kept = { name: string; context: string; lat: number; lon: number; radiusKm: number; country: string; band: number; people: number }
+type Kept = { name: string; context: string; lat: number; lon: number; radiusKm: number; country: string; band: number; people: number; within: string }
 let sources: Sources
 let file: string
 let counts: Record<string, number>
@@ -36,7 +36,7 @@ before(async () => {
 after(() => sources.close())
 
 test('it keeps every town but those no longer there, and every colonia with a postal area, each once', () => {
-  assert.deepEqual(counts, { towns: 12, countries: 4, colonias: 14, gone: 1, colonias_without_area: 1 })
+  assert.deepEqual(counts, { towns: 23, countries: 9, colonias: 14, names: 17, gone: 1, colonias_without_area: 1 })
   assert.equal(kept.filter((r) => r.name === 'Ciudad Perdida').length, 0, 'an abandoned place is left out')
   assert.equal(kept.filter((r) => r.name === 'Sin Área').length, 0, 'a colonia with no postal area is left out')
   assert.equal(kept.filter((r) => r.name === 'Del Valle' && r.context.endsWith('66220')).length, 1, 'a repeated line is one colonia')
@@ -75,6 +75,27 @@ test('each context line: municipio or district, state, country, and a colonia it
   assert.equal(one('Chamberí', 'Spain').context, 'Provincia de Madrid, Madrid, Spain')
   assert.equal(one('Madrid', 'Colombia').context, 'Cundinamarca, Colombia')
   assert.equal(one('Matei', 'Fiji').context, 'Northern, Fiji', 'no municipio, none shown')
+})
+
+test("a town's other names are kept once each, but a name its own already matches", () => {
+  const db = new DatabaseSync(file, { readOnly: true })
+  const others = (name: string) => (db.prepare('select n.name from names n join places p on p.id = n.place where p.name = ? order by n.id').all(name) as Array<{ name: string }>).map((r) => r.name)
+  assert.deepEqual(others('Munich'), ['MUC', 'Monaco di Baviera', 'Muenchen', 'Munchen', 'München', 'myunhen'], 'München twice is once; Munchen and München are both kept, as spelled')
+  assert.deepEqual(others('Rome'), ['Rom', 'Roma', 'Róma', 'roma'], 'Rome, its own name, is left out')
+  assert.deepEqual(others('Tokyo'), ['Tokio', '東京', '東京都'])
+  assert.deepEqual(others('Monterrey'), [], 'none for a place with none, and a colonia has none')
+  db.close()
+})
+
+test('what follows a name to stand alone: a colonia its municipio, a section its city, a town its state, each then the next', () => {
+  const within = (name: string, context: string) => one(name, context).within.split('\n')
+  assert.deepEqual(within('Del Valle', '66220'), ['San Pedro Garza García', 'Nuevo León', 'Mexico'])
+  assert.deepEqual(within('Chamberí', 'Spain'), ['Madrid', 'Madrid', 'Spain'], 'its city: the place with the most people within 30 km')
+  assert.deepEqual(within('Colonia del Valle', 'Mexico'), ['Mexico City', 'Ciudad de México', 'Mexico'], 'a section of Mexico City, not a colonia, so with no municipio')
+  assert.deepEqual(within('Shibuya', 'Japan'), ['Tokyo', 'Tokyo', 'Japan'])
+  assert.deepEqual(within('Barrio Solo', 'Fiji'), ['Northern', 'Fiji'], 'a section with no place within 30 km has its state')
+  assert.deepEqual(within('Monterrey', 'Nuevo León'), ['Nuevo León', 'Mexico'])
+  assert.deepEqual(within('Levuka', 'Fiji'), ['Fiji'], 'a town with no state has its country')
 })
 
 test('a town is sized by its band, from how many live there; a colonia is in the smallest band', () => {
