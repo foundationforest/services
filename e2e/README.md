@@ -1,9 +1,9 @@
 # e2e
 
-The end-to-end test runs two people through all four services: each with their app, on a device of
-their own holding their seed, and an AI that acts for them through the MCP server. It is not a
-service. CI runs it on every pull request, and anyone can; the main way is `npm run e2e`, with no
-chain and no secret.
+The end-to-end test runs two people through the verifier, the host, the index and the MCP server:
+each with their app, on a device of their own holding their seed, and an AI that acts for them
+through the MCP server. It is not a service. CI runs it on every pull request, and anyone can; the
+main way is `npm run e2e`, with no chain and no secret.
 
 ## How it works
 

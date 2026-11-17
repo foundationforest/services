@@ -1,0 +1,24 @@
+{
+  "name": "@forest/places",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Forest Foundation's place lookup: words to places, and a point to the places nearest it, as JSON, from one SQLite file that npm run build makes from GeoNames and Correos de México's postal areas.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.ts",
+    "build": "node --disable-warning=ExperimentalWarning scripts/build.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fflate": "0.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.2",
+    "typescript": "5.9.3"
+  }
+}
