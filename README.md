@@ -10,8 +10,9 @@ The Forest Foundation runs one copy of each service so Forest works from day one
 | [host](host/README.md) | Keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, prepaid writes at that host, a fraction of a cent for a small one; a message from its sender's folder. Your first credits are a gift from the verifier, kept in your wallet: your Profiles folder's balance at the host (the folder where your app lists your profiles). | [host.forest.foundation](https://host.forest.foundation) |
 | [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | [index.forest.foundation](https://index.forest.foundation) |
 | [MCP server](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you through [MCP](https://modelcontextprotocol.io): find people, post, review, message, within the access keys you give it. It keeps nothing of yours. | mcp.forest.foundation |
+| [places](places/README.md) | Turns words into places, a town or, in Mexico, a colonia, with its point and size, so no one types a place by hand and your app and your AI get the same answer. It stores nothing. | |
 
-The end-to-end test ([`e2e/`](e2e/README.md)) runs two people through all four on every change. None of the services touches a chain.
+The end-to-end test ([`e2e/`](e2e/README.md)) runs two people through the verifier, the host, the index and the MCP server on every change. None of the services touches a chain.
 
 ## The pins
 
@@ -21,7 +22,7 @@ A pin is the one commit of another repo that every service here uses: `STANDARD`
 
 ## Run a copy
 
-Each service's directory has its own `deploy/Dockerfile`, built from the repo root, and a README that lists its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's directory; the verifier first fetches its face models (`npm run fetch -- models`).
+Each service's directory has its own `deploy/Dockerfile`, built from the repo root, and a README that lists its settings. On your own machine, with Node 22.18 or later, `./standard.sh` fetches [the standard](https://github.com/foundationforest/standard) and [the markets](https://github.com/foundationforest/markets) at their pins, then `npm ci && npm start` in any service's directory; the verifier first fetches its face models (`npm run fetch -- models`), and places first builds its file (`npm run build`), with no pin: it uses neither.
 
 ## Who decides what
 
@@ -31,4 +32,4 @@ Each service's directory has its own `deploy/Dockerfile`, built from the repo ro
 
 ## FAQ
 
-**Why one repo for four services?** They share one pin of the standard, one CI and one end-to-end test. Each directory still stands alone, with its own package, image and README.
+**Why one repo for these services?** They share one CI, and all but places one pin of the standard and one end-to-end test. Each directory still stands alone, with its own package, image and README.
