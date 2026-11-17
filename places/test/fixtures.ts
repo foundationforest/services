@@ -23,7 +23,7 @@ export const CITIES = tsv([
   city(3, 'San Nicolás de los Garza', 25.74167, -100.30222, 'PPL', 'MX', '19', '046', 412199),
   city(4, 'San Nicolás', 16.5, -93.0, 'PPL', 'MX', '05', '107', 600),
   city(5, 'San Pedro Garza García', 25.66158, -100.4034, 'PPL', 'MX', '19', '019', 132128),
-  city(6, 'Mexico City', 19.42847, -99.12766, 'PPLC', 'MX', '09', '', 12294193, 'CDMX,Ciudad de México,Mexico City'),
+  city(6, 'Mexico City', 19.42847, -99.12766, 'PPLC', 'MX', '09', '', 12294193, 'CDMX,Ciudad de Mexico,Ciudad de México,Mexico City'),
   city(7, 'Chamberí', 40.43404, -3.70379, 'PPLX', 'ES', '29', 'M', 145934),
   city(8, 'Madrid', 40.4165, -3.70256, 'PPLC', 'ES', '29', 'M', 3255944),
   city(9, 'Madrid', 4.73245, -74.26419, 'PPLA2', 'CO', '33', '25430', 135000),
@@ -35,7 +35,8 @@ export const CITIES = tsv([
   // spelled as the main name, and one twice.
   city(14, 'Munich', 48.13743, 11.57549, 'PPLA', 'DE', '02', '091', 1505005, 'MUC,Monaco di Baviera,Muenchen,Munchen,München,München,myunhen'),
   city(15, 'Ottobrunn bei München', 48.0649, 11.6633, 'PPL', 'DE', '02', '091', 21000),
-  city(16, 'Rome', 41.89193, 12.51133, 'PPLC', 'IT', '07', 'RM', 2318895, 'Rom,Roma,Rome,roma'),
+  city(16, 'Rome', 41.89193, 12.51133, 'PPLC', 'IT', '07', 'RM', 2318895, 'Rom,Roma,Rome,Róma,roma'),
+  city(24, 'Roma', -29.4467, 27.7081, 'PPL', 'LS', '', '', 9000),
   city(17, 'La Romana', 18.42733, -68.97285, 'PPLA', 'DO', '12', '', 208437),
   city(18, 'Tokyo', 35.6895, 139.69171, 'PPLC', 'JP', '40', '', 9733276, 'Tokio,東京,東京都'),
   city(19, 'Shibuya', 35.6589, 139.70665, 'PPLX', 'JP', '40', '', 230609),
@@ -79,6 +80,7 @@ export const COUNTRIES = '# GeoNames country info\n#ISO\tISO3\tISO-Numeric\tfips
   ['IT', 'ITA', 380, 'IT', 'Italy'],
   ['DO', 'DOM', 214, 'DR', 'Dominican Republic'],
   ['JP', 'JPN', 392, 'JA', 'Japan'],
+  ['LS', 'LSO', 426, 'LT', 'Lesotho'],
 ])
 
 /** A postal-file line: its point is always 0, 0. */

@@ -178,7 +178,7 @@ export async function build(o: { dir: string; sources?: typeof SOURCES; states?:
   db.exec(SCHEMA)
   const put = db.prepare('insert into places (id, name, context, folded, lat, lon, radiusKm, country, band, people, within) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
   const spot = db.prepare('insert into spots (id, minLat, maxLat, minLon, maxLon) values (?, ?, ?, ?, ?)')
-  const other = db.prepare('insert into names (place, name, folded) values (?, ?, ?)')
+  const other = db.prepare('insert into names (place, name, folded, uses) values (?, ?, ?, ?)')
   let id = 0
   function add(name: string, context: string, lat: number, lon: number, radiusKm: number, country: string, band: number, people: number, within: Array<string | undefined>) {
     id++
@@ -201,6 +201,9 @@ export async function build(o: { dir: string; sources?: typeof SOURCES; states?:
     return [{ name, names, lat: Number(lat), lon: Number(lon), section: feature === 'PPLX', cc, people, district: admin2.get(`${cc}.${a1}.${a2}`), state: cc === 'MX' && region ? state(region) : region }]
   })
   const cityOf = citiesOf(towns)
+  // How many towns use each spelling, as their own name or another, for choosing which to show.
+  const uses = new Map<string, number>()
+  for (const t of towns) for (const name of new Set([t.name, ...t.names.split(',')])) if (name) uses.set(name, (uses.get(name) ?? 0) + 1)
   db.exec('begin')
   const seenCountries = new Set<string>()
   for (const t of towns) {
@@ -215,7 +218,7 @@ export async function build(o: { dir: string; sources?: typeof SOURCES; states?:
       const folded = fold(name)
       if (!folded || folded === own || kept.has(name)) continue
       kept.add(name)
-      other.run(place, name, folded)
+      other.run(place, name, folded, uses.get(name)!)
       counts.names++
     }
     seenCountries.add(t.cc)

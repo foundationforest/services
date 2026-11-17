@@ -90,6 +90,7 @@ export const CHECKS: Check[] = [
       ['москва', 'Москва', 'Moscow', 55.75204, 37.61781],
       ['東京', '東京', 'Tokyo', 35.6895, 139.69171],
       ['القاهرة', 'القاهرة', 'Cairo', 30.06263, 31.24967],
+      ['ciudad de mexico', 'Ciudad de México', 'Mexico City', 19.42847, -99.12766],
     ] as const
   ).map(([q, shown, city, lat, lon]) => first(`"${q}" is ${city}, shown as ${shown}`, (p) => p.find(q), (p) => p.name === shown && km(p, point(lat, lon)) < 1)),
   // The name each place stands alone with, in a listing.

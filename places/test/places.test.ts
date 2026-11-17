@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import type { Server } from 'node:http'
 import { after, before, test } from 'node:test'
 
-import { CREDIT, openPlaces, type Place, type Places } from '../src/places.ts'
+import { closest, CREDIT, openPlaces, type Place, type Places } from '../src/places.ts'
 import { serve, web } from '../src/web.ts'
 import { buildFixture, serveSources } from './fixtures.ts'
 
@@ -94,16 +94,25 @@ test('another name, in any language or script, finds its place, and is the name 
   const first = async (q: string) => (await find(`q=${encodeURIComponent(q)}`))[0]!
   assert.deepEqual(named(await find('q=m%C3%BCnchen')), ['München | Upper Bavaria, Bavaria, Germany', 'Ottobrunn bei München | Upper Bavaria, Bavaria, Germany'])
   assert.equal((await first('MÜNCHEN')).name, 'München', 'as typed, but for capitals')
-  assert.equal((await first('munchen')).name, 'Munchen', 'as typed')
+  assert.equal((await first('munchen')).name, 'München', 'typed without its accent, shown as GeoNames spells it, though it also holds Munchen')
   assert.equal((await first('muenchen')).name, 'Muenchen')
   assert.equal((await first('monaco')).name, 'Monaco di Baviera', 'part of a name')
   assert.equal((await first('muc')).name, 'MUC')
-  assert.deepEqual(named(await find('q=roma')), ['Roma | Città metropolitana di Roma Capitale, Lazio, Italy', 'La Romana | Dominican Republic'], 'a whole name before one that only starts so; Roma, not its machine spelling roma')
+  assert.deepEqual(named(await find('q=roma')), ['Roma | Città metropolitana di Roma Capitale, Lazio, Italy', 'La Romana | Dominican Republic', 'Roma | Lesotho'], 'a whole name before one that only starts so; Roma, the spelling two towns use, not Róma or the machine spelling roma')
   assert.equal((await first('rom')).name, 'Rome', 'its own name matched, as the start of a word, so its own name is shown')
   assert.equal((await first('東京')).name, '東京')
   assert.equal((await first('東京')).place.name, '東京, Tokyo')
   assert.equal((await first('cdmx')).place.name, 'CDMX, Ciudad de México')
-  assert.equal((await first('ciudad de mexico')).name, 'Ciudad de México')
+  assert.equal((await first('ciudad de mexico')).name, 'Ciudad de México', 'with its accent, though GeoNames holds Ciudad de Mexico too')
+  assert.equal((await first('CIUDAD DE MÉXICO')).name, 'Ciudad de México')
+})
+
+test('the other name shown: as GeoNames spells it, the spelling more towns use, then the one with accents', () => {
+  const pick = (q: string, names: Array<[string, number]>) => closest(q, names.map(([name, uses]) => ({ name, uses })))
+  assert.equal(pick('roma', [['Róma', 1], ['roma', 80], ['Roma', 300]]), 'Roma', 'capitals before a machine spelling, then the spelling more towns use')
+  assert.equal(pick('ciudad de mexico', [['Ciudad de Mexico', 1], ['Ciudad de México', 1]]), 'Ciudad de México', 'as many towns: the one with accents')
+  assert.equal(pick('munchen', [['München', 1], ['Munchen', 3]]), 'Munchen', 'more towns use it')
+  assert.equal(pick('mona', [['Monaco di Baviera', 1], ['Monacu', 1]]), 'Monacu', 'neither typed whole: the shorter')
 })
 
 test('its own name before another, when both are typed whole and the rest is equal; another name is matched alone, not with the context', async () => {
@@ -176,7 +185,7 @@ test('every answer credits its sources; GET / says what the file holds and where
   for (const path of ['/', '/v1/find?q=monterrey', '/v1/name?near=0,0']) assert.equal((await get(path)).body.credit, CREDIT)
   assert.match(CREDIT, /GeoNames.*CC BY 4\.0.*Correos de México.*CC BY 4\.0/)
   const { body } = await get('/')
-  assert.deepEqual(body.counts, { towns: 22, countries: 8, colonias: 14, names: 15, gone: 1, colonias_without_area: 1 })
+  assert.deepEqual(body.counts, { towns: 23, countries: 9, colonias: 14, names: 17, gone: 1, colonias_without_area: 1 })
   assert.equal(body.sources.length, 8)
   assert.equal(body.find, '/v1/find?q=<words>&country=<XX>&near=<lat>,<lon>')
   assert.equal(body.name, '/v1/name?near=<lat>,<lon>')

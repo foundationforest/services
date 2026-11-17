@@ -40,7 +40,7 @@ export const CREDIT =
  * Every place, with what its order needs: `folded` its name as fold() gives it, `band` its size band
  * (0 for a colonia, the smallest), `people` how many live there (0 for a colonia, which has no
  * count), and `within` what may follow its name to stand alone, best first, one a line. `names`
- * holds a town's other names, each folded too. `words` searches each place's name and context,
+ * holds a town's other names, each folded too, with how many of GeoNames' towns use that spelling. `words` searches each place's name and context,
  * `others` the other names; neither keeps the sizes only a relevance score reads. `spots` finds
  * places by their point; `about` holds when the file was built and from what.
  */
@@ -58,7 +58,7 @@ create table places (
   people integer not null,
   within text not null
 );
-create table names (id integer primary key, place integer not null, name text not null, folded text not null);
+create table names (id integer primary key, place integer not null, name text not null, folded text not null, uses integer not null);
 create virtual table words using fts5 (
   name, context,
   content = 'places', content_rowid = 'id',
@@ -120,7 +120,7 @@ with hits as (
   from words join places p on p.id = words.rowid
   where words match $all
   union all
-  select n.place, 1, n.name, instr($typed, ' ' || n.folded || ' ') > 0
+  select n.place, 1, n.uses || ' ' || n.name, instr($typed, ' ' || n.folded || ' ') > 0
   from others join names n on n.id = others.rowid
   where others match $all
 ), best as (
@@ -150,24 +150,28 @@ select ${SHOWN}, km from (
 const BOXES = [0.05, 0.2, 1, 5, 30, 180]
 const KM_PER_DEGREE = (Math.PI / 180) * 6371.0088
 
-/** The words as typed, for comparing a name with them: one space between words, lower case. */
-const asTyped = (text: string) => text.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase()
-
 /**
- * Of the other names that matched, the one to show: written as the words were typed, ignoring
- * capitals; else the whole name typed, ignoring accents too; else one written with capitals,
- * where its script has them, as GeoNames' all-lower-case names are machine spellings; else the
- * shortest; else the first in code point order.
+ * Of the other names that matched, each with how many towns use its spelling, the one to show. A
+ * name the words typed differ from only by accents or capitals comes first, shown as GeoNames
+ * spells it: a person typing often leaves accents out, so "ciudad de mexico" shows Ciudad de
+ * México. Then: one written with capitals, where its script has them, as GeoNames' all-lower-case
+ * names are machine spellings; among names that differ only so, the spelling most towns use, then
+ * one with accents, so "roma" shows Roma, the name of hundreds of places, not the Hungarian Róma;
+ * else the shortest; else the first in code point order.
  */
-export function closest(question: string, names: string[]): string {
-  const typed = asTyped(question), folded = fold(question)
-  const rank = (n: string) => [asTyped(n) === typed ? 0 : 1, fold(n) === folded ? 0 : 1, n === n.toLowerCase() && n !== n.toUpperCase() ? 1 : 0, n.length]
-  const before = (a: string, b: string) => {
+export function closest(question: string, names: Array<{ name: string; uses: number }>): string {
+  const folded = fold(question)
+  const accented = (n: string) => /\p{M}/u.test(n.normalize('NFD'))
+  const rank = ({ name: n, uses }: { name: string; uses: number }) => {
+    const typed = fold(n) === folded
+    return [typed ? 0 : 1, n === n.toLowerCase() && n !== n.toUpperCase() ? 1 : 0, typed ? -uses : 0, typed && !accented(n) ? 1 : 0, n.length]
+  }
+  const before = (a: { name: string; uses: number }, b: { name: string; uses: number }) => {
     const x = rank(a), y = rank(b)
     const i = x.findIndex((v, j) => v !== y[j])
-    return i === -1 ? (a < b ? -1 : a > b ? 1 : 0) : x[i]! - y[i]!
+    return i === -1 ? (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) : x[i]! - y[i]!
   }
-  return [...names].sort(before)[0]!
+  return [...names].sort(before)[0]!.name
 }
 
 /** A name that stands alone: the name, then the first of `within` that is not the name itself. */
@@ -204,7 +208,8 @@ export function openPlaces(file: string) {
       const match = all.map((w) => `"${w}"*`).join(' ')
       const given = { $all: match, $named: `name : (${match})`, $typed: ` ${fold(question)} `, $country: o.country?.toUpperCase() ?? null }
       const found = o.near ? findNear.all({ ...given, $lat: round2(o.near.lat), $lon: round2(o.near.lon) }) : findAnywhere.all(given)
-      return found.map((r) => shown(r, r.kind === 1 ? closest(question, (r.others as string).split('\n')) : (r.name as string)))
+      const others = (r: Record<string, unknown>) => (r.others as string).split('\n').map((o) => ({ uses: Number(o.slice(0, o.indexOf(' '))), name: o.slice(o.indexOf(' ') + 1) }))
+      return found.map((r) => shown(r, r.kind === 1 ? closest(question, others(r)) : (r.name as string)))
     },
     /** Up to 8 places nearest the point, nearest first. */
     name(point: Point): Place[] {

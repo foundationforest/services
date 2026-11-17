@@ -2,13 +2,13 @@
 
 places turns words into places: a town, a section of a city or, in Mexico, a colonia, each with
 its point, its size in whole kilometres, its name, a line saying where it is, its country, and the
-place as a listing holds it. Words in any language or script find a place by any of its names. No
-one types a point or a place's name by hand, and an app and a person's AI asking the same words get
-the same answer. Anyone can ask, with a plain GET and no login; the main way is an app or an AI
-filling a listing's place. This is the Forest Foundation's copy. Anyone can run another; the main
-way is this code, whose one script builds the same file from the same public data. It keeps that
-one file, built from GeoNames and Correos de México's postal areas, and nothing of anyone's: the
-service stores nothing and logs no question.
+place as a listing holds it. Words in any language or script find a place by any of its names. A
+listing's place is a circle, a name and a country, which a person's AI can write itself; places is
+an optional helper for an app's "type a place" box, so a person picks a place instead of typing a
+point. Anyone can ask a copy, with a plain GET and no login, and anyone can run one; the main way
+is this code, whose one script builds the same file from the same public data. The Forest
+Foundation does not run a copy. A copy keeps that one file, built from GeoNames and Correos de
+México's postal areas, and nothing of anyone's: the service stores nothing and logs no question.
 
 ## How it works
 
@@ -86,10 +86,13 @@ Garza is. A whole name typed counts before whose name it is: "münchen" is Munic
 München, before Ottobrunn bei München, whose own name only holds the word.
 
 **When another name matched,** it is the name shown, so a person gets the place in their own words
-and no one needs to know their language: the one written as the words were typed, but for capitals;
-else the whole name typed, but for accents; else one written with capitals, where its script has
-them, since GeoNames' names all in lower case are machine spellings; else the shortest. Its own name
-matching, even as the start of a word, is shown instead: "rom" gives Rome.
+and no one needs to know their language. A name the words typed differ from only by accents or
+capitals comes first, shown as GeoNames spells it: "ciudad de mexico" shows Ciudad de México. Then
+one written with capitals, where its script has them, since GeoNames' names all in lower case are
+machine spellings; among names that differ only so, the spelling most of GeoNames' towns use, then
+the one with accents, so "roma" shows Roma, the name of many towns, not the Hungarian Róma; else
+the shortest. Its own name matching, even as the start of a word, is shown instead: "rom" gives
+Rome.
 
 **Naming a point** gives up to 8 places whose points are nearest it, nearest first; places at one
 point by band, then people, then name. A colonia's point is its postal area's centre, so the
@@ -113,7 +116,7 @@ A place is `{ name, context, lat, lon, radiusKm, country, place }`: `name` the n
 `lat` and `lon` in degrees to four decimals, `radiusKm` in whole kilometres, `country` two letters
 in capitals, for showing a list. `place` is the same place as a listing holds it, in the markets'
 place, `{ lat, lon, radiusKm, name, country }`: `lat` and `lon` as decimal text, a name that stands
-alone, so an app and an AI write the same value:
+alone, for an app to write as it comes:
 
 ```json
 { "lat": "40.434", "lon": "-3.7038", "radiusKm": 3, "name": "Chamberí, Madrid", "country": "ES" }
@@ -138,8 +141,11 @@ Errors are `{ "error": "<code>" }`:
   `npm run build` run inside it, so the file is in the image and there is no volume; started as
   `node src/main.ts`. Its build downloads about 340 MB, so it is built again only when `places/`
   changes.
-- **Where:** one replica of the image; a copy that answers more runs more replicas, each with the
-  same file.
+- **Where:** to run a copy as the foundation runs its other services, a Railway service from this
+  repo with `RAILWAY_DOCKERFILE_PATH=places/deploy/Dockerfile`, watch path `places/**`, one replica
+  (a copy that answers more runs more, each with the same file), no volume, no variable to set (it
+  reads `PORT`, which Railway sets, and `DATA_DIR`, whose default is where the image keeps the
+  file), and a public domain to `PORT`.
 - **Free,** with no rate limit. **Stores** nothing. **Logs** one line when it starts, and for a
   request that fails its error's kind only, never its path, its question or the error's message.
 - **Its numbers, and why:**
@@ -223,7 +229,7 @@ So the circle is at least as big as the area. Del Valle's postal area, 66220, is
 of 1.07 km: rounded to the nearest, 1 km, its circle would cover less than the area.
 
 **Why a service, and not a file in the app?**
-The file is about 130 MB, and an app and a person's AI must get the same answer.
+The file is about 130 MB, too big for an app to carry.
 
 **Why the copy of Correos de México's areas, and not datos.gob.mx?**
 The copy holds Correos de México's edition 11 as GeoJSON, one file a state, at a commit that never

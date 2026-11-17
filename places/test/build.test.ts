@@ -36,7 +36,7 @@ before(async () => {
 after(() => sources.close())
 
 test('it keeps every town but those no longer there, and every colonia with a postal area, each once', () => {
-  assert.deepEqual(counts, { towns: 22, countries: 8, colonias: 14, names: 15, gone: 1, colonias_without_area: 1 })
+  assert.deepEqual(counts, { towns: 23, countries: 9, colonias: 14, names: 17, gone: 1, colonias_without_area: 1 })
   assert.equal(kept.filter((r) => r.name === 'Ciudad Perdida').length, 0, 'an abandoned place is left out')
   assert.equal(kept.filter((r) => r.name === 'Sin Área').length, 0, 'a colonia with no postal area is left out')
   assert.equal(kept.filter((r) => r.name === 'Del Valle' && r.context.endsWith('66220')).length, 1, 'a repeated line is one colonia')
@@ -81,7 +81,7 @@ test("a town's other names are kept once each, but a name its own already matche
   const db = new DatabaseSync(file, { readOnly: true })
   const others = (name: string) => (db.prepare('select n.name from names n join places p on p.id = n.place where p.name = ? order by n.id').all(name) as Array<{ name: string }>).map((r) => r.name)
   assert.deepEqual(others('Munich'), ['MUC', 'Monaco di Baviera', 'Muenchen', 'Munchen', 'München', 'myunhen'], 'München twice is once; Munchen and München are both kept, as spelled')
-  assert.deepEqual(others('Rome'), ['Rom', 'Roma', 'roma'], 'Rome, its own name, is left out')
+  assert.deepEqual(others('Rome'), ['Rom', 'Roma', 'Róma', 'roma'], 'Rome, its own name, is left out')
   assert.deepEqual(others('Tokyo'), ['Tokio', '東京', '東京都'])
   assert.deepEqual(others('Monterrey'), [], 'none for a place with none, and a colonia has none')
   db.close()
