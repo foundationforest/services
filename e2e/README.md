@@ -22,9 +22,10 @@ main way is `npm run e2e`, with no chain and no secret.
 ### What one run does
 
 A seller who offers and a buyer who asks, each from a seed of their own, in a market the directory
-at `MARKETS` holds. The run names no market: it picks the first in the directory with a role whose
-listings are offers, one whose listings are requests, and a description, so a market changing, or a
-new one, never stops it. Every step checks what it did, and the run passes only if every step does.
+at `MARKETS` holds, read through the markets package. The run names no market: it picks the first
+in the directory with a role whose listings are offers, one whose listings are requests, and a
+description, so a market changing, or a new one, never stops it. Every step checks what it did,
+and the run passes only if every step does.
 
 1. **Keys:** each seed's profile, in the role that offers or the one that requests, with its address
    and pay addresses `{ solana, evm }`, and its stamp number at the end-to-end test's verifier's

@@ -15,6 +15,7 @@
   "dependencies": {
     "@foundationforest/folders": "file:../standard/folders",
     "@foundationforest/keys": "file:../standard/keys",
+    "@foundationforest/markets": "file:../markets/build",
     "@foundationforest/proofs": "file:../standard/proofs"
   },
   "devDependencies": {

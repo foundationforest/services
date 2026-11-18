@@ -11,8 +11,8 @@ import { html, type Page, searchBox, urls } from './template.ts'
 
 export type Home = {
   index: string
-  /** Each market in the directory, its summary, its description, its status, its role words, how many listings each role has listed here, and each role's word for its listings. */
-  markets: Array<{ name: string; summary: string; description: string; status: Status; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: Role['listings'] } }>
+  /** Each market in the directory, its summary, its description if it has one, its status, its role words, how many listings each role has listed here, and each role's word for its listings. */
+  markets: Array<{ name: string; summary: string; description?: string; status: Status; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: Role['listings'] } }>
   lists: ListsShown
 }
 
@@ -36,7 +36,7 @@ export const home: Page<Home> = {
       markets: markets.directory.markets.map((m) => ({
         name: m.name,
         summary: m.summary,
-        description: m.description,
+        ...(m.description !== undefined && { description: m.description }),
         status: m.status,
         roles: m.roles.map((r) => r.role),
         listed: Object.fromEntries(m.roles.map((r) => [r.role, listed(m.name, r.role)])),

@@ -1,11 +1,11 @@
 # places
 
 places turns words into places: a town, a section of a city or, in Mexico, a colonia, each with
-its point, its size in whole kilometres, its name, a line saying where it is, its country, and the
-place as a listing holds it. Words in any language or script find a place by any of its names. A
-listing's place is a circle, a name and a country, which a person's AI can write itself; places is
-an optional helper for an app's "type a place" box, so a person picks a place instead of typing a
-point. Anyone can ask a copy, with a plain GET and no login, and anyone can run one; the main way
+its point, its size in whole kilometres, its name, a line saying where it is, a caption, its
+country, and the place as a listing holds it. Words in any language or script find a place by any
+of its names. A listing's place is a circle, three numbers and no name, which a person's AI can
+write itself; places is an optional helper for an app's "type a place" box, so a person picks a
+place instead of typing a point, and its names are for showing only. Anyone can ask a copy, with a plain GET and no login, and anyone can run one; the main way
 is this code, whose one script builds the same file from the same public data. The Forest
 Foundation does not run a copy. A copy keeps that one file, built from GeoNames and Correos de
 México's postal areas, and nothing of anyone's: the service stores nothing and logs no question.
@@ -60,7 +60,8 @@ datos.gob.mx, one GeoJSON file a state, at its tag `2025.1`, commit `8b32f43`.
   name or the part before it left out: "San Pedro Garza García, Nuevo León, Mexico, 66220". Mexico's
   states have one name each: "Ciudad de México" for GeoNames' "Mexico City" and the postal file's
   "Distrito Federal", and "Coahuila", "Michoacán" and "Veracruz" for the postal file's long names.
-- **Alone, in a listing,** a colonia's name goes with its municipio, "Del Valle, San Pedro
+- **Its caption,** the name that stands alone, the one line an app or an index shows for the circle,
+  since a listing holds no name: a colonia's name goes with its municipio, "Del Valle, San Pedro
   Garza García"; a city section's with its city, "Chamberí, Madrid"; a town's with its state,
   "Monterrey, Nuevo León". GeoNames gives a section no city, so its city is the place with the most
   people within 30 km of it, in its country, that is not a section itself; with none, its state. A
@@ -112,14 +113,15 @@ with a new image.
 | `/v1/find?q=<words>`, with `country=<XX>` and `near=<lat>,<lon>` if wanted | `{ places, credit }`: up to 8, best first. `country` two letters (ISO 3166), in any case |
 | `/v1/name?near=<lat>,<lon>` | `{ places, credit }`: up to 8, nearest first |
 
-A place is `{ name, context, lat, lon, radiusKm, country, place }`: `name` the name that matched,
-`lat` and `lon` in degrees to four decimals, `radiusKm` in whole kilometres, `country` two letters
-in capitals, for showing a list. `place` is the same place as a listing holds it, in the markets'
-place, `{ lat, lon, radiusKm, name, country }`: `lat` and `lon` as decimal text, a name that stands
-alone, for an app to write as it comes:
+A place is `{ name, context, caption, lat, lon, radiusKm, country, place }`: `name` the name that
+matched, `context` the line saying where it is, `caption` the name that stands alone, `lat` and `lon`
+in degrees to four decimals, `radiusKm` in whole kilometres, `country` two letters in capitals, for
+showing a list. `place` is the same place as a listing holds it, the markets' place,
+`{ lat, lon, radiusKm }`: `lat` and `lon` as decimal text, for an app to write as it comes; the
+names stay out of it:
 
 ```json
-{ "lat": "40.434", "lon": "-3.7038", "radiusKm": 3, "name": "Chamberí, Madrid", "country": "ES" }
+{ "lat": "40.434", "lon": "-3.7038", "radiusKm": 3 }
 ```
 
 `credit` names GeoNames and Correos de México, each under CC BY 4.0.
@@ -180,7 +182,7 @@ npm start
 parts, codes as numbers, other names, context lines, names alone, bands, the checks that stop
 it, a busy source), and the service over HTTP (matching, other names in two scripts and the one
 shown, both orders, a country, rounding, naming a point across 180 degrees and from a pole, each
-answer's place against the markets' patterns, the credit, headers, every error, and that it writes
+answer's place against the markets' patterns and its caption, the credit, headers, every error, and that it writes
 and logs nothing).
 
 ## Promises
@@ -204,11 +206,9 @@ and logs nothing).
 - **Another name is matched alone,** never with the context: "münchen germany" finds no Munich.
 - **Only the names GeoNames gives:** a colonia has its one name; a town missing a name people use is
   not found by it.
-- **A section's city is the biggest place near it,** which can be a neighbouring city, and a name
-  that stands alone puts other names with the state or city in GeoNames' own word, often English:
-  "München, Bavaria".
-- **Kosovo's places carry `XK`,** GeoNames' code, which the markets' countries list does not hold:
-  the 77 of them make a place no listing takes until it does.
+- **A section's city is the biggest place near it,** which can be a neighbouring city, and a
+  caption puts other names with the state or city in GeoNames' own word, often English: "München,
+  Bavaria".
 - **Words match from their start:** no spelling mistakes, no middle of a word.
 - **Only colonias GeoNames' postal file holds,** and of those, 3,692 whose postal code has no area,
   or an area of none, are left out.

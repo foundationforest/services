@@ -48,7 +48,7 @@ export async function runPass(ctx: Context, before: number | null, now: number):
 
   const touched = await readHosts(store, lists.hosts, log)
   for (const p of before === null ? allProfiles(store) : comingDue(store, before, now)) touched.add(p)
-  viewAgain(store, touched, now)
+  viewAgain(store, markets, touched, now)
 
   // Filter.
   const held = db.prepare('select address, body, market, role from profiles').all() as Array<{ address: string; body: string; market: string | null; role: string | null }>
