@@ -93,7 +93,7 @@ export const CHECKS: Check[] = [
       ['ciudad de mexico', 'Ciudad de México', 'Mexico City', 19.42847, -99.12766],
     ] as const
   ).map(([q, shown, city, lat, lon]) => first(`"${q}" is ${city}, shown as ${shown}`, (p) => p.find(q), (p) => p.name === shown && km(p, point(lat, lon)) < 1)),
-  // The name each place stands alone with, in a listing.
+  // The caption each place stands alone with.
   ...(
     [
       ['del valle', point(25.66, -100.37), 'Del Valle, San Pedro Garza García'],
@@ -102,7 +102,7 @@ export const CHECKS: Check[] = [
       ['shibuya', undefined, 'Shibuya, Tokyo'],
       ['monterrey', undefined, 'Monterrey, Nuevo León'],
     ] as const
-  ).map(([q, near, name]) => first(`"${q}" stands alone as ${name}`, (p) => p.find(q, { near }), (p) => p.place.name === name)),
+  ).map(([q, near, name]) => first(`"${q}" stands alone as ${name}`, (p) => p.find(q, { near }), (p) => p.caption === name)),
   counted('the Mexico data holds about 141,000 colonias', 'colonias', 134_000, 148_000),
   counted('the world holds about 237,000 towns and city sections', 'towns', 225_000, 250_000),
   counted('in about 246 countries', 'countries', 240, 250),

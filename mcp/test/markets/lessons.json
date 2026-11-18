@@ -10,19 +10,30 @@
     { "role": "student", "listings": "requests" }
   ],
   "listing": {
-    "description": { "type": "text", "description": "The lessons: what is taught, and how." },
-    "price": { "type": "money", "description": "Each price, per hour, per session or per lesson, with a count for a pack of lessons, or for a whole course.", "per": ["hour", "session", "lesson"] },
-    "subjects": { "type": "choice", "description": "The school subjects the lessons are for.", "values": ["maths", "physics", "chemistry", "biology"], "many": true },
-    "languages": { "type": "choice", "description": "By ISO 639-1 code, the languages the lessons are given in.", "values": ["en", "es", "fr"], "labels": { "en": "English", "es": "Spanish", "fr": "French" }, "many": true },
-    "levels": { "type": "choice", "description": "The levels the lessons are for.", "values": ["primary", "secondary", "university", "adult"], "many": true },
-    "minutes": { "type": "number", "description": "How long one session lasts.", "unit": "minutes" },
-    "ages": { "type": "number", "description": "The students' ages the lessons are for, in years, or from one age to another, such as 9 to 11.", "unit": "years", "range": true },
-    "mode": { "type": "choice", "description": "How sessions are held: in person, online, or both.", "values": ["in-person", "online"], "many": true },
-    "place": { "type": "place", "description": "Where sessions can be held: anywhere in the circle the person will go.", "radiusKm": 5, "when": { "mode": ["in-person"] } },
-    "hours": { "type": "hours", "description": "When sessions can be held, each week." }
+    "description": {
+      "piece": "text",
+      "ask": { "label": "About", "long": true, "as": { "tutor": { "question": "What should students know?" }, "student": { "question": "What should the tutor know?" } } }
+    },
+    "price": {
+      "piece": "price",
+      "per": ["hour", "session", "lesson"],
+      "ask": { "question": "What do you charge?", "as": { "student": { "label": "Budget", "question": "What would you pay at most?" } } }
+    },
+    "subjects": { "piece": "choice", "values": ["maths", "physics", "chemistry", "biology"], "several": true },
+    "languages": { "piece": "choice", "values": "languages", "several": true, "ask": { "question": "Which languages are the lessons in?" } },
+    "levels": { "piece": "choice", "values": ["primary", "secondary", "university", "adult"], "several": true, "ask": { "labels": { "primary": "primary school", "adult": "adults" } } },
+    "minutes": { "piece": "number", "unit": "minutes", "ask": { "label": "Lesson length" } },
+    "ages": { "piece": "number", "unit": "years", "ask": { "start": { "range": true } } },
+    "mode": { "piece": "choice", "values": ["in-person", "online"], "several": true },
+    "place": {
+      "piece": "place",
+      "when": { "mode": ["in-person"] },
+      "ask": { "label": "Area", "start": { "radiusKm": 5 }, "as": { "student": { "hint": "Your neighbourhood and town, not your address.", "start": { "radiusKm": 2 } } } }
+    },
+    "hours": { "piece": "date", "several": true, "ask": { "label": "Days and times", "start": { "way": "weekly", "hours": true } } }
   },
   "preview": ["subjects", "description", "price", "mode", "place"],
   "review": {
-    "paid": { "type": "choice", "description": "Whether the student paid as agreed.", "values": ["yes", "no"], "roles": ["student"] }
+    "paid": { "piece": "choice", "values": ["yes", "no"], "roles": ["student"], "ask": { "question": "Did they pay as agreed?" } }
   }
 }

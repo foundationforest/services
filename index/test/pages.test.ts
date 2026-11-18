@@ -21,7 +21,7 @@ import { b64u, base58 } from '@foundationforest/folders'
 import { colorFor } from '../src/avatar.ts'
 import { ROOT } from '../src/index.ts'
 import { loadLists } from '../src/lists.ts'
-import { BETA, cardLines, fieldsOf, inWords, moneyText, numberText, photosOf, placeHtml, unitText, valueText } from '../src/pages/common.ts'
+import { answerText, BETA, cardLines, inWords, moneyText, photosOf, placeHtml, valueText } from '../src/pages/common.ts'
 import { home } from '../src/pages/home.ts'
 import { market } from '../src/pages/market.ts'
 import { listing as listingPage, type ListingPage } from '../src/pages/listing.ts'
@@ -63,26 +63,29 @@ before(async () => {
   for (const [name, p] of Object.entries(people)) await publishProfile(host.url, p, name === 'seller' ? { hosts: [PHOTOS, host.url] } : {})
   const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
-    // Its languages by ISO code, which its market labels; its minutes in the market's unit; its ages a
-    // range; two prices, one for a pack of 5 lessons, 260 MXN a lesson.
+    // Its languages by ISO code, from the markets' shared list; its minutes in the market's unit; its
+    // ages a range; a count with no unit; two prices, one for a pack of 5 lessons, 260 MXN a lesson,
+    // with a note; its hours weekly, in its zone.
     at(a!, 'listing/a', {
       description: 'Maths and physics, in Madrid.',
       subjects: ['maths', 'physics'],
       languages: ['en', 'es'],
       minutes: '60',
       ages: { from: '9', to: '11' },
+      groupSize: '4',
       price: [
         { amount: '30', currency: 'USD', per: 'hour' },
-        { amount: '1300', currency: 'MXN', per: 'lesson', count: 5 },
+        { amount: '1300', currency: 'MXN', per: 'lesson', count: 5, note: 'The first lesson is free' },
       ],
       mode: ['in-person'],
-      place: { lat: '40.42', lon: '-3.70', radiusKm: 5, area: 'Madrid' },
+      place: { lat: '40.42', lon: '-3.70', radiusKm: 5 },
+      hours: [{ every: ['tuesday', 'thursday'], start: '18:00', end: '20:00', zone: 'Europe/Madrid' }],
       contact: 'https://wa.me/34600000000',
     }),
     // Online only: no place, as lessons asks for one only in person. Its ages with no top.
     at(b!, 'listing/b', { description: 'Maths, online.', subjects: ['maths'], languages: ['es'], minutes: '45', ages: { from: '18' }, price: [{ amount: '25', currency: 'USD', per: 'hour' }], mode: ['online'], contact: 'http://example.com/maths/' }),
     // 100 USD for 5 hours: 20 an hour, the cheapest per hour.
-    at(c!, 'listing/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], price: [{ amount: '100', currency: 'USD', per: 'hour', count: 5 }], mode: ['in-person'], place: { lat: '38.72', lon: '-9.14', radiusKm: 5, area: 'Lisbon' } }),
+    at(c!, 'listing/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], price: [{ amount: '100', currency: 'USD', per: 'hour', count: 5 }], mode: ['in-person'], place: { lat: '38.72', lon: '-9.14', radiusKm: 5 } }),
     // One age, a number in a field that takes a range.
     at(s1!, 'listing/need', { description: 'Help with maths homework.', subjects: ['maths'], ages: '10', contact: 'mailto:s1@example.com' }),
     // Its size a value its market labels, xl as XL; its place 8.9 km north of a's.
@@ -93,12 +96,12 @@ before(async () => {
       size: 'xl',
       condition: 'like-new',
       price: [{ amount: '40', currency: 'EUR' }],
-      location: { lat: '40.50', lon: '-3.70', radiusKm: 2, area: 'Madrid' },
+      location: { lat: '40.50', lon: '-3.70', radiusKm: 2 },
       photos: COAT,
       files: COAT.map((sha256, n) => ({ sha256, type: 'image/jpeg', size: 1000 + n })),
       contact: 'seller@example.com',
     }),
-    // A file field named pastWork, not photos: the facts leave it out by its type. A place with no area.
+    // A photo field named pastWork, not photos: the facts leave it out by its piece.
     at(repairer!, 'listing/taps', { description: 'Leaks and taps fixed.', repairs: ['plumbing'], base: { lat: '37.39', lon: '-5.98', radiusKm: 10 }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
     at(uncounted!, 'listing/u', { description: 'Maths, uncounted.' }),
     at(s1!, 'review/a', { subject: a!.key.address, score: '9', listing: `${a!.key.address}/listing/a`, text: 'Very clear.' }),
@@ -137,12 +140,14 @@ const mainOf = (html: string) => /<main>[\s\S]*<\/main>/.exec(html)![0]
 const ICON = (name: string) => new RegExp(`<svg class="i[^"]*" data-icon="${name}"[^>]*>.*?</svg>`)
 
 test('the four answers the mcp reads, in their shapes: every field they gave, and those added beside them', async () => {
-  const home = (await twin<{ index: string; markets: Array<{ name: string; summary: string; description: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: string } }> }>(i, '/index.json')).body
+  const home = (await twin<{ index: string; markets: Array<{ name: string; summary: string; description?: string; roles: string[]; listed: { [role: string]: number }; words: { [role: string]: string } }> }>(i, '/index.json')).body
   assert.deepEqual(keysOf(home), ['index', 'lists', 'markets'])
   assert.equal(home.index, i.address)
-  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; summary: string; description: string; status: string; roles: Array<{ role: string; listings: string }> }> }
+  const directory = JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')) as { markets: Array<{ name: string; summary: string; description?: string; status: string; roles: Array<{ role: string; listings: string }> }> }
   // Each market as the directory gives it, its summary and status among it, and, added, how many listings each role has listed and each role's word for its listings.
-  assert.deepEqual(home.markets.map(({ listed: _, words: __, ...m }) => m), directory.markets.map((m) => ({ name: m.name, summary: m.summary, description: m.description, status: m.status, roles: m.roles.map((r) => r.role) })))
+  // A market with no description, wardrobe, gives none.
+  assert.deepEqual(home.markets.map(({ listed: _, words: __, ...m }) => m), directory.markets.map((m) => ({ name: m.name, summary: m.summary, ...(m.description !== undefined && { description: m.description }), status: m.status, roles: m.roles.map((r) => r.role) })))
+  assert.ok(!('description' in home.markets.find((m) => m.name === 'wardrobe')!))
   assert.deepEqual(new Set(home.markets.map((m) => (m as unknown as { status: string }).status)), new Set(['beta', 'live']))
   assert.deepEqual(home.markets.map((m) => m.words), directory.markets.map((m) => Object.fromEntries(m.roles.map((r) => [r.role, r.listings]))))
   const listed = Object.fromEntries(home.markets.map((m) => [m.name, m.listed]))
@@ -346,9 +351,10 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual(who(await s('minReviews=1&role=tutor')), ['a', 'b'])
   assert.deepEqual(who(await s('q=coat')), ['seller'])
   assert.deepEqual(who(await s('market=wardrobe&role=seller')), ['seller'])
-  // With a market, its fields: a choice by a value, one of a many field's among them; a number by a
-  // range, in its unit, either end left open. A listing without the field is left out; with no
-  // market, a field filter is no filter, and the query leaves it out.
+  // With a market, its fields, each by the markets' match: a choice by a value, one of a field's
+  // several answers among them; a number by a range, in its unit, either end left open. A listing
+  // without the field is left out, though the markets match a missing answer; with no market, a field
+  // filter is no filter, and the query leaves it out.
   assert.deepEqual(who(await s('market=lessons&languages=es')), ['a', 'b'])
   assert.deepEqual(who(await s('market=lessons&languages=en')), ['a'])
   assert.deepEqual(who(await s('market=lessons&languages=fr')), [])
@@ -358,6 +364,11 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual(who(await s('market=lessons&minutes.min=45&minutes.max=60')), ['a', 'b'])
   assert.deepEqual(who(await s('market=lessons&languages=es&minutes.max=50')), ['b'])
   assert.deepEqual(who(await s('languages=fr&q=maths')), ['a', 's1', 'b'])
+  // Only a's says a group size; every other lesson leaves it out, so none is found.
+  assert.ok(SITE.markets.match(SITE.markets.market('lessons')!.listing.groupSize!, undefined, { from: '1' }))
+  assert.deepEqual(who(await s('market=lessons&groupSize.min=1')), ['a'])
+  // Words that are no number are no filter.
+  assert.deepEqual(who(await s('market=lessons&minutes.min=long')), who(await s('market=lessons')))
   // A number field that takes a range matches on overlap, each missing end limiting nothing: a's 9 to
   // 11, b's 18 and over, s1's 10, one number, the range from itself to itself.
   assert.deepEqual(who(await s('market=lessons&ages.min=10&ages.max=10')), ['a', 's1'])
@@ -390,8 +401,8 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual((await twin<{ query: unknown }>(i, '/search.json?languages=fr')).body.query, {})
   // 20000 km reaches every listing with a place, in every market, nearest first: Seville, then Lisbon.
   assert.deepEqual(who(await s('near=40.4,-3.7&km=20000')), ['a', 'seller', 'repairer', 'c'])
-  // A town by its name, as skill.md says: q finds a place by its area.
-  assert.deepEqual(who(await s('q=madrid')).sort(), ['a', 'seller'])
+  // A place has no name, so a town's name finds a listing only where its writer wrote it.
+  assert.deepEqual(who(await s('q=madrid')).sort(), ['a'])
   const paged = await s('role=tutor&limit=1&offset=1')
   assert.equal(paged.total, 3)
   assert.deepEqual(who(paged), ['c'])
@@ -446,29 +457,29 @@ test('the sitemap, robots.txt, and what is not here', async () => {
   assert.equal(head.headers.get('access-control-allow-origin'), '*')
 })
 
-test("a listing's page and its twin: its fields in its market's order with their types, who posted it, and how to reach them", async () => {
+test("a listing's page and its twin: its fields in the order its market asks them, with their pieces and words, who posted it, and how to reach them", async () => {
   const a = addressOf('a')
   const { status, body: o } = await twin<ListingPage>(i, `/profiles/${a}/listing/a.json`)
   assert.equal(status, 200)
-  assert.deepEqual(keysOf(o), both(['checks', 'fields', 'index', 'listing', 'market', 'message', 'profile', 'role', ...SHOWN], ['labels', 'types', 'units']))
+  assert.deepEqual(keysOf(o), both(['checks', 'fields', 'index', 'listing', 'market', 'message', 'profile', 'role', ...SHOWN], ['labels', 'pieces', 'units']))
   assert.deepEqual(keysOf(o.listing), both([...LISTING, 'listed', 'time'], LISTING_ADDED))
   assert.deepEqual([o.index, o.profile, o.market, o.role, o.listing.address, o.listing.url, o.listing.listed], [i.address, a, 'lessons', 'tutor', `${a}/listing/a`, `${BASE}/profiles/${a}/listing/a`, true])
   // The same profile, as its own page shows it.
   const p = (await twin<ProfilePage>(i, `/profiles/${a}.json`)).body
   assert.deepEqual([o.checks, o.ratings, o.trust, o.uniqueness, o.message], [p.checks, p.ratings, p.trust, p.uniqueness, p.message])
   assert.deepEqual(o.listing.body, p.listings.find((x) => x.address === `${a}/listing/a`)!.body)
-  // The market's preview first, then the rest of its listing fields in its order.
-  const lessons = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8')) as { listing: { [name: string]: { type: string; unit?: string } }; preview: string[] }
-  assert.deepEqual(o.fields, [...lessons.preview, ...Object.keys(lessons.listing).filter((f) => !lessons.preview.includes(f))])
-  // Each field's type, as its market names it; each number field's unit; and the labels of the
-  // values it holds, its languages' among them, for the codes it holds only.
-  assert.deepEqual(o.types, Object.fromEntries(Object.entries(lessons.listing).map(([name, f]) => [name, f.type])))
+  // The fields the market asks a tutor, in the markets' ask's order: the preview first, place after
+  // the mode its when names, then the rest, contact last.
+  assert.deepEqual(o.fields, SITE.markets.ask('lessons', 'tutor').map((f) => f.name))
+  assert.deepEqual(o.fields, ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'groupSize', 'hours', 'contact'])
+  // Each field's piece, as its market names it; each number field's unit, a count naming none; and
+  // how each value it holds reads, its languages' from the markets' shared list, for those it holds only.
+  const lessons = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8')) as { listing: { [name: string]: { piece: string } } }
+  assert.deepEqual(o.pieces, { ...Object.fromEntries(Object.entries(lessons.listing).map(([name, f]) => [name, f.piece])), contact: 'text' })
   assert.deepEqual(o.units, { minutes: 'minutes', ages: 'years' })
-  assert.deepEqual(o.labels, { languages: { en: 'English', es: 'Spanish' } })
-  // A market with no preview: the markets manual's, description, price, then its place fields.
-  const { preview: _, ...cleaning } = (await twin<{ market: Market }>(i, '/markets/repairs.json')).body.market
-  assert.deepEqual(fieldsOf(cleaning).slice(0, 4), ['description', 'price', 'base', 'home'])
-  assert.deepEqual(new Set(fieldsOf(cleaning)), new Set(Object.keys(cleaning.listing)))
+  assert.deepEqual(o.labels, { subjects: { maths: 'Maths', physics: 'Physics' }, languages: { en: 'English', es: 'Spanish' }, mode: { 'in-person': 'In person' } })
+  // A student is asked no groupSize, which is for tutors.
+  assert.deepEqual((await twin<ListingPage>(i, `/profiles/${addressOf('s1')}/listing/need.json`)).body.fields.includes('groupSize'), false)
 
   const html = (await page(i, `/profiles/${a}/listing/a`)).text
   assert.match(html, /<title>\$30 per hour · Maths and physics, in Madrid\.<\/title>/)
@@ -483,14 +494,19 @@ test("a listing's page and its twin: its fields in its market's order with their
   // posted it, in a card linking to their profile; the button to message them, in the role's word.
   const order = [
     `<a class="round clear back" href="${BASE}/markets/lessons" aria-label="Back">`,
-    '<h1>Maths and physics, in Madrid.</h1><p class="cost"><span class="d big">$30</span> <span class="s">per hour</span></p><p class="cost"><span class="d big">MX$1,300</span> <span class="s">for 5 lessons</span></p>',
-    '<dl class="card divide"><div class="kv"><dt>Subjects</dt><dd>Maths, Physics</dd></div>',
-    '<div class="kv"><dt>Mode</dt><dd>In person</dd></div><div class="kv"><dt>Place</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.42&amp;mlon=-3.70#map=15/40.42/-3.70">Madrid, within 5 km<svg',
-    // A language by its label, never its code; a number as stored, in its unit.
-    '<div class="kv"><dt>Languages</dt><dd>English, Spanish</dd></div>',
-    '<div class="kv"><dt>Minutes</dt><dd>60 minutes</dd></div>',
-    // A range in its unit.
+    '<h1>Maths and physics, in Madrid.</h1><p class="cost"><span class="d big">$30</span> <span class="s">per hour</span></p><p class="cost"><span class="d big">MX$1,300</span> <span class="s">for 5 lessons</span> <span class="s">(The first lesson is free)</span></p>',
+    // Each label its market's word, else its name in words; each value as the markets read it.
+    '<dl class="card divide"><div class="kv"><dt>Subjects</dt><dd>Maths and physics</dd></div>',
+    // A place as its numbers, a link to its point on the map: a place holds no name.
+    '<div class="kv"><dt>Online or in person</dt><dd>In person</dd></div><div class="kv"><dt>Area</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.42&amp;mlon=-3.70#map=15/40.42/-3.70">Around 40.42, -3.70, 5 km<svg',
+    // A language by how it reads, never its code; a number as stored, in its unit.
+    '<div class="kv"><dt>Languages</dt><dd>English and Spanish</dd></div>',
+    '<div class="kv"><dt>Lesson length</dt><dd>60 minutes</dd></div>',
+    // A range in its unit; a count with none.
     '<div class="kv"><dt>Ages</dt><dd>9 to 11 years</dd></div>',
+    '<div class="kv"><dt>Group size</dt><dd>4</dd></div>',
+    // Hours with their zone beside them.
+    '<div class="kv"><dt>Days and times</dt><dd>Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)</dd></div>',
     '<div class="kv"><dt>Contact</dt><dd><a href="https://wa.me/34600000000" rel="nofollow ugc">wa.me/34600000000<svg',
     `<a class="card poster" href="${BASE}/profiles/${a}"><span class="av" style="--h:${colorOf('lessons')}" aria-hidden="true">`,
     '<span class="nm">Lessons <span class="role">tutor</span><span class="vb" role="img" aria-label="Verified with a selfie"',
@@ -516,32 +532,33 @@ test("a listing's page and its twin: its fields in its market's order with their
   assert.deepEqual([u.status, u.body.listing.listed, u.body.listing.why], [200, false, 'its profile does not count here'])
   assert.match((await page(i, `/profiles/${addressOf('uncounted')}/listing/u`)).text, /<p class="red">Not listed: its profile does not count here\.<\/p>[\s\S]*<span class="nm">Lessons <span class="role">tutor<\/span><\/span><span class="rated"><span class="xs">Not verified here<\/span>/)
 
-  // The fields leave out every one its market types file, whatever it is called: the repairer's
-  // past work is a photo, and its licences a field.
+  // The fields leave out every photo field, whatever it is called: the repairer's past work is a
+  // photo, and its licences a field.
   const taps = (await twin<ListingPage>(i, `/profiles/${addressOf('repairer')}/listing/taps.json`)).body
-  assert.deepEqual([taps.listing.listed, taps.types.pastWork, taps.listing.photos], [true, 'file', [`${host.url}/v1/files/${COAT[0]}`]])
+  assert.deepEqual([taps.listing.listed, taps.pieces.pastWork, taps.listing.photos], [true, 'photo', [`${host.url}/v1/files/${COAT[0]}`]])
   const tapsHtml = (await page(i, `/profiles/${addressOf('repairer')}/listing/taps`)).text
   assert.ok(!tapsHtml.includes('<dt>Past work</dt>') && !tapsHtml.includes('<dt>Files</dt>'))
   assert.ok(tapsHtml.includes('<div class="kv"><dt>Licences</dt><dd>Gas</dd></div>'))
-  // A place: a link to its point on the map, its area if it has one, then how far round it reaches.
-  // On a card, which is a link already, the quiet line is the market's next field, as in the app.
-  assert.ok(tapsHtml.includes('<div class="kv"><dt>Base</dt><dd><a href="https://www.openstreetmap.org/?mlat=37.39&amp;mlon=-5.98#map=15/37.39/-5.98">Within 10 km<svg'))
+  // A place: its numbers, a link to its point on the map. On a card, which is a link already, the
+  // quiet line is the market's next field, as in the app.
+  assert.ok(tapsHtml.includes('<div class="kv"><dt>Base</dt><dd><a href="https://www.openstreetmap.org/?mlat=37.39&amp;mlon=-5.98#map=15/37.39/-5.98">Around 37.39, -5.98, 10 km<svg'))
   assert.ok(mainOf((await page(i, '/markets/repairs')).text).includes('<span class="title">Leaks and taps fixed.</span><span class="s">Plumbing</span>'))
-  // Radius 0 is that exact spot: its area alone, or that it is an exact spot.
+  // Radius 0 is that exact spot: its numbers alone.
   const spot = { lat: '40.42', lon: '-3.70', radiusKm: 0 }
-  assert.equal(valueText({ ...spot, area: 'Court 3' }), 'Court 3')
-  assert.match(String(placeHtml(spot)), /^<a href="https:\/\/www\.openstreetmap\.org\/\?mlat=40\.42&amp;mlon=-3\.70#map=15\/40\.42\/-3\.70">An exact spot<svg[^>]*>.*<\/svg><\/a>$/)
+  assert.match(String(placeHtml(SITE.markets, spot)), /^<a href="https:\/\/www\.openstreetmap\.org\/\?mlat=40\.42&amp;mlon=-3\.70#map=15\/40\.42\/-3\.70">40\.42, -3\.70<svg[^>]*>.*<\/svg><\/a>$/)
 
-  // A number in its unit on a card too; one of a unit is singular, and people's one a person.
-  assert.equal(cardLines(SITE.markets.market('wardrobe'), { description: 'Trainers.', kind: 'shoes', footLength: '27' }).line, '27 centimetres')
-  assert.deepEqual([unitText('minutes', '1'), unitText('people', '1'), unitText('people', '2'), unitText('square-metres', '1'), unitText('square-metres', '2.5')], ['minute', 'person', 'people', 'square metre', 'square metres'])
-  assert.equal(numberText(['30', '1'], 'nights'), '30 nights, 1 night')
-  // A range, either end left out for no limit that way, and one number in a field that takes one.
-  assert.deepEqual(
-    [numberText({ from: '9', to: '11' }, 'years'), numberText({ from: '18' }, 'years'), numberText({ to: '11' }, 'years'), numberText({ from: '1', to: '1' }, 'people'), numberText('10', 'years')],
-    ['9 to 11 years', '18 years and over', '11 years and under', '1 to 1 person', '10 years'],
+  // A number in its unit on a card too, as the markets read it.
+  assert.equal(cardLines(SITE, 'wardrobe', 'seller', { description: 'Trainers.', kind: 'shoes', footLength: '27' }).line, '27 centimetres')
+  // A listing that does not fit its market reads by its shape: the markets read only what fits.
+  assert.equal(cardLines(SITE, 'wardrobe', 'seller', { description: 'Trainers.', kind: 'shoes', footLength: 27 }).line, '27')
+  // Each date answer with hours says its zone beside them; one with none, none.
+  const days = { piece: 'date', several: true } as const
+  assert.equal(
+    answerText(SITE.markets, days, [{ every: ['saturday'], part: 'morning', zone: 'Europe/London' }, { on: '2031-06-02' }]),
+    'Saturday mornings (Europe/London); Monday 2 June 2031',
   )
-  assert.ok((await page(i, `/profiles/${addressOf('b')}/listing/b`)).text.includes('<div class="kv"><dt>Ages</dt><dd>18 years and over</dd></div>'))
+  assert.equal(valueText({ from: '9', to: '11' }), 'from: 9, to: 11')
+  assert.ok((await page(i, `/profiles/${addressOf('b')}/listing/b`)).text.includes('<div class="kv"><dt>Ages</dt><dd>18 years or more</dd></div>'))
   assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('<div class="kv"><dt>Ages</dt><dd>10 years</dd></div>'))
   // Each price in words: per its per, for a pack its count of it, a person's people, or for the whole deal.
   assert.deepEqual(
@@ -586,13 +603,13 @@ test("photos: each file a listing's fields name, linked at its profile entry's f
   const html = (await page(i, `/profiles/${seller}/listing/coat`)).text
   for (const link of links) assert.ok(html.includes(`<img src="${link}" alt="A wool coat, worn twice." loading="lazy">`), link)
   for (const text of ['<dt>Photos</dt>', '<dt>Files</dt>', 'a file (', `<dd>${COAT[0]}`]) assert.ok(!html.includes(text), text)
-  // A choice's value in words, as the markets manual writes them, or by its label where its field
-  // has one; its JSON carries the labels of the values it holds, no other. Its place, by its area.
+  // A choice's value as the markets read it: in words, or by its label where its field has one; its
+  // JSON carries how the values it holds read, no other. Its place, by its numbers.
   assert.ok(html.includes('<div class="kv"><dt>Kind</dt><dd>Coat</dd></div>'))
   assert.ok(html.includes('<div class="kv"><dt>Condition</dt><dd>Like new</dd></div>'))
   assert.ok(html.includes('<div class="kv"><dt>Size</dt><dd>XL</dd></div>'))
-  assert.deepEqual(o.labels, { size: { xl: 'XL' } })
-  assert.ok(html.includes('<div class="kv"><dt>Location</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.50&amp;mlon=-3.70#map=15/40.50/-3.70">Madrid, within 2 km<svg'))
+  assert.deepEqual(o.labels, { wearer: { women: 'Women' }, kind: { coat: 'Coat' }, size: { xl: 'XL' }, condition: { 'like-new': 'Like new' } })
+  assert.ok(html.includes('<div class="kv"><dt>Location</dt><dd><a href="https://www.openstreetmap.org/?mlat=40.50&amp;mlon=-3.70#map=15/40.50/-3.70">Around 40.50, -3.70, 2 km<svg'))
   // In one row that scrolls sideways, on the market's color while they load; on a laptop, the
   // first big and the rest small under it, by the stylesheet alone. Its price in euros.
   assert.ok(html.includes(`<div class="gal" style="--h:${colorOf('wardrobe')}"><a href="${links[0]}"><img src="${links[0]}"`))
@@ -671,7 +688,7 @@ test('the profile page, for a buyer: its header with its avatar, name, badge and
     'Message</a></div>',
     '<h2>Offers</h2>',
     // Its first price, and how many more its page shows.
-    `<a class="card lcard" href="${BASE}/profiles/${a}/listing/a"><span class="what"><span class="title">Maths and physics, in Madrid.</span><span class="s">Maths, Physics</span></span><span class="price"><span class="d">$30</span><span class="xs">per hour</span><span class="xs">+1 more</span></span></a>`,
+    `<a class="card lcard" href="${BASE}/profiles/${a}/listing/a"><span class="what"><span class="title">Maths and physics, in Madrid.</span><span class="s">Maths and physics</span></span><span class="price"><span class="d">$30</span><span class="xs">per hour</span><span class="xs">+1 more</span></span></a>`,
     '<h2>Reviews</h2>',
   ]
   for (let n = 1; n < order.length; n++) assert.ok(at(order[n - 1]!) < at(order[n]!), order[n])
@@ -758,20 +775,25 @@ test('the search page: its search box filled, the filters as chips and as one GE
   assert.ok(form.includes(`<a class="radio" href="${BASE}/search?q=maths&amp;market=wardrobe"><span class="r"></span><span>Wardrobe<span class="xs">People sell clothes and shoes they own.</span></span></a>`))
   assert.deepEqual([...form.matchAll(/<input type="radio" name="(\w+)" value="([^"]*)"( checked)?>/g)].map((m) => `${m[1]}=${m[2]}${m[3] ? '*' : ''}`), ['role=tutor', 'role=student', 'minRating=*', 'minRating=8', 'minRating=9'])
   assert.ok(!form.includes('name="near"') && form.endsWith('<button class="btn plain sm" type="submit">Apply</button></form>'))
-  // Once a market is chosen, its fields as filters, for every side here: a choice as a picker of its
-  // values by their labels, never their codes; a number as a range in its unit.
-  assert.ok(form.includes('<div class="group"><span class="lab">Languages</span><label class="inp"><select name="languages" aria-label="Languages"><option value="">Any</option><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option></select></label></div>'))
-  assert.ok(form.includes('<div class="group"><span class="lab">Minutes</span><div class="range"><label class="inp"><span class="s">From</span><input type="number" name="minutes.min" step="any" aria-label="Minutes, from"></label><label class="inp"><span class="s">To</span><input type="number" name="minutes.max" step="any" aria-label="Minutes, to"></label><span class="s">minutes</span></div></div>'))
-  assert.deepEqual([...form.matchAll(/<select name="([^"]+)"|<input type="number" name="([^"]+)"/g)].map((m) => m[1] ?? m[2]), ['subjects', 'languages', 'levels', 'minutes.min', 'minutes.max', 'ages.min', 'ages.max', 'mode'])
+  // Once a market is chosen, its fields as filters, for every side here, in its market's words: a
+  // choice as a picker of its values by how each reads, never their codes, a shared list's every
+  // value among them; a number as a range in its unit, a count with none.
+  assert.ok(form.includes('<div class="group"><span class="lab">Languages</span><label class="inp"><select name="languages" aria-label="Languages"><option value="">Any</option><option value="aa">Afar</option>'))
+  const languages = /<select name="languages"[\s\S]*?<\/select>/.exec(form)![0]
+  assert.ok(languages.includes('<option value="es">Spanish</option>'))
+  assert.equal(languages.split('<option').length - 2, Object.keys(SITE.markets.lists.languages!).length)
+  assert.ok(form.includes('<div class="group"><span class="lab">Lesson length</span><div class="range"><label class="inp"><span class="s">From</span><input type="number" name="minutes.min" step="any" aria-label="Lesson length, from"></label><label class="inp"><span class="s">To</span><input type="number" name="minutes.max" step="any" aria-label="Lesson length, to"></label><span class="s">minutes</span></div></div>'))
+  assert.ok(form.includes('<div class="group"><span class="lab">Group size</span><div class="range"><label class="inp"><span class="s">From</span><input type="number" name="groupSize.min" step="any" aria-label="Group size, from"></label><label class="inp"><span class="s">To</span><input type="number" name="groupSize.max" step="any" aria-label="Group size, to"></label></div></div>'))
+  assert.deepEqual([...form.matchAll(/<select name="([^"]+)"|<input type="number" name="([^"]+)"/g)].map((m) => m[1] ?? m[2]), ['subjects', 'languages', 'levels', 'minutes.min', 'minutes.max', 'ages.min', 'ages.max', 'groupSize.min', 'groupSize.max', 'mode'])
   // Asked: each a chip in words that removes it, the picker and the box filled; a link to another
   // market drops them, since they are this market's.
   const asked = mainOf((await page(i, '/search?q=maths&market=lessons&languages=es&minutes.min=50')).text)
   assert.ok(asked.includes(`<a class="fchip on" href="${BASE}/search?q=maths&amp;market=lessons&amp;minutes.min=50" aria-label="Remove Languages: Spanish">Languages: Spanish<svg`))
-  assert.ok(asked.includes(`<a class="fchip on" href="${BASE}/search?q=maths&amp;market=lessons&amp;languages=es" aria-label="Remove Minutes: at least 50 minutes">Minutes: at least 50 minutes<svg`))
+  assert.ok(asked.includes(`<a class="fchip on" href="${BASE}/search?q=maths&amp;market=lessons&amp;languages=es" aria-label="Remove Lesson length: 50 minutes or more">Lesson length: 50 minutes or more<svg`))
   assert.ok(asked.includes('<option value="es" selected>Spanish</option>') && asked.includes('<input type="number" name="minutes.min" value="50" step="any"'))
   assert.ok(asked.includes(`<a class="radio" href="${BASE}/search?q=maths&amp;market=wardrobe"><span class="r"></span><span>Wardrobe<span class="xs">People sell clothes and shoes they own.</span></span></a>`))
   assert.ok(asked.includes('<p class="s"><b>1</b> listing for &quot;maths&quot; in Lessons, best first</p>'))
-  assert.ok(mainOf((await page(i, '/search?market=lessons&minutes.min=40&minutes.max=50')).text).includes('aria-label="Remove Minutes: 40 to 50 minutes">'))
+  assert.ok(mainOf((await page(i, '/search?market=lessons&minutes.min=40&minutes.max=50')).text).includes('aria-label="Remove Lesson length: 40 to 50 minutes">'))
   // How many, in the words of what was asked; no side, so listings; then a card for each.
   assert.ok(html.includes('<p class="s"><b>3</b> listings for &quot;maths&quot; in Lessons, best first</p></div>'))
   assert.equal(html.match(/<a class="rcard"/g)!.length, 3)
@@ -804,8 +826,8 @@ test("a market's page: a header on its tint, its avatar, name, counts, summary a
   const wardrobe = mainOf((await page(i, '/markets/wardrobe')).text)
   assert.ok(wardrobe.startsWith(`<main>\n<div class="head tint" style="--h:${colorOf('wardrobe')}"><a class="round back" href="${BASE}/" aria-label="Back">`))
   assert.ok(wardrobe.includes(`<div class="me"><span class="av lg" style="--h:${colorOf('wardrobe')}" aria-hidden="true"><svg class="i" data-icon="coat-hanger"`))
-  // Its summary, then its description. Live: no chip and no line about it.
-  assert.ok(wardrobe.includes('<h1>Wardrobe</h1><span class="s">1 offer</span></div></div>\n<p>People sell clothes and shoes they own. Items are picked up in person or shipped.</p></div>'))
+  // Its summary, and no description, which it has none of. Live: no chip and no line about it.
+  assert.ok(wardrobe.includes('<h1>Wardrobe</h1><span class="s">1 offer</span></div></div>\n<p>People sell clothes and shoes they own.</p></div>'))
   assert.ok(!wardrobe.includes('Beta'))
   // Each side at its own anchor; the tabs link to them, the side's own marked; the stylesheet shows
   // the one the address names, the first when none.

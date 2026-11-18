@@ -1,12 +1,12 @@
 // What several pages share: what a profile shows (its ratings, trust, uniqueness and checks) as the
 // JSON gives it, a listing as every page gives it (its page and its photos among it), a search or
 // market result, and how the HTML draws each from the object, in the parts the Forest app draws: a
-// profile's avatar, name and badge, its rating, a listing's card, a result's card, the words of a
-// field's value, a number or a range in its unit, each price with its count, a beta market's chip
-// and line, the line for a market gone from the directory, and the fold that says what a profile's
-// numbers mean.
+// profile's avatar, name and badge, its rating, a listing's card, a result's card, the words of an
+// answer as the markets read it, each price with its count and note, a beta market's chip and line,
+// the line for a market gone from the directory, and the fold that says what a profile's numbers
+// mean.
 
-import { type Market, previewOf } from '@foundationforest/markets'
+import { type Asked, type DateValue, type Field, type Markets, nameWords, previewOf } from '@foundationforest/markets'
 
 import { colorFor } from '../avatar.ts'
 import type { Check } from '../filter.ts'
@@ -35,7 +35,7 @@ export function firstHost(profileEntry: unknown): string | undefined {
 
 /**
  * The files a field of a body names: its value, or each of its values, when every one is the
- * SHA-256 of a file the body's `files` lists (the markets' `file` type, read by its shape); else none.
+ * SHA-256 of a file the body's `files` lists (the markets' photo, read by its shape); else none.
  */
 export function filesIn(body: { [key: string]: unknown }, name: string): string[] {
   const listed = new Set((Array.isArray(body.files) ? body.files : []).map((f) => (f as { sha256?: unknown } | null)?.sha256))
@@ -57,40 +57,43 @@ export const listingOf = (base: string, address: string, body: { [key: string]: 
 export const messageOf = (apps: ListedApp[], address: string) => apps.map((a) => ({ name: a.name, url: a.message.replaceAll('{address}', encodeURIComponent(address)) }))
 
 /**
- * A market's listing fields, in the order a listing's page shows them: those that matter first, as the
- * markets' `previewOf` gives them, then the rest in the market's order.
+ * The fields a market asks a role's listing, in order, as the markets' `ask` gives them: its
+ * preview's first, each after the fields its `when` names, then the rest, `contact` last, each with
+ * its piece, its rules and its words for that role. None for a market the directory does not list or
+ * a role it does not have.
  */
-export function fieldsOf(m: Market | undefined): string[] {
-  if (!m) return []
-  const preview = previewOf(m)
-  return [...preview, ...Object.keys(m.listing).filter((n) => !preview.includes(n))]
+export function askedOf(markets: Markets, market: string | null, role: string | null): Asked[] {
+  const m = market === null ? undefined : markets.market(market)
+  return m && m.roles.some((r) => r.role === role) ? markets.ask(m.name, role!) : []
 }
 
-/** Each of a market's listing fields' type, as its file names it: `file`, `money`, `place` and the rest of the markets' types. */
-export function typesOf(m: Market | undefined): { [field: string]: string } {
-  return m ? Object.fromEntries(Object.entries(m.listing).map(([name, field]) => [name, field.type])) : {}
-}
+/** Each asked field's piece: `photo` names photos, `price`, `place` and the rest of the markets' eight. */
+export const piecesOf = (asked: Asked[]): { [field: string]: string } => Object.fromEntries(asked.map((a) => [a.name, a.piece]))
 
-/** Each of a market's number fields' unit, as its file names it: `{ minutes: "minutes" }`. */
-export function unitsOf(m: Market | undefined): { [field: string]: string } {
-  return m ? Object.fromEntries(Object.entries(m.listing).flatMap(([name, field]) => (field.unit ? [[name, field.unit]] : []))) : {}
-}
+/** Each asked number field's unit, as its market names it: `{ minutes: "minutes" }`. A count names none. */
+export const unitsOf = (asked: Asked[]): { [field: string]: string } => Object.fromEntries(asked.flatMap((a) => (a.unit ? [[a.name, a.unit]] : [])))
 
 /**
- * The labels of the values a body holds, for each of its market's choice fields that has some, as
- * its file gives them: `{ size: { xl: "XL" } }`. Only those the body holds, so a listing's JSON
- * stays the size of the listing.
+ * How each value a body holds reads, for each of its choice fields, as the markets' `ask` gives its
+ * choices: `{ size: { xl: "XL" } }`, `{ languages: { es: "Spanish" } }`. Only those the body holds,
+ * so a listing's JSON stays the size of the listing.
  */
-export function labelsOf(m: Market | undefined, body: { [key: string]: unknown }): { [field: string]: { [value: string]: string } } {
+export function labelsOf(asked: Asked[], body: { [key: string]: unknown }): { [field: string]: { [value: string]: string } } {
   const out: { [field: string]: { [value: string]: string } } = {}
-  for (const [name, field] of Object.entries(m?.listing ?? {})) {
-    const labels = field.type === 'choice' ? field.labels : undefined
-    if (!labels || !Object.hasOwn(body, name)) continue
-    const held = (Array.isArray(body[name]) ? (body[name] as unknown[]) : [body[name]]).filter((v): v is string => typeof v === 'string' && Object.hasOwn(labels, v))
-    if (held.length) out[name] = Object.fromEntries(held.map((v) => [v, labels[v]!]))
+  for (const a of asked) {
+    if (!a.choices || !Object.hasOwn(body, a.name)) continue
+    const held = (Array.isArray(body[a.name]) ? (body[a.name] as unknown[]) : [body[a.name]]).flatMap((v) => a.choices!.filter((c) => c.value === v))
+    if (held.length) out[a.name] = Object.fromEntries(held.map((c) => [c.value, c.label]))
   }
   return out
 }
+
+/** Whether a listing fits its market, by the markets' `checkEntry`: only then do the markets read its answers. */
+export const fits = (markets: Markets, market: string | null, role: string | null, body: { [key: string]: unknown }) =>
+  market !== null && role !== null && markets.checkEntry(market, role, 'listing', body) === null
+
+/** A field's name in words, where its market gives it no label: `pastWork` is "Past work". */
+export const fieldLabel = nameWords
 
 type ShownColumns = { value: number | null; count: number | null; trust: number | null; uniqueness: number | null }
 
@@ -138,11 +141,6 @@ export function inWords(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** A field's name as words: `pastWork` is "Past work". */
-export function fieldLabel(name: string): string {
-  const words = name.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`)
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
 
 /** A plural word for `n` of them: "offer" for one, "offers" for any other number. */
 export const wordFor = (n: number, word: string) => (n === 1 ? word.replace(/s$/, '') : word)
@@ -232,8 +230,8 @@ export function rateHtml(s: Shown & { checks: Check[] }): Raw {
   return html`<span class="rate">${icon('star', 'fill')}${s.ratings.value.toFixed(1)}</span><span class="xs">(${s.ratings.count})</span>`
 }
 
-/** A place, read by its shape: its point and its radius, and its area if it has one. */
-type Place = { lat: string; lon: string; radiusKm: number; area?: unknown }
+/** A place, read by its shape: a circle, its point and its radius. */
+type Place = { lat: string; lon: string; radiusKm: number }
 const isPlace = (v: unknown): v is Place => {
   const o = v as Place | null
   return !!o && typeof o === 'object' && typeof o.lat === 'string' && typeof o.lon === 'string' && Number.isInteger(o.radiusKm)
@@ -242,16 +240,13 @@ const isPlace = (v: unknown): v is Place => {
 /** Where a place's point is on openstreetmap.org, marked. */
 export const mapUrl = (p: Place) => `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=15/${p.lat}/${p.lon}`
 
-/** A place as the app writes it (app src/show.ts): its area, then how far round it reaches; nothing more for radius 0, that exact spot. */
-export function placeText(p: Place): string {
-  const area = typeof p.area === 'string' ? p.area : ''
-  if (p.radiusKm === 0) return area || 'An exact spot'
-  return area ? `${area}, within ${p.radiusKm} km` : `Within ${p.radiusKm} km`
-}
-
-/** A place on a listing's page: each one a link to its point on the map, in placeText's words, with the arrow of a link that opens another site. */
-export const placeHtml = (v: unknown): Raw =>
-  html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}<a href="${mapUrl(p)}">${placeText(p)}${icon('arrow-up-right', 'bold', 'xs')}</a>`)}`
+/**
+ * A place on a listing's page: each one a link to its point on the map, in the words the markets
+ * read it in, its numbers ("Around 40.42, -3.70, 5 km"), with the arrow of a link that opens another
+ * site. A place holds no name, so its numbers are its caption here.
+ */
+export const placeHtml = (markets: Markets, v: unknown): Raw =>
+  html`${(Array.isArray(v) ? v : [v]).filter(isPlace).map((p, i) => html`${i ? ', ' : ''}<a href="${mapUrl(p)}">${markets.read({ piece: 'place' }, p)}${icon('arrow-up-right', 'bold', 'xs')}</a>`)}`
 
 /**
  * An amount in its currency, as people write a price, as the app does (app src/show.ts, priceParts),
@@ -274,16 +269,16 @@ export function amountText(amount: unknown, currency: unknown): string {
 export const perPlural = (per: string) => (per === 'person' ? 'people' : /(s|x|z|ch|sh)$/.test(per) ? `${per}es` : `${per}s`)
 
 /**
- * Money as people write a price: its amount in its currency (amountText); and what it is for, "per
- * hour", or for a pack, its count of its per, "for 5 lessons", or nothing for the whole deal. None
- * for a value that is not money.
+ * A price as people write one: its amount in its currency (amountText); what it is for, "per hour",
+ * or for a pack, its count of its per, "for 5 lessons", or nothing for the whole deal; and its note,
+ * the writer's few words on it, or none. None for a value that is not a price.
  */
-export function priceParts(money: unknown): { amount: string; per: string } | null {
+export function priceParts(money: unknown): { amount: string; per: string; note: string } | null {
   if (!money || typeof money !== 'object' || Array.isArray(money) || !('amount' in money) || !('currency' in money)) return null
-  const m = money as { amount: unknown; currency: unknown; per?: unknown; count?: unknown }
+  const m = money as { amount: unknown; currency: unknown; per?: unknown; count?: unknown; note?: unknown }
   const per = typeof m.per === 'string' && m.per ? m.per : ''
   const count = Number.isInteger(m.count) ? (m.count as number) : 1
-  return { amount: amountText(m.amount, m.currency), per: !per ? '' : count > 1 ? `for ${count} ${perPlural(per)}` : `per ${per}` }
+  return { amount: amountText(m.amount, m.currency), per: !per ? '' : count > 1 ? `for ${count} ${perPlural(per)}` : `per ${per}`, note: typeof m.note === 'string' ? m.note : '' }
 }
 
 /** Money in one line: "$30 per hour", "MX$1,300 for 5 lessons". */
@@ -292,76 +287,42 @@ export const moneyText = (money: unknown) => {
   return p ? [p.amount, p.per].filter(Boolean).join(' ') : ''
 }
 
+/** A price, as the markets write one. */
+type Price = { amount: string; currency: string; per?: string; count?: number; note?: string }
+
 /**
  * Each price a listing gives, in its writer's order: its price is always a list of them in the
- * markets' format; one held as a single money, as before it, is a list of one. Only those that are
- * money.
+ * markets' format; one held alone, as before it, is a list of one. Only those that are prices.
  */
-export function pricesOf(body: { [key: string]: unknown }): Array<{ amount: string; currency: string; per?: string; count?: number }> {
+export function pricesOf(body: { [key: string]: unknown }): Price[] {
   const held = body.price === undefined ? [] : Array.isArray(body.price) ? body.price : [body.price]
-  return held.filter((m): m is { amount: string; currency: string; per?: string; count?: number } => priceParts(m) !== null && typeof m.amount === 'string' && typeof m.currency === 'string')
+  return held.filter((m): m is Price => priceParts(m) !== null && typeof m.amount === 'string' && typeof m.currency === 'string')
 }
 
-/** A field's value as words on a page: each of the markets' nine types, read by its shape. */
+/**
+ * An answer as words on a page, as the markets' `read` says it in English: a choice by how its
+ * value reads (es as Spanish), a number in its unit, a date's days and hours. `read` leaves a date's
+ * zone out, so each answer with hours or a part of the day says its zone beside them, by its name. A
+ * photo is no words: it is drawn as a photo. Only for an answer that fits its field (fits).
+ */
+export function answerText(markets: Markets, field: Field, value: unknown): string {
+  if (field.piece === 'photo') return ''
+  if (field.piece !== 'date') return markets.read(field, value)
+  const answers = (field.several ? value : [value]) as DateValue[]
+  return answers.map((v) => `${markets.read({ piece: 'date' }, v)}${v.zone === undefined ? '' : ` (${v.zone})`}`).join('; ')
+}
+
+/** An answer as words, read by its shape alone: for a listing that does not fit its market, whose answers the markets do not read. */
 export function valueText(v: unknown): string {
   if (typeof v === 'string') return v
   if (typeof v === 'number' || typeof v === 'boolean') return String(v)
   if (Array.isArray(v)) return v.map(valueText).join(', ')
   if (v && typeof v === 'object') {
-    const o = v as { [key: string]: unknown }
-    if ('amount' in o && 'currency' in o) return moneyText(o)
-    if (isPlace(o)) return placeText(o)
-    if ('sha256' in o) return `a file (${o.type}, ${o.size} bytes)`
-    if ('from' in o && 'to' in o) return `${o.from} to ${o.to}`
-    if ('zone' in o && Array.isArray(o.slots)) return `${(o.slots as Array<{ days: string[]; from: string; to: string }>).map((s) => `${s.days.join(', ')} ${s.from} to ${s.to}`).join('; ')} (${o.zone})`
-    return Object.entries(o)
+    return Object.entries(v)
       .map(([k, x]) => `${k}: ${valueText(x)}`)
       .join(', ')
   }
   return ''
-}
-
-/**
- * A choice field's value as people read it: each value's label where its field has one (`xl` as
- * "XL"), otherwise the value in words, joined by commas.
- */
-export const choiceText = (v: unknown, labels: { [value: string]: string } = {}) =>
-  (Array.isArray(v) ? v : [v]).map((x) => (Object.hasOwn(labels, String(x)) ? labels[String(x)]! : inWords(String(x)))).join(', ')
-
-/** A unit in words for `n` of it: hyphens as spaces, and one of it without the plural's s, a person for people: "45 minutes", "1 night", "2 square metres". */
-export function unitText(unit: string, n: string): string {
-  const words = unit.replaceAll('-', ' ')
-  return n !== '1' ? words : words === 'people' ? 'person' : words.replace(/s$/, '')
-}
-
-/**
- * One number or one range in its unit: "45 minutes"; a range from one number to another, "9 to 11
- * years", or with an end left out, for no limit that way, "18 years and over", "11 years and under".
- */
-function oneNumber(v: unknown, unit: string): string {
-  if (v && typeof v === 'object' && !Array.isArray(v)) {
-    const { from, to } = v as { from?: unknown; to?: unknown }
-    if (typeof from === 'string' && typeof to === 'string') return `${from} to ${to} ${unitText(unit, to)}`
-    if (typeof from === 'string') return `${from} ${unitText(unit, from)} and over`
-    if (typeof to === 'string') return `${to} ${unitText(unit, to)} and under`
-  }
-  const n = valueText(v)
-  return n ? `${n} ${unitText(unit, n)}` : ''
-}
-
-/** A number field's value as stored, in its unit, a number or a range (oneNumber); each of a list so, joined by commas. */
-export const numberText = (v: unknown, unit: string) =>
-  (Array.isArray(v) ? v : [v])
-    .map((x) => oneNumber(x, unit))
-    .filter(Boolean)
-    .join(', ')
-
-/** A field's value as words, by its market's type for it: a choice by its labels, a number in its unit, a file as nothing (it is drawn as a photo), the rest by its shape. */
-function fieldText(m: Market | undefined, name: string, value: unknown): string {
-  if (value === undefined || value === null) return ''
-  const field = m?.listing[name]
-  if (field?.type === 'file') return ''
-  return field?.type === 'choice' ? choiceText(value, field.labels) : field?.unit ? numberText(value, field.unit) : valueText(value)
 }
 
 /** The first line of a text, cut short at a word, with an ellipsis when cut. */
@@ -388,12 +349,15 @@ export function priceHtml(body: { [key: string]: unknown }): Raw {
 /**
  * A listing's card's two lines, as the app writes them (app src/show.ts, cardLines): its title, its
  * description's first line, else its preview's first field it holds; and one quiet line, the next of
- * its preview's fields it holds, but its description, its price and its photos.
+ * its preview's fields it holds, but its description, its price and its photos, each answer as the
+ * markets read it when the listing fits its market, else by its shape.
  */
-export function cardLines(m: Market | undefined, body: { [key: string]: unknown }): { title: string; line: string } {
+export function cardLines(site: Site, market: string | null, role: string | null, body: { [key: string]: unknown }): { title: string; line: string } {
+  const m = market === null ? undefined : site.markets.market(market)
+  const read = fits(site.markets, market, role, body)
   const shown = (m ? previewOf(m) : [])
-    .filter((name) => name !== 'price' && name !== 'description' && m!.listing[name] && m!.listing[name]!.type !== 'file')
-    .map((name) => fieldText(m, name, body[name]))
+    .filter((name) => name !== 'price' && name !== 'description' && m!.listing[name] && m!.listing[name]!.piece !== 'photo' && body[name] !== undefined)
+    .map((name) => (read ? answerText(site.markets, m!.listing[name]!, body[name]) : valueText(body[name])))
     .filter(Boolean)
   const description = typeof body.description === 'string' ? firstLine(body.description, 140) : ''
   const [title = 'A listing', line = ''] = description ? [description, ...shown] : shown
@@ -409,13 +373,13 @@ const thumbHtml = (l: Listing) => (l.photos[0] ? html`<img class="thumb" src="${
  * profile's avatar, name and badge, and its rating.
  */
 export function resultHtml(site: Site, r: Result & { km?: number }): Raw {
-  const { title, line } = cardLines(site.markets.market(r.market), r.listing.body)
+  const { title, line } = cardLines(site, r.market, r.role, r.listing.body)
   return html`<a class="rcard" href="${r.listing.url}"><span class="top">${thumbHtml(r.listing)}<span class="what"><span class="title">${title}</span>${line ? html`<span class="s">${line}</span>` : ''}${r.km === undefined ? '' : html`<span class="xs">${r.km} km</span>`}</span>${priceHtml(r.listing.body)}</span><span class="who">${profileAvatar(site, r.market, r.role, 'xs')}${nameHtml(r.market, r.role, r.checks)}<span class="grow"></span>${rateHtml(r)}</span></a>`
 }
 
 /** A profile's own listing, as its page draws it: a card linking to the listing's page, its photo, title, quiet line and price, and why it is not listed, when it is not. */
-export function listingCardHtml(site: Site, market: string | null, l: Listing & { listed: boolean; why?: string }): Raw {
-  const { title, line } = cardLines(market ? site.markets.market(market) : undefined, l.body)
+export function listingCardHtml(site: Site, market: string | null, role: string | null, l: Listing & { listed: boolean; why?: string }): Raw {
+  const { title, line } = cardLines(site, market, role, l.body)
   return html`<a class="card lcard" href="${l.url}">${thumbHtml(l)}<span class="what"><span class="title">${title}</span>${line ? html`<span class="s">${line}</span>` : ''}${l.listed ? '' : html`<span class="s red">Not listed: ${l.why}.</span>`}</span>${priceHtml(l.body)}</a>`
 }
 

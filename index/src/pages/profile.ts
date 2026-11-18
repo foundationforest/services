@@ -189,7 +189,7 @@ export const profile: Page<ProfilePage> = {
 ${isGone(site, market) ? goneHtml(market) : ''}${messageHtml(o.message, 'Message')}</div>
 ${numbersHtml(o)}
 <div class="lists"><h2>${word ? inWords(word) : 'Listings'}</h2>
-${o.listings.length ? html`<div class="list">${o.listings.map((l) => listingCardHtml(site, market, l))}</div>` : html`<p>None yet.</p>`}
+${o.listings.length ? html`<div class="list">${o.listings.map((l) => listingCardHtml(site, market, role, l))}</div>` : html`<p>None yet.</p>`}
 <h2>Reviews</h2>
 ${said.length ? html`<div class="list">${said.map(saidHtml)}</div>` : html`<p>None yet.</p>`}</div>
 <details class="fold all"><summary>${icon('file-code')}<span class="grow">Everything this index read about this profile</span>${icon('caret-down')}</summary><div class="fbody"><p>Its address: <code>${o.address}</code></p>

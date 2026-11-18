@@ -17,12 +17,19 @@ a page, with what this index made of each of its proofs.
   `/index.json`. The twin is the object the page is drawn from.
 - A page may be cached for 30 seconds, and served for up to 5 minutes more while a cache fetches a
   new one. The index reads its hosts again 30 seconds after each pass ends.
-- In entries, money and decimals are text: a score `"8.5"`, a point's degrees `"40.42"`, and a
-  listing's `price`, always a list of its prices, such as
-  `[{ "amount": "30", "currency": "USD", "per": "hour" }, { "amount": "1300", "currency": "MXN", "per": "lesson", "count": 5 }]`,
-  where `count` is how many of its `per` the amount buys, 1 when left out. A number field that takes
-  a range may hold `{ "from": "9", "to": "11" }`, or one end, `{ "from": "18" }` for 18 and over. In
-  this index's JSON, a rating, a trust and a uniqueness are plain numbers; in its signed
+- A listing's fields are as its market writes them
+  ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): a
+  field takes one answer, or a list of several, which mean any of them. Numbers, amounts and degrees
+  are decimal text: a score `"8.5"`, a number `"45"`, or a range `{ "from": "9", "to": "11" }`, an end
+  left out for no limit, `{ "from": "18" }` for 18 and over. A `price` is always a list of prices,
+  such as
+  `[{ "amount": "30", "currency": "USD", "per": "hour" }, { "amount": "1300", "currency": "MXN", "per": "lesson", "count": 5, "note": "The first lesson is free" }]`,
+  where `count` is how many of its `per` the amount buys, 1 when left out, and `note` the writer's
+  few words on it. A place is a circle, `{ "lat": "40.42", "lon": "-3.70", "radiusKm": 5 }`, with no
+  name; radius 0 is an exact spot. A date is days, `{ "on" }`, `{ "from", "to" }` or
+  `{ "every": ["monday"] }`, and hours if wanted, `start` and `end` or a `part` of the day, with their
+  `zone`, a time zone by name. A choice is one of its field's values, such as a language by its code,
+  `es`. In this index's JSON, a rating, a trust and a uniqueness are plain numbers; in its signed
   `statement`, a rating is text.
 
 ## What each profile shows
@@ -45,12 +52,15 @@ Every profile this index counts shows three things, each ranked inside its own m
 On the pages, a listing in a list shows its profile's badge, "Verified with a selfie" for a face
 check and "Verified with ID" for an ID check, and its rating with how many raters scored it, "★ 9.2
 (14)", or New when no one has rated it. Its trust and its uniqueness are in a fold on its profile's page, What
-these mean, with what each means. A review's date there is its entry's `time`, in UTC. A
-choice's value is in words there, `like-new` as "Like new", or by its label where its market gives
-one, `xl` as "XL" or a language's code `es` as "Spanish"; a number is in its field's unit, as
-written, `"45"` as "45 minutes", and a range so, "9 to 11 years", "18 years and over"; a price is in
-its own currency, for a pack with its count, "MX$1,300 for 5 lessons". A listing's page shows every
-price, and a listing in a list its first, with how many more. The JSON keeps each as written.
+these mean, with what each means. A review's date there is its entry's `time`, in UTC. Each field
+is under its market's label for it, and each answer reads as the markets read it in English: a
+choice in words, `like-new` as "Like new", or by its label, `xl` as "XL" or a language's code `es`
+as "Spanish"; a number in its field's unit, `"45"` as "45 minutes", and a range so, "9 to 11
+years", "18 years or more"; a date's days and hours, with its zone beside them, "Tuesdays and
+Thursdays, 18:00 to 20:00 (Europe/Madrid)"; a place as its numbers, "Around 40.42, -3.70, 5 km",
+linked to its point on a map; a price in its own currency, for a pack with its count, with its note,
+"MX$1,300 for 5 lessons (The first lesson is free)". A listing's page shows every price, and a
+listing in a list its first, with how many more. The JSON keeps each as written.
 
 ## The markets
 
@@ -58,7 +68,8 @@ price, and a listing in a list its first, with how many more. The JSON keeps eac
 
 `{ "index", "markets": [{ "name", "summary", "description", "status", "roles", "listed", "words" }], "lists" }`:
 this index's address, every market in the markets directory it reads, with its `summary`, the one
-line that says what the dealing is, its `description`, what an AI needs to know of it beyond that,
+line that says what the dealing is, its `description`, if it has one, what an AI needs to know of it
+beyond that,
 its `status`, `live` or `beta` (beta: it works, at your own risk, and may change; its tile and its
 page say so), its roles, how many listings each role has `listed`, such as
 `{ "tutor": 3, "student": 1 }`, and each role's word for its listings, `offers` or `requests`, such
@@ -70,8 +81,9 @@ proofs it shows; and `maxAgeDays`.
     GET https://index.forest.foundation/markets/<name>.json
 
 `{ "index", "market", "listings": { "<role>": [<result>] } }`: the market's file as the directory
-holds it (its roles, its listing fields, the fields a listing's preview shows first, and the fields
-its reviews add), and the listings this index lists, by role, in search's order.
+holds it (its roles, its listing fields, each with its piece, its rules and its words under `ask`,
+the fields a listing's preview shows first, and the fields its reviews add), and the listings this
+index lists, by role, in search's order.
 
 ## Search
 
@@ -82,22 +94,23 @@ its reviews add), and the listings this index lists, by role, in search's order.
 it was given, such as `{ "q": "maths", "market": "tutoring" }`, and `markets` every market's name.
 Every filter may be left out:
 
-- `q`: words in the listing, each a word's start, all of them;
+- `q`: words in the listing, each a word's start, all of them: what its writer wrote, and how its
+  choices read, such as Spanish; never its places, dates, numbers or prices;
 - `market`, `role`: only that market, only listings by that role;
 - `near=lat,lon` and `km`, how far the searcher would go (10 unless given): a listing whose place's
   circle touches that one, the distance between the two points at most `km` plus the place's
   `radiusKm`; each result then carries `km`, that distance between the two points, and a listing
-  with no place, as one online only, is left out. `q` also finds a place by its area, such as a
-  town;
+  with no place, as one online only, is left out. A place has no name: to search near a town, give
+  its point;
 - `minRating`: a profile rated at least this, from 1 to 10; one with no rating is left out;
 - `minReviews`: a profile scored by at least this many raters;
-- with `market`, its listing fields, by their names in its file: a `choice` field as
-  `<field>=<value>`, a listing whose field holds that value (for a field that holds a list, one of
-  its values), such as `speaks=es&learns=en`; a `number` field as `<field>.min` and `<field>.max`,
-  in the field's `unit`, either one alone for an open end, such as `minutes.min=45`: a listing
-  whose number, or range, overlaps them, a range's missing end limiting nothing, so `ages.min=30`
-  finds 18 and over. A listing without the field is left out once it is filtered on. Without
-  `market`, a field is no filter;
+- with `market`, its listing fields, by their names in its file, each matched as the markets match
+  it: a `choice` field as `<field>=<value>`, a listing whose field holds that value (for a field
+  with several answers, one of them), such as `speaks=es&learns=en`; a `number` field as
+  `<field>.min` and `<field>.max`, in the field's `unit`, either one alone for an open end, such as
+  `minutes.min=45`: a listing whose number, or range, overlaps them, a range's missing end limiting
+  nothing, so `ages.min=30` finds 18 and over. A listing that leaves the field out is left out once
+  it is filtered on. Without `market`, a field is no filter;
 - `price.currency`, with `price.per`, `price.min` and `price.max`, in any market: a listing with a
   price in that currency for that `per`, or for the whole deal when `price.per` is left out, whose
   amount divided by its `count`, what one of its `per` costs, is at least `price.min` and at most
@@ -167,13 +180,13 @@ order only: each result's `ratings` is as it is.
     GET https://index.forest.foundation/profiles/<address>/listing/<id>.json
 
 A listing's own page, at its address under `/profiles`: `{ "index", "profile", "market", "role",
-"listing", "checks", "ratings", "trust", "uniqueness", "fields", "types", "units", "labels",
+"listing", "checks", "ratings", "trust", "uniqueness", "fields", "pieces", "units", "labels",
 "message" }`. `listing` is as its profile's page gives it; `checks`, `ratings`, `trust`,
-`uniqueness` and `message` are its profile's; `fields` is its market's listing fields in the order
-the page shows them, the market's preview first; `types` is each one's type, as its market names
-it, a `file` field naming photos; `units` is each number field's unit, such as
-`{ "minutes": "minutes" }`; `labels` is, for each choice field it holds, the labels its market gives
-the values it holds, such as `{ "size": { "xl": "XL" } }`.
+`uniqueness` and `message` are its profile's; `fields` is the fields its market asks its role's
+listings, in that order, the market's preview first and `contact` last; `pieces` is each one's
+piece, as its market names it, a `photo` field naming photos; `units` is each number field's unit,
+such as `{ "minutes": "minutes" }`; `labels` is, for each choice field it holds, how each value it
+holds reads, such as `{ "size": { "xl": "XL" }, "languages": { "es": "Spanish" } }`.
 The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
 gives, in the writer's words, and `message`. A listing that is not listed has its page too, with
 `why`.

@@ -8,8 +8,9 @@
 //
 //   profile      the current profile entry, if it has one: its market, role, hosts, public
 //                encryption key, pay addresses, access keys and proofs
-//   listing/<id> a listing; a delete keeps its last body here for good, marked deleted, so a review
-//                that names it still finds it
+//   listing/<id> a listing, and its words for search: its text and choice answers (textOf); a
+//                delete keeps its last body here for good, marked deleted, so a review that names
+//                it still finds it
 //   review/<id>  a review; a delete removes it
 //   vouch/<id>   a vouch; a delete removes it
 //   report/<id>  a report; a delete removes it
@@ -18,6 +19,8 @@
 // not this index's.
 
 import { type Checked, encodeEntry, isLocked, MAX_FUTURE_MS, readPage, type SignedEntry, viewFolder } from '@foundationforest/folders'
+
+import { type Markets, SHARED } from '@foundationforest/markets'
 
 import type { Store } from './store.ts'
 
@@ -72,18 +75,38 @@ export function allProfiles(store: Store): string[] {
   return store.db.prepare('select distinct profile from entries').all().map((r) => r.profile as string)
 }
 
-/** Every string inside a body, for search. */
-function textOf(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) return value.map(textOf).join(' ')
-  if (value && typeof value === 'object') return Object.values(value).map(textOf).join(' ')
-  return ''
+/**
+ * What search's words find in a listing, by its market's fields: each text answer as its writer wrote
+ * it, and each choice answer as the markets read it, es as Spanish. Never a place, a date, a number,
+ * a price, a photo or a link: their text is coordinates, a time zone's name, codes and amounts, no
+ * one's words, so a zone such as America/Monterrey would match every listing with hours there. A
+ * field its market does not name, or a listing whose market is not in the directory, gives none.
+ */
+function textOf(markets: Markets, market: unknown, body: { [key: string]: unknown }): string {
+  const m = typeof market === 'string' ? markets.market(market) : undefined
+  if (!m) return ''
+  const fields = { ...m.listing, ...SHARED.listing }
+  const words = Object.entries(body).flatMap(([name, value]) => {
+    const field = Object.hasOwn(fields, name) ? fields[name]! : undefined
+    if (field?.piece === 'text') return (Array.isArray(value) ? value : [value]).filter((v) => typeof v === 'string')
+    if (field?.piece !== 'choice') return []
+    // A listing that does not fit is kept too, and a value that is not its field's reads as nothing.
+    try {
+      return [markets.read(field, value)]
+    } catch {
+      return []
+    }
+  })
+  return words.join(' ')
 }
 
 const live = (c: Checked | undefined) => (c && c.entry.body !== null && !isLocked(c.entry.body) ? c : undefined)
 
-/** Each folder viewed again from every entry held for it, at `now`, into profiles, listings, reviews, vouches and reports. */
-export function viewAgain(store: Store, profiles: Iterable<string>, now: number): void {
+/**
+ * Each folder viewed again from every entry held for it, at `now`, into profiles, listings, reviews,
+ * vouches and reports, each listing's words read by `markets`.
+ */
+export function viewAgain(store: Store, markets: Markets, profiles: Iterable<string>, now: number): void {
   const { db } = store
   const entriesOf = db.prepare('select id, text from entries where profile = ?')
   const upsertProfile = db.prepare(`insert into profiles (address, body, market, role, time) values (?, ?, ?, ?, ?)
@@ -134,7 +157,7 @@ export function viewAgain(store: Store, profiles: Iterable<string>, now: number)
           listings.add(address)
           upsertListing.run(address, profile, JSON.stringify(it.entry.body), it.entry.time)
           dropText.run(address)
-          addText.run(address, textOf(it.entry.body))
+          addText.run(address, textOf(markets, body?.market, it.entry.body as { [key: string]: unknown }))
         } else if (REVIEW.test(path)) {
           reviews.add(address)
           const subject = (it.entry.body as { subject?: unknown }).subject

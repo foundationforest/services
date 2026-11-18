@@ -22,14 +22,14 @@ import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { type Body, entry, leave, nextTime, readFolder, readInbox, senderCounts, write } from '@foundationforest/folders'
 import { inboxEntry, lock, lockCount, openInbox, openLocked } from '@foundationforest/folders/locked'
 import { mainKey, newAccessKey, openingHalf, payAddresses } from '@foundationforest/keys'
-import { SHARED } from '@foundationforest/markets'
+import { type Asked, loadMarkets } from '@foundationforest/markets'
 import { WORD } from '../src/forest.ts'
 import { serve } from '../src/server.ts'
 import { HOW } from '../src/tools.ts'
 import { LESSONS, MARKETS, SKILL, type World, aiApp, lesson, logIn, world } from './setup.ts'
 
-/** The checkout's build/types.json, as the markets tool reads it. */
-const TYPES = JSON.parse(readFileSync(new URL('../../markets/build/types.json', import.meta.url), 'utf8'))
+/** The tests' own markets, as this copy reads them. */
+const markets = loadMarkets(MARKETS)
 
 type Result = { isError?: boolean; content: Array<{ text: string }> }
 
@@ -105,10 +105,18 @@ describe('reading, with no login', () => {
     assert.match(descriptions.search!, /a price as price\.currency and price\.per with price\.min and price\.max, by what one of its per costs, and sort=price for the cheapest first/)
     assert.match(descriptions.markets!, /its summary \(the one line that says what the dealing is\)/)
     assert.match(descriptions.markets!, /its status \(live, or beta: it works, at your own risk, and may change\)/)
-    // Before the person writes in a beta market, the AI tells them; a price is a list, with counts, and a range may leave out an end.
+    // Before the person writes in a beta market, the AI tells them; a price is a list, with counts, a
+    // number may leave out an end; and how to write a place, hours and several answers.
     assert.ok(HOW.includes('- A market is live or beta. Before the person writes in a beta market, tell them it works, at their own risk, and may change.'))
     assert.match(HOW, /- A listing's price is a list of every price the person charges, each with its per and, for a pack, its count/)
-    assert.match(HOW, /A number field with range takes one number or \{ from, to \}, either end left out for no limit/)
+    assert.match(HOW, /A number may be \{ from, to \}, either end left out for no limit/)
+    for (const line of [
+      'Centre a circle on the neighbourhood or town the person names, never on their address.',
+      "From memory, use 1 km and name the spot in the listing's own words.",
+      'When you do not know where a place is, ask for the nearest town you do know. Never guess.',
+      'Hours carry a time zone by name',
+      'Several answers in a field mean any of them. Things that go together are another listing: two stops of a trip are two listings.',
+    ]) assert.ok(HOW.includes(line), line)
   })
 
   test("how Forest works first, then the index's guide, its own word, read as a chat starts", async () => {
@@ -125,65 +133,54 @@ describe('reading, with no login', () => {
     }
   })
 
-  test('markets: every market with its status, or one market with its preview, kinds, each with its fields, each field once, what each key means, and each type its fields use, whole; a market not in the directory refused', async () => {
+  test('markets: every market with its status, or one market as ask says it: each field\'s rules once, each role\'s words in order, a shared list by its name; a market not in the directory refused', async () => {
     const all = await call('markets')
     assert.deepEqual(all.markets, JSON.parse(readFileSync(join(MARKETS, 'directory.json'), 'utf8')).markets, 'the directory as it is')
     assert.deepEqual(all.markets.map((m: { name: string; status: string }) => [m.name, m.status]), [['lessons', 'beta'], ['wardrobe', 'live']])
     // Each with its summary, its number and, where it names one, its icon, as the directory gives them.
     assert.deepEqual(all.markets.map((m: { summary: string; icon?: string; number: number }) => [m.summary, m.icon, m.number]), [[LESSONS.summary, 'graduation-cap', 1], ['People sell clothes and shoes they own.', undefined, 2]])
     const one = await call('markets', { name: 'lessons' })
-    assert.deepEqual(Object.keys(one), ['market', 'kinds', 'keys', 'types'])
-    // The market is the file but its fields, which kinds gives: each field once.
-    const { listing, review, ...file } = LESSONS
+    assert.deepEqual(Object.keys(one), ['market', 'fields', 'roles', 'vouch', 'report'])
+    // The market is the file but its fields, with its preview.
+    const { listing: _, review: __, ...file } = LESSONS
     assert.deepEqual(one.market, file)
-    const text = JSON.stringify(one)
-    for (const [key, field] of Object.entries({ ...listing, ...review } as { [key: string]: { description: string } })) {
-      assert.equal(text.split(JSON.stringify(field.description)).length - 1, 1, `${key} once`)
+    assert.deepEqual(Object.keys(one.fields), ['listing', 'review', 'vouch', 'report'])
+    // Each role's words, in the order ask gives them: the preview first, each after the fields its when
+    // names, then the rest, contact last; a role's own words over the field's.
+    const asked = (role: string, kind?: string, about?: string) => markets.ask('lessons', role, kind, about)
+    const words = ({ name, label, question, hint, start }: Asked) => ({ name, label, question, ...(hint !== undefined && { hint }), ...(start !== undefined && { start }) })
+    for (const role of ['tutor', 'student']) {
+      assert.deepEqual(one.roles[role].listing, asked(role).map(words), `${role}'s listing`)
+      assert.deepEqual(one.roles[role].review, asked(role, 'review', role).map(words), `a review of a ${role}`)
     }
-    assert.deepEqual(Object.keys(one.kinds), ['listing', 'review', 'vouch', 'report'])
-    assert.deepEqual(one.kinds.listing, { ...LESSONS.listing, ...SHARED.listing }, "a listing's fields are the file's, and contact")
-    assert.deepEqual(one.kinds.review, { ...SHARED.review, ...LESSONS.review }, "a review's are those every review holds, and the file's")
-    // A number's unit, and a choice's labels, as the file gives them.
-    assert.equal(one.kinds.listing.minutes.unit, 'minutes')
-    assert.deepEqual(one.kinds.listing.languages.labels, { en: 'English', es: 'Spanish', fr: 'French' })
-    // Each type its fields use, as the checkout's types.json defines it: its shape, not only its words.
-    assert.deepEqual(Object.keys(one.types), ['text', 'money', 'choice', 'number', 'place', 'hours'])
-    assert.deepEqual(one.types.place, TYPES.$defs.place)
-    // A range's shape beside a number's, and a price's count: what a pack of lessons and ages 9 to 11 take.
-    assert.deepEqual(one.types.number, TYPES.$defs.number)
-    assert.deepEqual(Object.keys(one.types.number.$defs.range.properties), ['from', 'to'])
-    assert.match(one.types.number.$defs.range.description, /Either end may be left out, for no limit that way/)
-    assert.match(one.types.money.properties.count.description, /How many of its per the amount buys/)
-    assert.deepEqual([one.kinds.listing.ages.unit, one.kinds.listing.ages.range], ['years', true])
-    assert.deepEqual(Object.keys(one.types.place.properties), ['lat', 'lon', 'radiusKm', 'area'])
-    assert.match(one.types.place.description, /never a home's door/)
-    // What each key means, in the markets' schema's words: the file's own keys, its summary, icon and
-    // number among them, and each key its fields use, in the schema's order. What an AI given the
-    // file alone guesses: that any field may be left out, that a listing's price is always a list,
-    // that many makes a list, that a range may leave out an end, that radiusKm is where a new place
-    // starts, and that roles on a review field names the profile reviewed.
-    assert.deepEqual(Object.keys(one.keys), ['market', 'field'])
-    assert.deepEqual(Object.keys(one.keys.market), ['name', 'summary', 'description', 'status', 'icon', 'number', 'roles', 'listing', 'preview', 'review'])
-    assert.deepEqual(Object.keys(one.keys.field), ['type', 'description', 'values', 'labels', 'per', 'radiusKm', 'unit', 'range', 'many', 'roles', 'when'])
-    assert.match(one.keys.market.summary, /one plain line of at most 80 characters/)
-    assert.match(one.keys.market.icon, /Phosphor/)
-    assert.match(one.keys.market.number, /tells markets apart by/)
-    assert.match(one.keys.market.listing, /A listing may leave out any of them/)
-    assert.match(one.keys.market.listing, /price is always a list of one or more money/)
-    assert.match(one.keys.field.range, /either end may be left out, for no limit that way/)
-    assert.match(one.keys.market.status, /Beta: works, at your own risk/)
-    assert.match(one.keys.field.many, /The field holds a list of its type/)
-    assert.match(one.keys.field.radiusKm, /the radius, in whole kilometres, a new place starts at/)
-    assert.match(one.keys.field.roles, /in review, the roles of the profile the review is about/)
-    assert.deepEqual(Object.keys(one.kinds.review), ['subject', 'score', 'text', 'listing', 'paid'], 'the fields every review holds, then the file’s own')
-    assert.deepEqual(Object.keys(one.kinds.vouch), ['subject', 'text'])
-    // A market with no preview and no review of its own: both meant all the same, a preview given;
-    // only the keys its fields use.
+    assert.deepEqual(one.roles.tutor.listing.map((f: { name: string }) => f.name), ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'price'), { name: 'price', label: 'Budget', question: 'What would you pay at most?' })
+    assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'place'), { name: 'place', label: 'Area', question: 'Area', hint: 'Your neighbourhood and town, not your address.', start: { radiusKm: 2 } })
+    // A review's paid is for a review of a student only.
+    assert.deepEqual([one.roles.student.review, one.roles.tutor.review].map((r: Array<{ name: string }>) => r.map((f) => f.name)), [['subject', 'listing', 'score', 'text', 'paid'], ['subject', 'listing', 'score', 'text']])
+    assert.deepEqual(one.vouch, asked('tutor', 'vouch').map(words))
+    assert.deepEqual(one.report, asked('tutor', 'report').map(words))
+    // Each field's rules once, the same for every role, with how an answer is written; its suggestions
+    // left out, since each role's words carry them.
+    const rules = one.fields.listing
+    assert.deepEqual(Object.keys(rules), ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.ok(!JSON.stringify(one.fields).includes('"ask"'), 'no suggestions in the rules')
+    assert.deepEqual(rules.minutes, { piece: 'number', unit: 'minutes', takes: asked('tutor').find((f) => f.name === 'minutes')!.takes })
+    assert.deepEqual(rules.place, { piece: 'place', when: { mode: ['in-person'] }, takes: '{ lat, lon, radiusKm }: lat and lon as decimal text, and radiusKm in whole kilometres' })
+    assert.match(rules.hours.takes, /with zone, a time zone by name such as Europe\/Madrid$/)
+    assert.match(rules.price.takes, /^a list of one or more, each different, each \{ amount, currency, per, count, note \}/)
+    // A choice's values with how each reads; a shared list by its name, and how its values are written.
+    assert.deepEqual(rules.levels, { piece: 'choice', several: true, choices: { primary: 'Primary school', secondary: 'Secondary', university: 'University', adult: 'Adults' }, takes: 'a list of one or more, each different, each one of primary, secondary, university, adult' })
+    assert.deepEqual(rules.languages, { piece: 'choice', several: true, list: 'languages', takes: 'a list of one or more, each different, each a language as its ISO 639-1 code in lower case, such as "es"' })
+    assert.deepEqual(one.fields.review.paid, { piece: 'choice', roles: ['student'], choices: { yes: 'Yes', no: 'No' }, takes: 'one of yes, no' })
+    assert.deepEqual(Object.keys(one.fields.vouch), ['subject', 'text'])
     const other = await call('markets', { name: 'wardrobe' })
     assert.deepEqual(Object.keys(other.market), ['name', 'summary', 'description', 'status', 'number', 'roles', 'preview'])
     assert.deepEqual([other.market.status, other.market.preview], ['live', ['description', 'price', 'location']])
-    assert.deepEqual(Object.keys(other.keys.market), ['name', 'summary', 'description', 'status', 'number', 'roles', 'listing', 'preview', 'review'])
-    assert.deepEqual(Object.keys(other.keys.field), ['type', 'description', 'values', 'labels', 'radiusKm', 'many', 'roles'])
+    assert.deepEqual(other.fields.listing.shipTo, { piece: 'choice', several: true, list: 'countries', takes: 'a list of one or more, each different, each a country as its ISO 3166-1 alpha-2 code in upper case, such as "MX"' })
+    assert.deepEqual(other.roles.buyer.listing.map((f: { name: string }) => f.name), ['description', 'price', 'location', 'size', 'shipTo', 'contact'], 'photos are for sellers only')
+    // A shared list is named, never listed: a market's answer stays a few KB.
+    assert.ok(JSON.stringify(other).length < 4000, `${JSON.stringify(other).length} characters`)
     assert.match((await call('markets', { name: 'knitting' })).refused, /knitting is not a market in the directory/)
   })
 
@@ -250,22 +247,24 @@ describe('acting for the person', () => {
     assert.equal((await call('read', { label: TUTOR, path: 'listing/maths' })).body.description, 'Maths, from the AI.')
     const refusals: Array<[string, Body | null, RegExp]> = [
       ['listing/x', { ...lesson('x'), colour: 'red' }, /a listing in lessons has no field colour/],
-      ['listing/x', { price: 30 }, /price takes a list of one or more, each different, each \{ amount, currency, per, count \}/],
+      ['listing/x', { price: 30 }, /price takes a list of one or more, each different, each \{ amount, currency, per, count, note \}/],
       // A price is always a list, a single one a list of one; a count only with a per; a range in order.
       ['listing/x', { ...lesson('x'), price: { amount: '30', currency: 'USD', per: 'hour' } }, /price takes a list of one or more/],
       ['listing/x', { ...lesson('x'), price: [] }, /price takes a list of one or more/],
       ['listing/x', { ...lesson('x'), price: [{ amount: '30', currency: 'USD', count: 2 }] }, /price takes a list of one or more/],
       ['listing/x', { ...lesson('x'), ages: { from: '11', to: '9' } }, /ages takes .*from no more than to/],
       ['listing/x', { ...lesson('x'), ages: {} }, /ages takes /],
-      ['listing/x', { subjects: ['knitting'] }, /subjects takes a list, each different, each one of /],
-      ['listing/x', { ...lesson('x'), place: { area: 'Madrid', online: true } }, /place takes \{ lat, lon, radiusKm, area \}/],
+      ['listing/x', { subjects: ['knitting'] }, /subjects takes a list of one or more, each different, each one of /],
+      ['listing/x', { ...lesson('x'), languages: ['xx'] }, /languages takes a list of one or more, each different, each one of the values in the languages list/],
+      ['listing/x', { ...lesson('x'), place: { lat: '40.42', lon: '-3.70', radiusKm: 5, area: 'Madrid' } }, /place takes \{ lat, lon, radiusKm \}/],
+      ['listing/x', { ...lesson('x'), hours: [{ every: ['monday'], start: '18:00', zone: '+01:00' }] }, /hours takes .*with zone, a time zone by name/],
       ['listing/x', { ...lesson('x'), mode: ['online'] }, /place is only for a listing whose mode is in-person/],
       ['photo/x', { text: 'x' }, /photo is no kind of entry: the kinds are listing, review, vouch, report/],
       ['listing/a/b', lesson('x'), /one segment after the kind/],
       ['profile', { hosts: [w.host] }, /no access key writes profile/],
       ['review/x', { score: '9' }, /a review names its subject/],
       ['review/x', { subject: 'nobody', score: '9' }, /subject is the address of the profile the review is about/],
-      ['review/x', { subject: w.stranger.address, score: '11' }, /score takes a number from "1" to "10"/],
+      ['review/x', { subject: w.stranger.address, score: '11' }, /score takes one number from "1" to "10"/],
       ['review/x', { subject: w.stranger.address, listing: 'physics' }, /listing takes a listing's address/],
       ['review/x', { subject: w.stranger.address, listing: 'nobody/listing/physics' }, /listing is a listing's address: <profile address>\/listing\/<id>/],
       ['vouch/x', { subject: w.stranger.address, score: '9' }, /a vouch in lessons has no field score/],
@@ -274,6 +273,9 @@ describe('acting for the person', () => {
       ['report/x', { subject: w.own[STUDENT]!, text: 'x' }, /subject is one of the person's own profiles: a report is about someone else/],
     ]
     for (const [path, body, why] of refusals) assert.match((await call('write', { label: TUTOR, path, body })).refused, why, path)
+    // checkEntry's refusal, passed on as it says it.
+    const odd = { ...lesson('x'), mode: ['online'] }
+    assert.equal((await call('write', { label: TUTOR, path: 'listing/x', body: odd })).refused, markets.checkEntry('lessons', 'tutor', 'listing', odd))
     assert.equal(await at(TUTOR, 'listing/x'), null, 'nothing written')
   })
 

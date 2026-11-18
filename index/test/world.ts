@@ -31,20 +31,21 @@ export const tmp = (name: string) => mkdtempSync(join(tmpdir(), `index-${name}-`
 /**
  * A markets checkout of the tests' own, as the markets package reads one: each market in
  * test/markets/, directory.json written from them in name order as the markets' check writes it,
- * and the pinned checkout's build/types.json, the format the types hold. Wardrobe's number is 11, so
- * the colors' cycle through ten is tested; matches names no icon, so its first letter is.
+ * and the pinned checkout's build/lists.json, the shared lists a choice may take. Wardrobe's number
+ * is 11, so the colors' cycle through ten is tested, and it has no description; matches names no
+ * icon, so its first letter is.
  */
 export const MARKETS = (() => {
   const dir = tmp('markets')
   const own = join(ROOT, 'test/markets')
   mkdirSync(join(dir, 'markets'))
   mkdirSync(join(dir, 'build'))
-  copyFileSync(join(ROOT, '../markets/build/types.json'), join(dir, 'build/types.json'))
+  copyFileSync(join(ROOT, '../markets/build/lists.json'), join(dir, 'build/lists.json'))
   const markets = readdirSync(own)
     .sort()
     .map((file) => {
       copyFileSync(join(own, file), join(dir, 'markets', file))
-      return JSON.parse(readFileSync(join(own, file), 'utf8')) as { name: string; summary: string; description: string; status: string; icon?: string; number: number; roles: unknown[] }
+      return JSON.parse(readFileSync(join(own, file), 'utf8')) as { name: string; summary: string; description?: string; status: string; icon?: string; number: number; roles: unknown[] }
     })
   writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, summary, description, status, icon, number, roles }) => ({ name, summary, description, status, ...(icon && { icon }), number, roles })) }))
   return dir

@@ -14,8 +14,8 @@
 //   minReviews   a profile scored by at least this many raters
 //   price.currency, price.per
 //                a listing with a price in that currency, for that per, or for the whole deal
-//                when price.per is left out: prices compare only within one per and currency
-//                (the markets' types.json), since any rate between currencies is a guess
+//                when price.per is left out: prices compare only within one per and currency, as
+//                the markets' prices do, since any rate between currencies is a guess
 //   price.min, price.max
 //                with price.currency, a price in it whose amount divided by its count, what one of
 //                its per costs, is at least, at most this
@@ -23,19 +23,21 @@
 //                the order above
 //   limit        20 unless given, at most 100; offset skips that many
 //
-// With market, also a filter per listing field of that market, by its type (filterable): a choice
-// by its name, `<field>=<value>`, a listing whose field holds that value, among its values for a
-// many one; a number by `<field>.min` and `<field>.max`, in its unit, a listing whose number or range
-// overlaps that range, a missing end limiting nothing. A listing without the field is left out once
-// it is filtered on.
+// With market, also a filter per listing field of that market, by its piece (filterable), each
+// matched by the markets' own match, one field at a time: a choice by its name, `<field>=<value>`, a
+// listing whose field holds that value, among its answers for one with several; a number by
+// `<field>.min` and `<field>.max`, in its unit, a listing whose number or range overlaps that range,
+// a missing end limiting nothing. The markets match a listing that leaves the field out; here a
+// listing without the field is left out once it is filtered on (README.md, FAQ). How the filters
+// combine is this index's: a listing must match each.
 //
 // Its JSON gives, beside the results, `query`, each of these filters as it was given, and `markets`,
 // every market's name, so its page draws its search box, filled with what was searched, and its
 // filters.
 
-import type { Field, Market } from '@foundationforest/markets'
+import type { Asked, Field, Market, Markets } from '@foundationforest/markets'
 
-import { amountText, avatarHtml, choiceText, fieldLabel, inWords, offerOf, pricesOf, type Result, resultHtml, results, unitText, wordFor } from './common.ts'
+import { amountText, avatarHtml, fieldLabel, inWords, offerOf, pricesOf, type Result, resultHtml, results, wordFor } from './common.ts'
 import { icon } from './icons.ts'
 import { backHtml, html, type Page, type Raw, searchBox, urls } from './template.ts'
 
@@ -63,18 +65,38 @@ const PRICE = ['price.currency', 'price.per', 'price.min', 'price.max']
  * one of search's own filters is filtered by that filter, never as a field, since the query holds
  * one value per name.
  */
-export const filterable = (m: Market): Array<[string, Field]> => Object.entries(m.listing).filter(([name, f]) => (f.type === 'choice' || f.type === 'number') && !FILTERS.includes(name))
+export const filterable = (m: Market): Array<[string, Field]> => Object.entries(m.listing).filter(([name, f]) => (f.piece === 'choice' || f.piece === 'number') && !FILTERS.includes(name))
 
 /** The names a field's filter takes in the query: a choice's own name, a number's `<name>.min` and `<name>.max`. */
-const namesOf = ([name, f]: [string, Field]) => (f.type === 'number' ? [`${name}.min`, `${name}.max`] : [name])
+const namesOf = ([name, f]: [string, Field]) => (f.piece === 'number' ? [`${name}.min`, `${name}.max`] : [name])
 
-/** What a field holds, as a list: each value of a many one, or its one value, or none. */
-const heldIn = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined ? [] : [v])
+/**
+ * The answer a filter asks of a field, as the field writes one, for the markets' match: a choice's
+ * value; a number's `{ from, to }`, an end not given left out; each as a list of one for a field
+ * with several. None when the query does not filter on it: no value, or no number at either end.
+ */
+function wantedOf(get: (name: string) => string | undefined, [name, f]: [string, Field]): unknown {
+  let one: unknown
+  if (f.piece === 'choice') one = get(name) || undefined
+  else {
+    const end = (n: string) => {
+      const text = get(n)?.trim()
+      return text && Number.isFinite(Number(text)) ? text : undefined
+    }
+    const [from, to] = [end(`${name}.min`), end(`${name}.max`)]
+    one = from === undefined && to === undefined ? undefined : { ...(from !== undefined && { from }), ...(to !== undefined && { to }) }
+  }
+  return one === undefined ? undefined : f.several ? [one] : one
+}
 
-/** A number filter's range in words, in its unit: "30 to 60 minutes", "at least 3 nights", "at most 1 person". */
-function rangeText(min: string | undefined, max: string | undefined, unit: string): string {
-  if (min && max) return `${min} to ${max} ${unitText(unit, max)}`
-  return min ? `at least ${min} ${unitText(unit, min)}` : `at most ${max} ${unitText(unit, max!)}`
+/**
+ * The fields a market asks one side, by name, with its words for that side, as the markets' ask
+ * gives them; with no side, every side's, the first side's words for a field both ask.
+ */
+function askedBy(markets: Markets, m: Market, role: string | undefined): Map<string, Asked> {
+  const out = new Map<string, Asked>()
+  for (const r of m.roles) if (role === undefined || r.role === role) for (const a of markets.ask(m.name, r.role)) if (!out.has(a.name)) out.set(a.name, a)
+  return out
 }
 
 /** The price filters in words: "at most $25 per hour", "€10 to €40", "in USD per hour". */
@@ -83,17 +105,6 @@ function priceFilterText(q: { [filter: string]: string }): string {
   const [min, max] = [q['price.min'], q['price.max']].map((n) => (n ? amountText(n, currency) : ''))
   const range = min && max ? `${min} to ${max}` : min ? `at least ${min}` : max ? `at most ${max}` : `in ${currency}`
   return q['price.per'] ? `${range} per ${q['price.per']}` : range
-}
-
-/**
- * A value's span, from its least to its most: a number is the span from itself to itself, and a
- * range's missing end limits nothing (the markets' types.json); null for a value of neither shape.
- */
-function spanOf(v: unknown): [number, number] | null {
-  if (typeof v === 'string') return [Number(v), Number(v)]
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return null
-  const { from, to } = v as { from?: unknown; to?: unknown }
-  return [typeof from === 'string' ? Number(from) : -Infinity, typeof to === 'string' ? Number(to) : Infinity]
 }
 
 /** What one of a price's per costs: its amount divided by its count, 1 when left out. */
@@ -130,7 +141,7 @@ export function km(a: { lat: number; lon: number }, b: { lat: number; lon: numbe
   return 2 * 6371.0088 * Math.asin(Math.sqrt(h))
 }
 
-/** Every place a listing names, in a field of the place type, its point and its radius: read by its shape, as the markets' types say. */
+/** Every place a listing names, in any of its place fields, its point and its radius: read by its shape, a circle, as the markets write one. */
 function pointsOf(body: { [key: string]: unknown }): Array<{ lat: number; lon: number; radiusKm: number }> {
   const out: Array<{ lat: number; lon: number; radiusKm: number }> = []
   for (const v of Object.values(body)) {
@@ -159,23 +170,11 @@ export const search: Page<SearchPage> = {
     let found: Array<Result & { time: number; km?: number; cost?: number }> = results(store, base, where.join(' '), params)
     const m = q.get('market') ? markets.market(q.get('market')!) : undefined
     const fields = m ? filterable(m) : []
-    for (const [name, f] of fields) {
-      if (f.type === 'choice') {
-        const value = q.get(name)
-        if (value) found = found.filter((r) => heldIn(r.listing.body[name]).includes(value))
-        continue
-      }
-      // Two spans match when each one's least is at most the other's most.
-      const min = number(q, `${name}.min`) ?? -Infinity
-      const max = number(q, `${name}.max`) ?? Infinity
-      if (min !== -Infinity || max !== Infinity) {
-        found = found.filter((r) =>
-          heldIn(r.listing.body[name]).some((v) => {
-            const span = spanOf(v)
-            return span !== null && span[0] <= max && min <= span[1]
-          }),
-        )
-      }
+    for (const field of fields) {
+      const wanted = wantedOf((n) => q.get(n) ?? undefined, field)
+      if (wanted === undefined) continue
+      const [name, f] = field
+      found = found.filter((r) => r.listing.body[name] !== undefined && markets.match(f, r.listing.body[name], wanted))
     }
     // Prices compare only within one currency and one per, the whole deal's when per is left out;
     // each listing keeps the least that is in bounds, its cost, for sort=price.
@@ -225,10 +224,11 @@ export const search: Page<SearchPage> = {
   // and the market along. The market is a link, not one of the form's fields: a role is one of its
   // market's, so changing the market drops the side, which a form with no script cannot do. Near
   // is a point, and a page with no script cannot find one for a town's name, so it shows only when
-  // the address carries one, as an app or an AI writes it; a town's name in the words finds the
-  // listings whose place is called so. Once a market is chosen, the form asks each of its fields
-  // search filters by, for the side chosen, or every side: a choice as a picker of its values by
-  // their labels, a number as a range in its unit; and changing the market drops them. The price
+  // the address carries one, as an app or an AI writes it; a place has no name for words to find.
+  // Once a market is chosen, the form asks each of its fields search filters by, for the side
+  // chosen, or every side, in its market's words for that side (its ask): a choice as a picker of
+  // its values by how each reads, a number as a range in its unit; and changing the market drops
+  // them. The price
   // filters and sort=price, like near, come only in the query, as an app or an AI writes them: each
   // shows as a chip that removes it, and the form carries them along.
   body(o, base, site) {
@@ -243,24 +243,28 @@ export const search: Page<SearchPage> = {
     // Field filters belong to their market: a link that changes it drops them.
     const drop = Object.fromEntries(Object.keys(q).filter((n) => !FILTERS.includes(n)).map((n) => [n, null]))
     const fields = m ? filterable(m) : []
-    const asked = fields.filter((field) => namesOf(field).some((n) => q[n] !== undefined))
-    const shown = fields.filter(([, f]) => !side || !f.roles || f.roles.includes(side.role))
+    const wanted = (field: [string, Field]) => wantedOf((n) => q[n], field)
+    const asked = fields.filter((field) => wanted(field) !== undefined)
+    const said = m ? askedBy(site.markets, m, side?.role) : new Map<string, Asked>()
+    const shown = fields.filter(([name]) => said.has(name))
+    const labelOf = (name: string) => said.get(name)?.label ?? fieldLabel(name)
     // A link to the other side drops the filters on fields its listings never hold.
     const dropFor = (role: string) => Object.fromEntries(asked.filter(([, f]) => f.roles && !f.roles.includes(role)).flatMap((field) => namesOf(field).map((n) => [n, null])))
+    // A chip says the filter as the markets read the answer it asks for: "Spanish", "50 minutes or more".
     const fieldChip = ([name, f]: [string, Field]) => {
-      const words = `${fieldLabel(name)}: ${f.type === 'choice' ? choiceText(q[name], f.labels) : rangeText(q[`${name}.min`], q[`${name}.max`], f.unit!)}`
-      return html`<a class="fchip on" href="${link(Object.fromEntries(namesOf([name, f]).map((n) => [n, null])))}" aria-label="${`Remove ${words}`}">${words}${icon('x', 'bold')}</a>`
+      const chip = `${labelOf(name)}: ${site.markets.read(f, wanted([name, f]))}`
+      return html`<a class="fchip on" href="${link(Object.fromEntries(namesOf([name, f]).map((n) => [n, null])))}" aria-label="${`Remove ${chip}`}">${chip}${icon('x', 'bold')}</a>`
     }
     const fieldGroup = ([name, f]: [string, Field]) => {
-      const label = fieldLabel(name)
-      if (f.type === 'choice') {
-        return html`<div class="group"><span class="lab">${label}</span><label class="inp"><select name="${name}" aria-label="${label}"><option value="">Any</option>${f.values!.map((v) => html`<option value="${v}"${v === q[name] ? ' selected' : ''}>${choiceText(v, f.labels)}</option>`)}</select></label></div>`
+      const label = labelOf(name)
+      if (f.piece === 'choice') {
+        return html`<div class="group"><span class="lab">${label}</span><label class="inp"><select name="${name}" aria-label="${label}"><option value="">Any</option>${(said.get(name)!.choices ?? []).map((c) => html`<option value="${c.value}"${c.value === q[name] ? ' selected' : ''}>${c.label}</option>`)}</select></label></div>`
       }
       const box = (end: 'min' | 'max', words: string) => {
         const given = q[`${name}.${end}`]
         return html`<label class="inp"><span class="s">${words}</span><input type="number" name="${name}.${end}"${given === undefined ? '' : html` value="${given}"`} step="any" aria-label="${`${label}, ${words.toLowerCase()}`}"></label>`
       }
-      return html`<div class="group"><span class="lab">${label}</span><div class="range">${box('min', 'From')}${box('max', 'To')}<span class="s">${unitText(f.unit!, '')}</span></div></div>`
+      return html`<div class="group"><span class="lab">${label}</span><div class="range">${box('min', 'From')}${box('max', 'To')}${f.unit ? html`<span class="s">${f.unit.replaceAll('-', ' ')}</span>` : ''}</div></div>`
     }
     const near = NEAR.test(q.near ?? '') ? q.near! : null
     const cheapest = q.sort === 'price' && q['price.currency'] !== undefined

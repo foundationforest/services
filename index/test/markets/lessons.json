@@ -10,16 +10,17 @@
     { "role": "student", "listings": "requests" }
   ],
   "listing": {
-    "description": { "type": "text", "description": "The lessons: what is taught, and how." },
-    "price": { "type": "money", "description": "Each price, per hour, per session or per lesson, with a count for a pack of lessons, or for a whole course.", "per": ["hour", "session", "lesson"] },
-    "subjects": { "type": "choice", "description": "The school subjects the lessons are for.", "values": ["maths", "physics", "chemistry", "biology"], "many": true },
-    "languages": { "type": "choice", "description": "By ISO 639-1 code, the languages the lessons are given in.", "values": ["en", "es", "fr"], "labels": { "en": "English", "es": "Spanish", "fr": "French" }, "many": true },
-    "levels": { "type": "choice", "description": "The levels the lessons are for.", "values": ["primary", "secondary", "university", "adult"], "many": true },
-    "minutes": { "type": "number", "description": "How long one session lasts.", "unit": "minutes" },
-    "ages": { "type": "number", "description": "The students' ages the lessons are for, in years, or from one age to another, such as 9 to 11.", "unit": "years", "range": true },
-    "mode": { "type": "choice", "description": "How sessions are held: in person, online, or both.", "values": ["in-person", "online"], "many": true },
-    "place": { "type": "place", "description": "Where sessions can be held: anywhere in the circle the person will go.", "radiusKm": 5, "when": { "mode": ["in-person"] } },
-    "hours": { "type": "hours", "description": "When sessions can be held, each week." }
+    "description": { "piece": "text", "ask": { "long": true } },
+    "price": { "piece": "price", "per": ["hour", "session", "lesson"], "ask": { "as": { "student": { "label": "Budget" } } } },
+    "subjects": { "piece": "choice", "values": ["maths", "physics", "chemistry", "biology"], "several": true },
+    "languages": { "piece": "choice", "values": "languages", "several": true },
+    "levels": { "piece": "choice", "values": ["primary", "secondary", "university", "adult"], "several": true, "ask": { "labels": { "adult": "adults" } } },
+    "minutes": { "piece": "number", "unit": "minutes", "ask": { "label": "Lesson length" } },
+    "ages": { "piece": "number", "unit": "years", "ask": { "start": { "range": true } } },
+    "groupSize": { "piece": "number", "roles": ["tutor"] },
+    "mode": { "piece": "choice", "values": ["in-person", "online"], "several": true, "ask": { "label": "Online or in person" } },
+    "place": { "piece": "place", "when": { "mode": ["in-person"] }, "ask": { "label": "Area", "start": { "radiusKm": 5 } } },
+    "hours": { "piece": "date", "several": true, "ask": { "label": "Days and times", "start": { "way": "weekly", "hours": true } } }
   },
   "preview": ["subjects", "description", "price", "mode", "place"]
 }

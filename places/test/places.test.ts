@@ -47,39 +47,40 @@ test('words match the start of words in the name and the context, whatever their
   assert.deepEqual(await find('q=del+valle+tokyo'), [], 'every word must match')
 })
 
-test('each place answered: its name, context, point, radius and country, and the place a listing holds, and nothing else', async () => {
+test('each place answered: its name, context, caption, point, radius and country, and the place a listing holds, and nothing else', async () => {
   const [p] = await find('q=del+valle&near=25.66,-100.37')
-  assert.deepEqual(Object.keys(p!), ['name', 'context', 'lat', 'lon', 'radiusKm', 'country', 'place'])
+  assert.deepEqual(Object.keys(p!), ['name', 'context', 'caption', 'lat', 'lon', 'radiusKm', 'country', 'place'])
   assert.deepEqual(p, {
     name: 'Del Valle',
     context: 'San Pedro Garza García, Nuevo León, Mexico, 66220',
+    caption: 'Del Valle, San Pedro Garza García',
     lat: 25.658,
     lon: -100.3719,
     radiusKm: 2,
     country: 'MX',
-    place: { lat: '25.658', lon: '-100.3719', radiusKm: 2, name: 'Del Valle, San Pedro Garza García', country: 'MX' },
+    place: { lat: '25.658', lon: '-100.3719', radiusKm: 2 },
   })
 })
 
-// The markets' place: its point as decimal text, its radius whole, a name on one line, and a
-// country in capitals (build/README.md and checkEntry in foundationforest/markets).
+// The markets' place: a circle, its point as decimal text and its radius whole, with no name
+// (build/README.md and checkEntry in foundationforest/markets); the caption, one line.
 const LAT = /^-?(90(\.0+)?|[1-8]?[0-9](\.[0-9]+)?)$/
 const LON = /^-?(180(\.0+)?|(1[0-7][0-9]|[1-9]?[0-9])(\.[0-9]+)?)$/
 const LINE = /^[^\r\n]*\S[^\r\n]*$/
 
-test("every answer's place is the markets' place, the same point and radius, and a name that stands alone", async () => {
+test("every answer's place is the markets' place, the same point and radius, and its caption a name that stands alone", async () => {
   const all = [
     ...(await Promise.all(['del valle', 'madrid', 'monterrey', 'münchen', '東京', 'lomas', 'matei', 'ciudad de mexico'].map((q) => find(`q=${encodeURIComponent(q)}`)))).flat(),
     ...(await Promise.all(['25.66,-100.37', '-16.69,-179.99', '89.99,0', '-17.3,178.4'].map(async (p) => (await get(`/v1/name?near=${p}`)).body.places as Place[]))).flat(),
   ]
   assert.ok(all.length > 40)
   for (const p of all) {
-    assert.deepEqual(Object.keys(p.place), ['lat', 'lon', 'radiusKm', 'name', 'country'])
-    assert.ok(LAT.test(p.place.lat) && LON.test(p.place.lon) && LINE.test(p.place.name) && /^[A-Z]{2}$/.test(p.place.country), JSON.stringify(p.place))
-    assert.deepEqual([Number(p.place.lat), Number(p.place.lon), p.place.radiusKm, p.place.country], [p.lat, p.lon, p.radiusKm, p.country])
-    assert.ok(p.place.name.startsWith(p.name), 'it starts with the name shown')
+    assert.deepEqual(Object.keys(p.place), ['lat', 'lon', 'radiusKm'])
+    assert.ok(LAT.test(p.place.lat) && LON.test(p.place.lon) && Number.isInteger(p.place.radiusKm) && LINE.test(p.caption), JSON.stringify(p))
+    assert.deepEqual([Number(p.place.lat), Number(p.place.lon), p.place.radiusKm], [p.lat, p.lon, p.radiusKm])
+    assert.ok(p.caption.startsWith(p.name), 'it starts with the name shown')
   }
-  const alone = async (q: string) => (await find(q))[0]!.place.name
+  const alone = async (q: string) => (await find(q))[0]!.caption
   assert.equal(await alone('q=del+valle&near=25.66,-100.37'), 'Del Valle, San Pedro Garza García', 'a colonia, with its municipio')
   assert.equal(await alone('q=chamberi'), 'Chamberí, Madrid', 'a city section, with its city')
   assert.equal(await alone('q=shibuya'), 'Shibuya, Tokyo')
@@ -87,7 +88,7 @@ test("every answer's place is the markets' place, the same point and radius, and
   assert.equal(await alone('q=monterrey'), 'Monterrey, Nuevo León', 'a town, with its state')
   assert.equal(await alone('q=levuka'), 'Levuka, Fiji', 'a town with no state, with its country')
   assert.equal(await alone('q=ciudad+de+mexico'), 'Ciudad de México, Mexico', 'a name the same as its state goes with its country')
-  assert.equal(((await get('/v1/name?near=25.66,-100.37')).body.places as Place[])[0]!.place.name, 'Del Valle, San Pedro Garza García')
+  assert.equal(((await get('/v1/name?near=25.66,-100.37')).body.places as Place[])[0]!.caption, 'Del Valle, San Pedro Garza García')
 })
 
 test('another name, in any language or script, finds its place, and is the name shown', async () => {
@@ -101,8 +102,8 @@ test('another name, in any language or script, finds its place, and is the name 
   assert.deepEqual(named(await find('q=roma')), ['Roma | Città metropolitana di Roma Capitale, Lazio, Italy', 'La Romana | Dominican Republic', 'Roma | Lesotho'], 'a whole name before one that only starts so; Roma, the spelling two towns use, not Róma or the machine spelling roma')
   assert.equal((await first('rom')).name, 'Rome', 'its own name matched, as the start of a word, so its own name is shown')
   assert.equal((await first('東京')).name, '東京')
-  assert.equal((await first('東京')).place.name, '東京, Tokyo')
-  assert.equal((await first('cdmx')).place.name, 'CDMX, Ciudad de México')
+  assert.equal((await first('東京')).caption, '東京, Tokyo')
+  assert.equal((await first('cdmx')).caption, 'CDMX, Ciudad de México')
   assert.equal((await first('ciudad de mexico')).name, 'Ciudad de México', 'with its accent, though GeoNames holds Ciudad de Mexico too')
   assert.equal((await first('CIUDAD DE MÉXICO')).name, 'Ciudad de México')
 })

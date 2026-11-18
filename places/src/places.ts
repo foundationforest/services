@@ -73,9 +73,14 @@ create virtual table spots using rtree (id, minLat, maxLat, minLon, maxLon);
 create table about (key text primary key, value text not null);
 `
 
-/** A place as a listing holds it, in the markets' place: its point as decimal text, its radius, a name that stands alone, and its country. */
-export type Listed = { lat: string; lon: string; radiusKm: number; name: string; country: string }
-export type Place = { name: string; context: string; lat: number; lon: number; radiusKm: number; country: string; place: Listed }
+/** A place as a listing holds it, the markets' place: a circle, its point as decimal text and its radius in whole kilometres. It holds no name. */
+export type Listed = { lat: string; lon: string; radiusKm: number }
+/**
+ * A place answered: its names, for showing only (the name that matched, its context, and its
+ * caption, the name that stands alone, the one line an app or an index shows for the circle), its
+ * point, its radius and its country, and the place as a listing holds it.
+ */
+export type Place = { name: string; context: string; caption: string; lat: number; lon: number; radiusKm: number; country: string; place: Listed }
 export type Point = { lat: number; lon: number }
 
 /** A question this service does not answer, with its code. */
@@ -174,7 +179,7 @@ export function closest(question: string, names: Array<{ name: string; uses: num
   return [...names].sort(before)[0]!.name
 }
 
-/** A name that stands alone: the name, then the first of `within` that is not the name itself. */
+/** A name that stands alone, a place's caption: the name, then the first of `within` that is not the name itself. */
 export function alone(name: string, within: string): string {
   const after = within.split('\n').find((part) => part && fold(part) !== fold(name))
   return after ? `${name}, ${after}` : name
@@ -191,11 +196,12 @@ export function openPlaces(file: string) {
   const shown = (r: Record<string, unknown>, name = r.name as string): Place => ({
     name,
     context: r.context as string,
+    caption: alone(name, r.within as string),
     lat: r.lat as number,
     lon: r.lon as number,
     radiusKm: r.radiusKm as number,
     country: r.country as string,
-    place: { lat: String(r.lat), lon: String(r.lon), radiusKm: r.radiusKm as number, name: alone(name, r.within as string), country: r.country as string },
+    place: { lat: String(r.lat), lon: String(r.lon), radiusKm: r.radiusKm as number },
   })
 
   return {

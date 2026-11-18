@@ -20,7 +20,7 @@ export type Args = { [name: string]: unknown }
 
 /** What a tool works with: the index and the markets it reads, how it reaches hosts, and, for a call with a login, the person's connection. */
 export type Ctx = Context & {
-  /** The markets this copy reads: the directory, each market's file, and checkEntry. */
+  /** The markets this copy reads: the directory, each market's file, checkEntry and ask. */
   markets: Markets
   /** The fetch every host is reached with: one that reaches only public addresses, unless told otherwise. */
   hostFetch: typeof fetch

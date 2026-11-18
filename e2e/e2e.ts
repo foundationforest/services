@@ -62,6 +62,7 @@ import { readFileSync } from 'node:fs'
 
 import { type Body, b64u, encodeEntry, encodeInbox, entry, hex, proofsOf, readFolder, readInbox, verificationCheck, write } from '@foundationforest/folders'
 import { lockCount, openLocked } from '@foundationforest/folders/locked'
+import { loadMarkets } from '@foundationforest/markets'
 import { type PayAddresses, accessKey, checkBytes, mainKey, newSeed, openingHalf, payAddresses, pointOf, seedNumber, stampNumberOf, unpackSignature } from '@foundationforest/keys'
 import {
   type SignedStamp,
@@ -88,18 +89,16 @@ const repo = join(here, '..')
 const servicesFile = process.argv[2] ? resolve(process.argv[2]) : join(here, 'services.json')
 const cfg = readServices(servicesFile)
 const REPUTATION_FILES = { wasm: join(repo, 'standard/proofs/reputation/setup/reputation.wasm'), zkey: join(repo, 'standard/proofs/reputation/setup/reputation.zkey') }
-/** A market as the directory lists it. */
-type Listed = { name: string; roles: Array<{ role: string; listings: string }> }
-/** The directory at MARKETS, and a market's file, its listing fields, from the checkout standard.sh made. */
-const DIRECTORY = JSON.parse(readFileSync(join(repo, 'markets/directory.json'), 'utf8')) as { markets: Listed[] }
-const fileOf = (m: Listed) => JSON.parse(readFileSync(join(repo, `markets/markets/${m.name}.json`), 'utf8')) as { listing: { [field: string]: { type: string } } }
+/** The markets at MARKETS, through the markets package, from the checkout standard.sh made: the directory, and each market's file. */
+const MARKETS = loadMarkets(join(repo, 'markets'))
+const DIRECTORY = MARKETS.directory
 /**
  * Where the two people deal, read from the directory and never named, so a market changing or a new
  * one never stops the end-to-end test: the first market with a role that offers and one that
  * requests, whose listings hold a description to search by. The seller takes the first role that
  * offers, the buyer the first that requests.
  */
-const MARKET = DIRECTORY.markets.find((m) => m.roles.some((r) => r.listings === 'offers') && m.roles.some((r) => r.listings === 'requests') && fileOf(m).listing.description?.type === 'text') ?? none('no market in the directory has a role that offers, one that requests, and a description')
+const MARKET = DIRECTORY.markets.find((m) => m.roles.some((r) => r.listings === 'offers') && m.roles.some((r) => r.listings === 'requests') && MARKETS.market(m.name)!.listing.description?.piece === 'text') ?? none('no market in the directory has a role that offers, one that requests, and a description')
 const SIDES = { seller: MARKET.roles.find((r) => r.listings === 'offers')!.role, buyer: MARKET.roles.find((r) => r.listings === 'requests')!.role }
 /** Stops the run, saying why. */
 function none(why: string): never {
@@ -414,11 +413,13 @@ async function main() {
   // 6. MCP server: every call through the AI's own client.
   const [market, sellerRole] = seller.label.split('/') as [string, string]
   const read = await seller.ai!.call('markets', { name: market })
-  assert.ok(read.kinds.listing.description && read.kinds.review.listing && read.keys.field.type, 'the seller’s AI reads what a listing and a review hold, and what each key means')
-  // A description, and a price where the market has one: a list of one, with no per, which an amount may always leave out.
+  type Words = Array<{ name: string; question: string }>
+  const asks = (kind: 'listing' | 'review') => (read.roles[sellerRole] as { [kind: string]: Words })[kind]!.map((f) => f.name)
+  assert.ok(asks('listing').includes('description') && asks('review').includes('listing') && read.fields.listing.description.takes, 'the seller’s AI reads what its listing and a review about it ask, and how each answer is written')
+  // A description, and a price where the market has one: a list of one, with no per, which a price may always leave out.
   const offer = {
     description: 'A test listing, written by an AI through the MCP server by the end-to-end test.',
-    ...(read.kinds.listing.price?.type === 'money' && { price: [{ amount: '2', currency: 'USD' }] }),
+    ...(read.fields.listing.price?.piece === 'price' && { price: [{ amount: '2', currency: 'USD' }] }),
   }
   const beforeListing = await held(seller.address)
   assert.equal((await seller.ai!.call('write', { label: seller.label, path: 'listing/offer', body: offer })).written, 'listing/offer')

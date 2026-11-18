@@ -35,20 +35,20 @@ import { App, type Choice } from './app.ts'
 /**
  * A markets checkout of the tests' own, as the markets package reads one: each market in
  * test/markets/, directory.json written from them in name order as the markets' check writes it,
- * and the pinned checkout's build/types.json, the format the types hold. Every copy a test starts
- * reads it, as `marketsDir`.
+ * and the pinned checkout's build/lists.json, the shared lists a choice may take. Every copy a test
+ * starts reads it, as `marketsDir`.
  */
 export const MARKETS = (() => {
   const dir = mkdtempSync(join(tmpdir(), 'mcp-markets-'))
   const own = new URL('./markets/', import.meta.url)
   mkdirSync(join(dir, 'markets'))
   mkdirSync(join(dir, 'build'))
-  copyFileSync(new URL('../../markets/build/types.json', import.meta.url), join(dir, 'build/types.json'))
+  copyFileSync(new URL('../../markets/build/lists.json', import.meta.url), join(dir, 'build/lists.json'))
   const markets = readdirSync(own)
     .sort()
     .map((file) => {
       copyFileSync(new URL(file, own), join(dir, 'markets', file))
-      return JSON.parse(readFileSync(new URL(file, own), 'utf8')) as { name: string; summary: string; description: string; status: string; icon?: string; number: number; roles: unknown[] }
+      return JSON.parse(readFileSync(new URL(file, own), 'utf8')) as { name: string; summary: string; description?: string; status: string; icon?: string; number: number; roles: unknown[] }
     })
   writeFileSync(join(dir, 'directory.json'), JSON.stringify({ markets: markets.map(({ name, summary, description, status, icon, number, roles }) => ({ name, summary, description, status, ...(icon && { icon }), number, roles })) }))
   return dir
@@ -56,7 +56,7 @@ export const MARKETS = (() => {
 
 export const LESSONS = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8'))
 
-/** A listing that fits lessons' listing fields: two prices, one a pack of 5 lessons, and its ages a range with no top. */
+/** A listing that fits lessons' listing fields: two prices, one a pack of 5 lessons, its ages a range with no top, and its hours weekly in a zone. */
 export const lesson = (description: string): Body => ({
   description,
   price: [
@@ -67,8 +67,9 @@ export const lesson = (description: string): Body => ({
   subjects: ['maths', 'physics'],
   levels: ['secondary'],
   mode: ['in-person'],
-  place: { lat: '40.42', lon: '-3.70', radiusKm: 5, area: 'Madrid' },
-  hours: { zone: 'Europe/Madrid', slots: [{ days: ['tuesday', 'thursday'], from: '18:00', to: '20:00' }] },
+  languages: ['es'],
+  place: { lat: '40.42', lon: '-3.70', radiusKm: 5 },
+  hours: [{ every: ['tuesday', 'thursday'], start: '18:00', end: '20:00', zone: 'Europe/Madrid' }],
 })
 
 /** What the person ticks at the connect page, unless a test says otherwise: their two lessons profiles, every switch. */
