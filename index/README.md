@@ -17,14 +17,16 @@ and browse these pages by links, with nothing to install and no login. For AI ag
 ```
 the hosts in lists/hosts.json ── entries ─────────┐
                                                   ├──▶ filter ──▶ rank ──▶ pages, JSON, the tree
-the markets, at MARKETS ── what a listing holds ──┘
+the markets, at MARKETS ── what a listing holds ──┘                            ▲
+                                       places, at PLACES_URL ── names of places ┘
 ```
 
 One process. Every `READ_SECONDS` it makes a pass: it reads what is new on each host, then filters,
 ranks, signs what changed and builds its tree again, from everything it holds; between passes it
 serves. Each verb is one place in the code: **filter** (`src/filter.ts`), which profiles count;
 **rank** (`src/rank.ts`), pure functions, one per part of the ranking, run once per market;
-**format** (`src/pages/`), one file per page, building its JSON and drawing its HTML from it.
+**format** (`src/pages/`), one file per page, building its JSON and drawing its HTML from it,
+asking the places service for the names of places as it builds (What it asks places).
 
 ### What it reads
 
@@ -48,6 +50,25 @@ minutes ahead of the index's clock is held back until it is not, as every reader
 market's file, with the package's four answers, `checkEntry`, `match`, `read` and `ask`, from the
 checkout of [foundationforest/markets](https://github.com/foundationforest/markets) at the commit
 in `../MARKETS`, never over the network. It reads nothing else.
+
+### What it asks places
+
+A place on a host is a circle, three numbers and no name, and a page with no script can ask
+nothing itself, so while it builds a page, never in a pass, the index asks the places service
+([`../places`](../places/README.md), at `PLACES_URL`, `src/places.ts`) two things:
+
+| It asks | For | Path |
+|---|---|---|
+| The first place found for the words a person types in Where | its point, as `near` writes one, and its caption, the name to show | `/v1/find?q=<words>` |
+| The places nearest a circle's centre, the point rounded to two decimals | the name to show for a listing's place, and for a search's place a link gives with no name | `/v1/name?near=<lat>,<lon>` |
+
+Of the places nearest a centre, the name is the caption of the first whose `radiusKm` times 5 is at
+least the circle's, so a town names a wide circle and a colonia a small one; else the nearest's.
+Places' answers change only with a new file, so each is kept in memory for a day, by its question,
+up to 10,000 of each kind. One that fails or takes more than 5 seconds is not kept: the place
+shows by its size alone, and Where finds no place. What leaves the index is the words typed in
+Where and points rounded to two decimals, and nothing is logged; places stores nothing and logs no
+question. Each answer carries places' credit, which the About page shows.
 
 ### Which profiles count
 
@@ -129,7 +150,7 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 | **Pickiness** | Each score on 0 to 1 as `(s − 1) / 9`; `P = 0.5 + 0.5 × Σ(Rt − s) / (1 + n)` over the `n` profiles it scored, `Rt` each one's current rating. Below others' ratings is tough, above is easy; few scores stay near 0.5. Shown nowhere |
 | **Ratings** | Each score weighs `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, so a tough rater's high scores count more and its low ones less, and an average rater's weigh half. A rater's reviews of one profile, one per listing, are one score, their mean. A rating is the weighted average of its scores, 1 to 10, to one decimal, shown as it is with how many raters; none with no counted review. A review's `weight` is its score's weight, split among its rater's reviews of that profile |
 | **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust at half its uniqueness and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
-| **Search's order** | Ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest listing; with `near`, nearest first, then this; with `sort=price`, cheapest first, then the rest. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest listing. Order only: a profile's page shows its ratings as they are |
+| **Search's order** | Top rated, the default: ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest listing. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest listing. Nearest, `sort=near`, with a place: nearest first; Cheapest, `sort=price`, with a price filter: cheapest first; ties in Top rated's order. A place alone narrows the results and never reorders them. Order only: a profile's page shows its ratings as they are |
 
 At today's numbers, with trust and uniqueness from 0 to 100 as the pages show them:
 
@@ -201,37 +222,62 @@ reads the hosts again, ranks, and exits; the secret is never touched.
 ## Its API
 
 Every page is HTML for people, drawn by one template (`src/pages/template.ts`) from the page's JSON
-object, which is also served at the same path with `.json`: the two never disagree. Beside the
-object, a page is drawn only with what stays fixed while the index runs: the markets at `MARKETS`,
-for each market's number, icon, summary and fields and whether the directory still lists it, and
-`lists/apps.json`, for the app it opens.
+object, which is also served at the same path with `.json`: the two never disagree, and anything a
+page shows is in its object, the names places gave among it. Beside the object, a page is drawn only
+with what stays fixed while the index runs: the markets at `MARKETS`, for each market's number,
+icon, summary and fields and whether the directory still lists it, and `lists/apps.json`, for the
+app it opens.
 
-The pages look like the Forest app: its colors, light and dark by the device's setting, its shapes,
-and its fonts, Figtree for words and Bricolage Grotesque for titles, prices and scores, served from
-here, with Phosphor's icons drawn into each page, so a page asks no other site but the hosts for
-their photos. The HTML runs no script: filters are links and one GET form, a market's sides are
-links to anchors, and a fold is HTML's own. Each page carries schema.org JSON-LD.
+The pages look like the Forest app: its colors, light and dark by the device's setting, and Figtree
+for every word, titles and prices at its heaviest, served from here, with Phosphor's icons drawn into
+each page, so a page asks no other site but the hosts for their photos. One rule for the greens:
+strong green does something (Search, Message, Show offers); soft green is what is picked (a side, a
+filter that is on, a place once set); black is for words and the check badges; every other action is
+outlined in black. The HTML runs no script: filters are links and one GET form, a fold is HTML's
+own, and a phone's filters are a market page's same form, shown over the page at `#filters`. Each
+page carries schema.org JSON-LD.
 
-- **A profile's avatar** is its market's icon on its market's color: solid when its role's listings
-  are offers, light when they are requests. The icon is the one its market file names, else the
+- **A market** shows as its icon on its color. The icon is the one its market file names, else the
   market's first letter, as it is for an icon this copy of Phosphor lacks. The color is the market's
   number cycled through this index's ten colors (`src/avatar.ts`), so markets numbered next to each
-  other differ; a market gone from the directory has no number, and takes the pages' quiet ink.
-- **A badge** says how a profile is verified, by its strongest check: a face on mint, "Verified with
-  a selfie", for a face check; an ID on forest green, "Verified with ID", for an ID check.
-- **A rating** shows as a star, its value and how many raters scored it, or New.
-- **A beta market** carries a chip, Beta, on its tile and its page, and its page says what beta
-  means: "Beta: it works, at your own risk, and may change." A live one carries none.
-- **A field** shows under its market's label for the listing's role, and each answer as stored, in
-  the words the markets package's `read` gives it in English: a choice as its value reads, such as
+  other differ; a market gone from the directory has no number, and takes the pages' quiet ink. On
+  the front page each market is a tile filled with its color, its name and its counts white over a
+  fade of black behind them (`TILE` in `src/pages/template.ts`), so both pass WCAG's contrast on
+  every color (`test/contrast.test.ts`).
+- **A profile's picture** is the Forest app's animal for its address, on its market's color: solid
+  when its role's listings are offers, light when they are requests. The forty animals and the rule
+  are the app's, copied into `src/animals.ts`: 32-bit FNV-1a over the address's UTF-8 bytes, modulo
+  the list's length, so a profile is the same animal in the app and here, for everyone, with no
+  login. The drawings are Microsoft's Fluent Emoji, High Contrast, under the MIT license. A page's
+  JSON gives the address; the animal is drawn from it, as a market's color from its number.
+- **A badge** says a check this index counts for a profile, each a black square: a face, "Verified
+  with a selfie", for a face check; an ID card, "Verified with ID", for an ID check.
+- **A result** is a picture and two lines: its listing's first photo, square, or, with none, its
+  market's icon on a tint of its color; its title, the description's first line, and its first
+  price; then, quiet, its profile's rating with how many raters scored it, "★ 9.2 (14)", and its
+  distance once there is a place. Search marks each photo with its market's icon. A market shows its
+  results in this index's opinion, which any index may choose otherwise: a grid of pictures when the
+  first field its `preview` shows is a photo field, its listings being things to look at, else a list
+  of the two lines with no picture.
+- **A beta market** carries Beta beside its name on its page, and its page says what beta means:
+  "Beta: it works, at your own risk, and may change." A live one carries none.
+- **A field** shows its market's label for the listing's role above each answer as stored, in the
+  words the markets package's `read` gives it in English: a choice as its value reads, such as
   Spanish for `es`; a number in its field's unit, "45 minutes", and a range so, "9 to 11 years",
   "18 years or more"; a date's days and hours, with its zone beside them, which `read` leaves out,
-  "Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)"; a place as its numbers, "Around 40.42,
-  -3.70, 5 km", linked to its point on a map, since a place holds no name. A listing that does not
-  fit its market shows each answer by its shape. A price is drawn here, in its own currency, for
-  its count of its per, per hour a length, and with its note, "$25 for 45 minutes (The first lesson
-  is free)". A listing's page shows every price; a listing in a list its first, and how many more,
-  "+1 more".
+  "Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)". A listing that does not fit its market
+  shows each answer by its shape.
+- **A place** reads as the Forest app says it, by its size and the name places gives its centre
+  (What it asks places): "Within 10 km of Camden, London", a circle of 0 km "Exact spot near Sol,
+  Madrid"; with no name, "Within 10 km", "An exact spot"; on a listing's page with a link to its point
+  at openstreetmap.org.
+- **A price** reads as the Forest app says it: its amount in its currency, in English's number
+  format with no decimals on a whole amount, "€15", "$12.50", "MX$1,300" ("30 coins" for a currency
+  that is no code), then what it is for: for one of its per, "a" or "an" and the per, "€15 an hour",
+  "€900 a month"; per hour another count as a length, "for 3 hours", or under 2 hours and not whole
+  "for 45 minutes"; any other per counted, "for 5 lessons", "for 2 people"; with no per, the amount
+  alone. A request's says "Up to" first: "Up to €60 for 3 hours". A listing's page shows every
+  price, each with its note under it; a result its first.
 - **A profile's rating, trust and uniqueness** are in its page's fold What these mean, open on a
   laptop.
 
@@ -240,17 +286,17 @@ max-age=30, stale-while-revalidate=300`. Every field, for programs: [`skill.md`]
 
 | Path | JSON |
 |---|---|
-| `/`, twin `/index.json` | `{ index, markets: [{ name, summary, description, status, roles, listed, words }], lists }`: its address, every market in the directory with its summary, its description if it has one, and its status (`live` or `beta`), its role words, how many listings each role has `listed` and each role's word for its listings (`offers` or `requests`), and its lists, each key with its confidence; drawn as one search box and a link per market, on its color, with its summary and its listings counted in its words, a beta one with its chip |
-| `/about`, twin `/about.json` | `{ index, lists }`: its address and its lists, as `/` gives them; drawn as what this index is, links to its JSON, `skill.md` and source, then what it reads and its address |
-| `/markets/<name>` | `{ index, market, listings: { <role>: [<result>] } }`: the market's file verbatim, its `preview` and `status` among it, and the listings this index lists, by role, in search's order; drawn as the market's avatar, name, counts, summary and description, a beta one with its chip and its line, then each role's listings at an anchor of their own, with a search box for them, each listing one link with its first photo, its first line, the next of its market's `preview` fields it holds, its price, and its profile's avatar, name, badge and rating, or New |
-| `/search` | `{ index, total, results: [<result>], query, markets }`, with any of `q` (each word a word's start in the listing, all of them), `market`, `role`, `near=lat,lon` and `km`, how far the searcher would go (10 unless given: a listing whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`), `minRating`, `minReviews` (raters), with `market` a filter per choice and number field of that market's listings, each matched by the markets package's `match`, all of them together (a choice as `<field>=<value>`, a listing whose field holds that value, among its answers for one with several; a number as `<field>.min` and `<field>.max`, in its unit, a listing whose number or range overlaps them, a missing end limiting nothing; a listing that leaves the field out left out), `price.currency` with `price.per`, `price.min` and `price.max` (a listing with a price in that currency for that per, the whole deal's when `price.per` is left out, whose amount divided by its count is in bounds, per hour a length, so 25 for 0.75 hours is 33.33 an hour: prices compare only within one currency and one per), `sort=price` with `price.currency` (cheapest first), `limit` (20, at most 100) and `offset`; `query`, each of these as given, and `markets`, every market's name; drawn with the words in its search box, and the filters as links and one form: the market, each with its summary, the listings' side and the market's fields for that side once a market is chosen, in its words for that side (a choice as a picker of its values by how each reads, a number as a range in its unit, each one asked as a chip), how far once `near` is given, and the rating; `near`, the price filters and `sort` come only in the query, each shown as a chip |
-| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, listings, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer: its avatar, market and role, badge, rating and how many reviews count, the first `message` link as its button and the rest as links, its listings and the reviews and vouches it received, each with its writer's avatar, market and role, and badge, and its entry's date in UTC; its rating, trust and uniqueness in the fold What these mean, the rest in a second fold. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each listing, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`, and gives the other profile's `market`, `role` and `checks`, its writer's on one received and its subject's on one given, as this index holds them (`null`, `null` and none for one with no profile entry here); each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
-| `/profiles/<address>/listing/<id>` | `{ index, profile, market, role, listing, checks, ratings, trust, uniqueness, fields, pieces, units, labels, message }`: one listing, at its address under `/profiles`; `listing` as its profile's page gives it, `fields` the fields its market asks its role's listings, in the order the markets package's `ask` gives them, the `preview`'s first and `contact` last, `pieces` each one's piece, `units` each number field's unit, `labels` how each choice value it holds reads. Drawn as its photos, its description's first line as its heading, its prices, the rest of its description, its other fields but photo ones, as A field above, each place a link to its point at openstreetmap.org, its `contact` as written, who posted it, and the first `message` link as its button. Its title is its price and first line; a listing not listed has its page too, saying why |
+| `/`, twin `/index.json` | `{ index, markets: [{ name, summary, description, status, roles, listed, words }], lists }`: its address, every market in the directory with its summary, its description if it has one, and its status (`live` or `beta`), its role words, how many listings each role has `listed` and each role's word for its listings (`offers` or `requests`), and its lists, each key with its confidence; drawn as one search box and a tile per market, filled with its color, its icon big at its top right, its name, and every role's count in its word, 0 included, "48 offers · 12 requests" |
+| `/about`, twin `/about.json` | `{ index, lists, credit }`: its address and its lists, as `/` gives them, and the credit places' answers carry, for the names of places (null before places has answered); drawn as what this index is, links to its JSON, `skill.md` and source, then what it reads, its address and the credit |
+| `/markets/<name>` | `{ index, market, listings: { <role>: [<result>] }, role, query, total, results, place, currencies }`: the market's file verbatim, its `preview` and `status` among it, and every listing this index lists, by role, in Top rated's order; and the page's view of one side, `role`, the query's or else the market's first: search's filters below, but `market`, as `query` gives them, `total` how many of that side's listings they find, `results` a page of them in their order, `place` as search gives it, and `currencies`, those that side's listings price in, most used first. Drawn as its icon on its color, its name, Beta beside it when beta, its summary and what beta means; its description in a fold; its sides as tabs, each with how many listings it lists, each keeping the words and the place; Where and its filters, one GET form to this page, a fold for Where, for each choice and number field that side is asked (a choice as chips, Any first, or as a picker past 12 values; a number as a range in its unit), for the price, "Up to" an amount, per one of the market's own pers or in all, in a currency, that side's most used first, and for the rating, Any, 8 or 9 or more; how many and the order; its results; Show more |
+| `/search` | `{ index, total, results: [<result>], query, markets, place, found }`, with any of `q` (each word a word's start in the listing, all of them), `market`, `role`; a place: `where`, words for it, places' first place found (What it asks places), or `near=lat,lon` with `near.name`, the name to show for it, which places gives when it is left out; `km`, how far the searcher would go (10 unless given: a listing whose place's circle touches that one, the distance between the two points at most `km` plus its `radiusKm`); `minRating`, `minReviews` (raters), with `market` a filter per choice and number field of that market's listings, each matched by the markets package's `match`, all of them together (a choice as `<field>=<value>`, a listing whose field holds that value, among its answers for one with several; a number as `<field>.min` and `<field>.max`, in its unit, a listing whose number or range overlaps them, a missing end limiting nothing; a listing that leaves the field out left out); a price filter, on once it gives an amount or with `sort=price`: `price.currency` with `price.per`, `price.min` and `price.max` (a listing with a price in that currency for that per, the whole deal's when `price.per` is left out, whose amount divided by its count is in bounds, per hour a length, so 25 for 0.75 hours is 33.33 an hour: prices compare only within one currency and one per); `sort`, `rating` (Top rated, the default), `near` (Nearest, with a place) or `price` (Cheapest, with a price filter); `limit` (20, at most 100) and `offset`. `query` is each of these as given, `markets` every market's name, `place` the place results are near, `{ near, name, km }`, `name` null when places names none, or null with no place, and `found` how many results each market holds. A page's form sends back the name it showed: `where` with the same words as `near.name` is no new place, and an emptied box clears it. Drawn as Where, a fold with its box and how far, 2, 5, 10, 25 or 50 km, reading "Anywhere" or "Camden, London · 10 km"; a chip per market with results, to its page with the words and the place kept; how many and the order, only those that apply; the results; Show more, each link carrying the place as `near`, `near.name` and `km` and never `where` |
+| `/profiles/<address>` | `{ index, address, profile, checks, ratings, trust, uniqueness, statement, signature, listings, reviews, vouches, reports, words, proofs, message }`: drawn for a buyer: its animal, its market and role, its badges, its rating and how many reviews count, the first `message` link as Message and the rest as links, its listings as its market shows them, and the reviews it received, each with its score, its entry's month in UTC, its text, and its writer's animal and short name; its rating, trust and uniqueness in the fold What these mean, the rest, its vouches among it, in a second fold. One that does not count has no rating, 0, 0, and no `statement` or `signature`. Each listing, review, vouch and report gives its entry's `time` (ms since 1970) and says whether it counts and, when not, `why`, and gives the other profile's `market`, `role` and `checks`, its writer's on one received and its subject's on one given, as this index holds them (`null`, `null` and none for one with no profile entry here); each review its `weight`; `words`, each writer's one word and its weight; `message`, a link to message it from each app in `lists/apps.json` |
+| `/profiles/<address>/listing/<id>` | `{ index, profile, market, role, listing, checks, ratings, trust, uniqueness, fields, pieces, units, labels, captions, reviews, message }`: one listing, at its address under `/profiles`; `listing` as its profile's page gives it, `fields` the fields its market asks its role's listings, in the order the markets package's `ask` gives them, the `preview`'s first and `contact` last, `pieces` each one's piece, `units` each number field's unit, `labels` how each choice value it holds reads, `captions` the name places gives each of its places' centres, by field, null where it gives none, `reviews` the reviews its profile received that count, `{ count, latest }`, the two newest as its profile's page gives them, and `message` each app's link to message the profile about this listing (its `about`). Drawn the same with photos or without, photos adding the top: on a phone full width, swiped, each with "1 / 3"; on a laptop one at a time, with round arrows to each photo's anchor. Then its market and role, its description's first line as its title, each price with its note under it, who posted it (their animal, short name, rating with how many reviews, badges, linking to their page), its fields but photo ones, each label above its value, each place with a link to its point at openstreetmap.org, its `contact` as written, the rest of its description, its two latest reviews and a link to all, and a line linking its JSON. On a phone a bar at the foot holds its price and Message; on a laptop the right column stays in view. Its title is its first price and first line; a listing not listed has its page too, saying why |
 | `/v1/reputation` | `{ index, root, time, signature, leaves }`, `leaves` how many; 404 with no tree |
 | `/v1/reputation/leaves` | `{ root, leaves: [{ profile, score }] }`, every leaf by address; 404 with no tree. No URL serves one leaf and its path: asking for one would tell the index, and whoever logs its requests, which profile is the caller's |
 | `/sitemap.xml`, `/robots.txt` | The home page, the About page, each market, each counted profile, each listing it lists |
 | `/llms.txt`, `/skill.md` | Files here written for `https://index.forest.foundation`, served with `PUBLIC_URL` in its place |
-| `/fonts/<file>` | The pages' fonts, the files of `@fontsource-variable/figtree` and `@fontsource-variable/bricolage-grotesque` as the packages give them, cached for a day |
+| `/fonts/<file>` | The pages' font, the files of `@fontsource-variable/figtree` as the package gives them, cached for a day |
 
 A `<result>` is `{ profile, market, role, listing: { address, body, url, photos }, ratings, trust, uniqueness, checks }`, and with `near`,
 `km`: the distance between the two points, to one decimal.
@@ -275,9 +321,15 @@ holds its own.
   `tolerance` 1e-9 and `maxRounds` 1000.
 - **Reputation proofs** (`lists/indexes.json`): its own (`self`), against its newest root or one it
   signed in the last 30 days (`maxAgeDays`).
-- **Apps** (`lists/apps.json`): each by name, with its link to message a profile, `{address}` the
-  profile's address. Today the Forest app, `https://app.forest.foundation/message?to={address}`.
-  Without the file, the pages link to no app.
+- **Apps** (`lists/apps.json`): each by name, with its `message` link to message a profile, `{address}`
+  the profile's address, and its `about` link to message it about one listing, `{listing}` the
+  listing's full address, `<profile address>/listing/<id>`, the shape a review's `listing` has. A
+  profile's page links `message`, a listing's `about`. Today the Forest app,
+  `https://app.forest.foundation/message?to={address}` and
+  `https://app.forest.foundation/message?to={address}&listing={listing}`; `listing` is for the app,
+  and one that does not read it ignores it. Without the file, the pages link to no app.
+- **Places** (`PLACES_URL`): the foundation's, https://places.forest.foundation; each answer kept a
+  day, up to 10,000 of each kind, each question given 5 seconds.
 - **How often:** a pass 30 seconds after the last ends. A host that takes more than 60 seconds to
   serve a page fails that read; the next pass tries again.
 - **What it keeps:** every entry its hosts served that checks, each proof check's answer, every root,
@@ -294,6 +346,7 @@ holds its own.
 | `DATA_DIR` | required | Its secret and the one file, on a volume |
 | `PUBLIC_URL` | `https://index.forest.foundation` | Where the pages are published: an origin |
 | `READ_SECONDS` | `30` | Seconds between the end of one pass and the start of the next |
+| `PLACES_URL` | `https://places.forest.foundation` | The places service the pages ask for the names of places: an origin |
 | `PORT` | `8080` | |
 
 A setting, a list or the config file that does not read, or an `index-seed.json` that does not hold
@@ -302,26 +355,19 @@ a secret, stops the start, naming what is wrong.
 ```
 ./standard.sh                                              # from the repo root: the standard and the markets, at their pins
 (cd host && npm ci)                                        # this repo's host, which the tests run
+(cd places && npm ci)                                      # this repo's places, which the tests run
 cd index && npm ci                                         # the standard's packages, linked by name from ../standard/
 npm run check && npm test
 DATA_DIR=./data PUBLIC_URL=http://127.0.0.1:8080 npm start
 ```
 
-`test/` covers, on loopback, with this repo's host, real verifications and reputation proofs from
-the circuits' committed proving files, and markets of its own (`test/markets/`), so no market at
-`MARKETS` changes what it finds: the filter, every guarantee How it scores gives (forty random
-graphs among them), which feedback counts, the markets' check and its words, a market gone from
-the directory, search's words, never a time zone or a code, search's filters on a market's fields
-through the markets' match, a missing answer left out, ranges by overlap, on several places in one
-and on prices by their counts, with sort by price, the tree and the proofs' ages, every page's
-shape, top bar, foot and JSON-LD, its forms with no script, the fonts served here and nothing asked
-of another site, every JSON field kept, each listing's page, its prices with their notes, its
-fields in its market's words without its photo fields, dates with their zones and places by their
-numbers, its photos' links and the apps it links to, the badges, the avatars, each market's icon
-from its file and color from its number, every icon the markets accept present here, the profile
-page's order and folds, the numbers only in a fold, the beta chip, units and labels, each market's
-summary and a market with no description, the market, search and About pages, the secret, and the
-index end to end over HTTP, rebuilds included.
+`test/` covers, on loopback, with this repo's host and this repo's places on its own tests' small
+world, real verifications and reputation proofs from the circuits' committed proving files, and
+markets of its own (`test/markets/`): the filter, the ranking and its guarantees, which feedback
+counts, the markets' check and words, search's filters and its three orders, Where and places'
+answers kept, the tree, every page drawn from its twin with its JSON-LD, the greens and the font,
+each page's parts, the price and place words, the animals pinned to the app's, the tiles' contrast,
+the apps' links, and the index end to end over HTTP, rebuilds included.
 
 ## Promises
 
@@ -354,8 +400,10 @@ index end to end over HTTP, rebuilds included.
 - **Everything after reading is computed again each pass,** in one process, each proof checked once;
   one sitemap file; a profile's page lists every entry about it; search reads every match before it
   pages.
-- **Near is a point:** a page with no script can't find one for a town's name, so the pages filter
-  by place only when the link carries one, and a place holds no name for words to find.
+- **Where takes the first place places finds:** a name many towns share finds the one places puts
+  first.
+- **A place's name is the nearest places holds,** however far, and only while places answers: with
+  none, a place shows by its size alone.
 - **Browsing by links goes market by market,** and filters live in the query, which some AI
   readers drop.
 - **Pages in English only.**
@@ -370,6 +418,12 @@ index end to end over HTTP, rebuilds included.
 **Why does search filter by a market's fields only once a market is chosen?**
 A field means what its market's file says: two markets may give one name another piece or other
 values. Within one market each name has one meaning, so a filter on it finds all it should.
+
+**Why does a price filter need an amount?**
+A market's filter form sends the currency and the per it shows every time, since a page with no
+script cannot leave them out. If a currency alone filtered, a form sent for a rating would hide
+every listing priced in another currency. So `price.currency` and `price.per` say what an amount is
+in, and filter once there is one, `price.min` or `price.max`, or with `sort=price`.
 
 **Why does a filter leave out a listing that says nothing in that field, when the markets match a
 missing answer?**

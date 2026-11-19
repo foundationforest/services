@@ -82,9 +82,11 @@ test('a field holding several places: a search near any of them finds the listin
   assert.deepEqual(await near('near=37.40,-5.98&km=1'), [[both, 1.1]])
   // Between the two towns, far from either circle: nothing.
   assert.deepEqual(await near('near=39.00,-4.80&km=10'), [])
-  // Its page links each place to its point on the map.
+  // Its page says each place in words, with a link to its point on the map: here with no places
+  // service to name them, by their size alone.
   const html = (await page(i, `/profiles/${both}`)).text
-  assert.match(html, /<dt>Courts<\/dt><dd><a href="https:\/\/www\.openstreetmap\.org\/\?mlat=40\.42[^"]*">Around 40\.42, -3\.70, 1 km<svg[\s\S]*?<\/a>, <a href="https:\/\/www\.openstreetmap\.org\/\?mlat=37\.39[^"]*">Around 37\.39, -5\.98, 1 km<svg/)
+  assert.match(html, /<dt>Courts<\/dt><dd>Within 1 km<br><a href="https:\/\/www\.openstreetmap\.org\/\?mlat=40\.42[^"]*">See on a map<svg[\s\S]*?<\/a><br>Within 1 km<br><a href="https:\/\/www\.openstreetmap\.org\/\?mlat=37\.39[^"]*">See on a map<svg/)
+  assert.deepEqual((await twin<ListingPage>(i, `/profiles/${both}.json`)).body.captions, { courts: [null, null] })
   await i.close()
 })
 
@@ -111,7 +113,7 @@ test("search's words: what people wrote and how their choices read; never a time
   await i.close()
 })
 
-test('a profile whose market has left the directory: out of search, its pages open and say so, their back links home', async () => {
+test('a profile whose market has left the directory: out of search, its pages open and say so', async () => {
   // Verified for its label, with a listing that fitted its market while the market was there.
   const seller = await profile('old-market/seller', [by])
   await publishProfile(host.url, seller)
@@ -124,13 +126,13 @@ test('a profile whose market has left the directory: out of search, its pages op
   assert.equal(p.status, 200)
   assert.deepEqual([p.body.checks, p.body.listings[0]!.listed, p.body.listings[0]!.why], [[], false, 'its profile does not count here'])
   const line = '<p class="s">Its market, Old market, is no longer in the markets directory, so nothing here counts.</p>'
-  const back = '<a class="round back" href="https://index.test.example/" aria-label="Back">'
   const profileHtml = (await page(i, `/profiles/${seller.key.address}`)).text
-  assert.ok(profileHtml.includes(line) && profileHtml.includes(back))
+  assert.ok(profileHtml.includes(line))
   const l = await twin<ListingPage>(i, `/profiles/${seller.key.address}/listing/coat.json`)
   assert.deepEqual([l.status, l.body.market, l.body.fields], [200, 'old-market', []])
   const listingHtml = (await page(i, `/profiles/${seller.key.address}/listing/coat`)).text
-  assert.ok(listingHtml.includes(line) && listingHtml.includes('<a class="round clear back" href="https://index.test.example/" aria-label="Back">'))
+  // Its market in words, with no icon: the directory no longer gives it one.
+  assert.ok(listingHtml.includes(line) && listingHtml.includes('<span class="mk">Old market</span>'))
   // A profile in a market the directory lists shows no such line.
   const tutor = await profile('lessons/tutor', [by])
   await publishProfile(host.url, tutor)
