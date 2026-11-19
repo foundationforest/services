@@ -56,12 +56,12 @@ export const MARKETS = (() => {
 
 export const LESSONS = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8'))
 
-/** A listing that fits lessons' listing fields: two prices, one a pack of 5 lessons, its ages a range with no top, and its hours weekly in a zone. */
+/** A listing that fits lessons' listing fields: two prices, one for 0.75 hours, its 45 minutes, its ages a range with no top, and its hours weekly in a zone. */
 export const lesson = (description: string): Body => ({
   description,
   price: [
     { amount: '30', currency: 'USD', per: 'hour' },
-    { amount: '1300', currency: 'MXN', per: 'lesson', count: 5 },
+    { amount: '25', currency: 'USD', per: 'hour', count: '0.75' },
   ],
   ages: { from: '12' },
   subjects: ['maths', 'physics'],

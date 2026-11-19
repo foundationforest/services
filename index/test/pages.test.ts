@@ -64,8 +64,8 @@ before(async () => {
   const { a, b, c, s1, s2, seller, repairer, uncounted } = people as { [k: string]: (typeof people)[string] }
   const written = [
     // Its languages by ISO code, from the markets' shared list; its minutes in the market's unit; its
-    // ages a range; a count with no unit; two prices, one for a pack of 5 lessons, 260 MXN a lesson,
-    // with a note; its hours weekly, in its zone.
+    // ages a range; a count with no unit; two prices, one for 2 months, 650 MXN a month, with a note;
+    // its hours weekly, in its zone.
     at(a!, 'listing/a', {
       description: 'Maths and physics, in Madrid.',
       subjects: ['maths', 'physics'],
@@ -75,17 +75,18 @@ before(async () => {
       groupSize: '4',
       price: [
         { amount: '30', currency: 'USD', per: 'hour' },
-        { amount: '1300', currency: 'MXN', per: 'lesson', count: 5, note: 'The first lesson is free' },
+        { amount: '1300', currency: 'MXN', per: 'month', count: '2', note: 'The first lesson is free' },
       ],
       mode: ['in-person'],
       place: { lat: '40.42', lon: '-3.70', radiusKm: 5 },
       hours: [{ every: ['tuesday', 'thursday'], start: '18:00', end: '20:00', zone: 'Europe/Madrid' }],
       contact: 'https://wa.me/34600000000',
     }),
-    // Online only: no place, as lessons asks for one only in person. Its ages with no top.
-    at(b!, 'listing/b', { description: 'Maths, online.', subjects: ['maths'], languages: ['es'], minutes: '45', ages: { from: '18' }, price: [{ amount: '25', currency: 'USD', per: 'hour' }], mode: ['online'], contact: 'http://example.com/maths/' }),
+    // Online only: no place, as lessons asks for one only in person. Its ages with no top. 25 USD for
+    // 0.75 hours, its 45 minutes: 33.33 an hour, the dearest per hour.
+    at(b!, 'listing/b', { description: 'Maths, online.', subjects: ['maths'], languages: ['es'], minutes: '45', ages: { from: '18' }, price: [{ amount: '25', currency: 'USD', per: 'hour', count: '0.75' }], mode: ['online'], contact: 'http://example.com/maths/' }),
     // 100 USD for 5 hours: 20 an hour, the cheapest per hour.
-    at(c!, 'listing/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], price: [{ amount: '100', currency: 'USD', per: 'hour', count: 5 }], mode: ['in-person'], place: { lat: '38.72', lon: '-9.14', radiusKm: 5 } }),
+    at(c!, 'listing/c', { description: 'Chemistry, in Lisbon.', subjects: ['chemistry'], price: [{ amount: '100', currency: 'USD', per: 'hour', count: '5' }], mode: ['in-person'], place: { lat: '38.72', lon: '-9.14', radiusKm: 5 } }),
     // One age, a number in a field that takes a range.
     at(s1!, 'listing/need', { description: 'Help with maths homework.', subjects: ['maths'], ages: '10', contact: 'mailto:s1@example.com' }),
     // Its size a value its market labels, xl as XL; its place 8.9 km north of a's.
@@ -377,16 +378,17 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual(who(await s('market=lessons&ages.max=8')), [])
   assert.deepEqual(who(await s('market=lessons&ages.min=11&ages.max=18')), ['a', 'b'])
   // Prices: within one currency and one per, the whole deal's when per is left out, by what one of
-  // its per costs, its amount divided by its count: a's 30 an hour, b's 25, c's 100 for 5 hours, 20.
+  // its per costs, its amount divided by its count: a's 30 an hour, b's 25 for 0.75 hours, 33.33,
+  // c's 100 for 5 hours, 20.
   const hourly = 'price.currency=USD&price.per=hour'
   assert.deepEqual(who(await s(hourly)), ['a', 'c', 'b'])
-  assert.deepEqual(who(await s(`${hourly}&price.max=25`)), ['c', 'b'])
-  assert.deepEqual(who(await s(`${hourly}&price.min=26`)), ['a'])
+  assert.deepEqual(who(await s(`${hourly}&price.max=25`)), ['c'])
+  assert.deepEqual(who(await s(`${hourly}&price.min=26`)), ['a', 'b'])
   assert.deepEqual(who(await s(`${hourly}&price.min=20&price.max=20`)), ['c'])
-  assert.deepEqual(who(await s(`${hourly}&sort=price`)), ['c', 'b', 'a'])
-  // a's pack, 1,300 MXN for 5 lessons, is 260 a lesson; the coat's 40 EUR is for the whole deal.
-  assert.deepEqual(who(await s('price.currency=MXN&price.per=lesson&price.max=260')), ['a'])
-  assert.deepEqual(who(await s('price.currency=MXN&price.per=lesson&price.max=259')), [])
+  assert.deepEqual(who(await s(`${hourly}&sort=price`)), ['c', 'a', 'b'])
+  // a's 1,300 MXN for 2 months is 650 a month; the coat's 40 EUR is for the whole deal.
+  assert.deepEqual(who(await s('price.currency=MXN&price.per=month&price.max=650')), ['a'])
+  assert.deepEqual(who(await s('price.currency=MXN&price.per=month&price.max=649')), [])
   assert.deepEqual(who(await s('price.currency=MXN&price.per=hour')), [])
   assert.deepEqual(who(await s('price.currency=EUR')), ['seller'])
   assert.deepEqual(who(await s('price.currency=USD')), [])
@@ -408,6 +410,21 @@ test("search: words, market, role, a place, a rating, raters, pages; sorted by r
   assert.deepEqual(who(paged), ['c'])
   // The uncounted profile's listing is never a result.
   assert.ok(!who(await s('q=uncounted')).length)
+})
+
+test('search: a price for 45 minutes compares with a budget per hour, by its amount divided by its length', async () => {
+  const s = async (q: string) => (await twin<{ results: Array<{ profile: string }> }>(i, `/search.json?${q}`)).body
+  const who = (r: { results: Array<{ profile: string }> }) => r.results.map((x) => Object.keys(people).find((k) => people[k]!.key.address === x.profile))
+  // b's 25 USD for 0.75 hours is less than 30, and 33.33 an hour: a budget of 30 an hour leaves it out,
+  // one of 34 finds it, after c's 20 an hour and a's 30.
+  const hourly = 'price.currency=USD&price.per=hour&sort=price'
+  assert.deepEqual(who(await s(`${hourly}&price.max=30`)), ['c', 'a'])
+  assert.deepEqual(who(await s(`${hourly}&price.max=34`)), ['c', 'a', 'b'])
+  // As the markets' own match: b's price meets a request whose budget is 34 an hour, not one of 30.
+  const price = SITE.markets.market('lessons')!.listing.price!
+  const b = [{ amount: '25', currency: 'USD', per: 'hour', count: '0.75' }]
+  assert.equal(SITE.markets.match(price, b, [{ amount: '30', currency: 'USD', per: 'hour' }]), false)
+  assert.equal(SITE.markets.match(price, b, [{ amount: '34', currency: 'USD', per: 'hour' }]), true)
 })
 
 test("search near a point: a listing's radius reaches past km, the nearest first, each with its distance", async () => {
@@ -494,7 +511,7 @@ test("a listing's page and its twin: its fields in the order its market asks the
   // posted it, in a card linking to their profile; the button to message them, in the role's word.
   const order = [
     `<a class="round clear back" href="${BASE}/markets/lessons" aria-label="Back">`,
-    '<h1>Maths and physics, in Madrid.</h1><p class="cost"><span class="d big">$30</span> <span class="s">per hour</span></p><p class="cost"><span class="d big">MX$1,300</span> <span class="s">for 5 lessons</span> <span class="s">(The first lesson is free)</span></p>',
+    '<h1>Maths and physics, in Madrid.</h1><p class="cost"><span class="d big">$30</span> <span class="s">per hour</span></p><p class="cost"><span class="d big">MX$1,300</span> <span class="s">for 2 months</span> <span class="s">(The first lesson is free)</span></p>',
     // Each label its market's word, else its name in words; each value as the markets read it.
     '<dl class="card divide"><div class="kv"><dt>Subjects</dt><dd>Maths and physics</dd></div>',
     // A place as its numbers, a link to its point on the map: a place holds no name.
@@ -554,23 +571,26 @@ test("a listing's page and its twin: its fields in the order its market asks the
   // Each date answer with hours says its zone beside them; one with none, none.
   const days = { piece: 'date', several: true } as const
   assert.equal(
-    answerText(SITE.markets, days, [{ every: ['saturday'], part: 'morning', zone: 'Europe/London' }, { on: '2031-06-02' }]),
-    'Saturday mornings (Europe/London); Monday 2 June 2031',
+    answerText(SITE.markets, days, [{ every: ['saturday'], start: '09:00', end: '12:00', zone: 'Europe/London' }, { on: '2031-06-02' }]),
+    'Saturdays, 9:00 to 12:00 (Europe/London); Monday 2 June 2031',
   )
   assert.equal(valueText({ from: '9', to: '11' }), 'from: 9, to: 11')
   assert.ok((await page(i, `/profiles/${addressOf('b')}/listing/b`)).text.includes('<div class="kv"><dt>Ages</dt><dd>18 years or more</dd></div>'))
   assert.ok((await page(i, `/profiles/${addressOf('s1')}/listing/need`)).text.includes('<div class="kv"><dt>Ages</dt><dd>10 years</dd></div>'))
-  // Each price in words: per its per, for a pack its count of it, a person's people, or for the whole deal.
+  // Each price in words: per its per, for more than one its count of it, a person's people, per hour
+  // a length, or for the whole deal.
   assert.deepEqual(
     [
       moneyText({ amount: '30', currency: 'USD', per: 'hour' }),
-      moneyText({ amount: '30', currency: 'USD', per: 'hour', count: 1 }),
-      moneyText({ amount: '1300', currency: 'MXN', per: 'lesson', count: 5 }),
-      moneyText({ amount: '90', currency: 'EUR', per: 'person', count: 3 }),
+      moneyText({ amount: '30', currency: 'USD', per: 'hour', count: '1' }),
+      moneyText({ amount: '25', currency: 'EUR', per: 'hour', count: '0.75' }),
+      moneyText({ amount: '60', currency: 'EUR', per: 'hour', count: '3' }),
+      moneyText({ amount: '1300', currency: 'MXN', per: 'month', count: '2' }),
+      moneyText({ amount: '90', currency: 'EUR', per: 'person', count: '3' }),
       moneyText({ amount: '12.5', currency: 'EUR' }),
       moneyText({ amount: '30', currency: 'coins' }),
     ],
-    ['$30 per hour', '$30 per hour', 'MX$1,300 for 5 lessons', '€90 for 3 people', '€12.50', '30 coins'],
+    ['$30 per hour', '$30 per hour', '€25 for 45 minutes', '€60 for 3 hours', 'MX$1,300 for 2 months', '€90 for 3 people', '€12.50', '30 coins'],
   )
 
   // Every place that shows the listing links to its page.
@@ -581,7 +601,7 @@ test("a listing's page and its twin: its fields in the order its market asks the
   assert.deepEqual([ld['@graph'][0]['@type'], ld['@graph'][0].mainEntity['@type'], ld['@graph'][0].mainEntity.url], ['ItemPage', 'Offer', `${BASE}/profiles/${a}/listing/a`])
   assert.deepEqual(ld['@graph'][0].mainEntity.priceSpecification, [
     { '@type': 'UnitPriceSpecification', price: '30', priceCurrency: 'USD', referenceQuantity: { '@type': 'QuantitativeValue', value: 1, unitText: 'hour' } },
-    { '@type': 'UnitPriceSpecification', price: '1300', priceCurrency: 'MXN', referenceQuantity: { '@type': 'QuantitativeValue', value: 5, unitText: 'lesson' } },
+    { '@type': 'UnitPriceSpecification', price: '1300', priceCurrency: 'MXN', referenceQuantity: { '@type': 'QuantitativeValue', value: 2, unitText: 'month' } },
   ])
 })
 
@@ -809,15 +829,15 @@ test('the search page: its search box filled, the filters as chips and as one GE
   assert.ok(near.includes('<b>1</b> listing, nearest first'))
   // The price filters and sort=price come only in the query: each a chip that removes it, the form
   // carrying them along, and the count says cheapest first.
-  const cheap = mainOf((await page(i, '/search?price.currency=USD&price.per=hour&price.max=25&sort=price')).text)
-  assert.ok(cheap.includes(`<a class="fchip on" href="${BASE}/search?sort=price" aria-label="Remove price at most $25 per hour">Price: at most $25 per hour<svg`))
-  assert.ok(cheap.includes(`<a class="fchip on" href="${BASE}/search?price.currency=USD&amp;price.per=hour&amp;price.max=25" aria-label="Remove cheapest first">Cheapest first<svg`))
-  for (const [name, value] of [['price.currency', 'USD'], ['price.per', 'hour'], ['price.max', '25'], ['sort', 'price']]) assert.ok(cheap.includes(`<input type="hidden" name="${name}" value="${value}">`), name)
+  const cheap = mainOf((await page(i, '/search?price.currency=USD&price.per=hour&price.max=30&sort=price')).text)
+  assert.ok(cheap.includes(`<a class="fchip on" href="${BASE}/search?sort=price" aria-label="Remove price at most $30 per hour">Price: at most $30 per hour<svg`))
+  assert.ok(cheap.includes(`<a class="fchip on" href="${BASE}/search?price.currency=USD&amp;price.per=hour&amp;price.max=30" aria-label="Remove cheapest first">Cheapest first<svg`))
+  for (const [name, value] of [['price.currency', 'USD'], ['price.per', 'hour'], ['price.max', '30'], ['sort', 'price']]) assert.ok(cheap.includes(`<input type="hidden" name="${name}" value="${value}">`), name)
   assert.ok(cheap.includes('<b>2</b> listings, cheapest first'))
   assert.ok(mainOf((await page(i, '/search?price.currency=EUR&price.min=10&price.max=40')).text).includes('aria-label="Remove price €10 to €40">'))
   assert.ok(mainOf((await page(i, '/search?price.currency=EUR')).text).includes('aria-label="Remove price in EUR">'))
   // Changing the market keeps them: a price means the same in every market.
-  assert.ok(cheap.includes(`<a class="radio" href="${BASE}/search?price.currency=USD&amp;price.per=hour&amp;price.max=25&amp;sort=price&amp;market=lessons">`))
+  assert.ok(cheap.includes(`<a class="radio" href="${BASE}/search?price.currency=USD&amp;price.per=hour&amp;price.max=30&amp;sort=price&amp;market=lessons">`))
   // What was searched is text in the box, never markup.
   assert.ok((await page(i, '/search?q=%22%3E%3Cb%3E')).text.includes('<input type="search" name="q" value="&quot;&gt;&lt;b&gt;" placeholder'))
 })

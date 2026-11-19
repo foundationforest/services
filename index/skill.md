@@ -23,14 +23,14 @@ a page, with what this index made of each of its proofs.
   are decimal text: a score `"8.5"`, a number `"45"`, or a range `{ "from": "9", "to": "11" }`, an end
   left out for no limit, `{ "from": "18" }` for 18 and over. A `price` is always a list of prices,
   such as
-  `[{ "amount": "30", "currency": "USD", "per": "hour" }, { "amount": "1300", "currency": "MXN", "per": "lesson", "count": 5, "note": "The first lesson is free" }]`,
-  where `count` is how many of its `per` the amount buys, 1 when left out, and `note` the writer's
-  few words on it. A place is a circle, `{ "lat": "40.42", "lon": "-3.70", "radiusKm": 5 }`, with no
-  name; radius 0 is an exact spot. A date is days, `{ "on" }`, `{ "from", "to" }` or
-  `{ "every": ["monday"] }`, and hours if wanted, `start` and `end` or a `part` of the day, with their
-  `zone`, a time zone by name. A choice is one of its field's values, such as a language by its code,
-  `es`. In this index's JSON, a rating, a trust and a uniqueness are plain numbers; in its signed
-  `statement`, a rating is text.
+  `[{ "amount": "30", "currency": "USD", "per": "hour" }, { "amount": "25", "currency": "USD", "per": "hour", "count": "0.75", "note": "The first lesson is free" }]`,
+  where `count` is how many of its `per` the amount buys, as decimal text, 1 when left out, and per
+  `hour` a length, `"0.75"` for 45 minutes; and `note` the writer's few words on it. A place is a
+  circle, `{ "lat": "40.42", "lon": "-3.70", "radiusKm": 5 }`, with no name; radius 0 is an exact
+  spot. A date is days, `{ "on" }`, `{ "from", "to" }` or `{ "every": ["monday"] }`, and hours if
+  wanted, `start` and `end` as clock times, with their `zone`, a time zone by name. A choice is one
+  of its field's values, such as a language by its code, `es`. In this index's JSON, a rating, a
+  trust and a uniqueness are plain numbers; in its signed `statement`, a rating is text.
 
 ## What each profile shows
 
@@ -58,9 +58,9 @@ choice in words, `like-new` as "Like new", or by its label, `xl` as "XL" or a la
 as "Spanish"; a number in its field's unit, `"45"` as "45 minutes", and a range so, "9 to 11
 years", "18 years or more"; a date's days and hours, with its zone beside them, "Tuesdays and
 Thursdays, 18:00 to 20:00 (Europe/Madrid)"; a place as its numbers, "Around 40.42, -3.70, 5 km",
-linked to its point on a map; a price in its own currency, for a pack with its count, with its note,
-"MX$1,300 for 5 lessons (The first lesson is free)". A listing's page shows every price, and a
-listing in a list its first, with how many more. The JSON keeps each as written.
+linked to its point on a map; a price in its own currency, for its count of its `per`, per hour a
+length, with its note, "$25 for 45 minutes (The first lesson is free)". A listing's page shows
+every price, and a listing in a list its first, with how many more. The JSON keeps each as written.
 
 ## The markets
 
@@ -88,7 +88,7 @@ index lists, by role, in search's order.
 ## Search
 
     GET https://index.forest.foundation/search.json?q=maths&market=tutoring&role=tutor
-    GET https://index.forest.foundation/search.json?market=language-exchange&speaks=es&learns=en
+    GET https://index.forest.foundation/search.json?market=language-exchange&learns=es&languages=en
 
 `{ "index", "total", "results": [<result>], "query", "markets" }`: `query` is each filter below as
 it was given, such as `{ "q": "maths", "market": "tutoring" }`, and `markets` every market's name.
@@ -106,17 +106,17 @@ Every filter may be left out:
 - `minReviews`: a profile scored by at least this many raters;
 - with `market`, its listing fields, by their names in its file, each matched as the markets match
   it: a `choice` field as `<field>=<value>`, a listing whose field holds that value (for a field
-  with several answers, one of them), such as `speaks=es&learns=en`; a `number` field as
+  with several answers, one of them), such as `learns=es&languages=en`; a `number` field as
   `<field>.min` and `<field>.max`, in the field's `unit`, either one alone for an open end, such as
-  `minutes.min=45`: a listing whose number, or range, overlaps them, a range's missing end limiting
+  `ages.max=12`: a listing whose number, or range, overlaps them, a range's missing end limiting
   nothing, so `ages.min=30` finds 18 and over. A listing that leaves the field out is left out once
   it is filtered on. Without `market`, a field is no filter;
 - `price.currency`, with `price.per`, `price.min` and `price.max`, in any market: a listing with a
   price in that currency for that `per`, or for the whole deal when `price.per` is left out, whose
   amount divided by its `count`, what one of its `per` costs, is at least `price.min` and at most
-  `price.max`, such as `price.currency=MXN&price.per=lesson&price.max=300`, which finds 1,300 MXN
-  for 5 lessons, 260 a lesson. Prices compare only within one currency and one `per`, so without
-  `price.currency` neither bound is a filter;
+  `price.max`, such as `price.currency=USD&price.per=hour&price.max=30`, which finds 20 USD an
+  hour and leaves out 25 USD for 0.75 hours, 33.33 an hour. Prices compare only within one
+  currency and one `per`, so without `price.currency` neither bound is a filter;
 - `sort=price`, with `price.currency`: the cheapest first, by the least of those prices, then the
   order below;
 - `limit` (20 unless given, at most 100) and `offset`, for the next page.
@@ -185,7 +185,7 @@ A listing's own page, at its address under `/profiles`: `{ "index", "profile", "
 `uniqueness` and `message` are its profile's; `fields` is the fields its market asks its role's
 listings, in that order, the market's preview first and `contact` last; `pieces` is each one's
 piece, as its market names it, a `photo` field naming photos; `units` is each number field's unit,
-such as `{ "minutes": "minutes" }`; `labels` is, for each choice field it holds, how each value it
+such as `{ "ages": "years" }`; `labels` is, for each choice field it holds, how each value it
 holds reads, such as `{ "size": { "xl": "XL" }, "languages": { "es": "Spanish" } }`.
 The page shows its photos, its fields, who posted it, and how to reach them: the `contact` its body
 gives, in the writer's words, and `message`. A listing that is not listed has its page too, with

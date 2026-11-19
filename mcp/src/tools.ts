@@ -15,11 +15,12 @@ export const HOW = `Forest: people offer, pay and review each other directly, th
 - Never put one of the person's addresses in anything you write for another of their profiles or send to anyone else, unless the person asks.
 - Read the market before you write to it: markets with its name gives, for each role, the fields its listings ask and those a review about it asks, in order, each with its question, its hint and how an answer is written. Any field may be left out. An entry of a kind sits at <kind>/<id>, with an id you choose; one that does not fit is refused, naming the field.
 - Numbers, amounts and coordinates are decimal text, such as "2.5". A number may be { from, to }, either end left out for no limit, such as { "from": "18" } for 18 and over.
-- A listing's price is a list of every price the person charges, each with its per and, for a pack, its count, and a few words of note if wanted, such as [{ "amount": "1300", "currency": "MXN", "per": "lesson", "count": 5 }] for 5 lessons; one price is a list of one.
+- A listing's price is a list of every price the person charges, each with its per and, for more than one of it, its count, as decimal text, and a few words of note if wanted; one price is a list of one.
+- A price for time is an amount for a length in hours: 15 an hour, { "amount": "15", "currency": "EUR", "per": "hour" }, or 25 for 0.75 hours (45 minutes), { "amount": "25", "currency": "EUR", "per": "hour", "count": "0.75" }. A minimum goes in the price's note.
 - A place is a circle, { lat, lon, radiusKm }. Centre a circle on the neighbourhood or town the person names, never on their address.
 - Never write an exact spot, radiusKm 0, unless the person gives its coordinates. From memory, use 1 km and name the spot in the listing's own words.
 - When you do not know where a place is, ask for the nearest town you do know. Never guess.
-- Hours carry a time zone by name, such as Europe/Madrid.
+- Hours are clock times, with a time zone by name, such as Europe/Madrid. When the person says "mornings", ask for the hours.
 - Several answers in a field mean any of them. Things that go together are another listing: two stops of a trip are two listings.
 - A market is live or beta. Before the person writes in a beta market, tell them it works, at their own risk, and may change.
 - Ask the person before anything public in their name: a listing, a review, a vouch, a report, or a first message to someone.

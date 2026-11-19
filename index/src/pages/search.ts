@@ -18,7 +18,8 @@
 //                the markets' prices do, since any rate between currencies is a guess
 //   price.min, price.max
 //                with price.currency, a price in it whose amount divided by its count, what one of
-//                its per costs, is at least, at most this
+//                its per costs, is at least, at most this; per hour the count is a length, so 25
+//                for 0.75 hours, 33.33 an hour, costs more than 30 an hour
 //   sort         price, with price.currency: cheapest first, by the least of those prices, ties in
 //                the order above
 //   limit        20 unless given, at most 100; offset skips that many
@@ -107,8 +108,11 @@ function priceFilterText(q: { [filter: string]: string }): string {
   return q['price.per'] ? `${range} per ${q['price.per']}` : range
 }
 
-/** What one of a price's per costs: its amount divided by its count, 1 when left out. */
-const eachOf = (p: { amount: string; count?: number }) => Number(p.amount) / (Number.isInteger(p.count) ? p.count! : 1)
+/**
+ * What one of a price's per costs: its amount divided by its count, decimal text, 1 when left out, as
+ * the markets' match divides it. Per hour the count is a length: 25 for 0.75 hours is 33.33 an hour.
+ */
+const eachOf = (p: { amount: string; count?: string }) => Number(p.amount) / Number(p.count ?? '1')
 
 export type SearchPage = {
   index: string
