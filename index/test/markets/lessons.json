@@ -1,7 +1,7 @@
 {
   "name": "lessons",
   "summary": "Tutors teach school subjects one on one.",
-  "description": "Lessons are paid per hour, per session or per lesson, in person or online.",
+  "description": "Lessons are paid by the hour or by the month, in person or online.",
   "status": "beta",
   "icon": "graduation-cap",
   "number": 1,
@@ -11,7 +11,7 @@
   ],
   "listing": {
     "description": { "piece": "text", "ask": { "long": true } },
-    "price": { "piece": "price", "per": ["hour", "session", "lesson"], "ask": { "as": { "student": { "label": "Budget" } } } },
+    "price": { "piece": "price", "per": ["hour", "month"], "ask": { "as": { "student": { "label": "Budget" } } } },
     "subjects": { "piece": "choice", "values": ["maths", "physics", "chemistry", "biology"], "several": true },
     "languages": { "piece": "choice", "values": "languages", "several": true },
     "levels": { "piece": "choice", "values": ["primary", "secondary", "university", "adult"], "several": true, "ask": { "labels": { "adult": "adults" } } },

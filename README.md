@@ -10,8 +10,7 @@ The Forest Foundation runs one copy of each service Forest needs, so Forest work
 | [host](host/README.md) | Keeps your profiles' folders (listings, reviews, photos, inbox) and serves them to anyone. Each write is paid from its folder's credits, prepaid writes at that host, a fraction of a cent for a small one; a message from its sender's folder. Your first credits are a gift from the verifier, kept in your wallet: your Profiles folder's balance at the host (the folder where your app lists your profiles). | [host.forest.foundation](https://host.forest.foundation) |
 | [index](index/README.md) | Reads the hosts, counts verified profiles only, and ranks them by reputation in each market. Pages for people, JSON for programs. Free. | [index.forest.foundation](https://index.forest.foundation) |
 | [MCP server](mcp/README.md) | Lets your AI app (Claude, ChatGPT) act for you through [MCP](https://modelcontextprotocol.io): find people, post, review, message, within the access keys you give it. It keeps nothing of yours. | mcp.forest.foundation |
-
-[places](places/README.md), a lookup an app's "type a place" box can use to turn words into a place a listing holds, is here for anyone to run; the foundation does not run a copy.
+| [places](places/README.md) | Turns the words you type into a place a listing holds: a town, a section of a city or, in Mexico, a colonia, for an app's "type a place" box. Free, and it keeps nothing. | [places.forest.foundation](https://places.forest.foundation) |
 
 The end-to-end test ([`e2e/`](e2e/README.md)) runs two people through the verifier, the host, the index and the MCP server on every change. None of the services touches a chain.
 

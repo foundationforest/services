@@ -49,7 +49,7 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in
   its unit, matching a number or a range that overlaps them) and on prices (`price.currency`,
   `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app that cuts the guide still
-  finds, say, a language exchange by `speaks` and `learns`.
+  finds, say, a language exchange by `learns` and `languages`.
   Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
@@ -62,11 +62,14 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   sent to anyone else, unless the person asks; read the market before writing to it; numbers,
   amounts and coordinates are decimal text, and a number may be `{ from, to }`, either end left out
   for no limit; a listing's price is a list of every price the person charges, each with its per
-  and, for a pack, its count, and a note if wanted; a place is a circle, centred on the
+  and, for more than one of it, its count, as decimal text, and a note if wanted; a price for time
+  is an amount for a length in hours, 25 for 0.75 hours being 45 minutes, and a minimum goes in its
+  note; a place is a circle, centred on the
   neighbourhood or town the person names, never their address, an exact spot only from coordinates
   the person gives, 1 km from memory with the spot named in the listing's own words, and the
-  nearest town asked for, never guessed, when the AI does not know where a place is; hours carry a
-  time zone by name; several answers in a field mean any of them, and things that go together are
+  nearest town asked for, never guessed, when the AI does not know where a place is; hours are
+  clock times with a time zone by name, and when the person says "mornings", the AI asks for the
+  hours; several answers in a field mean any of them, and things that go together are
   another listing; before the
   person writes in a beta market, tell them it works, at their own risk, and may change; ask the
   person before anything public in their name; photos are the person's to add, in their Forest app;

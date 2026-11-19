@@ -105,16 +105,19 @@ describe('reading, with no login', () => {
     assert.match(descriptions.search!, /a price as price\.currency and price\.per with price\.min and price\.max, by what one of its per costs, and sort=price for the cheapest first/)
     assert.match(descriptions.markets!, /its summary \(the one line that says what the dealing is\)/)
     assert.match(descriptions.markets!, /its status \(live, or beta: it works, at your own risk, and may change\)/)
-    // Before the person writes in a beta market, the AI tells them; a price is a list, with counts, a
-    // number may leave out an end; and how to write a place, hours and several answers.
+    // Before the person writes in a beta market, the AI tells them; a price is a list, with counts as
+    // decimal text, per hour a length; a number may leave out an end; and how to write a place, hours
+    // as clock times and several answers.
     assert.ok(HOW.includes('- A market is live or beta. Before the person writes in a beta market, tell them it works, at their own risk, and may change.'))
-    assert.match(HOW, /- A listing's price is a list of every price the person charges, each with its per and, for a pack, its count/)
+    assert.match(HOW, /- A listing's price is a list of every price the person charges, each with its per and, for more than one of it, its count, as decimal text/)
+    assert.match(HOW, /- A price for time is an amount for a length in hours: 15 an hour, .* or 25 for 0\.75 hours \(45 minutes\), .*"count": "0\.75" \}\. A minimum goes in the price's note\./)
+    assert.ok(!/"per": "(lesson|session|visit)"|"count": \d|morning|afternoon|evening|part of the day/.test(HOW.replace('"mornings"', '')), 'no per lesson, no numeric count, no part of the day')
     assert.match(HOW, /A number may be \{ from, to \}, either end left out for no limit/)
     for (const line of [
       'Centre a circle on the neighbourhood or town the person names, never on their address.',
       "From memory, use 1 km and name the spot in the listing's own words.",
       'When you do not know where a place is, ask for the nearest town you do know. Never guess.',
-      'Hours carry a time zone by name',
+      'Hours are clock times, with a time zone by name, such as Europe/Madrid. When the person says "mornings", ask for the hours.',
       'Several answers in a field mean any of them. Things that go together are another listing: two stops of a trip are two listings.',
     ]) assert.ok(HOW.includes(line), line)
   })
@@ -251,7 +254,7 @@ describe('acting for the person', () => {
       // A price is always a list, a single one a list of one; a count only with a per; a range in order.
       ['listing/x', { ...lesson('x'), price: { amount: '30', currency: 'USD', per: 'hour' } }, /price takes a list of one or more/],
       ['listing/x', { ...lesson('x'), price: [] }, /price takes a list of one or more/],
-      ['listing/x', { ...lesson('x'), price: [{ amount: '30', currency: 'USD', count: 2 }] }, /price takes a list of one or more/],
+      ['listing/x', { ...lesson('x'), price: [{ amount: '30', currency: 'USD', count: '2' }] }, /price takes a list of one or more/],
       ['listing/x', { ...lesson('x'), ages: { from: '11', to: '9' } }, /ages takes .*from no more than to/],
       ['listing/x', { ...lesson('x'), ages: {} }, /ages takes /],
       ['listing/x', { subjects: ['knitting'] }, /subjects takes a list of one or more, each different, each one of /],
@@ -277,6 +280,14 @@ describe('acting for the person', () => {
     const odd = { ...lesson('x'), mode: ['online'] }
     assert.equal((await call('write', { label: TUTOR, path: 'listing/x', body: odd })).refused, markets.checkEntry('lessons', 'tutor', 'listing', odd))
     assert.equal(await at(TUTOR, 'listing/x'), null, 'nothing written')
+  })
+
+  test("write: hours with a part of the day are refused, in checkEntry's words: hours are clock times", async () => {
+    const mornings = { ...lesson('x'), hours: [{ every: ['saturday'], part: 'morning', zone: 'Europe/Madrid' }] }
+    const why = markets.checkEntry('lessons', 'tutor', 'listing', mornings)
+    assert.match(why ?? '', /^hours takes .*start, and end if wanted, as HH:MM/)
+    assert.equal((await call('write', { label: TUTOR, path: 'listing/mornings', body: mornings })).refused, why)
+    assert.equal(await at(TUTOR, 'listing/mornings'), null, 'nothing written')
   })
 
   test('write, public: a review naming its listing; a delete', async () => {

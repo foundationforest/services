@@ -269,26 +269,36 @@ export function amountText(amount: unknown, currency: unknown): string {
 export const perPlural = (per: string) => (per === 'person' ? 'people' : /(s|x|z|ch|sh)$/.test(per) ? `${per}es` : `${per}s`)
 
 /**
+ * A length in hours as people say it, by the rule the markets' read words it with, which the
+ * package does not export: 45 minutes, 90 minutes, 3 hours, 2.5 hours.
+ */
+const hoursText = (n: number) => (Number.isInteger(n) ? `${n} ${n === 1 ? 'hour' : 'hours'}` : n < 2 ? `${Math.round(n * 60)} minutes` : `${n} hours`)
+
+/**
  * A price as people write one: its amount in its currency (amountText); what it is for, "per hour",
- * or for a pack, its count of its per, "for 5 lessons", or nothing for the whole deal; and its note,
- * the writer's few words on it, or none. None for a value that is not a price.
+ * or for more than one of its per, its count of it, "for 3 people", and per hour a length, "for 45
+ * minutes", or nothing for the whole deal; and its note, the writer's few words on it, or none. Its
+ * count is decimal text, read as a number, so a listing that does not fit, with a count written as
+ * a number, reads too. None for a value that is not a price.
  */
 export function priceParts(money: unknown): { amount: string; per: string; note: string } | null {
   if (!money || typeof money !== 'object' || Array.isArray(money) || !('amount' in money) || !('currency' in money)) return null
   const m = money as { amount: unknown; currency: unknown; per?: unknown; count?: unknown; note?: unknown }
   const per = typeof m.per === 'string' && m.per ? m.per : ''
-  const count = Number.isInteger(m.count) ? (m.count as number) : 1
-  return { amount: amountText(m.amount, m.currency), per: !per ? '' : count > 1 ? `for ${count} ${perPlural(per)}` : `per ${per}`, note: typeof m.note === 'string' ? m.note : '' }
+  const held = Number(m.count ?? 1)
+  const count = Number.isFinite(held) && held > 0 ? held : 1
+  const forWhat = !per ? '' : count === 1 ? `per ${per}` : per === 'hour' ? `for ${hoursText(count)}` : `for ${count} ${perPlural(per)}`
+  return { amount: amountText(m.amount, m.currency), per: forWhat, note: typeof m.note === 'string' ? m.note : '' }
 }
 
-/** Money in one line: "$30 per hour", "MX$1,300 for 5 lessons". */
+/** Money in one line: "$30 per hour", "$25 for 45 minutes", "MX$1,300 for 2 months". */
 export const moneyText = (money: unknown) => {
   const p = priceParts(money)
   return p ? [p.amount, p.per].filter(Boolean).join(' ') : ''
 }
 
 /** A price, as the markets write one. */
-type Price = { amount: string; currency: string; per?: string; count?: number; note?: string }
+type Price = { amount: string; currency: string; per?: string; count?: string; note?: string }
 
 /**
  * Each price a listing gives, in its writer's order: its price is always a list of them in the
@@ -302,7 +312,7 @@ export function pricesOf(body: { [key: string]: unknown }): Price[] {
 /**
  * An answer as words on a page, as the markets' `read` says it in English: a choice by how its
  * value reads (es as Spanish), a number in its unit, a date's days and hours. `read` leaves a date's
- * zone out, so each answer with hours or a part of the day says its zone beside them, by its name. A
+ * zone out, so each answer with hours says its zone beside them, by its name. A
  * photo is no words: it is drawn as a photo. Only for an answer that fits its field (fits).
  */
 export function answerText(markets: Markets, field: Field, value: unknown): string {
@@ -437,7 +447,7 @@ export function offerOf(r: Result, base: string): { [key: string]: unknown } {
     '@type': 'UnitPriceSpecification',
     price: p.amount,
     priceCurrency: p.currency,
-    ...(typeof p.per === 'string' && { referenceQuantity: { '@type': 'QuantitativeValue', value: Number.isInteger(p.count) ? p.count : 1, unitText: p.per } }),
+    ...(typeof p.per === 'string' && { referenceQuantity: { '@type': 'QuantitativeValue', value: Number(p.count ?? 1), unitText: p.per } }),
   }))
   const rating = aggregateOf(r)
   return {
