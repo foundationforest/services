@@ -6,7 +6,8 @@
 // `currencies`, those this side's listings price in, most used first, for the price filter's picker.
 //
 // Drawn as its head, the market's icon on its color, its name, Beta beside it when beta, its summary
-// under, and what beta means under that; its description in a fold, so the page stays short; its
+// under, what beta means under that, and its description in a fold behind a quiet link, More about
+// this market, so the page stays short; its
 // sides as tabs, each a link that keeps the words and the place, with how many listings it lists;
 // then Where and the filters, how many results and in what order, the results as a grid or a list
 // (common.ts, layoutOf), and Show more.
@@ -154,8 +155,9 @@ export const market: Page<MarketPage> = {
     // A side's tab keeps the words and the place, and drops the filters, which are the other side's.
     const tab = (role: string) => urls(base).market(m.name, { ...(o.query.q && { q: o.query.q }), ...carried({}, o.place), role })
     const { form, on } = filtersHtml(site, base, o, m, word, keep)
-    return html`<div class="mhead">${marketHtml(site, m.name, 'md')}<div><h1>${inWords(m.name)}${m.status === 'beta' ? betaFlag : ''}</h1><p class="s">${m.summary}</p>${m.status === 'beta' ? html`<p class="xs">${BETA}</p>` : ''}</div></div>
-${m.description ? html`<details class="fold"><summary><span class="grow">More about this market</span>${icon('caret-down')}</summary><div class="fbody"><p>${m.description}</p></div></details>` : ''}
+    return html`<div class="mhead">${marketHtml(site, m.name, 'md')}<div><h1>${inWords(m.name)}${m.status === 'beta' ? betaFlag : ''}</h1><p class="s">${m.summary}</p>${m.status === 'beta' ? html`<p class="xs">${BETA}</p>` : ''}${
+      m.description ? html`<details class="more"><summary>More about this market${icon('caret-down', 'regular', 'xs')}</summary><p class="s">${m.description}</p></details>` : ''
+    }</div></div>
 <nav class="sides" aria-label="Sides">${m.roles.map((r) => html`<a href="${tab(r.role)}"${r.role === o.role ? html` aria-current="page"` : ''}>${inWords(r.listings)} <span class="n">${o.listings[r.role]!.length}</span></a>`)}</nav>
 <div class="controls"><div class="bar"><a class="${o.place ? 'chip on' : 'chip'}" href="#filters">${icon('map-pin')}${o.place ? placeWords(o.place) : 'Anywhere'}</a><a class="${on ? 'chip on' : 'chip'}" href="#filters">${icon('sliders-horizontal')}Filters${on ? html` <span class="n">${on}</span>` : ''}</a></div>${form}<div class="count"><p><b>${o.total}</b> ${wordFor(o.total, word)}</p></div>${orderHtml(link, o.query, o.place)}</div>
 ${noPlaceHtml(o.query, o.place)}${o.results.length ? resultsHtml(site, o.results, { layout: layoutOf(site, m.name) }) : ''}${moreHtml(link, o)}`

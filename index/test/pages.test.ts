@@ -342,14 +342,16 @@ test("every page is drawn from its twin's object and the site's fixed parts, run
   assert.equal((await page(i, '/fonts/../package.json')).status, 404)
 })
 
-test('results, one look: a picture and two lines in a grid, or two lines in a list, by the market\'s preview; no profile picture, no New', async () => {
+test('results, one look: a picture and three lines in a grid, or two lines in a list, by the market\'s preview; no profile picture, no New', async () => {
   // Wardrobe's preview starts with its photos: a grid; the rest, a list.
   assert.deepEqual(DIRECTORY.markets.map((m) => [m.name, layoutOf(SITE, m.name)]), [['lessons', 'list'], ['matches', 'list'], ['repairs', 'list'], ['wardrobe', 'grid']])
   const coat = `${BASE}/profiles/${addressOf('seller')}/listing/coat`
-  // In its market: the photo, square, no mark; its title, the description's first line; its price;
-  // no rating, so no second line's words.
+  // In its market: the photo, square, no mark; its title, the description's first line, on a line
+  // of its own; its price under it; no rating, so no quiet line's words.
   const wardrobe = mainOf((await page(i, '/markets/wardrobe')).text)
-  assert.ok(wardrobe.includes(`<div class="grid"><a class="result" href="${coat}"><span class="pic" style="--h:${colorOf('wardrobe')}"><img src="${PHOTOS}/v1/files/${COAT[0]}" alt="" loading="lazy"></span><span class="l1"><span class="t">A wool coat, worn twice.</span><span class="p">€40</span></span><span class="l2"></span></a></div>`))
+  assert.ok(wardrobe.includes(`<div class="grid"><a class="result" href="${coat}"><span class="pic" style="--h:${colorOf('wardrobe')}"><img src="${PHOTOS}/v1/files/${COAT[0]}" alt="" loading="lazy"></span><span class="t">A wool coat, worn twice.</span><span class="p">€40</span><span class="l2"></span></a></div>`))
+  // A request's long price on its own line too, the title left whole.
+  assert.ok(mainOf((await page(i, '/search?q=homework')).text).includes('<span class="t">Help with maths homework.</span><span class="p">Up to £15 for 2 hours</span><span class="l2"></span></a>'))
   // In search, the market's mark on the photo; with no photo, the market's icon on its tint.
   const found = mainOf((await page(i, '/search')).text)
   assert.ok(found.includes(`<img src="${PHOTOS}/v1/files/${COAT[0]}" alt="" loading="lazy"><span class="av mk" style="--h:${colorOf('wardrobe')}" aria-hidden="true"><svg class="i" data-icon="coat-hanger"`))
@@ -639,7 +641,7 @@ test("a listing's page and its twin: its fields in its market's order, its place
   // label above its value, its place in words with a map, the contact last; its reviews; the foot.
   inOrder(mainOf(html), [
     `<main>\n<div class="lpage"><div class="side"><div class="sum"><div class="from"><span class="mk"><span class="av xs" style="--h:${colorOf('lessons')}" aria-hidden="true">`,
-    'Lessons</span><span class="flag">tutor</span></div>',
+    'Lessons</span><span class="flag">Tutor</span></div>',
     '<h1>Maths and physics, in Madrid.</h1><div class="prices"><p><span class="d">$30 an hour</span></p><p><span class="d">MX$1,300 for 2 months</span><br><span class="note">The first lesson is free</span></p></div>',
     `<div class="dock"><span class="dp"><b class="d">$30 an hour</b><span class="xs">Opens the Forest app</span></span><a class="btn go" href="${about}"><svg class="i" data-icon="paper-plane-tilt"`,
     'Message</a></div>',
@@ -892,8 +894,9 @@ test("a market's page: its head, the description folded, its sides as tabs, Wher
   const lessons = mainOf((await page(i, '/markets/lessons')).text)
   // The head: its icon on its color, its name with Beta beside it, its summary, and what beta means.
   assert.ok(lessons.startsWith(`<main>\n<div class="mhead"><span class="av md" style="--h:${colorOf('lessons')}" aria-hidden="true"><svg class="i" data-icon="graduation-cap"`))
-  assert.ok(lessons.includes(`<h1>Lessons<span class="flag" title="${BETA}">Beta</span></h1><p class="s">Tutors teach school subjects one on one.</p><p class="xs">${BETA}</p></div></div>`))
-  assert.match(lessons, new RegExp(`<details class="fold"><summary><span class="grow">More about this market</span>${ICON('caret-down').source}</summary><div class="fbody"><p>Lessons are paid by the hour or by the month, in person or online\\.</p></div></details>`))
+  // Its description behind a quiet link with its caret, no box, under the rest of its head.
+  assert.match(lessons, new RegExp(`<h1>Lessons<span class="flag" title="${BETA}">Beta</span></h1><p class="s">Tutors teach school subjects one on one\\.</p><p class="xs">${BETA}</p><details class="more"><summary>More about this market${ICON('caret-down').source}</summary><p class="s">Lessons are paid by the hour or by the month, in person or online\\.</p></details></div></div>`))
+  assert.ok(!lessons.includes('<details class="fold">'))
   // Its sides: each a link that keeps the words and the place, with how many it lists; the one shown soft green.
   assert.ok(lessons.includes(`<nav class="sides" aria-label="Sides"><a href="${BASE}/markets/lessons?role=tutor" aria-current="page">Offers <span class="n">3</span></a><a href="${BASE}/markets/lessons?role=student">Requests <span class="n">1</span></a></nav>`))
   const kept = mainOf((await page(i, '/markets/lessons?q=maths&near=40.53,-3.70&near.name=North&languages=es')).text)

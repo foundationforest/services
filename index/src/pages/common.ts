@@ -1,8 +1,8 @@
 // What several pages share: what a profile shows (its ratings, trust and uniqueness, and its checks)
 // as the JSON gives it, a listing as every page gives it (its page and its photos among it), a
 // search or market result, and how the HTML draws each from the object: a market's icon on its
-// color, a profile's animal, the badges, a rating, a result in its one look (a picture and two lines,
-// in a grid or a list, by its market's preview), the words of an answer as the markets read it, each
+// color, a profile's animal, the badges, a rating, a result in its one look (a picture and three
+// lines in a grid, or two lines in a list, by its market's preview), the words of an answer as the markets read it, each
 // price and place in the app's words (words.ts), a beta market's flag and line, the line for a
 // market gone from the directory, and the fold that says what a profile's numbers mean.
 
@@ -344,21 +344,25 @@ function line2Html(r: Shows): Raw {
 }
 
 /**
- * Results in their one look, as a grid of pictures or a list (layoutOf): each a link to the
- * listing's page, its picture in a grid (its first photo, square; with none, its market's icon on
+ * Results in their one look, as a grid of pictures or a list (layoutOf), each a link to the
+ * listing's page. In a grid: its picture (its first photo, square; with none, its market's icon on
  * a tint of its color), with its market's mark on the photo when `mark`, as search shows results of
- * many markets; then its title and first price, in the app's words, and its second line.
+ * many markets; its title on a line of its own, never squeezed; its first price, in the app's words,
+ * bold, under it; then the quiet line. In a list: its title with its first price at the right, then
+ * the quiet line.
  */
 export function resultsHtml(site: Site, items: Shows[], o: { layout: 'grid' | 'list'; mark?: boolean }): Raw {
   const one = (r: Shows) => {
     const price = priceText(pricesOf(r.listing.body)[0], isRequest(site, r.market, r.role))
-    const lines = html`<span class="l1"><span class="t">${titleOf(site, r.market, r.role, r.listing.body)}</span>${price ? html`<span class="p">${price}</span>` : ''}</span><span class="l2">${line2Html(r)}</span>`
-    if (o.layout === 'list') return html`<a class="result" href="${r.listing.url}">${lines}</a>`
+    const title = html`<span class="t">${titleOf(site, r.market, r.role, r.listing.body)}</span>`
+    const cost = price ? html`<span class="p">${price}</span>` : ''
+    const quiet = html`<span class="l2">${line2Html(r)}</span>`
+    if (o.layout === 'list') return html`<a class="result" href="${r.listing.url}"><span class="l1">${title}${cost}</span>${quiet}</a>`
     const photo = r.listing.photos[0]
     const pic = photo
       ? html`<img src="${photo}" alt="" loading="lazy">${o.mark && r.market ? marketHtml(site, r.market, 'mk') : ''}`
       : html`<span class="none" aria-hidden="true">${r.market ? marketIcon(site, r.market) : ''}</span>`
-    return html`<a class="result" href="${r.listing.url}"><span class="pic" style="--h:${colorOf(site, r.market)}">${pic}</span>${lines}</a>`
+    return html`<a class="result" href="${r.listing.url}"><span class="pic" style="--h:${colorOf(site, r.market)}">${pic}</span>${title}${cost}${quiet}</a>`
   }
   return o.layout === 'list' ? html`<div class="list box">${items.map(one)}</div>` : html`<div class="grid">${items.map(one)}</div>`
 }

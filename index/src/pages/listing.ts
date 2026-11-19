@@ -180,7 +180,7 @@ export const listing: Page<ListingPage> = {
     const reviews = o.reviews.latest.length
       ? html`<section class="reviews box" aria-label="Reviews"><h2>Reviews</h2>${o.reviews.latest.map((r) => reviewHtml(site, r))}<a class="link" href="${urls(base).profile(o.profile)}#reviews">All ${o.reviews.count} ${o.reviews.count === 1 ? 'review' : 'reviews'}</a></section>`
       : ''
-    return html`<div class="lpage">${photos}<div class="side"><div class="sum"><div class="from">${o.market ? html`<span class="mk">${isGone(site, o.market) ? '' : marketHtml(site, o.market, 'xs')}${inWords(o.market)}</span>` : ''}${o.role ? html`<span class="flag">${o.role}</span>` : ''}</div>
+    return html`<div class="lpage">${photos}<div class="side"><div class="sum"><div class="from">${o.market ? html`<span class="mk">${isGone(site, o.market) ? '' : marketHtml(site, o.market, 'xs')}${inWords(o.market)}</span>` : ''}${o.role ? html`<span class="flag">${inWords(o.role)}</span>` : ''}</div>
 <h1>${head || firstPrice || 'A listing'}</h1>${prices.length ? html`<div class="prices">${prices.map((p) => html`<p><span class="d">${priceText(p, request)}</span>${priceParts(p)!.note ? html`<br><span class="note">${priceParts(p)!.note}</span>` : ''}</p>`)}</div>` : ''}
 ${o.listing.listed ? '' : html`<p class="red">Not listed: ${o.listing.why}.</p>`}${isGone(site, o.market) ? goneHtml(o.market) : ''}${dock}${who}</div>${reviews}</div>
 ${facts.length ? html`<dl class="details box">${facts}</dl>` : ''}${rest ? html`<section class="about"><h2>About</h2><p class="text">${rest}</p></section>` : ''}
