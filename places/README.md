@@ -5,9 +5,10 @@ its point, its size in whole kilometres, its name, a line saying where it is, a 
 country, and the place as a listing holds it. Words in any language or script find a place by any
 of its names. A listing's place is a circle, three numbers and no name, which a person's AI can
 write itself; places is an optional helper for an app's "type a place" box, so a person picks a
-place instead of typing a point, and its names are for showing only. Anyone can ask a copy, with a plain GET and no login, and anyone can run one; the main way
-is this code, whose one script builds the same file from the same public data. The Forest
-Foundation does not run a copy. A copy keeps that one file, built from GeoNames and Correos de
+place instead of typing a point, and its names are for showing only. The Forest Foundation runs
+this copy, at https://places.forest.foundation. Anyone can ask it, with a plain GET and no login,
+and anyone can run another; the main way is this code, whose one script builds the same file from
+the same public data. A copy keeps that one file, built from GeoNames and Correos de
 México's postal areas, and nothing of anyone's: the service stores nothing and logs no question.
 
 ## How it works
@@ -143,11 +144,11 @@ Errors are `{ "error": "<code>" }`:
   `npm run build` run inside it, so the file is in the image and there is no volume; started as
   `node src/main.ts`. Its build downloads about 340 MB, so it is built again only when `places/`
   changes.
-- **Where:** to run a copy as the foundation runs its other services, a Railway service from this
+- **Where:** the foundation runs it as it runs its other services, a Railway service from this
   repo with `RAILWAY_DOCKERFILE_PATH=places/deploy/Dockerfile`, watch path `places/**`, one replica
   (a copy that answers more runs more, each with the same file), no volume, no variable to set (it
   reads `PORT`, which Railway sets, and `DATA_DIR`, whose default is where the image keeps the
-  file), and a public domain to `PORT`.
+  file), and a public domain to `PORT`, places.forest.foundation.
 - **Free,** with no rate limit. **Stores** nothing. **Logs** one line when it starts, and for a
   request that fails its error's kind only, never its path, its question or the error's message.
 - **Its numbers, and why:**
