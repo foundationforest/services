@@ -25,8 +25,12 @@ export type ListedKey = {
   until?: number
 }
 
-/** An app a page links to, to message a profile: `message` is its link, `{address}` the profile's address. */
-export type ListedApp = { name: string; message: string }
+/**
+ * An app a page links to, to message a profile: `message` is its link, `{address}` the profile's
+ * address; `about` its link to message the profile about one listing, `{listing}` the listing's full
+ * address, `<profile>/listing/<id>`, the shape a review's `listing` has.
+ */
+export type ListedApp = { name: string; message: string; about: string }
 
 /** An index whose reputation proofs this index shows. `self` is this index's own key. */
 export type ListedIndex = { index: string; name: string }
@@ -110,16 +114,21 @@ export function loadLists(root: string): Lists {
   }
 }
 
-/** lists/apps.json's apps: each a name and an http or https link with `{address}` in it. */
+/** Whether a link is http or https, holds each of `marks`, and reads as a URL once they are filled. */
+const linkWith = (link: unknown, marks: string[]): link is string =>
+  typeof link === 'string' && /^https?:\/\//.test(link) && marks.every((m) => link.includes(m)) && URL.canParse(marks.reduce((l, m) => l.replaceAll(m, 'x'), link))
+
+/** lists/apps.json's apps: each a name, an http or https `message` link with `{address}` in it, and an `about` link with `{address}` and `{listing}`. */
 function appsOf(file: { [key: string]: unknown }): ListedApp[] {
   if (!Array.isArray(file.apps)) fail('lists/apps.json', 'apps is a list')
   return file.apps.map((a): ListedApp => {
-    if (!isObject(a) || typeof a.name !== 'string' || !a.name) fail('lists/apps.json', `${JSON.stringify(a)}: each is { name, message }`)
-    const link = typeof a.message === 'string' ? a.message : ''
-    const filled = link.replaceAll('{address}', 'x')
-    if (!link.includes('{address}') || !/^https?:\/\//.test(link) || !URL.canParse(filled)) {
+    if (!isObject(a) || typeof a.name !== 'string' || !a.name) fail('lists/apps.json', `${JSON.stringify(a)}: each is { name, message, about }`)
+    if (!linkWith(a.message, ['{address}'])) {
       fail('lists/apps.json', `app ${JSON.stringify(a.name)}: message is an http or https link with {address} in it, such as https://app.forest.foundation/message?to={address}`)
     }
-    return { name: a.name, message: link }
+    if (!linkWith(a.about, ['{address}', '{listing}'])) {
+      fail('lists/apps.json', `app ${JSON.stringify(a.name)}: about is an http or https link with {address} and {listing} in it, such as https://app.forest.foundation/message?to={address}&listing={listing}`)
+    }
+    return { name: a.name, message: a.message, about: a.about }
   })
 }

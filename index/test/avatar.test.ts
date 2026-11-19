@@ -1,4 +1,4 @@
-// A market's avatar (src/avatar.ts, pages/common.ts): its color is its number cycled through the
+// A market's icon on its color (src/avatar.ts, pages/common.ts): its color is its number cycled through the
 // index's palette of ten, so neighbours differ; its icon is the one its market file names, else its
 // first letter, and one this copy of Phosphor lacks never stops the index, the letter drawn instead;
 // and every icon the markets accept (their build/icons.json) is in this copy of Phosphor, so a gap
@@ -11,7 +11,7 @@ import { test } from 'node:test'
 import { loadMarkets, type Market } from '@foundationforest/markets'
 
 import { colorFor, NO_NUMBER, PALETTE } from '../src/avatar.ts'
-import { avatarHtml, colorOf } from '../src/pages/common.ts'
+import { colorOf, marketHtml } from '../src/pages/common.ts'
 import { fileOf } from '../src/pages/icons.ts'
 import { siteOf } from '../src/pages/template.ts'
 import { MARKETS } from './world.ts'
@@ -37,17 +37,17 @@ test("a market's color is its number cycled through the palette: neighbours diff
 })
 
 test("a market's icon is its market file's, else its first letter; one this copy of Phosphor lacks shows the letter and stops nothing", () => {
-  const drawn = (name: string) => String(avatarHtml(site, name, { size: 'lg' }))
+  const drawn = (name: string) => String(marketHtml(site, name, 'md'))
   assert.equal(markets.market('lessons')!.icon, 'graduation-cap')
-  assert.match(drawn('lessons'), new RegExp(`^<span class="av lg" style="--h:${PALETTE[0]}" aria-hidden="true"><svg class="i" data-icon="graduation-cap" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" focusable="false">.+</svg></span>$`))
+  assert.match(drawn('lessons'), new RegExp(`^<span class="av md" style="--h:${PALETTE[0]}" aria-hidden="true"><svg class="i" data-icon="graduation-cap" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true" focusable="false">.+</svg></span>$`))
   assert.equal(markets.market('matches')!.icon, undefined)
-  assert.equal(drawn('matches'), `<span class="av lg" style="--h:${PALETTE[1]}" aria-hidden="true"><span class="letter">M</span></span>`)
-  assert.equal(drawn('knitting'), `<span class="av lg" style="--h:${NO_NUMBER}" aria-hidden="true"><span class="letter">K</span></span>`)
+  assert.equal(drawn('matches'), `<span class="av md" style="--h:${PALETTE[1]}" aria-hidden="true"><span class="letter">M</span></span>`)
+  assert.equal(drawn('knitting'), `<span class="av md" style="--h:${NO_NUMBER}" aria-hidden="true"><span class="letter">K</span></span>`)
   // A market naming an icon this copy lacks, or a name that is no icon's: the letter.
   for (const icon of ['no-such-icon', '../fill/star', 'Star']) {
     const odd: Market = { ...markets.market('lessons')!, name: 'odd', icon, number: 5 }
     const oddSite = siteOf({ ...markets, market: (name) => (name === 'odd' ? odd : markets.market(name)) }, [])
-    assert.equal(String(avatarHtml(oddSite, 'odd')), `<span class="av" style="--h:${PALETTE[4]}" aria-hidden="true"><span class="letter">O</span></span>`, icon)
+    assert.equal(String(marketHtml(oddSite, 'odd', 'xs')), `<span class="av xs" style="--h:${PALETTE[4]}" aria-hidden="true"><span class="letter">O</span></span>`, icon)
   }
 })
 

@@ -27,17 +27,16 @@ const TEXT = 'text/plain; charset=utf-8'
 const answer = (status: number, type: string, body: string) => new Response(body, { status, headers: { ...HEADERS, 'content-type': type } })
 const json = (value: unknown, status = 200) => answer(status, 'application/json; charset=utf-8', JSON.stringify(value))
 
-export type Web = { handle(request: Request): Response }
+export type Web = { handle(request: Request): Promise<Response> }
 
 /** The pages over `ctx`, published at `base`. `root` is this directory, which holds llms.txt and skill.md. */
 export function web(reads: Omit<Context, 'base'>, base: string, root: string): Web {
   const ctx: Context = { ...reads, base }
   const site = siteOf(ctx.markets, ctx.lists.apps)
   const files = Object.fromEntries(['llms.txt', 'skill.md'].map((f) => [f, readFileSync(join(root, f), 'utf8').replaceAll(WRITTEN_FOR, base)]))
-  // The fonts' files as their packages give them, Figtree and Bricolage Grotesque, the Forest app's,
-  // which every page's style names at /fonts/; the two packages name their files apart. Cached for a
-  // day, not for good: their names carry no version, so a newer package serves new bytes under the
-  // same name.
+  // The font's files as its package gives them, Figtree, the Forest app's, which every page's style
+  // names at /fonts/. Cached for a day, not for good: their names carry no version, so a newer
+  // package serves new bytes under the same name.
   const fonts = Object.fromEntries(FONT_FILES.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.woff2')).map((f) => [f, new Uint8Array(readFileSync(join(dir, f)))])))
 
   function sitemap(): string {
@@ -52,7 +51,7 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${list.map((l) => `<url><loc>${esc(l)}</loc></url>\n`).join('')}</urlset>\n`
   }
 
-  function route(url: URL): Response {
+  async function route(url: URL): Promise<Response> {
     const path = url.pathname
     if (path === '/robots.txt') return answer(200, TEXT, `User-agent: *\nAllow: /\n\nSitemap: ${base}/sitemap.xml\n`)
     if (path === '/sitemap.xml') return answer(200, 'application/xml; charset=utf-8', sitemap())
@@ -82,7 +81,7 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
     const alone = ALONE.includes(first ?? '')
     const params = alone ? [] : isListing ? [rest[0]!, rest[2]!] : rest
     if (!page || (alone && rest.length) || (bare !== '/' && !alone && !isListing && params.length !== 1)) return answer(404, TEXT, 'Nothing here.\n')
-    const o = page.data(ctx, params, url.searchParams)
+    const o = await page.data(ctx, params, url.searchParams)
     if (o === null) return twin ? json({ error: 'not found' }, 404) : answer(404, TEXT, 'Nothing here.\n')
     if (twin) return json(o)
     const pageUrl = `${base}${bare === '/' ? '/' : bare}${url.search}`
@@ -90,7 +89,7 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
   }
 
   return {
-    handle(request) {
+    async handle(request) {
       if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('GET only\n', { status: 405, headers: { ...HEADERS, allow: 'GET, HEAD', 'content-type': TEXT } })
       let url: URL
       try {
@@ -99,14 +98,14 @@ export function web(reads: Omit<Context, 'base'>, base: string, root: string): W
       } catch {
         return answer(400, TEXT, 'That address is not written correctly.\n')
       }
-      const res = route(url)
+      const res = await route(url)
       return request.method === 'HEAD' ? new Response(null, { status: res.status, headers: res.headers }) : res
     },
   }
 }
 
 /** One request's answer: 400 for a URL that does not parse, 500 for a page that fails, logged with its error only. */
-function respond(pages: Web, path: string | undefined, method: string | undefined): Response {
+async function respond(pages: Web, path: string | undefined, method: string | undefined): Promise<Response> {
   let url: URL
   try {
     url = new URL(`http://index.invalid${path ?? '/'}`)
@@ -114,7 +113,7 @@ function respond(pages: Web, path: string | undefined, method: string | undefine
     return new Response('That address is not written correctly.\n', { status: 400, headers: { 'content-type': TEXT } })
   }
   try {
-    return pages.handle(new Request(url, { method: method === 'HEAD' || method === 'GET' ? method : 'POST' }))
+    return await pages.handle(new Request(url, { method: method === 'HEAD' || method === 'GET' ? method : 'POST' }))
   } catch (err) {
     console.error(`request failed: ${url.pathname}: ${(err as Error).message}`)
     return new Response('The index could not answer this.\n', { status: 500, headers: { 'content-type': TEXT } })
@@ -127,7 +126,7 @@ function respond(pages: Web, path: string | undefined, method: string | undefine
  */
 export function serve(pages: Web, port: number, hostname: string): Promise<Server> {
   const server = createServer(async (req, res) => {
-    const response = respond(pages, req.url, req.method)
+    const response = await respond(pages, req.url, req.method)
     const headers: Record<string, string> = {}
     response.headers.forEach((v, k) => (headers[k] = v))
     res.writeHead(response.status, headers)

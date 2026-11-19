@@ -5,7 +5,7 @@
 // from screen readers: the words beside it, or its parent's, say what it is. A name the pages use
 // that is not read here stops the start, so a page never misses one. A market's icon is its market
 // file's, read the first time a page draws it; one this copy of Phosphor lacks is never drawn, and
-// never stops the start: the market's avatar shows its first letter (common.ts), and the index's
+// never stops the start: the market's icon shows its first letter (common.ts), and the index's
 // tests fail on any icon the markets accept that this copy lacks.
 
 import { readFileSync } from 'node:fs'
@@ -17,9 +17,9 @@ export type Weight = 'regular' | 'fill' | 'bold'
 
 /** Every icon a page draws, but the markets', with each weight it is drawn in. */
 const USED: { [weight in Weight]: string[] } = {
-  regular: ['arrow-left', 'caret-down', 'caret-right', 'file-code', 'github-logo', 'info', 'magnifying-glass', 'map-pin', 'sliders-horizontal', 'sparkle', 'star'],
+  regular: ['caret-down', 'caret-right', 'file-code', 'github-logo', 'info', 'magnifying-glass', 'map-pin', 'sliders-horizontal', 'sparkle'],
   fill: ['identification-card', 'smiley', 'star'],
-  bold: ['arrow-up-right', 'handshake', 'paper-plane-tilt', 'x'],
+  bold: ['arrow-up-right', 'caret-left', 'caret-right', 'paper-plane-tilt', 'x'],
 }
 
 /** Where an icon's file is in @phosphor-icons/core. */

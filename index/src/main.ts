@@ -22,9 +22,11 @@ function seconds(name: string, fallback: string): number {
 const dataDir = setting('DATA_DIR')
 const publicUrl = setting('PUBLIC_URL', 'https://index.forest.foundation')
 if (!/^https?:\/\/[^/]+$/.test(publicUrl)) throw new Error('PUBLIC_URL is an origin, such as https://index.forest.foundation')
+const placesUrl = setting('PLACES_URL', 'https://places.forest.foundation')
+if (!/^https?:\/\/[^/]+$/.test(placesUrl)) throw new Error('PLACES_URL is an origin, such as https://places.forest.foundation')
 
 if (process.argv[2] === 'rebuild') {
-  await rebuild({ dataDir, publicUrl })
+  await rebuild({ dataDir, publicUrl, placesUrl })
   // Exits once the line is out, whatever is still open: a deploy's next command waits on it. Every
   // rebuild of the foundation's copy printed this and its deploy went no further, though none
   // checked a proof, so the curve's threads that index.ts stops never started; what held it is not
@@ -33,7 +35,7 @@ if (process.argv[2] === 'rebuild') {
 } else {
   const port = Number(setting('PORT', '8080'))
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new Error('PORT is a port number')
-  const index = await startIndex({ dataDir, publicUrl, readSeconds: seconds('READ_SECONDS', '30'), port })
+  const index = await startIndex({ dataDir, publicUrl, placesUrl, readSeconds: seconds('READ_SECONDS', '30'), port })
   console.log(`index ${index.address}, listening on ${port}`)
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => void index.close().then(() => process.exit(0)))
 }

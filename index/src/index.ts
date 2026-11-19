@@ -11,6 +11,7 @@ import { loadMarkets } from '@foundationforest/markets'
 
 import { loadLists } from './lists.ts'
 import { runPass } from './pass.ts'
+import { placesAt } from './places.ts'
 import { loadOrMakeKey } from './seed.ts'
 import { openStore, type Store } from './store.ts'
 import { serve, web, type Web } from './web.ts'
@@ -21,6 +22,8 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 export type Options = {
   dataDir: string
   publicUrl: string
+  /** The places service the pages ask for names and for Where (places.ts); none unless given, so it asks nothing. */
+  placesUrl?: string
   /** Seconds between the end of one pass and the start of the next; 0 runs no passes but those asked for. */
   readSeconds: number
   /** Where lists/ and config/ are: this directory unless given. */
@@ -74,7 +77,8 @@ export async function startIndex(o: Options): Promise<Index> {
   if (made) log(`no seed in ${o.dataDir}, so a new one was made and kept there`)
   const store = openStore(o.dataDir)
   const ctx = { store, lists, markets, key, log }
-  const pages = web({ store, lists, markets, self: key.address }, o.publicUrl.replace(/\/+$/, ''), ROOT)
+  const places = placesAt(o.placesUrl ? o.placesUrl.replace(/\/+$/, '') : null)
+  const pages = web({ store, lists, markets, self: key.address, places }, o.publicUrl.replace(/\/+$/, ''), ROOT)
 
   let before: number | null = null
   let running: Promise<void> = Promise.resolve()

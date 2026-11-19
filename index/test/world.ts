@@ -1,8 +1,10 @@
-// A small Forest on loopback for the tests: this repo's host (its host API, host/src/plug.ts), a
-// stand-in verifier whose key the test's lists name, people with seeds, profiles with real
-// verifications made from the verification circuit's committed proving files, entries signed with
-// their main keys, and the index itself, with lists written to a directory of its own and markets
-// of its own: test/markets/, so no test depends on what a market in the pinned checkout holds.
+// A small Forest on loopback for the tests: this repo's host (its host API, host/src/plug.ts), this
+// repo's places (places/src), on the file its own tests build from their small world
+// (places/test/fixtures.ts), a stand-in verifier whose key the test's lists name, people with seeds,
+// profiles with real verifications made from the verification circuit's committed proving files,
+// entries signed with their main keys, and the index itself, with lists written to a directory of its
+// own and markets of its own: test/markets/, so no test depends on what a market in the pinned
+// checkout holds.
 
 import { randomBytes } from 'node:crypto'
 import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -14,6 +16,9 @@ import { b64u, entry, type SignedEntry, write } from '@foundationforest/folders'
 import { proofBytes, proveVerification, signStamp, verifierKeyOf } from '@foundationforest/proofs'
 
 import { Host } from '../../host/src/plug.ts'
+import { openPlaces } from '../../places/src/places.ts'
+import { serve as servePlaces, web as placesWeb } from '../../places/src/web.ts'
+import { buildFixture, serveSources } from '../../places/test/fixtures.ts'
 import { type Index, ROOT, startIndex } from '../src/index.ts'
 
 export const STANDARD = join(ROOT, '../standard')
@@ -95,6 +100,21 @@ export async function startHost(): Promise<{ url: string; close(): Promise<void>
   return { url, close: () => host.close() }
 }
 
+/**
+ * This repo's places on loopback, on the file its own tests build from their small world: Madrid
+ * and its section Chamberí, Monterrey and its colonias, Munich, Rome, and the rest of
+ * places/test/fixtures.ts.
+ */
+export async function startPlaces(): Promise<{ url: string; close(): Promise<void> }> {
+  const sources = await serveSources()
+  const { file } = await buildFixture(sources)
+  await sources.close()
+  const places = openPlaces(file)
+  const server = await servePlaces(placesWeb(places), 0, '127.0.0.1')
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`
+  return { url, close: () => new Promise((resolve) => server.close(() => (places.close(), resolve()))) }
+}
+
 /** Write signed entries to the host. */
 export async function post(hostUrl: string, entries: SignedEntry[]): Promise<void> {
   const [out] = await write([hostUrl], entries)
@@ -119,8 +139,8 @@ export type Lists = {
   apps?: unknown
 }
 
-/** The apps the test lists name: one, with a message link holding the profile's address. */
-export const TEST_APPS = [{ name: 'Forest app', message: 'https://app.test.example/message?to={address}' }]
+/** The apps the test lists name: one, with a message link holding the profile's address, and an about link holding the listing's too. */
+export const TEST_APPS = [{ name: 'Forest app', message: 'https://app.test.example/message?to={address}', about: 'https://app.test.example/message?to={address}&listing={listing}' }]
 
 /** The index's own numbers, config/scoring.json. */
 export const SCORING = JSON.parse(readFileSync(join(ROOT, 'config/scoring.json'), 'utf8'))
@@ -139,12 +159,13 @@ export function listsDir(l: Lists): string {
   return dir
 }
 
-/** The index over these lists; with no readSeconds, no pass of its own: the test asks for each. `now`, a clock of the test's, Date.now unless given. */
-export async function index(l: Lists, options: { port?: number | null; dataDir?: string; readSeconds?: number; now?: () => number } = {}): Promise<Index & { dataDir: string }> {
+/** The index over these lists; with no readSeconds, no pass of its own: the test asks for each. `now`, a clock of the test's, Date.now unless given; `places`, the places it asks, none unless given. */
+export async function index(l: Lists, options: { port?: number | null; dataDir?: string; readSeconds?: number; now?: () => number; places?: string } = {}): Promise<Index & { dataDir: string }> {
   const dataDir = options.dataDir ?? tmp('data')
   const i = await startIndex({
     dataDir,
     publicUrl: 'https://index.test.example',
+    ...(options.places && { placesUrl: options.places }),
     readSeconds: options.readSeconds ?? 0,
     listsRoot: listsDir(l),
     marketsDir: MARKETS,
@@ -158,12 +179,12 @@ export async function index(l: Lists, options: { port?: number | null; dataDir?:
 
 /** A page's JSON twin, through the index's own handler. */
 export async function twin<T = { [key: string]: unknown }>(i: Index, path: string): Promise<{ status: number; body: T }> {
-  const res = i.pages.handle(new Request(`https://index.test.example${path}`))
+  const res = await i.pages.handle(new Request(`https://index.test.example${path}`))
   return { status: res.status, body: (await res.json()) as T }
 }
 
 export async function page(i: Index, path: string): Promise<{ status: number; text: string }> {
-  const res = i.pages.handle(new Request(`https://index.test.example${path}`))
+  const res = await i.pages.handle(new Request(`https://index.test.example${path}`))
   return { status: res.status, text: await res.text() }
 }
 

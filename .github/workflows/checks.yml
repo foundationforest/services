@@ -8,9 +8,9 @@
 #                face embedding's on the real models and portraits its `npm run fetch` checks by
 #                SHA-256, and its gifts' tickets taken by the host's own seller, bought with
 #                the host's credits client
-#   index        its type-check and its tests, on loopback: this repo's host (its host API), real
-#                verifications and a real reputation proof from the circuits' committed proving files,
-#                and the index end to end
+#   index        its type-check and its tests, on loopback: this repo's host (its host API), this
+#                repo's places on its own tests' small world, real verifications and a real reputation
+#                proof from the circuits' committed proving files, and the index end to end
 #   host         its type-check and its tests: the standard's host check against the host API and
 #                against the whole host, the host API's own tests and its storage's, its credits',
 #                its credits client's alone against Cloudflare's own Privacy Pass issuer, and its
@@ -98,6 +98,7 @@ jobs:
         run: |
           ./standard.sh
           (cd host && npm ci --no-audit --no-fund)
+          (cd places && npm ci --no-audit --no-fund)
           (cd index && npm ci --no-audit --no-fund)
       - name: Type-check
         working-directory: index

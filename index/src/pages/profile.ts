@@ -7,19 +7,19 @@
 // and report with its entry's own time; the words it received and gave, each with its weight; and where
 // to message it.
 //
-// The page is drawn for a buyer, as the app would show it: a header on its market's tint, with its
-// avatar, its name and badge, its rating and how many reviews count, and the button to message it;
-// then a fold saying what its numbers mean, with its own; its listings and the reviews and vouches
-// it received, as cards; and one fold with everything else this index read, the weight of each
-// review it received among it. A profile whose market has left the directory says so in its
-// header, and its back link goes home. On a laptop, the header and the folds on the left, the cards
-// on the right.
+// The page is drawn for a buyer, as the app would show it: its animal, big, on its market's color,
+// its name and badges, its rating and how many reviews count, and the button to message it; then a
+// fold saying what its numbers mean, with its own; its listings, as its market shows them (a grid or
+// a list, common.ts, layoutOf), and the reviews it received, each with its writer's animal and short
+// name; and one fold with everything else this index read, the weight of each review it received
+// among it. A profile whose market has left the directory says so. On a laptop, the head and the
+// folds on the left, the listings and reviews on the right.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aggregateOf, badgeHtml, colorOf, countText, dateHtml, firstHost, goneHtml, inWords, isGone, type Listing, listingCardHtml, listingOf, messageHtml, messageOf, nameHtml, nameText, numbersHtml, personOf, profileAvatar, type Shown, shownFor, wordOf } from './common.ts'
+import { aggregateOf, animalHtml, badgeHtml, firstHost, goneHtml, inWords, isGone, layoutOf, type Listing, listingOf, messageOf, nameText, numbersHtml, personOf, ratedHtml, resultsHtml, reviewHtml, type Shown, shownFor, wordOf } from './common.ts'
 import { icon } from './icons.ts'
-import { backHtml, html, type Page, type Raw, short, urls } from './template.ts'
+import { html, type Page, type Raw, short, urls } from './template.ts'
 
 /**
  * The other profile on an entry: its writer on one received, its subject on one given. Its market,
@@ -66,8 +66,9 @@ const otherOf = (r: OtherColumns): Other => ({ market: r.market, role: r.role, c
 
 // The other profile's fields come after every field an entry gave before them, so each of those
 // keeps its place.
-type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number } & OtherColumns
-const entry = (r: ReviewColumns): ReviewEntry => {
+export type ReviewColumns = { address: string; reviewer: string; body: string; time: number; counted: number; why: string | null; weight: number } & OtherColumns
+/** A review as a page's JSON gives it, from its row in the reviews table and its other profile's columns. */
+export const reviewEntry = (r: ReviewColumns): ReviewEntry => {
   const body = parse<{ [key: string]: unknown }>(r.body)
   return {
     reviewer: r.reviewer,
@@ -101,7 +102,7 @@ const listOf = <T>(items: T[], draw: (item: T) => Raw) => (items.length ? items.
 
 export const profile: Page<ProfilePage> = {
   name: 'profile',
-  data({ store, lists, self, base }, [address]) {
+  async data({ store, lists, self, base }, [address]) {
     const found = store.db.prepare('select address, body, checks, proofs from profiles where address = ?').get(address ?? '') as
       | { address: string; body: string; checks: string; proofs: string }
       | undefined
@@ -122,7 +123,7 @@ export const profile: Page<ProfilePage> = {
              from reviews e left join profiles f on f.address = e.${other} where e.${column} = ? order by e.time desc, e.address`,
           )
           .all(found.address) as ReviewColumns[]
-      ).map(entry)
+      ).map(reviewEntry)
     const saidIn = (table: string) => {
       const of = (column: string, other: string) =>
         (
@@ -157,41 +158,25 @@ export const profile: Page<ProfilePage> = {
     }
   },
   title: (o) => `Forest index: ${[o.profile.market, o.profile.role].filter((x) => typeof x === 'string').join(' ')} ${short(o.address)}`,
-  // A review's and a vouch's card shows its entry's own time as its date, in UTC, the one zone a page
-  // with no script can give every reader; the time is its writer's word, as the JSON says. Its writer
-  // is drawn as a result's profile is, its avatar, name and badge, from the market, role and checks
-  // the JSON gives beside it; one with no profile entry here as "A profile", nameHtml's own word,
-  // with no avatar and no badge.
+  // A review shows its entry's own time as its month, in UTC, the one zone a page with no script can
+  // give every reader; the time is its writer's word, as the JSON says. Its writer is drawn by its
+  // animal, on its market's color as the JSON gives it beside the review, and its short name.
   body(o, base, site) {
     const subjectOf = (r: { body: { [key: string]: unknown } }) => (typeof r.body.subject === 'string' ? r.body.subject : '')
     const wordHtml = (w: WordEntry, other: string) => html`<li>${w.word}, <a href="${urls(base).profile(other)}">${short(other)}</a>, weight ${w.weight.toFixed(2)}</li>`
     const market = typeof o.profile.market === 'string' ? o.profile.market : null
     const role = typeof o.profile.role === 'string' ? o.profile.role : null
     const word = wordOf(site, market, role)
-    const reviews = o.reviews.received.filter((r) => r.counted).length
-    const rated = !o.checks.length
-      ? html`<span class="s">Not verified here</span>`
-      : o.ratings.value === null
-        ? html`<span class="chip sm">New</span>`
-        : html`<span class="rate">${icon('star', 'fill')}${o.ratings.value.toFixed(1)}</span><span class="s">${countText(reviews, 'reviews')}</span>`
-    // The reviews and vouches it received, newest first, by their entries' own times.
-    const said = [...o.reviews.received.map((r) => ({ r, writer: r.reviewer, vouch: false })), ...o.vouches.received.map((r) => ({ r, writer: r.writer, vouch: true }))].sort(
-      (a, b) => b.r.time - a.r.time || (a.r.address < b.r.address ? -1 : 1),
-    )
-    const saidHtml = ({ r, writer, vouch }: (typeof said)[number]) =>
-      html`<a class="card said" href="${urls(base).profile(writer)}"><span class="line">${
-        vouch ? html`<span class="chip mint">${icon('handshake', 'bold')}Vouch</span>` : html`<span class="rate">${icon('star', 'fill')}${typeof r.body.score === 'string' ? r.body.score : '–'}</span>`
-      }<span class="grow"></span><span class="xs">${dateHtml(r.time)}</span></span>${typeof r.body.text === 'string' && r.body.text ? html`<span class="text">${r.body.text}</span>` : ''}<span class="who">${profileAvatar(site, r.market, r.role, 'xs')}${nameHtml(r.market, r.role, r.checks)}</span>${
-        r.counted ? '' : html`<span class="s red">Does not count: ${r.why}.</span>`
-      }</a>`
-    return html`<div class="${market ? 'head tint profile-head' : 'head profile-head'}"${market ? html` style="--h:${colorOf(site, market)}"` : ''}>${backHtml(market && !isGone(site, market) ? urls(base).market(market) : urls(base).home)}
-<div class="me">${profileAvatar(site, market, role, 'lg')}<div><h1 class="h2 titled">${nameText(market, role)}${badgeHtml(o.checks, true)}</h1><span class="rated">${rated}</span></div></div>
-${isGone(site, market) ? goneHtml(market) : ''}${messageHtml(o.message, 'Message')}</div>
+    const counted = o.reviews.received.filter((r) => r.counted).length
+    const [first, ...more] = o.message
+    const listings = o.listings.map((l) => ({ market, role, listing: l }))
+    return html`<div class="phead"><div class="me">${animalHtml(site, o.address, market, role, 'lg')}<div><h1>${nameText(market, role)}${badgeHtml(o.checks, true)}</h1><span class="s">${short(o.address)}</span><span class="rated">${ratedHtml(o, counted)}</span></div></div>
+${isGone(site, market) ? goneHtml(market) : ''}${first ? html`<a class="btn go wide" href="${first.url}">${icon('paper-plane-tilt', 'bold')}Message</a>${more.length ? html`<div class="s">${more.map((m, i) => html`${i ? ' · ' : ''}<a class="link" href="${m.url}">Message in the ${m.name}</a>`)}</div>` : ''}` : ''}</div>
 ${numbersHtml(o)}
 <div class="lists"><h2>${word ? inWords(word) : 'Listings'}</h2>
-${o.listings.length ? html`<div class="list">${o.listings.map((l) => listingCardHtml(site, market, role, l))}</div>` : html`<p>None yet.</p>`}
-<h2>Reviews</h2>
-${said.length ? html`<div class="list">${said.map(saidHtml)}</div>` : html`<p>None yet.</p>`}</div>
+${listings.length ? resultsHtml(site, listings, { layout: layoutOf(site, market) }) : html`<p class="s">None yet.</p>`}
+<h2 id="reviews">Reviews</h2>
+${o.reviews.received.length ? html`<div class="box reviews">${o.reviews.received.map((r) => reviewHtml(site, r, { address: r.reviewer, short: short(r.reviewer), url: urls(base).profile(r.reviewer) }))}</div>` : html`<p class="s">None yet.</p>`}</div>
 <details class="fold all"><summary>${icon('file-code')}<span class="grow">Everything this index read about this profile</span>${icon('caret-down')}</summary><div class="fbody"><p>Its address: <code>${o.address}</code></p>
 <h3>Reviews received</h3>
 ${listOf(o.reviews.received, (r) => reviewLine(r, r.reviewer, base))}
