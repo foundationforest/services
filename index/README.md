@@ -142,27 +142,27 @@ code is `src/rank.ts`; each key's confidence is in `lists/verifiers.json`, every
 
 | Part | How |
 |---|---|
-| **Uniqueness**, how sure it is the profile is one real person | `1 − Π(1 − c)` over the keys its verifications count for, each key once, `c` its confidence; on the pages, 0 to 100: 75 with a face check, 99 with an ID check too. Each check is one more chance to catch someone who is not one person, so a second raises it, never past 1 |
+| **Uniqueness**, how sure it is the profile is one real person, and so how much its word weighs | `1 − Π(1 − c)` over the keys its verifications count for, each key once, `c` its confidence; on the pages, 0 to 100: 75 with a face check, 99 with an ID check too. Each check is one more chance to catch someone who is not one person, so a second raises it, never past 1. It weighs the profile's own words and scores, never its trust |
 | **Words** | Each writer's one word about each profile it wrote about in its market: a report if its latest counted entry about it is a report, else a vouch, since it rated or vouched for it. A rating of 1 is a vouch: its writer dealt with the profile. A word weighs its giver's uniqueness times trust, at most 1 |
 | **The vouch part** | `V = 1 − 0.5 × vouchStep^v`, `v` the sum of the vouches' weights: 0.5 with none; at `vouchStep` 0.5 each full vouch closes half of what is left to 1, never reaching it |
 | **The report part** | `R = reportCut^r`, `r` the sum of the reports' weights: 1 with none; at `reportCut` 0.25 each full report leaves a quarter |
-| **Trust**, how much its own words and scores weigh | `uniqueness × V × R`: a newcomer's is half its uniqueness, and it never passes it. Each part moves without touching the other |
+| **Trust**, what others' words make of it | `V × R`: a newcomer's is 0.5, whatever its checks; vouches and ratings raise it toward 1, never reaching it, and reports lower it. Each part moves without touching the other |
 | **Pickiness** | Each score on 0 to 1 as `(s − 1) / 9`; `P = 0.5 + 0.5 × Σ(Rt − s) / (1 + n)` over the `n` profiles it scored, `Rt` each one's current rating. Below others' ratings is tough, above is easy; few scores stay near 0.5. Shown nowhere |
 | **Ratings** | Each score weighs `uniqueness × trust × (s × P + (1 − s) × (1 − P))`, so a tough rater's high scores count more and its low ones less, and an average rater's weigh half. A rater's reviews of one profile, one per listing, are one score, their mean. A rating is the weighted average of its scores, 1 to 10, to one decimal, shown as it is with how many raters; none with no counted review. A review's `weight` is its score's weight, split among its rater's reviews of that profile |
-| **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust at half its uniqueness and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
+| **Settling** | Trust, pickiness and ratings depend on each other, so it works in rounds from each trust and each pickiness at 0.5, each round reading only the one before, so no order of anything changes the result. A round moves every value all the way until the biggest move stops shrinking; from then on, each time it stops shrinking, half as far as before. It stops when nothing moves by more than `tolerance`, or after `maxRounds` |
 | **Search's order** | Top rated, the default: ratings with `marketWeight` of the market's average added, as one more rater of weight 1, then the newest listing. The average is the weighted average of every score in the market. A profile no one rated sorts at it; in a market with no scores, by the newest listing. Nearest, `sort=near`, with a place: nearest first; Cheapest, `sort=price`, with a price filter: cheapest first; ties in Top rated's order. A place alone narrows the results and never reorders them. Order only: a profile's page shows its ratings as they are |
 
 At today's numbers, with trust and uniqueness from 0 to 100 as the pages show them:
 
 | Who | Trust |
 |---|---|
-| A newcomer with a face check (uniqueness 75) | 38 |
-| A profile of uniqueness 100, with no word / one full vouch / one full report | 50 / 75 / 13 |
-| A face vouched for by one face no one has said a word about | 44 |
-| Two faces who rated each other | 45 each |
-| Five faces each vouching for a sixth | 61 |
-| Ten faces all vouching for each other | 74 each, never 75 |
-| Thirty faces all reporting each other | 6 each |
+| A newcomer, with a face check, an ID check or both | 50 |
+| A profile with no word / one full vouch / one full report | 50 / 75 / 13 |
+| A profile vouched for by one face / one ID check no one has said a word about | 61 / 64 |
+| Two faces who rated each other | 64 each |
+| Five faces each vouching for a sixth | 86 |
+| Ten faces all vouching for each other | 100 each (99.5, rounded) |
+| Thirty faces all reporting each other | 7 each |
 
 ### The signed statement
 
@@ -391,8 +391,10 @@ the apps' links, and the index end to end over HTTP, rebuilds included.
 - **Two of one person's profiles can rate or vouch for each other:** nothing here links them (FAQ).
 - **A rating of 1 is a vouch:** a profile that cheated someone gains trust from their rating, unless
   they report it instead.
-- **Trust grows only from words received:** a side of a market that is never rated keeps 38, however
+- **Trust grows only from words received:** a side of a market that is never rated keeps 50, however
   many deals it makes; its scores still count, at that trust.
+- **Trust doesn't see checks:** ten faces vouching for each other stand at 100, as high as anyone;
+  only their badges and uniqueness tell them apart.
 - **A rating is shown as it is:** one 10 from a newcomer shows 10, with a count of 1.
 - **Only its own roots:** a proof against another index's tree shows nothing here.
 - **Only the hosts it lists:** a profile whose folder lives elsewhere is not here.
@@ -440,7 +442,7 @@ its ratings say it is worse than the market's usual. Its page still says it has 
 **Why do rounds move half as far once the biggest move stops shrinking?**
 Reports can make whole moves flip for ever: thirty profiles that all report each other go from high
 trust, so heavy reports, to low trust, so light reports, and back, every round. Moving half as far
-settles them where trust is what the reports leave of it, 6 each. Where whole moves settle on their
+settles them where trust is what the reports leave of it, 7 each. Where whole moves settle on their
 own, the result is the same, within `tolerance`.
 
 **Can one of my other profiles rate or vouch for me?**
@@ -448,4 +450,4 @@ Only in the same market, and only as the other role: a review, a vouch or a repo
 between two profiles of one market, and a seed has one profile per market and role. Nothing here
 can link two profiles of one seed, so this index cannot catch it. The ranking bounds it: a rater's
 reviews of one profile, across all its listings, count as one score, so many listings don't multiply
-it; and two faces lift each other from 38 to 45, and never past their uniqueness, 75.
+it; and two faces lift each other only from 50 to 64.

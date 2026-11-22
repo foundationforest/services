@@ -128,11 +128,11 @@ test("vouches and reports: who counts, the latest per writer and subject, why th
   assert.equal((await twin<ProfilePage>(i, `/profiles/${student.key.address}.json`)).body.reports.given[0]!.address, `${student.key.address}/report/scam`)
 
   // The student's latest is a report; another's, a rating, so a vouch. Each weighs its giver's
-  // uniqueness times trust: two faces no one has said a word about, 0.75 times 0.375.
+  // uniqueness times trust: two faces no one has said a word about, 0.75 times 0.5.
   const words = () => new Map(t.words.received.map((w) => [w.writer, w]))
   assert.equal(words().get(student.key.address)!.word, 'report')
   assert.equal(words().get(another.key.address)!.word, 'vouch')
-  for (const w of t.words.received) assert.equal(w.weight, 0.75 * 0.375)
+  for (const w of t.words.received) assert.equal(w.weight, 0.75 * 0.5)
   assert.equal(t.words.received.length, 2)
   const reported = t.trust
   assert.equal(t.uniqueness, 75)

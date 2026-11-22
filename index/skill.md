@@ -43,12 +43,13 @@ Every profile this index counts shows three things, each ranked inside its own m
   score weighs more from a rater with more uniqueness and trust, and counts for what it means from
   that rater: a tough rater's high scores weigh more and its low ones less; an easy rater's the
   other way. `value` is null with no rating.
-- **Trust,** from 0 to 100: how much this profile's own words and scores weigh. A newcomer's is half
-  its uniqueness. It rises with each vouch, and with each rating it gets, since a rating is a vouch
-  (the rater dealt with it), and falls with each report; each counts by its giver's uniqueness and
-  trust. It never passes the profile's uniqueness.
+- **Trust,** from 0 to 100: what others' words make of this profile. A newcomer's is 50, whatever
+  its checks. It rises with each vouch, and with each rating it gets, since a rating is a vouch
+  (the rater dealt with it), and falls with each report; each counts by its giver's uniqueness
+  times trust. Trust does not say which checks the profile has: read `checks` beside it.
 - **Uniqueness,** from 0 to 100: how sure this index is that the profile is one real person, from
-  the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check.
+  the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check;
+  and so how much its own words and scores weigh, times its trust.
 
 On the pages, a result shows its listing's first photo, its title (its description's first line)
 and its first price, and its profile's rating with how many raters scored it, "★ 9.2 (14)", and,
