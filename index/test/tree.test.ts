@@ -50,8 +50,8 @@ test('the tree, its signed root, and a reputation proof on a profile, by its roo
   const trustOf = async (p: typeof tutor) => (await twin<ProfilePage>(i, `/profiles/${p.key.address}.json`)).body.trust
   for (const p of people) assert.equal(leaves.find((l) => l.profile === p.key.address)!.score, await trustOf(p))
   const value = await trustOf(tutor)
-  // Three students' ratings are three vouches: more than a newcomer's half of its uniqueness.
-  assert.ok(value > Math.round(100 * (1 - 0.25 * 0.25) / 2), `${value}`)
+  // Three students' ratings are three vouches: more than a newcomer's 50.
+  assert.ok(value > 50, `${value}`)
   const asLeaves = (ls: Leaves['leaves']) => ls.map((l) => ({ profile: pointOf(l.profile), score: BigInt(l.score) }))
   const root = buildTree(asLeaves(leaves)).root
   assert.equal(hex.encode(toBytes32(root)), served.root)

@@ -62,19 +62,19 @@ test('a review between two checked profiles, read from a host, counted, and serv
   assert.ok(p, 'the index served the rating within a minute')
   assert.deepEqual(p.checks, [{ verifier: by.name, key: by.key, label: 'face check' }])
   // One 8.5 is a rating of 8.5, shown as it is. It is the student's word too, a vouch weighing the
-  // student's uniqueness times trust, 0.75 times 0.375: it lifts the tutor's trust from half its
-  // uniqueness, 37.5, to 0.75 (1 - 0.5 x 0.5^0.28125), 44.
+  // student's uniqueness times trust, 0.75 times 0.5: it lifts the tutor's trust from a newcomer's
+  // 50 to 1 - 0.5 x 0.5^0.375, 61.
   const shown = { ratings: p.ratings, trust: p.trust, uniqueness: p.uniqueness }
-  assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 44, uniqueness: 75 })
+  assert.deepEqual(shown, { ratings: { value: 8.5, count: 1 }, trust: 61, uniqueness: 75 })
   assert.equal(p.listings[0]!.listed, true)
   const found = (await get<{ total: number; results: Array<{ listing: { address: string }; ratings: { value: number }; trust: number }> }>('/search.json?q=maths&market=lessons&role=tutor')).body
   assert.equal(found.total, 1)
   assert.equal(found.results[0]!.listing.address, offer)
-  assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 44])
+  assert.deepEqual([found.results[0]!.ratings.value, found.results[0]!.trust], [8.5, 61])
   const html = await (await fetch(`${i.url}/profiles/${tutor.key.address}`)).text()
   assert.ok(html.includes('Lessons tutor<span class="badges"><span class="vb lg" role="img" aria-label="Verified with a selfie"'))
   assert.match(html, /<span class="rated"><span class="rate"><svg[^>]*>.*?<\/svg>8\.5<\/span><span class="s">· 1 review<\/span><\/span>/)
-  for (const n of ['8.5', '44', '75']) assert.ok(html.includes(`<div class="num"><span class="d">${n}</span>`), n)
+  for (const n of ['8.5', '61', '75']) assert.ok(html.includes(`<div class="num"><span class="d">${n}</span>`), n)
   // The listing's own page, over HTTP, at its address under /profiles.
   const listingPage = await fetch(`${i.url}/profiles/${tutor.key.address}/listing/maths`)
   assert.equal(listingPage.status, 200)
@@ -94,7 +94,7 @@ test('a review between two checked profiles, read from a host, counted, and serv
   assert.equal(again.address, i.address)
   await again.pass()
   assert.equal(again.store.db.prepare('select first from seen where profile = ?').get(tutor.key.address)!.first, first)
-  assert.deepEqual({ ...again.store.db.prepare('select value, count, trust, uniqueness from ratings where profile = ?').get(tutor.key.address) }, { value: 8.5, count: 1, trust: 44, uniqueness: 75 })
+  assert.deepEqual({ ...again.store.db.prepare('select value, count, trust, uniqueness from ratings where profile = ?').get(tutor.key.address) }, { value: 8.5, count: 1, trust: 61, uniqueness: 75 })
   assert.equal(again.store.db.prepare('select root from roots order by time desc limit 1').get()!.root, tree.root)
   await again.close()
   await host.close()

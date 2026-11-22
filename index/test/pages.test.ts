@@ -225,10 +225,10 @@ test('the JSON answers, in their shapes: every field they gave, and those added 
   const words = (p.words as { received: Array<{ [k: string]: unknown }> }).received
   assert.deepEqual(words.map((w) => [keysOf(w), w.word]), [0, 1].map(() => [['subject', 'weight', 'word', 'writer'], 'vouch']))
   // Two raters of 9: a rating of 9, shown as it is. Each is a vouch, so a's trust is above a
-  // newcomer's half of its uniqueness, and never above it.
+  // newcomer's 50, and below 100.
   assert.deepEqual(p.ratings, { value: 9, count: 2 })
   assert.equal(p.uniqueness, 75)
-  assert.ok((p.trust as number) > 38 && (p.trust as number) < 75, `${p.trust}`)
+  assert.ok((p.trust as number) > 50 && (p.trust as number) < 100, `${p.trust}`)
 
   // The statement of what it shows, signed by the index's key.
   const { statement, signature } = p as unknown as { statement: string; signature: string }
@@ -388,7 +388,7 @@ test('trust and uniqueness only in a fold', async () => {
 test("search: words, market, role, a place, a rating, raters, pages; Top rated by ratings with the market's average added", async () => {
   // Every score here weighs the same: two students no one has said a word about, neither picky. So
   // the market's average is 22 / 3, about 7.33, and with one unit of it added a, two 9s, sorts at
-  // about 7.7; c, unrated, at the average itself; b, one 4, at about 6.92.
+  // about 7.79; c, unrated, at the average itself; b, one 4, at about 6.81.
   assert.deepEqual(who(await s('market=lessons&role=tutor')), ['a', 'c', 'b'])
   assert.deepEqual(who(await s('q=maths')), ['a', 's1', 'b'])
   assert.deepEqual(who(await s('q=math&role=tutor')), ['a', 'b'])

@@ -5,13 +5,14 @@
 // A review, a vouch or a report counts only between two profiles of one market (reviews.ts), so
 // each market is ranked on its own. Each part is its own function, with its own knobs:
 //
-//   uniqueness   u = 1 - prod(1 - c), over the keys a profile's verifications count for (filter.ts)
+//   uniqueness   u = 1 - prod(1 - c), over the keys a profile's verifications count for (filter.ts);
+//                its one job is what the profile's own words and scores weigh, never its trust
 //   words        each writer has one word per subject: a report if its latest counted entry about
 //                it is a report, otherwise a vouch (it rated or vouched); a word weighs its giver's
 //                u times trust
 //   vouch part   V = 1 - 0.5 vouchStep^v, v the sum of the vouches' weights: 0.5 with none, never 1
 //   report part  R = reportCut^r, r the sum of the reports' weights: 1 with none
-//   trust        T = u V R, never above u
+//   trust        T = V R: 0.5 with no word, whatever its checks, never 1
 //   pickiness    scores on 0 to 1 as (s - 1) / 9; P = 0.5 + 0.5 sum(Rt - s) / (1 + n), over the n
 //                subjects a rater scored, Rt each one's current rating on the same scale
 //   ratings      each score weighs its rater's u T (s P + (1 - s)(1 - P)); a rating is the weighted
@@ -21,7 +22,7 @@
 // A rater's reviews of one subject (one per listing) are one score, their mean; each review's weight
 // is that score's weight split equally among them. P weighs each score; the index shows no pickiness.
 //
-// Settling: from T = u / 2 and P = 0.5, each round works out every trust, pickiness and rating from
+// Settling: from T = 0.5 and P = 0.5, each round works out every trust, pickiness and rating from
 // the round before only, so the order of anything changes nothing. A round moves each trust and
 // pickiness the whole way to its new value until the biggest move stops shrinking: reports can make
 // whole moves flip for ever (trust high, so heavy reports, so trust low, so light reports, so trust
@@ -78,7 +79,7 @@ export const vouchPart = (v: number, { vouchStep }: Pick<Numbers, 'vouchStep'>) 
 /** `r`, the sum of a profile's reports' weights. */
 export const reportPart = (r: number, { reportCut }: Pick<Numbers, 'reportCut'>) => reportCut ** r
 
-export const trustOf = (u: number, V: number, R: number) => u * V * R
+export const trustOf = (V: number, R: number) => V * R
 
 /** A score from 1 to 10 on 0 to 1. */
 export const scaled = (score: number) => (score - 1) / 9
@@ -129,7 +130,7 @@ export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[
     return sums
   }
 
-  let trust = new Map(profiles.map((p) => [p.address, p.uniqueness / 2]))
+  let trust = new Map(profiles.map((p) => [p.address, 0.5]))
   let picky = new Map(profiles.map((p) => [p.address, 0.5]))
   let step = 1
   let last = Infinity
@@ -142,7 +143,7 @@ export function rank(profiles: RankProfile[], ratings: RankRating[], said: Said[
       const sums = w.word === 'vouch' ? v : r
       sums.set(w.subject, (sums.get(w.subject) ?? 0) + u.get(w.writer)! * trust.get(w.writer)!)
     }
-    const nextTrust = new Map([...u].map(([a, x]) => [a, trustOf(x, vouchPart(v.get(a) ?? 0, numbers), reportPart(r.get(a) ?? 0, numbers))]))
+    const nextTrust = new Map([...u].map(([a]) => [a, trustOf(vouchPart(v.get(a) ?? 0, numbers), reportPart(r.get(a) ?? 0, numbers))]))
     const sums = sumsOf(trust, picky)
     const ratingOf = (subject: string) => {
       const s = sums.get(subject)

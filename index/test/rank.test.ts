@@ -39,33 +39,32 @@ test("uniqueness: the chance at least one check holds; a face check's 0.75, with
   assert.ok(near(uniqueness([FACE, ID]), 1 - 0.25 * 0.05))
 })
 
-test("a newcomer's trust is half its uniqueness", () => {
-  const r = rank([face('new'), { address: 'both', uniqueness: uniqueness([FACE, ID]) }], [], [], numbers)
-  assert.equal(r.trust.get('new'), FACE / 2)
-  assert.ok(near(r.trust.get('both')!, uniqueness([FACE, ID]) / 2))
-  assert.equal(r.pickiness.get('new'), 0.5)
+test("a newcomer's trust is 0.5, whatever its checks", () => {
+  const r = rank([face('face'), { address: 'id', uniqueness: ID }, { address: 'both', uniqueness: uniqueness([FACE, ID]) }], [], [], numbers)
+  for (const a of ['face', 'id', 'both']) assert.equal(r.trust.get(a), 0.5, a)
+  assert.equal(r.pickiness.get('face'), 0.5)
 })
 
-test('one full vouch closes half the gap to uniqueness, and each more closes half of what is left; never all of it', () => {
+test('one full vouch closes half the gap to 1, and each more closes half of what is left; never all of it', () => {
   assert.equal(vouchPart(0, numbers), 0.5)
   assert.equal(vouchPart(1, numbers), 0.75)
   assert.equal(vouchPart(2, numbers), 0.875)
   assert.ok(vouchPart(40, numbers) < 1)
-  assert.equal(trustOf(FACE, vouchPart(1, numbers), 1), FACE / 2 + (FACE - FACE / 2) / 2)
+  assert.equal(trustOf(vouchPart(1, numbers), 1), 0.5 + (1 - 0.5) / 2)
   // rank() puts them together: a vouch weighs its giver's uniqueness times trust.
   const r = rank([face('giver'), face('x')], [], [said('giver', 'x', 'vouch')], numbers)
   const [word] = r.words
   assert.deepEqual({ ...word, weight: undefined }, { writer: 'giver', subject: 'x', word: 'vouch', weight: undefined })
-  assert.equal(word!.weight, FACE * (FACE / 2))
-  assert.ok(near(r.trust.get('x')!, trustOf(FACE, vouchPart(word!.weight, numbers), 1)))
+  assert.equal(word!.weight, FACE * 0.5)
+  assert.ok(near(r.trust.get('x')!, trustOf(vouchPart(word!.weight, numbers), 1)))
 })
 
 test('one full report cuts trust to a quarter', () => {
   assert.equal(reportPart(0, numbers), 1)
   assert.equal(reportPart(1, numbers), 0.25)
-  assert.equal(trustOf(FACE, vouchPart(0, numbers), reportPart(1, numbers)), FACE / 2 / 4)
+  assert.equal(trustOf(vouchPart(0, numbers), reportPart(1, numbers)), 0.5 / 4)
   const r = rank([face('reporter'), face('x')], [], [said('reporter', 'x', 'report')], numbers)
-  assert.ok(near(r.trust.get('x')!, (FACE / 2) * reportPart(FACE * (FACE / 2), numbers)))
+  assert.ok(near(r.trust.get('x')!, 0.5 * reportPart(FACE * 0.5, numbers)))
 })
 
 test('the vouch part and the report part each change without touching the other', () => {
@@ -81,16 +80,34 @@ test('the vouch part and the report part each change without touching the other'
   assert.ok(vouched > nothing && reported < nothing)
 })
 
-test('trust never passes uniqueness, a self-vouching ring included', () => {
-  const ring = Array.from({ length: 10 }, (_, i) => ({ address: `ring-${i}`, uniqueness: 1 }))
+test("uniqueness weighs a word, never a trust: Ana's ID check and Ben's selfie, both at 80, vouch 0.76 and 0.60", () => {
+  // One vouch each from the same giver, whom no one has said a word about, stands Ana and Ben at
+  // one trust whatever their checks: 80, at a vouchStep of 0.16. Each then vouches for x, and each
+  // vouch weighs its giver's uniqueness times that trust.
+  const r = rank(
+    [{ address: 'giver', uniqueness: 1 }, { address: 'ana', uniqueness: ID }, face('ben'), face('x')],
+    [],
+    [said('giver', 'ana', 'vouch'), said('giver', 'ben', 'vouch'), said('ana', 'x', 'vouch'), said('ben', 'x', 'vouch')],
+    { ...numbers, vouchStep: 0.16 },
+  )
+  assert.equal(r.trust.get('ana'), r.trust.get('ben'))
+  assert.ok(near(r.trust.get('ana')!, 0.8), `${r.trust.get('ana')}`)
+  const weight = (writer: string) => r.words.find((w) => w.writer === writer && w.subject === 'x')!.weight
+  assert.ok(near(weight('ana'), 0.76), `${weight('ana')}`)
+  assert.ok(near(weight('ben'), 0.6), `${weight('ben')}`)
+})
+
+test('trust stays above 0 and below 1, whatever the checks: ten faces vouching for each other reach the top', () => {
+  const ring = Array.from({ length: 10 }, (_, i) => face(`ring-${i}`))
   const { ratings, said: saidRing } = rated(...ring.flatMap((w) => ring.filter((s) => s !== w).map((s) => rating(w.address, s.address, 10))))
   const r = rank(ring, ratings, [...saidRing, ...ring.flatMap((w) => ring.filter((s) => s !== w).map((s) => said(w.address, s.address, 'vouch')))], numbers)
   assert.ok(r.rounds < numbers.maxRounds)
   for (const p of ring) {
     const t = r.trust.get(p.address)!
-    assert.ok(t > 0.9 && t < p.uniqueness, `${t}`)
-    // Shown as a whole number from 0 to 100, it may round up to its uniqueness, never past it.
-    assert.ok(Math.round(t * 100) <= Math.round(p.uniqueness * 100))
+    assert.ok(t > 0.99 && t < 1, `${t}`)
+    // Shown as a whole number from 0 to 100, it is 100, as high as anyone's: only the badges, and
+    // the uniqueness, say these are faces.
+    assert.equal(Math.round(t * 100), 100)
   }
   // And on random graphs of ratings, vouches and reports, by a seeded generator.
   let seed = 11
@@ -109,7 +126,7 @@ test('trust never passes uniqueness, a self-vouching ring included', () => {
     }
     const out = rank(profiles, ratings, words, numbers)
     assert.ok(out.rounds < numbers.maxRounds, `graph ${g} settled`)
-    for (const p of profiles) assert.ok(out.trust.get(p.address)! <= p.uniqueness, `graph ${g}`)
+    for (const p of profiles) assert.ok(out.trust.get(p.address)! > 0 && out.trust.get(p.address)! < 1, `graph ${g}`)
   }
 })
 
@@ -122,7 +139,7 @@ test('reports that push trust both ways still settle: thirty profiles all report
   assert.ok(r.rounds < numbers.maxRounds, `${r.rounds}`)
   const t = r.trust.get('r0')!
   for (const p of ring) assert.ok(near(r.trust.get(p.address)!, t, 1e-7))
-  assert.ok(near(t, trustOf(1, vouchPart(0, numbers), reportPart(29 * t, numbers)), 1e-7), `${t}`)
+  assert.ok(near(t, trustOf(vouchPart(0, numbers), reportPart(29 * t, numbers)), 1e-7), `${t}`)
 })
 
 test("a rater who gives 1s to well-rated places counts less on low scores than a neutral rater", () => {

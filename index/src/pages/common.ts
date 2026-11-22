@@ -379,8 +379,8 @@ export function numbersHtml(s: Shown): Raw {
       ? html`<div class="num"><span class="d">–</span><p class="s">No rating: no one this index counts has rated it.</p></div>`
       : html`<div class="num"><span class="d">${s.ratings.value.toFixed(1)}</span><p class="s">The average of ${n} ${n === 1 ? "person's" : "people's"} reviews, from 1 to 10, each weighed by how much this index trusts them.</p></div>`
   return html`<details class="fold wide mean"><summary>${icon('info')}<span class="grow">What these mean</span>${icon('caret-down')}</summary><div class="fbody">${rating}
-<div class="num"><span class="d">${s.trust}</span><p class="s">Trust, 0 to 100: how much its own reviews count. Vouches and ratings raise it, reports lower it.</p></div>
-<div class="num"><span class="d">${s.uniqueness}</span><p class="s">Uniqueness, 0 to 100: how sure this index is that it's one real person.</p></div></div></details>`
+<div class="num"><span class="d">${s.trust}</span><p class="s">Trust, 0 to 100: it starts at 50; vouches and ratings raise it, reports lower it.</p></div>
+<div class="num"><span class="d">${s.uniqueness}</span><p class="s">Uniqueness, 0 to 100: how sure this index is that it's one real person, and so how much its word weighs.</p></div></div></details>`
 }
 
 /** Dates in English, in UTC, the one zone a page with no script can give every reader. */

@@ -56,7 +56,7 @@ and the run passes only if every step does.
    listing.
 8. **The index** shows both profiles counted under the face key, the listing listed, the review
    counted, and what its own ranking, with `index/config/scoring.json`, makes of it: today the seller
-   rated 10.0 by one, trust 44; the buyer no rating, trust 38; each uniqueness 75. Each statement is
+   rated 10.0 by one, trust 61; the buyer no rating, trust 50; each uniqueness 75. Each statement is
    signed and checked. No message appears in its JSON.
 9. **The trust, carried:** the seller's device finds its leaf, checks the signed root, and proves
    its trust onto the second profile (the standard's reputation circuit), naming none of its
@@ -148,8 +148,8 @@ balances it found; its services stop with the run, so their pages are gone.
 
 ## FAQ
 
-**Why is the seller's trust 44, and the buyer's 38?**
-A newcomer's trust is half its uniqueness: 38, the buyer, whom no one rated. The buyer's review is
-also its word about the seller, a vouch weighing 0.75 times 0.375, which lifts the seller to 44.
+**Why is the seller's trust 61, and the buyer's 50?**
+A newcomer's trust is 50, whatever its checks: the buyer, whom no one rated. The buyer's review is
+also its word about the seller, a vouch weighing 0.75 times 0.5, which lifts the seller to 61.
 The end-to-end test works this out with the index's own ranking and numbers, and checks the index
 shows it.
