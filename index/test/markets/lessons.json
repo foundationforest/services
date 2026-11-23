@@ -17,7 +17,7 @@
     "levels": { "piece": "choice", "values": ["primary", "secondary", "university", "adult"], "several": true, "ask": { "labels": { "adult": "adults" } } },
     "minutes": { "piece": "number", "unit": "minutes", "ask": { "label": "Lesson length" } },
     "ages": { "piece": "number", "unit": "years", "ask": { "start": { "range": true } } },
-    "groupSize": { "piece": "number", "roles": ["tutor"] },
+    "spots": { "piece": "number", "roles": ["tutor"], "ask": { "label": "Group size" } },
     "mode": { "piece": "choice", "values": ["in-person", "online"], "several": true, "ask": { "label": "Online or in person" } },
     "place": { "piece": "place", "when": { "mode": ["in-person"] }, "ask": { "label": "Area", "start": { "radiusKm": 5 } } },
     "hours": { "piece": "date", "several": true, "ask": { "label": "Days and times", "start": { "way": "weekly", "hours": true } } }

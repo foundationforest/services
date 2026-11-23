@@ -61,13 +61,14 @@ on its profile's page, What these mean, with what each means. A review's date th
 read it in English: a choice in words, `like-new` as "Like new", or by its label, `xl` as "XL" or a
 language's code `es` as "Spanish"; a number in its field's unit, `"45"` as "45 minutes", and a range
 so, "9 to 11 years", "18 years or more"; a date's days and hours, with its zone beside them,
-"Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)". A place reads by its size and the name the
-places service gives its centre, "Within 5 km of Chamberí, Madrid", "Exact spot near Sol, Madrid",
-or by its size alone with none, "Within 5 km", linked to its point on a map. A price reads as the
-Forest app says it: "$25 an hour" for one of its `per`, "$25 for 45 minutes" or "$60 for 3 hours"
-per hour for another count, "€100 for 5 lessons" for any other `per`, "€40" for the whole deal, a
-request's with "Up to" first, "Up to €60 for 3 hours", its note under it. A listing's page shows
-every price, and a result its first. The JSON keeps each as written.
+"Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)", and a time's own spots after its hours,
+"3 spots" or "full". A place reads by its size and the name the places service gives its centre,
+"Within 5 km of Chamberí, Madrid", "Exact spot near Sol, Madrid", or by its size alone with none,
+"Within 5 km", linked to its point on a map. A price reads as the Forest app says it: "$25 an hour"
+for one of its `per`, "$25 for 45 minutes" or "$60 for 3 hours" per hour for another count, "€100
+for 5 lessons" for any other `per`, "€40" for the whole deal, a request's with "Up to" first, "Up to
+€60 for 3 hours", its note under it. A listing's page shows every price, and a result its first. The
+JSON keeps each as written.
 
 ## The markets
 
@@ -89,11 +90,11 @@ proofs it shows; and `maxAgeDays`.
 
 `{ "index", "market", "listings": { "<role>": [<result>] }, "role", "query", "total", "results", "place", "currencies" }`:
 the market's file as the directory holds it (its roles, its listing fields, each with its piece, its
-rules and its words under `ask`, the fields a listing's preview shows first, and the fields its
-reviews add), and every listing this index lists, by role, Top rated first. A market's page also
-takes search's filters below, but `market`: `role` is the side it shows, the one asked or else the
-market's first; `query`, `total`, `results` and `place` are as search gives them, for that side;
-`currencies` are the currencies that side's listings price in, most used first.
+rules and its words under `ask`, the fields a listing's preview shows first, after its description,
+and the fields its reviews add), and every listing this index lists, by role, Top rated first. A
+market's page also takes search's filters below, but `market`: `role` is the side it shows, the one
+asked or else the market's first; `query`, `total`, `results` and `place` are as search gives them,
+for that side; `currencies` are the currencies that side's listings price in, most used first.
 
     GET https://index.forest.foundation/markets/<name>.json?role=<role>&where=madrid&sort=near
 
@@ -130,8 +131,11 @@ none, and `found` how many results each market holds, every page of them, such a
   with several answers, one of them), such as `learns=es&languages=en`; a `number` field as
   `<field>.min` and `<field>.max`, in the field's `unit`, either one alone for an open end, such as
   `ages.max=12`: a listing whose number, or range, overlaps them, a range's missing end limiting
-  nothing, so `ages.min=30` finds 18 and over. A listing that leaves the field out is left out once
-  it is filtered on. Without `market`, a field is no filter;
+  nothing, so `ages.min=30` finds 18 and over; and `spots`, in a market whose listings hold it, as
+  `spots=<n>`, a whole number from 1, room for that many: an offer whose spots, a time's own where
+  it holds some, else the listing's, are at least `n` at any of its times but a full one, a request
+  whose spots are at most `n`, such as `spots=2`. A listing that leaves the field out is left out
+  once it is filtered on. Without `market`, a field is no filter;
 - `price.currency`, with `price.per`, `price.min` and `price.max`, in any market, once it gives an
   amount, `price.min` or `price.max`, or with `sort=price`: a listing with a price in that currency
   for that `per`, or for the whole deal when `price.per` is left out, whose amount divided by its
@@ -207,17 +211,18 @@ A listing's own page, at its address under `/profiles`: `{ "index", "profile", "
 "listing", "checks", "ratings", "trust", "uniqueness", "fields", "pieces", "units", "labels",
 "captions", "reviews", "message" }`. `listing` is as its profile's page gives it; `checks`,
 `ratings`, `trust` and `uniqueness` are its profile's; `message` is a link to message its profile
-about this listing from each app this index lists, the listing's full address in it; `fields` is the fields its market asks its role's
-listings, in that order, the market's preview first and `contact` last; `pieces` is each one's
-piece, as its market names it, a `photo` field naming photos; `units` is each number field's unit,
-such as `{ "ages": "years" }`; `labels` is, for each choice field it holds, how each value it
-holds reads, such as `{ "size": { "xl": "XL" }, "languages": { "es": "Spanish" } }`; `captions` is,
-for each place field it holds, the name the places service gives each place's centre, in its
-answers' order, null where it gives none, such as `{ "area": ["Chamberí, Madrid"] }`; `reviews` is
-the reviews its profile received that count, `{ "count", "latest" }`, the two newest as its
-profile's page gives them. The page shows its photos, its fields, who posted it, their two latest
-reviews, and how to reach them: the `contact` its body gives, in the writer's words, and `message`.
-A listing that is not listed has its page too, with `why`.
+about this listing from each app this index lists, the listing's full address in it; `fields` is the
+fields its market asks its role's listings, in that order, `description` first, then the market's
+preview, and `contact` last; `pieces` is each one's piece, as its market names it, a `photo` field
+naming photos; `units` is each number field's unit, such as `{ "ages": "years" }`; `labels` is, for
+each choice field it holds, how each value it holds reads, such as `{ "size": { "xl": "XL" },
+"languages": { "es": "Spanish" } }`; `captions` is, for each place field it holds, the name the
+places service gives each place's centre, in its answers' order, null where it gives none, such as
+`{ "area": ["Chamberí, Madrid"] }`; `reviews` is the reviews its profile received that count, `{
+"count", "latest" }`, the two newest as its profile's page gives them. The page shows its photos,
+its fields, who posted it, their two latest reviews, and how to reach them: the `contact` its body
+gives, in the writer's words, and `message`. A listing that is not listed has its page too, with
+`why`.
 
 ## About
 

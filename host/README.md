@@ -191,10 +191,10 @@ Something new: one email. Nothing new: none. One a day at most, by the day where
 Resend's idempotency key, `<id>/<that day>`, takes that day's email once.
 
 **The email** is from `Forest <notify@forest.foundation>`, its subject `3 new on Forest`: "You have
-3 new messages and 1 review.", then "On your Tutoring tutor and Goods seller.", each profile with
-something new named by its market and role; an Open Forest button to the app; and at the foot "You
-turned this on in Forest. Stop these emails". Light HTML, with a text version. Its stop link opens a
-page with one Stop button, and its `List-Unsubscribe` header gives a mail app's own one-tap
+3 new messages and 1 review.", then "On your Tutoring tutor and Goods selling seller.", each profile
+with something new named by its market and role; an Open Forest button to the app; and at the foot
+"You turned this on in Forest. Stop these emails". Light HTML, with a text version. Its stop link
+opens a page with one Stop button, and its `List-Unsubscribe` header gives a mail app's own one-tap
 Unsubscribe (RFC 8058).
 
 **What it keeps,** in `email/email.sqlite`, and nothing else:

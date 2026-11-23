@@ -34,9 +34,10 @@
 // matched by the markets' own match, one field at a time: a choice by its name, `<field>=<value>`, a
 // listing whose field holds that value, among its answers for one with several; a number by
 // `<field>.min` and `<field>.max`, in its unit, a listing whose number or range overlaps that range,
-// a missing end limiting nothing. The markets match a listing that leaves the field out; here a
-// listing without the field is left out once it is filtered on (README.md, FAQ). How the filters
-// combine is this index's: a listing must match each.
+// a missing end limiting nothing; spots by `spots=<n>`, a whole number from 1, room for that many
+// (roomFor). The markets match a listing that leaves the field out; here a listing without the field
+// is left out once it is filtered on (README.md, FAQ). How the filters combine is this index's: a
+// listing must match each.
 //
 // Its JSON gives, beside the results, `query`, each of these filters as it was given, `markets`,
 // every market's name, `place`, the place the results are near, and `found`, how many results each
@@ -74,17 +75,25 @@ export const PRICE = ['price.currency', 'price.per', 'price.min', 'price.max']
  */
 export const filterable = (m: Market): Array<[string, Field]> => Object.entries(m.listing).filter(([name, f]) => (f.piece === 'choice' || f.piece === 'number') && !FILTERS.includes(name))
 
-/** The names a field's filter takes in the query: a choice's own name, a number's `<name>.min` and `<name>.max`. */
-export const namesOf = ([name, f]: [string, Field]) => (f.piece === 'number' ? [`${name}.min`, `${name}.max`] : [name])
+/**
+ * The listing field the markets know by its name: how many places an offer has, or how many people
+ * a request is for, one whole number, "0" when full; a date answer may hold its own, for that time.
+ */
+export const SPOTS = 'spots'
+
+/** The names a field's filter takes in the query: a choice's own name and spots', a number's `<name>.min` and `<name>.max`. */
+export const namesOf = ([name, f]: [string, Field]) => (f.piece === 'number' && name !== SPOTS ? [`${name}.min`, `${name}.max`] : [name])
 
 /**
  * The answer a filter asks of a field, as the field writes one, for the markets' match: a choice's
- * value; a number's `{ from, to }`, an end not given left out; each as a list of one for a field
- * with several. None when the query does not filter on it: no value, or no number at either end.
+ * value; spots' whole number from 1; a number's `{ from, to }`, an end not given left out; each as a
+ * list of one for a field with several. None when the query does not filter on it: no value, spots
+ * that are no whole number from 1, or no number at either end.
  */
 export function wantedOf(get: (name: string) => string | undefined, [name, f]: [string, Field]): unknown {
   let one: unknown
   if (f.piece === 'choice') one = get(name) || undefined
+  else if (name === SPOTS) one = /^[1-9][0-9]*$/.test(get(name)?.trim() ?? '') ? get(name)!.trim() : undefined
   else {
     const end = (n: string) => {
       const text = get(n)?.trim()
@@ -94,6 +103,26 @@ export function wantedOf(get: (name: string) => string | undefined, [name, f]: [
     one = from === undefined && to === undefined ? undefined : { ...(from !== undefined && { from }), ...(to !== undefined && { to }) }
   }
   return one === undefined ? undefined : f.several ? [one] : one
+}
+
+/**
+ * Whether a listing has room for `n`, the searcher's own spots, by the markets' match on spots, the
+ * listing on its side: an offer's at least `n`, a request's at most. Its times are every answer of
+ * its market's date fields; each counts with its own spots when it holds some, else the listing's;
+ * with no time, the listing's count. A full time, "0", is skipped, and one with no spots counts for
+ * nothing, so a listing that says none is left out, as every filter here counts only what a listing
+ * says (README.md, FAQ). Search asks no time, so any of its times will do.
+ */
+export function roomFor(markets: Markets, m: Market, offers: boolean, body: { [key: string]: unknown }, n: string): boolean {
+  const field = m.listing[SPOTS]
+  if (!field) return false
+  const spots = { ...field, name: SPOTS }
+  const said = (v: unknown) => (typeof v === 'string' ? v : undefined)
+  const times = Object.keys(m.listing)
+    .filter((name) => m.listing[name]!.piece === 'date' && body[name] !== undefined)
+    .flatMap((name) => (Array.isArray(body[name]) ? (body[name] as unknown[]) : [body[name]]))
+  const counts = times.length ? times.map((t) => said((t as { spots?: unknown } | null)?.spots) ?? said(body[SPOTS])) : [said(body[SPOTS])]
+  return counts.some((s) => s !== undefined && s !== '0' && (offers ? markets.match(spots, s, n) : markets.match(spots, n, s)))
 }
 
 /**
@@ -202,11 +231,14 @@ export async function find(ctx: Context, q: URLSearchParams): Promise<Found> {
   let found: Array<Result & { time: number; km?: number; cost?: number; d?: number }> = results(store, base, where.join(' '), params)
   const m = q.get('market') ? markets.market(q.get('market')!) : undefined
   const fields = m ? filterable(m) : []
+  const offers = new Set(m?.roles.filter((r) => r.listings === 'offers').map((r) => r.role))
   for (const field of fields) {
     const wanted = wantedOf((n) => q.get(n) ?? undefined, field)
     if (wanted === undefined) continue
     const [name, f] = field
-    found = found.filter((r) => r.listing.body[name] !== undefined && markets.match(f, r.listing.body[name], wanted))
+    found = found.filter((r) =>
+      name === SPOTS ? roomFor(markets, m!, offers.has(r.role), r.listing.body, wanted as string) : r.listing.body[name] !== undefined && markets.match({ ...f, name }, r.listing.body[name], wanted),
+    )
   }
   // Prices compare only within one currency and one per, the whole deal's when per is left out;
   // each listing keeps the least that is in bounds, its cost, for sort=price.

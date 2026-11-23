@@ -1,10 +1,10 @@
 // `/profiles/<address>/listing/<id>`: one listing, at its own address under /profiles. Its photos,
-// its fields in the order its market asks its role (the preview's first) with each one's piece and
-// each number's unit, the name places gives each of its places' centres, who posted it and what that
-// profile shows with the two latest reviews it received, and how to reach them: the contact the
-// listing gives, and a link to message the profile about this listing from each app lists/apps.json
-// names (its `about`). A listing that is not listed has its page too, saying why, as its profile's
-// page does.
+// its fields in the order its market asks its role (its description first, then its preview's) with
+// each one's piece and each number's unit, the name places gives each of its places' centres, who
+// posted it and what that profile shows with the two latest reviews it received, and how to reach
+// them: the contact the listing gives, and a link to message the profile about this listing from
+// each app lists/apps.json names (its `about`). A listing that is not listed has its page too,
+// saying why, as its profile's page does.
 //
 // Drawn the same with photos or without, the photos only adding the top: on a phone, full width and
 // swiped sideways (CSS scroll snapping), each with "1 / 3"; on a laptop, one at a time with round
@@ -39,7 +39,7 @@ export type ListingPage = {
   listing: Listing & { time: number; listed: boolean; why?: string }
   checks: Check[]
 } & Shown & {
-  /** The fields its market asks its role's listings, in that order, as the markets' ask gives them: the preview's first, contact last. */
+  /** The fields its market asks its role's listings, in that order, as the markets' ask gives them: description first, then the preview's, contact last. */
   fields: string[]
   /** Each of `fields`' piece, as its market names it: a `photo` field names photos. */
   pieces: { [field: string]: string }

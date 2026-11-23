@@ -103,6 +103,7 @@ describe('reading, with no login', () => {
     const descriptions = Object.fromEntries(tools.map((t) => [t.name, t.description ?? '']))
     assert.match(descriptions.search!, /a choice as <field>=<value>.*a number as <field>\.min and <field>\.max, in the field's unit.*a listing whose number or range overlaps them/)
     assert.match(descriptions.search!, /a price as price\.currency and price\.per with price\.min and price\.max, by what one of its per costs, and sort=price for the cheapest first/)
+    assert.match(descriptions.search!, /spots as spots=<n>, room for that many: an offer whose spots, a time's own where it holds some, else the listing's, are at least n at a time not full, a request's at most n/)
     assert.match(descriptions.markets!, /its summary \(the one line that says what the dealing is\)/)
     assert.match(descriptions.markets!, /its status \(live, or beta: it works, at your own risk, and may change\)/)
     // Before the person writes in a beta market, the AI tells them; a price is a list, with counts as
@@ -113,6 +114,8 @@ describe('reading, with no login', () => {
     assert.match(HOW, /- A price for time is an amount for a length in hours: 15 an hour, .* or 25 for 0\.75 hours \(45 minutes\), .*"count": "0\.75" \}\. A minimum goes in the price's note\./)
     assert.ok(!/"per": "(lesson|session|visit)"|"count": \d|morning|afternoon|evening|part of the day/.test(HOW.replace('"mornings"', '')), 'no per lesson, no numeric count, no part of the day')
     assert.match(HOW, /A number may be \{ from, to \}, either end left out for no limit/)
+    // Spots: one whole number, "0" when full, and a time's own in its date answer.
+    assert.match(HOW, /- A listing's spots is how many places an offer has, or how many people a request is for: one whole number, never a range, "0" when full\. A time with its own holds them in its date answer, .*"spots": "3" \}, and they win for that time\./)
     for (const line of [
       'Centre a circle on the neighbourhood or town the person names, never on their address.',
       "From memory, use 1 km and name the spot in the listing's own words.",
@@ -148,15 +151,15 @@ describe('reading, with no login', () => {
     const { listing: _, review: __, ...file } = LESSONS
     assert.deepEqual(one.market, file)
     assert.deepEqual(Object.keys(one.fields), ['listing', 'review', 'vouch', 'report'])
-    // Each role's words, in the order ask gives them: the preview first, each after the fields its when
-    // names, then the rest, contact last; a role's own words over the field's.
+    // Each role's words, in the order ask gives them: the description first, then the preview, each
+    // after the fields its when names, then the rest, contact last; a role's own words over the field's.
     const asked = (role: string, kind?: string, about?: string) => markets.ask('lessons', role, kind, about)
     const words = ({ name, label, question, hint, start }: Asked) => ({ name, label, question, ...(hint !== undefined && { hint }), ...(start !== undefined && { start }) })
     for (const role of ['tutor', 'student']) {
       assert.deepEqual(one.roles[role].listing, asked(role).map(words), `${role}'s listing`)
       assert.deepEqual(one.roles[role].review, asked(role, 'review', role).map(words), `a review of a ${role}`)
     }
-    assert.deepEqual(one.roles.tutor.listing.map((f: { name: string }) => f.name), ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.deepEqual(one.roles.tutor.listing.map((f: { name: string }) => f.name), ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
     assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'price'), { name: 'price', label: 'Budget', question: 'What would you pay at most?' })
     assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'place'), { name: 'place', label: 'Area', question: 'Area', hint: 'Your neighbourhood and town, not your address.', start: { radiusKm: 2 } })
     // A review's paid is for a review of a student only.
@@ -166,7 +169,7 @@ describe('reading, with no login', () => {
     // Each field's rules once, the same for every role, with how an answer is written; its suggestions
     // left out, since each role's words carry them.
     const rules = one.fields.listing
-    assert.deepEqual(Object.keys(rules), ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.deepEqual(Object.keys(rules), ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
     assert.ok(!JSON.stringify(one.fields).includes('"ask"'), 'no suggestions in the rules')
     assert.deepEqual(rules.minutes, { piece: 'number', unit: 'minutes', takes: asked('tutor').find((f) => f.name === 'minutes')!.takes })
     assert.deepEqual(rules.place, { piece: 'place', when: { mode: ['in-person'] }, takes: '{ lat, lon, radiusKm }: lat and lon as decimal text, and radiusKm in whole kilometres' })
@@ -179,7 +182,8 @@ describe('reading, with no login', () => {
     assert.deepEqual(Object.keys(one.fields.vouch), ['subject', 'text'])
     const other = await call('markets', { name: 'wardrobe' })
     assert.deepEqual(Object.keys(other.market), ['name', 'summary', 'description', 'status', 'number', 'roles', 'preview'])
-    assert.deepEqual([other.market.status, other.market.preview], ['live', ['description', 'price', 'location']])
+    // A market with no preview: its price, then its place fields; the description comes first anyway.
+    assert.deepEqual([other.market.status, other.market.preview], ['live', ['price', 'location']])
     assert.deepEqual(other.fields.listing.shipTo, { piece: 'choice', several: true, list: 'countries', takes: 'a list of one or more, each different, each a country as its ISO 3166-1 alpha-2 code in upper case, such as "MX"' })
     assert.deepEqual(other.roles.buyer.listing.map((f: { name: string }) => f.name), ['description', 'price', 'location', 'size', 'shipTo', 'contact'], 'photos are for sellers only')
     // A shared list is named, never listed: a market's answer stays a few KB.
