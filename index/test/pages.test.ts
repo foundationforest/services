@@ -73,7 +73,7 @@ before(async () => {
       languages: ['en', 'es'],
       minutes: '60',
       ages: { from: '9', to: '11' },
-      groupSize: '4',
+      spots: '4',
       price: [
         { amount: '30', currency: 'USD', per: 'hour' },
         { amount: '1300', currency: 'MXN', per: 'month', count: '2', note: 'The first lesson is free' },
@@ -414,8 +414,8 @@ test("search: words, market, role, a place, a rating, raters, pages; Top rated b
   assert.deepEqual(who(await s('market=lessons&minutes.min=45&minutes.max=60')), ['a', 'b'])
   assert.deepEqual(who(await s('market=lessons&languages=es&minutes.max=50')), ['b'])
   assert.deepEqual(who(await s('languages=fr&q=maths')), ['a', 's1', 'b'])
-  assert.ok(SITE.markets.match(SITE.markets.market('lessons')!.listing.groupSize!, undefined, { from: '1' }))
-  assert.deepEqual(who(await s('market=lessons&groupSize.min=1')), ['a'])
+  assert.ok(SITE.markets.match({ ...SITE.markets.market('lessons')!.listing.minutes!, name: 'minutes' }, undefined, { from: '1' }))
+  assert.deepEqual(who(await s('market=lessons&minutes.min=1')), ['a', 'b'])
   assert.deepEqual(who(await s('market=lessons&minutes.min=long')), who(await s('market=lessons')))
   // A number field that takes a range matches on overlap, each missing end limiting nothing: a's 9 to
   // 11, b's 18 and over, s1's 10, one number, the range from itself to itself.
@@ -461,7 +461,7 @@ test('search: a price filter, on once it gives an amount or sort=price, compares
   assert.deepEqual(who(await s(`${hourly}&sort=price&near=40.4,-3.7&km=20000`)), ['c', 'a'])
   assert.deepEqual((await s(`${hourly}&price.max=25&sort=price&price.min=`)).query, { 'price.currency': 'USD', 'price.per': 'hour', 'price.max': '25', sort: 'price' })
   // As the markets' own match: b's price meets a request whose budget is 34 an hour, not one of 30.
-  const price = SITE.markets.market('lessons')!.listing.price!
+  const price = { ...SITE.markets.market('lessons')!.listing.price!, name: 'price' }
   const b = [{ amount: '25', currency: 'USD', per: 'hour', count: '0.75' }]
   assert.equal(SITE.markets.match(price, b, [{ amount: '30', currency: 'USD', per: 'hour' }]), false)
   assert.equal(SITE.markets.match(price, b, [{ amount: '34', currency: 'USD', per: 'hour' }]), true)
@@ -617,9 +617,9 @@ test("a listing's page and its twin: its fields in its market's order, its place
   assert.deepEqual(o.listing.body, p.listings.find((x) => x.address === `${a}/listing/a`)!.body)
   // Its message link is each app's about: the profile, and the listing's full address.
   assert.deepEqual(o.message, [{ name: 'Forest app', url: `https://app.test.example/message?to=${a}&listing=${encodeURIComponent(`${a}/listing/a`)}` }])
-  // The fields the market asks a tutor, in the markets' ask's order: the preview first, place after
-  // the mode its when names, then the rest, contact last.
-  assert.deepEqual(o.fields, ['subjects', 'description', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'groupSize', 'hours', 'contact'])
+  // The fields the market asks a tutor, in the markets' ask's order: the description first, then the
+  // preview, place after the mode its when names, then the rest, contact last.
+  assert.deepEqual(o.fields, ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'spots', 'hours', 'contact'])
   const lessons = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8')) as { listing: { [name: string]: { piece: string } } }
   assert.deepEqual(o.pieces, { ...Object.fromEntries(Object.entries(lessons.listing).map(([name, f]) => [name, f.piece])), contact: 'text' })
   assert.deepEqual(o.units, { minutes: 'minutes', ages: 'years' })
@@ -630,7 +630,7 @@ test("a listing's page and its twin: its fields in its market's order, its place
   assert.equal(o.reviews.count, 2)
   assert.deepEqual(o.reviews.latest, p.reviews.received.filter((r) => r.counted).slice(0, 2))
   assert.deepEqual(o.reviews.latest.map((r) => r.reviewer), [addressOf('s2'), addressOf('s1')])
-  assert.equal((await twin<ListingPage>(i, `/profiles/${addressOf('s1')}/listing/need.json`)).body.fields.includes('groupSize'), false)
+  assert.equal((await twin<ListingPage>(i, `/profiles/${addressOf('s1')}/listing/need.json`)).body.fields.includes('spots'), false)
 
   const html = (await page(i, `/profiles/${a}/listing/a`)).text
   assert.match(html, /<title>\$30 an hour · Maths and physics, in Madrid\.<\/title>/)
@@ -928,22 +928,24 @@ test("a market's filters: one GET form, Where, each field the side is asked, the
   assert.deepEqual([...form.matchAll(/<summary class="chip"><span>([^<]+)<\/span>/g)].map((m) => m[1]), ['Where', 'Subjects', 'Languages', 'Levels', 'Lesson length', 'Ages', 'Group size', 'Online or in person', 'Price', 'Rating'])
   assert.equal(form.match(/<button class="btn go show" type="submit">Show offers<\/button>/g)!.length, 10)
   assert.ok(form.endsWith(`<div class="ffoot"><a class="link" href="${BASE}/markets/lessons?q=maths">Clear all</a><button class="btn go" type="submit">Show offers</button></div></form>`))
-  assert.deepEqual([...new Set([...form.matchAll(/ name="([^"]+)"/g)].map((m) => m[1]))], ['q', 'where', 'km', 'subjects', 'languages', 'levels', 'minutes.min', 'minutes.max', 'ages.min', 'ages.max', 'groupSize.min', 'groupSize.max', 'mode', 'price.max', 'price.per', 'price.currency', 'minRating'])
+  assert.deepEqual([...new Set([...form.matchAll(/ name="([^"]+)"/g)].map((m) => m[1]))], ['q', 'where', 'km', 'subjects', 'languages', 'levels', 'minutes.min', 'minutes.max', 'ages.min', 'ages.max', 'spots', 'mode', 'price.max', 'price.per', 'price.currency', 'minRating'])
   // A choice as chips, Any first and picked; one with more than 12 values, the languages, as a picker.
   assert.deepEqual([...form.matchAll(/<input type="radio" name="subjects" value="([^"]*)"( checked)?>([^<]+)</g)].map((m) => `${m[3]}${m[2] ? '*' : ''}`), ['Any*', 'Maths', 'Physics', 'Chemistry', 'Biology'])
   const languages = /<select name="languages"[\s\S]*?<\/select>/.exec(form)![0]
   assert.ok(languages.startsWith('<select name="languages" aria-label="Languages"><option value="">Any</option>') && languages.includes('<option value="es">Spanish</option>'))
   assert.equal(languages.split('<option').length - 2, Object.keys(SITE.markets.lists.languages!).length)
-  // A number as a range in its unit, a count with none.
+  // A number as a range in its unit.
   assert.ok(form.includes('<div class="range"><label class="inp"><input type="number" name="minutes.min" step="any" placeholder="From" aria-label="Lesson length, from"></label><label class="inp"><input type="number" name="minutes.max" step="any" placeholder="To" aria-label="Lesson length, to"></label><span class="s">minutes</span></div>'))
-  assert.ok(form.includes('<div class="range"><label class="inp"><input type="number" name="groupSize.min" step="any" placeholder="From" aria-label="Group size, from"></label><label class="inp"><input type="number" name="groupSize.max" step="any" placeholder="To" aria-label="Group size, to"></label></div>'))
+  assert.ok(form.includes('<div class="range"><label class="inp"><input type="number" name="ages.min" step="any" placeholder="From" aria-label="Ages, from"></label><label class="inp"><input type="number" name="ages.max" step="any" placeholder="To" aria-label="Ages, to"></label><span class="s">years</span></div>'))
+  // Spots as one whole number, room for that many.
+  assert.ok(form.includes('<summary class="chip"><span>Group size</span>') && form.includes('<label class="inp"><input type="number" name="spots" min="1" step="1" placeholder="How many" aria-label="Group size"></label>'))
   // The price: up to an amount, per the market's own pers, the first picked, or in all; in the
   // currency the side's listings use most, USD here.
   assert.ok(form.includes('<div class="price"><span class="s">Up to</span><label class="inp"><input type="number" name="price.max" step="any" min="0" placeholder="Amount" aria-label="Up to"></label><label class="inp unit"><select name="price.per" aria-label="Per"><option value="hour" selected>an hour</option><option value="month">a month</option><option value="">in all</option></select></label><label class="inp unit"><select name="price.currency" aria-label="Currency"><option value="USD" selected>USD</option><option value="MXN">MXN</option></select></label></div>'))
   assert.deepEqual([...form.matchAll(/<input type="radio" name="minRating" value="([^"]*)"( checked)?>([^<]+)</g)].map((m) => `${m[3]}${m[2] ? '*' : ''}`), ['Any*', '8 or more', '9 or more'])
   // A student is asked no group size, and its button says requests; its price in GBP.
   const students = /<form class="filters"[\s\S]*?<\/form>/.exec(mainOf((await page(i, '/markets/lessons?role=student')).text))![0]
-  assert.ok(!students.includes('groupSize') && students.includes('Show requests</button>') && students.includes('<option value="GBP" selected>GBP</option>'))
+  assert.ok(!students.includes('spots') && students.includes('Show requests</button>') && students.includes('<option value="GBP" selected>GBP</option>'))
   assert.ok(students.includes('<input type="hidden" name="role" value="student">') && students.includes(`<a class="link" href="${BASE}/markets/lessons?role=student">Clear all</a>`))
   // Wardrobe's price has no per: the amount and the currency alone.
   const coats = /<form class="filters"[\s\S]*?<\/form>/.exec(mainOf((await page(i, '/markets/wardrobe')).text))![0]

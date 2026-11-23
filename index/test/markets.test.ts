@@ -4,7 +4,8 @@
 // single price where a price is always a list, a range that runs backwards, and hours with no zone
 // among them; a field holding several places, found near any of them; search's words, which find
 // what people wrote and how their choices read, never a time zone's name, a code or a coordinate;
-// and a profile whose market has left the directory, out of search, its pages saying so.
+// a profile whose market has left the directory, out of search, its pages saying so; and spots,
+// search's room for n, and how a listing's page reads them.
 
 import assert from 'node:assert/strict'
 import { after, before, test } from 'node:test'
@@ -12,6 +13,7 @@ import { after, before, test } from 'node:test'
 import type { ListingPage } from '../src/pages/listing.ts'
 import type { MarketPage } from '../src/pages/market.ts'
 import type { ProfilePage } from '../src/pages/profile.ts'
+import { roomFor } from '../src/pages/search.ts'
 import { loadMarkets } from '@foundationforest/markets'
 
 import { at, index, MARKETS, verifier, page, post, profile, publishProfile, startHost, twin } from './world.ts'
@@ -59,7 +61,8 @@ test('a listing that does not fit its market is kept, not listed, and its profil
   assert.equal(why('back').listed, false)
   assert.match(why('back').why!, /^ages takes .*from no more than to/)
   assert.equal(why('zone').listed, false)
-  assert.match(why('zone').why!, /^hours takes .*with zone, a time zone by name such as Europe\/Madrid$/)
+  // A tutor's hours may hold their own spots, since lessons' spots is for tutors.
+  assert.match(why('zone').why!, /^hours takes .*with zone, a time zone by name such as Europe\/Madrid; and, if wanted, its own spots for that time, .*, where "0" is full$/)
   // In checkEntry's own words.
   assert.equal(why('zone').why, loadMarkets(MARKETS).checkEntry('lessons', 'tutor', 'listing', { description: 'Maths.', hours: [{ every: ['monday'], start: '18:00' }] }))
   assert.equal(t.listings.find((p) => p.address.endsWith('/listing/good'))!.listed, true)
@@ -138,5 +141,56 @@ test('a profile whose market has left the directory: out of search, its pages op
   await publishProfile(host.url, tutor)
   await i.pass()
   assert.ok(!(await page(i, `/profiles/${tutor.key.address}`)).text.includes('no longer in the markets directory'))
+  await i.close()
+})
+
+test("spots: room for n, a time's own over the listing's, a full time skipped, a listing that says none left out; each as the markets read it", async () => {
+  const tutor = await profile('lessons/tutor', [by])
+  await publishProfile(host.url, tutor)
+  const zone = 'Europe/Lisbon'
+  const weekly = { every: ['monday'], start: '18:00', zone }
+  await post(host.url, [
+    // Its own spots win for each time: 6 on the 9th; the 16th is full.
+    at(tutor, 'listing/own', { description: 'Own.', spots: '1', hours: [{ on: '2027-01-09', start: '10:00', zone, spots: '6' }, { on: '2027-01-16', start: '10:00', zone, spots: '0' }] }),
+    // A time with no spots of its own has the listing's; with no time, the listing's.
+    at(tutor, 'listing/plain', { description: 'Plain.', spots: '3', hours: [weekly] }),
+    at(tutor, 'listing/bare', { description: 'Bare.', spots: '2' }),
+    // Full, as a listing and at its one time.
+    at(tutor, 'listing/full', { description: 'Full.', spots: '0' }),
+    at(tutor, 'listing/allfull', { description: 'All full.', spots: '5', hours: [{ on: '2027-01-09', start: '10:00', zone, spots: '0' }] }),
+    // No spots on the listing: only its time that says some counts.
+    at(tutor, 'listing/some', { description: 'Some.', hours: [{ on: '2027-01-09', start: '10:00', zone, spots: '4' }, weekly] }),
+    at(tutor, 'listing/none', { description: 'None.', hours: [weekly] }),
+  ])
+  const i = await index({ hosts: [host.url], keys: [{ key: by.key, verifier: by.name, label: 'face check', confidence: 0.75 }] })
+  await i.pass()
+  const ids = async (q: string) =>
+    (await twin<{ results: Array<{ listing: { address: string } }> }>(i, `/search.json?${q}&limit=100`)).body.results
+      .filter((r) => r.listing.address.startsWith(`${tutor.key.address}/`))
+      .map((r) => r.listing.address.split('/').at(-1))
+      .sort()
+  const all = ['allfull', 'bare', 'full', 'none', 'own', 'plain', 'some']
+  assert.deepEqual(await ids('market=lessons'), all)
+  assert.deepEqual(await ids('market=lessons&spots=2'), ['bare', 'own', 'plain', 'some'])
+  assert.deepEqual(await ids('market=lessons&spots=3'), ['own', 'plain', 'some'])
+  assert.deepEqual(await ids('market=lessons&spots=4'), ['own', 'some'])
+  assert.deepEqual(await ids('market=lessons&spots=6'), ['own'])
+  assert.deepEqual(await ids('market=lessons&spots=7'), [])
+  // Spots that are no whole number from 1 filter nothing, and without a market spots is no filter.
+  for (const n of ['0', 'abc', '2.5', '-1', '']) assert.deepEqual(await ids(`market=lessons&spots=${n}`), all, n)
+  assert.deepEqual(await ids('spots=7'), all)
+  assert.deepEqual((await twin<{ query: object }>(i, '/search.json?market=lessons&spots=3')).body.query, { market: 'lessons', spots: '3' })
+  // On a request the same count is the most it is for: a request for 2 has room in 3, not in 1.
+  const markets = loadMarkets(MARKETS)
+  const lessons = markets.market('lessons')!
+  assert.deepEqual(['3', '2', '1'].map((n) => roomFor(markets, lessons, false, { spots: '2' }, n)), [true, true, false])
+  assert.deepEqual(['3', '2', '1'].map((n) => roomFor(markets, lessons, true, { spots: '2' }, n)), [false, true, true])
+  assert.deepEqual([roomFor(markets, lessons, false, {}, '1'), roomFor(markets, lessons, false, { spots: '0' }, '1')], [false, false])
+  // Its page shows each as the markets read it: the listing's a number, a time's own after its hours.
+  const own = (await page(i, `/profiles/${tutor.key.address}/listing/own`)).text
+  assert.ok(own.includes('<div class="kv"><dt>Group size</dt><dd>1</dd></div>'))
+  assert.ok(own.includes(`<div class="kv"><dt>Days and times</dt><dd>${markets.read({ piece: 'date' }, { on: '2027-01-09', start: '10:00', spots: '6' })} (${zone}); ${markets.read({ piece: 'date' }, { on: '2027-01-16', start: '10:00', spots: '0' })} (${zone})</dd></div>`))
+  assert.ok(own.includes(', 10:00, 6 spots (Europe/Lisbon); ') && own.includes(', 10:00, full (Europe/Lisbon)</dd>'))
+  assert.ok((await page(i, `/profiles/${tutor.key.address}/listing/full`)).text.includes('<div class="kv"><dt>Group size</dt><dd>0</dd></div>'))
   await i.close()
 })

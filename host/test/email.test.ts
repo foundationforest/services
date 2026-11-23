@@ -135,7 +135,7 @@ test('a profile without its main key’s signature for that email address, or no
   try {
     const seed = newSeed()
     const tutor = await profile(w, seed, 'tutoring/tutor')
-    const seller = await mainKey(seed, 'goods/seller') // no folder here
+    const seller = await mainKey(seed, 'goods-selling/seller') // no folder here
     const email = 'ana@example.com'
     const on = (profiles: unknown[]) => post(w, '/email', { email, timeZone: 'America/Mexico_City', profiles })
     const [own] = signed(w, email, [tutor.key])
@@ -210,7 +210,7 @@ test('one email a day at most, at 8:00 where the person is, with the counts, the
   try {
     const seed = newSeed()
     const tutor = await profile(w, seed, 'tutoring/tutor')
-    const seller = await profile(w, seed, 'goods/seller')
+    const seller = await profile(w, seed, 'goods-selling/seller')
     const bob = await profile(w, newSeed(), 'tutoring/student')
     const other = await profile(w, newSeed(), 'tutoring/tutor')
     const id = await turnOn(w, 'ana@example.com', 'America/Mexico_City', [tutor, seller])
@@ -238,9 +238,9 @@ test('one email a day at most, at 8:00 where the person is, with the counts, the
     assert.deepEqual(letter.body.headers, { 'List-Unsubscribe': `<${stop}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' })
     assert.equal(
       letter.body.text,
-      `You have 1 new message, 1 review and 1 vouch.\nOn your Tutoring tutor and Goods seller.\n\nOpen Forest: https://app.forest.foundation\n\nYou turned this on in Forest. Stop these emails: ${stop}\n`,
+      `You have 1 new message, 1 review and 1 vouch.\nOn your Tutoring tutor and Goods selling seller.\n\nOpen Forest: https://app.forest.foundation\n\nYou turned this on in Forest. Stop these emails: ${stop}\n`,
     )
-    for (const part of ['You have 1 new message, 1 review and 1 vouch.', 'On your Tutoring tutor and Goods seller.', '>Open Forest</a>', 'href="https://app.forest.foundation"', `href="${stop}"`, 'Stop these emails']) assert.ok(letter.body.html.includes(part), part)
+    for (const part of ['You have 1 new message, 1 review and 1 vouch.', 'On your Tutoring tutor and Goods selling seller.', '>Open Forest</a>', 'href="https://app.forest.foundation"', `href="${stop}"`, 'Stop these emails']) assert.ok(letter.body.html.includes(part), part)
 
     w.clock.advance(MINUTE)
     await message(w, bob, tutor, 'More secret words')
@@ -260,7 +260,7 @@ test('each email address gets its email at 8:00 in its own time zone', async () 
   const w = await world()
   try {
     const ana = await profile(w, newSeed(), 'tutoring/tutor')
-    const kenji = await profile(w, newSeed(), 'goods/seller')
+    const kenji = await profile(w, newSeed(), 'goods-selling/seller')
     const bob = await profile(w, newSeed(), 'tutoring/student')
     await turnOn(w, 'ana@example.com', 'America/Mexico_City', [ana])
     await turnOn(w, 'kenji@example.jp', 'Asia/Tokyo', [kenji])
@@ -287,7 +287,7 @@ test('a change of profiles needs no code; a new email address takes the profiles
   try {
     const seed = newSeed()
     const tutor = await profile(w, seed, 'tutoring/tutor')
-    const seller = await profile(w, seed, 'goods/seller')
+    const seller = await profile(w, seed, 'goods-selling/seller')
     const old = await turnOn(w, 'ana@example.com', 'America/Mexico_City', [tutor])
     const sent = w.resend.sent.length
     assert.deepEqual(await post(w, `/email/${old}`, { timeZone: 'Europe/Madrid', profiles: signed(w, 'ana@example.com', [tutor.key, seller.key]) }), { status: 200, body: { id: old } })

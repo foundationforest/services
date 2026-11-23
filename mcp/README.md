@@ -34,7 +34,7 @@ read before the person connects anything; four act for the person and need one.
 
 | Tool | Marked | The AI gives | What it does |
 |---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, the same for every role (its piece, `several`, `roles`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written); `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
+| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first, after its description); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, the same for every role (its piece, `several`, `roles`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written); `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
 | `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
 | `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
 | `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
@@ -47,9 +47,10 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   any index can take what it likes, and the AI learns what it holds from the index's own guide. Its
   description names the filters the foundation's index takes on a market's own fields once
   `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in
-  its unit, matching a number or a range that overlaps them) and on prices (`price.currency`,
-  `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app that cuts the guide still
-  finds, say, a language exchange by `learns` and `languages`.
+  its unit, matching a number or a range that overlaps them, and spots as `spots=<n>`, room for that
+  many: an offer's spots at least `n`, a time's own over the listing's, a request's at most) and on
+  prices (`price.currency`, `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app
+  that cuts the guide still finds, say, a language exchange by `learns` and `languages`.
   Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
   unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
@@ -61,7 +62,9 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   label; never put one of the person's addresses in what is written for another of their profiles or
   sent to anyone else, unless the person asks; read the market before writing to it; numbers,
   amounts and coordinates are decimal text, and a number may be `{ from, to }`, either end left out
-  for no limit; a listing's price is a list of every price the person charges, each with its per
+  for no limit; a listing's spots is one whole number, never a range, "0" when full, and a time with
+  its own holds them in its date answer; a listing's price is a list of every price the person
+  charges, each with its per
   and, for more than one of it, its count, as decimal text, and a note if wanted; a price for time
   is an amount for a length in hours, 25 for 0.75 hours being 45 minutes, and a minimum goes in its
   note; a place is a circle, centred on the

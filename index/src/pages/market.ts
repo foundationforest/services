@@ -21,7 +21,7 @@ import type { Field, Market } from '@foundationforest/markets'
 
 import { BETA, betaFlag, fieldLabel, inWords, layoutOf, marketHtml, offerOf, pricesOf, type Result, resultsHtml, results, wordFor } from './common.ts'
 import { icon } from './icons.ts'
-import { askedBy, carried, filterable, find, hiddenOf, linker, moreHtml, type Near, namesOf, noPlaceHtml, orderHtml, PRICE, placeWords, pricedIn, RATINGS, wantedOf, whereInputs } from './search.ts'
+import { askedBy, carried, filterable, find, hiddenOf, linker, moreHtml, type Near, namesOf, noPlaceHtml, orderHtml, PRICE, placeWords, pricedIn, RATINGS, SPOTS, wantedOf, whereInputs } from './search.ts'
 import { html, type Page, type Raw, type Site, urls } from './template.ts'
 import { amountText } from './words.ts'
 
@@ -90,6 +90,10 @@ function filtersHtml(site: Site, base: string, o: MarketPage, m: Market, word: s
         return fold(label, now, html`<label class="inp"><select name="${name}" aria-label="${label}"><option value="">Any</option>${choices.map((c) => html`<option value="${c.value}"${c.value === q[name] ? ' selected' : ''}>${c.label}</option>`)}</select></label>`)
       }
       return fold(label, now, html`<div class="opts" role="radiogroup" aria-label="${label}">${radio(name, '', 'Any', !q[name])}${choices.map((c) => radio(name, c.value, c.label, c.value === q[name]))}</div>`)
+    }
+    // Spots: one whole number, room for that many (search.ts, roomFor).
+    if (name === SPOTS) {
+      return fold(label, now, html`<label class="inp"><input type="number" name="${name}"${q[name] === undefined ? '' : html` value="${q[name]}"`} min="1" step="1" placeholder="How many" aria-label="${label}"></label>`)
     }
     const box = (end: 'min' | 'max', words: string) => {
       const given = q[`${name}.${end}`]

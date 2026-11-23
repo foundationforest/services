@@ -64,9 +64,9 @@ export const aboutOf = (apps: ListedApp[], address: string, listing: string) =>
 
 /**
  * The fields a market asks a role's listing, in order, as the markets' `ask` gives them: its
- * preview's first, each after the fields its `when` names, then the rest, `contact` last, each with
- * its piece, its rules and its words for that role. None for a market the directory does not list or
- * a role it does not have.
+ * description first, then its preview's, each after the fields its `when` names, then the rest,
+ * `contact` last, each with its piece, its rules and its words for that role. None for a market the
+ * directory does not list or a role it does not have.
  */
 export function askedOf(markets: Markets, market: string | null, role: string | null): Asked[] {
   const m = market === null ? undefined : markets.market(market)
