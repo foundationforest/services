@@ -316,7 +316,7 @@ holds its own.
 - **Verifier keys** (`lists/verifiers.json`): each by address, with the verifier name its
   verifications carry, its check's name, its confidence and an optional `until`. Today the
   foundation's verifier's two keys, under `verifier.forest.foundation`, neither with an `until`: its
-  face key `4H5vL1ym…`, face check at 0.75, and its ID key `AbmjkNZy…`, ID check at 0.95.
+  face key `3twF6XFW…`, face check at 0.75, and its ID key `6KsXLzB3…`, ID check at 0.95.
 - **Markets:** every market in the directory at `MARKETS`, each role its file lists.
 - **Weights** (`config/scoring.json`): `vouchStep` 0.5, `reportCut` 0.25, `marketWeight` 1,
   `tolerance` 1e-9 and `maxRounds` 1000.
