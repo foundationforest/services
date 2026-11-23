@@ -17,7 +17,7 @@ stamp. No key of yours, no account.
 |---|---|
 | stamp | One signature over the verifier's name, your stamp number and its facts ([the standard's](https://github.com/foundationforest/standard/blob/main/proofs/README.md#the-stamp-and-the-verification)) |
 | stamp number | A number your device makes from your seed and the verifier's name, the same every time |
-| facts | One number made from what the check saw of you, which any change to that changes |
+| facts | One number made from the list of what the check saw of you, by the standard's recipe: any change to the list changes it |
 | verification | What a profile shows: a proof, made on your device, that its seed holds a stamp from this verifier, without the stamp, the seed or who you are |
 
 Signing the stamp number and the facts together says the check was for whoever holds the seed behind
@@ -26,45 +26,73 @@ nothing here puts either on a chain.
 
 ### The two checks
 
-Both are Didit sessions, each check in its own Didit application, with its own key: a face search
-sees only its own application's faces. The app drives them; the verifier only asks Didit what each
-came to.
+Both are Didit sessions, on two workflows in one Didit application, with one key: a face search sees
+only its own application's faces, so each check's face is compared with every face kept there, of
+either check. The app drives them; the verifier asks Didit what each came to, and judges the faces it
+saw ([One person, one stamp number](#one-person-one-stamp-number)).
 
 | Step | Face check, free | ID check, $5 held |
 |---|---|---|
 | Pay | | `POST /id/payment`, and the person pays on Stripe's page, which holds the $5 ([The ID check's payment](#the-id-checks-payment)) |
-| Open | `POST /face/session` opens a session on the face workflow and answers the page the person uses | `POST /id/session` with the payment, on the ID workflow |
-| The person | Didit checks for a live person, and declines a face it has seen before | Didit also reads a government document and matches the live face to its photo, and reports each face it has seen like it |
+| Open | `POST /face/session` with the stamp number opens a session on the face workflow, for that number, and answers the page the person uses | `POST /id/session` with the payment and the stamp number, on the ID workflow |
+| The person | Didit checks for a live person, and reports each face it has seen like it | Didit also reads a government document and matches the live face to its photo |
 | Ask | The app sends the session and its stamp number to `POST /face/stamp` | `POST /id/stamp`, with the payment |
-| Approved | The verifier fetches the selfie, computes its embedding ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a stamp from the face key | Every document, liveness and face-match step passed too; then [one person, one ID stamp](#one-person-one-id-stamp), and the stamp number's ID stamp |
+| Approved | [One person, one stamp number](#one-person-one-stamp-number); then the verifier fetches the selfie, computes its embedding ([The face model](#the-face-model)), keeps the session next to the stamp number, and answers a stamp from the face key | Every document, liveness and face-match step passed too; then [one person, one stamp number](#one-person-one-stamp-number), and the stamp number's ID stamp |
 
-- **Declined** answers `403 declined`, or `403 face_seen` for a face check Didit declined as a face
-  it has seen before (the liveness step's risk `DUPLICATED_FACE` or `POSSIBLE_DUPLICATED_FACE`);
-  **Expired** or **Abandoned** (the person did not finish in time) `403 expired`: the session will
-  never pass, so the app opens a new one.
+- **Declined** answers `403 declined`, and **Expired** or **Abandoned** (the person did not finish
+  in time) `403 expired`: the session will never pass, so the app opens a new one.
 - **Anything else unfinished** answers `403 not_approved`, and the app asks again once the person is
   done. A refused or failed request uses nothing up, but for the ID check's refusals that end its
   payment.
-- **`vendor_data`** on each session is a fresh random id after a prefix naming only the check, so it
-  names nobody; Didit's face search compares a face with those under other `vendor_data`, the
-  person's own earlier sessions among them.
+- **`vendor_data`** on each session is `<check>-<hash>-<random>`: the check's name, `face` or `id`;
+  HMAC-SHA256 of the stamp number's 32 bytes, under a key derived from the verifier's secret ([Its
+  keys](#its-keys)), the same for both checks; and a fresh random id. Without the verifier's secret,
+  no stamp number gives its hash.
+- **Each check is its own Didit user,** never one `vendor_data` for all of a person's checks: Didit
+  leaves a user's own faces out of its whole face search, and comparing a person's checks with each
+  other is what One person, one stamp number rests on.
+- **A session gives a stamp only to the stamp number it was opened for:** asked for another, or
+  under a `vendor_data` the verifier cannot read, `409 session_used`, which ends no payment.
 
-### One person, one ID stamp
+### One person, one stamp number
 
-Didit remembers; the verifier judges. After Didit approves an ID check:
+Didit remembers; the verifier judges, and keeps each person under one stamp number. Neither
+workflow takes any action on a face seen before. After Didit approves a check opened for stamp number
+S, the verifier reads each face its liveness step matched, up to five, strongest first, and each
+session a seen-face risk (`DUPLICATED_FACE`, `POSSIBLE_DUPLICATED_FACE`) names that the matches leave
+out: Didit's pages say the matches are the faces above its similarity threshold, not whether its
+lower, possible band is among them. Each face is one of three:
 
-1. **A stamp number with an ID stamp** gets it back, its own fields only ([The stamp](#the-stamp)).
-2. **No name, first or full, or no real birth date** read: refused, `no_document_data`.
-3. **Each face Didit matched**, up to five from its liveness step, is read as its Didit user
-   (`GET /v3/users/{vendor_data}/`): the full name from their documents, and their birth date. They
-   are the same person when the birth dates are equal and the names fit: every word of this check's
-   first name is in their full name, or every word of their full name is in this check's. Words are
-   Unicode NFKD, marks removed, lower case, letters only. A user with no name: the birth date alone
-   decides. The same person: refused, `duplicate_document`.
-4. **Anyone else** gets a new ID stamp.
+| A face | When |
+|---|---|
+| S's own | Under S's hash, from a check that gave S a stamp: a session the verifier holds for S, or a kept template, which only such a check leaves |
+| An earlier try | Under S's hash, from a check that gave no stamp |
+| Another's | Under any other `vendor_data`; a risk's that names no session, unless a face listed without one can be it; or one Didit no longer has that gave S no stamp |
 
-- **A match to a session the same payment opened** is the person's own earlier try, and is skipped:
-  one payment gives one stamp.
+Then, in order:
+
+| | Face check | ID check |
+|---|---|---|
+| Another's face | `face_seen` | Its Didit user (`GET /v3/users/{vendor_data}/`) fits this check's document: `duplicate_document`. Anything else passes, a face check's among them, whose user is not asked about |
+| S holds a stamp of either key, and no face is S's own | `other_person` | The same |
+| S's own ID check, whose Didit user has a birth date | | It must fit this check's document, or `other_person` |
+| Five faces, Didit's whole list, and none of these | `too_many_matches` | The same |
+| None of these | A new face stamp; the first stays the one handed back | S's first ID stamp back, without its list, or a new one |
+
+- **Fits:** the birth dates are equal and the names fit, every word of this check's first name in
+  the user's full name, or every word of the user's full name in this check's. Words are Unicode
+  NFKD, marks removed, lower case, letters only. A user with no name: the birth date alone decides.
+  An ID check that read no name, first or full, or no real birth date is refused first,
+  `no_document_data`.
+- **A face check reads no name,** so the ID check cannot tell its person from a twin, and passes:
+  a person can hold a face stamp on one seed and an ID stamp on another, and no more.
+- **An earlier try counts for nothing** but its place in Didit's list: a person's own lost try never
+  blocks their next check, and someone else's try at S never makes their next one S's own.
+- **Five matches at most:** a refused check stays approved at Didit for its day ([The
+  sweep](#the-sweep)), so five of a person's tries under one stamp number could push an earlier
+  stamp number's face off the list. A full list that refuses nothing may have left one out.
+- **A session asked again within its hour** is judged no more: its decision is the same, and its own
+  stamp is now S's.
 - **A name alone never decides,** so strangers with one name and birth date both pass; **a face alone
   never decides,** so twins with their own first names pass.
 - **The country is left out,** since a renewed or another country's document is the same person.
@@ -80,11 +108,11 @@ new ID stamp. One payment gives one ID stamp, and up to three sessions in its fi
    the person back to `returnUrl` as it is, paid or not, with no id in its address.
 2. The person pays on Stripe's page, which only holds the $5 until the verifier takes it
    (`payment_intent_data[capture_method]=manual`).
-3. The app sends `POST /id/session` with the payment. Each time, the verifier asks Stripe whether that
-   Checkout Session is one it made (its mark, `metadata.check`), whether it holds the money, and
-   since when; if not, or if it was held a day ago or more, `402 not_paid`. Each session opened takes
-   one of the payment's three tries, and one Didit does not open gives its try back; after three,
-   `409 payment_used`.
+3. The app sends `POST /id/session` with the payment and the stamp number. Each time, the verifier
+   asks Stripe whether that Checkout Session is one it made (its mark, `metadata.check`), whether it
+   holds the money, and since when; if not, or if it was held a day ago or more, `402 not_paid`.
+   Each session opened takes one of the payment's three tries, and one Didit does not open gives its
+   try back; after three, `409 payment_used`.
 4. The app sends the payment again with `POST /id/stamp`, with a session that payment opened; with
    another payment's, `402 not_paid`. A new ID stamp takes the $5. The first stamp it gives, new or
    given back, uses the payment up: no more sessions and no more stamps from it
@@ -112,60 +140,62 @@ deleted (Stripe's and Railway's own records could tie more, as [Limits](#limits)
 ### The stamp
 
 The verifier signs `{stampNumber, facts, verifierName}` with the standard's `signStamp`, and answers
-it in the standard's JSON form, with what its facts were made from beside it:
+it in the standard's JSON form, with the list its facts were made from beside it, under `factList`
+([the standard's facts as a list](https://github.com/foundationforest/standard/blob/main/proofs/README.md#the-stamp-and-the-verification)):
 
 ```
-face:  {"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<face key>","verifierName":"<its name>",
-        "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},"model":"opencv-sface-2021dec","embedding":"<base64url>"}
-ID:    the same, from the ID key, and "fields":"{\"date_of_birth\":\"1815-12-10\",\"first_name\":\"Ada\",…}"
+{"stampNumber":"<decimal>","facts":"<decimal>","verifier":"<its key>","verifierName":"<its name>",
+ "signature":{"r8":["<decimal>","<decimal>"],"s":"<decimal>"},
+ "factList":[{"name":"model","value":"opencv-sface-2021dec","salt":"<decimal>"},
+             {"name":"embedding","value":"<base64url>","salt":"<decimal>"}, …]}
 ```
 
-| Key | Its facts, fixed for good: a new recipe is a new key |
+| Key | Its facts, by name, in the list's order: a new recipe is a new key |
 |---|---|
-| face key | `Poseidon([h(model), h(embedding)])` |
-| ID key | `Poseidon([h(model), h(embedding), fieldsRoot])` |
+| face key | `model`, `embedding` |
+| ID key | `model`, `embedding`, then each text field Didit read on the document, under Didit's own name, in the order of the names |
 
-- **Poseidon:** a hash made for zero-knowledge proofs, circomlib's, through `poseidon-lite` 0.3.0, as
-  the standard's keys use it. **`h(x)`:** SHA-256 of x's bytes, as a big-endian integer, mod BN254's
-  scalar order (the size of the numbers the proofs work in).
-- **`model`:** the face model's name, UTF-8. A face's numbers mean nothing without the program that
-  made them; with the name, anyone can run the same model. **`embedding`:** the 512 bytes the model
-  gives for the selfie.
-- **`fields`:** every text field Didit read on the document, by Didit's names, as it read them, in
-  one string of canonical JSON (RFC 8785): `document_type`, `document_subtype`, `document_number`,
-  `personal_number`, `first_name`, `last_name`, `full_name`, `date_of_birth`, `date_of_issue`,
-  `expiration_date`, `issuing_state`, `nationality`, `place_of_birth`, `address`, `gender`,
-  `marital_status`, `region`, and each of `extra_fields`, a document's own (a profession, a driving
-  licence's classes), as `extra_fields.<its key>`. A field Didit did not read is absent. Never an
-  image or a video, the step's status, what Didit works out itself (`age`, `issuing_state_name`,
-  `formatted_address`, `parsed_address`), or the same text again in machine form (`mrz`,
-  `barcodes`).
-- **`fieldsRoot`:** the root of a Poseidon Merkle tree of depth 8, 256 leaves: one leaf
-  `Poseidon([h(name), h(value)])` for each field, in the order of their names, as `fields` lists
-  them, then leaves of 0; each node `Poseidon([left, right])`. Every path has 8 steps, so one field
-  can be proved against the root without the others; nothing here makes such a proof.
+- **A fact** is a name, a value and a salt; the facts are the standard's `factsNumber` of the list,
+  the root of a Poseidon tree with one leaf for each fact. Every value is text.
+- **`model`:** the face model's name. A face's numbers mean nothing without the program that made
+  them; with the name, anyone can run the same model. **`embedding`:** the 512 bytes the model gives
+  for the selfie, as base64url text.
+- **The document's fields:** every text field Didit read, as it read it, under Didit's names:
+  `document_type`, `document_subtype`, `document_number`, `personal_number`, `first_name`,
+  `last_name`, `full_name`, `date_of_birth`, `date_of_issue`, `expiration_date`, `issuing_state`,
+  `nationality`, `place_of_birth`, `address`, `gender`, `marital_status`, `region`, and each of
+  `extra_fields`, a document's own (a profession, a driving licence's classes), as
+  `extra_fields.<its key>`. A field Didit did not read is absent. Never an image or a video, the
+  step's status, what Didit works out itself (`age`, `issuing_state_name`, `formatted_address`,
+  `parsed_address`), or the same text again in machine form (`mrz`, `barcodes`).
+- **Each salt** is derived from the verifier's secret, not drawn: the first 31 bytes, read
+  big-endian, of HMAC-SHA256 of the session's id, a 0 byte and the fact's name ([Its
+  keys](#its-keys)). So the same session, signed again within its hour, gives the same list and the
+  same stamp.
 
-The fields beside a stamp are the person's: anyone they show them to can make the facts again.
-Nothing in the standard reads them, and the verification keeps the facts private. Facts are exact;
-a face comparison is fuzzy. Two photos of one face never give the same numbers, so a later check
-would not work the facts out from a new photo: you would show the kept embedding, anyone could see it
-gives the facts, and compare it with your live face using the same model. So a face that changes
+The list beside a stamp is the person's: with the standard's facts proof, they show any of its facts,
+up to eight in one proof, to one reader, and nothing else of the stamp. Nothing here makes such a
+proof. Facts are exact; a face comparison is fuzzy. Two photos of one face never give the same
+numbers, so a reader would not work the facts out from a new photo: the person shows the `embedding`
+fact, and the reader compares it with their live face using the same model. So a face that changes
 with light and age leaves its stamp good. Nothing here runs such a check yet.
 
 **Asked back:** `POST /stamp` with a stamp number answers, for each key, the first stamp it signed
-for that number, its own fields only, or `null`. A later face check Didit approves answers its own new
-stamp, but the first stays the one handed back, so nobody else who knows the number can change it;
-either gives the same verification. A later ID check answers the first ID stamp, its own fields only:
-one ID stamp a person, ever. At each start the verifier forgets any kept ID stamp its ID key did not
-sign, so that stamp number's next ID check keeps a new one, if Didit has not seen the face before
-([Limits](#limits)). Handing a stamp back is safe: a verification needs the seed behind the number. The fields beside a stamp come only in the answer that signed it,
-and again from that session within its hour.
+for that number, without its list, or `null`. A later face check that passes [One person, one stamp
+number](#one-person-one-stamp-number) answers its own new stamp, but the first stays the one handed
+back; either gives the same verification. A later ID check answers the first ID stamp, without its
+list: one ID stamp a person, for now. At each start the verifier forgets any kept stamp its key did
+not sign, so that stamp number's next check keeps a new one. Handing a stamp back is safe: a
+verification needs the seed behind the number. The list beside a stamp comes only in the answer that
+signed it, and again from that session within its hour.
 
 ### Its keys
 
 `GET /` gives, in canonical JSON (one exact way of writing it): its name; its two keys as addresses,
-each with its facts recipe, and the ID key with `forSale` and `testPayments`; `h`; `fieldsRoot`;
-`consent`, the text an app shows before the ID check ([The consent screen](#didit)); and with gifts,
+each with the names of its facts, `facts`, in their list's order (`extra_fields.<its key>` for each
+of a document's own), and the ID key with `forSale` and `testPayments`; `recipe`, the standard's
+facts as a list; `consent`, the text an app shows before the ID check ([The consent
+screen](#didit)); and with gifts,
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is derived from it
@@ -180,9 +210,11 @@ each with its facts recipe, and the ID key with `forSale` and `testPayments`; `h
   only, so the two are kept or lost together. No person, phrase or variable holds it; nothing prints
   or logs it.
 - **Derived from its own secret** with the standard's `hkdf` (a standard way to make many keys from
-  one secret): under `face`, the face key; `id-fields`, the ID key, a text of its own for its recipe;
-  `sponsor`, the sponsor key, an Ed25519 key that signs the gifts' tickets. The texts never change,
-  since a new text would derive a new key. None of the keys holds money.
+  one secret): under `face-facts`, the face key; `id-facts`, the ID key; `sponsor`, the sponsor key,
+  an Ed25519 key that signs the gifts' tickets; `vendor-data`, the key of a stamp number's hash in
+  `vendor_data`; `fact-salt`, the key of the facts' salts. The texts never change, since a new text
+  would derive a new key; a new recipe takes new ones, and `face`, `id` and `id-fields`, the texts of
+  the keys of the recipes before, are never used again. None of the keys holds money.
 
 ### The sweep
 
@@ -210,7 +242,7 @@ One SQLite file (a database in a single file), seven tables:
 
 | Table | What | Why |
 |---|---|---|
-| `sessions` | The SHA-256 of each session id that gave a stamp, with the stamp number and which check (`face` or `id`) | A session gives its stamp to one stamp number, and again only within its hour |
+| `sessions` | The SHA-256 of each session id that gave a stamp, with the stamp number and which check (`face` or `id`) | A session gives its stamp to one stamp number, and again only within its hour; a face Didit matches from it is that stamp number's own |
 | `stamps` | The first stamp each key signed for each stamp number: the number, the key, the facts, the signature | A lost stamp comes back |
 | `to_delete` | The id of each session that gave a stamp and is not yet deleted in Didit, its check, and when it was first signed | The hour, and the sweep. It goes once Didit has deleted it |
 | `opened` | The id of each session opened that gave no stamp and is not yet deleted in Didit, its check, when it opened, and for an ID session which of its payment's tries it is and the SHA-256 of that payment while it is not used up | The day, the sweep, a payment's stamp from its own sessions only, and its last try. It goes once Didit has deleted it, or moves to `to_delete` |
@@ -218,13 +250,16 @@ One SQLite file (a database in a single file), seven tables:
 | `payments` | The SHA-256 of each payment that opened an ID session, how many sessions it opened, and whether it is used up | One payment, three sessions at most and one ID stamp |
 
 Nothing else: no face, no embedding, no name, no birth date, no document, no address, none of the
-fields beside a stamp, and of a payment nothing of who paid or with what, no amount, no time, and
-nothing beside a stamp number. Facts are a one-way hash: without the exact embedding, which no new
-photo gives again, no guess can be tested against them. A session id is in clear, with a time, only
-in `to_delete` and `opened`, for a day at most, until Didit has deleted it. Deleted bytes are
-overwritten (`secure_delete`); at each start the verifier drops a `fingerprints` table, the keyed
-hashes of a name and birth date an earlier version kept. The stamp number links the tables, so
-whoever also holds what Didit keeps of those sessions can tell which face went with which name.
+list beside a stamp, no `vendor_data`, and of a payment nothing of who paid or with what, no amount,
+no time, and nothing beside a stamp number. Facts are a one-way hash of the list: without the exact
+embedding, which no new photo gives again, and the salts, which take the verifier's secret, no guess
+can be tested against them. A session id is in clear, with a time, only in `to_delete` and `opened`,
+for a day at most, until Didit has deleted it. Deleted bytes are overwritten (`secure_delete`); at
+each start the verifier drops a `fingerprints` table, the keyed hashes of a name and birth date an
+earlier version kept. The stamp number links the tables, so whoever also holds what Didit keeps of
+those sessions can tell which face went with which name. Didit can tell which face check and which
+ID check are one person's, since their `vendor_data` carry one hash, and whoever holds both the
+verifier's secret and what Didit keeps can go from a stamp number to a person.
 
 ### The face model
 
@@ -272,10 +307,10 @@ sees them, and pays nothing: the host lists its sponsor key and counts what its 
 | Route | Body | Answer |
 |---|---|---|
 | `GET /` | | `200`, [its keys](#its-keys) |
-| `POST /face/session` | none, `{}`, or `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}` |
-| `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked |
+| `POST /face/session` | `{"stampNumber": "<decimal>"}`, and may add `"returnUrl": "<url>"`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}` |
+| `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`, the stamp number it was opened for, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked |
 | `POST /id/payment` | `{"returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Stripe sends the person after, paid or not | `201 {"payment", "url"}` |
-| `POST /id/session` | `{"payment": "<its id>"}`, and may add `"returnUrl"`, as for a face session | `201 {"sessionId", "url"}` |
+| `POST /id/session` | `{"payment": "<its id>", "stampNumber": "<decimal>"}`, and may add `"returnUrl"`, as for a face session | `201 {"sessionId", "url"}` |
 | `POST /id/stamp` | `{"sessionId", "stampNumber", "payment"}`, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked |
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face", "id"}`, each a stamp or `null`; `404 not_found` if neither |
 
@@ -284,19 +319,24 @@ below BN254's scalar order. A payment's id is its Checkout Session's, `cs_test_�
 body with any other field is refused. CORS is open to any origin. Every code below is in
 `src/codes.ts`, which an app can import. Errors are `{"error": "<code>"}`:
 
-- **`400`:** `not_json`, `not_an_object`, `expected_empty_body`, `expected_exactly_returnUrl`,
-  `expected_exactly_payment`, `expected_exactly_payment_and_returnUrl`,
+- **`400`:** `not_json`, `not_an_object`, `expected_exactly_returnUrl`,
+  `expected_exactly_stampNumber`, `expected_exactly_stampNumber_and_returnUrl`,
+  `expected_exactly_payment_and_stampNumber`,
+  `expected_exactly_payment_and_stampNumber_and_returnUrl`,
   `expected_exactly_sessionId_and_stampNumber`,
-  `expected_exactly_sessionId_and_stampNumber_and_payment`, `expected_exactly_stampNumber`,
-  `bad_session_id`, `bad_stamp_number`, `bad_return_url`, `bad_payment`.
+  `expected_exactly_sessionId_and_stampNumber_and_payment`, `bad_session_id`, `bad_stamp_number`,
+  `bad_return_url`, `bad_payment`.
 - **`402`:** `not_paid` (no money held, held a day ago or more, no payment Stripe has, or not the
   payment that opened the session).
-- **`403`, the check does not count:** `unknown_session`, `wrong_workflow`, `declined`, `face_seen`,
-  `expired`, `not_approved`, `no_liveness`, `liveness_not_passed`, `no_document`,
-  `document_not_passed`, `no_face_match`, `face_match_not_passed`, `no_face`, `no_document_data` (no
-  name, or no real birth date), `duplicate_document` (a person Didit has seen before).
-- **`409`:** `session_used` (given to another stamp number, or its hour is over), `payment_used`
-  (it gave its stamp or one back, opened its three sessions, or its hold was cancelled).
+- **`403`, the check does not count:** `unknown_session`, `wrong_workflow`, `declined`, `face_seen`
+  (another stamp number's face), `expired`, `not_approved`, `no_liveness`, `liveness_not_passed`,
+  `no_document`, `document_not_passed`, `no_face_match`, `face_match_not_passed`, `no_face`,
+  `no_document_data` (no name, or no real birth date), `duplicate_document` (a person Didit has seen
+  under another stamp number), `other_person` (not the person this stamp number's stamp went to),
+  `too_many_matches` (Didit's whole list, which may have left one out).
+- **`409`:** `session_used` (opened for or given to another stamp number, or its hour is over),
+  `payment_used` (it gave its stamp or one back, opened its three sessions, or its hold was
+  cancelled).
 - **Others:** `404 not_found` (no route, or no stamp); `405 post_only`, `405 get_only`;
   `413 too_large` (over 4 KB); `502 face_check_unavailable`, `502 payment_unavailable` (Stripe);
   `503 not_for_sale` (no Stripe); `500 internal`.
@@ -308,9 +348,8 @@ body with any other field is refused. CORS is open to any origin. Every code bel
 | Variable | Default | What | Ours |
 |---|---|---|---|
 | `VERIFIER_NAME` | `verifier.forest.foundation` | Its name, which never changes | the default |
-| `DIDIT_FACE_API_KEY` | required | From the face check's Didit application. A secret | the foundation's, for "Forest face" |
-| `DIDIT_FACE_WORKFLOW_ID` | required | The face check's workflow; a session on another is refused | "Forest face", `2faaca36-58b4-49d7-90d7-2b9cf002d173` |
-| `DIDIT_ID_API_KEY` | required | From the ID check's Didit application, or the face check's key with both workflows in one application, whose one face search the two checks then share. A secret | the foundation's, for "Forest ID" |
+| `DIDIT_API_KEY` | required | From the one Didit application both checks run in. A secret | the foundation's, for "forest id" |
+| `DIDIT_FACE_WORKFLOW_ID` | required | The face check's workflow; a session on another is refused | "Forest face", `e2622cbf-0b3a-484e-bb94-3bad22d20833` |
 | `DIDIT_ID_WORKFLOW_ID` | required | The ID check's workflow; the same | "Forest ID", `4ddd9ce6-5d8c-4984-9833-5e2b612f30b2` |
 | `DIDIT_BASE_URL` | `https://verification.didit.me` | For a stand-in Didit | the default |
 | `FACE_MODEL` | `sface` | Or `stand-in`, with `DIDIT_BASE_URL` on loopback | `sface` |
@@ -335,17 +374,18 @@ Stripe key or Price that is not one (quoting no key), or a key without a Price.
 
 ### Didit
 
-- **The foundation pays per check:** about $0.15 a face check, up to $0.30 an ID check on Didit's
-  list. The cost is capped at Didit by a prepaid balance with no auto-refill, so there is no session
-  limit here. The ID check's price is in [Stripe](#stripe).
-- **Two applications:** the face check's, with "Forest face", and the ID check's, with "Forest ID".
-- **"Forest face":** one passive liveness step, face search on, and a face seen before declined
-  (`DUPLICATED_FACE`, `POSSIBLE_DUPLICATED_FACE`). A screen, a virtual camera, an injected frame, an
-  outside camera or more than one face is declined.
+- **The foundation pays per check:** $0.10 a face check and $0.30 an ID check, on Didit's list. The
+  cost is capped at Didit by a prepaid balance with no auto-refill, so there is no session limit
+  here. The ID check's price is in [Stripe](#stripe).
+- **One application,** "forest id", with both workflows.
+- **"Forest face":** one passive liveness step, face search on, and every duplicate-face action No
+  action. A screen, a virtual camera, an injected frame, an outside camera or more than one face is
+  declined.
 - **"Forest ID":** a document by camera scan, then liveness with face search on, then the face
-  matched to the document's photo. Every duplicate-face action is No action: Didit only reports a
-  face seen before, and the verifier judges ([One person, one ID stamp](#one-person-one-id-stamp)).
-- **Retention:** each application's own window is unlimited; the verifier deletes every session it
+  matched to the document's photo, every duplicate-face action No action too.
+- **Both only report a face seen before,** and the verifier judges ([One person, one stamp
+  number](#one-person-one-stamp-number)).
+- **Retention:** the application's own window is unlimited; the verifier deletes every session it
   opens ([The sweep](#the-sweep)).
 
 **The consent screen.** `GET /` serves it as `consent`, and an app shows what it gets, before the ID
@@ -399,8 +439,7 @@ setting; nothing here does them. The consent screen above is this code's, and an
 ### Public, secret, kept
 
 - **Public:** this code, these settings, its name and its two keys.
-- **Secret:** the secret its keys are derived from, `DIDIT_FACE_API_KEY`, `DIDIT_ID_API_KEY` and
-  `STRIPE_SECRET_KEY`.
+- **Secret:** the secret its keys are derived from, `DIDIT_API_KEY` and `STRIPE_SECRET_KEY`.
 - **Kept, not published:** [What it keeps](#what-it-keeps), the stamp numbers given a gift among it.
 - **Logged:** its port, that it made its secret, an error's kind, what Didit did with a face it was
   asked to keep and did not, and why Stripe or Didit failed: at each 502, at a cancel Stripe did not
@@ -440,19 +479,20 @@ DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox -- decline
 ```
 
 It runs both checks on the sandbox application's two workflows, with its key for both, refuses a key
-that is `DIDIT_FACE_API_KEY` or `DIDIT_ID_API_KEY`, and keeps its own secret and file in
+that is `DIDIT_API_KEY`, and keeps its own secret and file in
 `data/sandbox/`. With `STRIPE_SECRET_KEY`, `STRIPE_ID_PRICE` and `APP_ORIGINS` set, the ID check is
 paid in Stripe's test mode, with a test card; it refuses a live key.
 
 `test/` covers, against a stand-in Didit and a stand-in Stripe, a real SQLite file and real HTTP:
-both checks, a face seen before and a person seen before (twins, namesakes and one face with two
-birth dates among them), the ID check's hold, its tries, its cancels and its clock, the Stripe and
-Didit clients' requests, verifications made from the stamps and checked against the published keys,
-the facts vectors and the fields tree leaf by leaf, what is read of Didit's ID report, stamps asked
-back and given back, the secret, the sweep, the raw file, the face models on three portraits, both
-gifts' tickets taken by the host's own seller, what `GET /` says of the ID check's sale, what a
-failure at Stripe or Didit logs, the fetch's retries, and this README's consent screen and codes, as
-the code has them.
+both checks, each rule of One person, one stamp number (twins, namesakes, one face with two birth
+dates, someone else at a stamp number and an earlier try among them), the `vendor_data`, the ID
+check's hold, its tries, its cancels and its clock, the Stripe and Didit clients' requests,
+verifications and a facts proof made from the stamps and checked against the published keys, the
+lists, their salts and the `vendor_data` hash against pinned vectors, what is read of Didit's ID
+report, stamps asked back and given back, the secret, the sweep, the raw file, the face models on
+three portraits, both gifts' tickets taken by the host's own seller, what `GET /` says of the ID
+check's sale, what a failure at Stripe or Didit logs, the fetch's retries, and this README's consent
+screen and codes, as the code has them.
 
 ## Promises
 
@@ -476,25 +516,29 @@ the code has them.
 
 ## Limits
 
-- **A new first name on a new ID,** by a legal change, gives a second ID stamp: it looks exactly like
-  an identical twin.
+- **A new first name on a new ID,** by a legal change, gives a second ID stamp on another seed: it
+  looks exactly like an identical twin. On the person's own seed it is refused, `other_person`.
 - **Someone who has Didit erase their data** can verify again.
-- **A twin or a look-alike is refused the face check,** `face_seen`, when Didit finds the face like
-  one it has seen, and nobody reviews it; the ID check is still open to them.
-- **An approved check the app lost blocks its owner for up to a day:** until the sweep deletes it,
-  Didit matches the face to it, so the face check answers `face_seen`, and an ID check on another
-  payment `duplicate_document`.
-- **One person per check rests on Didit's face search,** the ID check's with the name and birth date:
-  a face it does not match is signed for whatever stamp number the person brings.
-- **A person can hold a face stamp on one seed and an ID stamp on another,** since each check's face
-  search sees only its own application's faces. Time solves it: an index trusts a profile more the
-  more verifiers stand behind its seed.
-- **A new ID key re-stamps no one Didit knows:** after a new recipe or a lost volume, a person whose
-  face the ID application has seen is refused, `duplicate_document`, until the ID check moves to an
-  application that has not.
-- **A face template ends** after 3650 days at most; then a returning face is new to Didit.
-- **After the hour, a lost answer loses the fields beside the stamp for good:** the stamp comes back,
-  from `POST /stamp` or a new ID check, without them.
+- **A twin or a look-alike is refused the face check,** `face_seen`, when Didit matches the face to
+  one under another stamp number, and nobody reviews it; the ID check is still open to them.
+- **One person, one stamp number rests on Didit's face search,** the ID check's with the name and
+  birth date: a face it matches to no other stamp number's is signed for the stamp number the person
+  brings.
+- **A person can hold a face stamp on one seed and an ID stamp on another:** a face check reads no
+  name, so the ID check cannot tell its person from a twin. Time solves it: an index trusts a profile
+  more the more verifiers stand behind its seed.
+- **Two checks finished at the same moment do not see each other:** Didit compares a face only with
+  checks it already approved.
+- **Five of a stamp number's own faces at Didit fill its list,** its stamped checks' templates and the
+  day's tries: its next check is refused, `too_many_matches`, till some go. Once Didit holds many
+  faces, five look-alikes can fill it too.
+- **A lost volume re-stamps no one Didit knows:** a new secret reads no earlier `vendor_data`, so
+  every face Didit kept is another stamp number's, until the checks move to an application that has
+  none.
+- **A kept face template ends** after 3650 days at most: then a returning face is new to Didit, and a
+  person Didit no longer matches to their own stamped check, as then, is refused `other_person`.
+- **After the hour, a lost answer loses the list beside the stamp for good:** the stamp comes back,
+  from `POST /stamp` or a new check, without it.
 - **A stamp describes the document as it was on the day of the check:** with one ID stamp a person,
   a renewed document never gives a new one.
 - **Stamps signed before this code kept them do not come back:** `not_found`, and the person checks
@@ -523,9 +567,17 @@ No. We hold your stamp number, made from your seed and our name; your profiles' 
 your seed and their labels. Only your seed connects the two, and it never leaves your device. A
 verification shows that we signed a stamp to the seed behind it, never which stamp number.
 
-**Why are an ID stamp's fields one string, not an object?**
-A stamp's own keys are lower-case words, so it fits inside an entry, and Didit's names, such as
-`date_of_birth`, are not. One string keeps Didit's names and the exact text each leaf was made from.
+**Why does each check get its own `vendor_data`, not one for the person?**
+Didit leaves a user's own faces, those under one `vendor_data`, out of its whole face search. With
+one for all of a person's checks, their checks would never be compared with each other, and someone
+else's check at their stamp number could not be told from theirs. The hash in each says which faces
+are one stamp number's.
+
+**Why are the salts derived, not drawn at random?**
+So a session signed again within its hour gives the same stamp, list and all, after an app lost the
+first answer, and the verifier tells the session that signed a stamp number's first ID stamp from
+one that gave it back by their facts. To anyone without the verifier's secret the salts are as good
+as random; whoever holds it already holds every facts number the verifier signed.
 
 **Could someone rebuild this verifier from public data?**
 Its name, keys and code are public. Which session and person went with which stamp number is not, so

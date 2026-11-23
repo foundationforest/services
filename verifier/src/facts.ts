@@ -1,27 +1,24 @@
 // What a stamp's facts are made from, and whether an ID check read the same person as a Didit user.
 //
-// A stamp is the standard's (proofs/verification/README.md, "The stamp and the verification"): the
-// person's stamp number and one field element, `facts`, signed with the standard's `signStamp`.
-// This verifier makes facts by a recipe fixed for each of its two keys, for good (a new recipe is a
-// new key):
+// A stamp is the standard's (proofs/README.md, "The stamp and the verification"): the person's stamp
+// number and one field element, `facts`, signed with the standard's `signStamp`. Both of this
+// verifier's keys make facts by the standard's recipe for facts as a list (proofs/README.md, "Facts
+// as a list"): `factsNumber` of the list the stamp carries beside it, under `factList`, so the person
+// can show some of them with the standard's facts proof. Each fact is a name, a value and a salt; every
+// value is text.
 //
-//   face key   Poseidon([h(model), h(embedding)])
-//   ID key     Poseidon([h(model), h(embedding), fieldsRoot])
+//   face key   model, the face model's name (`opencv-sface-2021dec`, face.ts), and embedding, the 512
+//              bytes it gives for the check's selfie, as base64url text
+//   ID key     those two, then each text field Didit read on the document, under Didit's own name
+//              (didit.ts's `fieldsOf`), in the order of the names, as JavaScript sorts them
 //
-// Poseidon is the standard's, circomlib's, through poseidon-lite 0.3.0 as keys/ uses it; h(x) is
-// SHA-256 of x's bytes, read as a big-endian integer, reduced mod BN254's scalar order (`BN254_R`).
-//
-//   model        the face model's name, as UTF-8 (`opencv-sface-2021dec`, face.ts)
-//   embedding    the 512 bytes the face model gives for the check's selfie
-//   fieldsRoot   the root of a Poseidon Merkle tree of depth FIELDS_DEPTH over the document's fields
-//                (didit.ts reads them): one leaf Poseidon([h(name), h(value)]) for each, in the order
-//                of their names, then leaves of 0; each node Poseidon([left, right]), the pair hash
-//                the standard's reputation tree uses. That tree is Semaphore's, whose depth grows
-//                with its leaves, so a fixed depth is built here: every path has FIELDS_DEPTH
-//                siblings, so a circuit can prove one field and show none of the others.
-//
-// The stamp carries `fields` beside facts (server.ts), the fields as text (`fieldsText`), so the
-// person keeps what it was made from and anyone can make it again.
+// The salts are the standard's kind, each a number below BN254's scalar order, but derived rather than
+// drawn (`saltsOf`): the first 31 bytes, read big-endian, of HMAC-SHA256, under the key the verifier's
+// secret derives under `fact-salt` (seed.ts), of the session's id, a 0 byte and the fact's name. So a
+// session signed again within its hour (server.ts) gives the same list, the same facts and the same
+// stamp, as the person's app lost the first answer, and the verifier tells a session that signed its
+// stamp number's first ID stamp from one that gave it back by their facts. To anyone without the
+// secret they are random; whoever holds it already holds every facts number the verifier signed.
 //
 // Who an ID check read is how the verifier knows a person came to it before, while keeping nothing
 // of who they are: Didit's face search finds the faces like this one, and the verifier compares what
@@ -29,73 +26,48 @@
 // so strangers with one name and birth date both pass; a face alone never decides, so twins pass.
 // The country is left out on purpose: a renewed document, or another country's, is the same person.
 
-import { createHash } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 
-import { BN254_R, isFieldElement } from '@foundationforest/keys'
-import { poseidon2 } from 'poseidon-lite/poseidon2'
-import { poseidon3 } from 'poseidon-lite/poseidon3'
+import { isFieldElement } from '@foundationforest/keys'
+import type { Fact } from '@foundationforest/proofs'
+import { b64u } from '@foundationforest/folders'
 
-import type { Document, User } from './didit.ts'
+import { DOCUMENT_FIELDS, type Document, type User } from './didit.ts'
+
+/** The face key's facts, by name, in their list's order. */
+export const FACE_FACTS = ['model', 'embedding'] as const
+
+/** The ID key's facts, by name, in their list's order: `extra_fields.<its key>` stands for each of a document's own. */
+export const ID_FACTS = [...FACE_FACTS, ...[...DOCUMENT_FIELDS, 'extra_fields.<its key>'].sort()] as const
+
+/** The recipe, as `GET /` names it. */
+export const RECIPE = "the standard's facts as a list (proofs/README.md, Facts as a list): factsNumber of the list beside the stamp, under factList"
+
+/** A session's salts, one for each fact's name (`saltsOf`). */
+export type Salts = (name: string) => string
 
 /**
- * The fields tree's depth: 2^8 = 256 leaves. Didit documents 17 top-level text fields and about 140
- * in `extra_fields`, most of them driving-licence classes; all of them fit at once.
+ * The salts of a session's facts: for each name, the first 31 bytes of HMAC-SHA256 under `key` of the
+ * session's id, a 0 byte and the name, read big-endian, so below BN254's scalar order, in decimal text.
  */
-export const FIELDS_DEPTH = 8
+export function saltsOf(key: Uint8Array, sessionId: string): Salts {
+  return (name) => BigInt('0x' + createHmac('sha256', key).update(sessionId).update(Uint8Array.of(0)).update(name).digest('hex').slice(0, 62)).toString()
+}
 
-/** The recipes, as `GET /` names them. */
-export const RECIPES = {
-  face: 'Poseidon([h(model), h(embedding)])',
-  id: 'Poseidon([h(model), h(embedding), fieldsRoot])',
-  h: 'SHA-256 of the bytes, read as a big-endian integer, mod the BN254 scalar order',
-  fieldsRoot: `the root of a Poseidon Merkle tree of depth ${FIELDS_DEPTH} over the fields beside the stamp: one leaf Poseidon([h(name), h(value)]) for each, in the order of their names, then leaves of 0; each node Poseidon([left, right])`,
-} as const
+const fact = (name: string, value: string, salts: Salts): Fact => ({ name, value, salt: salts(name) })
+
+/** The face key's list: the face model's name, and the selfie's embedding as base64url text. */
+export function faceList(model: string, embedding: Uint8Array, salts: Salts): Fact[] {
+  return [fact('model', model, salts), fact('embedding', b64u.encode(embedding), salts)]
+}
+
+/** The ID key's list: the face key's two, then every field of the document, in the order of their names. */
+export function idList(model: string, embedding: Uint8Array, document: Document, salts: Salts): Fact[] {
+  return [...faceList(model, embedding, salts), ...Object.keys(document).sort().map((name) => fact(name, document[name]!, salts))]
+}
 
 /** Who an ID check read: the words of its first name and of its full name, and its birth date as YYYY-MM-DD. */
 export type Person = { first: string[]; full: string[]; birth: string }
-
-/** h(x): SHA-256 of x's bytes (text as UTF-8), read as a big-endian integer, reduced into the field. */
-export function h(x: Uint8Array | string): bigint {
-  return BigInt('0x' + createHash('sha256').update(x).digest('hex')) % BN254_R
-}
-
-/** The face key's facts: Poseidon([h(model), h(embedding)]). */
-export function faceFacts(model: string, embedding: Uint8Array): bigint {
-  return poseidon2([h(model), h(embedding)])
-}
-
-/** The fields' names in the order their leaves take: JavaScript's sort, by UTF-16 code units, as RFC 8785 orders keys. */
-const names = (fields: Document) => Object.keys(fields).sort()
-
-/**
- * The fields as text: RFC 8785 for this one shape, a flat object of text, written out here since the
- * standard's canonical JSON takes only `[a-z][a-zA-Z0-9]*` keys and Didit's names have `_` and `.`.
- * Its keys in the leaves' order; each key and value as JSON.stringify writes a string, which is RFC
- * 8785's form.
- */
-export function fieldsText(fields: Document): string {
-  return `{${names(fields).map((name) => `${JSON.stringify(name)}:${JSON.stringify(fields[name])}`).join(',')}}`
-}
-
-/** The fields tree's root (RECIPES.fieldsRoot). Refuses more fields than the tree has leaves. */
-export function fieldsRoot(fields: Document): bigint {
-  if (names(fields).length > 2 ** FIELDS_DEPTH) throw new RangeError(`a document's fields fit in 2^${FIELDS_DEPTH} leaves`)
-  let level = names(fields).map((name) => poseidon2([h(name), h(fields[name]!)]))
-  // The empty subtree at each height: a leaf of 0, then the hash of two of the height below.
-  let empty = 0n
-  for (let height = 0; height < FIELDS_DEPTH; height++) {
-    const next: bigint[] = []
-    for (let i = 0; i < level.length; i += 2) next.push(poseidon2([level[i]!, level[i + 1] ?? empty]))
-    level = next
-    empty = poseidon2([empty, empty])
-  }
-  return level[0] ?? empty
-}
-
-/** The ID key's facts: Poseidon([h(model), h(embedding), fieldsRoot]). */
-export function idFacts(model: string, embedding: Uint8Array, fields: Document): bigint {
-  return poseidon3([h(model), h(embedding), fieldsRoot(fields)])
-}
 
 /** Days from 1970-01-01 to a YYYY-MM-DD date, or null for anything that is not a real date. */
 export function daysOf(birth: string): number | null {

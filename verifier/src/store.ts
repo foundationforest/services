@@ -2,7 +2,8 @@
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
-//                  to one stamp number only, and once its hour is over, is known as used
+//                  to one stamp number only, once its hour is over is known as used, and a face Didit
+//                  matches from it is known as that stamp number's own (server.ts)
 //   stamps         for each stamp number and key (`face` or `id`): the first stamp that key signed for
 //                  it, as its facts and its signature (r8, s), so a lost stamp is handed back
 //   to_delete      for each session that gave a stamp and is not yet deleted in Didit: its id, which
@@ -24,7 +25,7 @@
 //                  sessions it opened, and whether it is used up (`stamped`: it gave a stamp, gave one
 //                  back, or its hold was cancelled), so it opens at most ID_TRIES and gives one stamp
 //
-// Nothing else: no face, no embedding, no name, no birth date, no document, none of the fields beside a
+// Nothing else: no face, no embedding, no name, no birth date, no document, none of the list beside a
 // stamp, of a gift only a hash of its buy, and of a payment nothing of who paid or with what, no
 // amount and no time, and nothing beside a stamp number. A session id is kept as its hash; in clear,
 // and with a time, only in `to_delete` and `opened`, until Didit has deleted the session, a day at
@@ -138,6 +139,12 @@ export class Store {
   /** Whether this session gave a stamp. */
   holds(sessionId: string): boolean {
     return this.#session.get(sessionHash(sessionId)) !== undefined
+  }
+
+  /** The stamp number this session gave a stamp to, or undefined if it gave none. */
+  stampNumberOf(sessionId: string): bigint | undefined {
+    const kept = this.#session.get(sessionHash(sessionId))
+    return kept === undefined ? undefined : fromBytes32(kept.stamp_number as Uint8Array)
   }
 
   /**

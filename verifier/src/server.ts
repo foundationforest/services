@@ -3,14 +3,15 @@
 // client's address).
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
-//                       signs its stamps, as an address, and its facts recipe; for the ID check also
-//                       `forSale` and `testPayments`, whether it is for sale and whether its payments
-//                       run on a test key; what h is; `consent`, the text an app shows before the ID
-//                       check; and, with gifts,
+//                       signs its stamps, as an address, and the names of its facts; for the ID check
+//                       also `forSale` and `testPayments`, whether it is for sale and whether its
+//                       payments run on a test key; `recipe`, the standard's facts as a list; `consent`,
+//                       the text an app shows before the ID check; and, with gifts,
 //                       {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
-//   POST /face/session  {} or {returnUrl}         -> 201 {sessionId, url}   a face check; Didit sends the
-//                                                    person back to returnUrl, an app's own page, when
-//                                                    its origin is in APP_ORIGINS
+//   POST /face/session  {stampNumber} or {stampNumber, returnUrl}
+//                                                 -> 201 {sessionId, url}   a face check for that stamp
+//                                                    number; Didit sends the person back to returnUrl,
+//                                                    an app's own page, when its origin is in APP_ORIGINS
 //   POST /face/stamp    {sessionId, stampNumber}  -> 200 {stamp}            a stamp from the face key
 //                       with a gift, also {gift: "<the host buy's reference>"}
 //                                                 -> 200 {stamp, gift: {ticket} or {error}}
@@ -18,7 +19,7 @@
 //                                                    ID check (stripe.ts), which holds its $5; Stripe
 //                                                    sends the person back to returnUrl, on an origin
 //                                                    in APP_ORIGINS
-//   POST /id/session    {payment} or {payment, returnUrl}
+//   POST /id/session    {payment, stampNumber} or {payment, stampNumber, returnUrl}
 //                                                 -> 201 {sessionId, url}   an ID check, opened as a face
 //                                                    check is, for a payment held less than a day ago,
 //                                                    with a try left
@@ -26,10 +27,10 @@
 //                                                 -> 200 {stamp}            a stamp from the ID key, for the
 //                                                    payment that opened the session, its hold taken,
 //                                                    and its gift asked as the face stamp's is; for a
-//                                                    stamp number that has one, the first, its own
-//                                                    fields only, its hold cancelled
+//                                                    stamp number that has one, the first, without its
+//                                                    list, its hold cancelled
 //   POST /stamp         {stampNumber}             -> 200 {face, id}         the stamps kept for it, each
-//                                                    a stamp or null, its own fields only; 404
+//                                                    a stamp or null, without its list; 404
 //                                                    `not_found` when none was signed for it
 //
 // Errors are `{error: <code>}`, each code in codes.ts: 400 a malformed body, 402 a payment not held
@@ -39,6 +40,25 @@
 // 413 a body over 4 KB, 502 Didit or Stripe failing the request (logged by its status and codes,
 // `why`), 503 the ID check not for sale (no Stripe). A refused or failed request uses nothing up,
 // but for the ID check's refusals that end its payment (`ends`).
+//
+// One person, one stamp number: a session is opened for one stamp number, S, and gives a stamp only
+// to it, its `vendor_data` carrying S's hash (didit.ts). Once Didit approves it, the verifier
+// judges each face Didit matched, and each session a seen-face risk names (`faces`): own, under S's
+// hash from a check that gave S a stamp (one `sessions` holds for S, or a kept template, which only
+// such a check leaves); an earlier try, under S's hash from one that gave none, which counts for
+// nothing but its place in Didit's list; or another's, under any other `vendor_data`
+// (`judgeFaces`):
+//
+//   1. another's: for a face check, `face_seen`; for an ID check, one whose Didit user has the same
+//      birth date and a name that fits, `duplicate_document`, and any other passes, a face check's
+//      among them: with no name on it, it cannot be told from a twin
+//   2. S holds a stamp of either key, and no face is its own: `other_person`
+//   3. for an ID check, its own ID check whose Didit user has a birth date that does not fit this
+//      one's: `other_person`
+//   4. Didit listed as many matches as it lists, and nothing above refused: `too_many_matches`, since
+//      the verifier cannot tell what it left out
+//
+// Then a face check gives a new face stamp, and an ID check S's first ID stamp back, or a new one.
 //
 // One payment opens up to ID_TRIES ID sessions in its first day (store.ts), and gives one ID stamp,
 // from one of the sessions it opened. Its $5 is only held until then: taken when it gives a new ID
@@ -56,15 +76,14 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
-import { signStamp, stampToJson } from '@foundationforest/proofs'
+import { type Fact, factsNumber, signStamp, stampToJson } from '@foundationforest/proofs'
 import type { ServiceKey } from '@foundationforest/keys'
-import { b64u } from '@foundationforest/folders'
 
 import type { Code } from './codes.ts'
-import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge } from './didit.ts'
+import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge, readVendorData, stampHash, vendorDataFor } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
-import { type Person, decimal, faceFacts, fieldsText, idFacts, person, samePerson } from './facts.ts'
+import { type Person, decimal, faceList, idList, person, saltsOf, samePerson } from './facts.ts'
 import type { Ed25519Key } from './seed.ts'
 import { type KeptStamp, type Store, paymentHash } from './store.ts'
 import { PAYMENT, PaymentUnavailable, type Payments } from './stripe.ts'
@@ -124,11 +143,11 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown>> 
 }
 
 /** Exactly these fields, each a string: the service takes nothing it doesn't need. */
-function fields(body: Record<string, unknown>, names: string[] = []): Record<string, string> {
+function fields(body: Record<string, unknown>, names: string[]): Record<string, string> {
   const keys = Object.keys(body)
   if (keys.length !== names.length || !names.every((n) => typeof body[n] === 'string')) {
     // Each route's own names joined, every one of them in codes.ts, as its tests send it.
-    throw new HttpError(400, (names.length ? `expected_exactly_${names.join('_and_')}` : 'expected_empty_body') as Code)
+    throw new HttpError(400, `expected_exactly_${names.join('_and_')}` as Code)
   }
   return body as Record<string, string>
 }
@@ -150,12 +169,17 @@ function paymentOf(value: string): string {
   return value
 }
 
+/** The person's stamp number at this verifier, from its decimal text. */
+function stampNumberIn(text: string | undefined): bigint {
+  const stampNumber = decimal(text)
+  if (stampNumber === null) throw new HttpError(400, 'bad_stamp_number')
+  return stampNumber
+}
+
 /** A request for a stamp: a Didit session id, and the person's stamp number at this verifier. */
 function stampRequest(input: Record<string, string>): { sessionId: string; stampNumber: bigint } {
   if (!UUID.test(input.sessionId!)) throw new HttpError(400, 'bad_session_id')
-  const stampNumber = decimal(input.stampNumber)
-  if (stampNumber === null) throw new HttpError(400, 'bad_stamp_number')
-  return { sessionId: input.sessionId!, stampNumber }
+  return { sessionId: input.sessionId!, stampNumber: stampNumberIn(input.stampNumber) }
 }
 
 const CORS = {
@@ -190,6 +214,8 @@ export type VerifierDeps = {
   embedder: Embedder
   /** The two stamp keys, service keys: the face key and the ID key. */
   stampKeys: { face: ServiceKey; id: ServiceKey }
+  /** The keys of a stamp number's hash in `vendor_data` and of the facts' salts, derived from the verifier's secret (seed.ts). */
+  hashKeys: { vendorData: Uint8Array; salt: Uint8Array }
   /** `GET /`, canonical text. */
   about: string
   /** Unset: no gifts. */
@@ -289,17 +315,21 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   type Route = (body: Record<string, unknown>) => Promise<[number, unknown]>
 
+  /** The `vendor_data` a session of this check opened for this stamp number carries (didit.ts). */
+  const vendorData = (c: CheckDeps, stampNumber: bigint) => vendorDataFor(c.kind, deps.hashKeys.vendorData, stampNumber)
+
   /**
-   * A face session on the check's workflow: `{}`, or `{returnUrl}` on an app's origin, where Didit
-   * sends the person when it is done. Kept as opened, so the sweep deletes it.
+   * A face session on the check's workflow, for a stamp number: `{stampNumber}`, or with `returnUrl` on
+   * an app's origin, where Didit sends the person when it is done. Kept as opened, so the sweep deletes
+   * it.
    */
   async function open(c: CheckDeps, body: Record<string, unknown>): Promise<[number, unknown]> {
-    let callback: string | undefined
-    if ('returnUrl' in body) callback = returnUrlIn(deps.appOrigins ?? [], fields(body, ['returnUrl']).returnUrl!)
-    else fields(body)
+    const input = fields(body, 'returnUrl' in body ? ['stampNumber', 'returnUrl'] : ['stampNumber'])
+    const stampNumber = stampNumberIn(input.stampNumber)
+    const callback = input.returnUrl === undefined ? undefined : returnUrlIn(deps.appOrigins ?? [], input.returnUrl)
     let session
     try {
-      session = await c.check.createSession({ callback })
+      session = await c.check.createSession({ vendorData: vendorData(c, stampNumber), callback })
     } catch (error) {
       throw unavailable('face_check_unavailable', error)
     }
@@ -325,16 +355,18 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
-   * An ID session, for a payment: Stripe is asked each time whether it holds the money, and since
-   * when, since the hourly search may have cancelled it; a payment held a day ago or more opens none.
-   * Each session takes one of its tries, and a session Didit does not open gives its try back. Kept as
-   * opened with the payment, so only that payment gives its stamp, and the sweep deletes it.
+   * An ID session, for a payment and a stamp number: Stripe is asked each time whether it holds the
+   * money, and since when, since the hourly search may have cancelled it; a payment held a day ago or
+   * more opens none. Each session takes one of its tries, and a session Didit does not open gives its
+   * try back. Kept as opened with the payment, so only that payment gives its stamp, and the sweep
+   * deletes it.
    */
   async function openId(body: Record<string, unknown>): Promise<[number, unknown]> {
     const payments = forSale()
-    const input = fields(body, 'returnUrl' in body ? ['payment', 'returnUrl'] : ['payment'])
-    const callback = input.returnUrl === undefined ? undefined : returnUrlIn(deps.appOrigins ?? [], input.returnUrl)
+    const input = fields(body, 'returnUrl' in body ? ['payment', 'stampNumber', 'returnUrl'] : ['payment', 'stampNumber'])
     const payment = paymentOf(input.payment!)
+    const stampNumber = stampNumberIn(input.stampNumber)
+    const callback = input.returnUrl === undefined ? undefined : returnUrlIn(deps.appOrigins ?? [], input.returnUrl)
     const hash = paymentHash(payment)
     if (store.knowsPayment(hash) && store.triesLeft(hash) === 0) throw new HttpError(409, 'payment_used')
     let heldAt: number | null
@@ -347,7 +379,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     kept(store.takeTry(hash))
     let session
     try {
-      session = await id.check.createSession({ callback })
+      session = await id.check.createSession({ vendorData: vendorData(id, stampNumber), callback })
     } catch (error) {
       store.giveBackTry(hash)
       throw unavailable('face_check_unavailable', error)
@@ -356,8 +388,13 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return [201, session]
   }
 
-  /** What Didit decided for this session, if it passed: otherwise the refusal. */
-  async function decided(c: CheckDeps, sessionId: string) {
+  /**
+   * What Didit decided for this session, if it passed and the session was opened for this stamp
+   * number: otherwise the refusal. One opened for another, or under a `vendor_data` this verifier
+   * cannot read, as before it wrote stamp numbers there, gives its stamp to none but that one:
+   * `session_used`, a 409, which ends no payment.
+   */
+  async function decided(c: CheckDeps, sessionId: string, stampNumber: bigint) {
     let decision
     try {
       decision = await c.check.decision(sessionId)
@@ -367,8 +404,91 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const refusal = judge(decision, c.workflowId, c.kind)
     // A session that gave a stamp and is gone from Didit was deleted: by the sweep, or by hand.
     if (refusal === 'unknown_session' && store.holds(sessionId)) throw new HttpError(409, 'session_used')
+    if (refusal === 'unknown_session' || refusal === 'wrong_workflow') throw new HttpError(403, refusal)
+    const opened = readVendorData(decision!.vendorData)
+    if (opened?.check !== c.kind || opened.hash !== stampHash(deps.hashKeys.vendorData, stampNumber)) throw new HttpError(409, 'session_used')
     if (refusal) throw new HttpError(403, refusal)
     return decision!
+  }
+
+  /** A face Didit matched, or a session a seen-face risk named, as `judgeFaces` reads it: whose it is, and its `vendor_data` when it is known. */
+  type Face = { kind: 'own' | 'try' | 'other'; vendorData: string | null }
+
+  /**
+   * Each face Didit matched to this session's, and each session a seen-face risk names that no match
+   * listed can be (didit.ts's `named`), for stamp number S: own, under S's hash from a check that gave
+   * S a stamp, a session `sessions` holds for S or a kept template, which only such a check leaves; an
+   * earlier try, under S's hash from a session that gave none; another's, under any other. A named
+   * session's `vendor_data` is read from Didit; one Didit no longer has is S's own if it gave S a
+   * stamp, and like a risk that names no session, another's otherwise.
+   */
+  async function faces(c: CheckDeps, stampNumber: bigint, decision: Decision): Promise<Face[]> {
+    const mine = stampHash(deps.hashKeys.vendorData, stampNumber)
+    const gaveStamp = (sessionId: string) => store.stampNumberOf(sessionId) === stampNumber
+    const kindOf = (vendorData: string | null, sessionId: string | null): Face['kind'] => {
+      if (vendorData === null || readVendorData(vendorData)?.hash !== mine) return 'other'
+      return sessionId === null || gaveStamp(sessionId) ? 'own' : 'try'
+    }
+    const found: Face[] = decision.matches.map((match) => ({ kind: kindOf(match.vendorData, match.sessionId), vendorData: match.vendorData }))
+    const listed = (sessionId: string | null) => decision.matches.some((match) => match.sessionId === sessionId)
+    for (const sessionId of decision.named.filter((named) => !listed(named))) {
+      if (sessionId === null) {
+        found.push({ kind: 'other', vendorData: null })
+        continue
+      }
+      let named
+      try {
+        named = await c.check.decision(sessionId)
+      } catch (error) {
+        throw unavailable('face_check_unavailable', error)
+      }
+      if (named?.vendorData) found.push({ kind: kindOf(named.vendorData, sessionId), vendorData: named.vendorData })
+      else found.push({ kind: gaveStamp(sessionId) ? 'own' : 'other', vendorData: null })
+    }
+    return found
+  }
+
+  /** The Didit user a face's `vendor_data` names, or null for none. */
+  async function userOf(vendorData: string) {
+    try {
+      return await id.check.user(vendorData)
+    } catch (error) {
+      throw unavailable('face_check_unavailable', error)
+    }
+  }
+
+  /**
+   * One person, one stamp number: the faces Didit found for a session opened for S (`faces`), judged
+   * in order, for a check Didit approved. Another stamp number's face refuses a face check,
+   * `face_seen`, and an ID check when its Didit user has the same birth date and a name that fits,
+   * `duplicate_document`; a face check's, which read no name, is not asked about. S holding a stamp,
+   * with no face of its own, is someone else, `other_person`; so is an ID check whose own earlier ID
+   * check's user has a birth date that does not fit. A list as long as Didit makes them, with none of
+   * these, may have left one out: `too_many_matches`. An earlier try counts only in the list.
+   */
+  async function judgeFaces(c: CheckDeps, stampNumber: bigint, decision: Decision, who: Person | null): Promise<void> {
+    const found = await faces(c, stampNumber, decision)
+    const others = found.filter((face) => face.kind === 'other')
+    const own = found.filter((face) => face.kind === 'own')
+    const isFaceCheck = (vendorData: string) => readVendorData(vendorData)?.check === 'face'
+    if (c.kind === 'face' && others.length > 0) throw new HttpError(403, 'face_seen')
+    if (c.kind === 'id') {
+      for (const { vendorData } of others) {
+        if (vendorData === null || isFaceCheck(vendorData)) continue
+        const user = await userOf(vendorData)
+        if (user && samePerson(who!, user)) throw new HttpError(403, 'duplicate_document')
+      }
+    }
+    const held = store.stamps(stampNumber)
+    if ((held.face || held.id) && own.length === 0) throw new HttpError(403, 'other_person')
+    if (c.kind === 'id') {
+      for (const { vendorData } of own) {
+        if (vendorData === null || isFaceCheck(vendorData)) continue
+        const user = await userOf(vendorData)
+        if (user?.birth && !samePerson(who!, user)) throw new HttpError(403, 'other_person')
+      }
+    }
+    if (decision.full) throw new HttpError(403, 'too_many_matches')
   }
 
   /** The embedding of the selfie the session took. */
@@ -418,16 +538,25 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return { ...stampRequest(input), input, ...(asked && { gift: { reference } }) }
   }
 
-  /** A stamp from the face key, for this stamp number, from a face check Didit approved. */
+  /** A stamp's list (facts.ts), its facts made from it, signed by this check's key with the list beside it. */
+  const signed = (c: CheckDeps, stampNumber: bigint, factList: Fact[]) =>
+    signStamp(deps.stampKeys[c.kind].secret, { stampNumber, facts: factsNumber(factList), verifierName: deps.verifierName, factList })
+
+  /**
+   * A stamp from the face key, for this stamp number, from a face check Didit approved and the
+   * verifier judged (`judgeFaces`). The session, asked again within its hour, gives the same stamp: its
+   * decision and its salts are the same, and it is judged no more, as its own stamp is now S's.
+   */
   async function faceStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     const { sessionId, stampNumber, gift } = stampAsked('face', body)
     kept(store.check({ sessionId, stampNumber, since: since() }))
+    const again = store.holds(sessionId)
 
-    const decision = await decided(face, sessionId)
+    const decision = await decided(face, sessionId, stampNumber)
+    if (!again) await judgeFaces(face, stampNumber, decision, null)
     const embedded = await embedding(face, decision.faceImage)
-    const model = embedder.model
-    // Signed, with the fields its facts were made from beside it, and kept without them.
-    const stamp = signStamp(deps.stampKeys.face.secret, { stampNumber, facts: faceFacts(model, embedded), verifierName: deps.verifierName, model, embedding: b64u.encode(embedded) })
+    // Signed, with the list its facts were made from beside it, and kept without it.
+    const stamp = signed(face, stampNumber, faceList(embedder.model, embedded, saltsOf(deps.hashKeys.salt, sessionId)))
     // Checked again, for good, inside one transaction: the session may have given a stamp for another
     // stamp number while this request waited for Didit.
     kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now(), stamp }))
@@ -436,7 +565,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return [200, answer]
   }
 
-  /** A kept stamp as JSON, with its own fields only: the fields beside it were never kept. */
+  /** A kept stamp as JSON, without its list: the list beside it was never kept. */
   const keptToJson = (check: Check, stampNumber: bigint, stamp: KeptStamp) =>
     stampToJson({ stampNumber, ...stamp, verifierName: deps.verifierName, verifier: deps.stampKeys[check].address })
 
@@ -446,26 +575,6 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       await payments.cancel(payment)
     } catch (error) {
       log(`verifier: a hold could not be cancelled at Stripe, left for the hourly search (${why(error)})`)
-    }
-  }
-
-  /**
-   * Whether Didit has seen this person before: a face it matched whose Didit user has the same birth
-   * date and a name that fits (facts.ts's `samePerson`), refused as `duplicate_document`. A match to a
-   * session this same payment opened is the person's own earlier try, and one payment gives one stamp,
-   * so it is skipped.
-   */
-  async function seenBefore(who: Person, decision: Decision, payment: Uint8Array): Promise<void> {
-    for (const match of decision.matches) {
-      const opener = match.sessionId === null ? undefined : store.opener(match.sessionId)
-      if (opener && Buffer.from(opener).equals(Buffer.from(payment))) continue
-      let user
-      try {
-        user = await id.check.user(match.vendorData)
-      } catch (error) {
-        throw unavailable('face_check_unavailable', error)
-      }
-      if (user && samePerson(who, user)) throw new HttpError(403, 'duplicate_document')
     }
   }
 
@@ -479,11 +588,11 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
-   * The ID stamp for this stamp number, from an ID check Didit approved, opened by the payment sent,
-   * which gave no stamp yet: a stamp number that has one gets it back, its own fields only, and the
-   * payment's hold is cancelled; a person Didit has seen before is refused; anyone else gets a new
-   * stamp, and the hold is taken. One ID stamp a person, ever. The session that signed it, sent again
-   * within its hour, gives it with its fields beside it, using nothing. A refusal that ends the
+   * The ID stamp for this stamp number, from an ID check Didit approved and the verifier judged
+   * (`judgeFaces`), opened by the payment sent, which gave no stamp yet: a stamp number that has one
+   * gets it back, without its list, and the payment's hold is cancelled; anyone else gets a new stamp,
+   * and the hold is taken. One ID stamp a person, for now. The session that signed it, sent again
+   * within its hour, gives it with its list beside it, using nothing. A refusal that ends the
    * payment cancels its hold: a person seen before, always; any other refusal of a session that will
    * never pass, only for the payment's newest session, its last try, so an older one asked about later
    * never cancels a hold whose newest session may still pass.
@@ -510,24 +619,22 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   async function signId(a: { sessionId: string; stampNumber: bigint; payment: string; hash: Uint8Array; again: boolean; gift?: { reference: unknown } }): Promise<[number, unknown]> {
     const { sessionId, stampNumber, hash, again } = a
     const payments = deps.payments!
-    const decision = await decided(id, sessionId)
+    const decision = await decided(id, sessionId, stampNumber)
     const withGift = (answer: unknown): [number, unknown] => [200, { stamp: answer, ...(a.gift && { gift: giveGift('id', stampNumber, a.gift.reference) }) }]
-    /** The first ID stamp back, its own fields only: the session kept with it, the payment used up, and its hold cancelled. */
+    /** The first ID stamp back, without its list: the session kept with it, the payment used up, and its hold cancelled. */
     const giveBack = async (first: KeptStamp): Promise<[number, unknown]> => {
       kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp: first, payment: hash }))
       await cancel(payments, a.payment)
       return withGift(keptToJson('id', stampNumber, first))
     }
+    const who = person(decision.document)
+    if (!who) throw new HttpError(403, 'no_document_data')
+    if (!again) await judgeFaces(id, stampNumber, decision, who)
     const first = store.stamps(stampNumber).id
     if (first && !again) return giveBack(first)
 
-    const who = person(decision.document)
-    if (!who) throw new HttpError(403, 'no_document_data')
-    if (!again) await seenBefore(who, decision, hash)
     const embedded = await embedding(id, decision.faceImage)
-    const model = embedder.model
-    const document = decision.document!
-    const stamp = signStamp(deps.stampKeys.id.secret, { stampNumber, facts: idFacts(model, embedded, document), verifierName: deps.verifierName, model, embedding: b64u.encode(embedded), fields: fieldsText(document) })
+    const stamp = signed(id, stampNumber, idList(embedder.model, embedded, decision.document!, saltsOf(deps.hashKeys.salt, sessionId)))
     return settle(async () => {
       // Checked again: another request may have signed for this session or this stamp number meanwhile.
       kept(store.check({ sessionId, stampNumber, since: since(), payment: hash }))
@@ -548,15 +655,15 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       }
       kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, payment: hash }))
       // Read after `remember`, whose transaction keeps only the first ID stamp a stamp number gets. The
-      // same facts mean the same embedding and fields: this stamp, so its fields go with it.
+      // same facts mean the same session, embedding and fields: this stamp, so its list goes with it.
       const firstId = store.stamps(stampNumber).id!
       return withGift(firstId.facts === stamp.facts ? stampToJson(stamp) : keptToJson('id', stampNumber, firstId))
     })
   }
 
   /**
-   * The stamps kept for a stamp number, one for each key, each with its own fields only. A stamp is no
-   * use without the seed behind its number.
+   * The stamps kept for a stamp number, one for each key, each without its list. A stamp is no use
+   * without the seed behind its number.
    */
   async function stampBack(body: Record<string, unknown>): Promise<[number, unknown]> {
     const stampNumber = decimal(fields(body, ['stampNumber']).stampNumber)

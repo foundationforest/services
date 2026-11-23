@@ -1,20 +1,41 @@
 {
-  "about": "The facts recipes (src/facts.ts), pinned. h(x) is SHA-256 of x's bytes, read as a big-endian integer, mod the BN254 scalar order. An ID vector's fields are a document's text fields by Didit's names, its text the fields as canonical JSON. The stamp number is keys/'s, from its test vectors (standard/keys/test/vectors.json): the seed 00 01 ... 1f at verifier-a.example.",
-  "h": {
-    "model": "opencv-sface-2021dec",
-    "value": "10591749797650705127731616988021729254250218697580187264448946244445411076997"
+  "about": "The facts lists and the vendor_data hash (src/facts.ts, src/didit.ts), pinned. The verifier's secret is the bytes 00 01 ... 1f, for these vectors only. vendorData: the keyed hash of a stamp number each Didit session's vendor_data carries, HMAC-SHA256 under the key hkdf derives from the secret under vendor-data, of the stamp number's 32 bytes, big-endian, in hex; the stamp number is keys/'s, from its test vectors (standard/keys/test/vectors.json): the seed 00 01 ... 1f at verifier-a.example. salts: each fact's salt for one session, the first 31 bytes of HMAC-SHA256 under the key hkdf derives under fact-salt, of the session's id, a 0 byte and the fact's name, read big-endian, in decimal. face and id: each key's list for that session, with those salts, and its facts, the standard's factsNumber of the list; an ID vector's fields are a document's text fields by Didit's names.",
+  "secret": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "vendorData": {
+    "key": "bafb46c1a0e9efcf06e4614a7dee3700b4e898f1757019776fab56be1f298d45",
+    "stampNumber": "18402149250886678356079257736529107316112840223970378666944710760051516693134",
+    "hash": "68080742134a98a5aa97f3c840379a38f5517926a98598372567b1cda8b141c9",
+    "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "verifier": "verifier-a.example"
   },
-  "face": [
-    {
-      "model": "opencv-sface-2021dec",
-      "embedding": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
-      "facts": "3938773745469359507631482279027453944382046040977112154017228241633455231226"
+  "salts": {
+    "key": "aa5e9464b3ead43fb7a8ec39a277cd8a92f19d02060431555c30813bd9e15f4c",
+    "sessionId": "4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a",
+    "salts": {
+      "model": "341534271377441416460911075085863987224845106726104604095042029109575041719",
+      "embedding": "421413418760872739300903487830227877451981107791074934951178783294857435814",
+      "first_name": "268816259302042791728172938386540732337422656339544322738477593318029281066"
     }
-  ],
+  },
+  "face": {
+    "model": "opencv-sface-2021dec",
+    "embedding": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
+    "list": [
+      {
+        "name": "model",
+        "value": "opencv-sface-2021dec",
+        "salt": "341534271377441416460911075085863987224845106726104604095042029109575041719"
+      },
+      {
+        "name": "embedding",
+        "value": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
+        "salt": "421413418760872739300903487830227877451981107791074934951178783294857435814"
+      }
+    ],
+    "facts": "17459494554654116847373430378438259336807001655471298154514336375123384925470"
+  },
   "id": [
     {
-      "model": "opencv-sface-2021dec",
-      "embedding": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
       "fields": {
         "document_type": "Passport",
         "document_subtype": "PASSPORT_GENERIC",
@@ -34,39 +55,180 @@
         "extra_fields.DL Class": "B",
         "extra_fields.profession": "Ingeniera"
       },
-      "text": "{\"address\":\"Calle Mayor 1, 28001 Madrid\",\"date_of_birth\":\"1990-05-12\",\"date_of_issue\":\"2022-05-11\",\"document_number\":\"AB1234567\",\"document_subtype\":\"PASSPORT_GENERIC\",\"document_type\":\"Passport\",\"expiration_date\":\"2032-05-11\",\"extra_fields.DL Class\":\"B\",\"extra_fields.profession\":\"Ingeniera\",\"first_name\":\"María\",\"full_name\":\"María García López\",\"gender\":\"F\",\"issuing_state\":\"ESP\",\"last_name\":\"García López\",\"nationality\":\"ESP\",\"personal_number\":\"99999999R\",\"place_of_birth\":\"Madrid\"}",
-      "fieldsRoot": "2084943790452204498328301009183232545459698005308740288813831740898690128306",
-      "facts": "3990499692154085961117504524198684132607320109888289603002640888202744907020"
+      "list": [
+        {
+          "name": "model",
+          "value": "opencv-sface-2021dec",
+          "salt": "341534271377441416460911075085863987224845106726104604095042029109575041719"
+        },
+        {
+          "name": "embedding",
+          "value": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
+          "salt": "421413418760872739300903487830227877451981107791074934951178783294857435814"
+        },
+        {
+          "name": "address",
+          "value": "Calle Mayor 1, 28001 Madrid",
+          "salt": "397397226581805185183969628448447829427494634786298585283418783301675082790"
+        },
+        {
+          "name": "date_of_birth",
+          "value": "1990-05-12",
+          "salt": "391640839667058411166680725486264809576976336782704347750866645335089521035"
+        },
+        {
+          "name": "date_of_issue",
+          "value": "2022-05-11",
+          "salt": "283439633255069714092652837577921785775208378160283865436410038297937038680"
+        },
+        {
+          "name": "document_number",
+          "value": "AB1234567",
+          "salt": "163611195802714697864727305605076817074362184238472499262976415484234259242"
+        },
+        {
+          "name": "document_subtype",
+          "value": "PASSPORT_GENERIC",
+          "salt": "403249770916585844804474794971610691686737115845087353348457937264035024483"
+        },
+        {
+          "name": "document_type",
+          "value": "Passport",
+          "salt": "229475570649519023045780492171861633901088847829126102826172695619833381456"
+        },
+        {
+          "name": "expiration_date",
+          "value": "2032-05-11",
+          "salt": "41000694885696316014462767080825602808846021552695240024493755891127067735"
+        },
+        {
+          "name": "extra_fields.DL Class",
+          "value": "B",
+          "salt": "446599785206783597444988360999876497037803901891222831663238057314042254407"
+        },
+        {
+          "name": "extra_fields.profession",
+          "value": "Ingeniera",
+          "salt": "195383951025985196833564151345743629313714212850996778545087104266472328338"
+        },
+        {
+          "name": "first_name",
+          "value": "María",
+          "salt": "268816259302042791728172938386540732337422656339544322738477593318029281066"
+        },
+        {
+          "name": "full_name",
+          "value": "María García López",
+          "salt": "447503187866526083584524364385285800747576640164403852348523798900144880471"
+        },
+        {
+          "name": "gender",
+          "value": "F",
+          "salt": "389889426186479367174110195043869664956651657495091022459484178732233121221"
+        },
+        {
+          "name": "issuing_state",
+          "value": "ESP",
+          "salt": "11610594398787562253321362718170945555608695266791053243580579236842483431"
+        },
+        {
+          "name": "last_name",
+          "value": "García López",
+          "salt": "133470902474100225617415967720200537833438480392242921159982280287470624119"
+        },
+        {
+          "name": "nationality",
+          "value": "ESP",
+          "salt": "280796021527148215325808017600167609550455189456110186902267261132178461652"
+        },
+        {
+          "name": "personal_number",
+          "value": "99999999R",
+          "salt": "100153453755894920304980766390193357774311792063165100273110698897365391340"
+        },
+        {
+          "name": "place_of_birth",
+          "value": "Madrid",
+          "salt": "417758601166680981205058430766190481073639302691532117097198698474825569185"
+        }
+      ],
+      "facts": "17456759970728959106284901367592908296936186764511419353328602298702322869735"
     },
     {
-      "model": "opencv-sface-2021dec",
-      "embedding": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
       "fields": {
         "first_name": "Ada",
         "last_name": "Lovelace",
         "date_of_birth": "1815-12-10"
       },
-      "text": "{\"date_of_birth\":\"1815-12-10\",\"first_name\":\"Ada\",\"last_name\":\"Lovelace\"}",
-      "fieldsRoot": "16654506825549086737698037818090119078171002609105570040903470555341355986926",
-      "facts": "20840066383513926478078803951717958459098798678387862893338766259919295125326"
+      "list": [
+        {
+          "name": "model",
+          "value": "opencv-sface-2021dec",
+          "salt": "341534271377441416460911075085863987224845106726104604095042029109575041719"
+        },
+        {
+          "name": "embedding",
+          "value": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
+          "salt": "421413418760872739300903487830227877451981107791074934951178783294857435814"
+        },
+        {
+          "name": "date_of_birth",
+          "value": "1815-12-10",
+          "salt": "391640839667058411166680725486264809576976336782704347750866645335089521035"
+        },
+        {
+          "name": "first_name",
+          "value": "Ada",
+          "salt": "268816259302042791728172938386540732337422656339544322738477593318029281066"
+        },
+        {
+          "name": "last_name",
+          "value": "Lovelace",
+          "salt": "133470902474100225617415967720200537833438480392242921159982280287470624119"
+        }
+      ],
+      "facts": "7759577725354852366950724991641628476583891178625167422267659261258019772512"
     },
     {
-      "model": "opencv-sface-2021dec",
-      "embedding": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
       "fields": {
         "full_name": "Aina Ivanova",
         "date_of_birth": "1970-01-01",
         "issuing_state": "KGZ",
         "extra_fields.full_name_non_latin": "Айна Иванова"
       },
-      "text": "{\"date_of_birth\":\"1970-01-01\",\"extra_fields.full_name_non_latin\":\"Айна Иванова\",\"full_name\":\"Aina Ivanova\",\"issuing_state\":\"KGZ\"}",
-      "fieldsRoot": "13969532977073687966227621450672983445401490228174494564916364077048686452282",
-      "facts": "15130558663126412758464681927105481922501991226521413125815912227850913420736"
+      "list": [
+        {
+          "name": "model",
+          "value": "opencv-sface-2021dec",
+          "salt": "341534271377441416460911075085863987224845106726104604095042029109575041719"
+        },
+        {
+          "name": "embedding",
+          "value": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn-AgYKDhIWGh4iJiouMjY6PkJGSk5SVlpeYmZqbnJ2en6ChoqOkpaanqKmqq6ytrq-wsbKztLW2t7i5uru8vb6_wMHCw8TFxsfIycrLzM3Oz9DR0tPU1dbX2Nna29zd3t_g4eLj5OXm5-jp6uvs7e7v8PHy8_T19vf4-fr7_P3-_wABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVpbXF1eX2BhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp-goaKjpKWmp6ipqqusra6vsLGys7S1tre4ubq7vL2-v8DBwsPExcbHyMnKy8zNzs_Q0dLT1NXW19jZ2tvc3d7f4OHi4-Tl5ufo6err7O3u7_Dx8vP09fb3-Pn6-_z9_v8",
+          "salt": "421413418760872739300903487830227877451981107791074934951178783294857435814"
+        },
+        {
+          "name": "date_of_birth",
+          "value": "1970-01-01",
+          "salt": "391640839667058411166680725486264809576976336782704347750866645335089521035"
+        },
+        {
+          "name": "extra_fields.full_name_non_latin",
+          "value": "Айна Иванова",
+          "salt": "118236379526217719124037422798330397520926321122989346017780219505480132831"
+        },
+        {
+          "name": "full_name",
+          "value": "Aina Ivanova",
+          "salt": "447503187866526083584524364385285800747576640164403852348523798900144880471"
+        },
+        {
+          "name": "issuing_state",
+          "value": "KGZ",
+          "salt": "11610594398787562253321362718170945555608695266791053243580579236842483431"
+        }
+      ],
+      "facts": "7348518103061024373410927657440358299142086607959843833116009005737285667567"
     }
-  ],
-  "stampNumber": {
-    "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-    "verifier": "verifier-a.example",
-    "stampNumber": "18402149250886678356079257736529107316112840223970378666944710760051516693134"
-  }
+  ]
 }
