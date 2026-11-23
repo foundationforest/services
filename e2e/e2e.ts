@@ -69,6 +69,7 @@ import {
   buildTree,
   checkReputation,
   checkVerification,
+  factListOf,
   proofBytes as reputationBytes,
   proveReputation,
   signedBytes,
@@ -246,9 +247,10 @@ const people: Person[] = []
 
 /**
  * The face check, as the app does it, asked with its gift: the gift read in the verifier's
- * `GET /`, one buy at its host of exactly its credits, a session, the check (the stand-in passes
- * it), the stamp number and the buy's reference sent, and a stamp and a ticket back, checked. The
- * app keeps the stamp on the device, as safely as a key, and the buy to finish later.
+ * `GET /`, one buy at its host of exactly its credits, a session opened for the stamp number, the
+ * check (the stand-in passes it), the stamp number and the buy's reference sent, and a stamp, with
+ * its list beside it, and a ticket back, checked. The app keeps the stamp on the device, as safely as
+ * a key, and the buy to finish later.
  */
 async function faceStamp(p: Person) {
   const verifier = services!.verifier
@@ -257,7 +259,7 @@ async function faceStamp(p: Person) {
   const directory = await json(`${services!.host}${DIRECTORY_PATH}`)
   assert.equal(directory.status, 200, `${services!.host} publishes its credits`)
   const b = await buy(serviceOf(services!.host, directory.body), CREDITS)
-  const session = await post(`${verifier.url}/face/session`, {})
+  const session = await post(`${verifier.url}/face/session`, { stampNumber: p.stampNumber.toString() })
   assert.equal(session.status, 201, `a session: ${JSON.stringify(session.body)}`)
   const got = await post(`${verifier.url}/face/stamp`, { sessionId: session.body.sessionId, stampNumber: p.stampNumber.toString(), gift: b.reference })
   assert.equal(got.status, 200, `a stamp: ${JSON.stringify(got.body)}`)
@@ -275,7 +277,8 @@ async function faceStamp(p: Person) {
   assert.equal(back.status, 200, `the stamp asked back: ${JSON.stringify(back.body)}`)
   const own = (x: SignedStamp) => ({ stampNumber: x.stampNumber, facts: x.facts, verifier: x.verifier, verifierName: x.verifierName, signature: x.signature })
   assert.deepEqual(own(stampFromJson(back.body.face)), own(stamp), 'asked back by its stamp number, it is the one signed')
-  say(`${p.role}: a stamp from the loop verifier's face check, model ${String(got.body.stamp.model)}, kept on the device, the same asked back by its stamp number, and the gift's ticket for ${CREDITS} credits, buy ${b.reference}`)
+  const model = factListOf(stamp).find((fact) => fact.name === 'model')?.value
+  say(`${p.role}: a stamp from the loop verifier's face check, its facts the list beside it, model ${String(model)}, kept on the device, the same asked back by its stamp number, and the gift's ticket for ${CREDITS} credits, buy ${b.reference}`)
 }
 
 /** The gift's credits, as the app collects them: the buy sent to the host with its ticket, the credits finished, and spent into the wallet, the Profiles folder's balance. */

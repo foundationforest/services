@@ -1,23 +1,28 @@
-// The verifier's seed: 32 random bytes that every key the verifier uses is derived from. The seed
-// itself signs nothing.
+// The verifier's secret: 32 random bytes that every key the verifier uses is derived from. The
+// secret itself signs nothing. The code's names for it, `Seed` and the standard's `newSeed`, and the
+// file's name stay as they are.
 //
 // It is made on the verifier's own machine, the first time the verifier starts without one (the
 // standard's `newSeed`), and kept in one file beside its database (`verifier-seed.json` in
-// DATABASE_PATH's directory), on the same volume: the seed and what it keeps of which checks it signed
-// for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the verifier's own
-// user only. Nothing prints or logs it.
+// DATABASE_PATH's directory), on the same volume: the secret and what it keeps of which checks it
+// signed for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the
+// verifier's own user only. Nothing prints or logs it.
 //
 // What is derived from it, with the standard's `hkdf`, the same every time:
 //
-//   face          the face key: a service key (the standard's `serviceKey`) from these 32 bytes,
-//                 which `signStamp` takes, and which sign every face stamp
-//   id-fields     the ID key, a service key the same way, which signs every ID stamp: its facts are
-//                 made from every field of the document (facts.ts). Never `id`, the text of the
-//                 recipe before it: a new recipe takes a new text
+//   face-facts    the face key: a service key (the standard's `serviceKey`) from these 32 bytes,
+//                 which `signStamp` takes, and which signs every face stamp: its facts are the
+//                 standard's list (facts.ts)
+//   id-facts      the ID key, a service key the same way, which signs every ID stamp
 //   sponsor       the sponsor key, Ed25519, which signs the gift's tickets (gift.ts)
+//   vendor-data   the key of the hash of a stamp number each Didit session carries in its
+//                 `vendor_data` (didit.ts), so the verifier knows which stamp number a session it
+//                 meets was opened for
+//   fact-salt     the key each fact's salt is derived with, for its session and its name (facts.ts)
 //
-// Each stamp key's facts recipe is fixed for good (facts.ts): a new recipe is a new key, under a
-// new text here. None of these keys holds money.
+// Each stamp key's facts recipe is fixed for good: a new recipe is a new key, under a new text here.
+// Never `face`, `id` or `id-fields`, the texts of the keys of the recipes before: their stamps are
+// dropped at each start (service.ts). None of these keys holds money.
 
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
@@ -30,9 +35,11 @@ export const SEED_FILE = 'verifier-seed.json'
 
 /** The texts each key is derived under. */
 export const INFO = {
-  face: 'face',
-  id: 'id-fields',
+  face: 'face-facts',
+  id: 'id-facts',
   sponsor: 'sponsor',
+  vendorData: 'vendor-data',
+  salt: 'fact-salt',
 } as const
 
 /** An Ed25519 key: its address (the public key in base58), and its signature of a message. */
@@ -40,8 +47,8 @@ export type Ed25519Key = { address: string; sign(message: Uint8Array): Uint8Arra
 
 export type Seed = {
   /** 32 bytes the standard's `hkdf` derives from the seed under `info`. */
-  mix(info: string): Promise<Uint8Array>
-  /** The Ed25519 key whose secret is `mix(info)`. */
+  derive(info: string): Promise<Uint8Array>
+  /** The Ed25519 key whose secret is `derive(info)`. */
   ed25519(info: string): Promise<Ed25519Key>
 }
 
@@ -60,7 +67,7 @@ export function ed25519(secret: Uint8Array): Ed25519Key {
 export function seedFrom(bytes: Uint8Array): Seed {
   const secret = new Uint8Array(bytes)
   return {
-    mix: (info) => hkdf(secret, info),
+    derive: (info) => hkdf(secret, info),
     ed25519: async (info) => ed25519(await hkdf(secret, info)),
   }
 }

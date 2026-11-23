@@ -21,15 +21,20 @@ export const VERIFIER_NAME = 'verifier.test.forest.example'
 /** The selfie of `person`, as the stand-in Didit names it: the test embedder reads the name back. */
 export const selfie = (person: string) => `https://didit.example/photo/${person}`
 
-/** What a face check that passed looks like: approved, one liveness step approved, the person's selfie. */
+/**
+ * What a face check that passed looks like: approved, one liveness step approved, the person's
+ * selfie. Its `vendor_data`, left empty, is the one the session was opened under (`FakeFaceCheck.set`).
+ */
 export const passed = (person: string, over: Partial<Decision> = {}): Decision => ({
   workflowId: FACE_WORKFLOW,
+  vendorData: '',
   status: 'Approved',
   liveness: [{ status: 'Approved' }],
   documents: [],
   faceMatches: [],
-  risks: [],
   matches: [],
+  full: false,
+  named: [],
   faceImage: selfie(person),
   document: null,
   ...over,
@@ -83,14 +88,21 @@ export function faceOf(name: string): Uint8Array {
 /** A person's stamp number for the test verifier, as their app derives it: from a fresh seed and the verifier's name. */
 export const stampNumber = async () => stampNumberOf(seedNumber(new Uint8Array(randomBytes(32))), VERIFIER_NAME)
 
+/** One Didit application, as both checks share it: its sessions' decisions, and its users. */
+export class FakeApplication {
+  readonly sessions = new Map<string, Decision>()
+  /** Each Didit user, by `vendor_data`. */
+  readonly users = new Map<string, User>()
+}
+
 /**
- * Didit, as far as the verifier sees it. A test says what each session came to with `set`, and who
- * each user a match names is with `users`. With `hold`, decisions wait until the test lets them go, so
- * two requests can both be waiting at once. A photo is its selfie address's last part, the person's
- * name.
+ * Didit, as far as one check sees it: its workflow's sessions, in the application both checks share.
+ * A test says what each session came to with `set`, and who each user a match names is with `users`.
+ * With `hold`, decisions wait until the test lets them go, so two requests can both be waiting at
+ * once. A photo is its selfie address's last part, the person's name.
  */
 export class FakeFaceCheck implements FaceCheck {
-  readonly sessions = new Map<string, Decision>()
+  readonly sessions: Map<string, Decision>
   down = false
   /** What Didit not answering throws, whichever way it is down. */
   fail: Error = new Error('down')
@@ -100,26 +112,35 @@ export class FakeFaceCheck implements FaceCheck {
   created = 0
   /** The callback each session was opened with, by session id. */
   readonly callbacks = new Map<string, string | undefined>()
+  /** The `vendor_data` each session was opened under, by session id. */
+  readonly vendorData = new Map<string, string>()
   /** Each session deleted, in order, and those deleted keeping the face; with `deleteDown`, Didit does not answer a deletion; `outcome` is what it says it did with a face it was asked to keep. */
   readonly deleted: string[] = []
   readonly keptFaces: string[] = []
   deleteDown = false
   outcome = 'retained_with_user'
   /** Each Didit user, by `vendor_data`; with `usersDown`, Didit does not answer for one. */
-  readonly users = new Map<string, User>()
+  readonly users: Map<string, User>
   usersDown = false
   #gate: Promise<void> | undefined
 
-  async createSession({ callback }: { callback?: string } = {}) {
+  constructor(application: FakeApplication = new FakeApplication()) {
+    this.sessions = application.sessions
+    this.users = application.users
+  }
+
+  async createSession({ vendorData, callback }: { vendorData: string; callback?: string }) {
     if (this.down) throw this.fail
     this.created++
     const sessionId = randomUUID()
     this.callbacks.set(sessionId, callback)
+    this.vendorData.set(sessionId, vendorData)
     return { sessionId, url: `https://verify.example/session/${sessionId}` }
   }
 
+  /** What a session came to: `decision`, under the `vendor_data` it was opened with unless the decision names one. */
   set(sessionId: string, decision: Decision) {
-    this.sessions.set(sessionId, decision)
+    this.sessions.set(sessionId, { ...decision, vendorData: decision.vendorData || this.vendorData.get(sessionId) || '' })
   }
 
   hold(): () => void {

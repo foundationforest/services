@@ -12,7 +12,7 @@ import { canonical } from '@foundationforest/folders'
 import { DiditClient, type FaceCheck } from './didit.ts'
 import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
-import { RECIPES } from './facts.ts'
+import { FACE_FACTS, ID_FACTS, RECIPE } from './facts.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
 import { HOLDS_EVERY_MS, SWEEP_EVERY_MS, errorKind, handler, sweep, sweepHolds } from './server.ts'
 import { Store } from './store.ts'
@@ -30,12 +30,10 @@ export const CONSENT =
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
   verifierName: string
-  /** The face check's Didit application's key: each check is its own application, since a face search sees only its own. */
-  diditFaceApiKey: string
+  /** The key of the one Didit application both checks run in, so each face is compared with every face of either check: a face search sees only its own application's. */
+  diditApiKey: string
   /** The face check's workflow: liveness, with Didit's face search. */
   diditFaceWorkflowId: string
-  /** The ID check's Didit application's key. */
-  diditIdApiKey: string
   /** The ID check's workflow: document, liveness and face match. */
   diditIdWorkflowId: string
   diditBaseUrl: string
@@ -87,7 +85,7 @@ function whole(name: string, value: string, min: number): number {
  * no variable: it is the seed file beside the database (`SEED_FILE`).
  */
 export function readConfig(env: Record<string, string | undefined> = process.env): Config {
-  const missing = ['DIDIT_FACE_API_KEY', 'DIDIT_FACE_WORKFLOW_ID', 'DIDIT_ID_API_KEY', 'DIDIT_ID_WORKFLOW_ID'].filter((name) => !env[name])
+  const missing = ['DIDIT_API_KEY', 'DIDIT_FACE_WORKFLOW_ID', 'DIDIT_ID_WORKFLOW_ID'].filter((name) => !env[name])
   if (missing.length) throw new Error(`missing environment variables: ${missing.join(', ')}`)
 
   let gift: Gift | undefined
@@ -113,9 +111,8 @@ export function readConfig(env: Record<string, string | undefined> = process.env
   }
   return {
     verifierName: env.VERIFIER_NAME || VERIFIER_NAME,
-    diditFaceApiKey: env.DIDIT_FACE_API_KEY!,
+    diditApiKey: env.DIDIT_API_KEY!,
     diditFaceWorkflowId: env.DIDIT_FACE_WORKFLOW_ID!,
-    diditIdApiKey: env.DIDIT_ID_API_KEY!,
     diditIdWorkflowId: env.DIDIT_ID_WORKFLOW_ID!,
     diditBaseUrl,
     faceModel,
@@ -165,31 +162,36 @@ export async function startVerifier(
 ): Promise<Verifier> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
   const { seed, made: madeSeed } = loadOrMakeSeed(join(dirname(config.databasePath), SEED_FILE))
-  const stampKeys = { face: serviceKey(await seed.mix(INFO.face)), id: serviceKey(await seed.mix(INFO.id)) }
+  const stampKeys = { face: serviceKey(await seed.derive(INFO.face)), id: serviceKey(await seed.derive(INFO.id)) }
   const keys = { face: stampKeys.face.address, id: stampKeys.id.address }
   const sponsor = await seed.ed25519(INFO.sponsor)
+  const hashKeys = { vendorData: await seed.derive(INFO.vendorData), salt: await seed.derive(INFO.salt) }
   const baseUrl = config.diditBaseUrl
-  const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey: config.diditFaceApiKey, baseUrl, workflowId: config.diditFaceWorkflowId, check: 'face' })
-  const idCheck = overrides.idCheck ?? new DiditClient({ apiKey: config.diditIdApiKey, baseUrl, workflowId: config.diditIdWorkflowId, check: 'id' })
+  const apiKey = config.diditApiKey
+  const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditFaceWorkflowId, check: 'face' })
+  const idCheck = overrides.idCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditIdWorkflowId, check: 'id' })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
   const payments = overrides.payments ?? (config.stripe && new StripeClient(config.stripe))
 
   const store = new Store(config.databasePath)
-  // One ID stamp a person, from the ID key: a kept ID stamp that key did not sign, as from a key whose
-  // recipe this code no longer uses, is forgotten, so its stamp number's next ID check keeps a new one.
-  store.dropUnsigned('id', (stampNumber, stamp) => stampSigned({ stampNumber, ...stamp, verifierName: config.verifierName, verifier: keys.id }))
+  // The first stamp each key signed for a stamp number is the one handed back: a kept stamp its key did
+  // not sign, as from a key whose recipe this code no longer uses, is forgotten, so its stamp number's
+  // next check keeps a new one.
+  for (const check of ['face', 'id'] as const) {
+    store.dropUnsigned(check, (stampNumber, stamp) => stampSigned({ stampNumber, ...stamp, verifierName: config.verifierName, verifier: keys[check] }))
+  }
 
   const gift = config.gift && { gift: config.gift, sponsor }
   const about = canonical({
     name: config.verifierName,
-    face: { key: keys.face, facts: RECIPES.face },
+    // Each key with the names of its facts, in their list's order (facts.ts).
+    face: { key: keys.face, facts: [...FACE_FACTS] },
     // Beside the ID key, as the ID check is the one sold: whether it is for sale, through the same
     // Stripe its routes use, so this never says so while they answer `not_for_sale`; and whether its
     // payments run on a test key. Both always there, false without a key, so an app reads them with
     // no rule for one left out.
-    id: { key: keys.id, facts: RECIPES.id, forSale: payments !== undefined, testPayments: payments?.test ?? false },
-    h: RECIPES.h,
-    fieldsRoot: RECIPES.fieldsRoot,
+    id: { key: keys.id, facts: [...ID_FACTS], forSale: payments !== undefined, testPayments: payments?.test ?? false },
+    recipe: RECIPE,
     consent: CONSENT,
     ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
   })
@@ -202,6 +204,7 @@ export async function startVerifier(
       store,
       embedder,
       stampKeys,
+      hashKeys,
       about,
       gift,
       appOrigins: config.appOrigins,
