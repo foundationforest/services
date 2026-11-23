@@ -129,7 +129,9 @@ jobs:
               log="$RUNNER_TEMP/failed/${name##*/ }.log"
               for wait in 0 10 30; do
                 sleep "$wait"
-                gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" > "$log" && break
+                # The runner colours each Run line, and gh prints no log that holds an escape without
+                # --allow-escape-sequences; markets.ts takes the colours out.
+                gh api --allow-escape-sequences "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" > "$log" && break
                 echo "Its log was not ready; it is in the run." > "$log"
               done
             done
