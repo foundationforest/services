@@ -51,24 +51,24 @@ Every profile this index counts shows three things, each ranked inside its own m
   the checks its verifications count for: 75 with a face check, 99 with a face check and an ID check;
   and so how much its own words and scores weigh, times its trust.
 
-On the pages, a result shows its listing's first photo, its title (its description's first line)
-and its first price, and its profile's rating with how many raters scored it, "★ 9.2 (14)", and,
-near a place, its distance; nothing when no one has rated it. A profile's page and a listing's show
-the profile's animal, the Forest app's for its address, and its badges, "Verified with a selfie"
-for a face check and "Verified with ID" for an ID check. Its trust and its uniqueness are in a fold
-on its profile's page, What these mean, with what each means. A review's date there is its entry's
-`time`, in UTC. Each field is under its market's label for it, and each answer reads as the markets
-read it in English: a choice in words, `like-new` as "Like new", or by its label, `xl` as "XL" or a
-language's code `es` as "Spanish"; a number in its field's unit, `"45"` as "45 minutes", and a range
-so, "9 to 11 years", "18 years or more"; a date's days and hours, with its zone beside them,
-"Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)", and a time's own spots after its hours,
-"3 spots" or "full". A place reads by its size and the name the places service gives its centre,
-"Within 5 km of Chamberí, Madrid", "Exact spot near Sol, Madrid", or by its size alone with none,
-"Within 5 km", linked to its point on a map. A price reads as the Forest app says it: "$25 an hour"
-for one of its `per`, "$25 for 45 minutes" or "$60 for 3 hours" per hour for another count, "€100
-for 5 lessons" for any other `per`, "€40" for the whole deal, a request's with "Up to" first, "Up to
-€60 for 3 hours", its note under it. A listing's page shows every price, and a result its first. The
-JSON keeps each as written.
+On the pages, a result shows its listing's first photo, its title (its `title`, else its
+description's first line) and its first price, and its profile's rating with how many raters scored
+it, "★ 9.2 (14)", and, near a place, its distance; nothing when no one has rated it. A profile's
+page and a listing's show the profile's animal, the Forest app's for its address, and its badges,
+"Verified with a selfie" for a face check and "Verified with ID" for an ID check. Its trust and its
+uniqueness are in a fold on its profile's page, What these mean, with what each means. A review's
+date there is its entry's `time`, in UTC. Each field is under its market's label for it, and each
+answer reads as the markets read it in English: a choice in words, `like-new` as "Like new", or by
+its label, `xl` as "XL" or a language's code `es` as "Spanish"; a number in its field's unit, `"45"`
+as "45 minutes", and a range so, "9 to 11 years", "18 years or more"; a date's days and hours, with
+its zone beside them, "Tuesdays and Thursdays, 18:00 to 20:00 (Europe/Madrid)", and a time's own
+spots after its hours, "3 spots" or "full". A place reads by its size and the name the places
+service gives its centre, "Within 5 km of Chamberí, Madrid", "Exact spot near Sol, Madrid", or by
+its size alone with none, "Within 5 km", linked to its point on a map. A price reads as the Forest
+app says it: "$25 an hour" for one of its `per`, "$25 for 45 minutes" or "$60 for 3 hours" per hour
+for another count, "€100 for 5 lessons" for any other `per`, "€40" for the whole deal, a request's
+with "Up to" first, "Up to €60 for 3 hours", its note under it. A listing's page shows every price,
+and a result its first. The JSON keeps each as written.
 
 ## The markets
 
@@ -90,8 +90,9 @@ proofs it shows; and `maxAgeDays`.
 
 `{ "index", "market", "listings": { "<role>": [<result>] }, "role", "query", "total", "results", "place", "currencies" }`:
 the market's file as the directory holds it (its roles, its listing fields, each with its piece, its
-rules and its words under `ask`, the fields a listing's preview shows first, after its description,
-and the fields its reviews add), and every listing this index lists, by role, Top rated first. A
+rules and its words under `ask`, the fields a listing's preview shows first, after its title and
+description, and the fields its reviews add), and every listing this index lists, by role, Top
+rated first. A
 market's page also takes search's filters below, but `market`: `role` is the side it shows, the one
 asked or else the market's first; `query`, `total`, `results` and `place` are as search gives them,
 for that side; `currencies` are the currencies that side's listings price in, most used first.
@@ -212,9 +213,9 @@ A listing's own page, at its address under `/profiles`: `{ "index", "profile", "
 "captions", "reviews", "message" }`. `listing` is as its profile's page gives it; `checks`,
 `ratings`, `trust` and `uniqueness` are its profile's; `message` is a link to message its profile
 about this listing from each app this index lists, the listing's full address in it; `fields` is the
-fields its market asks its role's listings, in that order, `description` first, then the market's
-preview, and `contact` last; `pieces` is each one's piece, as its market names it, a `photo` field
-naming photos; `units` is each number field's unit, such as `{ "ages": "years" }`; `labels` is, for
+fields its market asks its role's listings, in that order, `title` and `description` first, then
+the market's preview, and `contact` last; `pieces` is each one's piece, as its market names it, a
+`photo` field naming photos; `units` is each number field's unit, such as `{ "ages": "years" }`; `labels` is, for
 each choice field it holds, how each value it holds reads, such as `{ "size": { "xl": "XL" },
 "languages": { "es": "Spanish" } }`; `captions` is, for each place field it holds, the name the
 places service gives each place's centre, in its answers' order, null where it gives none, such as

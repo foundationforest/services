@@ -93,12 +93,14 @@ test('a field holding several places: a search near any of them finds the listin
   await i.close()
 })
 
-test("search's words: what people wrote and how their choices read; never a time zone, a code, a coordinate or an amount", async () => {
+test("search's words: what people wrote, its title among it, and how their choices read; never a time zone, a code, a coordinate or an amount", async () => {
   const tutor = await profile('lessons/tutor', [by])
   await publishProfile(host.url, tutor)
-  // Its only Madrid is its hours' zone; es is Spanish; 40.42 and 25 are a coordinate and an amount.
+  // Its only Madrid is its hours' zone; es is Spanish; 40.42 and 25 are a coordinate and an amount;
+  // only its title says quantum.
   await post(host.url, [
     at(tutor, 'listing/zoned', {
+      title: 'Quantum physics tutor',
       description: 'Physics, by video.',
       languages: ['es'],
       mode: ['in-person'],
@@ -111,7 +113,7 @@ test("search's words: what people wrote and how their choices read; never a time
   await i.pass()
   const found = async (q: string) => (await twin<{ results: Array<{ listing: { address: string } }> }>(i, `/search.json?q=${encodeURIComponent(q)}`)).body.results.map((r) => r.listing.address)
   const zoned = `${tutor.key.address}/listing/zoned`
-  for (const q of ['physics video', 'spanish', 'in person']) assert.deepEqual(await found(q), [zoned], q)
+  for (const q of ['physics video', 'spanish', 'in person', 'quantum', 'quantum video']) assert.deepEqual(await found(q), [zoned], q)
   for (const q of ['madrid', 'europe', 'es', '40', '25', 'eur', 'monday']) assert.deepEqual(await found(q), [], q)
   await i.close()
 })

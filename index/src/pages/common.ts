@@ -306,11 +306,20 @@ export function firstLine(text: string, max: number): string {
 }
 
 /**
- * A listing's title, as the app writes it: its description's first line; else, for one with no
- * description, the first of its market's preview fields it holds, but its price and its photos, as
- * the markets read it when it fits its market, else by its shape; else "A listing".
+ * A listing's own title, its `title`, or '' when it has none. One that fits its market holds one
+ * line of at most 60 characters; one that does not may hold more, and is shown on its profile's
+ * page and its own, so only its first line counts, cut short as a description's is.
+ */
+export const titleIn = (body: { [key: string]: unknown }): string => (typeof body.title === 'string' ? firstLine(body.title, 140) : '')
+
+/**
+ * A listing's title, as the app writes it: its own title; else its description's first line; else,
+ * for one with no description, the first of its market's preview fields it holds, but its price and
+ * its photos, as the markets read it when it fits its market, else by its shape; else "A listing".
  */
 export function titleOf(site: Site, market: string | null, role: string | null, body: { [key: string]: unknown }): string {
+  const own = titleIn(body)
+  if (own) return own
   if (typeof body.description === 'string' && body.description.trim()) return firstLine(body.description, 140)
   const m = market === null ? undefined : site.markets.market(market)
   const read = fits(site.markets, market, role, body)
@@ -414,11 +423,13 @@ export function aggregateOf(s: Shown): { [key: string]: unknown } | null {
 }
 
 /**
- * A listing as a schema.org Offer, at its page, with its photos, each of its prices, and its
- * seller's rating. A price with a per is a price for its count of it, as its reference quantity.
+ * A listing as a schema.org Offer, at its page, with its photos, its own title as its name when it
+ * has one, its description, each of its prices, and its seller's rating. A price with a per is a
+ * price for its count of it, as its reference quantity.
  */
 export function offerOf(r: Result, base: string): { [key: string]: unknown } {
   const body = r.listing.body
+  const title = titleIn(body)
   const prices = pricesOf(body).map((p) => ({
     '@type': 'UnitPriceSpecification',
     price: p.amount,
@@ -431,6 +442,7 @@ export function offerOf(r: Result, base: string): { [key: string]: unknown } {
     identifier: r.listing.address,
     url: r.listing.url,
     ...(r.listing.photos.length > 0 && { image: r.listing.photos }),
+    ...(title !== '' && { name: title }),
     ...(typeof body.description === 'string' && { description: body.description }),
     seller: personOf(r.profile, base),
     ...(prices.length > 0 && { priceSpecification: prices }),

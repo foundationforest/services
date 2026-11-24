@@ -151,15 +151,16 @@ describe('reading, with no login', () => {
     const { listing: _, review: __, ...file } = LESSONS
     assert.deepEqual(one.market, file)
     assert.deepEqual(Object.keys(one.fields), ['listing', 'review', 'vouch', 'report'])
-    // Each role's words, in the order ask gives them: the description first, then the preview, each
-    // after the fields its when names, then the rest, contact last; a role's own words over the field's.
+    // Each role's words, in the order ask gives them: the title and the description first, then the
+    // preview, each after the fields its when names, then the rest, contact last; a role's own words
+    // over the field's.
     const asked = (role: string, kind?: string, about?: string) => markets.ask('lessons', role, kind, about)
     const words = ({ name, label, question, hint, start }: Asked) => ({ name, label, question, ...(hint !== undefined && { hint }), ...(start !== undefined && { start }) })
     for (const role of ['tutor', 'student']) {
       assert.deepEqual(one.roles[role].listing, asked(role).map(words), `${role}'s listing`)
       assert.deepEqual(one.roles[role].review, asked(role, 'review', role).map(words), `a review of a ${role}`)
     }
-    assert.deepEqual(one.roles.tutor.listing.map((f: { name: string }) => f.name), ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.deepEqual(one.roles.tutor.listing.map((f: { name: string }) => f.name), ['title', 'description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
     assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'price'), { name: 'price', label: 'Budget', question: 'What would you pay at most?' })
     assert.deepEqual(one.roles.student.listing.find((f: { name: string }) => f.name === 'place'), { name: 'place', label: 'Area', question: 'Area', hint: 'Your neighbourhood and town, not your address.', start: { radiusKm: 2 } })
     // A review's paid is for a review of a student only.
@@ -169,7 +170,7 @@ describe('reading, with no login', () => {
     // Each field's rules once, the same for every role, with how an answer is written; its suggestions
     // left out, since each role's words carry them.
     const rules = one.fields.listing
-    assert.deepEqual(Object.keys(rules), ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
+    assert.deepEqual(Object.keys(rules), ['title', 'description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'hours', 'contact'])
     assert.ok(!JSON.stringify(one.fields).includes('"ask"'), 'no suggestions in the rules')
     assert.deepEqual(rules.minutes, { piece: 'number', unit: 'minutes', takes: asked('tutor').find((f) => f.name === 'minutes')!.takes })
     assert.deepEqual(rules.place, { piece: 'place', when: { mode: ['in-person'] }, takes: '{ lat, lon, radiusKm }: lat and lon as decimal text, and radiusKm in whole kilometres' })
@@ -182,12 +183,14 @@ describe('reading, with no login', () => {
     assert.deepEqual(Object.keys(one.fields.vouch), ['subject', 'text'])
     const other = await call('markets', { name: 'wardrobe' })
     assert.deepEqual(Object.keys(other.market), ['name', 'summary', 'description', 'status', 'number', 'roles', 'preview'])
-    // A market with no preview: its price, then its place fields; the description comes first anyway.
+    // A market with no preview: its price, then its place fields; the title and the description come
+    // first anyway.
     assert.deepEqual([other.market.status, other.market.preview], ['live', ['price', 'location']])
     assert.deepEqual(other.fields.listing.shipTo, { piece: 'choice', several: true, list: 'countries', takes: 'a list of one or more, each different, each a country as its ISO 3166-1 alpha-2 code in upper case, such as "MX"' })
-    assert.deepEqual(other.roles.buyer.listing.map((f: { name: string }) => f.name), ['description', 'price', 'location', 'size', 'shipTo', 'contact'], 'photos are for sellers only')
-    // A shared list is named, never listed: a market's answer stays a few KB.
-    assert.ok(JSON.stringify(other).length < 4000, `${JSON.stringify(other).length} characters`)
+    assert.deepEqual(other.roles.buyer.listing.map((f: { name: string }) => f.name), ['title', 'description', 'price', 'location', 'size', 'shipTo', 'contact'], 'photos are for sellers only')
+    // A shared list is named, never listed: a market's answer stays a few KB. Its countries listed
+    // would add over 4,000 characters.
+    assert.ok(JSON.stringify(other).length < 5000, `${JSON.stringify(other).length} characters`)
     assert.match((await call('markets', { name: 'knitting' })).refused, /knitting is not a market in the directory/)
   })
 
