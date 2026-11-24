@@ -8,10 +8,11 @@ import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 
-import { PaymentUnavailable, StripeClient } from '../src/stripe.ts'
+import { PAGE_TEXT, PaymentUnavailable, StripeClient } from '../src/stripe.ts'
 
 const KEY = 'sk_test_51standin'
 const PRICE = 'price_1UXRbDILoxkbMfX4cfwRfCOI'
+const ADDED_PRICE = 'price_1UXRbDILoxkbMfX4added00'
 const PAYMENT = 'cs_test_a1b2c3d4e5f6g7h8i9j0'
 const INTENT = 'pi_3Q0a1b2c3d4e5f6g'
 /** When the PaymentIntent was made, in Stripe's seconds. */
@@ -66,23 +67,46 @@ before(async () => {
 })
 after(() => server.close())
 
-const client = () => new StripeClient({ secretKey: KEY, price: PRICE, baseUrl: base + '/' })
+const client = () => new StripeClient({ secretKey: KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: base + '/' })
 
 /** The API version the client is written for: a literal here, so moving it is a change made on purpose. */
 const VERSION = '2026-10-28.endive'
 
-test('a Checkout page for one of the Price that only holds the money, naming no payment method, marked as the verifier’s, its PaymentIntent too, back to the app either way, on its API version', async () => {
+/** A Price in the shape of Stripe's own: one-time, in US dollars. */
+function priceBody(id: string, over: Record<string, unknown> = {}) {
+  return { id, object: 'price', active: true, billing_scheme: 'per_unit', currency: 'usd', livemode: false, product: 'prod_1', type: 'one_time', unit_amount: id === PRICE ? 500 : 200, unit_amount_decimal: id === PRICE ? '500' : '200', ...over }
+}
+
+test('the two Prices, each its amount in the currency’s smallest unit and its currency, as Stripe says them; one with no amount, or Stripe not answering, throws', async () => {
+  seen.length = 0
+  reply = (req) => [200, priceBody(req.url!.split('/').at(-1)!)]
+  assert.deepEqual(await client().prices(), { price: { amount: 500, currency: 'usd' }, addedPrice: { amount: 200, currency: 'usd' } })
+  assert.deepEqual(seen.map((r) => [r.method, r.url, r.auth, r.version]), [['GET', `/v1/prices/${PRICE}`, `Bearer ${KEY}`, VERSION], ['GET', `/v1/prices/${ADDED_PRICE}`, `Bearer ${KEY}`, VERSION]])
+
+  // A Price with no amount of its own (tiered, or the customer's choice), or not a Price at all.
+  for (const over of [{ unit_amount: null }, { unit_amount: 2.5 }, { currency: 'USD' }, { currency: undefined }]) {
+    reply = (req) => [200, priceBody(req.url!.split('/').at(-1)!, over)]
+    await assert.rejects(client().prices(), (error: Error) => error instanceof PaymentUnavailable && error.message === 'Stripe answered a price without an amount and a currency', JSON.stringify(over))
+  }
+  reply = () => [404, { error: { type: 'invalid_request_error', code: 'resource_missing', param: 'price', message: 'No such price' } }]
+  await assert.rejects(client().prices(), (error: Error) => error instanceof PaymentUnavailable && error.message === 'Stripe answered 404 to a price' && JSON.stringify((error as PaymentUnavailable).codes) === '["invalid_request_error","resource_missing","price"]')
+})
+
+test('a Checkout page for one of a Price that only holds the money, saying so by its Pay button, naming no payment method, marked as the verifier’s, its PaymentIntent too, back to the app either way, on its API version', async () => {
   seen.length = 0
   const url = `https://checkout.stripe.com/c/pay/${PAYMENT}#fidkdWxOYHwnPyd1blpxYHZxWjA0`
   reply = () => [200, sessionBody({ payment_status: 'unpaid', status: 'open', url })]
-  assert.deepEqual(await client().checkout('https://app.example/paid?for=id'), { payment: PAYMENT, url })
+  assert.deepEqual(await client().checkout('https://app.example/paid?for=id', false), { payment: PAYMENT, url })
+  assert.deepEqual(await client().checkout('https://app.example/paid?for=id', true), { payment: PAYMENT, url })
 
-  const [made] = seen
+  const [made, added] = seen
   assert.deepEqual([made!.method, made!.url, made!.auth, made!.type, made!.version], ['POST', '/v1/checkout/sessions', `Bearer ${KEY}`, 'application/x-www-form-urlencoded', VERSION])
+  assert.equal(new URLSearchParams(added!.body).get('line_items[0][price]'), ADDED_PRICE, 'for an added ID, the added-ID Price')
   assert.deepEqual(Object.fromEntries(new URLSearchParams(made!.body)), {
     mode: 'payment',
     'line_items[0][price]': PRICE,
     'line_items[0][quantity]': '1',
+    'custom_text[submit][message]': PAGE_TEXT,
     success_url: 'https://app.example/paid?for=id',
     cancel_url: 'https://app.example/paid?for=id',
     'metadata[check]': 'id',
@@ -92,13 +116,13 @@ test('a Checkout page for one of the Price that only holds the money, naming no 
 
   for (const answer of [sessionBody({ url: null }), sessionBody({ id: 'pi_3Mtw', url }), 'not json']) {
     reply = () => [200, answer]
-    await assert.rejects(client().checkout('https://app.example/'), PaymentUnavailable)
+    await assert.rejects(client().checkout('https://app.example/', false), PaymentUnavailable)
   }
 
   // A refusal: its status, and its error's type, code and param, as Stripe sent them; never its message.
   const message = 'The `payment_method_types` parameter is no longer supported when creating a Checkout Session. Payment methods are now managed from your Dashboard settings.'
   reply = () => [400, { error: { type: 'invalid_request_error', code: 'payment_method_types_no_longer_supported', param: 'payment_method_types', message, doc_url: 'https://docs.stripe.com/error-codes', request_log_url: 'https://dashboard.stripe.com/test/logs/req_x' } }]
-  await assert.rejects(client().checkout('https://app.example/'), (error: Error) => {
+  await assert.rejects(client().checkout('https://app.example/', false), (error: Error) => {
     assert.ok(error instanceof PaymentUnavailable)
     assert.equal(error.message, 'Stripe answered 400 to a new payment')
     assert.equal(error.status, 400)
@@ -107,10 +131,10 @@ test('a Checkout page for one of the Price that only holds the money, naming no 
     return true
   })
   reply = () => [400, { error: { type: 'invalid_request_error', message: 'No such price' } }]
-  await assert.rejects(client().checkout('https://app.example/'), (error: Error) => error instanceof PaymentUnavailable && error.status === 400 && JSON.stringify(error.codes) === '["invalid_request_error"]')
+  await assert.rejects(client().checkout('https://app.example/', false), (error: Error) => error instanceof PaymentUnavailable && error.status === 400 && JSON.stringify(error.codes) === '["invalid_request_error"]')
   // No JSON: the status alone.
   reply = () => [502, '<html>Bad gateway</html>']
-  await assert.rejects(client().checkout('https://app.example/'), (error: Error) => error instanceof PaymentUnavailable && error.status === 502 && error.codes.length === 0)
+  await assert.rejects(client().checkout('https://app.example/', false), (error: Error) => error instanceof PaymentUnavailable && error.status === 502 && error.codes.length === 0)
 })
 
 test('held: a session the verifier made, complete, holding the money or having taken it, since its PaymentIntent was made; anything else is not, and Stripe not answering throws, naming no payment', async () => {
@@ -151,7 +175,7 @@ test('held: a session the verifier made, complete, holding the money or having t
     assert.ok(!JSON.stringify(error).includes(KEY.slice(-4)))
     return true
   })
-  const gone = new StripeClient({ secretKey: KEY, price: PRICE, baseUrl: 'http://127.0.0.1:1' })
+  const gone = new StripeClient({ secretKey: KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: 'http://127.0.0.1:1' })
   await assert.rejects(gone.held(PAYMENT), (error: Error) => error instanceof PaymentUnavailable && error.message === 'Stripe could not be reached')
 })
 

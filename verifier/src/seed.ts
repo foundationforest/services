@@ -19,6 +19,9 @@
 //                 `vendor_data` (didit.ts), so the verifier knows which stamp number a session it
 //                 meets was opened for
 //   fact-salt     the key each fact's salt is derived with, for its session and its name (facts.ts)
+//   payment       the AES-256-GCM key a payment's stamp number is locked under, inside the payment
+//                 the verifier answers (server.ts), so the payment opens ID sessions for that stamp
+//                 number only and nothing keeps the two side by side
 //
 // Each stamp key's facts recipe is fixed for good: a new recipe is a new key, under a new text here.
 // Never `face`, `id` or `id-fields`, the texts of the keys of the recipes before: their stamps are
@@ -40,6 +43,7 @@ export const INFO = {
   sponsor: 'sponsor',
   vendorData: 'vendor-data',
   salt: 'fact-salt',
+  payment: 'payment',
 } as const
 
 /** An Ed25519 key: its address (the public key in base58), and its signature of a message. */
