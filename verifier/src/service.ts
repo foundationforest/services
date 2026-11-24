@@ -14,18 +14,19 @@ import { type Embedder, sface, standIn } from './face.ts'
 import type { Gift } from './gift.ts'
 import { FACE_FACTS, ID_FACTS, RECIPE } from './facts.ts'
 import { INFO, SEED_FILE, loadOrMakeSeed } from './seed.ts'
-import { HOLDS_EVERY_MS, SWEEP_EVERY_MS, errorKind, handler, sweep, sweepHolds } from './server.ts'
+import { HOLDS_EVERY_MS, SWEEP_EVERY_MS, errorKind, handler, sweep, sweepHolds, why } from './server.ts'
 import { Store } from './store.ts'
-import { type Payments, StripeClient } from './stripe.ts'
+import { type Payments, type Prices, StripeClient } from './stripe.ts'
 
 /**
  * The consent screen: what an app shows before the ID check, word for word, served in `GET /` as
- * `consent`. It is the foundation's legal text, with the price its Stripe Price sells and the tries
- * a payment gives, so another verifier running this code writes its own here. README.md quotes it,
- * and test/readme.test.ts holds the two together.
+ * `consent`. It is the foundation's legal text, with the tries a payment gives, so another verifier
+ * running this code writes its own here. It names no price: the app shows the one `GET /` gives
+ * beside it, as Stripe's Price says it. README.md quotes it, and test/readme.test.ts holds the two
+ * together.
  */
 export const CONSENT =
-  'The check holds $5 through Stripe for the Open Forest Foundation and covers up to three tries in a day: the $5 is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is checked once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no photo) for up to ten years, so it can tell if you come back; a try that gives no stamp is deleted a day after it began, its face with it. Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep; a profile that shows it says only that you were checked.'
+  "The check's price is held through Stripe for the Open Forest Foundation and covers up to three tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is counted once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no photo) for up to ten years, so it can tell if you come back; a try that gives no stamp is deleted a day after it began, its face with it. Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that shows either says only that you were checked."
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
@@ -43,8 +44,8 @@ export type Config = {
   gift?: Gift
   /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
   appOrigins: string[]
-  /** Stripe's key and the Price the ID check sells. Unset: the ID check is not for sale. */
-  stripe?: { secretKey: string; price: string }
+  /** Stripe's key and the two Prices the ID check sells: for a stamp number's first ID stamp, and for each one after. Unset: the ID check is not for sale. */
+  stripe?: { secretKey: string; price: string; addedPrice: string }
   /** The one file; the verifier's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
   port: number
@@ -93,14 +94,16 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     const credits = { face: whole('FACE_CREDITS', env.FACE_CREDITS || '10', 0), id: whole('ID_CREDITS', env.ID_CREDITS || '100', 0) }
     if (credits.face > 0 || credits.id > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
   }
-  const price = env.STRIPE_ID_PRICE
-  if (price && !/^price_[A-Za-z0-9]+$/.test(price)) throw new Error('STRIPE_ID_PRICE is a Stripe Price: price_…')
+  const { STRIPE_ID_PRICE: price, STRIPE_ADDED_ID_PRICE: addedPrice } = env
+  for (const [name, value] of [['STRIPE_ID_PRICE', price], ['STRIPE_ADDED_ID_PRICE', addedPrice]] as const) {
+    if (value && !/^price_[A-Za-z0-9]+$/.test(value)) throw new Error(`${name} is a Stripe Price: price_…`)
+  }
   let stripe: Config['stripe']
   if (env.STRIPE_SECRET_KEY) {
     // Never quoted: it is a secret.
     if (!/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(env.STRIPE_SECRET_KEY)) throw new Error('STRIPE_SECRET_KEY is a Stripe secret key, sk_…, or a restricted one, rk_…')
-    if (!price) throw new Error('STRIPE_SECRET_KEY needs STRIPE_ID_PRICE, the Price the ID check sells')
-    stripe = { secretKey: env.STRIPE_SECRET_KEY, price }
+    if (!price || !addedPrice) throw new Error('STRIPE_SECRET_KEY needs STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE, the Prices the ID check sells')
+    stripe = { secretKey: env.STRIPE_SECRET_KEY, price, addedPrice }
   }
   const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
   const faceModel = env.FACE_MODEL || 'sface'
@@ -136,8 +139,8 @@ export type Verifier = {
   madeSeed: boolean
   /**
    * What the sweep does every minute: deletes in Didit the sessions signed an hour ago or more, and
-   * those that gave no stamp and opened a day ago or more; and, an hour after its last answered search,
-   * cancels the old holds at Stripe.
+   * those that gave no stamp and opened a day ago or more; an hour after its last answered search,
+   * cancels the old holds at Stripe; and, until Stripe has said them, asks it for the two prices.
    */
   sweep(): Promise<void>
   /** Stops taking requests, and closes the file. */
@@ -166,6 +169,7 @@ export async function startVerifier(
   const keys = { face: stampKeys.face.address, id: stampKeys.id.address }
   const sponsor = await seed.ed25519(INFO.sponsor)
   const hashKeys = { vendorData: await seed.derive(INFO.vendorData), salt: await seed.derive(INFO.salt) }
+  const paymentKey = await seed.derive(INFO.payment)
   const baseUrl = config.diditBaseUrl
   const apiKey = config.diditApiKey
   const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditFaceWorkflowId, check: 'face' })
@@ -182,19 +186,36 @@ export async function startVerifier(
   }
 
   const gift = config.gift && { gift: config.gift, sponsor }
-  const about = canonical({
-    name: config.verifierName,
-    // Each key with the names of its facts, in their list's order (facts.ts).
-    face: { key: keys.face, facts: [...FACE_FACTS] },
-    // Beside the ID key, as the ID check is the one sold: whether it is for sale, through the same
-    // Stripe its routes use, so this never says so while they answer `not_for_sale`; and whether its
-    // payments run on a test key. Both always there, false without a key, so an app reads them with
-    // no rule for one left out.
-    id: { key: keys.id, facts: [...ID_FACTS], forSale: payments !== undefined, testPayments: payments?.test ?? false },
-    recipe: RECIPE,
-    consent: CONSENT,
-    ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
-  })
+  const log = overrides.log ?? ((line: string) => console.log(line))
+  const aboutWith = (prices: Prices | null) =>
+    canonical({
+      name: config.verifierName,
+      // Each key with the names of its facts, in their list's order (facts.ts).
+      face: { key: keys.face, facts: [...FACE_FACTS] },
+      // Beside the ID key, as the ID check is the one sold: whether it is for sale, through the same
+      // Stripe its routes use, so this never says so while they answer `not_for_sale`; whether its
+      // payments run on a test key; and its two prices, as Stripe's Prices say, so no app writes one.
+      // All always there, false and null without a key, the prices null until Stripe has said them,
+      // so an app reads them with no rule for one left out.
+      id: { key: keys.id, facts: [...ID_FACTS], forSale: payments !== undefined, testPayments: payments?.test ?? false, price: prices?.price ?? null, addedPrice: prices?.addedPrice ?? null },
+      recipe: RECIPE,
+      consent: CONSENT,
+      ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
+    })
+  // The prices are Stripe's to say, and the face check never waits for Stripe: the verifier starts
+  // without them, asks now and at every sweep till Stripe answers, and makes no payment before.
+  let prices: Prices | null = null
+  let about = aboutWith(null)
+  const askPrices = async () => {
+    if (!payments || prices) return
+    try {
+      prices = await payments.prices()
+      about = aboutWith(prices)
+    } catch (error) {
+      log(`verifier: Stripe has not said the ID check's prices, asked again at the next sweep (${why(error)})`)
+    }
+  }
+  void askPrices()
 
   const server = createServer(
     handler({
@@ -205,7 +226,9 @@ export async function startVerifier(
       embedder,
       stampKeys,
       hashKeys,
-      about,
+      paymentKey,
+      about: () => about,
+      prices: () => prices,
       gift,
       appOrigins: config.appOrigins,
       payments,
@@ -222,10 +245,10 @@ export async function startVerifier(
     (sweeping ??= (async () => {
       await sweep({ store, checks: { face: faceCheck, id: idCheck }, now: clock, log: overrides.log })
       if (payments && clock() - searchedAt >= HOLDS_EVERY_MS && (await sweepHolds({ payments, now: clock, log: overrides.log }))) searchedAt = clock()
+      await askPrices()
     })().finally(() => {
       sweeping = undefined
     }))
-  const log = overrides.log ?? ((line: string) => console.log(line))
   const sweeper = setInterval(() => void sweepNow().catch((error) => log(`verifier: the sweep failed (${errorKind(error)})`)), SWEEP_EVERY_MS)
   sweeper.unref()
   await new Promise<void>((resolve, reject) => {

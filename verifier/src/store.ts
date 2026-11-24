@@ -1,39 +1,45 @@
-// The verifier's one file, seven tables:
+// The verifier's one file, eight tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
 //                  to one stamp number only, once its hour is over is known as used, and a face Didit
 //                  matches from it is known as that stamp number's own (server.ts)
-//   stamps         for each stamp number and key (`face` or `id`): the first stamp that key signed for
-//                  it, as its facts and its signature (r8, s), so a lost stamp is handed back
+//   stamps         for each stamp number: the first stamp the face key signed for it, and every stamp
+//                  the ID key signed for it, each as its facts and its signature (r8, s), so a lost
+//                  stamp is handed back
 //   to_delete      for each session that gave a stamp and is not yet deleted in Didit: its id, which
-//                  check it was, and when it was first signed, so it is signed again only within the
-//                  hour after, and the sweep deletes it in Didit, keeping its face template, once the
-//                  hour is over; it goes once Didit has deleted the session
+//                  check it was, when it was first signed, and whether Didit keeps its face (it gave its
+//                  stamp number its first stamp of a kind), so it is signed again only within the hour
+//                  after, and the sweep deletes it in Didit once the hour is over, keeping its face
+//                  template or not; it goes once Didit has deleted the session
 //   opened         for each session the verifier opened that gave no stamp and is not yet deleted in
-//                  Didit: its id, which check it was, when it opened, and for an ID session which of its
-//                  payment's tries it was and the SHA-256 of that payment, while it is not used up, so
-//                  it is stamped only with that payment, its refusal ends the payment only when it was
-//                  the last try, and the sweep deletes it in Didit, face and all, a day after it opened;
-//                  it goes once Didit has deleted the session, or moves to `to_delete` once it gives a
-//                  stamp
+//                  Didit: its id, which check it was, when it opened, and `try`: for an ID session which
+//                  of its payment's tries it was, with the SHA-256 of that payment while it is not used
+//                  up, so it is stamped only with that payment, its refusal ends the payment only when it
+//                  was the last try; for a face session, 1 once it counted as one of its stamp number's
+//                  free tries, so it counts once. The sweep deletes it in Didit, face and all, a day
+//                  after it opened; it goes once Didit has deleted the session, or moves to `to_delete`
+//                  once it gives a stamp
+//   face_tries     for each stamp number a face session of which Didit finished without giving it a
+//                  stamp: how many such sessions, so it opens no face session after FACE_TRIES
 //   gifts          each stamp number given its face stamp's gift (gift.ts), with a hash of the buy it
 //                  was given for, so a person gets one, and the same buy asked again gets the same
 //                  ticket
 //   id_gifts       the same, for the ID stamp's gift
-//   payments       each payment (stripe.ts) that opened an ID session: the SHA-256 of its id, how many
-//                  sessions it opened, and whether it is used up (`stamped`: it gave a stamp, gave one
-//                  back, or its hold was cancelled), so it opens at most ID_TRIES and gives one stamp
+//   payments       each payment (stripe.ts) that opened an ID session: the SHA-256 of its Checkout
+//                  Session's id, how many sessions it opened, and whether it is used up (`stamped`: it
+//                  gave a stamp, or its hold was cancelled), so it opens at most ID_TRIES and gives one
+//                  stamp
 //
 // Nothing else: no face, no embedding, no name, no birth date, no document, none of the list beside a
 // stamp, of a gift only a hash of its buy, and of a payment nothing of who paid or with what, no
 // amount and no time, and nothing beside a stamp number. A session id is kept as its hash; in clear,
 // and with a time, only in `to_delete` and `opened`, until Didit has deleted the session, a day at
 // most, so then the file names no Didit session and holds no time. A payment sits beside the sessions
-// it opened only there, and only until it is used up. The stamp number links `sessions`, `stamps` and
-// the gifts: the hashes of the sessions signed for it, face and ID. Deleted bytes are overwritten
-// (`secure_delete`), the dropped `fingerprints` table's among them: keyed hashes of a name and birth
-// date, which this code no longer keeps.
+// it opened only there, and only until it is used up. The stamp number links `sessions`, `stamps`,
+// `face_tries` and the gifts: the hashes of the sessions signed for it, face and ID. Deleted bytes are
+// overwritten (`secure_delete`), the dropped `fingerprints` table's among them: keyed hashes of a name
+// and birth date, which this code no longer keeps.
 
 import { createHash } from 'node:crypto'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
@@ -55,10 +61,16 @@ export function paymentHash(payment: string): Uint8Array {
 /** How many ID sessions one payment opens: the first try and two more. */
 export const ID_TRIES = 3
 
+/** How many face sessions Didit may finish without giving their stamp number a stamp before it opens no more. */
+export const FACE_TRIES = 2
+
 export type Remembered = 'ok' | 'session_used' | 'not_paid' | 'payment_used'
 
 /** What the file keeps of a stamp, beside its stamp number and key: its facts and its signature. */
 export type KeptStamp = { facts: bigint; signature: StampSignature }
+
+/** The stamps kept for a stamp number: the first face stamp, and every ID stamp. */
+export type Kept = { face?: KeptStamp; id: KeptStamp[] }
 
 /** A stamp as the file keeps it: its facts, and its signature as r8 (x then y) and s. */
 function keptStamp(row: Record<string, unknown>): KeptStamp {
@@ -68,6 +80,12 @@ function keptStamp(row: Record<string, unknown>): KeptStamp {
     signature: { R8: [fromBytes32(r8.subarray(0, 32)), fromBytes32(r8.subarray(32))], S: fromBytes32(row.s as Uint8Array) },
   }
 }
+
+/** The stamps table's columns: one row a stamp, so a stamp number holds every ID stamp signed for it. */
+const STAMPS = 'stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)'
+
+/** Whether Didit keeps a session's face when it is deleted; 1 for the rows of a file from before it was kept. */
+const KEEP_FACE = 'keep_face INTEGER NOT NULL DEFAULT 1'
 
 export class Store {
   readonly #db: DatabaseSync
@@ -93,6 +111,9 @@ export class Store {
   readonly #addPayment: StatementSync
   readonly #tries: StatementSync
   readonly #stamped: StatementSync
+  readonly #faceTries: StatementSync
+  readonly #markTry: StatementSync
+  readonly #addFaceTry: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -101,11 +122,15 @@ export class Store {
       PRAGMA secure_delete = ON;
       PRAGMA temp_store = MEMORY;
       PRAGMA journal_mode = DELETE;
+    `)
+    this.#moveOn()
+    this.#db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS stamps (${STAMPS}) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, ${KEEP_FACE}) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID;
       DROP TABLE IF EXISTS fingerprints;
+      CREATE TABLE IF NOT EXISTS face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL) WITHOUT ROWID;
@@ -113,14 +138,14 @@ export class Store {
     this.#session = this.#db.prepare('SELECT stamp_number FROM sessions WHERE hash = ?')
     this.#addSession = this.#db.prepare('INSERT OR IGNORE INTO sessions (hash, stamp_number, kind) VALUES (?, ?, ?)')
     this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
-    this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ?')
+    this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ? ORDER BY kind, facts')
     this.#stampsOf = this.#db.prepare('SELECT stamp_number, facts, r8, s FROM stamps WHERE kind = ?')
-    this.#dropStamp = this.#db.prepare('DELETE FROM stamps WHERE stamp_number = ? AND kind = ?')
+    this.#dropStamp = this.#db.prepare('DELETE FROM stamps WHERE stamp_number = ? AND kind = ? AND facts = ?')
     const gifts = (table: string) => ({ give: this.#db.prepare(`INSERT OR IGNORE INTO ${table} (stamp_number, buy) VALUES (?, ?)`), given: this.#db.prepare(`SELECT buy FROM ${table} WHERE stamp_number = ?`) })
     this.#gifts = { face: gifts('gifts'), id: gifts('id_gifts') }
     this.#signedAt = this.#db.prepare('SELECT signed_at FROM to_delete WHERE session_id = ?')
-    this.#addToDelete = this.#db.prepare('INSERT OR IGNORE INTO to_delete (session_id, kind, signed_at) VALUES (?, ?, ?)')
-    this.#due = this.#db.prepare('SELECT session_id, kind FROM to_delete WHERE signed_at <= ? ORDER BY signed_at')
+    this.#addToDelete = this.#db.prepare('INSERT OR IGNORE INTO to_delete (session_id, kind, signed_at, keep_face) VALUES (?, ?, ?, ?)')
+    this.#due = this.#db.prepare('SELECT session_id, kind, keep_face FROM to_delete WHERE signed_at <= ? ORDER BY signed_at')
     this.#deleted = this.#db.prepare('DELETE FROM to_delete WHERE session_id = ?')
     // An ID session's try: how many its payment has opened, this one among them.
     this.#addOpened = this.#db.prepare('INSERT OR IGNORE INTO opened (session_id, kind, opened_at, payment, try) VALUES (?, ?, ?, ?, (SELECT tries FROM payments WHERE hash = ?))')
@@ -134,6 +159,32 @@ export class Store {
     this.#tries = this.#db.prepare('UPDATE payments SET tries = tries + ? WHERE hash = ? AND stamped = 0')
     // Used up, a payment opens no more sessions, and the file forgets how many it took.
     this.#stamped = this.#db.prepare(`UPDATE payments SET stamped = 1, tries = ${ID_TRIES} WHERE hash = ?`)
+    this.#faceTries = this.#db.prepare('SELECT tries FROM face_tries WHERE stamp_number = ?')
+    // A face session counts once, and only while it is opened and gave no stamp.
+    this.#markTry = this.#db.prepare("UPDATE opened SET try = 1 WHERE session_id = ? AND kind = 'face' AND try IS NULL")
+    this.#addFaceTry = this.#db.prepare('INSERT INTO face_tries (stamp_number, tries) VALUES (?, 1) ON CONFLICT (stamp_number) DO UPDATE SET tries = tries + 1')
+  }
+
+  /**
+   * A file an earlier version wrote, moved to this one's tables: `stamps` keyed by its stamp number,
+   * key and facts, as it holds every ID stamp, its rows copied; `to_delete` with `keep_face`, 1 for
+   * every row, as every session that gave a stamp kept its face then.
+   */
+  #moveOn(): void {
+    const sql = (table: string) => this.#db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)?.sql as string | undefined
+    const stamps = sql('stamps')
+    if (stamps !== undefined && !stamps.includes('PRIMARY KEY (stamp_number, kind, facts)')) {
+      this.#db.exec(`
+        BEGIN IMMEDIATE;
+        ALTER TABLE stamps RENAME TO stamps_before;
+        CREATE TABLE stamps (${STAMPS}) WITHOUT ROWID;
+        INSERT INTO stamps (stamp_number, kind, facts, r8, s) SELECT stamp_number, kind, facts, r8, s FROM stamps_before;
+        DROP TABLE stamps_before;
+        COMMIT;
+      `)
+    }
+    const toDelete = sql('to_delete')
+    if (toDelete !== undefined && !toDelete.includes('keep_face')) this.#db.exec(`ALTER TABLE to_delete ADD COLUMN ${KEEP_FACE}`)
   }
 
   /** Whether this session gave a stamp. */
@@ -171,13 +222,14 @@ export class Store {
   }
 
   /**
-   * `check`, and when it passes, the session and the stamp kept with the stamp number, the session
-   * moved from `opened` to `to_delete`, and the payment used up, in one transaction. Two requests can
-   * both pass every check before this while each waits for Didit; only the first to get here keeps
-   * anything, and the second is checked against it. A session sent again within its hour uses no
-   * payment.
+   * `check`, and when it passes, the session and its stamps kept with the stamp number, the session
+   * moved from `opened` to `to_delete`, and the payment used up, in one transaction. `face` is the
+   * face stamp an ID check signs from its selfie beside its ID stamp, kept only if the stamp number
+   * holds none. Two requests can both pass every check before this while each waits for Didit; only
+   * the first to get here keeps anything, and the second is checked against it. A session sent again
+   * within its hour uses no payment.
    */
-  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; stamp: KeptStamp; payment?: Uint8Array }): Remembered {
+  remember(input: { sessionId: string; stampNumber: bigint; kind: Check; since: number; signedAt: number; stamp: KeptStamp; face?: KeptStamp; payment?: Uint8Array }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
     try {
       const again = this.holds(input.sessionId)
@@ -187,12 +239,20 @@ export class Store {
         if (input.payment && !again) this.useUp(input.payment)
         const number = toBytes32(input.stampNumber)
         this.#addSession.run(sessionHash(input.sessionId), number, input.kind)
-        // The first stamp a key signs for a stamp number stays: a later check for that number, by
-        // anyone who knows it, never changes the stamp handed back. Any of them gives the same verification.
-        const { facts, signature } = input.stamp
-        this.#addStamp.run(number, input.kind, toBytes32(facts), Buffer.concat([toBytes32(signature.R8[0]), toBytes32(signature.R8[1])]), toBytes32(signature.S))
-        // The first signing's time stays: a session signed again within its hour gets no more time.
-        this.#addToDelete.run(input.sessionId, input.kind, input.signedAt)
+        const held = this.stamps(input.stampNumber)
+        const add = (kind: Check, { facts, signature }: KeptStamp) =>
+          this.#addStamp.run(number, kind, toBytes32(facts), Buffer.concat([toBytes32(signature.R8[0]), toBytes32(signature.R8[1])]), toBytes32(signature.S))
+        // The first face stamp stays: a later check for that number, by anyone who knows it, never
+        // changes the face stamp handed back, and any face stamp gives the same verification. Every ID
+        // stamp is kept, one for each document checked.
+        const firstFace = !held.face && (input.kind === 'face' || input.face !== undefined)
+        const firstId = input.kind === 'id' && held.id.length === 0
+        if (input.kind === 'id') add('id', input.stamp)
+        if (firstFace) add('face', input.kind === 'face' ? input.stamp : input.face!)
+        // Didit keeps the face of a session that gave its stamp number its first stamp of a kind, and
+        // no other's: a person's own kept faces stay at two at most. The first signing's time and
+        // choice stay: a session signed again within its hour gets no more time.
+        this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, firstFace || firstId ? 1 : 0)
         this.#closed.run(input.sessionId)
       }
       this.#db.exec(outcome === 'ok' ? 'COMMIT' : 'ROLLBACK')
@@ -204,10 +264,13 @@ export class Store {
     }
   }
 
-  /** The stamps kept for this stamp number, by key: the first each key signed for it. */
-  stamps(stampNumber: bigint): Partial<Record<Check, KeptStamp>> {
-    const kept: Partial<Record<Check, KeptStamp>> = {}
-    for (const row of this.#stamps.all(toBytes32(stampNumber))) kept[row.kind as Check] = keptStamp(row)
+  /** The stamps kept for this stamp number: the first face stamp signed for it, and every ID stamp. */
+  stamps(stampNumber: bigint): Kept {
+    const kept: Kept = { id: [] }
+    for (const row of this.#stamps.all(toBytes32(stampNumber))) {
+      if (row.kind === 'id') kept.id.push(keptStamp(row))
+      else kept.face ??= keptStamp(row)
+    }
     return kept
   }
 
@@ -219,10 +282,20 @@ export class Store {
     let dropped = 0
     for (const row of this.#stampsOf.all(kind)) {
       if (signed(fromBytes32(row.stamp_number as Uint8Array), keptStamp(row))) continue
-      this.#dropStamp.run(row.stamp_number as Uint8Array, kind)
+      this.#dropStamp.run(row.stamp_number as Uint8Array, kind, row.facts as Uint8Array)
       dropped++
     }
     return dropped
+  }
+
+  /** How many of this stamp number's face sessions Didit finished without giving it a stamp. */
+  faceTries(stampNumber: bigint): number {
+    return (this.#faceTries.get(toBytes32(stampNumber))?.tries as number | undefined) ?? 0
+  }
+
+  /** A face session Didit finished that gave this stamp number no stamp: one of its tries, once a session. */
+  faceTry(sessionId: string, stampNumber: bigint): void {
+    if (Number(this.#markTry.run(sessionId).changes) === 1) this.#addFaceTry.run(toBytes32(stampNumber))
   }
 
   /** A session the verifier opened, at `at`; for an ID session, after its try was taken, with the payment that opened it. */
@@ -240,9 +313,9 @@ export class Store {
     return (this.#opener.get(sessionId)?.payment as Uint8Array | null | undefined) ?? undefined
   }
 
-  /** The sessions first signed at `before` or earlier and not yet deleted in Didit, oldest first. */
-  due(before: number): { sessionId: string; kind: Check }[] {
-    return this.#due.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check }))
+  /** The sessions first signed at `before` or earlier and not yet deleted in Didit, oldest first, each with whether Didit keeps its face. */
+  due(before: number): { sessionId: string; kind: Check; keepFace: boolean }[] {
+    return this.#due.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check, keepFace: r.keep_face === 1 }))
   }
 
   /** The sessions opened at `before` or earlier that gave no stamp and are not yet deleted in Didit, oldest first. */

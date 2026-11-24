@@ -16,8 +16,9 @@
 // drawn (`saltsOf`): the first 31 bytes, read big-endian, of HMAC-SHA256, under the key the verifier's
 // secret derives under `fact-salt` (seed.ts), of the session's id, a 0 byte and the fact's name. So a
 // session signed again within its hour (server.ts) gives the same list, the same facts and the same
-// stamp, as the person's app lost the first answer, and the verifier tells a session that signed its
-// stamp number's first ID stamp from one that gave it back by their facts. To anyone without the
+// stamp, as the person's app lost the first answer; an ID check's face stamp, from the same selfie,
+// takes the same session's salts, and the verifier tells whether the face stamp a stamp number holds
+// is the one this session signed by their facts. To anyone without the
 // secret they are random; whoever holds it already holds every facts number the verifier signed.
 //
 // Who an ID check read is how the verifier knows a person came to it before, while keeping nothing

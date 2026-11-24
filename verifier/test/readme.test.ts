@@ -1,7 +1,8 @@
-// README.md says what the code holds: its consent screen is the text GET / serves (CONSENT), and the
-// codes its Its API lists are the server's (CODES). Each is read from the README as an app reads it:
-// the paragraph after **The consent screen.**, and every code in backticks from where errors are
-// named to How we run it.
+// README.md says what the code holds: its consent screen is the text GET / serves (CONSENT), the
+// codes its Its API lists are the server's (CODES), and what Stripe's page says by its Pay button is
+// PAGE_TEXT. Each is read from the README as an app reads it: the paragraph after **The consent
+// screen.**, every code in backticks from where errors are named to How we run it, and the quote
+// after **By the Pay button.**
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -9,6 +10,7 @@ import { test } from 'node:test'
 
 import { CODES } from '../src/codes.ts'
 import { CONSENT } from '../src/service.ts'
+import { PAGE_TEXT } from '../src/stripe.ts'
 
 const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
 
@@ -23,4 +25,9 @@ test("the codes README.md's Its API lists are CODES, each once", () => {
   const listed = [...errors.matchAll(/`(?:\d{3} )?([a-zA-Z_]+)`/g)].map(([, code]) => code!)
   assert.equal(new Set(CODES).size, CODES.length, 'no code twice in the list')
   assert.deepEqual(new Set(listed), new Set(CODES))
+})
+
+test("the text README.md says Stripe's page shows by its Pay button is the one the verifier sends", () => {
+  const after = README.slice(README.indexOf('**By the Pay button.**'))
+  assert.equal(/"([^"]+)"/.exec(after)?.[1], PAGE_TEXT)
 })

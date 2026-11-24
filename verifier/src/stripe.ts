@@ -1,11 +1,13 @@
 // The ID check's payment: Stripe's API, and what the verifier asks of it.
 //
-// The person's $5 is held for the ID check on a Stripe Checkout page the verifier makes, for the Price
-// `STRIPE_ID_PRICE` names, and taken only when the check gives a new ID stamp. The verifier asks Stripe
-// to make a Checkout Session for one of that Price whose PaymentIntent is captured by hand
-// (`payment_intent_data[capture_method]=manual`), so paying only holds the money; later, whether a
-// session it made holds the money, and since when; to take it (capture); to cancel it; and,
-// every hour, for the holds it made long ago, to cancel them. From a session it reads its id, its
+// The ID check's price is held on a Stripe Checkout page the verifier makes, and taken only when the
+// check gives a new ID stamp: the Price `STRIPE_ID_PRICE` names for a stamp number that holds no ID
+// stamp, the one `STRIPE_ADDED_ID_PRICE` names for one that holds one. The verifier asks Stripe what
+// each Price is (`prices`: its amount and currency, for `GET /`); to make a Checkout Session for one
+// of a Price whose PaymentIntent is captured by hand (`payment_intent_data[capture_method]=manual`),
+// so paying only holds the money, with PAGE_TEXT by its Pay button; later, whether a session it made
+// holds the money, and since when; to take it (capture); to cancel it; and, every hour, for the holds
+// it made long ago, to cancel them. From a session it reads its id, its
 // page's address, the mark the verifier gave it and its PaymentIntent (`metadata.check`, on both, so a
 // payment made with the same key for anything else opens no ID check and its hold is never touched),
 // and of that PaymentIntent its id, its status and when it was made. Everything else Stripe answers,
@@ -21,14 +23,16 @@
 // It names no payment method: the key's payment method settings at Stripe choose them, among those
 // that can hold money. A card's hold usually lasts 7 days; the verifier cancels each after two.
 //
-// Stripe's API as its documents give it (docs.stripe.com, Checkout Sessions, PaymentIntents, placing
-// a hold, and search, API version STRIPE_VERSION): form-encoded, the key as a Bearer token;
-// `POST /v1/checkout/sessions`; `GET /v1/checkout/sessions/{id}?expand[]=payment_intent`, a 404 for a
+// Stripe's API as its documents give it (docs.stripe.com, Prices, Checkout Sessions and their custom
+// text, PaymentIntents, placing a hold, and search, API version STRIPE_VERSION): form-encoded, the key
+// as a Bearer token; `GET /v1/prices/{id}`, its `unit_amount` in the currency's smallest unit and its
+// `currency`, lower case; `POST /v1/checkout/sessions`, `custom_text[submit][message]` the text above
+// its Pay button; `GET /v1/checkout/sessions/{id}?expand[]=payment_intent`, a 404 for a
 // session Stripe does not have, as one made in test mode is to a live key;
 // `POST /v1/payment_intents/{id}/capture` and `/cancel`; `GET /v1/payment_intents/search`, whose
 // results can lag a minute behind, so each one's own status is checked before it is cancelled. A
 // held PaymentIntent is `requires_capture`, a taken one `succeeded`, a cancelled one `canceled`. This
-// needs the key's Checkout Sessions: Write and PaymentIntents: Write and nothing else. A refusal is
+// needs the key's Prices: Read, Checkout Sessions: Write and PaymentIntents: Write, and nothing else. A refusal is
 // `{error: {type, code, param, message, payment_intent}}`: the thrown error keeps its status, type,
 // code and param, for the log line (server.ts), and never its message; a capture or a cancel refused
 // for a PaymentIntent already taken or cancelled is read by that PaymentIntent's status.
@@ -46,11 +50,25 @@ export const PAYMENT = /^cs_(test|live)_[A-Za-z0-9]{1,200}$/
 /** The mark each Checkout Session the verifier makes, and its PaymentIntent, carries, as its `metadata[check]`. */
 const MARK = 'id'
 
+/** What Stripe's page says above its Pay button: the hold is taken only for a stamp. README.md quotes it. */
+export const PAGE_TEXT = 'You are charged only if the check passes.'
+
+/** A Price, as Stripe gives it: its amount, in the currency's smallest unit (500 for $5), and its currency, lower case (`usd`). */
+export type Price = { amount: number; currency: string }
+
+/** The ID check's two prices: `price` for a stamp number that holds no ID stamp, `addedPrice` for one that holds one. */
+export type Prices = { price: Price; addedPrice: Price }
+
 export interface Payments {
   /** Whether its key is a test key, `sk_test_…` or `rk_test_…`: its payments take only Stripe's test cards, and charge nobody. */
   readonly test: boolean
-  /** A Checkout page for one ID check, sending the person back to `returnUrl`: the payment's id, and the page. */
-  checkout(returnUrl: string): Promise<{ payment: string; url: string }>
+  /** What the two Prices are. Throws if Stripe can't answer, or answers a Price with no amount. */
+  prices(): Promise<Prices>
+  /**
+   * A Checkout page for one ID check, at the added-ID Price when `added`, sending the person back to
+   * `returnUrl`: the payment's id, its Checkout Session's, and the page.
+   */
+  checkout(returnUrl: string, added: boolean): Promise<{ payment: string; url: string }>
   /**
    * When this payment's money was held, in milliseconds: when its PaymentIntent was made, if the
    * verifier made it and it holds the money or took it in full; null for anything else, or one Stripe
@@ -125,25 +143,32 @@ export class StripeClient implements Payments {
   readonly test: boolean
   readonly #secretKey: string
   readonly #price: string
+  readonly #addedPrice: string
   readonly #baseUrl: string
 
   /** `baseUrl` is for tests, against a stand-in on this machine; it is no setting. */
-  constructor(options: { secretKey: string; price: string; baseUrl?: string }) {
+  constructor(options: { secretKey: string; price: string; addedPrice: string; baseUrl?: string }) {
     this.test = /^(sk|rk)_test_/.test(options.secretKey)
     this.#secretKey = options.secretKey
     this.#price = options.price
+    this.#addedPrice = options.addedPrice
     this.#baseUrl = (options.baseUrl ?? 'https://api.stripe.com').replace(/\/+$/, '')
   }
 
+  async prices(): Promise<Prices> {
+    return { price: await this.#priceOf(this.#price), addedPrice: await this.#priceOf(this.#addedPrice) }
+  }
+
   /** Back to `returnUrl` paid or not: the app asks the verifier which. Paying only holds the money. */
-  async checkout(returnUrl: string): Promise<{ payment: string; url: string }> {
+  async checkout(returnUrl: string, added: boolean): Promise<{ payment: string; url: string }> {
     const res = await this.#fetch('/v1/checkout/sessions', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         mode: 'payment',
-        'line_items[0][price]': this.#price,
+        'line_items[0][price]': added ? this.#addedPrice : this.#price,
         'line_items[0][quantity]': '1',
+        'custom_text[submit][message]': PAGE_TEXT,
         success_url: returnUrl,
         cancel_url: returnUrl,
         'metadata[check]': MARK,
@@ -205,6 +230,18 @@ export class StripeClient implements Payments {
       page = json.has_more === true && typeof json.next_page === 'string' ? json.next_page : undefined
     } while (page)
     return outcome
+  }
+
+  /** A Price's amount and currency. */
+  async #priceOf(price: string): Promise<Price> {
+    const res = await this.#fetch(`/v1/prices/${encodeURIComponent(price)}`, { method: 'GET' })
+    if (!res.ok) throw refused(res.status, await errorOf(res), 'a price')
+    const json = await body(res)
+    const amount = json?.unit_amount
+    if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount < 0 || typeof json?.currency !== 'string' || !/^[a-z]{3}$/.test(json.currency)) {
+      throw new PaymentUnavailable('Stripe answered a price without an amount and a currency', { status: res.status })
+    }
+    return { amount, currency: json.currency }
   }
 
   /** The Checkout Session, if the verifier made it, with its PaymentIntent; null for one Stripe does not have or that is not its. */

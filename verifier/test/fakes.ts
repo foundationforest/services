@@ -12,7 +12,7 @@ import { hex } from '@foundationforest/folders'
 import type { Check, Decision, Document, FaceCheck, User } from '../src/didit.ts'
 import { EMBEDDING_BYTES, FaceError, type Embedder } from '../src/face.ts'
 import { paymentHash, sessionHash } from '../src/store.ts'
-import type { Payments } from '../src/stripe.ts'
+import type { Payments, Prices } from '../src/stripe.ts'
 
 export const FACE_WORKFLOW = '7f9f3c52-1b1e-4c4b-9d0f-2a6e4b1c0d11'
 export const ID_WORKFLOW = '0b6e2f1a-3c4d-4e5f-8a9b-1c2d3e4f5a6b'
@@ -183,15 +183,23 @@ export class FakeFaceCheck implements FaceCheck {
   }
 }
 
+/** The two Prices the stand-in Stripe sells: $5 for a stamp number's first ID stamp, $2 for each after. */
+export const PRICES: Prices = { price: { amount: 500, currency: 'usd' }, addedPrice: { amount: 200, currency: 'usd' } }
+
 /**
- * Stripe, as far as the verifier sees it: the Checkout pages it made, each with the page it sends the
- * person back to, and each payment's hold: when it was held, by `clock`, and whether it is held, taken
- * or cancelled. A test pays one with `pay`.
+ * Stripe, as far as the verifier sees it: its two Prices, unless `pricesDown`; the Checkout pages it
+ * made, each with the page it sends the person back to and whether it sells the added-ID Price; and
+ * each payment's hold: when it was held, by `clock`, and whether it is held, taken or cancelled. A test
+ * pays one with `pay`, by its Checkout Session's id.
  */
 export class FakePayments implements Payments {
   /** Its payments are `cs_test_…`, as a test key's are. */
   readonly test = true
   readonly returnUrls = new Map<string, string>()
+  /** Whether each Checkout page sells the added-ID Price, by its Checkout Session's id. */
+  readonly added = new Map<string, boolean>()
+  /** Stripe not answering for its Prices alone. */
+  pricesDown = false
   readonly #holds = new Map<string, { at: number; state: 'held' | 'taken' | 'cancelled' }>()
   readonly #clock: () => number
   down = false
@@ -206,20 +214,27 @@ export class FakePayments implements Payments {
     this.#clock = clock
   }
 
-  async checkout(returnUrl: string) {
+  async prices() {
+    if (this.down || this.pricesDown) throw this.fail
+    return PRICES
+  }
+
+  async checkout(returnUrl: string, added: boolean) {
     if (this.down) throw this.fail
     const payment = `cs_test_${randomBytes(24).toString('hex')}`
     this.returnUrls.set(payment, returnUrl)
+    this.added.set(payment, added)
     return { payment, url: `https://checkout.stripe.example/c/pay/${payment}` }
   }
 
+  /** The payment paid, by its Checkout Session's id or as the verifier answered it. */
   pay(payment: string) {
-    this.#holds.set(payment, { at: this.#clock(), state: 'held' })
+    this.#holds.set(checkoutOf(payment), { at: this.#clock(), state: 'held' })
   }
 
-  /** What became of a payment's hold. */
+  /** What became of a payment's hold, by its Checkout Session's id or as the verifier answered it. */
   state(payment: string) {
-    return this.#holds.get(payment)?.state
+    return this.#holds.get(checkoutOf(payment))?.state
   }
 
   async held(payment: string) {
@@ -239,7 +254,7 @@ export class FakePayments implements Payments {
 
   async cancel(payment: string) {
     if (this.down) throw this.fail
-    const hold = this.#holds.get(payment)
+    const hold = this.#holds.get(checkoutOf(payment))
     if (hold?.state === 'held') hold.state = 'cancelled'
   }
 
@@ -257,6 +272,9 @@ export class FakePayments implements Payments {
   }
 }
 
+/** A payment's Checkout Session's id: what comes before the dot in the payment the verifier answers. */
+export const checkoutOf = (payment: string) => payment.split('.')[0]!
+
 /** A fresh verifier seed as its file holds it, and its 32 bytes. */
 export function seedJson(): { json: string; bytes: Uint8Array } {
   const bytes = new Uint8Array(randomBytes(32))
@@ -267,27 +285,30 @@ export function seedJson(): { json: string; bytes: Uint8Array } {
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
 const TABLES = [
+  'CREATE TABLE face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
   'CREATE TABLE payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID',
-  'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)) WITHOUT ROWID',
+  'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, keep_face INTEGER NOT NULL DEFAULT 1) WITHOUT ROWID',
 ]
 
 /**
  * What the file should hold: the sessions that gave stamps, with their stamp numbers and checks; of
  * those, the ones not yet deleted in Didit; the sessions opened that gave no stamp and are not yet
- * deleted, each with the payment that opened it while it is open, or null; the stamp numbers given
- * each check's gift; each payment that opened an ID session, with its tries and whether it is used up.
+ * deleted, each with the payment that opened it while it is open, or null; each stamp number's face
+ * tries; the stamp numbers given each check's gift; each payment that opened an ID session, by its
+ * Checkout Session's id, with its tries and whether it is used up.
  */
-export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; opened?: [string, string | null][]; gifts?: bigint[]; idGifts?: bigint[]; payments?: [string, number, boolean][]; never: string[] }
+export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; opened?: [string, string | null][]; faceTries?: [bigint, number][]; gifts?: bigint[]; idGifts?: bigint[]; payments?: [string, number, boolean][]; never: string[] }
 
 /**
- * The file holds seven tables and nothing else: each session that gave a stamp as the hash of its id,
- * next to its stamp number and its check; one stamp for each stamp number and check those sessions
- * gave; those not yet deleted in Didit, by id; the sessions opened that gave no stamp and are not yet
+ * The file holds eight tables and nothing else: each session that gave a stamp as the hash of its id,
+ * next to its stamp number and its check; one face stamp for each stamp number those sessions gave a
+ * stamp, as an ID check gives one too, and one ID stamp for each ID session; those not yet deleted in
+ * Didit, by id; each stamp number's face tries; the sessions opened that gave no stamp and are not yet
  * deleted, by id, each with the hash of the payment that opened it or none; the stamp numbers given
  * each check's gift, each with a hash of its buy; each payment as the hash of its id, with its tries
  * and whether it is used up, and nothing else. None of `never` (names, birth dates, embeddings, a
@@ -299,7 +320,9 @@ export function assertKept(path: string, expected: Expected): void {
   const file = readFileSync(path)
   for (const text of expected.never) assert.equal(file.includes(Buffer.from(text)), false, `${text.slice(0, 24)} is not in the file`)
   const payments = expected.payments ?? []
-  for (const [payment] of payments) assert.equal(file.includes(Buffer.from(payment)), false, 'no payment id is in the clear')
+  for (const [payment] of payments) {
+    for (const text of [payment, checkoutOf(payment)]) assert.equal(file.includes(Buffer.from(text)), false, 'no payment and no Checkout Session id is in the clear')
+  }
   const toDelete = expected.toDelete ?? []
   for (const [sessionId] of expected.sessions) {
     if (!toDelete.includes(sessionId)) assert.equal(file.includes(Buffer.from(sessionId)), false, 'no deleted session id is in the clear')
@@ -309,7 +332,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'seven tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'eight tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -322,7 +345,14 @@ export function assertKept(path: string, expected: Expected): void {
       .all()
       .map((r) => `${fromBytes32(r.stamp_number as Uint8Array)} ${r.kind}`)
       .sort()
-    assert.deepEqual(stamps, [...new Set(expected.sessions.map(([, n, kind]) => `${n} ${kind}`))].sort(), 'one stamp for each stamp number and check a session gave')
+    const wantStamps = [...new Set(expected.sessions.map(([, n]) => `${n} face`)), ...expected.sessions.filter(([, , kind]) => kind === 'id').map(([, n]) => `${n} id`)].sort()
+    assert.deepEqual(stamps, wantStamps, 'one face stamp for each stamp number a session gave a stamp, and one ID stamp for each ID session')
+    const tries = db
+      .prepare('SELECT stamp_number, tries FROM face_tries')
+      .all()
+      .map((r) => `${fromBytes32(r.stamp_number as Uint8Array)} ${r.tries}`)
+      .sort()
+    assert.deepEqual(tries, (expected.faceTries ?? []).map(([n, count]) => `${n} ${count}`).sort(), 'each stamp number’s face tries, a count, and nothing of them beside it')
     const pending = db
       .prepare('SELECT session_id FROM to_delete')
       .all()
@@ -334,7 +364,7 @@ export function assertKept(path: string, expected: Expected): void {
       .all()
       .map((r) => `${r.session_id} ${r.payment ? Buffer.from(r.payment as Uint8Array).toString('hex') : 'none'}`)
       .sort()
-    const wantOpen = opened.map(([id, payment]) => `${id} ${payment ? Buffer.from(paymentHash(payment)).toString('hex') : 'none'}`).sort()
+    const wantOpen = opened.map(([id, payment]) => `${id} ${payment ? Buffer.from(paymentHash(checkoutOf(payment))).toString('hex') : 'none'}`).sort()
     assert.deepEqual(open, wantOpen, 'by id, the sessions opened that gave no stamp and are not yet deleted, each beside its payment only while that is open')
     for (const [table, given] of [['gifts', expected.gifts], ['id_gifts', expected.idGifts]] as const) {
       const gifts = db
@@ -349,7 +379,7 @@ export function assertKept(path: string, expected: Expected): void {
       .all()
       .map((r) => `${Buffer.from(r.hash as Uint8Array).toString('hex')} ${r.tries} ${r.stamped}`)
       .sort()
-    const wantPaid = payments.map(([payment, tries, stamped]) => `${Buffer.from(paymentHash(payment)).toString('hex')} ${tries} ${stamped ? 1 : 0}`).sort()
+    const wantPaid = payments.map(([payment, tries, stamped]) => `${Buffer.from(paymentHash(checkoutOf(payment))).toString('hex')} ${tries} ${stamped ? 1 : 0}`).sort()
     assert.deepEqual(paid, wantPaid, 'each payment, hashed, with its tries and whether it gave a stamp, and nothing beside it')
   } finally {
     db.close()

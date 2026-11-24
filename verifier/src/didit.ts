@@ -20,8 +20,9 @@
 //
 // Every session the verifier opens is deleted by its sweep (server.ts's `sweep`): one that gave a
 // stamp an hour after its stamp, keeping one image-free face template anchored to the session's own
-// `vendor_data`, for FACE_RETENTION_DAYS, so its face search goes on seeing the face and its user
-// stays; any other a day after it opened, face and all. Didit drops the template with the session
+// `vendor_data`, for FACE_RETENTION_DAYS, when it gave its stamp number its first stamp of a kind
+// (store.ts), so its face search goes on seeing the face and its user stays; any other a day after it
+// opened, face and all. Didit drops the template with the session
 // unless asked, and gives every kept template an end. Deleting a session never deletes its user,
 // whose full name, birth date and country Didit keeps, so it can tell when someone comes back.
 //

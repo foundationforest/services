@@ -8,11 +8,10 @@ export const CODES = [
   // 400: a body the route does not take
   'not_json',
   'not_an_object',
-  'expected_exactly_returnUrl',
   'expected_exactly_stampNumber',
   'expected_exactly_stampNumber_and_returnUrl',
-  'expected_exactly_payment_and_stampNumber',
-  'expected_exactly_payment_and_stampNumber_and_returnUrl',
+  'expected_exactly_payment',
+  'expected_exactly_payment_and_returnUrl',
   'expected_exactly_sessionId_and_stampNumber',
   'expected_exactly_sessionId_and_stampNumber_and_payment',
   'bad_session_id',
@@ -42,6 +41,7 @@ export const CODES = [
   // 409
   'session_used',
   'payment_used',
+  'face_tries_used',
   // 404, 405, 413, 502, 503, 500
   'not_found',
   'post_only',

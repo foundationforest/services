@@ -11,11 +11,12 @@ import { generateKeyPairSync, randomBytes, randomUUID } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
 import { hkdf, seedNumber, serviceKey, stampNumberOf } from '@foundationforest/keys'
-import { checkFacts, checkVerification, factListOf, factsNumber, proveFacts, proveVerification, signStamp, stampFromJson, stampSigned } from '@foundationforest/proofs'
+import { checkFacts, checkVerification, factListOf, factsNumber, proveFacts, proveVerification, signStamp, stampFromJson, stampSigned, stampToJson, toBytes32 } from '@foundationforest/proofs'
 import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
@@ -24,18 +25,20 @@ import * as hostCredits from '../../host/credits/seller.ts'
 import { DiditClient, DiditUnavailable, type Decision, MATCHES_LISTED, readVendorData, stampHash } from '../src/didit.ts'
 import { ID_FACTS, RECIPE, faceList, idList, saltsOf } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
-import { HOLD_FOR_MS, HOLDS_EVERY_MS, OPEN_FOR_MS, SIGNED_FOR_MS } from '../src/server.ts'
+import { HOLD_FOR_MS, HOLDS_EVERY_MS, OPEN_FOR_MS, SIGNED_FOR_MS, lockPayment } from '../src/server.ts'
 import { CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
-import { ID_TRIES, Store } from '../src/store.ts'
-import { PaymentUnavailable } from '../src/stripe.ts'
+import { FACE_TRIES, ID_TRIES, Store } from '../src/store.ts'
+import { type Payments, PaymentUnavailable, StripeClient } from '../src/stripe.ts'
 import {
   FACE_WORKFLOW,
+  PRICES,
   FakeApplication,
   FakeFaceCheck,
   FakePayments,
   ID_WORKFLOW,
   VERIFIER_NAME,
   assertKept,
+  checkoutOf,
   doc,
   faceOf,
   namedFaces,
@@ -69,7 +72,7 @@ type Harness = {
   ids: FakeFaceCheck
   /** Stripe. */
   payments: FakePayments
-  /** The payment each ID session was opened with. */
+  /** The payment each ID session was opened with, as the verifier answered it. */
   paidFor: Map<string, string>
   /** The ID sessions a payment opened, in order. */
   sessionsOf(payment: string): string[]
@@ -78,12 +81,17 @@ type Harness = {
   post(path: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; body: any }>
   /** A new face session for stamp number `n`, whose check came to `decision`; returns its id. */
   session(decision: Decision, n: bigint): Promise<string>
-  /** A payment made and paid at Stripe, not yet sent to the verifier. */
-  paid(): Promise<string>
-  /** A payment that opened an ID session, so the verifier knows it was paid, and gave no stamp. */
+  /** A payment for stamp number `n`, as `POST /id/payment` answers it, paid at Stripe, not yet sent to the verifier's other routes. */
+  paid(n: bigint): Promise<string>
+  /** A payment that opened an ID session, for a stamp number of its own, so the verifier knows it was paid, and gave no stamp. */
   knownPayment(): Promise<string>
-  /** A new ID session for stamp number `n`, whose check came to `decision`, opened with `payment` or a new one; returns its id. */
+  /** A new ID session for stamp number `n`, whose check came to `decision`, opened with `payment`, which must be `n`'s, or a new one; returns its id. */
   idSession(decision: Decision, n: bigint, payment?: string): Promise<string>
+  /**
+   * Forgets every stamp number's free face tries, by hand, in the file: the tries are their own test,
+   * and the judging tests run many refused face checks on one stamp number.
+   */
+  forgetTries(): void
   /** The face a session the verifier opened leaves in Didit's list, as a later session's match: its vendor_data and its session; with `template`, no session, as once it is deleted. */
   match(sessionId: string, template?: boolean): Decision['matches'][number]
   /** Moves the verifier's clock on. */
@@ -92,10 +100,11 @@ type Harness = {
 
 /**
  * The verifier, with `seed` in its seed file beside the database when given; with none there, it
- * makes one. Its ID check is for sale, through a stand-in Stripe, unless `forSale` is false: then
- * through Stripe itself if its settings give a key, and otherwise not.
+ * makes one. Its ID check is for sale, through a stand-in Stripe (its Prices unknown while
+ * `pricesDown`), unless `forSale` is false: then through `payments` if given, and otherwise not. It
+ * sends people back to https://app.example unless `env` says otherwise.
  */
-async function start(options: { env?: Record<string, string | undefined>; seed?: string; dbPath?: string; forSale?: boolean } = {}): Promise<Harness> {
+async function start(options: { env?: Record<string, string | undefined>; seed?: string; dbPath?: string; forSale?: boolean; payments?: Payments; pricesDown?: boolean } = {}): Promise<Harness> {
   const dbPath = options.dbPath ?? join(tempDir(), 'verifier.sqlite')
   if (options.seed) writeFileSync(join(dirname(dbPath), SEED_FILE), options.seed, { mode: 0o600 })
   const config = readConfig({
@@ -105,6 +114,7 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     DATABASE_PATH: dbPath,
     PORT: '0',
+    APP_ORIGINS: 'https://app.example',
     ...options.env,
   })
   let clock = Date.now()
@@ -112,13 +122,14 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
   const faces = new FakeFaceCheck(application)
   const ids = new FakeFaceCheck(application)
   const payments = new FakePayments(() => clock)
+  payments.pricesDown = options.pricesDown ?? false
   const paidFor = new Map<string, string>()
   const logs: string[] = []
   const verifier = await startVerifier(config, {
     faceCheck: faces,
     idCheck: ids,
     embedder: namedFaces(),
-    ...(options.forSale !== false && { payments }),
+    ...(options.forSale !== false ? { payments } : options.payments && { payments: options.payments }),
     log: (line) => logs.push(line),
     now: () => clock,
   })
@@ -136,27 +147,34 @@ async function start(options: { env?: Record<string, string | undefined>; seed?:
     faces.set(body.sessionId, decision)
     return body.sessionId as string
   }
-  const paid = async () => {
-    const { payment } = await payments.checkout('https://app.example/paid')
-    payments.pay(payment)
-    return payment
+  const paid = async (n: bigint) => {
+    const { status, body } = await post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/paid' })
+    assert.equal(status, 201, JSON.stringify(body))
+    payments.pay(checkoutOf(body.payment))
+    return body.payment as string
   }
   const idSession = async (decision: Decision, n: bigint, payment?: string) => {
-    payment ??= await paid()
-    const { status, body } = await post('/id/session', { payment, stampNumber: n.toString() })
+    payment ??= await paid(n)
+    const { status, body } = await post('/id/session', { payment })
     assert.equal(status, 201, JSON.stringify(body))
     ids.set(body.sessionId, decision)
     paidFor.set(body.sessionId, payment)
     return body.sessionId as string
   }
   const knownPayment = async () => {
-    const payment = await paid()
-    await idSession(passedId('nobody'), await stampNumber(), payment)
+    const n = await stampNumber()
+    const payment = await paid(n)
+    await idSession(passedId('nobody'), n, payment)
     return payment
+  }
+  const forgetTries = () => {
+    const db = new DatabaseSync(dbPath)
+    db.exec('DELETE FROM face_tries')
+    db.close()
   }
   const sessionsOf = (payment: string) => [...paidFor].filter(([, p]) => p === payment).map(([id]) => id)
   const match = (sessionId: string, template = false) => ({ vendorData: (faces.vendorData.get(sessionId) ?? ids.vendorData.get(sessionId))!, sessionId: template ? null : sessionId })
-  return { verifier, faces, ids, payments, paidFor, sessionsOf, dbPath, logs, post, session, paid, knownPayment, idSession, match, later: (ms) => void (clock += ms) }
+  return { verifier, faces, ids, payments, paidFor, sessionsOf, dbPath, logs, post, session, paid, knownPayment, idSession, forgetTries, match, later: (ms) => void (clock += ms) }
 }
 
 const faceStamp = (h: Harness, sessionId: string, n: bigint) => h.post('/face/stamp', { sessionId, stampNumber: n.toString() })
@@ -192,7 +210,7 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     assert.deepEqual(JSON.parse(text), {
       name: VERIFIER_NAME,
       face: { key: keys.face, facts: ['model', 'embedding'] },
-      id: { key: keys.id, facts: [...ID_FACTS], forSale: true, testPayments: true },
+      id: { key: keys.id, facts: [...ID_FACTS], forSale: true, testPayments: true, price: PRICES.price, addedPrice: PRICES.addedPrice },
       recipe: "the standard's facts as a list (proofs/README.md, Facts as a list): factsNumber of the list beside the stamp, under factList",
       consent: CONSENT,
     })
@@ -214,13 +232,44 @@ test('GET /: whether the ID check is for sale, and whether its payments run on a
     ['sk_live_51standin', true, false],
     ['rk_live_51standin', true, false],
   ] as const) {
-    const h = await start({ forSale: false, env: { STRIPE_SECRET_KEY: key, STRIPE_ID_PRICE: key && 'price_1standin' } })
+    // Stripe at an address on this machine that answers nothing, so nothing here reaches Stripe itself.
+    const payments = key && new StripeClient({ secretKey: key, price: 'price_1standin', addedPrice: 'price_2standin', baseUrl: 'http://127.0.0.1:9' })
+    const h = await start({ forSale: false, payments })
     try {
       const { id } = await about(h)
       assert.deepEqual({ forSale: id.forSale, testPayments: id.testPayments }, { forSale, testPayments }, key ?? 'no key')
+      assert.deepEqual([id.price, id.addedPrice], [null, null], 'no price before Stripe has said it')
     } finally {
       await h.verifier.close()
     }
+  }
+})
+
+test('GET /: the two prices, once Stripe has said them; the verifier starts without them, asks at every sweep, and makes no payment before; the face check never waits for Stripe', async () => {
+  const h = await start({ pricesDown: true })
+  try {
+    assert.deepEqual([(await about(h)).id.price, (await about(h)).id.addedPrice], [null, null])
+    assert.deepEqual(h.logs, ["verifier: Stripe has not said the ID check's prices, asked again at the next sweep (Error)"], 'logged, by its kind')
+    const n = await stampNumber()
+    assert.deepEqual(await h.post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/paid' }), { status: 502, body: { error: 'payment_unavailable' } }, 'no payment before the person can be shown its price')
+    assert.equal(h.payments.added.size, 0, 'nor a page at Stripe')
+    assert.equal((await face(h, 'alice', n)).stamp.verifier, h.verifier.keys.face, 'the face check, as ever')
+    await h.verifier.sweep()
+    assert.equal(h.logs.length, 2, 'asked again at the sweep, and still unknown')
+
+    // Stripe answers: the next sweep has them, GET / says them, still canonical, and the payment is made.
+    h.payments.pricesDown = false
+    await h.verifier.sweep()
+    const text = await (await fetch(h.verifier.url + '/')).text()
+    assert.equal(canonical(parseCanonical(text)), text)
+    assert.deepEqual([JSON.parse(text).id.price, JSON.parse(text).id.addedPrice], [PRICES.price, PRICES.addedPrice])
+    assert.equal((await h.post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/paid' })).status, 201)
+    // Known, they are never asked again.
+    h.payments.pricesDown = true
+    await h.verifier.sweep()
+    assert.equal(h.logs.length, 2)
+  } finally {
+    await h.verifier.close()
   }
 })
 
@@ -288,6 +337,16 @@ test('an ID stamp: signed by the ID key, its facts the standard’s list of the 
     assert.equal(await check(published.id.key), true)
     assert.equal(await check(published.face.key), false, 'an ID stamp is no face stamp')
 
+    // An ID check is a face check and a document: n held no face stamp, so the same selfie gives it one
+    // from the face key, its list the face key's own, the same salts as the ID stamp's first two facts.
+    const faceStamp = stampFromJson(res.body.face)
+    assert.deepEqual([faceStamp.verifier, faceStamp.stampNumber], [published.face.key, n])
+    assert.ok(stampSigned(faceStamp))
+    assert.deepEqual(factListOf(faceStamp), list.slice(0, 2), 'the model and the embedding, as the ID stamp has them')
+    const faceProof = await proveVerification({ seed: person, stamp: faceStamp, label, artifacts: ARTIFACTS })
+    assert.equal(await checkVerification({ proof: faceProof.proof, verifier: published.face.key, verifierName: VERIFIER_NAME, label, profile: faceProof.address }), true, 'both badges')
+    assert.deepEqual((await stampBack(h, n)).body.face, own(res.body.face), 'the one POST /stamp gives')
+
     // What the list is for: the standard's facts proof shows two of its facts, and nothing else, to one reader.
     const reader = 'a reader’s profile'
     const shown = await proveFacts({ seed: person, stamp, label, show: [{ name: 'last_name', value: 'LoveLace' }, { name: 'date_of_birth', value: '1990-04-01' }], time: Date.now(), to: reader, artifacts: setupOf('facts') })
@@ -306,14 +365,16 @@ test('an ID stamp: signed by the ID key, its facts the standard’s list of the 
   }
 })
 
-test('one ID stamp a person, for now: a face Didit has seen, with the same birth date and a name that fits, is refused for another stamp number; for the same one, the first stamp, given back', async () => {
+test('an ID stamp for each document: the first at the price, each after at the added-ID price, none replacing another; a face Didit has seen, with a name that fits, is refused for another stamp number', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await stampNumber(), await stampNumber()]
     const first = await h.idSession(passedId('ada', doc('Lovelace')), n1)
+    assert.equal(h.payments.added.get(checkoutOf(h.paidFor.get(first)!)), false, 'a stamp number with no ID stamp pays the price')
     const signed = await idStamp(h, first, n1)
     assert.equal(signed.status, 200)
     assert.equal(h.payments.state(h.paidFor.get(first)!), 'taken', 'a new ID stamp takes the hold')
+    assert.equal(signed.body.face.verifier, h.verifier.keys.face, 'and n1 held no face stamp: one from the same selfie')
     // What Didit keeps of her: a user, by the session's vendor_data, with the name and birth date it read, and her face, as a kept template.
     const template = h.match(first, true)
     h.ids.users.set(template.vendorData, { fullName: 'Ada Lovelace', birth: '1990-04-01' })
@@ -324,21 +385,95 @@ test('one ID stamp a person, for now: a face Didit has seen, with the same birth
     const refused = await h.idSession(passedId('ada', renewed, seen), n2)
     assert.deepEqual(await idStamp(h, refused, n2), { status: 403, body: { error: 'duplicate_document' } })
     assert.equal(h.payments.state(h.paidFor.get(refused)!), 'cancelled', 'its hold cancelled')
-    assert.deepEqual(await idStamp(h, refused, n1), { status: 409, body: { error: 'payment_used' } }, 'and its payment used up')
-    // For the same stamp number, from a new session, her own face and a document that fits: the first stamp back, without its list, never a new one, and nothing taken.
-    const later = await h.idSession(passedId('ada', renewed, seen), n1)
-    const again = await idStamp(h, later, n1)
-    assert.deepEqual(again, { status: 200, body: { stamp: own(signed.body.stamp) } })
-    assert.equal('factList' in again.body.stamp, false)
-    assert.equal(h.payments.state(h.paidFor.get(later)!), 'cancelled', 'a stamp given back cancels its hold')
-    assert.deepEqual((await stampBack(h, n1)).body.id, own(signed.body.stamp), 'the one POST /stamp gives')
-    assert.deepEqual((await idStamp(h, later, n1)).body, again.body, 'and that session, sent again, the same')
-    // The first session, sent again within its hour: its stamp, with its list; after it, used.
-    assert.deepEqual((await idStamp(h, first, n1)).body, signed.body)
+    assert.deepEqual(await h.post('/id/session', { payment: h.paidFor.get(refused) }), { status: 409, body: { error: 'payment_used' } }, 'and its payment used up')
+
+    // For the same stamp number, another document of hers that fits: a new ID stamp, at the added-ID price, its hold taken, and no face stamp, as n1 holds one.
+    const payment = await h.paid(n1)
+    assert.equal(h.payments.added.get(checkoutOf(payment)), true, 'a stamp number with an ID stamp pays the added-ID price')
+    const added = await h.idSession(passedId('ada', renewed, seen), n1, payment)
+    const second = await idStamp(h, added, n1)
+    assert.equal(second.status, 200, JSON.stringify(second.body))
+    assert.notEqual(second.body.stamp.facts, signed.body.stamp.facts)
+    assert.equal(second.body.face, null)
+    assert.equal(h.payments.state(payment), 'taken')
+    // The same document checked again: another stamp for it. The person paid; an index counts the ID key once.
+    const again = await idStamp(h, await h.idSession(passedId('ada', renewed, seen), n1), n1)
+    assert.equal(again.status, 200)
+    assert.notEqual(again.body.stamp.facts, second.body.stamp.facts)
+
+    // POST /stamp hands back every one, without its list, and the face stamp the first gave.
+    const back = (await stampBack(h, n1)).body
+    assert.deepEqual(back.face, own(signed.body.face))
+    assert.deepEqual(new Set(back.id.map((stamp: { facts: string }) => stamp.facts)), new Set([signed, second, again].map((r) => r.body.stamp.facts)))
+    for (const stamp of back.id) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier', 'verifierName'])
+
+    // Each session, sent again within its hour: its own stamps, with their lists; after it, used.
+    assert.deepEqual((await idStamp(h, first, n1)).body, signed.body, 'the first, its face stamp too')
+    assert.deepEqual((await idStamp(h, added, n1)).body, second.body)
     h.later(SIGNED_FOR_MS)
     assert.deepEqual(await idStamp(h, first, n1), { status: 409, body: { error: 'session_used' } })
+
+    // Didit keeps the face of a check that gave n1 its first stamp of a kind, here both at once, and of no added ID.
+    await h.verifier.sweep()
+    assert.deepEqual(h.ids.keptFaces, [first])
+    // A later face check for n1, with its own face: a new face stamp, the first still the one handed back, and its face not kept either.
+    const later = await face(h, 'ada', n1, { matches: [template] })
+    assert.deepEqual((await stampBack(h, n1)).body.face, own(signed.body.face))
+    h.later(SIGNED_FOR_MS)
+    await h.verifier.sweep()
+    assert.deepEqual([h.faces.deleted, h.faces.keptFaces], [[later.sessionId], []])
+
     // Ada Lovelace born another day, with her face, is someone else.
     assert.equal((await idStamp(h, await h.idSession(passedId('ada2', doc('Lovelace', { date_of_birth: '1815-12-10' }), seen), n2), n2)).status, 200)
+  } finally {
+    await h.verifier.close()
+  }
+})
+
+test('two free face tries a stamp number: a face session Didit finished that an app asked a stamp of and that gave none, once a session; then no more face sessions, and the ID check', async () => {
+  const h = await start()
+  try {
+    const n = await stampNumber()
+    const left = async (k: bigint) => (await stampBack(h, k)).body.faceTriesLeft
+    assert.equal(await left(n), FACE_TRIES, 'none used')
+    // A session opened before the tries are used, finished later.
+    const early = await h.session(passed('cleo', { status: 'In Progress' }), n)
+
+    // Never finished, never asked about, or not this stamp number's: no try.
+    for (const status of ['Not Started', 'In Progress', 'In Review', 'Expired', 'Abandoned']) {
+      assert.equal((await faceCheck(h, passed('cleo', { status }), n)).status, 403, status)
+    }
+    await h.session(passed('cleo', { status: 'Declined' }), n)
+    assert.deepEqual(await faceStamp(h, await h.session(passed('cleo', { status: 'Declined' }), await stampNumber()), n), { status: 409, body: { error: 'session_used' } })
+    assert.equal(await left(n), FACE_TRIES)
+
+    // Declined, asked twice: one try. Approved and refused by the verifier, face_seen: the other.
+    const declined = await h.session(passed('cleo', { status: 'Declined' }), n)
+    for (let i = 0; i < 2; i++) assert.deepEqual(await faceStamp(h, declined, n), { status: 403, body: { error: 'declined' } })
+    assert.equal(await left(n), FACE_TRIES - 1)
+    assert.deepEqual(await faceCheck(h, passed('cleo', { matches: [{ vendorData: `face-${randomUUID()}`, sessionId: null }] }), n), { status: 403, body: { error: 'face_seen' } })
+    assert.equal(await left(n), 0)
+
+    // No more face sessions for n, with a return page or not, and Didit is not asked.
+    const created = h.faces.created
+    for (const body of [{ stampNumber: n.toString() }, { stampNumber: n.toString(), returnUrl: 'https://app.example/back' }]) {
+      assert.deepEqual(await h.post('/face/session', body), { status: 409, body: { error: 'face_tries_used' } })
+    }
+    assert.equal(h.faces.created, created)
+    // One opened before still gives its stamp, and gives no try back.
+    h.faces.set(early, passed('cleo'))
+    assert.equal((await faceStamp(h, early, n)).status, 200)
+    assert.equal(await left(n), 0)
+
+    // Another stamp number, as a new passkey has, starts over; after its two tries, the ID check
+    // gives it its ID stamp and a face stamp from the same selfie.
+    const m = await stampNumber()
+    assert.equal(await left(m), FACE_TRIES)
+    for (let i = 0; i < FACE_TRIES; i++) assert.equal((await faceCheck(h, passed('dov', { faceImage: null }), m)).status, 403)
+    assert.equal(await left(m), 0)
+    const id = await idStamp(h, await h.idSession(passedId('dov', doc('Dov')), m), m)
+    assert.equal(id.status, 200, JSON.stringify(id.body))
+    assert.deepEqual((await stampBack(h, m)).body, { face: own(id.body.face), id: [own(id.body.stamp)], faceTriesLeft: 0 })
   } finally {
     await h.verifier.close()
   }
@@ -395,8 +530,8 @@ test('the ID check refuses a person Didit has seen: their face, birth date and a
 
     // Didit not answering for a user: a 502, and nothing used.
     h.ids.usersDown = true
-    const payment = await h.paid()
     const n = await stampNumber()
+    const payment = await h.paid(n)
     const sessionId = await h.idSession(passedId('kim', doc('Kim'), { matches: [{ vendorData: carlos.user, sessionId: null }] }), n, payment)
     assert.deepEqual(await idStamp(h, sessionId, n), { status: 502, body: { error: 'face_check_unavailable' } })
     assert.equal(h.payments.state(payment), 'held')
@@ -464,7 +599,9 @@ test('the face check: another stamp number’s face is face_seen, stamped or not
     assert.deepEqual(await faceStamp(h, stranger, n), refused('other_person'))
     assert.deepEqual(await faceStamp(h, stranger, n), refused('other_person'), 'a refused session asked again is refused again')
     // That try stays in Didit for its day under n's hash; their next check matches it, and it counts for nothing.
+    h.forgetTries()
     assert.deepEqual(await faceCheck(h, passed('mallory', { matches: [h.match(stranger)] }), n), refused('other_person'), 'still someone else')
+    h.forgetTries()
 
     // With a face of its own, a stamp from a check that gave it one: a new face stamp; the first stays the one handed back.
     const again = await faceCheck(h, passed('alice', { matches: [h.match(alice.sessionId, true), h.match(stranger)] }), n)
@@ -479,10 +616,10 @@ test('the face check: another stamp number’s face is face_seen, stamped or not
     const lostAgain = await h.session(passed('alice'), n)
     assert.equal((await faceCheck(h, passed('alice', { matches: [h.match(lostAgain), h.match(alice.sessionId, true)] }), n)).status, 200)
 
-    // A stamp number that holds an ID stamp only: a face check needs that check's face.
+    // A stamp number whose stamps came from an ID check, its face stamp among them: a face check needs that check's face.
     const k = await stampNumber()
     const id = await h.idSession(passedId('ida', doc('Pfeiffer')), k)
-    assert.equal((await idStamp(h, id, k)).status, 200)
+    assert.equal((await idStamp(h, id, k)).body.face.verifier, h.verifier.keys.face)
     assert.deepEqual(await faceCheck(h, passed('ida'), k), refused('other_person'))
     assert.equal((await faceCheck(h, passed('ida', { matches: [h.match(id, true)] }), k)).status, 200)
 
@@ -532,7 +669,8 @@ test('the ID check: another’s face that fits is duplicate_document, a face che
     h.ids.users.set(h.match(adaFace.sessionId).vendorData, ada)
     const m = await stampNumber()
     const onM = await check('ada', doc('Lovelace'), { matches: [h.match(adaFace.sessionId, true)] }, m)
-    assert.deepEqual(outcome(onM), { status: 200, error: undefined, hold: 'taken' }, 'a face stamp on one seed and an ID stamp on another: no wider than that')
+    assert.deepEqual(outcome(onM), { status: 200, error: undefined, hold: 'taken' }, 'a face stamp on one seed, and an ID stamp and a face stamp on another: no wider than that')
+    assert.equal(onM.body.face.verifier, h.verifier.keys.face)
 
     // Her ID check's face refuses another stamp number's ID check whose document fits, stamped or not; one that does not fit passes.
     h.ids.users.set(h.match(onM.sessionId).vendorData, ada)
@@ -558,9 +696,10 @@ test('the ID check: another’s face that fits is duplicate_document, a face che
     const ownId = { matches: [h.match(nId.sessionId, true)] }
     assert.deepEqual(outcome(await check('ada', doc('Lovelace', { date_of_birth: '1991-04-01' }), ownId, n)), refused('other_person'))
     assert.deepEqual(outcome(await check('eva', doc('Lovelace', { first_name: 'Eva', full_name: 'Eva Lovelace' }), ownId, n)), refused('other_person'))
-    // One that fits, from a renewed document: the first ID stamp back, without its list, and its hold cancelled.
-    const back = await check('ada', doc('Lovelace', { document_number: 'CD7654321' }), ownId, n)
-    assert.deepEqual([back.status, back.body.stamp, back.hold], [200, own(nId.body.stamp), 'cancelled'])
+    // One that fits, from a renewed document: a new ID stamp, with its list, and its hold taken.
+    const renewed = await check('ada', doc('Lovelace', { document_number: 'CD7654321' }), ownId, n)
+    assert.deepEqual([renewed.status, renewed.hold, renewed.body.face], [200, 'taken', null])
+    assert.notEqual(renewed.body.stamp.facts, nId.body.stamp.facts)
     // An own ID check whose Didit user is gone, or has no birth date, has nothing to fit.
     h.ids.users.set(h.match(nId.sessionId).vendorData, { fullName: 'Ada Lovelace', birth: null })
     assert.equal((await check('ada', doc('Lovelace', { date_of_birth: '1991-04-01' }), ownId, n)).status, 200)
@@ -629,7 +768,7 @@ test('Didit decides no face seen before: a declined check is declined, never fac
     assert.deepEqual(await faceCheck(h, passed('known', { status: 'Declined', ...seen }), n), { status: 403, body: { error: 'declined' } }, 'a session that will never pass, whatever it matched')
     const review = await h.session(passed('known', { status: 'In Review', liveness: [{ status: 'In Review' }] }), n)
     assert.deepEqual(await faceStamp(h, review, n), { status: 403, body: { error: 'not_approved' } }, 'no one reviews: In Review is unfinished')
-    assert.deepEqual(await stampBack(h, n), { status: 404, body: { error: 'not_found' } }, 'nothing kept')
+    assert.deepEqual(await stampBack(h, n), { status: 200, body: { face: null, id: [], faceTriesLeft: FACE_TRIES - 1 } }, 'nothing kept but the declined try')
     assert.equal((await faceCheck(h, passed('new'), n)).status, 200)
     const declined = await h.idSession(passedId('ida', doc('Pfeiffer'), { status: 'Declined', ...seen }), n)
     assert.deepEqual(await idStamp(h, declined, n), { status: 403, body: { error: 'declined' } })
@@ -638,7 +777,7 @@ test('Didit decides no face seen before: a declined check is declined, never fac
   }
 })
 
-test('the sweep deletes every session the verifier opened: an hour after its stamp, keeping its face template; any other a day after it opened, face and all', async () => {
+test('the sweep deletes every session the verifier opened: an hour after its stamp, keeping its face template if it gave its stamp number its first stamp of a kind; any other a day after it opened, face and all', async () => {
   const h = await start()
   try {
     const n = await stampNumber()
@@ -661,7 +800,7 @@ test('the sweep deletes every session the verifier opened: an hour after its sta
     h.later(1)
     await h.verifier.sweep()
     assert.deepEqual([h.faces.deleted, h.ids.deleted], [[signed.sessionId], [id]], 'a session that gave a stamp, once the hour is over')
-    assert.deepEqual([h.faces.keptFaces, h.ids.keptFaces], [[signed.sessionId], [id]], 'keeping its face template')
+    assert.deepEqual([h.faces.keptFaces, h.ids.keptFaces], [[signed.sessionId], [id]], 'keeping its face template: each gave n its first stamp of a kind')
     assert.deepEqual(h.logs, [], 'Didit kept each face template: nothing to say')
     assert.deepEqual(await faceStamp(h, signed.sessionId, n), { status: 409, body: { error: 'session_used' } })
 
@@ -688,9 +827,16 @@ test('the sweep deletes every session the verifier opened: an hour after its sta
     await h.verifier.sweep()
     assert.equal(h.faces.deleted.at(-1), later.sessionId)
 
+    // m's second face stamp keeps no face: its first does, so m's own kept faces stay few.
+    const second = await face(h, 'lena', m, { matches: [h.match(later.sessionId, true)] })
+    h.later(SIGNED_FOR_MS)
+    await h.verifier.sweep()
+    assert.deepEqual([h.faces.deleted.at(-1), h.faces.keptFaces.at(-1)], [second.sessionId, later.sessionId], 'deleted, its face with it')
+
     // Didit deleting a session without keeping the face template it was asked to keep: logged, by Didit's outcome only.
     h.faces.outcome = 'deleted'
-    const mo = await face(h, 'lena', m, { matches: [h.match(later.sessionId, true)] })
+    const o = await stampNumber()
+    const otto = await face(h, 'otto', o)
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
     assert.equal(h.logs.at(-1), 'verifier: Didit kept no face template for a deleted session (deleted)')
@@ -698,13 +844,15 @@ test('the sweep deletes every session the verifier opened: an hour after its sta
     // The file names a session in clear only until Didit has deleted it.
     const pia = await face(h, 'lena', m, { matches: [h.match(later.sessionId, true)] })
     const open = await h.session(passed('quinn'), await stampNumber())
-    const payment = await h.paid()
-    const idOpen = await h.idSession(passedId('rui', doc('Rui')), await stampNumber(), payment)
+    const r = await stampNumber()
+    const payment = await h.paid(r)
+    const idOpen = await h.idSession(passedId('rui', doc('Rui')), r, payment)
     await h.verifier.close()
     assertKept(h.dbPath, {
-      sessions: [[signed.sessionId, n, 'face'], [id, n, 'id'], [later.sessionId, m, 'face'], [mo.sessionId, m, 'face'], [pia.sessionId, m, 'face']],
+      sessions: [[signed.sessionId, n, 'face'], [id, n, 'id'], [later.sessionId, m, 'face'], [second.sessionId, m, 'face'], [otto.sessionId, o, 'face'], [pia.sessionId, m, 'face']],
       toDelete: [pia.sessionId],
       opened: [[open, null], [idOpen, payment]],
+      faceTries: [[n, 1]],
       payments: [[h.paidFor.get(idDeclined)!, 1, false], [h.paidFor.get(id)!, ID_TRIES, true], [payment, 1, false]],
       never: [],
     })
@@ -790,6 +938,7 @@ test('refusals, malformed requests, and Didit not answering', async () => {
       [{ sessionId: 'x', stampNumber: '5', payment }, 400, 'bad_session_id'],
       [{ sessionId, stampNumber: '05', payment }, 400, 'bad_stamp_number'],
       [{ sessionId, stampNumber: '5', payment: 'pi_3Mtw' }, 400, 'bad_payment'],
+      [{ sessionId, stampNumber: '5', payment: checkoutOf(payment) }, 400, 'bad_payment'],
       [{ sessionId, stampNumber: '5', payment: 'x'.repeat(5000) }, 413, 'too_large'],
     ]
     for (const [body, status, error] of idBad) assert.deepEqual(await h.post('/id/stamp', body), { status, body: { error } }, error)
@@ -813,31 +962,39 @@ test('refusals, malformed requests, and Didit not answering', async () => {
   }
 })
 
-test('the ID check is paid through Stripe: a Checkout page sending the person back to an app, then a session for a paid payment', async () => {
-  const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
+test('the ID check is paid through Stripe: a Checkout page for a stamp number, sending the person back to an app; the payment carries the stamp number, locked, and opens sessions for it alone', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
   try {
-    const made = await h.post('/id/payment', { returnUrl: 'https://app.example/paid?for=id' })
+    const n = await stampNumber()
+    const made = await h.post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/paid?for=id' })
     assert.equal(made.status, 201, JSON.stringify(made.body))
     assert.deepEqual(Object.keys(made.body).sort(), ['payment', 'url'])
     const { payment } = made.body
-    assert.equal(h.payments.returnUrls.get(payment), 'https://app.example/paid?for=id', 'Stripe is told where to send the person back')
+    // Its Checkout Session's id, a dot, and the stamp number locked under the key the text `payment` derives: Stripe never sees it.
+    assert.match(payment, /^cs_test_[A-Za-z0-9]+\.[A-Za-z0-9_-]{80}$/)
+    assert.equal(made.body.url, `https://checkout.stripe.example/c/pay/${checkoutOf(payment)}`)
+    assert.equal(payment.includes(n.toString()), false)
+    assert.equal(h.payments.returnUrls.get(checkoutOf(payment)), 'https://app.example/paid?for=id', 'Stripe is told where to send the person back')
     for (const returnUrl of ['https://other.example/', 'not a url']) {
-      assert.deepEqual(await h.post('/id/payment', { returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
+      assert.deepEqual(await h.post('/id/payment', { stampNumber: n.toString(), returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
     }
-    for (const body of [{}, { returnUrl: 3 }, { returnUrl: 'https://app.example/', x: 1 }]) {
-      assert.deepEqual(await h.post('/id/payment', body), { status: 400, body: { error: 'expected_exactly_returnUrl' } })
+    for (const body of [{}, { returnUrl: 'https://app.example/' }, { stampNumber: n.toString() }, { stampNumber: n.toString(), returnUrl: 3 }, { stampNumber: n.toString(), returnUrl: 'https://app.example/', x: 1 }]) {
+      assert.deepEqual(await h.post('/id/payment', body), { status: 400, body: { error: 'expected_exactly_stampNumber_and_returnUrl' } }, JSON.stringify(body))
     }
+    assert.deepEqual(await h.post('/id/payment', { stampNumber: '05', returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_stamp_number' } })
 
     // Not paid yet: no session, and Stripe is asked again next time.
-    const stampNumber_ = (await stampNumber()).toString()
-    const session = (payment: string) => h.post('/id/session', { payment, stampNumber: stampNumber_ })
+    const session = (p: string) => h.post('/id/session', { payment: p })
     assert.deepEqual(await session(payment), { status: 402, body: { error: 'not_paid' } })
-    assert.deepEqual(await session('cs_test_unknown'), { status: 402, body: { error: 'not_paid' } }, 'one Stripe does not have')
+    const key = await hkdf(seed.bytes, 'payment')
+    assert.deepEqual(await session(lockPayment(key, 'cs_test_unknown', n)), { status: 402, body: { error: 'not_paid' } }, 'one Stripe does not have')
     h.payments.pay(payment)
     const opened = await session(payment)
     assert.equal(opened.status, 201)
     assert.deepEqual([h.ids.created, h.faces.created], [1, 0], 'on the ID check’s Didit, and only there')
-    assert.equal(h.payments.state(payment), 'held', 'paying only holds the $5')
+    assert.equal(readVendorData(h.ids.vendorData.get(opened.body.sessionId)!)!.hash, stampHash(await hkdf(seed.bytes, 'vendor-data'), n), 'for the payment’s own stamp number')
+    assert.equal(h.payments.state(payment), 'held', 'paying only holds the price')
     const asked = h.payments.asked
     assert.equal((await session(payment)).status, 201)
     assert.equal(h.payments.asked, asked + 1, 'Stripe is asked each time whether it still holds the money')
@@ -853,35 +1010,42 @@ test('the ID check is paid through Stripe: a Checkout page sending the person ba
     assert.equal(h.ids.created, ID_TRIES)
 
     // One clock: a payment opens sessions only in its first day; a hold cancelled at Stripe opens none.
-    const slow = await h.paid()
+    const slow = await h.paid(n)
     assert.equal((await session(slow)).status, 201)
     h.later(OPEN_FOR_MS - 1)
     assert.equal((await session(slow)).status, 201, 'within its day')
     h.later(1)
     assert.deepEqual(await session(slow), { status: 402, body: { error: 'not_paid' } }, 'a day after it was held')
-    const dropped = await h.paid()
-    await h.payments.cancel(dropped)
+    const dropped = await h.paid(n)
+    await h.payments.cancel(checkoutOf(dropped))
     assert.deepEqual(await session(dropped), { status: 402, body: { error: 'not_paid' } }, 'its hold cancelled')
     assert.equal(h.ids.created, ID_TRIES + 2)
 
-    const n = stampNumber_
+    // The payment alone; one the verifier did not make, or altered, opens nothing.
+    const fresh = await h.paid(n)
+    const [id, locked] = fresh.split('.') as [string, string]
+    const other = await h.paid(await stampNumber())
+    const flipped = `${locked.slice(0, 20)}${locked[20] === 'A' ? 'B' : 'A'}${locked.slice(21)}`
     const bad: [unknown, string][] = [
-      [{}, 'expected_exactly_payment_and_stampNumber'],
-      [{ payment }, 'expected_exactly_payment_and_stampNumber'],
-      [{ payment: 5, stampNumber: n }, 'expected_exactly_payment_and_stampNumber'],
-      [{ payment, stampNumber: n, x: 1 }, 'expected_exactly_payment_and_stampNumber'],
-      [{ payment, stampNumber: n, returnUrl: 5 }, 'expected_exactly_payment_and_stampNumber_and_returnUrl'],
-      [{ payment, returnUrl: 'https://app.example/' }, 'expected_exactly_payment_and_stampNumber_and_returnUrl'],
-      [{ payment, stampNumber: n, returnUrl: 'https://other.example/' }, 'bad_return_url'],
-      [{ payment: 'pi_3Mtw', stampNumber: n }, 'bad_payment'],
-      [{ payment: 'cs_test_a/b', stampNumber: n }, 'bad_payment'],
-      [{ payment, stampNumber: '05' }, 'bad_stamp_number'],
+      [{}, 'expected_exactly_payment'],
+      [{ payment: 5 }, 'expected_exactly_payment'],
+      [{ payment: fresh, x: 1 }, 'expected_exactly_payment'],
+      [{ payment: fresh, stampNumber: n.toString() }, 'expected_exactly_payment'],
+      [{ payment: fresh, returnUrl: 5 }, 'expected_exactly_payment_and_returnUrl'],
+      [{ returnUrl: 'https://app.example/' }, 'expected_exactly_payment_and_returnUrl'],
+      [{ payment: fresh, returnUrl: 'https://other.example/' }, 'bad_return_url'],
+      [{ payment: 'pi_3Mtw' }, 'bad_payment'],
+      [{ payment: id }, 'bad_payment'],
+      [{ payment: `${id}.${flipped}` }, 'bad_payment'],
+      [{ payment: `${checkoutOf(other)}.${locked}` }, 'bad_payment'],
+      [{ payment: lockPayment(new Uint8Array(32), id, n) }, 'bad_payment'],
+      [{ payment: `cs_test_a/b.${locked}` }, 'bad_payment'],
     ]
-    for (const [body, error] of bad) assert.deepEqual(await h.post('/id/session', body), { status: 400, body: { error } }, error)
+    for (const [body, error] of bad) assert.deepEqual(await h.post('/id/session', body), { status: 400, body: { error } }, JSON.stringify(body))
 
-    const unasked = await h.paid()
+    const unasked = await h.paid(n)
     h.payments.down = true
-    assert.deepEqual(await h.post('/id/payment', { returnUrl: 'https://app.example/' }), { status: 502, body: { error: 'payment_unavailable' } })
+    assert.deepEqual(await h.post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/' }), { status: 502, body: { error: 'payment_unavailable' } })
     assert.deepEqual(await session(unasked), { status: 502, body: { error: 'payment_unavailable' } })
     assert.equal(h.ids.created, ID_TRIES + 2, 'a refused request never reaches Didit')
   } finally {
@@ -893,7 +1057,7 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
   const h = await start()
   try {
     const n = await stampNumber()
-    const payment = await h.paid()
+    const payment = await h.paid(n)
     // Declined, then expired: two tries, and the payment still gives its stamp.
     const declined = await h.idSession(passedId('ada', doc('Lovelace'), { status: 'Declined' }), n, payment)
     assert.deepEqual(await idStamp(h, declined, n), { status: 403, body: { error: 'declined' } })
@@ -906,7 +1070,7 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
     assert.equal(h.payments.state(payment), 'taken', 'a new stamp takes it')
 
     // Used up: no more sessions, and no stamp for any other session.
-    assert.deepEqual(await h.post('/id/session', { payment, stampNumber: n.toString() }), { status: 409, body: { error: 'payment_used' } })
+    assert.deepEqual(await h.post('/id/session', { payment }), { status: 409, body: { error: 'payment_used' } })
     const b = await stampNumber()
     const other = await h.idSession(passedId('bea', doc('Brontë')), b)
     assert.deepEqual(await idStamp(h, other, b, payment), { status: 409, body: { error: 'payment_used' } }, 'one stamp a payment')
@@ -916,23 +1080,23 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
     // A payment Stripe was never asked about, or one that did not open the session: no stamp, and Didit is not asked.
     const sibling = await h.idSession(passedId('cy', doc('Twombly')), await stampNumber())
     h.ids.down = true
-    assert.deepEqual(await idStamp(h, other, b, await h.paid()), { status: 402, body: { error: 'not_paid' } })
+    assert.deepEqual(await idStamp(h, other, b, await h.paid(b)), { status: 402, body: { error: 'not_paid' } })
     assert.deepEqual(await idStamp(h, other, b, h.paidFor.get(sibling)), { status: 402, body: { error: 'not_paid' } }, 'a session another payment opened')
     h.ids.down = false
     assert.equal((await idStamp(h, other, b)).status, 200, 'with its own')
 
     // The last try refused ends the payment: its hold cancelled, at once.
-    const last = await h.paid()
+    const d = await stampNumber()
+    const last = await h.paid(d)
     for (let i = 0; i < ID_TRIES; i++) {
-      const k = await stampNumber()
-      const session = await h.idSession(passedId('dee', doc('Dee'), { status: 'Declined' }), k, last)
-      assert.deepEqual(await idStamp(h, session, k), { status: 403, body: { error: 'declined' } })
+      const session = await h.idSession(passedId('dee', doc('Dee'), { status: 'Declined' }), d, last)
+      assert.deepEqual(await idStamp(h, session, d), { status: 403, body: { error: 'declined' } })
       assert.equal(h.payments.state(last), i < ID_TRIES - 1 ? 'held' : 'cancelled', `try ${i + 1}`)
     }
     // Only its newest session ends it: an older one refused after the last was opened leaves the hold
     // for that one, which may still pass.
-    const late = await h.paid()
     const f = await stampNumber()
+    const late = await h.paid(f)
     const lateTries = []
     for (let i = 0; i < ID_TRIES; i++) lateTries.push(await h.idSession(passedId('fay', doc('Fay'), { status: 'Declined' }), f, late))
     h.ids.set(lateTries.at(-1)!, passedId('fay', doc('Fay')))
@@ -942,8 +1106,8 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
     assert.equal(h.payments.state(late), 'taken')
 
     // An unfinished try, or a session that is none of the ID check's, ends nothing.
-    const unfinished = await h.paid()
     const e = await stampNumber()
+    const unfinished = await h.paid(e)
     const sessions = []
     for (let i = 0; i < ID_TRIES; i++) sessions.push(await h.idSession(passedId('eli', doc('Eli'), { status: 'In Progress' }), e, unfinished))
     assert.deepEqual(await idStamp(h, sessions.at(-1)!, e), { status: 403, body: { error: 'not_approved' } })
@@ -961,25 +1125,25 @@ test('one payment, one ID stamp, from a session it opened: a try that will never
 })
 
 test('Stripe or Didit failing a request: a 502, and one log line saying why by its status and codes alone, never its words, a key or an id', async () => {
-  const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
+  const h = await start()
   try {
-    const unasked = await h.paid()
-    const payment = await h.knownPayment()
     const n = await stampNumber()
+    const unasked = await h.paid(n)
+    const payment = await h.knownPayment()
     const sessionId = await h.session(passed('gina'), n)
     const unavailable = (error: string) => ({ status: 502, body: { error } })
 
     // Stripe refusing a new payment, as it refuses `payment_method_types`.
     h.payments.down = true
     h.payments.fail = new PaymentUnavailable('Stripe answered 400 to a new payment', { status: 400, codes: ['invalid_request_error', 'payment_method_types_no_longer_supported', 'payment_method_types'] })
-    assert.deepEqual(await h.post('/id/payment', { returnUrl: 'https://app.example/' }), unavailable('payment_unavailable'))
+    assert.deepEqual(await h.post('/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/' }), unavailable('payment_unavailable'))
     // Stripe refusing the key, asked about a payment: of what it sent, only what is a code.
-    const sent = ['invalid_request_error', 'Invalid API Key provided: sk_test_****ndin', 'sk_test_51standin', `sk_test_${'a'.repeat(99)}`, unasked, sessionId, 'X', 'a'.repeat(65), { code: 'x' }]
+    const sent = ['invalid_request_error', 'Invalid API Key provided: sk_test_****ndin', 'sk_test_51standin', `sk_test_${'a'.repeat(99)}`, checkoutOf(unasked), unasked, sessionId, 'X', 'a'.repeat(65), { code: 'x' }]
     h.payments.fail = new PaymentUnavailable('Stripe answered 401 to a payment', { status: 401, codes: sent })
-    assert.deepEqual(await h.post('/id/session', { payment: unasked, stampNumber: n.toString() }), unavailable('payment_unavailable'))
+    assert.deepEqual(await h.post('/id/session', { payment: unasked }), unavailable('payment_unavailable'))
     // Stripe not reached: the error's kind alone.
     h.payments.fail = new PaymentUnavailable('Stripe could not be reached')
-    assert.deepEqual(await h.post('/id/session', { payment: unasked, stampNumber: n.toString() }), unavailable('payment_unavailable'))
+    assert.deepEqual(await h.post('/id/session', { payment: unasked }), unavailable('payment_unavailable'))
     h.payments.down = false
 
     // Didit refusing to open a session, then to say what one decided; the photo's address refusing.
@@ -995,7 +1159,7 @@ test('Stripe or Didit failing a request: a 502, and one log line saying why by i
     h.faces.photoDown = false
     // Anything else thrown: its kind alone.
     h.ids.down = true
-    assert.deepEqual(await h.post('/id/session', { payment, stampNumber: n.toString() }), unavailable('face_check_unavailable'))
+    assert.deepEqual(await h.post('/id/session', { payment }), unavailable('face_check_unavailable'))
     h.ids.down = false
 
     assert.deepEqual(h.logs, [
@@ -1018,8 +1182,8 @@ test('Stripe or Didit failing a request: a 502, and one log line saying why by i
     h.faces.deleteDown = false
 
     // Stripe failing to take a hold: a 502, and nothing used; the same session, asked again, takes it.
-    const held = await h.paid()
     const m = await stampNumber()
+    const held = await h.paid(m)
     const taking = await h.idSession(passedId('ivo', doc('Ivo')), m, held)
     h.payments.down = true
     h.payments.fail = new PaymentUnavailable('Stripe answered 500 to a capture', { status: 500, codes: ['api_error'] })
@@ -1049,11 +1213,11 @@ test('Stripe or Didit failing a request: a 502, and one log line saying why by i
 })
 
 test('without Stripe the ID check is not for sale; the face check is free', async () => {
-  const h = await start({ forSale: false, env: { APP_ORIGINS: 'https://app.example' } })
+  const h = await start({ forSale: false })
   try {
     for (const [path, body] of [
-      ['/id/payment', { returnUrl: 'https://app.example/' }],
-      ['/id/session', { payment: 'cs_test_a1', stampNumber: '5' }],
+      ['/id/payment', { stampNumber: '5', returnUrl: 'https://app.example/' }],
+      ['/id/session', { payment: 'cs_test_a1' }],
       ['/id/stamp', { sessionId: '4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a', stampNumber: '5', payment: 'cs_test_a1' }],
     ] as const) {
       assert.deepEqual(await h.post(path, body), { status: 503, body: { error: 'not_for_sale' } }, path)
@@ -1065,7 +1229,7 @@ test('without Stripe the ID check is not for sale; the face check is free', asyn
   }
 })
 
-test('the file keeps which session gave which stamp number and which check it was, and the stamp it signed: nothing of who the person is', async () => {
+test('the file keeps which session gave which stamp number and which check it was, and the stamps it signed: nothing of who the person is', async () => {
   const h = await start()
   try {
     const [n1, n2] = [await stampNumber(), await stampNumber()]
@@ -1074,9 +1238,10 @@ test('the file keeps which session gave which stamp number and which check it wa
     const id = await h.idSession(passedId('alice', doc('Lovelace', { 'extra_fields.profession': 'Analyst' }), { matches: [h.match(a.sessionId)] }), n1)
     const res = await idStamp(h, id, n1)
     assert.equal(res.status, 200)
-    // A later check for the same stamp number gives the first stamp back, and writes nothing of its own document either.
+    // A later check for the same stamp number, another document, gives its own ID stamp, and writes nothing of its document either.
     const later = await h.idSession(passedId('alice', doc('Lovelace', { document_number: 'CD7654321', place_of_birth: 'Marylebone' }), { matches: [h.match(id)] }), n1)
-    assert.deepEqual((await idStamp(h, later, n1)).body.stamp, own(res.body.stamp))
+    const added = await idStamp(h, later, n1)
+    assert.equal(added.status, 200)
     const open = await h.knownPayment()
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
@@ -1091,7 +1256,7 @@ test('the file keeps which session gave which stamp number and which check it wa
       // The stamp's facts and signature are kept; the list beside it is not, nor any of its names, values or salts, nor any vendor_data.
       never: [
         ...['Lovelace', 'lovelace', '1990-04-01', 'AB1234567', 'CD7654321', '12 St James Square', 'Marylebone', 'Analyst', 'date_of_birth', 'document_number', 'embedding'],
-        ...['test-model', ...[a.stamp, res.body.stamp].flatMap((stamp) => stamp.factList.flatMap((f: { value: string; salt: string }) => [f.value, f.salt]))],
+        ...['test-model', ...[a.stamp, res.body.stamp, added.body.stamp].flatMap((stamp) => stamp.factList.flatMap((f: { value: string; salt: string }) => [f.value, f.salt]))],
         ...[a.sessionId, b.sessionId, id, later].map((s) => h.match(s).vendorData),
       ],
     })
@@ -1101,7 +1266,7 @@ test('the file keeps which session gave which stamp number and which check it wa
   }
 })
 
-test('a stamp asked back by its stamp number is the one signed, without its list, for both keys, and after its session is deleted in Didit', async () => {
+test('the stamps asked back by their stamp number are the ones signed, without their lists, for both keys, with the free face tries left, and after their sessions are deleted in Didit', async () => {
   const dbPath = join(tempDir(), 'verifier.sqlite')
   let h = await start({ dbPath })
   try {
@@ -1112,15 +1277,15 @@ test('a stamp asked back by its stamp number is the one signed, without its list
     assert.equal(signedId.status, 200)
     const back = await stampBack(h, n)
     assert.equal(back.status, 200)
-    assert.deepEqual(back.body, { face: own(signedFace.stamp), id: own(signedId.body.stamp) }, 'each the one signed, without the list beside it')
-    for (const stamp of [back.body.face, back.body.id]) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier', 'verifierName'])
+    assert.deepEqual(back.body, { face: own(signedFace.stamp), id: [own(signedId.body.stamp)], faceTriesLeft: FACE_TRIES }, 'each the one signed, without the list beside it')
+    for (const stamp of [back.body.face, ...back.body.id]) assert.deepEqual(Object.keys(stamp).sort(), ['facts', 'signature', 'stampNumber', 'verifier', 'verifierName'])
     const published = await about(h)
-    assert.deepEqual([back.body.face.verifier, back.body.id.verifier], [published.face.key, published.id.key])
-    assert.ok(stampSigned(stampFromJson(back.body.face)) && stampSigned(stampFromJson(back.body.id)))
+    assert.deepEqual([back.body.face.verifier, back.body.id[0].verifier], [published.face.key, published.id.key])
+    assert.ok(stampSigned(stampFromJson(back.body.face)) && stampSigned(stampFromJson(back.body.id[0])))
 
     // A number with a face stamp only: no ID stamp.
     const bob = await face(h, 'bob', m)
-    assert.deepEqual((await stampBack(h, m)).body, { face: own(bob.stamp), id: null })
+    assert.deepEqual((await stampBack(h, m)).body, { face: own(bob.stamp), id: [], faceTriesLeft: FACE_TRIES })
     // A later check for the same number, with its own face, answers its own stamp; the first stays the one handed back.
     const later = await face(h, 'alice', n, { matches: [h.match(signedFace.sessionId)] })
     assert.notEqual(later.stamp.facts, signedFace.stamp.facts)
@@ -1154,7 +1319,7 @@ test('at start, a kept stamp its key did not sign is forgotten, for both keys, a
 
   let h = await start({ seed: seed.json, dbPath })
   try {
-    assert.deepEqual(await stampBack(h, n), { status: 404, body: { error: 'not_found' } }, 'both forgotten')
+    assert.deepEqual(await stampBack(h, n), { status: 200, body: { face: null, id: [], faceTriesLeft: FACE_TRIES } }, 'both forgotten')
     // n holds no stamp now: its face check needs no face of its own, and gets a new face stamp.
     const signedFace = await face(h, 'ada', n)
     assert.equal(signedFace.stamp.verifier, h.verifier.keys.face)
@@ -1169,16 +1334,57 @@ test('at start, a kept stamp its key did not sign is forgotten, for both keys, a
     // Started again: the stamps its own keys signed stay.
     await h.verifier.close()
     h = await start({ dbPath })
-    assert.deepEqual((await stampBack(h, n)).body, { face: own(signedFace.stamp), id: own(res.body.stamp) })
+    assert.deepEqual((await stampBack(h, n)).body, { face: own(signedFace.stamp), id: [own(res.body.stamp)], faceTriesLeft: FACE_TRIES })
   } finally {
     await h.verifier.close().catch(() => {})
   }
 })
 
-test('a stamp number nothing was signed for is 404, and a body with any other field is refused', async () => {
+test('at start, a file an earlier version wrote moves to these tables: its stamps kept, one row each, and its signed sessions keep their faces', async () => {
+  const seed = seedJson()
+  const dbPath = join(tempDir(), 'verifier.sqlite')
+  const n = await stampNumber()
+  const sessionId = randomUUID()
+  const clock = Date.now()
+  // The earlier tables: one stamp per stamp number and key, and no `keep_face`, with a face stamp and an ID stamp of n's, signed by this verifier's keys.
+  const before = new DatabaseSync(dbPath)
+  before.exec(`
+    CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind)) WITHOUT ROWID;
+    CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL) WITHOUT ROWID;
+  `)
+  const signed: Record<string, ReturnType<typeof signStamp>> = {}
+  for (const [kind, text] of [['face', 'face-facts'], ['id', 'id-facts']] as const) {
+    const stamp = (signed[kind] = signStamp(await hkdf(seed.bytes, text), { stampNumber: n, facts: kind === 'face' ? 7n : 8n, verifierName: VERIFIER_NAME }))
+    const r8 = Buffer.concat([toBytes32(stamp.signature.R8[0]), toBytes32(stamp.signature.R8[1])])
+    before.prepare('INSERT INTO stamps VALUES (?, ?, ?, ?, ?)').run(toBytes32(n), kind, toBytes32(stamp.facts), r8, toBytes32(stamp.signature.S))
+  }
+  before.prepare('INSERT INTO to_delete VALUES (?, ?, ?)').run(sessionId, 'face', clock - SIGNED_FOR_MS)
+  before.close()
+
+  const h = await start({ seed: seed.json, dbPath })
+  try {
+    const json = (stamp: ReturnType<typeof signStamp>) => JSON.parse(JSON.stringify(stampToJson(stamp)))
+    assert.deepEqual((await stampBack(h, n)).body, { face: own(json(signed.face!)), id: [own(json(signed.id!))], faceTriesLeft: FACE_TRIES })
+    // Its signed session still keeps its face when the sweep deletes it.
+    h.faces.set(sessionId, passed('ada'))
+    await h.verifier.sweep()
+    assert.deepEqual(h.faces.keptFaces, [sessionId])
+    await h.verifier.close()
+    const db = new DatabaseSync(dbPath, { readOnly: true })
+    const tables = Object.fromEntries(db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all().map((t) => [t.name, t.sql]))
+    db.close()
+    assert.equal(tables.stamps, 'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)) WITHOUT ROWID')
+    assert.equal(tables.to_delete, 'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, keep_face INTEGER NOT NULL DEFAULT 1) WITHOUT ROWID')
+    assert.equal('stamps_before' in tables, false)
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('a stamp number nothing was kept for holds no stamp and both free face tries, and a body with any other field is refused', async () => {
   const h = await start()
   try {
-    assert.deepEqual(await stampBack(h, await stampNumber()), { status: 404, body: { error: 'not_found' } })
+    assert.deepEqual(await stampBack(h, await stampNumber()), { status: 200, body: { face: null, id: [], faceTriesLeft: FACE_TRIES } })
     const bad: [unknown, number, string][] = [
       ['nope', 400, 'not_json'],
       [{}, 400, 'expected_exactly_stampNumber'],
@@ -1228,20 +1434,25 @@ test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'https://app.example/' }), /APP_ORIGINS is an origin/)
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'app.example' }), /APP_ORIGINS is an origin/)
 
-  // Stripe: with its key the ID check is for sale, for the Price named; the Price alone sells nothing;
-  // the key is never quoted.
+  // Stripe: with its key the ID check is for sale, for the two Prices named; the Prices alone sell
+  // nothing; the key is never quoted.
   const price = 'price_1UXRbDILoxkbMfX4cfwRfCOI'
+  const addedPrice = 'price_1UXRbDILoxkbMfX4added00'
+  const prices = { STRIPE_ID_PRICE: price, STRIPE_ADDED_ID_PRICE: addedPrice }
   assert.equal(config.stripe, undefined)
-  assert.equal(readConfig({ ...base, STRIPE_ID_PRICE: price }).stripe, undefined)
+  assert.equal(readConfig({ ...base, ...prices }).stripe, undefined)
   for (const key of ['sk_test_51abc', 'rk_test_51abc', 'sk_live_51abc', 'rk_live_51abc']) {
-    assert.deepEqual(readConfig({ ...base, STRIPE_SECRET_KEY: key, STRIPE_ID_PRICE: price }).stripe, { secretKey: key, price })
+    assert.deepEqual(readConfig({ ...base, STRIPE_SECRET_KEY: key, ...prices }).stripe, { secretKey: key, price, addedPrice })
   }
-  assert.throws(() => readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_51abc' }), /STRIPE_SECRET_KEY needs STRIPE_ID_PRICE/)
+  for (const missing of [{}, { STRIPE_ID_PRICE: price }, { STRIPE_ADDED_ID_PRICE: addedPrice }]) {
+    assert.throws(() => readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_51abc', ...missing }), /STRIPE_SECRET_KEY needs STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE/)
+  }
   assert.throws(
-    () => readConfig({ ...base, STRIPE_SECRET_KEY: 'pk_test_51secret', STRIPE_ID_PRICE: price }),
+    () => readConfig({ ...base, STRIPE_SECRET_KEY: 'pk_test_51secret', ...prices }),
     (error: Error) => /STRIPE_SECRET_KEY is a Stripe secret key/.test(error.message) && !error.message.includes('51secret'),
   )
   assert.throws(() => readConfig({ ...base, STRIPE_ID_PRICE: 'prod_VYYiTk7BVWOSdv' }), /STRIPE_ID_PRICE is a Stripe Price/)
+  assert.throws(() => readConfig({ ...base, STRIPE_ADDED_ID_PRICE: 'prod_VYYiTk7BVWOSdv' }), /STRIPE_ADDED_ID_PRICE is a Stripe Price/)
 })
 
 /** The host's own seller, taking the verifier's sponsor key. */
@@ -1310,10 +1521,23 @@ test('the gifts: at a stamp number’s first stamp from each check, a sponsor’
     const paid = await host.seller.collect(seven.buy, `ticket ${idStamp.body.gift.ticket}`)
     assert.equal((await finish(seven.pending, paid.body as Uint8Array)).length, 7)
     assert.deepEqual((await h.post('/id/stamp', { sessionId: id, stampNumber: m.toString(), payment, gift: (await buy(host.service, 7)).reference })).body.gift, { error: 'given' })
+
+    // An ID check that gives a face stamp too gives the ID stamp's gift alone: it stands for both.
+    const q = await stampNumber()
+    const qid = await h.idSession(passedId('quin', doc('Quin')), q)
+    const both = await h.post('/id/stamp', { sessionId: qid, stampNumber: q.toString(), payment: h.paidFor.get(qid), gift: (await buy(host.service, 7)).reference })
+    assert.equal(both.body.face.verifier, h.verifier.keys.face)
+    assert.equal(both.body.gift.ticket.split('.')[1], '7')
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
     await h.verifier.close()
-    assertKept(h.dbPath, { sessions: [[sessionId, n, 'face'], [bob, m, 'face'], [id, m, 'id']], gifts: [n, m], idGifts: [m], payments: [[payment!, ID_TRIES, true]], never: [mine.reference, six.reference, seven.reference, ticket] })
+    assertKept(h.dbPath, {
+      sessions: [[sessionId, n, 'face'], [bob, m, 'face'], [id, m, 'id'], [qid, q, 'id']],
+      gifts: [n, m],
+      idGifts: [m, q],
+      payments: [[payment!, ID_TRIES, true], [h.paidFor.get(qid)!, ID_TRIES, true]],
+      never: [mine.reference, six.reference, seven.reference, ticket],
+    })
   } finally {
     await h.verifier.close().catch(() => {})
   }
@@ -1383,7 +1607,7 @@ test('the seed: made on the first start beside the database, kept there, the sam
 })
 
 test('a check sends the person back only to an app the verifier names in APP_ORIGINS', async () => {
-  const h = await start({ env: { APP_ORIGINS: 'https://app.example' } })
+  const h = await start()
   try {
     const stampNumber_ = (await stampNumber()).toString()
     const opened = await h.post('/face/session', { stampNumber: stampNumber_, returnUrl: 'https://app.example/checked?from=face' })
@@ -1398,20 +1622,20 @@ test('a check sends the person back only to an app the verifier names in APP_ORI
     assert.deepEqual(await h.post('/face/session', { stampNumber: stampNumber_, returnUrl: 'https://app.example/', x: 1 }), { status: 400, body: { error: 'expected_exactly_stampNumber_and_returnUrl' } })
     assert.equal(h.faces.created, 2, 'a refused request never reaches Didit')
     // The ID check, the same way, and its payment's page too.
-    const payment = await h.paid()
-    const id = await h.post('/id/session', { payment, stampNumber: stampNumber_, returnUrl: 'https://app.example/checked?from=id' })
+    const payment = await h.paid(BigInt(stampNumber_))
+    const id = await h.post('/id/session', { payment, returnUrl: 'https://app.example/checked?from=id' })
     assert.equal(id.status, 201)
     assert.equal(h.ids.callbacks.get(id.body.sessionId), 'https://app.example/checked?from=id')
-    assert.deepEqual(await h.post('/id/session', { payment, stampNumber: stampNumber_, returnUrl: 'https://other.example/' }), { status: 400, body: { error: 'bad_return_url' } })
+    assert.deepEqual(await h.post('/id/session', { payment, returnUrl: 'https://other.example/' }), { status: 400, body: { error: 'bad_return_url' } })
     assert.equal(h.ids.created, 1)
-    assert.deepEqual(await h.post('/id/payment', { returnUrl: 'https://app.example.evil/' }), { status: 400, body: { error: 'bad_return_url' } })
+    assert.deepEqual(await h.post('/id/payment', { stampNumber: stampNumber_, returnUrl: 'https://app.example.evil/' }), { status: 400, body: { error: 'bad_return_url' } })
   } finally {
     await h.verifier.close()
   }
-  const none = await start()
+  const none = await start({ env: { APP_ORIGINS: undefined } })
   try {
     assert.deepEqual(await none.post('/face/session', { stampNumber: '5', returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'with no APP_ORIGINS, no return URL is taken')
-    assert.deepEqual(await none.post('/id/payment', { returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'so no payment page either')
+    assert.deepEqual(await none.post('/id/payment', { stampNumber: '5', returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_return_url' } }, 'so no payment page either')
   } finally {
     await none.verifier.close()
   }
@@ -1432,6 +1656,7 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
     DIDIT_ID_WORKFLOW_ID: ID_WORKFLOW,
     DIDIT_BASE_URL: baseUrl,
     FACE_MODEL: 'stand-in',
+    APP_ORIGINS: 'https://app.example',
     DATABASE_PATH: join(tempDir(), 'verifier.sqlite'),
     PORT: '0',
   })
@@ -1461,9 +1686,10 @@ test('the stand-in for tests: test/fake-didit.ts and the stand-in embedding, bot
       assert.equal((await didit.decision(face.body.sessionId))?.status, 'Approved', 'still in Didit once its stamp is signed')
       const again = await post(verifier, '/face/stamp', { sessionId: face.body.sessionId, stampNumber: n.toString() })
       assert.deepEqual(again.body.stamp, faceStamp.body.stamp, 'within the hour, the same stamp')
-      const { payment } = await payments.checkout('https://app.example/paid')
+      const { body: paid } = await post(verifier, '/id/payment', { stampNumber: n.toString(), returnUrl: 'https://app.example/paid' })
+      const { payment } = paid
       payments.pay(payment)
-      const id = await post(verifier, '/id/session', { payment, stampNumber: n.toString() })
+      const id = await post(verifier, '/id/session', { payment })
       assert.equal(id.status, 201, JSON.stringify(id.body))
       const idStamp = await post(verifier, '/id/stamp', { sessionId: id.body.sessionId, stampNumber: n.toString(), payment })
       assert.equal(idStamp.status, 200, JSON.stringify(idStamp.body))
