@@ -45,10 +45,10 @@ const config = readConfig({
   DIDIT_ID_WORKFLOW_ID: SANDBOX.id,
   DATABASE_PATH: 'data/sandbox/verifier.sqlite',
 })
-const didit = (check: 'face' | 'id', workflowId: string) => new DiditClient({ apiKey, workflowId, check, baseUrl: config.diditBaseUrl, scenario })
+const didit = (workflowId: string) => new DiditClient({ apiKey, workflowId, baseUrl: config.diditBaseUrl, scenario })
 const verifier = await startVerifier(config, {
-  faceCheck: didit('face', SANDBOX.face),
-  idCheck: didit('id', SANDBOX.id),
+  faceCheck: didit(SANDBOX.face),
+  idCheck: didit(SANDBOX.id),
 })
 console.log(`verifier (Didit sandbox, scenario ${scenario}): ${verifier.url}`)
 console.log(`face key ${verifier.keys.face}, ID key ${verifier.keys.id}`)

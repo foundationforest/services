@@ -1,58 +1,50 @@
 // The two checks: Didit's API, and what the verifier requires of what it says.
 //
 // Didit runs each check on its own page and holds the face, and for the ID check the document. Both
-// checks are workflows in one Didit application, with one key, so that each check's face is compared
-// with every face kept there, of either check: a face search sees only its own application's faces.
-// The verifier asks Didit five things: to open a session on a check's workflow, later what that
-// session decided, the selfie the session took, to compute the face's embedding (face.ts), who each
-// face it matched belongs to (`user`), and to delete the session. From a decision it reads the
+// checks are workflows in one Didit application, with one key. Didit decides who is the same person:
+// each workflow compares its check with every other user's in the application, faces and documents,
+// and declines a person it has seen, as its settings say. The verifier asks Didit five things: to open
+// a session on a check's workflow, later what that session decided, the selfie the session took, to
+// compute the face's embedding (face.ts), to delete the session, and to delete a user who holds no
+// stamp, with what Didit keeps of them (server.ts's `sweep`). From a decision it reads the
 // session's workflow and `vendor_data`, its status, the status of each step (liveness; for the ID
-// check also the document and the face match), the faces the liveness steps matched, the sessions
-// their seen-face risks name, the selfie's address, and, from the document step, the text it read on
-// the document (`fieldsOf`), which the ID stamp's facts are made from (facts.ts). Everything else
-// Didit returns is dropped the moment the answer is parsed. Nothing Didit says is stored as it is.
+// check also the document and the face match), the risk of each warning that set a Declined or In
+// Review status (`decision_trace.status_warnings`), the selfie's address, and, from the document step,
+// the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from (facts.ts).
+// Everything else Didit returns is dropped the moment the answer is parsed. Nothing Didit says is
+// stored as it is.
 //
-// Didit remembers; the verifier judges. Neither workflow takes any action on a face seen before: Didit
-// only reports it, among the liveness step's matches, and the verifier judges each by its
-// `vendor_data` (server.ts). Didit's pages say `matches` lists the faces above "the biometric
-// similarity threshold", not whether that is its lower, possible band too, so the session a
-// DUPLICATED_FACE or POSSIBLE_DUPLICATED_FACE risk names is read beside them (`named`).
+// One Didit user a person: every session the verifier opens for a stamp number, face or ID, carries
+// the same `vendor_data`, the keyed hash of that stamp number (`stampHash`), and nothing else. Didit
+// leaves a user's own sessions out of its search for a person seen before, so a person's earlier
+// checks never refuse their next one, and every other user's count. It names nobody: without the
+// verifier's secret, no stamp number gives its hash.
 //
-// Every session the verifier opens is deleted by its sweep (server.ts's `sweep`): one that gave a
-// stamp an hour after its stamp, keeping one image-free face template anchored to the session's own
-// `vendor_data`, for FACE_RETENTION_DAYS, when it gave its stamp number its first stamp of a kind
-// (store.ts), so its face search goes on seeing the face and its user stays; any other a day after it
-// opened, face and all. Didit drops the template with the session
-// unless asked, and gives every kept template an end. Deleting a session never deletes its user,
-// whose full name, birth date and country Didit keeps, so it can tell when someone comes back.
+// The verifier signs only for an Approved session; Declined and In Review are a refusal, answered as
+// one code (`reasonOf`), from the risks that set the status, the first that applies in REASONS's
+// order. Which sessions Didit keeps and which the sweep deletes is server.ts's `sweep`.
 //
 // Didit's API as read in November 2026 (docs.didit.me: creating, retrieving and deleting a session,
-// the liveness report and its warnings, the ID verification report as its Data models page lists it,
-// getting a user, and vendor_data's uniqueness and scope): version 3, `x-api-key` header,
-// `POST /v3/session/` (with `vendor_data`, and `callback`, the page Didit sends the person to when the
-// check is done), `GET /v3/session/{id}/decision/`, `DELETE /v3/session/{id}/delete/`
-// (`retain_face_embeddings` true or false, overriding the application's own setting; 200 with
-// `face_retention_outcome`, 404 for a session already gone) and `GET /v3/users/{vendor_data}/`
-// (`full_name` and `date_of_birth`, each may be null; 404 for no such user). A liveness step's
-// `reference_image` is a signed URL to the selfie, valid for hours; its `matches[]`, up to five,
-// strongest first, are faces of approved sessions and kept templates, each with the matched face's
-// `vendor_data` and its `session_id`, null for a kept template; its `warnings[].risk` names each risk,
-// and a seen face's (SEEN) carries the session it saw in `additional_data.duplicated_session_id`. A
-// document step's report (`id_verifications[]`) holds the text read on the document
-// (DOCUMENT_FIELDS, and `extra_fields`, its document-specific ones), dates as YYYY-MM-DD and
-// countries as ISO 3166-1 alpha-3, beside the step's own status, signed URLs to its images and video,
-// scores, Didit's own derivations and other sessions' matches. A refusal's body varies by endpoint; a
-// stable `code` sits beside `detail`, Didit's own words, when it sends one. The thrown error keeps the
-// status and that code, for the log line (server.ts), and never `detail`.
-//
-// Each session's `vendor_data` is `<check>-<hash>-<random>` (`vendorDataFor`): its check's name, the
-// keyed hash of the stamp number it was opened for (`stampHash`), the same for both checks, and a fresh
-// random id. Didit leaves a user's own faces, those under one `vendor_data`, out of its whole face
-// search, so each session is a Didit user of its own, and a person's earlier sessions are faces the
-// search compares this one with; the hash says which of them are the same stamp number's. It names
-// nobody: without the verifier's secret, no stamp number gives its hash.
+// the decision's `decision_trace`, the liveness, face match and ID verification warnings, the ID
+// verification report as its Data models page lists it, and vendor_data's uniqueness and scope):
+// version 3, `x-api-key` header, `POST /v3/session/` (with `vendor_data`, and `callback`, the page
+// Didit sends the person to when the check is done), `GET /v3/session/{id}/decision/` and
+// `DELETE /v3/session/{id}/delete/` (`retain_face_embeddings` true or false, overriding the
+// application's own setting; 200 with `face_retention_outcome`, 404 for a session already gone), and
+// `POST /v3/users/delete/` (`vendor_data_list`; the user's record, its name and birth date among it,
+// and every face template kept for it go, its sessions do not; 200 `{deleted}`, 0 for one already
+// gone; a 409 or a 503 deletes nothing, and may be sent again). A
+// liveness step's `reference_image` is a signed URL to the selfie, valid for hours. A decision's
+// `decision_trace.status_warnings[]` lists the warnings that set a Declined or In Review status, each
+// with its `risk`; a status set by hand lists none. A document step's report (`id_verifications[]`)
+// holds the text read on the document (DOCUMENT_FIELDS, and `extra_fields`, its document-specific
+// ones), dates as YYYY-MM-DD and countries as ISO 3166-1 alpha-3, beside the step's own status, signed
+// URLs to its images and video, scores, Didit's own derivations and other sessions' matches. A
+// refusal's body varies by endpoint; a stable `code` sits beside `detail`, Didit's own words, when it
+// sends one. The thrown error keeps the status and that code, for the log line (server.ts), and never
+// `detail`.
 
-import { createHmac, randomUUID } from 'node:crypto'
+import { createHmac } from 'node:crypto'
 
 import { toBytes32 } from '@foundationforest/proofs'
 
@@ -110,9 +102,9 @@ export function fieldsOf(step: Record<string, unknown>): Document {
 /** What the verifier reads from a session's decision. */
 export type Decision = {
   workflowId: string
-  /** The session's own `vendor_data`, as the verifier opened it (`vendorDataFor`). */
+  /** The session's own `vendor_data`, as the verifier opened it: its stamp number's keyed hash (`stampHash`). */
   vendorData: string
-  /** The session's overall status: `Approved`, `Declined`, `Expired`, `Abandoned`, and so on. */
+  /** The session's overall status: `Approved`, `Declined`, `In Review`, `Expired`, `Abandoned`, and so on. */
   status: string
   /** One per liveness step the workflow ran, with that step's own status. */
   liveness: { status: string }[]
@@ -120,15 +112,8 @@ export type Decision = {
   documents: { status: string }[]
   /** One per face-match step (the selfie against the document's photo), with that step's own status. */
   faceMatches: { status: string }[]
-  /**
-   * Each face the liveness steps matched, once by its `vendor_data`: the matched session, or null for
-   * a kept face template or a face from a list.
-   */
-  matches: { vendorData: string; sessionId: string | null }[]
-  /** Whether a liveness step listed as many matches as Didit lists (MATCHES_LISTED), so it may have left some out. */
-  full: boolean
-  /** Each session a seen-face risk (SEEN) named, once, or null for a risk that named none. */
-  named: (string | null)[]
+  /** The risk of each warning that set a Declined or In Review status (`decision_trace.status_warnings`), once each. */
+  risks: string[]
   /** The first liveness step's selfie: a signed URL. Null when there is none. */
   faceImage: string | null
   /** What the first document step read. Null with no document step. */
@@ -137,93 +122,162 @@ export type Decision = {
 
 export interface FaceCheck {
   /**
-   * Open a session on the check's workflow, under `vendorData` (`vendorDataFor`): the page the person
-   * does the check on. With a callback, Didit sends the person there when the check is done.
+   * Open a session on the check's workflow, under `vendorData`, the stamp number's keyed hash
+   * (`stampHash`): the page the person does the check on. With a callback, Didit sends the person
+   * there when the check is done.
    */
   createSession(options: { vendorData: string; callback?: string }): Promise<{ sessionId: string; url: string }>
   /** What the session decided, or null if Didit has no such session. Throws if Didit can't answer. */
   decision(sessionId: string): Promise<Decision | null>
   /** The bytes of a photo a decision named (`faceImage`). Throws if they can't be had. */
   photo(url: string): Promise<Uint8Array>
-  /** The user a match named, by its `vendor_data`: their name and birth date; null for no such user. Throws if Didit can't answer. */
-  user(vendorData: string): Promise<User | null>
   /**
    * Delete the session, keeping its face template or not: what Didit did with the face
    * (`retained_with_user` when it kept the template, `deleted` when it did not), or `gone` for a
    * session Didit no longer has. Throws if Didit can't answer, and the session is then still there.
    */
   deleteSession(sessionId: string, keepFace: boolean): Promise<string>
+  /**
+   * Delete the Didit user under `vendorData`: its record, and every face template kept for it, but
+   * none of its sessions. Throws if Didit can't answer or refuses, and the user is then still there.
+   */
+  deleteUser(vendorData: string): Promise<void>
 }
-
-/** A Didit user, as its users API gives one: the full name read from their documents, and their birth date, either null. */
-export type User = { fullName: string | null; birth: string | null }
 
 /** How many days Didit keeps a deleted session's face template: 3650, the longest it allows. */
 export const FACE_RETENTION_DAYS = 3650
 
-export type Refusal =
-  | 'unknown_session'
-  | 'wrong_workflow'
-  | 'declined'
-  | 'expired'
-  | 'not_approved'
-  | 'no_liveness'
-  | 'liveness_not_passed'
-  | 'no_document'
-  | 'document_not_passed'
-  | 'no_face_match'
-  | 'face_match_not_passed'
+/**
+ * Why Didit refused a check, as the app is told, each with the risks that say it, in order: the first
+ * that applies wins. Any other risk, or none, as for a status set by hand, is `other`.
+ */
+export const REASONS = [
+  ['known_person', ['POSSIBLE_DUPLICATED_USER']],
+  [
+    'known_face',
+    [
+      'DUPLICATED_FACE',
+      'POSSIBLE_DUPLICATED_FACE',
+      'DUPLICATED_FACE_NAME_MISMATCH',
+      'DUPLICATED_FACE_DOCUMENT_MISMATCH',
+      'FRONT_CAMERA_DUPLICATED_FACE',
+      'POSSIBLE_FRONT_CAMERA_DUPLICATED_FACE',
+      'FRONT_CAMERA_DUPLICATED_FACE_NAME_MISMATCH',
+      'FRONT_CAMERA_DUPLICATED_FACE_DOCUMENT_MISMATCH',
+    ],
+  ],
+  ['face_mismatch', ['LOW_FACE_MATCH_SIMILARITY', 'FACE_MATCH_MAX_ATTEMPTS_EXCEEDED', 'LOW_FRONT_CAMERA_FACE_MATCH_SIMILARITY']],
+  [
+    'id_unclear',
+    [
+      // It can't be read.
+      'COULD_NOT_RECOGNIZE_DOCUMENT',
+      'COULD_NOT_DETECT_DOCUMENT_TYPE',
+      'IMAGE_TOO_BLURRY',
+      'IMAGE_TOO_DARK',
+      'IMAGE_TOO_BRIGHT',
+      'NAME_NOT_DETECTED',
+      'DATE_OF_BIRTH_NOT_DETECTED',
+      'DOCUMENT_NUMBER_NOT_DETECTED',
+      'EXPIRATION_DATE_NOT_DETECTED',
+      'INVALID_DATE',
+      'MRZ_NOT_DETECTED',
+      'QR_NOT_DETECTED',
+      'BARCODE_NOT_DETECTED',
+      'PORTRAIT_IMAGE_NOT_DETECTED',
+      'DOCUMENT_HAS_NO_PORTRAIT',
+      'CRITICAL_FIELD_OCCLUSION_DETECTED',
+      'FACE_MATCH_NOT_COMPUTED',
+      'NO_REFERENCE_IMAGE',
+      // It is expired, or not accepted.
+      'DOCUMENT_EXPIRED',
+      'DOCUMENT_NOT_SUPPORTED_FOR_APPLICATION',
+      // It looks altered.
+      'SCREEN_CAPTURE_DETECTED',
+      'PRINTED_COPY_DETECTED',
+      'PORTRAIT_MANIPULATION_DETECTED',
+      'SPECIMEN_DOCUMENT_DETECTED',
+      'PUBLIC_DOCUMENT_IMAGE_DETECTED',
+      'MRZ_VALIDATION_FAILED',
+      'MRZ_AND_DATA_EXTRACTED_FROM_OCR_NOT_SAME',
+      'DATA_INCONSISTENT',
+      'DOCUMENT_SIDES_MISMATCH',
+      'QR_VALIDATION_FAILED',
+      'BARCODE_VALIDATION_FAILED',
+      'BARCODE_SIGNATURE_INVALID',
+      'DOCUMENT_NUMBER_FORMAT_MISMATCH',
+      'PERSONAL_NUMBER_FORMAT_MISMATCH',
+    ],
+  ],
+  [
+    'face_unclear',
+    [
+      // Not a live face.
+      'LIVENESS_FACE_ATTACK',
+      'LOW_LIVENESS_SCORE',
+      'VIRTUAL_CAMERA_DETECTED',
+      'INJECTION_ATTACK_DETECTED',
+      'FRAME_INJECTION_SUSPECTED',
+      'SCREEN_CAPTURE_DURING_CAPTURE',
+      'EXTERNAL_CAPTURE_DEVICE_DETECTED',
+      'LIVENESS_VIDEO_ANOMALY',
+      // The face can't be seen well.
+      'NO_FACE_DETECTED',
+      'NO_FACE_IN_SELFIE',
+      'MULTIPLE_FACES_DETECTED',
+      'LOW_FACE_QUALITY',
+      'LOW_FACE_LUMINANCE',
+      'HIGH_FACE_LUMINANCE',
+    ],
+  ],
+] as const
 
-/** How many matches a liveness step lists at most: Didit's five, strongest first. */
-export const MATCHES_LISTED = 5
+/** Why Didit refused a check: one of REASONS, or `other`. */
+export type Reason = (typeof REASONS)[number][0] | 'other'
 
-/** The keyed hash of a stamp number a session carries: HMAC-SHA256 under `key` of its 32 bytes, big-endian, in hex. */
+/** The first of REASONS that one of these risks says, else `other`. */
+export function reasonOf(risks: string[]): Reason {
+  for (const [reason, says] of REASONS) if (risks.some((risk) => (says as readonly string[]).includes(risk))) return reason
+  return 'other'
+}
+
+/** What a decision means when it gives no stamp: a session not the verifier's to judge, one unfinished, or Didit's refusal. */
+export type Refusal = 'unknown_session' | 'wrong_workflow' | 'expired' | 'not_approved' | Reason
+
+/** The keyed hash of a stamp number, every session's `vendor_data`: HMAC-SHA256 under `key` of its 32 bytes, big-endian, in hex. */
 export function stampHash(key: Uint8Array, stampNumber: bigint): string {
   return createHmac('sha256', key).update(toBytes32(stampNumber)).digest('hex')
 }
 
-/** A session's `vendor_data`: its check's name, the hash of the stamp number it is opened for, and a random id. */
-export const vendorDataFor = (check: Check, key: Uint8Array, stampNumber: bigint) => `${check}-${stampHash(key, stampNumber)}-${randomUUID()}`
-
-const VENDOR_DATA = /^(face|id)-([0-9a-f]{64})-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
-
-/** What a `vendor_data` says: its check and its stamp number's hash; null for one this verifier did not write. */
-export function readVendorData(vendorData: string): { check: Check; hash: string } | null {
-  const read = VENDOR_DATA.exec(vendorData)
-  return read ? { check: read[1] as Check, hash: read[2]! } : null
-}
+/** A `vendor_data` as the verifier writes one: a stamp number's keyed hash. */
+const VENDOR_DATA = /^[0-9a-f]{64}$/
 
 // Didit's own documents write a status both as `Approved` and as `APPROVED`, and `Not Started` as `NOT_STARTED`.
 const is = (status: string, want: string) => status.toLowerCase().replace(/[\s_]+/g, ' ') === want
 
-/** Each step of this kind ran, and each passed; else the refusal for none, or for one that did not pass. */
-function steps(list: { status: string }[], none: Refusal, failed: Refusal): Refusal | null {
-  if (list.length === 0) return none
-  return list.every((step) => is(step.status, 'approved')) ? null : failed
-}
-
-/** The risks of a face Didit has seen before: like one from another approved session or a kept template, sure or possible. */
-export const SEEN = ['DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_FACE']
+/** Each step of this kind ran, and each passed. */
+const ran = (list: { status: string }[]) => list.length > 0 && list.every((step) => is(step.status, 'approved'))
 
 /**
- * What Didit's decision means to the verifier: a session on the check's own workflow; Declined,
- * `declined`, and Expired or Abandoned (the person did not finish in time), `expired`: a session that
- * will never pass, so the app starts a new one; anything else but approved, unfinished,
- * `not_approved`; and approved, every liveness step passed and, for the ID check, every document step
- * and every face match too. Null means Didit passed it. A face seen before is the verifier's to judge,
- * from the matches (server.ts): neither workflow declines one.
+ * What Didit's decision means to the verifier: a session on the check's own workflow; Declined or In
+ * Review, Didit's refusal, by its risks (`reasonOf`); Expired or Abandoned (the person did not finish
+ * in time), `expired`; anything else but Approved, unfinished, `not_approved`. Approved, it passes,
+ * with every liveness step run and passed and, for the ID check, every document step and face match
+ * too, and the document read: an approved session without them was not run on a workflow that makes
+ * this check, which is `wrong_workflow`. Null means Didit passed it.
  */
 export function judge(decision: Decision | null, workflowId: string, check: Check = 'face'): Refusal | null {
   if (!decision) return 'unknown_session'
   if (decision.workflowId !== workflowId) return 'wrong_workflow'
-  if (is(decision.status, 'declined')) return 'declined'
+  if (is(decision.status, 'declined') || is(decision.status, 'in review')) return reasonOf(decision.risks)
   if (is(decision.status, 'expired') || is(decision.status, 'abandoned')) return 'expired'
   if (!is(decision.status, 'approved')) return 'not_approved'
-  return (
-    steps(decision.liveness, 'no_liveness', 'liveness_not_passed') ??
-    (check === 'id' ? (steps(decision.documents, 'no_document', 'document_not_passed') ?? steps(decision.faceMatches, 'no_face_match', 'face_match_not_passed')) : null)
-  )
+  if (check === 'face') return ran(decision.liveness) ? null : 'wrong_workflow'
+  return ran(decision.liveness) && ran(decision.documents) && ran(decision.faceMatches) && decision.document !== null ? null : 'wrong_workflow'
 }
+
+/** Whether Didit refuses the session, Declined or In Review: the sweep deletes such a session at once. */
+export const refuses = (decision: Decision) => is(decision.status, 'declined') || is(decision.status, 'in review')
 
 const text = (value: unknown) => (typeof value === 'string' ? value : '')
 const reports = (value: unknown): Record<string, unknown>[] =>
@@ -236,13 +290,7 @@ export function parseDecision(body: unknown): Decision {
   const documents = reports(json.id_verifications)
   const status = (step: Record<string, unknown>) => ({ status: text(step.status) })
   const first = documents[0]
-  const matches = new Map<string, string | null>()
-  for (const match of liveness.flatMap((step) => reports(step.matches))) {
-    const vendorData = text(match.vendor_data)
-    if (vendorData && !matches.has(vendorData)) matches.set(vendorData, text(match.session_id) || null)
-  }
-  const seen = liveness.flatMap((step) => reports(step.warnings)).filter((warning) => SEEN.includes(text(warning.risk)))
-  const named = seen.map((warning) => text((warning.additional_data as Record<string, unknown> | null | undefined)?.duplicated_session_id) || null)
+  const trace = typeof json.decision_trace === 'object' && json.decision_trace !== null ? (json.decision_trace as Record<string, unknown>) : {}
   return {
     workflowId: text(json.workflow_id),
     vendorData: text(json.vendor_data),
@@ -250,9 +298,7 @@ export function parseDecision(body: unknown): Decision {
     liveness: liveness.map(status),
     documents: documents.map(status),
     faceMatches: reports(json.face_matches).map(status),
-    matches: [...matches].map(([vendorData, sessionId]) => ({ vendorData, sessionId })),
-    full: liveness.some((step) => Array.isArray(step.matches) && step.matches.length >= MATCHES_LISTED),
-    named: [...new Set(named)],
+    risks: [...new Set(reports(trace.status_warnings).map((warning) => text(warning.risk)).filter(Boolean))],
     faceImage: text(liveness[0]?.reference_image) || null,
     document: first ? fieldsOf(first) : null,
   }
@@ -310,7 +356,6 @@ function photoAddress(url: string): URL {
 export class DiditClient implements FaceCheck {
   readonly #apiKey: string
   readonly #workflowId: string
-  readonly #check: Check
   readonly #baseUrl: string
   readonly #scenario: string | undefined
 
@@ -318,21 +363,19 @@ export class DiditClient implements FaceCheck {
    * `scenario` is Didit's `sandbox_scenario`, the outcome a sandbox application's session comes to
    * (`approve`, `decline_…`, and others). Only `npm run sandbox` sets it; a live application ignores it.
    */
-  constructor(options: { apiKey: string; workflowId: string; check: Check; baseUrl?: string; scenario?: string }) {
+  constructor(options: { apiKey: string; workflowId: string; baseUrl?: string; scenario?: string }) {
     this.#apiKey = options.apiKey
     this.#workflowId = options.workflowId
-    this.#check = options.check
     this.#baseUrl = (options.baseUrl ?? 'https://verification.didit.me').replace(/\/+$/, '')
     this.#scenario = options.scenario
   }
 
   /**
-   * Each session gets its own `vendor_data` (`vendorDataFor`), which no other session shares: Didit
-   * leaves a user's own faces out of its whole face search, so one shared by two sessions would hide
-   * each from the other.
+   * Every session of a stamp number, face or ID, gets that number's `vendor_data` (`stampHash`), so
+   * Didit holds them as one user and leaves them out of its search for a person seen before.
    */
   async createSession({ vendorData, callback }: { vendorData: string; callback?: string }): Promise<{ sessionId: string; url: string }> {
-    if (readVendorData(vendorData)?.check !== this.#check) throw new Error(`a ${this.#check} session's vendor_data is vendorDataFor('${this.#check}', …)`)
+    if (!VENDOR_DATA.test(vendorData)) throw new Error("a session's vendor_data is its stamp number's keyed hash, stampHash(…)")
     const res = await this.#fetch('/v3/session/', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -364,19 +407,17 @@ export class DiditClient implements FaceCheck {
     return typeof outcome === 'string' ? outcome : ''
   }
 
+  /** Never keeping a face template: a user deleted is one who holds no stamp. */
+  async deleteUser(vendorData: string): Promise<void> {
+    const res = await this.#fetch('/v3/users/delete/', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ vendor_data_list: [vendorData] }) })
+    if (!res.ok) throw await refused(res, 'a user deletion', this.#apiKey)
+  }
+
   async decision(sessionId: string): Promise<Decision | null> {
     const res = await this.#fetch(`/v3/session/${encodeURIComponent(sessionId)}/decision/`, { method: 'GET' })
     if (res.status === 404) return null
     if (!res.ok) throw await refused(res, 'a decision', this.#apiKey)
     return parseDecision(await body(res))
-  }
-
-  async user(vendorData: string): Promise<User | null> {
-    const res = await this.#fetch(`/v3/users/${encodeURIComponent(vendorData)}/`, { method: 'GET' })
-    if (res.status === 404) return null
-    if (!res.ok) throw await refused(res, 'a user', this.#apiKey)
-    const json = (await body(res)) as Record<string, unknown> | null
-    return { fullName: text(json?.full_name) || null, birth: text(json?.date_of_birth) || null }
   }
 
   /** The selfie, from its signed URL. The API key does not go with it: the URL carries its own signature. */

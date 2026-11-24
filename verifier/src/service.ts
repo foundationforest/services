@@ -26,7 +26,7 @@ import { type Payments, type Prices, StripeClient } from './stripe.ts'
  * together.
  */
 export const CONSENT =
-  "The check's price is held through Stripe for the Open Forest Foundation and covers up to three tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is counted once. Didit keeps photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no photo) for up to ten years, so it can tell if you come back; a try that gives no stamp is deleted a day after it began, its face with it. Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that shows either says only that you were checked."
+  "The check's price is held through Stripe for the Open Forest Foundation and covers up to three tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is counted once. When the check passes, Didit keeps it, so it can tell if the same person comes back: photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video; Didit deletes the face images and face template in it after about a year, and keeps the rest. A check that does not pass is deleted at Didit once Forest has its answer, a day after it began at the latest, and one left unfinished a day after it began. For a person with a stamp, Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that shows either says only that you were checked."
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
@@ -180,8 +180,8 @@ export async function startVerifier(
   const paymentKey = await seed.derive(INFO.payment)
   const baseUrl = config.diditBaseUrl
   const apiKey = config.diditApiKey
-  const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditFaceWorkflowId, check: 'face' })
-  const idCheck = overrides.idCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditIdWorkflowId, check: 'id' })
+  const faceCheck = overrides.faceCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditFaceWorkflowId })
+  const idCheck = overrides.idCheck ?? new DiditClient({ apiKey, baseUrl, workflowId: config.diditIdWorkflowId })
   const embedder = overrides.embedder ?? (config.faceModel === 'stand-in' ? standIn() : await sface())
   const payments = overrides.payments ?? (config.stripe && new StripeClient(config.stripe))
 
@@ -251,7 +251,7 @@ export async function startVerifier(
   let sweeping: Promise<void> | undefined
   const sweepNow = () =>
     (sweeping ??= (async () => {
-      await sweep({ store, checks: { face: faceCheck, id: idCheck }, now: clock, log: overrides.log })
+      await sweep({ store, checks: { face: faceCheck, id: idCheck }, vendorKey: hashKeys.vendorData, now: clock, log: overrides.log })
       if (payments && clock() - searchedAt >= HOLDS_EVERY_MS && (await sweepHolds({ payments, now: clock, log: overrides.log }))) searchedAt = clock()
       await askPrices()
     })().finally(() => {
