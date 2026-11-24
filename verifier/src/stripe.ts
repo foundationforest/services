@@ -5,7 +5,9 @@
 // stamp, the one `STRIPE_ADDED_ID_PRICE` names for one that holds one. The verifier asks Stripe what
 // each Price is (`prices`: its amount and currency, for `GET /`); to make a Checkout Session for one
 // of a Price whose PaymentIntent is captured by hand (`payment_intent_data[capture_method]=manual`),
-// so paying only holds the money, with PAGE_TEXT by its Pay button; later, whether a session it made
+// so paying only holds the money, with PAGE_TEXT by its Pay button: Stripe's own page, which sends
+// the person back to the app, or, with no page to send them back to, one embedded in the verifier's
+// payment page (page.ts), which never sends them anywhere; later, whether a session it made
 // holds the money, and since when; to take it (capture); to cancel it; and, every hour, for the holds
 // it made long ago, to cancel them. From a session it reads its id, its
 // page's address, the mark the verifier gave it and its PaymentIntent (`metadata.check`, on both, so a
@@ -18,7 +20,9 @@
 // from the moment the session is made, and sends it each time, so the verifier finds the hold through
 // it; and Stripe itself keeps every hold, so the hourly search finds the old ones by their mark.
 // Stripe sends the person back to the app's page as it is, paid or not, with no id in its address:
-// the id stays in the app, and out of every log of addresses.
+// the id stays in the app, and out of every log of addresses. An embedded session's client secret,
+// which Stripe's script on the payment page mounts it with, goes to the app in the answer and no
+// further: it is never logged, and the app puts it after the page's `#`, which no browser sends.
 //
 // It names no payment method: the key's payment method settings at Stripe choose them, among those
 // that can hold money. A card's hold usually lasts 7 days; the verifier cancels each after two.
@@ -27,9 +31,11 @@
 // text, PaymentIntents, placing a hold, and search, API version STRIPE_VERSION): form-encoded, the key
 // as a Bearer token; `GET /v1/prices/{id}`, its `unit_amount` in the currency's smallest unit and its
 // `currency`, lower case; `POST /v1/checkout/sessions`, `custom_text[submit][message]` the text above
-// its Pay button; `GET /v1/checkout/sessions/{id}?expand[]=payment_intent`, a 404 for a
-// session Stripe does not have, as one made in test mode is to a live key;
-// `POST /v1/payment_intents/{id}/capture` and `/cancel`; `GET /v1/payment_intents/search`, whose
+// its Pay button, `ui_mode=embedded_page` with `redirect_on_completion=never` for one embedded with
+// no page to return to (which leaves out the payment methods that send a person to another page),
+// answering its `client_secret` instead of its `url`;
+// `GET /v1/checkout/sessions/{id}?expand[]=payment_intent`, a 404 for a session Stripe does not
+// have, as one made in test mode is to a live key; `POST /v1/payment_intents/{id}/capture` and `/cancel`; `GET /v1/payment_intents/search`, whose
 // results can lag a minute behind, so each one's own status is checked before it is cancelled. A
 // held PaymentIntent is `requires_capture`, a taken one `succeeded`, a cancelled one `canceled`. This
 // needs the key's Prices: Read, Checkout Sessions: Write and PaymentIntents: Write, and nothing else. A refusal is
@@ -53,6 +59,9 @@ const MARK = 'id'
 /** What Stripe's page says above its Pay button: the hold is taken only for a stamp. README.md quotes it. */
 export const PAGE_TEXT = 'You are charged only if the check passes.'
 
+/** A new payment: its Checkout Session's id, and Stripe's page to send the person to, or the client secret Stripe's script mounts an embedded one with. */
+export type Checkout = { payment: string; url: string } | { payment: string; clientSecret: string }
+
 /** A Price, as Stripe gives it: its amount, in the currency's smallest unit (500 for $5), and its currency, lower case (`usd`). */
 export type Price = { amount: number; currency: string }
 
@@ -62,13 +71,16 @@ export type Prices = { price: Price; addedPrice: Price }
 export interface Payments {
   /** Whether its key is a test key, `sk_test_…` or `rk_test_…`: its payments take only Stripe's test cards, and charge nobody. */
   readonly test: boolean
+  /** The key's publishable key, `pk_…`, which Stripe's script on the payment page (page.ts) runs with: public. */
+  readonly publishableKey: string
   /** What the two Prices are. Throws if Stripe can't answer, or answers a Price with no amount. */
   prices(): Promise<Prices>
   /**
-   * A Checkout page for one ID check, at the added-ID Price when `added`, sending the person back to
-   * `returnUrl`: the payment's id, its Checkout Session's, and the page.
+   * A Checkout page for one ID check, at the added-ID Price when `added`: Stripe's own, sending the
+   * person back to `returnUrl`, its id and the page; or, with no `returnUrl`, one to embed, which
+   * sends the person nowhere, its id and its client secret.
    */
-  checkout(returnUrl: string, added: boolean): Promise<{ payment: string; url: string }>
+  checkout(returnUrl: string | undefined, added: boolean): Promise<Checkout>
   /**
    * When this payment's money was held, in milliseconds: when its PaymentIntent was made, if the
    * verifier made it and it holds the money or took it in full; null for anything else, or one Stripe
@@ -141,14 +153,16 @@ type Settled = 'done' | 'succeeded' | 'canceled'
 
 export class StripeClient implements Payments {
   readonly test: boolean
+  readonly publishableKey: string
   readonly #secretKey: string
   readonly #price: string
   readonly #addedPrice: string
   readonly #baseUrl: string
 
   /** `baseUrl` is for tests, against a stand-in on this machine; it is no setting. */
-  constructor(options: { secretKey: string; price: string; addedPrice: string; baseUrl?: string }) {
+  constructor(options: { secretKey: string; publishableKey: string; price: string; addedPrice: string; baseUrl?: string }) {
     this.test = /^(sk|rk)_test_/.test(options.secretKey)
+    this.publishableKey = options.publishableKey
     this.#secretKey = options.secretKey
     this.#price = options.price
     this.#addedPrice = options.addedPrice
@@ -159,8 +173,13 @@ export class StripeClient implements Payments {
     return { price: await this.#priceOf(this.#price), addedPrice: await this.#priceOf(this.#addedPrice) }
   }
 
-  /** Back to `returnUrl` paid or not: the app asks the verifier which. Paying only holds the money. */
-  async checkout(returnUrl: string, added: boolean): Promise<{ payment: string; url: string }> {
+  /**
+   * Back to `returnUrl` paid or not: the app asks the verifier which. Embedded, with no `returnUrl`,
+   * the person stays on the page, and the app is told only that they are done (page.ts). Paying only
+   * holds the money.
+   */
+  async checkout(returnUrl: string | undefined, added: boolean): Promise<Checkout> {
+    const page: Record<string, string> = returnUrl === undefined ? { ui_mode: 'embedded_page', redirect_on_completion: 'never' } : { success_url: returnUrl, cancel_url: returnUrl }
     const res = await this.#fetch('/v1/checkout/sessions', {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -169,8 +188,7 @@ export class StripeClient implements Payments {
         'line_items[0][price]': added ? this.#addedPrice : this.#price,
         'line_items[0][quantity]': '1',
         'custom_text[submit][message]': PAGE_TEXT,
-        success_url: returnUrl,
-        cancel_url: returnUrl,
+        ...page,
         'metadata[check]': MARK,
         'payment_intent_data[capture_method]': 'manual',
         'payment_intent_data[metadata][check]': MARK,
@@ -178,10 +196,11 @@ export class StripeClient implements Payments {
     })
     if (!res.ok) throw refused(res.status, await errorOf(res), 'a new payment')
     const json = await body(res)
-    if (typeof json?.id !== 'string' || !PAYMENT.test(json.id) || typeof json.url !== 'string') {
-      throw new PaymentUnavailable('Stripe answered a new payment without an id or a page', { status: res.status })
-    }
-    return { payment: json.id, url: json.url }
+    if (typeof json?.id !== 'string' || !PAYMENT.test(json.id)) throw new PaymentUnavailable('Stripe answered a new payment without an id or a page', { status: res.status })
+    if (returnUrl !== undefined && typeof json.url === 'string') return { payment: json.id, url: json.url }
+    // A Checkout Session's client secret starts as its id does.
+    if (returnUrl === undefined && typeof json.client_secret === 'string' && /^cs_(test|live)_\S+$/.test(json.client_secret)) return { payment: json.id, clientSecret: json.client_secret }
+    throw new PaymentUnavailable('Stripe answered a new payment without an id or a page', { status: res.status })
   }
 
   /** A held payment, or one taken in full, as one made before the ID check held its money was. */

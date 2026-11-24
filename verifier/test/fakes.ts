@@ -195,7 +195,11 @@ export const PRICES: Prices = { price: { amount: 500, currency: 'usd' }, addedPr
 export class FakePayments implements Payments {
   /** Its payments are `cs_test_…`, as a test key's are. */
   readonly test = true
-  readonly returnUrls = new Map<string, string>()
+  readonly publishableKey = 'pk_test_standin'
+  /** The page each Checkout page sends the person back to, or undefined for one embedded, by its Checkout Session's id. */
+  readonly returnUrls = new Map<string, string | undefined>()
+  /** The client secret of each embedded Checkout page, by its Checkout Session's id. */
+  readonly clientSecrets = new Map<string, string>()
   /** Whether each Checkout page sells the added-ID Price, by its Checkout Session's id. */
   readonly added = new Map<string, boolean>()
   /** Stripe not answering for its Prices alone. */
@@ -219,12 +223,15 @@ export class FakePayments implements Payments {
     return PRICES
   }
 
-  async checkout(returnUrl: string, added: boolean) {
+  async checkout(returnUrl: string | undefined, added: boolean) {
     if (this.down) throw this.fail
     const payment = `cs_test_${randomBytes(24).toString('hex')}`
     this.returnUrls.set(payment, returnUrl)
     this.added.set(payment, added)
-    return { payment, url: `https://checkout.stripe.example/c/pay/${payment}` }
+    if (returnUrl !== undefined) return { payment, url: `https://checkout.stripe.example/c/pay/${payment}` }
+    const clientSecret = `${payment}_secret_${randomBytes(12).toString('hex')}`
+    this.clientSecrets.set(payment, clientSecret)
+    return { payment, clientSecret }
   }
 
   /** The payment paid, by its Checkout Session's id or as the verifier answered it. */

@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { after, test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { runInNewContext } from 'node:vm'
 
 import { hkdf, seedNumber, serviceKey, stampNumberOf } from '@foundationforest/keys'
 import { checkFacts, checkVerification, factListOf, factsNumber, proveFacts, proveVerification, signStamp, stampFromJson, stampSigned, stampToJson, toBytes32 } from '@foundationforest/proofs'
@@ -22,6 +23,7 @@ import { b64u, canonical, parseCanonical } from '@foundationforest/folders'
 import { buy, finish, serviceOf } from '../../host/client/client.ts'
 import * as hostCredits from '../../host/credits/seller.ts'
 
+import { PAYMENT_DONE } from '../src/codes.ts'
 import { DiditClient, DiditUnavailable, type Decision, MATCHES_LISTED, readVendorData, stampHash } from '../src/didit.ts'
 import { ID_FACTS, RECIPE, faceList, idList, saltsOf } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
@@ -233,7 +235,7 @@ test('GET /: whether the ID check is for sale, and whether its payments run on a
     ['rk_live_51standin', true, false],
   ] as const) {
     // Stripe at an address on this machine that answers nothing, so nothing here reaches Stripe itself.
-    const payments = key && new StripeClient({ secretKey: key, price: 'price_1standin', addedPrice: 'price_2standin', baseUrl: 'http://127.0.0.1:9' })
+    const payments = key && new StripeClient({ secretKey: key, publishableKey: key.includes('_test_') ? 'pk_test_51standin' : 'pk_live_51standin', price: 'price_1standin', addedPrice: 'price_2standin', baseUrl: 'http://127.0.0.1:9' })
     const h = await start({ forSale: false, payments })
     try {
       const { id } = await about(h)
@@ -979,8 +981,14 @@ test('the ID check is paid through Stripe: a Checkout page for a stamp number, s
     for (const returnUrl of ['https://other.example/', 'not a url']) {
       assert.deepEqual(await h.post('/id/payment', { stampNumber: n.toString(), returnUrl }), { status: 400, body: { error: 'bad_return_url' } }, returnUrl)
     }
-    for (const body of [{}, { returnUrl: 'https://app.example/' }, { stampNumber: n.toString() }, { stampNumber: n.toString(), returnUrl: 3 }, { stampNumber: n.toString(), returnUrl: 'https://app.example/', x: 1 }]) {
-      assert.deepEqual(await h.post('/id/payment', body), { status: 400, body: { error: 'expected_exactly_stampNumber_and_returnUrl' } }, JSON.stringify(body))
+    for (const [body, code] of [
+      [{}, 'expected_exactly_stampNumber'],
+      [{ stampNumber: n.toString(), x: 1 }, 'expected_exactly_stampNumber'],
+      [{ returnUrl: 'https://app.example/' }, 'expected_exactly_stampNumber_and_returnUrl'],
+      [{ stampNumber: n.toString(), returnUrl: 3 }, 'expected_exactly_stampNumber_and_returnUrl'],
+      [{ stampNumber: n.toString(), returnUrl: 'https://app.example/', x: 1 }, 'expected_exactly_stampNumber_and_returnUrl'],
+    ] as const) {
+      assert.deepEqual(await h.post('/id/payment', body), { status: 400, body: { error: code } }, JSON.stringify(body))
     }
     assert.deepEqual(await h.post('/id/payment', { stampNumber: '05', returnUrl: 'https://app.example/' }), { status: 400, body: { error: 'bad_stamp_number' } })
 
@@ -1212,6 +1220,112 @@ test('Stripe or Didit failing a request: a 502, and one log line saying why by i
   }
 })
 
+/**
+ * The payment page's own script, run as a browser would run it inside an app's frame, with `hash` its
+ * address after the `#`: a stand-in for Stripe's script and for the app around it. What it gave
+ * Stripe, where it mounted the Checkout, and each message it posted, with the origin it was posted to.
+ */
+async function runPage(html: string, hash: string) {
+  const script = /<script>\n([\s\S]*?)<\/script>/.exec(html)![1]!
+  const seen = { key: '', options: {} as Record<string, any>, mounted: '', posted: [] as [unknown, string][] }
+  runInNewContext(script, {
+    location: { hash },
+    parent: { postMessage: (message: unknown, origin: string) => seen.posted.push([message, origin]) },
+    Stripe: (key: string) => {
+      seen.key = key
+      return {
+        createEmbeddedCheckoutPage: async (options: Record<string, any>) => {
+          seen.options = options
+          return { mount: (where: string) => (seen.mounted = where) }
+        },
+      }
+    },
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  return seen
+}
+
+test('the payment page: the same payment, made to embed, answered with its client secret; the one page Stripe’s script loads on, which only the apps may frame, and which posts one message, to the apps alone, once the person has paid; the verifier still asks Stripe', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
+  try {
+    const n = await stampNumber()
+    const made = await h.post('/id/payment', { stampNumber: n.toString() })
+    assert.equal(made.status, 201, JSON.stringify(made.body))
+    assert.deepEqual(Object.keys(made.body).sort(), ['clientSecret', 'payment'])
+    const { payment, clientSecret } = made.body
+    assert.match(payment, /^cs_test_[A-Za-z0-9]+\.[A-Za-z0-9_-]{80}$/, 'the payment as the hosted page’s is: its stamp number locked in it')
+    assert.equal(h.payments.clientSecrets.get(checkoutOf(payment)), clientSecret, 'Stripe’s client secret, as Stripe answered it')
+    assert.equal(h.payments.returnUrls.get(checkoutOf(payment)), undefined, 'made to embed, with no page to send the person back to')
+    assert.equal(h.payments.added.get(checkoutOf(payment)), false, 'at the price, as the stamp number holds no ID stamp')
+
+    // The page's message is no proof: the app sends the payment, and the verifier asks Stripe.
+    assert.deepEqual(await h.post('/id/session', { payment }), { status: 402, body: { error: 'not_paid' } })
+    h.payments.pay(payment)
+    const opened = await h.post('/id/session', { payment })
+    assert.equal(opened.status, 201, JSON.stringify(opened.body))
+    assert.equal(readVendorData(h.ids.vendorData.get(opened.body.sessionId)!)!.hash, stampHash(await hkdf(seed.bytes, 'vendor-data'), n), 'for the payment’s own stamp number')
+    h.ids.set(opened.body.sessionId, passedId('ada', doc('Lovelace')))
+    assert.equal((await idStamp(h, opened.body.sessionId, n, payment)).status, 200)
+    assert.equal(h.payments.state(payment), 'taken', 'the stamp takes the hold, as for the hosted page')
+    const added = await h.post('/id/payment', { stampNumber: n.toString() })
+    assert.equal(h.payments.added.get(checkoutOf(added.body.payment)), true, 'and the next is at the added-ID price')
+
+    // The page: the same for every payment, whose client secret comes after its `#`, never to the verifier.
+    const res = await fetch(h.verifier.url + '/id/pay')
+    assert.equal(res.status, 200)
+    assert.deepEqual(
+      Object.fromEntries(['content-type', 'cache-control', 'content-security-policy', 'permissions-policy', 'access-control-allow-origin'].map((name) => [name, res.headers.get(name)])),
+      {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'content-security-policy': 'frame-ancestors https://app.example',
+        'permissions-policy': 'payment=(self "https://js.stripe.com" "https://checkout.stripe.com")',
+        'access-control-allow-origin': null,
+      },
+    )
+    const html = await res.text()
+    assert.deepEqual([...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map(([, src]) => src), ['https://js.stripe.com/endive/stripe.js'], 'Stripe’s script, of the release STRIPE_VERSION is in, and no other')
+    assert.equal(/"\*"|'\*'/.test(html), false, 'no message to any origin')
+    const page = await runPage(html, '#' + clientSecret)
+    assert.equal(page.key, 'pk_test_standin', 'the key’s publishable key')
+    assert.deepEqual(Object.keys(page.options).sort(), ['fetchClientSecret', 'onComplete'])
+    assert.equal(await page.options.fetchClientSecret(), clientSecret, 'the client secret from after the #')
+    assert.equal(page.mounted, '#checkout')
+    assert.deepEqual(page.posted, [], 'no message before the person has paid')
+    page.options.onComplete()
+    page.options.onComplete()
+    assert.deepEqual(page.posted, [[PAYMENT_DONE, 'https://app.example']], 'one message, to the app’s origin alone')
+    assert.equal(PAYMENT_DONE, 'payment_done')
+
+    // Stripe's script is on that page alone, and the client secret in no log.
+    assert.equal((await (await fetch(h.verifier.url + '/')).text()).includes('js.stripe.com'), false)
+    assert.equal(h.logs.some((line) => line.includes(clientSecret) || line.includes(checkoutOf(payment))), false)
+    assert.deepEqual(await h.post('/id/pay'), { status: 405, body: { error: 'get_only' } })
+    assert.equal((await fetch(h.verifier.url + '/id/pay?x')).status, 404, 'nothing comes in its address')
+  } finally {
+    await h.verifier.close()
+  }
+})
+
+test('the payment page may be framed by each app in APP_ORIGINS and posts to each, so only the one framing it gets the message; with none, nobody may frame it', async () => {
+  for (const [origins, ancestors, posted] of [
+    ['https://app.example, http://localhost:5173', 'frame-ancestors https://app.example http://localhost:5173', ['https://app.example', 'http://localhost:5173']],
+    [undefined, "frame-ancestors 'none'", []],
+  ] as const) {
+    const h = await start({ env: { APP_ORIGINS: origins } })
+    try {
+      const res = await fetch(h.verifier.url + '/id/pay')
+      assert.equal(res.headers.get('content-security-policy'), ancestors)
+      const page = await runPage(await res.text(), '#cs_test_a1_secret_b2')
+      page.options.onComplete()
+      assert.deepEqual(page.posted, posted.map((origin) => [PAYMENT_DONE, origin]))
+    } finally {
+      await h.verifier.close()
+    }
+  }
+})
+
 test('without Stripe the ID check is not for sale; the face check is free', async () => {
   const h = await start({ forSale: false })
   try {
@@ -1222,6 +1336,8 @@ test('without Stripe the ID check is not for sale; the face check is free', asyn
     ] as const) {
       assert.deepEqual(await h.post(path, body), { status: 503, body: { error: 'not_for_sale' } }, path)
     }
+    const page = await fetch(h.verifier.url + '/id/pay')
+    assert.deepEqual([page.status, await page.json()], [503, { error: 'not_for_sale' }], 'and no payment page')
     assert.equal(h.ids.created, 0)
     assert.equal((await face(h, 'alice', await stampNumber())).stamp.verifier, h.verifier.keys.face)
   } finally {
@@ -1434,19 +1550,32 @@ test('the configuration names what is missing', () => {
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'https://app.example/' }), /APP_ORIGINS is an origin/)
   assert.throws(() => readConfig({ ...base, APP_ORIGINS: 'app.example' }), /APP_ORIGINS is an origin/)
 
-  // Stripe: with its key the ID check is for sale, for the two Prices named; the Prices alone sell
-  // nothing; the key is never quoted.
+  // Stripe: with its key the ID check is for sale, for the two Prices named, with its publishable key,
+  // of the same mode, for the payment page; the Prices alone sell nothing; no key is ever quoted.
   const price = 'price_1UXRbDILoxkbMfX4cfwRfCOI'
   const addedPrice = 'price_1UXRbDILoxkbMfX4added00'
   const prices = { STRIPE_ID_PRICE: price, STRIPE_ADDED_ID_PRICE: addedPrice }
+  const test = { ...prices, STRIPE_PUBLISHABLE_KEY: 'pk_test_51pub' }
   assert.equal(config.stripe, undefined)
-  assert.equal(readConfig({ ...base, ...prices }).stripe, undefined)
+  assert.equal(readConfig({ ...base, ...test }).stripe, undefined)
   for (const key of ['sk_test_51abc', 'rk_test_51abc', 'sk_live_51abc', 'rk_live_51abc']) {
-    assert.deepEqual(readConfig({ ...base, STRIPE_SECRET_KEY: key, ...prices }).stripe, { secretKey: key, price, addedPrice })
+    const publishableKey = key.includes('_test_') ? 'pk_test_51pub' : 'pk_live_51pub'
+    assert.deepEqual(readConfig({ ...base, STRIPE_SECRET_KEY: key, ...prices, STRIPE_PUBLISHABLE_KEY: publishableKey }).stripe, { secretKey: key, publishableKey, price, addedPrice })
   }
   for (const missing of [{}, { STRIPE_ID_PRICE: price }, { STRIPE_ADDED_ID_PRICE: addedPrice }]) {
-    assert.throws(() => readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_51abc', ...missing }), /STRIPE_SECRET_KEY needs STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE/)
+    assert.throws(() => readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_51abc', STRIPE_PUBLISHABLE_KEY: 'pk_test_51pub', ...missing }), /STRIPE_SECRET_KEY needs STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE/)
   }
+  assert.throws(() => readConfig({ ...base, STRIPE_SECRET_KEY: 'sk_test_51abc', ...prices }), /STRIPE_SECRET_KEY needs STRIPE_PUBLISHABLE_KEY/)
+  for (const [secretKey, publishableKey] of [['sk_test_51abc', 'pk_live_51pub'], ['rk_live_51abc', 'pk_test_51pub']]) {
+    assert.throws(
+      () => readConfig({ ...base, STRIPE_SECRET_KEY: secretKey, ...prices, STRIPE_PUBLISHABLE_KEY: publishableKey }),
+      (error: Error) => /STRIPE_PUBLISHABLE_KEY is of another mode than STRIPE_SECRET_KEY/.test(error.message) && !error.message.includes('51abc') && !error.message.includes('51pub'),
+    )
+  }
+  assert.throws(
+    () => readConfig({ ...base, STRIPE_PUBLISHABLE_KEY: 'sk_test_51secret' }),
+    (error: Error) => /STRIPE_PUBLISHABLE_KEY is a Stripe publishable key/.test(error.message) && !error.message.includes('51secret'),
+  )
   assert.throws(
     () => readConfig({ ...base, STRIPE_SECRET_KEY: 'pk_test_51secret', ...prices }),
     (error: Error) => /STRIPE_SECRET_KEY is a Stripe secret key/.test(error.message) && !error.message.includes('51secret'),
