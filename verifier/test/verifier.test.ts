@@ -28,7 +28,7 @@ import { DiditClient, DiditUnavailable, type Decision, stampHash } from '../src/
 import { ID_FACTS, RECIPE, faceList, idList, saltsOf } from '../src/facts.ts'
 import { INFO, SEED_FILE, parseSeed, seedFrom } from '../src/seed.ts'
 import { HOLD_FOR_MS, HOLDS_EVERY_MS, OPEN_FOR_MS, SIGNED_FOR_MS, lockPayment } from '../src/server.ts'
-import { CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
+import { AGREE, CANCEL_RIGHT, CONSENT, FACE_CONSENT, readConfig, startVerifier, type Verifier } from '../src/service.ts'
 import { FACE_TRIES, ID_TRIES, Store } from '../src/store.ts'
 import { type Payments, PaymentUnavailable, StripeClient } from '../src/stripe.ts'
 import {
@@ -195,7 +195,7 @@ async function face(h: Harness, person: string, n: bigint, over: Partial<Decisio
   return { sessionId, stamp: res.body.stamp }
 }
 
-test('GET /: the name, for each check the key that signs its stamps, as an address, and the names of its facts, the recipe, and the consent screen', async () => {
+test('GET /: the name, for each check the key that signs its stamps, as an address, the names of its facts and its consent screen, the recipe, the line the person ticks, and the ID check’s right to cancel', async () => {
   const seed = seedJson()
   const h = await start({ seed: seed.json })
   try {
@@ -209,11 +209,15 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     for (const old of ['face', 'id', 'id-fields']) assert.ok(![keys.face, keys.id].includes(serviceKey(await hkdf(seed.bytes, old)).address), old)
     assert.deepEqual(JSON.parse(text), {
       name: VERIFIER_NAME,
-      face: { key: keys.face, facts: ['model', 'embedding'] },
-      id: { key: keys.id, facts: [...ID_FACTS], forSale: true, testPayments: true, price: PRICES.price, addedPrice: PRICES.addedPrice },
+      face: { key: keys.face, facts: ['model', 'embedding'], consent: FACE_CONSENT },
+      id: { key: keys.id, facts: [...ID_FACTS], forSale: true, testPayments: true, price: PRICES.price, addedPrice: PRICES.addedPrice, cancelRight: CANCEL_RIGHT },
       recipe: "the standard's facts as a list (proofs/README.md, Facts as a list): factsNumber of the list beside the stamp, under factList",
       consent: CONSENT,
+      agree: 'I am 18 or older and I agree',
     })
+    // The ID check's consent screen stays where today's app reads it; each check has its own.
+    assert.notEqual(FACE_CONSENT, CONSENT)
+    assert.equal(AGREE, 'I am 18 or older and I agree')
     assert.equal(JSON.parse(text).recipe, RECIPE)
     assert.deepEqual(JSON.parse(text).id.facts.slice(0, 4), ['model', 'embedding', 'address', 'date_of_birth'])
     assert.deepEqual(h.verifier.keys, keys)
@@ -425,7 +429,7 @@ test('an ID stamp for each document: the first at the price, each after at the a
   }
 })
 
-test('two free face tries a stamp number: a face session Didit finished that an app asked a stamp of and that gave none, once a session; then no more face sessions, and the ID check', async () => {
+test('one free face check a stamp number: a face session Didit finished that an app asked a stamp of and that gave none is its try, once; then no more face sessions, and the ID check', async () => {
   const h = await start()
   try {
     const n = await stampNumber()
@@ -442,12 +446,15 @@ test('two free face tries a stamp number: a face session Didit finished that an 
     assert.deepEqual(await faceStamp(h, await h.session(passed('cleo', { status: 'Declined' }), await stampNumber()), n), { status: 409, body: { error: 'session_used' } })
     assert.equal(await left(n), FACE_TRIES)
 
-    // Declined, asked twice: one try. In Review, refused as Declined is: the other.
+    // Declined, asked twice: its one try, once.
     const declined = await h.session(passed('cleo', { status: 'Declined' }), n)
+    assert.equal(FACE_TRIES, 1)
     for (let i = 0; i < 2; i++) assert.deepEqual(await faceStamp(h, declined, n), { status: 403, body: { error: 'other' } })
-    assert.equal(await left(n), FACE_TRIES - 1)
-    assert.deepEqual(await faceCheck(h, refusedWith(['DUPLICATED_FACE'], { status: 'In Review' }), n), { status: 403, body: { error: 'known_face' } })
     assert.equal(await left(n), 0)
+    // In Review is refused as Declined is, and is a try too.
+    const k = await stampNumber()
+    assert.deepEqual(await faceCheck(h, refusedWith(['AGE_BELOW_MINIMUM'], { status: 'In Review' }), k), { status: 403, body: { error: 'too_young' } })
+    assert.equal(await left(k), 0)
 
     // No more face sessions for n, with a return page or not, and Didit is not asked.
     const created = h.faces.created
@@ -460,11 +467,11 @@ test('two free face tries a stamp number: a face session Didit finished that an 
     assert.equal((await faceStamp(h, early, n)).status, 200)
     assert.equal(await left(n), 0)
 
-    // Another stamp number, as a new passkey has, starts over; after its two tries, the ID check
-    // gives it its ID stamp and a face stamp from the same selfie.
+    // Another stamp number, as a new passkey has, starts over; after its try, the ID check gives it
+    // its ID stamp and a face stamp from the same selfie.
     const m = await stampNumber()
     assert.equal(await left(m), FACE_TRIES)
-    for (let i = 0; i < FACE_TRIES; i++) assert.equal((await faceCheck(h, passed('dov', { faceImage: null }), m)).status, 403)
+    assert.deepEqual(await faceCheck(h, passed('dov', { faceImage: null }), m), { status: 403, body: { error: 'face_unclear' } })
     assert.equal(await left(m), 0)
     const id = await idStamp(h, await h.idSession(passedId('dov', doc('Dov')), m), m)
     assert.equal(id.status, 200, JSON.stringify(id.body))
@@ -499,15 +506,16 @@ test('one Didit user a stamp number: every session, face or ID, under its keyed 
     assert.deepEqual(await faceStamp(h, refused, n), { status: 409, body: { error: 'session_used' } }, 'kept, for m alone')
 
     // A session under any other vendor_data, as every session carried before: no stamp for anyone.
-    const old = await h.session(passed('carol', { vendorData: `face-${stampHash(key, m)}-${randomUUID()}` }), m)
-    assert.deepEqual(await faceStamp(h, old, m), { status: 409, body: { error: 'session_used' } })
+    const c = await stampNumber()
+    const old = await h.session(passed('carol', { vendorData: `face-${stampHash(key, c)}-${randomUUID()}` }), c)
+    assert.deepEqual(await faceStamp(h, old, c), { status: 409, body: { error: 'session_used' } })
 
     // Nothing of it is kept: no stamp number's hash is in the file.
     h.later(SIGNED_FOR_MS)
     await h.verifier.sweep()
     await h.verifier.close()
     const file = readFileSync(h.dbPath)
-    for (const text of [stampHash(key, n), stampHash(key, m)]) assert.equal(file.includes(Buffer.from(text)), false, text.slice(0, 24))
+    for (const text of [stampHash(key, n), stampHash(key, m), stampHash(key, c)]) assert.equal(file.includes(Buffer.from(text)), false, text.slice(0, 24))
   } finally {
     await h.verifier.close().catch(() => {})
   }
@@ -521,6 +529,7 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
     const codes: [string[], string][] = [
       [['POSSIBLE_DUPLICATED_USER'], 'known_person'],
       [['DUPLICATED_FACE'], 'known_face'],
+      [['AGE_BELOW_MINIMUM'], 'too_young'],
       [['LOW_FACE_MATCH_SIMILARITY'], 'face_mismatch'],
       [['DOCUMENT_EXPIRED'], 'id_unclear'],
       [['LOW_LIVENESS_SCORE'], 'face_unclear'],
@@ -536,13 +545,17 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
 
     // An ID check refused as a person or a face Didit has seen ends its payment on its first try, its
     // hold cancelled; any other refusal leaves the hold for the next try.
-    const idRefused = async (risks: string[], status = 'Declined') => {
+    const idRefused = async (risks: string[], status = 'Declined', document: Record<string, string> | null = null) => {
       const k = await stampNumber()
-      const sessionId = await h.idSession(refusedWith(risks, { workflowId: ID_WORKFLOW, status }), k)
+      const sessionId = await h.idSession(refusedWith(risks, { workflowId: ID_WORKFLOW, status, document }), k)
       return [(await idStamp(h, sessionId, k)).body.error, h.payments.state(h.paidFor.get(sessionId)!)]
     }
     assert.deepEqual(await idRefused(['POSSIBLE_DUPLICATED_USER']), ['known_person', 'cancelled'])
     assert.deepEqual(await idRefused(['FRONT_CAMERA_DUPLICATED_FACE'], 'In Review'), ['known_face', 'cancelled'])
+    // Too young, a birth date Didit read under 18: the same. One Didit did not read: an ID it could not read, and the tries go on.
+    assert.deepEqual(await idRefused(['MINIMUM_AGE_NOT_MET'], 'Declined', doc('Young', { date_of_birth: '2015-06-01' })), ['too_young', 'cancelled'])
+    assert.deepEqual(await idRefused(['MINIMUM_AGE_NOT_MET'], 'Declined', doc('Unread', { date_of_birth: '' })), ['id_unclear', 'held'])
+    assert.deepEqual(await idRefused(['MINIMUM_AGE_NOT_MET']), ['id_unclear', 'held'])
     for (const [risks, error] of [[['LOW_FACE_MATCH_SIMILARITY'], 'face_mismatch'], [['IMAGE_TOO_BLURRY'], 'id_unclear'], [['NO_FACE_DETECTED'], 'face_unclear'], [[], 'other']] as const) {
       assert.deepEqual(await idRefused([...risks]), [error, 'held'], error)
     }
@@ -554,15 +567,16 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
     const asked = h.faces.asked
     assert.deepEqual(await faceStamp(h, seen, m), refused('known_face'))
     assert.equal(h.faces.asked, asked, 'Didit is not asked again')
-    assert.equal((await stampBack(h, m)).body.faceTriesLeft, FACE_TRIES - 1)
+    assert.equal((await stampBack(h, m)).body.faceTriesLeft, 0, 'its one try')
     // A selfie Didit approved in which the face model finds no face: refused the same way, face_unclear.
-    const blank = await h.session(passed('none'), m)
-    assert.deepEqual(await faceStamp(h, blank, m), refused('face_unclear'))
+    const b = await stampNumber()
+    const blank = await h.session(passed('none'), b)
+    assert.deepEqual(await faceStamp(h, blank, b), refused('face_unclear'))
     // The next sweep deletes both in Didit, face and all; the app still gets their codes.
     await h.verifier.sweep()
     assert.ok([seen, blank].every((sessionId) => h.faces.deleted.includes(sessionId) && !h.faces.keptFaces.includes(sessionId)))
     assert.deepEqual(await faceStamp(h, seen, m), refused('known_face'))
-    assert.deepEqual(await faceStamp(h, blank, m), refused('face_unclear'))
+    assert.deepEqual(await faceStamp(h, blank, b), refused('face_unclear'))
   } finally {
     await h.verifier.close()
   }
@@ -615,14 +629,14 @@ test('two requests for one session at once, with two stamp numbers: one stamp, t
 test('the sweep: after its hour, a face session that gave a stamp deleted in Didit, keeping its face template if it gave its stamp number its first face stamp, and an ID session forgotten, which Didit keeps; a refused one deleted at once, asked about by the app or not; any other a day after it opened, face and all', async () => {
   const h = await start()
   try {
-    const [n, r, u] = [await stampNumber(), await stampNumber(), await stampNumber()]
+    const [n, r, t, u] = [await stampNumber(), await stampNumber(), await stampNumber(), await stampNumber()]
     // Refused, and the app asked: a face check Declined, an ID check Declined.
     const declined = await h.session(passed('gone', { status: 'Declined' }), r)
     assert.deepEqual(await faceStamp(h, declined, r), { status: 403, body: { error: 'other' } })
     const idDeclined = await h.idSession(refusedWith(['DOCUMENT_EXPIRED'], { workflowId: ID_WORKFLOW }), r)
     assert.deepEqual(await idStamp(h, idDeclined, r), { status: 403, body: { error: 'id_unclear' } })
     // Refused, and the app never asks: a face check In Review, an ID check Declined.
-    const unasked = await h.session(refusedWith(['DUPLICATED_FACE'], { status: 'In Review' }), r)
+    const unasked = await h.session(refusedWith(['DUPLICATED_FACE'], { status: 'In Review' }), t)
     const idUnasked = await h.idSession(refusedWith(['POSSIBLE_DUPLICATED_USER'], { workflowId: ID_WORKFLOW }), r)
     // Unfinished, and approved but never asked about.
     const unfinished = await h.session(passed('known', { status: 'In Progress' }), u)
@@ -640,7 +654,7 @@ test('the sweep: after its hour, a face session that gave a stamp deleted in Did
     assert.deepEqual([h.faces.keptFaces, h.ids.keptFaces], [[], []])
     // The app asking later gets the code the sweep read, for that stamp number alone, with no question to Didit.
     const asked = h.faces.asked + h.ids.asked
-    assert.deepEqual(await faceStamp(h, unasked, r), { status: 403, body: { error: 'known_face' } })
+    assert.deepEqual(await faceStamp(h, unasked, t), { status: 403, body: { error: 'known_face' } })
     assert.deepEqual(await idStamp(h, idUnasked, r), { status: 403, body: { error: 'known_person' } })
     assert.equal(h.faces.asked + h.ids.asked, asked)
     assert.equal(h.payments.state(h.paidFor.get(idUnasked)!), 'cancelled', 'its hold cancelled once the app asks with its payment')
@@ -669,7 +683,7 @@ test('the sweep: after its hour, a face session that gave a stamp deleted in Did
     assert.deepEqual([h.faces.keptFaces, h.ids.keptFaces], [[signed.sessionId], []], 'keeping nothing of them')
     await h.verifier.sweep()
     assert.equal(h.faces.deleted.length, 5, 'each once')
-    assert.deepEqual(await faceStamp(h, unasked, r), { status: 403, body: { error: 'unknown_session' } }, 'a refusal forgotten with its day')
+    assert.deepEqual(await faceStamp(h, unasked, t), { status: 403, body: { error: 'unknown_session' } }, 'a refusal forgotten with its day')
 
     // Didit not answering a deletion: the session stays for the next sweep.
     const m = await stampNumber()
@@ -718,7 +732,7 @@ test('the sweep: after its hour, a face session that gave a stamp deleted in Did
       toDelete: [pia.sessionId],
       opened: [[quiet, null], [open, null], [idOpen, payment]],
       refused: [[quiet, 'known_face']],
-      faceTries: [[r, 2]],
+      faceTries: [[r, 1], [t, 1]],
       payments: [[h.paidFor.get(idDeclined)!, 1, false], [h.paidFor.get(idUnasked)!, ID_TRIES, true], [h.paidFor.get(id)!, ID_TRIES, true], [payment, 1, false]],
       never: [],
     })
@@ -1253,6 +1267,49 @@ test('the payment page may be framed by each app in APP_ORIGINS and posts to eac
   }
 })
 
+test('POST /id/cancel: a payment that gave no stamp has its hold cancelled at once, and opens no more sessions; one that gave a stamp, or holds nothing, is not', async () => {
+  const h = await start()
+  try {
+    const cancel = (body: unknown) => h.post('/id/cancel', body)
+    // Paid, a session open: the hold cancelled, the payment used up, its session giving no stamp.
+    const n = await stampNumber()
+    const payment = await h.paid(n)
+    const sessionId = await h.idSession(passedId('ada', doc('Lovelace')), n, payment)
+    assert.deepEqual(await cancel({ payment }), { status: 200, body: { cancelled: true } })
+    assert.equal(h.payments.state(payment), 'cancelled')
+    assert.deepEqual(await cancel({ payment }), { status: 200, body: { cancelled: true } }, 'cancelled before: the same answer')
+    assert.deepEqual(await h.post('/id/session', { payment }), { status: 409, body: { error: 'payment_used' } })
+    assert.deepEqual(await idStamp(h, sessionId, n), { status: 409, body: { error: 'payment_used' } })
+    // Paid and no session yet: cancelled too, and Stripe holding nothing, it opens none.
+    const m = await stampNumber()
+    const unused = await h.paid(m)
+    assert.deepEqual(await cancel({ payment: unused }), { status: 200, body: { cancelled: true } })
+    assert.deepEqual(await h.post('/id/session', { payment: unused }), { status: 402, body: { error: 'not_paid' } })
+    // A payment that gave a stamp: its price taken, nothing to cancel.
+    const k = await stampNumber()
+    const stamped = await h.idSession(passedId('kim', doc('Kim')), k)
+    assert.equal((await idStamp(h, stamped, k)).status, 200)
+    assert.deepEqual(await cancel({ payment: h.paidFor.get(stamped) }), { status: 409, body: { error: 'payment_used' } })
+    assert.equal(h.payments.state(h.paidFor.get(stamped)!), 'taken')
+    // Not paid yet, or not this verifier's.
+    const { body: made } = await h.post('/id/payment', { stampNumber: (await stampNumber()).toString() })
+    assert.deepEqual(await cancel({ payment: made.payment }), { status: 402, body: { error: 'not_paid' } })
+    for (const [body, error] of [[{}, 'expected_exactly_payment'], [{ payment, x: 1 }, 'expected_exactly_payment'], [{ payment: checkoutOf(payment) }, 'bad_payment'], [{ payment: 5 }, 'expected_exactly_payment']] as const) {
+      assert.deepEqual(await cancel(body), { status: 400, body: { error } }, JSON.stringify(body))
+    }
+    // Stripe not answering: a 502, logged by its kind, and nothing used.
+    const p = await stampNumber()
+    const held = await h.paid(p)
+    h.payments.down = true
+    assert.deepEqual(await cancel({ payment: held }), { status: 502, body: { error: 'payment_unavailable' } })
+    h.payments.down = false
+    assert.equal(h.payments.state(held), 'held')
+    assert.equal((await fetch(h.verifier.url + '/id/cancel')).status, 405)
+  } finally {
+    await h.verifier.close()
+  }
+})
+
 test('without Stripe the ID check is not for sale; the face check is free', async () => {
   const h = await start({ forSale: false })
   try {
@@ -1260,6 +1317,7 @@ test('without Stripe the ID check is not for sale; the face check is free', asyn
       ['/id/payment', { stampNumber: '5', returnUrl: 'https://app.example/' }],
       ['/id/session', { payment: 'cs_test_a1' }],
       ['/id/stamp', { sessionId: '4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a', stampNumber: '5', payment: 'cs_test_a1' }],
+      ['/id/cancel', { payment: 'cs_test_a1' }],
     ] as const) {
       assert.deepEqual(await h.post(path, body), { status: 503, body: { error: 'not_for_sale' } }, path)
     }

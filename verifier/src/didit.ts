@@ -144,8 +144,11 @@ export interface FaceCheck {
   deleteUser(vendorData: string): Promise<void>
 }
 
-/** How many days Didit keeps a deleted session's face template: 3650, the longest it allows. */
-export const FACE_RETENTION_DAYS = 3650
+/** How many days Didit keeps a deleted session's face template: 1825, five years, as long as Forest's Didit plan keeps anything. */
+export const FACE_RETENTION_DAYS = 1825
+
+/** Forest is for people this old and older: an ID check whose birth date shows less is too young. */
+export const MINIMUM_AGE = 18
 
 /**
  * Why Didit refused a check, as the app is told, each with the risks that say it, in order: the first
@@ -166,6 +169,8 @@ export const REASONS = [
       'FRONT_CAMERA_DUPLICATED_FACE_DOCUMENT_MISMATCH',
     ],
   ],
+  // Didit's age estimate, on the face check, and the birth date on the ID check (`reasonFor`).
+  ['too_young', ['AGE_BELOW_MINIMUM', 'MINIMUM_AGE_NOT_MET']],
   ['face_mismatch', ['LOW_FACE_MATCH_SIMILARITY', 'FACE_MATCH_MAX_ATTEMPTS_EXCEEDED', 'LOW_FRONT_CAMERA_FACE_MATCH_SIMILARITY']],
   [
     'id_unclear',
@@ -221,8 +226,9 @@ export const REASONS = [
       'SCREEN_CAPTURE_DURING_CAPTURE',
       'EXTERNAL_CAPTURE_DEVICE_DETECTED',
       'LIVENESS_VIDEO_ANOMALY',
-      // The face can't be seen well.
+      // The face can't be seen well, its age not even estimated.
       'NO_FACE_DETECTED',
+      'AGE_NOT_DETECTED',
       'NO_FACE_IN_SELFIE',
       'MULTIPLE_FACES_DETECTED',
       'LOW_FACE_QUALITY',
@@ -239,6 +245,31 @@ export type Reason = (typeof REASONS)[number][0] | 'other'
 export function reasonOf(risks: string[]): Reason {
   for (const [reason, says] of REASONS) if (risks.some((risk) => (says as readonly string[]).includes(risk))) return reason
   return 'other'
+}
+
+/** Whole years from a YYYY-MM-DD birth date to `at` (milliseconds), or null for no real date, one to come, or one past any life. */
+export function yearsOld(birth: string, at: number): number | null {
+  const read = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birth.trim())
+  if (!read) return null
+  const [y, m, d] = [Number(read[1]), Number(read[2]), Number(read[3])]
+  // Date.UTC rolls 1990-02-30 over to March, and reads a year below 100 as 1900 and up: neither comes back the same.
+  const born = new Date(Date.UTC(y, m - 1, d))
+  if (born.toISOString().slice(0, 10) !== birth.trim()) return null
+  const now = new Date(at)
+  const years = now.getUTCFullYear() - y - (now.getUTCMonth() + 1 < m || (now.getUTCMonth() + 1 === m && now.getUTCDate() < d) ? 1 : 0)
+  return years >= 0 && years <= 130 ? years : null
+}
+
+/**
+ * Why Didit refused this check (`reasonOf`), at `at`. An ID check is `too_young` only for a birth
+ * date Didit read that shows under MINIMUM_AGE: Didit's MINIMUM_AGE_NOT_MET also says a date it did
+ * not read, or one past any life, and that is an ID it could not read, `id_unclear`.
+ */
+export function reasonFor(decision: Decision, check: Check, at: number): Reason {
+  const reason = reasonOf(decision.risks)
+  if (reason !== 'too_young' || check === 'face') return reason
+  const years = yearsOld(decision.document?.date_of_birth ?? '', at)
+  return years !== null && years < MINIMUM_AGE ? 'too_young' : 'id_unclear'
 }
 
 /** What a decision means when it gives no stamp: a session not the verifier's to judge, one unfinished, or Didit's refusal. */
@@ -259,17 +290,17 @@ const is = (status: string, want: string) => status.toLowerCase().replace(/[\s_]
 const ran = (list: { status: string }[]) => list.length > 0 && list.every((step) => is(step.status, 'approved'))
 
 /**
- * What Didit's decision means to the verifier: a session on the check's own workflow; Declined or In
- * Review, Didit's refusal, by its risks (`reasonOf`); Expired or Abandoned (the person did not finish
+ * What Didit's decision means to the verifier, at `at`: a session on the check's own workflow;
+ * Declined or In Review, Didit's refusal, by its risks (`reasonFor`); Expired or Abandoned (the person did not finish
  * in time), `expired`; anything else but Approved, unfinished, `not_approved`. Approved, it passes,
  * with every liveness step run and passed and, for the ID check, every document step and face match
  * too, and the document read: an approved session without them was not run on a workflow that makes
  * this check, which is `wrong_workflow`. Null means Didit passed it.
  */
-export function judge(decision: Decision | null, workflowId: string, check: Check = 'face'): Refusal | null {
+export function judge(decision: Decision | null, workflowId: string, check: Check = 'face', at: number = Date.now()): Refusal | null {
   if (!decision) return 'unknown_session'
   if (decision.workflowId !== workflowId) return 'wrong_workflow'
-  if (is(decision.status, 'declined') || is(decision.status, 'in review')) return reasonOf(decision.risks)
+  if (is(decision.status, 'declined') || is(decision.status, 'in review')) return reasonFor(decision, check, at)
   if (is(decision.status, 'expired') || is(decision.status, 'abandoned')) return 'expired'
   if (!is(decision.status, 'approved')) return 'not_approved'
   if (check === 'face') return ran(decision.liveness) ? null : 'wrong_workflow'

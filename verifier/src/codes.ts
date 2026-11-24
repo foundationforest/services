@@ -25,6 +25,7 @@ export const CODES = [
   // (didit.ts's REASONS), and then a session not the verifier's to judge, or one unfinished
   'known_person',
   'known_face',
+  'too_young',
   'face_mismatch',
   'id_unclear',
   'face_unclear',

@@ -263,7 +263,9 @@ export class FakePayments implements Payments {
   async cancel(payment: string) {
     if (this.down) throw this.fail
     const hold = this.#holds.get(checkoutOf(payment))
-    if (hold?.state === 'held') hold.state = 'cancelled'
+    if (!hold) return 'none' as const
+    if (hold.state === 'held') hold.state = 'cancelled'
+    return hold.state === 'taken' ? ('taken' as const) : ('cancelled' as const)
   }
 
   async cancelOld(before: number) {

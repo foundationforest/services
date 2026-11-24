@@ -9,7 +9,7 @@ import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 
 import { CODES } from '../src/codes.ts'
-import { DiditClient, DiditUnavailable, FACE_RETENTION_DAYS, REASONS, judge, parseDecision, reasonOf, stampHash } from '../src/didit.ts'
+import { DiditClient, DiditUnavailable, FACE_RETENTION_DAYS, MINIMUM_AGE, REASONS, judge, parseDecision, reasonFor, reasonOf, stampHash, yearsOld } from '../src/didit.ts'
 
 const KEY = 'test-api-key'
 const WORKFLOW = '550e8400-e29b-41d4-a716-446655440000'
@@ -254,8 +254,8 @@ test("a decision's risks are those of the warnings Didit says set its status, on
   assert.equal(judge(byHand, WORKFLOW), 'other')
 })
 
-test('a refusal is one code: the first of known_person, known_face, face_mismatch, id_unclear and face_unclear that a risk says, else other', () => {
-  assert.deepEqual(REASONS.map(([reason]) => reason), ['known_person', 'known_face', 'face_mismatch', 'id_unclear', 'face_unclear'])
+test('a refusal is one code: the first of known_person, known_face, too_young, face_mismatch, id_unclear and face_unclear that a risk says, else other', () => {
+  assert.deepEqual(REASONS.map(([reason]) => reason), ['known_person', 'known_face', 'too_young', 'face_mismatch', 'id_unclear', 'face_unclear'])
   const all = REASONS.flatMap(([, risks]) => [...risks])
   assert.equal(new Set(all).size, all.length, 'each risk says one code')
   for (const [reason, risks] of REASONS) {
@@ -266,17 +266,20 @@ test('a refusal is one code: the first of known_person, known_face, face_mismatc
   assert.equal(reasonOf(['POSSIBLE_DUPLICATED_USER']), 'known_person')
   assert.equal(reasonOf(['DUPLICATED_FACE']), 'known_face')
   assert.equal(reasonOf(['POSSIBLE_DUPLICATED_FACE']), 'known_face', 'the whole duplicated-face family')
+  for (const risk of ['AGE_BELOW_MINIMUM', 'MINIMUM_AGE_NOT_MET']) assert.equal(reasonOf([risk]), 'too_young', risk)
+  assert.equal(reasonOf(['AGE_NOT_DETECTED']), 'face_unclear', 'no age estimated: the face could not be read')
   assert.equal(reasonOf(['LOW_FACE_MATCH_SIMILARITY']), 'face_mismatch')
   for (const risk of ['IMAGE_TOO_BLURRY', 'DOCUMENT_EXPIRED', 'DOCUMENT_NOT_SUPPORTED_FOR_APPLICATION', 'PORTRAIT_MANIPULATION_DETECTED']) assert.equal(reasonOf([risk]), 'id_unclear', risk)
   for (const risk of ['LIVENESS_FACE_ATTACK', 'LOW_LIVENESS_SCORE', 'NO_FACE_DETECTED', 'MULTIPLE_FACES_DETECTED']) assert.equal(reasonOf([risk]), 'face_unclear', risk)
   // Several: the first in that order, whatever order Didit lists them in.
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER']), 'known_person')
-  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE']), 'known_face')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'AGE_BELOW_MINIMUM', 'DUPLICATED_FACE']), 'known_face')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'AGE_BELOW_MINIMUM']), 'too_young')
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY']), 'face_mismatch')
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED']), 'id_unclear')
   assert.equal(reasonOf(['FACE_IN_BLOCKLIST', 'LOW_LIVENESS_SCORE']), 'face_unclear')
   // Any other risk, or none.
-  for (const risks of [[], ['FACE_IN_BLOCKLIST'], ['MINIMUM_AGE_NOT_MET'], ['AML_HIT'], ['duplicated_face']]) assert.equal(reasonOf(risks), 'other', JSON.stringify(risks))
+  for (const risks of [[], ['FACE_IN_BLOCKLIST'], ['MAXIMUM_AGE_EXCEEDED'], ['AML_HIT'], ['duplicated_face']]) assert.equal(reasonOf(risks), 'other', JSON.stringify(risks))
 })
 
 test('a photo is fetched from its signed address without the API key, and only from https or this machine', async () => {
@@ -293,13 +296,13 @@ test('a photo is fetched from its signed address without the API key, and only f
   }
 })
 
-test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to keep its face template for 3650 days, or to keep nothing', async () => {
+test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to keep its face template for 1825 days, or to keep nothing', async () => {
   seen.length = 0
   reply = () => [200, { session_id: SESSION, session_number: 1024, face_retention_outcome: 'retained_with_user', biometric_template_uuid: '9d2f4b6e-1c3a-4e8f-b7d5-0a1c2e3f4a5b', biometric_template_expires_at: '2036-10-20T00:00:00Z', deleted_child_verifications: 0 }]
   assert.equal(await client().deleteSession(SESSION, true), 'retained_with_user')
   assert.deepEqual([seen[0]!.method, seen[0]!.url, seen[0]!.key], ['DELETE', `/v3/session/${SESSION}/delete/`, KEY])
-  assert.deepEqual(JSON.parse(seen[0]!.body), { retain_face_embeddings: true, face_retention_days: 3650 })
-  assert.equal(FACE_RETENTION_DAYS, 3650, 'the longest Didit allows')
+  assert.deepEqual(JSON.parse(seen[0]!.body), { retain_face_embeddings: true, face_retention_days: 1825 })
+  assert.equal(FACE_RETENTION_DAYS, 1825, 'five years, as long as the foundation’s Didit plan keeps anything')
 
   reply = () => [200, { session_id: SESSION, face_retention_outcome: 'deleted' }]
   assert.equal(await client().deleteSession(SESSION, false), 'deleted', 'what Didit did, as it says it')
@@ -360,6 +363,22 @@ test('a session Didit does not know is no decision; anything else unexpected thr
     assert.ok(!error.message.includes(SESSION))
     return true
   })
+})
+
+test('too young: a face Didit estimates under its minimum; an ID check only for a birth date Didit read that shows under 18, any other an ID it could not read', () => {
+  const at = Date.UTC(2026, 10, 24)
+  assert.equal(MINIMUM_AGE, 18)
+  assert.deepEqual(['2008-11-24', '2008-11-25', '1990-02-28', '2026-11-24'].map((birth) => yearsOld(birth, at)), [18, 17, 36, 0])
+  for (const birth of ['', '24/11/2008', '2008-02-30', '0099-01-01', '2027-01-01', '1890-01-01', ' 2008-11-24x']) assert.equal(yearsOld(birth, at), null, birth)
+  const refused = (risks: string[], document: Record<string, string> | null) => ({ ...parseDecision(decisionBody({ status: 'Declined' })), risks, document })
+  assert.equal(reasonFor(refused(['AGE_BELOW_MINIMUM'], null), 'face', at), 'too_young', 'the face check estimates, and reads no birth date')
+  assert.equal(reasonFor(refused(['MINIMUM_AGE_NOT_MET'], { date_of_birth: '2008-11-25' }), 'id', at), 'too_young', 'a day short of 18')
+  for (const document of [{ date_of_birth: '2008-11-24' }, {}, { date_of_birth: '24/11/2008' }, { date_of_birth: '1890-01-01' }, null] as (Record<string, string> | null)[]) {
+    assert.equal(reasonFor(refused(['MINIMUM_AGE_NOT_MET'], document), 'id', at), 'id_unclear', JSON.stringify(document))
+  }
+  assert.equal(reasonFor(refused(['POSSIBLE_DUPLICATED_USER', 'MINIMUM_AGE_NOT_MET'], {}), 'id', at), 'known_person', 'the order first')
+  assert.equal(judge({ ...refused(['MINIMUM_AGE_NOT_MET'], { date_of_birth: '2015-06-01' }), workflowId: WORKFLOW }, WORKFLOW, 'id', at), 'too_young')
+  assert.equal(judge({ ...refused(['MINIMUM_AGE_NOT_MET'], {}), workflowId: WORKFLOW }, WORKFLOW, 'id', at), 'id_unclear')
 })
 
 test("what Didit's decision means to the verifier, in order", () => {

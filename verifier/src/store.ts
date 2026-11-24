@@ -16,8 +16,8 @@
 //                  Didit: its id, which check it was, when it opened, and `try`: for an ID session which
 //                  of its payment's tries it was, with the SHA-256 of that payment while it is not used
 //                  up, so it is stamped only with that payment, its refusal ends the payment only when it
-//                  was the last try; for a face session, 1 once it counted as one of its stamp number's
-//                  free tries, so it counts once. The sweep asks Didit about it every minute, and deletes
+//                  was the last try; for a face session, 1 once it counted as its stamp number's free
+//                  try, so it counts once. The sweep asks Didit about it every minute, and deletes
 //                  it in Didit, face and all, a day after it opened; it goes then, or moves to
 //                  `to_delete` once it gives a stamp
 //   refused        for each opened session Didit refused (Declined or In Review), or that the verifier
@@ -76,8 +76,8 @@ export function paymentHash(payment: string): Uint8Array {
 /** How many ID sessions one payment opens: the first try and two more. */
 export const ID_TRIES = 3
 
-/** How many face sessions Didit may finish without giving their stamp number a stamp before it opens no more. */
-export const FACE_TRIES = 2
+/** How many face sessions Didit may finish without giving their stamp number a stamp before it opens no more: one free face check. */
+export const FACE_TRIES = 1
 
 export type Remembered = 'ok' | 'session_used' | 'not_paid' | 'payment_used'
 

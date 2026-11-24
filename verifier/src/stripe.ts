@@ -89,8 +89,12 @@ export interface Payments {
   held(payment: string): Promise<number | null>
   /** Takes the held money: true once it is taken, now or before; false when the hold was cancelled. Throws if Stripe can't answer. */
   capture(payment: string): Promise<boolean>
-  /** Cancels the hold; nothing to do once it is taken or cancelled. Throws if Stripe can't answer. */
-  cancel(payment: string): Promise<void>
+  /**
+   * Cancels the hold: `cancelled` once it is, now or before; `taken` when its price was taken, as for
+   * a stamp, and then it stays taken; `none` when nothing is held, as for a payment not yet paid or one
+   * Stripe does not have. Throws if Stripe can't answer.
+   */
+  cancel(payment: string): Promise<'cancelled' | 'taken' | 'none'>
   /**
    * Cancels each hold the verifier made before `before` (milliseconds) that still holds the money: how
    * many it cancelled, how many Stripe would not, and why the last would not. Throws if Stripe can't answer the search.
@@ -220,9 +224,13 @@ export class StripeClient implements Payments {
     return (await this.#settle(intent.id, 'capture')) !== 'canceled'
   }
 
-  async cancel(payment: string): Promise<void> {
+  async cancel(payment: string): Promise<'cancelled' | 'taken' | 'none'> {
     const intent = (await this.#session(payment))?.intent
-    if (intent?.status === 'requires_capture') await this.#settle(intent.id, 'cancel')
+    if (intent?.status === 'canceled') return 'cancelled'
+    if (intent?.status === 'succeeded') return 'taken'
+    if (intent?.status !== 'requires_capture') return 'none'
+    // Taken or cancelled by something else meanwhile: as it was settled.
+    return (await this.#settle(intent.id, 'cancel')) === 'succeeded' ? 'taken' : 'cancelled'
   }
 
   async cancelOld(before: number): Promise<{ cancelled: number; failed: number; error?: unknown }> {
