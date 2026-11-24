@@ -8,8 +8,9 @@
 //
 // It runs both checks on the sandbox application's two workflows, with the SFace model (`npm run
 // fetch -- models` first) and its own seed and file in data/sandbox/. PORT, VERIFIER_NAME, APP_ORIGINS,
-// HOST_URL, FACE_CREDITS, ID_CREDITS, STRIPE_SECRET_KEY, STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE are
-// read as `npm start` reads them; a live Stripe key is refused, so the ID check is paid in Stripe's test mode only. Then,
+// HOST_URL, FACE_CREDITS, ID_CREDITS, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_ID_PRICE and
+// STRIPE_ADDED_ID_PRICE are read as `npm start` reads them; a live Stripe key is refused, so the ID
+// check is paid in Stripe's test mode only. Then,
 // by hand: `POST /face/session`, open the page it answers and walk through Didit's mocked flow, and
 // `POST /face/stamp` with the session and a stamp number; for the ID check, `POST /id/payment` with
 // the stamp number first, paid on its page with one of Stripe's test cards, then `POST /id/session`
@@ -26,7 +27,7 @@ if (!apiKey) throw new Error('DIDIT_SANDBOX_API_KEY is not set: the sandbox appl
 if (apiKey === process.env.DIDIT_API_KEY) throw new Error('DIDIT_SANDBOX_API_KEY is a live key: the sandbox takes the sandbox application’s key, never a live one')
 const scenario = process.argv[2] || 'approve'
 
-const { PORT, VERIFIER_NAME, APP_ORIGINS, HOST_URL, FACE_CREDITS, ID_CREDITS, STRIPE_SECRET_KEY, STRIPE_ID_PRICE, STRIPE_ADDED_ID_PRICE } = process.env
+const { PORT, VERIFIER_NAME, APP_ORIGINS, HOST_URL, FACE_CREDITS, ID_CREDITS, STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_ID_PRICE, STRIPE_ADDED_ID_PRICE } = process.env
 if (STRIPE_SECRET_KEY?.includes('_live_')) throw new Error('STRIPE_SECRET_KEY is a live key: the sandbox takes a test-mode key only')
 const config = readConfig({
   PORT,
@@ -36,6 +37,7 @@ const config = readConfig({
   FACE_CREDITS,
   ID_CREDITS,
   STRIPE_SECRET_KEY,
+  STRIPE_PUBLISHABLE_KEY,
   STRIPE_ID_PRICE,
   STRIPE_ADDED_ID_PRICE,
   DIDIT_API_KEY: apiKey,

@@ -3,6 +3,7 @@
 // test/readme.test.ts holds the two together. An app imports the list to say each code in its own
 // words. It imports nothing, so an app in a browser imports it as it is. A gift's own `bad_gift`
 // and `given` are not here: they ride inside a stamp's answer, in its `gift`, not as its error.
+// PAYMENT_DONE, below the list, is no error: it is the one message the payment page posts.
 
 export const CODES = [
   // 400: a body the route does not take
@@ -55,3 +56,11 @@ export const CODES = [
 
 /** One of the verifier's codes. */
 export type Code = (typeof CODES)[number]
+
+/**
+ * The one message the payment page (`GET /id/pay`, page.ts) posts to the app around it, once the
+ * person has paid on it: all Stripe's hosted page tells the app by sending the person back, which is
+ * nothing but that they are done. The app then sends `POST /id/session` with the payment it holds,
+ * and the verifier asks Stripe whether the money is held.
+ */
+export const PAYMENT_DONE = 'payment_done'

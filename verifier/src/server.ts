@@ -1,6 +1,7 @@
 // The verifier's routes. The ones a person's app calls are POST with a JSON body, so nothing a person
 // sends is ever in a URL: hosting platforms log the path of every request (Railway does, with the
-// client's address).
+// client's address). The payment page is a GET, and what it needs comes after its `#`, which no
+// browser sends.
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
 //                       signs its stamps, as an address, and the names of its facts; for the ID check
@@ -24,6 +25,12 @@
 //                                                    stamp; the payment carries the stamp number, locked
 //                                                    (`lockPayment`); Stripe sends the person back to
 //                                                    returnUrl, on an origin in APP_ORIGINS
+//                       {stampNumber}             -> 201 {payment, clientSecret}
+//                                                    the same payment, made to be embedded in the
+//                                                    payment page, which sends the person nowhere
+//   GET  /id/pay        #<clientSecret>           -> 200 the payment page (page.ts), which only the apps
+//                                                    may frame: Stripe's embedded Checkout, and, once
+//                                                    the person has paid, one message to the app
 //   POST /id/session    {payment} or {payment, returnUrl}
 //                                                 -> 201 {sessionId, url}   an ID check for the payment's
 //                                                    stamp number, opened as a face check is, for a
@@ -97,6 +104,7 @@ import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge, rea
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { type Person, decimal, faceList, idList, person, saltsOf, samePerson } from './facts.ts'
+import { payPage } from './page.ts'
 import type { Ed25519Key } from './seed.ts'
 import { FACE_TRIES, type KeptStamp, type Store, paymentHash } from './store.ts'
 import { PAYMENT, PaymentUnavailable, type Payments, type Prices } from './stripe.ts'
@@ -392,15 +400,16 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   /**
    * A Stripe Checkout page for one ID check for a stamp number, sending the person back to
-   * `returnUrl`, an app's page: at the added-ID price when the stamp number holds an ID stamp. None
-   * until Stripe has said what its prices are, so the app can show the person the price first; the
-   * payment answered carries the stamp number, locked.
+   * `returnUrl`, an app's page; or, with no `returnUrl`, one to embed in the payment page, answered by
+   * its client secret: at the added-ID price when the stamp number holds an ID stamp. None until
+   * Stripe has said what its prices are, so the app can show the person the price first; the payment
+   * answered carries the stamp number, locked.
    */
   async function pay(body: Record<string, unknown>): Promise<[number, unknown]> {
     const payments = forSale()
-    const input = fields(body, ['stampNumber', 'returnUrl'])
+    const input = fields(body, 'returnUrl' in body ? ['stampNumber', 'returnUrl'] : ['stampNumber'])
     const stampNumber = stampNumberIn(input.stampNumber)
-    const returnUrl = returnUrlIn(deps.appOrigins ?? [], input.returnUrl!)
+    const returnUrl = input.returnUrl === undefined ? undefined : returnUrlIn(deps.appOrigins ?? [], input.returnUrl)
     // Asked again at every sweep (service.ts), and logged there.
     if (!deps.prices?.()) throw new HttpError(502, 'payment_unavailable')
     let made
@@ -411,8 +420,12 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     } catch (error) {
       throw unavailable('payment_unavailable', error)
     }
-    return [201, { payment: lockPayment(deps.paymentKey, made.payment, stampNumber), url: made.url }]
+    const payment = lockPayment(deps.paymentKey, made.payment, stampNumber)
+    return [201, 'url' in made ? { payment, url: made.url } : { payment, clientSecret: made.clientSecret }]
   }
+
+  /** The payment page, with Stripe: the same for every payment, whose client secret it reads after its `#`. */
+  const page = deps.payments && payPage(deps.payments.publishableKey, deps.appOrigins ?? [])
 
   /**
    * An ID session, for a payment, for the stamp number it carries: Stripe is asked each time whether it
@@ -759,6 +772,12 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
           if (req.method !== 'GET') throw new HttpError(405, 'get_only')
           res.writeHead(200, { ...CORS, 'cache-control': 'no-cache', 'content-type': 'application/json' })
           return void res.end(deps.about())
+        }
+        if (path === '/id/pay') {
+          if (req.method !== 'GET') throw new HttpError(405, 'get_only')
+          if (!page) throw new HttpError(503, 'not_for_sale')
+          res.writeHead(200, page.headers)
+          return void res.end(page.html)
         }
         if (!Object.hasOwn(routes, path)) throw new HttpError(404, 'not_found')
         const route = routes[path]!

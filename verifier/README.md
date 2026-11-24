@@ -34,7 +34,7 @@ saw ([One person, one stamp number](#one-person-one-stamp-number)).
 
 | Step | Face check, free | ID check, paid |
 |---|---|---|
-| Pay | | `POST /id/payment` with the stamp number, and the person pays on Stripe's page, which holds the price ([The ID check's payment](#the-id-checks-payment)) |
+| Pay | | `POST /id/payment` with the stamp number, and the person pays on the verifier's payment page inside the app, or on Stripe's own page, which holds the price ([The ID check's payment](#the-id-checks-payment)) |
 | Open | `POST /face/session` with the stamp number, while it has a free try left, opens a session on the face workflow, for that number, and answers the page the person uses | `POST /id/session` with the payment alone, for its stamp number, on the ID workflow |
 | The person | Didit checks for a live person, and reports each face it has seen like it | Didit also reads a government document and matches the live face to its photo |
 | Ask | The app sends the session and its stamp number to `POST /face/stamp` | `POST /id/stamp`, with the payment |
@@ -114,16 +114,18 @@ gives a new ID stamp: one price for a stamp number's first ID stamp, another for
 ([Stripe](#stripe)). One payment gives one ID stamp, and up to three sessions in its first day to
 get it.
 
-1. The app sends `POST /id/payment` with the stamp number and a `returnUrl` on an origin in
-   `APP_ORIGINS`, and gets the payment and Stripe's page. The verifier picks the Price: the added-ID
-   one when the stamp number holds an ID stamp. Until Stripe has said what its Prices are, it makes
-   none, `502 payment_unavailable`.
+1. The app sends `POST /id/payment` with the stamp number, and gets the payment and where the
+   person pays: with no `returnUrl`, the client secret of the [payment page](#the-payment-page); with
+   a `returnUrl` on an origin in `APP_ORIGINS`, Stripe's own page, which sends them back there. The
+   verifier picks the Price: the added-ID one when the stamp number holds an ID stamp. Until Stripe
+   has said what its Prices are, it makes none, `502 payment_unavailable`.
 2. **The payment carries the stamp number:** it is its Checkout Session's id (`cs_…`), a dot, and
    the stamp number locked with AES-256-GCM under the payment key ([Its keys](#its-keys)), the id
    bound in. It opens sessions for that stamp number alone and moves to no other; Stripe never sees
    the stamp number, and nothing else holds the two side by side. The app keeps it: Stripe sends the
-   person back to `returnUrl` as it is, paid or not, with no id in its address.
-3. The person pays on Stripe's page, which only holds the price until the verifier takes it
+   person back to `returnUrl` as it is, paid or not, with no id in its address, and the payment page
+   tells the app only that the person is done.
+3. The person pays, which only holds the price until the verifier takes it
    (`payment_intent_data[capture_method]=manual`).
 4. The app sends `POST /id/session` with the payment alone. Each time, the verifier asks Stripe
    whether that Checkout Session is one it made (its mark, `metadata.check`), whether it holds the
@@ -151,7 +153,31 @@ logged, and the hourly search finds it. No webhook, and nothing of a payment kep
 tries and whether it is used up: the app sends the payment each time, and Stripe keeps every hold,
 by its mark. A payment sits beside the sessions it opened only while it is not used up and they are
 not yet deleted (Stripe's and Railway's own records could tie more, as [Limits](#limits) says).
-Without `STRIPE_SECRET_KEY`, all three routes answer `503 not_for_sale`.
+Without `STRIPE_SECRET_KEY`, all three routes and the payment page answer `503 not_for_sale`.
+
+### The payment page
+
+Any app can send the person to Stripe's own page; the main way is the verifier's payment page,
+framed inside the app, so the person never leaves it. It is Stripe's embedded Checkout for a payment
+`POST /id/payment` made with no `returnUrl`: the same Price, hold, text by the Pay button and stamp
+number locked in the payment, on a Checkout Session made with `ui_mode=embedded_page` and
+`redirect_on_completion=never`, so Stripe sends the person nowhere.
+
+| | |
+|---|---|
+| Its address | `https://verifier.forest.foundation/id/pay#<clientSecret>`, the `clientSecret` `POST /id/payment` answered after the `#`, which a browser never sends: it is in no request and no log |
+| Who may frame it | The apps in `APP_ORIGINS` alone: `Content-Security-Policy: frame-ancestors <each origin>`, or `'none'` with none |
+| Apple Pay and Google Pay | `Permissions-Policy: payment=(self "https://js.stripe.com" "https://checkout.stripe.com")`, and the app's frame carries `allow="payment"` |
+| Stripe's script | `https://js.stripe.com/endive/stripe.js`, the release of the API version the verifier sends, on this page and no other: it mounts the Checkout with the client secret and the key's publishable key |
+| Once the person has paid | One message to the app around it, `"payment_done"` (`PAYMENT_DONE` in `src/codes.ts`), posted to each origin in `APP_ORIGINS`, so the browser hands it to the one framing the page and to no other; never to `"*"` |
+
+- **The message carries what Stripe's own page tells the app by sending the person back:** that they
+  are done, nothing more. The app then sends `POST /id/session` with the payment it holds, and the
+  verifier asks Stripe whether the money is held, as it does after Stripe's page: a message gives
+  nothing by itself.
+- **Only payment methods that need no other page:** with nowhere to send the person, Stripe leaves
+  out those that take them to their bank's page, or any other.
+- **Opened outside a frame,** the page takes the same payment, and posts its message to no one.
 
 ### The stamp
 
@@ -339,7 +365,8 @@ sees them, and pays nothing: the host lists its sponsor key and counts what its 
 | `GET /` | | `200`, [its keys](#its-keys) |
 | `POST /face/session` | `{"stampNumber": "<decimal>"}`, and may add `"returnUrl": "<url>"`, a page on an origin in `APP_ORIGINS` where Didit sends the person after | `201 {"sessionId", "url"}`, while it has a free try left |
 | `POST /face/stamp` | `{"sessionId": "<uuid>", "stampNumber": "<decimal>"}`, the stamp number it was opened for, and may add `"gift"` | `200 {"stamp"}`, with `"gift"` if asked |
-| `POST /id/payment` | `{"stampNumber": "<decimal>", "returnUrl": "<url>"}`, a page on an origin in `APP_ORIGINS` where Stripe sends the person after, paid or not | `201 {"payment", "url"}` |
+| `POST /id/payment` | `{"stampNumber": "<decimal>"}`, and may add `"returnUrl": "<url>"`, a page on an origin in `APP_ORIGINS` where Stripe sends the person after, paid or not | `201 {"payment", "clientSecret"}`, for the payment page; with `returnUrl`, `201 {"payment", "url"}`, Stripe's page |
+| `GET /id/pay` | none: `#<clientSecret>` after its address | `200`, [the payment page](#the-payment-page) |
 | `POST /id/session` | `{"payment": "<as POST /id/payment answered it>"}`, and may add `"returnUrl"`, as for a face session | `201 {"sessionId", "url"}` |
 | `POST /id/stamp` | `{"sessionId", "stampNumber", "payment"}`, and may add `"gift"` | `200 {"stamp", "face"}`, `face` the face stamp signed from the same selfie, or `null`; with `"gift"` if asked |
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face", "id", "faceTriesLeft"}`: a stamp or `null`, a list of stamps, a number |
@@ -382,8 +409,9 @@ locked. A body with any other field is refused. CORS is open to any origin. Ever
 | `DIDIT_ID_WORKFLOW_ID` | required | The ID check's workflow; the same | "Forest ID", `4ddd9ce6-5d8c-4984-9833-5e2b612f30b2` |
 | `DIDIT_BASE_URL` | `https://verification.didit.me` | For a stand-in Didit | the default |
 | `FACE_MODEL` | `sface` | Or `stand-in`, with `DIDIT_BASE_URL` on loopback | `sface` |
-| `APP_ORIGINS` | none: no `returnUrl` | Where Didit and Stripe may send a person back, by origin, comma-separated | the Forest app, https://app.forest.foundation |
+| `APP_ORIGINS` | none: no `returnUrl`, and no app frames the payment page | Where Didit and Stripe may send a person back, and the apps that may frame the payment page, by origin, comma-separated | the Forest app, https://app.forest.foundation |
 | `STRIPE_SECRET_KEY` | none: the ID check is not for sale | Stripe's secret key, `sk_…`, or a restricted one, `rk_…`. A secret | a test-mode key, for "Forest" at Stripe, added by hand in Railway |
+| `STRIPE_PUBLISHABLE_KEY` | required with the key | Its publishable key, `pk_…`, of the same mode, test or live, for the payment page. Public | the test-mode key's, added by hand in Railway |
 | `STRIPE_ID_PRICE` | required with the key | The Stripe Price of a stamp number's first ID stamp, `price_…` | "Forest ID check", $5, `price_1UXRbDILoxkbMfX4cfwRfCOI` |
 | `STRIPE_ADDED_ID_PRICE` | required with the key | The Stripe Price of each ID stamp after it, `price_…` | $2, the foundation's Price for an added ID, added by hand in Railway |
 | `HOST_URL` | none: no gift | The host whose credits the gifts pay for, `https://<host>` | https://host.forest.foundation |
@@ -400,7 +428,8 @@ It refuses to start without a required variable, so never without Didit: every s
 with every reader that trusts its keys, and a stand-in that passed everyone would sign for anyone. It
 also refuses a `verifier-seed.json` that does not hold a secret (quoting none of it),
 `FACE_MODEL=stand-in` with a Didit off this machine, a host or app that is not an origin, and a
-Stripe key or Price that is not one (quoting no key), or a key without both Prices. It never waits
+Stripe key or Price that is not one (quoting no key), or a key without both Prices and a publishable
+key of its own mode. It never waits
 for Stripe to start: it asks for the prices once it runs ([Its keys](#its-keys)).
 
 ### Didit
@@ -457,22 +486,28 @@ setting; nothing here does them. The consent screen above is this code's, and an
 - **By the Pay button.** Stripe's page says "You are charged only if the check passes.", its
   `custom_text[submit][message]`.
 - **How a person pays:** as the key's payment settings at Stripe allow, among the methods that can
-  hold money; the verifier names no method.
+  hold money; the verifier names no method. On the payment page, only those that need no other page:
+  ours are cards, Apple Pay, Google Pay and Link.
+- **Apple Pay and Google Pay on the payment page** need both the app's domain and the verifier's
+  registered with Stripe as payment method domains, under the key's business: ours,
+  app.forest.foundation and verifier.forest.foundation, are, by hand.
 - **The hold:** a card's usually lasts 7 days at Stripe; the verifier cancels each within two.
 - **Its API version:** every request sends `Stripe-Version: 2026-10-28.endive`, the version its code
   and its stand-in follow, so a new default version at Stripe changes nothing here.
 - **What Stripe sees:** what the person pays with, their email, the name, country and, for some
   countries, postal code it asks for, their device's network address, and the app's page they come
-  back to. The verifier tells it only the Price, its mark, `check: id`, on the session and its
-  PaymentIntent, and the text by its Pay button: never a stamp number, a Didit session or anything
-  from the ID. It reads back only each Price's amount and currency, and whether the payment holds
+  back to, or, on the payment page, that page and the app framing it. The verifier tells it only the
+  Price, its mark, `check: id`, on the session and its PaymentIntent, the text by its Pay button
+  and, for the payment page, that the session is embedded and sends the person nowhere: never a
+  stamp number, a Didit session or anything from the ID. It reads back only each Price's amount and currency, and whether the payment holds
   the money or took it, since when, and the mark.
 - **A test-mode key** takes only Stripe's test cards, which anyone can look up, so it charges
   nobody, and a payment made under it is unknown to a live key: `not_paid` there.
 - **Paid and still waiting?** Write to support@forest.foundation.
 - **A live key** is a restricted one with only Prices: Read, Checkout Sessions: Write and
   PaymentIntents: Write, all the verifier uses, for a business at Stripe that is the foundation's,
-  with live Prices in `STRIPE_ID_PRICE` and `STRIPE_ADDED_ID_PRICE`.
+  with live Prices in `STRIPE_ID_PRICE` and `STRIPE_ADDED_ID_PRICE`, and its live publishable key in
+  `STRIPE_PUBLISHABLE_KEY`.
 
 ### Public, secret, kept
 
@@ -485,8 +520,9 @@ setting; nothing here does them. The consent screen above is this code's, and an
   answer, beside how many of their cancels it refused, and at a sweep beside how many deletions
   Didit did not answer, the error's kind and, when one answered, its HTTP status and codes (Stripe's
   error `type`, `code` and `param`; Didit's `code`), each only if it is lower case, digits, `_`, `.`
-  and brackets, at most 64 characters, and not shaped like a Stripe key or a Checkout Session's id.
-  Never what either said in words, a key, a session or a payment.
+  and brackets, at most 64 characters, and not shaped like a Stripe key or a Checkout Session's id
+  or client secret. Never what either said in words, a key, a session, a payment or its client
+  secret.
 
 ### The image and the commands
 
@@ -518,13 +554,14 @@ DIDIT_SANDBOX_API_KEY=<the sandbox application's key> npm run sandbox -- decline
 
 It runs both checks on the sandbox application's two workflows, with its key for both, refuses a key
 that is `DIDIT_API_KEY`, and keeps its own secret and file in
-`data/sandbox/`. With `STRIPE_SECRET_KEY`, `STRIPE_ID_PRICE` and `APP_ORIGINS` set, the ID check is
-paid in Stripe's test mode, with a test card; it refuses a live key.
+`data/sandbox/`. With `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, both Prices and `APP_ORIGINS`
+set, the ID check is paid in Stripe's test mode, with a test card; it refuses a live key.
 
 `test/` covers, against a stand-in Didit and a stand-in Stripe, a real SQLite file and real HTTP:
 both checks, each rule of One person, one stamp number (twins, namesakes, one face with two birth
 dates, someone else at a stamp number and an earlier try among them), the `vendor_data`, the ID
-check's hold, its tries, its cancels and its clock, its two prices and the payment's lock, an ID
+check's hold, its tries, its cancels and its clock, its two prices and the payment's lock, the
+payment page's headers and its script, run with a stand-in for Stripe's, and its one message, an ID
 stamp for each document and the face stamp an ID check gives, the free face tries, which sessions
 keep their faces, the Stripe and Didit clients' requests, verifications and a facts proof made from
 the stamps and checked against the published keys, the lists, their salts and the `vendor_data` hash
@@ -582,6 +619,8 @@ text, as the code has them.
   person Didit no longer matches to their own stamped check, as then, is refused `other_person`.
 - **After the hour, a lost answer loses the list beside the stamp for good:** the stamp comes back
   from `POST /stamp` without it, and a new check gives a new stamp, with its own.
+- **The payment page offers only payment methods that need no other page:** a bank's own page is on
+  Stripe's page only.
 - **A stamp describes the document as it was on the day of the check:** a renewed document takes a
   new, paid ID check, and the old stamp stays good.
 - **The same document checked twice gives a second stamp for it:** the person paid, and an index

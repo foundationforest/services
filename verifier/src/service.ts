@@ -44,8 +44,11 @@ export type Config = {
   gift?: Gift
   /** The origins an app may ask the person to come back to after a check (`returnUrl`); empty for none. */
   appOrigins: string[]
-  /** Stripe's key and the two Prices the ID check sells: for a stamp number's first ID stamp, and for each one after. Unset: the ID check is not for sale. */
-  stripe?: { secretKey: string; price: string; addedPrice: string }
+  /**
+   * Stripe's key, its publishable key, for the payment page, and the two Prices the ID check sells:
+   * for a stamp number's first ID stamp, and for each one after. Unset: the ID check is not for sale.
+   */
+  stripe?: { secretKey: string; publishableKey: string; price: string; addedPrice: string }
   /** The one file; the verifier's seed file sits beside it (`SEED_FILE`). */
   databasePath: string
   port: number
@@ -94,16 +97,21 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     const credits = { face: whole('FACE_CREDITS', env.FACE_CREDITS || '10', 0), id: whole('ID_CREDITS', env.ID_CREDITS || '100', 0) }
     if (credits.face > 0 || credits.id > 0) gift = { origin: origin('HOST_URL', env.HOST_URL), credits }
   }
-  const { STRIPE_ID_PRICE: price, STRIPE_ADDED_ID_PRICE: addedPrice } = env
+  const { STRIPE_ID_PRICE: price, STRIPE_ADDED_ID_PRICE: addedPrice, STRIPE_PUBLISHABLE_KEY: publishableKey } = env
   for (const [name, value] of [['STRIPE_ID_PRICE', price], ['STRIPE_ADDED_ID_PRICE', addedPrice]] as const) {
     if (value && !/^price_[A-Za-z0-9]+$/.test(value)) throw new Error(`${name} is a Stripe Price: price_…`)
   }
+  // Public, but quoted no more than the secret key is.
+  if (publishableKey && !/^pk_(test|live)_[A-Za-z0-9]+$/.test(publishableKey)) throw new Error('STRIPE_PUBLISHABLE_KEY is a Stripe publishable key, pk_…')
   let stripe: Config['stripe']
   if (env.STRIPE_SECRET_KEY) {
     // Never quoted: it is a secret.
     if (!/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(env.STRIPE_SECRET_KEY)) throw new Error('STRIPE_SECRET_KEY is a Stripe secret key, sk_…, or a restricted one, rk_…')
     if (!price || !addedPrice) throw new Error('STRIPE_SECRET_KEY needs STRIPE_ID_PRICE and STRIPE_ADDED_ID_PRICE, the Prices the ID check sells')
-    stripe = { secretKey: env.STRIPE_SECRET_KEY, price, addedPrice }
+    if (!publishableKey) throw new Error('STRIPE_SECRET_KEY needs STRIPE_PUBLISHABLE_KEY, its publishable key, for the payment page')
+    // A test key's sessions are unknown to a live publishable key, and the other way round.
+    if (/_test_/.test(env.STRIPE_SECRET_KEY) !== publishableKey.startsWith('pk_test_')) throw new Error('STRIPE_PUBLISHABLE_KEY is of another mode than STRIPE_SECRET_KEY: both test, or both live')
+    stripe = { secretKey: env.STRIPE_SECRET_KEY, publishableKey, price, addedPrice }
   }
   const appOrigins = (env.APP_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => origin('APP_ORIGINS', o))
   const faceModel = env.FACE_MODEL || 'sface'

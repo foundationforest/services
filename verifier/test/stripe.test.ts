@@ -11,6 +11,7 @@ import { after, before, test } from 'node:test'
 import { PAGE_TEXT, PaymentUnavailable, StripeClient } from '../src/stripe.ts'
 
 const KEY = 'sk_test_51standin'
+const PUBLISHABLE_KEY = 'pk_test_51standin'
 const PRICE = 'price_1UXRbDILoxkbMfX4cfwRfCOI'
 const ADDED_PRICE = 'price_1UXRbDILoxkbMfX4added00'
 const PAYMENT = 'cs_test_a1b2c3d4e5f6g7h8i9j0'
@@ -67,7 +68,7 @@ before(async () => {
 })
 after(() => server.close())
 
-const client = () => new StripeClient({ secretKey: KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: base + '/' })
+const client = () => new StripeClient({ secretKey: KEY, publishableKey: PUBLISHABLE_KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: base + '/' })
 
 /** The API version the client is written for: a literal here, so moving it is a change made on purpose. */
 const VERSION = '2026-10-28.endive'
@@ -137,6 +138,38 @@ test('a Checkout page for one of a Price that only holds the money, saying so by
   await assert.rejects(client().checkout('https://app.example/', false), (error: Error) => error instanceof PaymentUnavailable && error.status === 502 && error.codes.length === 0)
 })
 
+test('a Checkout page to embed: the same Price, mark, hold and Pay-button text, on an embedded page that never sends the person anywhere, answered by its client secret, not a page', async () => {
+  seen.length = 0
+  const clientSecret = `${PAYMENT}_secret_a1b2c3d4e5f6`
+  reply = () => [200, sessionBody({ payment_status: 'unpaid', status: 'open', ui_mode: 'embedded_page', url: null, client_secret: clientSecret })]
+  assert.deepEqual(await client().checkout(undefined, false), { payment: PAYMENT, clientSecret })
+  assert.deepEqual(await client().checkout(undefined, true), { payment: PAYMENT, clientSecret })
+
+  const [made, added] = seen
+  assert.deepEqual([made!.method, made!.url, made!.auth, made!.type, made!.version], ['POST', '/v1/checkout/sessions', `Bearer ${KEY}`, 'application/x-www-form-urlencoded', VERSION])
+  assert.equal(new URLSearchParams(added!.body).get('line_items[0][price]'), ADDED_PRICE, 'for an added ID, the added-ID Price')
+  assert.deepEqual(Object.fromEntries(new URLSearchParams(made!.body)), {
+    mode: 'payment',
+    'line_items[0][price]': PRICE,
+    'line_items[0][quantity]': '1',
+    'custom_text[submit][message]': PAGE_TEXT,
+    ui_mode: 'embedded_page',
+    redirect_on_completion: 'never',
+    'metadata[check]': 'id',
+    'payment_intent_data[capture_method]': 'manual',
+    'payment_intent_data[metadata][check]': 'id',
+  }, 'the hosted page’s fields, with no address to send the person back to')
+
+  // A page alone is no answer for one to embed, nor a client secret for Stripe's own page.
+  for (const answer of [sessionBody({ url: 'https://checkout.stripe.com/c/pay/x', client_secret: null }), sessionBody({ url: null, client_secret: 'not one' }), sessionBody({ id: 'pi_3Mtw', url: null, client_secret: clientSecret })]) {
+    reply = () => [200, answer]
+    await assert.rejects(client().checkout(undefined, false), PaymentUnavailable, JSON.stringify(answer))
+  }
+  reply = () => [200, sessionBody({ url: null, client_secret: clientSecret })]
+  await assert.rejects(client().checkout('https://app.example/', false), PaymentUnavailable)
+  assert.equal(client().publishableKey, PUBLISHABLE_KEY, 'the publishable key, for the payment page')
+})
+
 test('held: a session the verifier made, complete, holding the money or having taken it, since its PaymentIntent was made; anything else is not, and Stripe not answering throws, naming no payment', async () => {
   seen.length = 0
   reply = () => [200, sessionBody()]
@@ -175,7 +208,7 @@ test('held: a session the verifier made, complete, holding the money or having t
     assert.ok(!JSON.stringify(error).includes(KEY.slice(-4)))
     return true
   })
-  const gone = new StripeClient({ secretKey: KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: 'http://127.0.0.1:1' })
+  const gone = new StripeClient({ secretKey: KEY, publishableKey: PUBLISHABLE_KEY, price: PRICE, addedPrice: ADDED_PRICE, baseUrl: 'http://127.0.0.1:1' })
   await assert.rejects(gone.held(PAYMENT), (error: Error) => error instanceof PaymentUnavailable && error.message === 'Stripe could not be reached')
 })
 
