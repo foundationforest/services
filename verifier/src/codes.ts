@@ -21,24 +21,18 @@ export const CODES = [
   'bad_payment',
   // 402
   'not_paid',
-  // 403: the check does not count
+  // 403: the check does not count. Didit's refusal, the first that applies in this order
+  // (didit.ts's REASONS), and then a session not the verifier's to judge, or one unfinished
+  'known_person',
+  'known_face',
+  'face_mismatch',
+  'id_unclear',
+  'face_unclear',
+  'other',
   'unknown_session',
   'wrong_workflow',
-  'declined',
-  'face_seen',
   'expired',
   'not_approved',
-  'no_liveness',
-  'liveness_not_passed',
-  'no_document',
-  'document_not_passed',
-  'no_face_match',
-  'face_match_not_passed',
-  'no_face',
-  'no_document_data',
-  'duplicate_document',
-  'other_person',
-  'too_many_matches',
   // 409
   'session_used',
   'payment_used',

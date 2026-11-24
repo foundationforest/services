@@ -8,14 +8,15 @@ import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { after, before, test } from 'node:test'
 
-import { DiditClient, DiditUnavailable, FACE_RETENTION_DAYS, MATCHES_LISTED, judge, parseDecision, vendorDataFor } from '../src/didit.ts'
+import { CODES } from '../src/codes.ts'
+import { DiditClient, DiditUnavailable, FACE_RETENTION_DAYS, REASONS, judge, parseDecision, reasonOf, stampHash } from '../src/didit.ts'
 
 const KEY = 'test-api-key'
 const WORKFLOW = '550e8400-e29b-41d4-a716-446655440000'
 const SESSION = '4c5c7f3a-1f82-4f3b-8d8e-1a8d2d2f9b7a'
-/** A key for the hash of a stamp number in vendor_data, and a vendor_data under it. */
+/** A key for the hash of a stamp number, and that number's vendor_data under it. */
 const HASH_KEY = new Uint8Array(32).fill(9)
-const VENDOR_DATA = vendorDataFor('face', HASH_KEY, 5n)
+const VENDOR_DATA = stampHash(HASH_KEY, 5n)
 
 /** A decision in the shape of Didit's own example: an uppercase status, reports as arrays, extra fields. */
 function decisionBody(over: Record<string, unknown> = {}) {
@@ -66,14 +67,13 @@ before(async () => {
 })
 after(() => server.close())
 
-const client = (check: 'face' | 'id' = 'face', scenario?: string) => new DiditClient({ apiKey: KEY, workflowId: WORKFLOW, check, baseUrl: base + '/', scenario })
+const client = (scenario?: string) => new DiditClient({ apiKey: KEY, workflowId: WORKFLOW, baseUrl: base + '/', scenario })
 
-test("a session is opened on the workflow under the vendor_data it is given, its check's", async () => {
+test("a session is opened on the workflow under the vendor_data it is given: its stamp number's keyed hash, the same for every check", async () => {
   seen.length = 0
   reply = () => [201, { session_id: SESSION, session_number: 1, url: 'https://verify.didit.me/session/abc', status: 'Not Started', workflow_id: WORKFLOW }]
   const first = await client().createSession({ vendorData: VENDOR_DATA })
-  const idVendorData = vendorDataFor('id', HASH_KEY, 5n)
-  await client('id').createSession({ vendorData: idVendorData })
+  await client().createSession({ vendorData: VENDOR_DATA })
   assert.deepEqual(first, { sessionId: SESSION, url: 'https://verify.didit.me/session/abc' })
 
   const [a, b] = seen
@@ -83,10 +83,10 @@ test("a session is opened on the workflow under the vendor_data it is given, its
   const bodyA = JSON.parse(a.body)
   assert.deepEqual(Object.keys(bodyA).sort(), ['vendor_data', 'workflow_id'], 'nothing about the person')
   assert.deepEqual(bodyA, { workflow_id: WORKFLOW, vendor_data: VENDOR_DATA })
-  assert.equal(JSON.parse(b.body).vendor_data, idVendorData)
-  // A face session under an ID check's vendor_data, or one this verifier did not write: refused before Didit is asked.
-  for (const [check, vendorData] of [['id', VENDOR_DATA], ['face', idVendorData], ['face', 'c0ffee00-0000-4000-8000-000000000000']] as const) {
-    await assert.rejects(client(check).createSession({ vendorData }), /vendor_data/)
+  assert.equal(JSON.parse(b.body).vendor_data, VENDOR_DATA, 'one Didit user for the stamp number')
+  // Anything but a stamp number's keyed hash, as every session carried before, is refused before Didit is asked.
+  for (const vendorData of [`face-${VENDOR_DATA}-c0ffee00-0000-4000-8000-000000000000`, VENDOR_DATA.toUpperCase(), VENDOR_DATA.slice(1), 'c0ffee00-0000-4000-8000-000000000000', '']) {
+    await assert.rejects(client().createSession({ vendorData }), /vendor_data/, vendorData)
   }
   assert.equal(seen.length, 2)
 
@@ -97,7 +97,7 @@ test("a session is opened on the workflow under the vendor_data it is given, its
   assert.equal(withCallback.callback, 'https://app.example/after?check=face')
 
   // In the sandbox, a scenario says what the session comes to; nothing else ever sends one.
-  await client('face', 'decline_duplicated_face').createSession({ vendorData: VENDOR_DATA })
+  await client('decline_duplicated_face').createSession({ vendorData: VENDOR_DATA })
   const sandboxed = JSON.parse(seen[3]!.body)
   assert.deepEqual(Object.keys(sandboxed).sort(), ['sandbox_scenario', 'vendor_data', 'workflow_id'])
   assert.equal(sandboxed.sandbox_scenario, 'decline_duplicated_face')
@@ -115,9 +115,7 @@ test('a decision is read from GET /v3/session/{id}/decision/ and cut down', asyn
     liveness: [{ status: 'Approved' }],
     documents: [],
     faceMatches: [],
-    matches: [],
-    full: false,
-    named: [],
+    risks: [],
     faceImage: 'https://example.com/face.jpg',
     document: null,
   })
@@ -213,14 +211,8 @@ test("an ID check's decision: every text field read on the document, by Didit's 
     liveness: [{ status: 'Approved' }, { status: 'Approved' }],
     documents: [{ status: 'Approved' }, { status: 'Approved' }],
     faceMatches: [{ status: 'Approved' }],
-    // Each face matched, once by its vendor_data, with its session or none; four listed, so the list is not full.
-    matches: [
-      { vendorData: 'id-c0ffee00-0000-4000-8000-000000000001', sessionId: '11111111-2222-3333-4444-555555555555' },
-      { vendorData: 'id-c0ffee00-0000-4000-8000-000000000002', sessionId: null },
-    ],
-    full: false,
-    // Each session a seen-face risk names, sure or possible, once, and none for one that names none; no other risk's.
-    named: ['11111111-2222-3333-4444-555555555555', '77777777-2222-3333-4444-555555555555', null],
+    // Approved: no warning set its status, whatever the steps' own warnings say.
+    risks: [],
     faceImage: 'https://example.com/selfie.jpg',
     // The first document step's text, as Didit read it; a field with no text (null, empty, a number, a list) is absent.
     document: {
@@ -244,18 +236,47 @@ test("an ID check's decision: every text field read on the document, by Didit's 
     },
   })
   const text = JSON.stringify(decision)
-  for (const never of ['media.example', 'Spain', 'Madrid, Spain', 'GARCIA', 'ANSI', '66666666', '88888888', 'Someone Else', 'ocr', 'documentary', 'retained_template', 'LOW_FACE_QUALITY']) {
+  for (const never of ['media.example', 'Spain', 'Madrid, Spain', 'GARCIA', 'ANSI', '11111111', '66666666', '77777777', '88888888', 'c0ffee00', 'Someone Else', 'ocr', 'documentary', 'retained_template', 'LOW_FACE_QUALITY', 'DUPLICATED_FACE']) {
     assert.equal(text.includes(never), false, `${never} is not read`)
   }
   assert.equal(judge(decision, WORKFLOW, 'id'), null)
 })
 
-test('a liveness step that lists as many matches as Didit lists is full: it may have left some out', () => {
-  const step = (n: number) => ({ status: 'Approved', matches: Array.from({ length: n }, (_, i) => ({ session_id: null, vendor_data: `face-${i}` })) })
-  assert.equal(MATCHES_LISTED, 5, "Didit's five")
-  assert.equal(parseDecision(decisionBody({ liveness_checks: [step(4)] })).full, false)
-  assert.equal(parseDecision(decisionBody({ liveness_checks: [step(4), step(5)] })).full, true)
-  assert.equal(parseDecision(decisionBody({ liveness_checks: [{ status: 'Approved', matches: 'five' }] })).full, false)
+test("a decision's risks are those of the warnings Didit says set its status, once each, and no other warning's", () => {
+  const trace = (status_warnings: unknown) => parseDecision(decisionBody({ status: 'Declined', decision_trace: { status: 'Declined', decided_by: 'automatic', status_warnings } })).risks
+  const warning = (risk: unknown) => ({ risk, feature: 'LIVENESS', node_id: 'liveness', log_type: 'error', check_status: 'Declined', source: 'liveness_checks', short_description: 'Duplicated face' })
+  assert.deepEqual(trace([warning('DUPLICATED_FACE'), warning('LOW_LIVENESS_SCORE'), warning('DUPLICATED_FACE')]), ['DUPLICATED_FACE', 'LOW_LIVENESS_SCORE'])
+  assert.deepEqual(trace([warning(7), warning(''), 'DUPLICATED_FACE', null]), [], 'nothing that is no risk')
+  for (const none of [[], null, 'DUPLICATED_FACE', undefined]) assert.deepEqual(trace(none), [], JSON.stringify(none))
+  // A status set by hand lists none, as Didit's sandbox shows: whatever the steps' own warnings say.
+  const byHand = parseDecision(decisionBody({ status: 'Declined', decision_trace: { status: 'Declined', decided_by: 'manual', status_warnings: [] }, liveness_checks: [{ status: 'Declined', warnings: [warning('DUPLICATED_FACE')] }] }))
+  assert.deepEqual(byHand.risks, [])
+  assert.equal(judge(byHand, WORKFLOW), 'other')
+})
+
+test('a refusal is one code: the first of known_person, known_face, face_mismatch, id_unclear and face_unclear that a risk says, else other', () => {
+  assert.deepEqual(REASONS.map(([reason]) => reason), ['known_person', 'known_face', 'face_mismatch', 'id_unclear', 'face_unclear'])
+  const all = REASONS.flatMap(([, risks]) => [...risks])
+  assert.equal(new Set(all).size, all.length, 'each risk says one code')
+  for (const [reason, risks] of REASONS) {
+    assert.ok(CODES.includes(reason), `${reason} is a code`)
+    for (const risk of risks) assert.equal(reasonOf([risk]), reason, risk)
+  }
+  assert.ok(CODES.includes('other'))
+  assert.equal(reasonOf(['POSSIBLE_DUPLICATED_USER']), 'known_person')
+  assert.equal(reasonOf(['DUPLICATED_FACE']), 'known_face')
+  assert.equal(reasonOf(['POSSIBLE_DUPLICATED_FACE']), 'known_face', 'the whole duplicated-face family')
+  assert.equal(reasonOf(['LOW_FACE_MATCH_SIMILARITY']), 'face_mismatch')
+  for (const risk of ['IMAGE_TOO_BLURRY', 'DOCUMENT_EXPIRED', 'DOCUMENT_NOT_SUPPORTED_FOR_APPLICATION', 'PORTRAIT_MANIPULATION_DETECTED']) assert.equal(reasonOf([risk]), 'id_unclear', risk)
+  for (const risk of ['LIVENESS_FACE_ATTACK', 'LOW_LIVENESS_SCORE', 'NO_FACE_DETECTED', 'MULTIPLE_FACES_DETECTED']) assert.equal(reasonOf([risk]), 'face_unclear', risk)
+  // Several: the first in that order, whatever order Didit lists them in.
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER']), 'known_person')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE']), 'known_face')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY']), 'face_mismatch')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED']), 'id_unclear')
+  assert.equal(reasonOf(['FACE_IN_BLOCKLIST', 'LOW_LIVENESS_SCORE']), 'face_unclear')
+  // Any other risk, or none.
+  for (const risks of [[], ['FACE_IN_BLOCKLIST'], ['MINIMUM_AGE_NOT_MET'], ['AML_HIT'], ['duplicated_face']]) assert.equal(reasonOf(risks), 'other', JSON.stringify(risks))
 })
 
 test('a photo is fetched from its signed address without the API key, and only from https or this machine', async () => {
@@ -281,7 +302,7 @@ test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to
   assert.equal(FACE_RETENTION_DAYS, 3650, 'the longest Didit allows')
 
   reply = () => [200, { session_id: SESSION, face_retention_outcome: 'deleted' }]
-  assert.equal(await client('id').deleteSession(SESSION, false), 'deleted', 'what Didit did, as it says it')
+  assert.equal(await client().deleteSession(SESSION, false), 'deleted', 'what Didit did, as it says it')
   assert.deepEqual(JSON.parse(seen[1]!.body), { retain_face_embeddings: false }, 'the face goes with the session, whatever the application’s own setting')
   reply = () => [404, { detail: 'Not found.' }]
   assert.equal(await client().deleteSession(SESSION, true), 'gone', 'a session already deleted')
@@ -291,21 +312,17 @@ test('a session is deleted with DELETE /v3/session/{id}/delete/, asking Didit to
   }
 })
 
-test("a match's user is read with GET /v3/users/{vendor_data}/: the full name and birth date, and nothing else", async () => {
+test('a user is deleted with POST /v3/users/delete/, by its vendor_data alone, keeping no face template; one already gone is no error, a refusal throws', async () => {
   seen.length = 0
-  const vendorData = 'id-c0ffee00-0000-4000-8000-000000000001'
-  reply = () => [200, { didit_internal_id: '9d2f4b6e-1c3a-4e8f-b7d5-0a1c2e3f4a5b', vendor_data: vendorData, display_name: 'Carlos', full_name: 'Carlos Islas', date_of_birth: '1990-01-01', effective_name: 'Carlos', status: 'ACTIVE', portrait_image_url: 'https://media.example/p.jpg', issuing_states: ['MEX'], approved_emails: ['c@example.com'], session_count: 2 }]
-  const user = await client('id').user(vendorData)
-  assert.deepEqual(seen[0], { method: 'GET', url: `/v3/users/${vendorData}/`, key: KEY, body: '' })
-  assert.deepEqual(user, { fullName: 'Carlos Islas', birth: '1990-01-01' }, 'its full name, never the display name the console gives it')
-  reply = () => [200, { vendor_data: vendorData, full_name: null, date_of_birth: null }]
-  assert.deepEqual(await client('id').user(vendorData), { fullName: null, birth: null })
-  reply = () => [404, { detail: 'No user with the supplied vendor_data exists for this application.' }]
-  assert.equal(await client('id').user('from a list/../x'), null, 'no such user')
-  assert.equal(seen.at(-1)!.url, '/v3/users/from%20a%20list%2F..%2Fx/', 'the vendor_data, encoded')
-  for (const answer of [[429, { detail: 'slow down', code: 'throttled' }], [200, 'not json']] as [number, unknown][]) {
+  reply = () => [200, { deleted: 1 }]
+  await client().deleteUser(VENDOR_DATA)
+  assert.deepEqual([seen[0]!.method, seen[0]!.url, seen[0]!.key], ['POST', '/v3/users/delete/', KEY])
+  assert.deepEqual(JSON.parse(seen[0]!.body), { vendor_data_list: [VENDOR_DATA] }, 'its sessions are not named, and no template is kept')
+  reply = () => [200, { deleted: 0 }]
+  await client().deleteUser(VENDOR_DATA)
+  for (const answer of [[409, { code: 'subject_deletion_in_progress', detail: 'Another request is deleting this person.' }], [503, { detail: 'An external store is unavailable.' }], [429, {}]] as [number, unknown][]) {
     reply = () => answer
-    await assert.rejects(client('id').user(vendorData), (error: Error) => error instanceof DiditUnavailable && error.status === answer[0] && !error.message.includes(vendorData))
+    await assert.rejects(client().deleteUser(VENDOR_DATA), (error: Error) => error instanceof DiditUnavailable && error.status === answer[0] && !error.message.includes(VENDOR_DATA) && !JSON.stringify(error).includes('person'))
   }
 })
 
@@ -337,7 +354,7 @@ test('a session Didit does not know is no decision; anything else unexpected thr
     await assert.rejects(client().decision(SESSION), (error: Error) => error instanceof DiditUnavailable && error.message === 'Didit answered 401 to a decision' && error.status === 401 && JSON.stringify(error.codes) === JSON.stringify(codes))
   }
 
-  const unreachable = new DiditClient({ apiKey: KEY, workflowId: WORKFLOW, check: 'face', baseUrl: 'http://127.0.0.1:1' })
+  const unreachable = new DiditClient({ apiKey: KEY, workflowId: WORKFLOW, baseUrl: 'http://127.0.0.1:1' })
   await assert.rejects(unreachable.decision(SESSION), (error: Error) => {
     assert.ok(error instanceof DiditUnavailable)
     assert.ok(!error.message.includes(SESSION))
@@ -350,27 +367,26 @@ test("what Didit's decision means to the verifier, in order", () => {
   assert.equal(judge(null, WORKFLOW), 'unknown_session')
   assert.equal(judge(ok, 'another'), 'wrong_workflow')
   assert.equal(judge(parseDecision({}), WORKFLOW), 'wrong_workflow', 'an empty answer counts for nothing')
-  // Declined, or Expired or Abandoned: a session that will never pass, each with its own code. A face
-  // seen before is the verifier's to judge, from the matches: Didit's decision alone never says so.
-  for (const status of ['Declined', 'DECLINED']) assert.equal(judge({ ...ok, status }, WORKFLOW), 'declined', status)
-  const seenFace = { ...ok, matches: [{ vendorData: 'face-x', sessionId: null }], named: [SESSION] }
-  assert.equal(judge({ ...seenFace, status: 'Declined' }, WORKFLOW), 'declined', 'never face_seen')
-  assert.equal(judge(seenFace, WORKFLOW), null, 'approved with a face seen, Didit passed it')
+  // Declined or In Review: Didit's refusal, by the risks that set it; none, other.
+  for (const status of ['Declined', 'DECLINED', 'In Review', 'IN_REVIEW']) {
+    assert.equal(judge({ ...ok, status }, WORKFLOW), 'other', status)
+    assert.equal(judge({ ...ok, status, risks: ['DUPLICATED_FACE'] }, WORKFLOW), 'known_face', status)
+    assert.equal(judge({ ...ok, status, risks: ['DOCUMENT_EXPIRED', 'POSSIBLE_DUPLICATED_USER'] }, WORKFLOW, 'id'), 'known_person', status)
+  }
+  assert.equal(judge({ ...ok, risks: ['DUPLICATED_FACE'] }, WORKFLOW), null, 'Approved is Didit passing it, whatever it says')
   for (const status of ['Expired', 'EXPIRED', 'Abandoned', 'ABANDONED']) assert.equal(judge({ ...ok, status }, WORKFLOW), 'expired', status)
-  // No one reviews: In Review is unfinished, as anything else but approved is.
-  for (const status of ['Not Started', 'NOT_STARTED', 'In Progress', 'In Review', 'IN_REVIEW', 'Resubmitted', '']) {
+  for (const status of ['Not Started', 'NOT_STARTED', 'In Progress', 'Resubmitted', 'Kyc Expired', '']) {
     assert.equal(judge({ ...ok, status }, WORKFLOW), 'not_approved', status)
   }
-  assert.equal(judge({ ...ok, liveness: [] }, WORKFLOW), 'no_liveness')
-  assert.equal(judge({ ...ok, liveness: [{ status: 'Not Finished' }] }, WORKFLOW), 'liveness_not_passed')
+  // Approved, without a step its check needs: not a workflow that makes this check.
+  assert.equal(judge({ ...ok, liveness: [] }, WORKFLOW), 'wrong_workflow')
+  assert.equal(judge({ ...ok, liveness: [{ status: 'Not Finished' }] }, WORKFLOW), 'wrong_workflow')
 
-  // The ID check: the same, then every document step and every face match.
-  const id = { ...ok, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }] }
+  // The ID check: the same, with every document step and every face match.
+  const id = { ...ok, documents: [{ status: 'Approved' }], faceMatches: [{ status: 'Approved' }], document: {} }
   assert.equal(judge(id, WORKFLOW, 'id'), null)
-  assert.equal(judge(ok, WORKFLOW, 'id'), 'no_document', 'a face check is not an ID check')
-  assert.equal(judge({ ...id, liveness: [] }, WORKFLOW, 'id'), 'no_liveness', 'liveness before the document')
-  assert.equal(judge({ ...id, documents: [{ status: 'Declined' }] }, WORKFLOW, 'id'), 'document_not_passed')
-  assert.equal(judge({ ...id, faceMatches: [] }, WORKFLOW, 'id'), 'no_face_match')
-  assert.equal(judge({ ...id, faceMatches: [{ status: 'In Review' }] }, WORKFLOW, 'id'), 'face_match_not_passed')
-  assert.equal(judge({ ...id, status: 'In Review' }, WORKFLOW, 'id'), 'not_approved')
+  assert.equal(judge(ok, WORKFLOW, 'id'), 'wrong_workflow', 'a face check is not an ID check')
+  for (const over of [{ liveness: [] }, { documents: [{ status: 'Declined' }] }, { faceMatches: [] }, { faceMatches: [{ status: 'In Review' }] }, { document: null }]) {
+    assert.equal(judge({ ...id, ...over }, WORKFLOW, 'id'), 'wrong_workflow', JSON.stringify(over))
+  }
 })

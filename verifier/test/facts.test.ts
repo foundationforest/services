@@ -1,7 +1,7 @@
 // The facts lists and the vendor_data hash, pinned (test/vectors.json): each value the verifier's code
 // gives, and the same value made again by hand, HMAC-SHA256 from node:crypto, each list fact by fact,
 // and its facts by the standard's own factsNumber; then a stamp signed with a list, read back by the
-// standard's factListOf. And who an ID check read, and whether it is the same person as a Didit user.
+// standard's factListOf.
 //
 //   npm test
 
@@ -14,8 +14,8 @@ import { hkdf, seedNumber, stampNumberOf } from '@foundationforest/keys'
 import { FACTS_LISTED, factListOf, factsNumber, signStamp } from '@foundationforest/proofs'
 import { b64u, hex } from '@foundationforest/folders'
 
-import { DOCUMENT_FIELDS, readVendorData, stampHash, vendorDataFor } from '../src/didit.ts'
-import { FACE_FACTS, ID_FACTS, faceList, idList, person, saltsOf, samePerson, words } from '../src/facts.ts'
+import { DOCUMENT_FIELDS, stampHash } from '../src/didit.ts'
+import { FACE_FACTS, ID_FACTS, faceList, idList, saltsOf } from '../src/facts.ts'
 import { INFO } from '../src/seed.ts'
 
 const vectors = JSON.parse(readFileSync(new URL('vectors.json', import.meta.url), 'utf8'))
@@ -39,20 +39,10 @@ test("the vendor_data hash: HMAC-SHA256 of the stamp number's 32 bytes, under th
   assert.equal(createHmac('sha256', key).update(bytes).digest('hex'), v.hash, 'by hand')
   assert.equal(stampHash(key, BigInt(v.stampNumber)), v.hash)
 
-  // A session's vendor_data: its check, that hash, and a random id, fresh each time; read back.
-  const face = vendorDataFor('face', key, BigInt(v.stampNumber))
-  const id = vendorDataFor('id', key, BigInt(v.stampNumber))
-  assert.match(face, new RegExp(`^face-${v.hash}-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`))
-  assert.match(id, new RegExp(`^id-${v.hash}-`))
-  assert.notEqual(face, vendorDataFor('face', key, BigInt(v.stampNumber)), 'each session its own')
-  assert.ok(face.length < 128, "under Didit's 128")
-  assert.deepEqual(readVendorData(face), { check: 'face', hash: v.hash })
-  assert.deepEqual(readVendorData(id), { check: 'id', hash: v.hash })
+  // Every session's vendor_data, face or ID: that hash, 64 hex characters, under Didit's 128.
+  assert.match(stampHash(key, BigInt(v.stampNumber)), /^[0-9a-f]{64}$/)
   assert.notEqual(stampHash(key, BigInt(v.stampNumber) + 1n), v.hash, 'another stamp number, another hash')
   assert.notEqual(stampHash(await hkdf(secret, 'another'), BigInt(v.stampNumber)), v.hash, 'another key, another hash')
-  for (const other of ['face-c0ffee00-0000-4000-8000-000000000000', `face-${v.hash}`, `selfie-${v.hash}-c0ffee00-0000-4000-8000-000000000000`, `face-${v.hash.toUpperCase()}-c0ffee00-0000-4000-8000-000000000000`, '']) {
-    assert.equal(readVendorData(other), null, other)
-  }
 })
 
 test("the salts: the first 31 bytes of HMAC-SHA256 of the session's id, a 0 byte and the fact's name, under the key derived as fact-salt", async () => {
@@ -122,33 +112,4 @@ test('the fields: their order does not matter, a missing one is simply absent, a
   assert.equal(idList('m', embedding, full, salts).length, FACTS_LISTED, 'every leaf full')
   assert.ok(factsNumber(idList('m', embedding, full, salts)))
   assert.throws(() => factsNumber(idList('m', embedding, { ...full, first_name: 'Ada' }, salts)), RangeError, 'one more than the list holds')
-})
-
-test('who an ID check read: the words of its first and full name, NFKD, marks removed, lower case, letters only, and a real birth date', () => {
-  // NFKD folds the full-width letters and splits the accents off, which go.
-  assert.deepEqual(words('\uff2a\uff4f\uff53e\u0301 MAR\u00cdA'), ['jose', 'maria'])
-  assert.deepEqual(words("  O'Brien-Núñez\tÅsa 3rd "), ['o', 'brien', 'nunez', 'asa', 'rd'], 'anything but a letter parts words')
-  assert.deepEqual(words(null), [])
-  assert.deepEqual(person({ first_name: 'María José', last_name: 'López', full_name: 'María José López', date_of_birth: '1990-04-01' }), { first: ['maria', 'jose'], full: ['maria', 'jose', 'lopez'], birth: '1990-04-01' })
-  assert.deepEqual(person({ full_name: 'Besa  Krasniqi', date_of_birth: ' 1970-01-01 ', issuing_state: 'XKX' }), { first: [], full: ['besa', 'krasniqi'], birth: '1970-01-01' }, 'a full name alone will do')
-  for (const birth of ['1990-02-30', '01/04/1990', '0099-01-01']) assert.equal(person({ full_name: 'Ada Lovelace', date_of_birth: birth }), null, birth)
-  assert.equal(person({ last_name: 'Lovelace', date_of_birth: '1990-04-01' }), null, 'no first or full name')
-  assert.equal(person({ first_name: '—', date_of_birth: '1990-04-01' }), null, 'no letter in it')
-  assert.equal(person(null), null)
-})
-
-test('the same person: the same birth date, and every word of the first name in their full name, or every word of their full name in this one', () => {
-  const read = (first: string, full: string, birth = '1990-01-01') => person({ first_name: first, full_name: full, date_of_birth: birth })!
-  const user = (fullName: string | null, birth: string | null = '1990-01-01') => ({ fullName, birth })
-  assert.equal(samePerson(read('Carlos', 'Carlos Islas Garza'), user('Carlos Islas')), true)
-  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('Carlos Islas Garza')), true)
-  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('carlos islas', ' 1990-01-01 ')), true)
-  assert.equal(samePerson(read('Eva', 'Eva Islas'), user('Ana Islas')), false, 'twins')
-  assert.equal(samePerson(read('María Fernanda', 'María Fernanda López'), user('María José López')), false)
-  assert.equal(samePerson(read('Carlos', 'Carlos Islas', '1991-01-01'), user('Carlos Islas')), false, 'another birth date')
-  assert.equal(samePerson(read('Carlos', 'Carlos Islas'), user('Carlos Islas', null)), false, 'no birth date')
-  assert.equal(samePerson(read('Lena', 'Lena Ortiz'), user(null)), true, 'no name: the birth date alone')
-  assert.equal(samePerson(read('Lena', 'Lena Ortiz'), user(' — ')), true, 'a name with no letter is none')
-  assert.equal(samePerson(person({ full_name: 'Besa Krasniqi', date_of_birth: '1990-01-01' })!, user('Besa Krasniqi Berisha')), false, 'no first name read: only the other way')
-  assert.equal(samePerson(person({ full_name: 'Besa Krasniqi Berisha', date_of_birth: '1990-01-01' })!, user('Besa Krasniqi')), true)
 })

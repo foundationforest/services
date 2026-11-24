@@ -1,25 +1,31 @@
-// The verifier's one file, eight tables:
+// The verifier's one file, nine tables:
 //
 //   sessions       for each check session that gave a stamp: the SHA-256 of its id, the stamp number it
 //                  was signed for, and which check it was (`face` or `id`), so a session gives its stamp
-//                  to one stamp number only, once its hour is over is known as used, and a face Didit
-//                  matches from it is known as that stamp number's own (server.ts)
+//                  to one stamp number only, and once its hour is over is known as used
 //   stamps         for each stamp number: the first stamp the face key signed for it, and every stamp
 //                  the ID key signed for it, each as its facts and its signature (r8, s), so a lost
 //                  stamp is handed back
-//   to_delete      for each session that gave a stamp and is not yet deleted in Didit: its id, which
-//                  check it was, when it was first signed, and whether Didit keeps its face (it gave its
-//                  stamp number its first stamp of a kind), so it is signed again only within the hour
-//                  after, and the sweep deletes it in Didit once the hour is over, keeping its face
-//                  template or not; it goes once Didit has deleted the session
+//   to_delete      for each session that gave a stamp, until its hour is over: its id, which check it
+//                  was, when it was first signed, and whether Didit keeps its face (a face session that
+//                  gave its stamp number its first face stamp), so it is signed again only within the
+//                  hour after; then the sweep deletes a face session in Didit, keeping its face template
+//                  or not, and forgets an ID session, which Didit keeps; it goes once Didit has deleted
+//                  the session, or, for an ID session, at once
 //   opened         for each session the verifier opened that gave no stamp and is not yet deleted in
 //                  Didit: its id, which check it was, when it opened, and `try`: for an ID session which
 //                  of its payment's tries it was, with the SHA-256 of that payment while it is not used
 //                  up, so it is stamped only with that payment, its refusal ends the payment only when it
 //                  was the last try; for a face session, 1 once it counted as one of its stamp number's
-//                  free tries, so it counts once. The sweep deletes it in Didit, face and all, a day
-//                  after it opened; it goes once Didit has deleted the session, or moves to `to_delete`
-//                  once it gives a stamp
+//                  free tries, so it counts once. The sweep asks Didit about it every minute, and deletes
+//                  it in Didit, face and all, a day after it opened; it goes then, or moves to
+//                  `to_delete` once it gives a stamp
+//   refused        for each opened session Didit refused (Declined or In Review), or that the verifier
+//                  could not sign for want of a face: its id, the code the app is told (codes.ts), the
+//                  SHA-256 of the `vendor_data` Didit holds it under beside its id (`ownerOf`), and
+//                  whether Didit has deleted it, so the sweep deletes it in Didit at once, face and all,
+//                  and the app still gets its code when it asks, for that stamp number only; it goes
+//                  with its `opened` row, a day after the session opened
 //   face_tries     for each stamp number a face session of which Didit finished without giving it a
 //                  stamp: how many such sessions, so it opens no face session after FACE_TRIES
 //   gifts          each stamp number given its face stamp's gift (gift.ts), with a hash of the buy it
@@ -33,9 +39,9 @@
 //
 // Nothing else: no face, no embedding, no name, no birth date, no document, none of the list beside a
 // stamp, of a gift only a hash of its buy, and of a payment nothing of who paid or with what, no
-// amount and no time, and nothing beside a stamp number. A session id is kept as its hash; in clear,
-// and with a time, only in `to_delete` and `opened`, until Didit has deleted the session, a day at
-// most, so then the file names no Didit session and holds no time. A payment sits beside the sessions
+// amount and no time, and nothing beside a stamp number. A session id is kept as its hash; in clear
+// only in `to_delete`, `opened` and `refused`, with a time in the first two, for a day at most, so then
+// the file names no Didit session and holds no time. A payment sits beside the sessions
 // it opened only there, and only until it is used up. The stamp number links `sessions`, `stamps`,
 // `face_tries` and the gifts: the hashes of the sessions signed for it, face and ID. Deleted bytes are
 // overwritten (`secure_delete`), the dropped `fingerprints` table's among them: keyed hashes of a name
@@ -51,6 +57,15 @@ import type { Check } from './didit.ts'
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {
   return createHash('sha256').update(sessionId, 'utf8').digest()
+}
+
+/**
+ * What the file keeps of whose a refused session is: the SHA-256 of its `vendor_data` and its id, so
+ * it tells the stamp number the session was opened for from any other, and no two rows tell they are
+ * one stamp number's.
+ */
+export function ownerOf(vendorData: string, sessionId: string): Uint8Array {
+  return createHash('sha256').update(vendorData, 'utf8').update(Uint8Array.of(0)).update(sessionId, 'utf8').digest()
 }
 
 /** What the file keeps of a payment's id: its SHA-256, so the file lists no payment. */
@@ -94,6 +109,7 @@ export class Store {
   readonly #addStamp: StatementSync
   readonly #stamps: StatementSync
   readonly #stampsOf: StatementSync
+  readonly #stampNumbers: StatementSync
   readonly #dropStamp: StatementSync
   /** Each check's gift: give one, and the buy one was given for. */
   readonly #gifts: Record<Check, { give: StatementSync; given: StatementSync }>
@@ -114,6 +130,12 @@ export class Store {
   readonly #faceTries: StatementSync
   readonly #markTry: StatementSync
   readonly #addFaceTry: StatementSync
+  readonly #refuse: StatementSync
+  readonly #refusal: StatementSync
+  readonly #toPoll: StatementSync
+  readonly #toRefuse: StatementSync
+  readonly #gone: StatementSync
+  readonly #forgetRefusal: StatementSync
 
   constructor(path: string) {
     this.#db = new DatabaseSync(path)
@@ -129,6 +151,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS stamps (${STAMPS}) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, ${KEEP_FACE}) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS refused (session_id TEXT PRIMARY KEY, code TEXT NOT NULL, owner BLOB NOT NULL, gone INTEGER NOT NULL) WITHOUT ROWID;
       DROP TABLE IF EXISTS fingerprints;
       CREATE TABLE IF NOT EXISTS face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
@@ -140,6 +163,7 @@ export class Store {
     this.#addStamp = this.#db.prepare('INSERT OR IGNORE INTO stamps (stamp_number, kind, facts, r8, s) VALUES (?, ?, ?, ?, ?)')
     this.#stamps = this.#db.prepare('SELECT kind, facts, r8, s FROM stamps WHERE stamp_number = ? ORDER BY kind, facts')
     this.#stampsOf = this.#db.prepare('SELECT stamp_number, facts, r8, s FROM stamps WHERE kind = ?')
+    this.#stampNumbers = this.#db.prepare('SELECT DISTINCT stamp_number FROM stamps')
     this.#dropStamp = this.#db.prepare('DELETE FROM stamps WHERE stamp_number = ? AND kind = ? AND facts = ?')
     const gifts = (table: string) => ({ give: this.#db.prepare(`INSERT OR IGNORE INTO ${table} (stamp_number, buy) VALUES (?, ?)`), given: this.#db.prepare(`SELECT buy FROM ${table} WHERE stamp_number = ?`) })
     this.#gifts = { face: gifts('gifts'), id: gifts('id_gifts') }
@@ -151,7 +175,7 @@ export class Store {
     this.#addOpened = this.#db.prepare('INSERT OR IGNORE INTO opened (session_id, kind, opened_at, payment, try) VALUES (?, ?, ?, ?, (SELECT tries FROM payments WHERE hash = ?))')
     this.#opener = this.#db.prepare('SELECT payment FROM opened WHERE session_id = ?')
     this.#tryOf = this.#db.prepare('SELECT try FROM opened WHERE session_id = ?')
-    this.#stale = this.#db.prepare('SELECT session_id, kind FROM opened WHERE opened_at <= ? ORDER BY opened_at')
+    this.#stale = this.#db.prepare('SELECT o.session_id, o.kind, r.gone FROM opened o LEFT JOIN refused r ON r.session_id = o.session_id WHERE o.opened_at <= ? ORDER BY o.opened_at')
     this.#closed = this.#db.prepare('DELETE FROM opened WHERE session_id = ?')
     this.#unlink = this.#db.prepare('UPDATE opened SET payment = NULL WHERE payment = ?')
     this.#payment = this.#db.prepare('SELECT tries, stamped FROM payments WHERE hash = ?')
@@ -163,6 +187,13 @@ export class Store {
     // A face session counts once, and only while it is opened and gave no stamp.
     this.#markTry = this.#db.prepare("UPDATE opened SET try = 1 WHERE session_id = ? AND kind = 'face' AND try IS NULL")
     this.#addFaceTry = this.#db.prepare('INSERT INTO face_tries (stamp_number, tries) VALUES (?, 1) ON CONFLICT (stamp_number) DO UPDATE SET tries = tries + 1')
+    // Only a session opened and giving no stamp is refused, and its first code stays.
+    this.#refuse = this.#db.prepare('INSERT OR IGNORE INTO refused (session_id, code, owner, gone) SELECT session_id, ?, ?, 0 FROM opened WHERE session_id = ?')
+    this.#refusal = this.#db.prepare('SELECT code, owner FROM refused WHERE session_id = ?')
+    this.#toPoll = this.#db.prepare('SELECT session_id, kind FROM opened WHERE session_id NOT IN (SELECT session_id FROM refused) ORDER BY opened_at')
+    this.#toRefuse = this.#db.prepare('SELECT r.session_id, o.kind FROM refused r JOIN opened o ON o.session_id = r.session_id WHERE r.gone = 0 ORDER BY o.opened_at')
+    this.#gone = this.#db.prepare('UPDATE refused SET gone = 1 WHERE session_id = ?')
+    this.#forgetRefusal = this.#db.prepare('DELETE FROM refused WHERE session_id = ?')
   }
 
   /**
@@ -190,12 +221,6 @@ export class Store {
   /** Whether this session gave a stamp. */
   holds(sessionId: string): boolean {
     return this.#session.get(sessionHash(sessionId)) !== undefined
-  }
-
-  /** The stamp number this session gave a stamp to, or undefined if it gave none. */
-  stampNumberOf(sessionId: string): bigint | undefined {
-    const kept = this.#session.get(sessionHash(sessionId))
-    return kept === undefined ? undefined : fromBytes32(kept.stamp_number as Uint8Array)
   }
 
   /**
@@ -246,13 +271,12 @@ export class Store {
         // changes the face stamp handed back, and any face stamp gives the same verification. Every ID
         // stamp is kept, one for each document checked.
         const firstFace = !held.face && (input.kind === 'face' || input.face !== undefined)
-        const firstId = input.kind === 'id' && held.id.length === 0
         if (input.kind === 'id') add('id', input.stamp)
         if (firstFace) add('face', input.kind === 'face' ? input.stamp : input.face!)
-        // Didit keeps the face of a session that gave its stamp number its first stamp of a kind, and
-        // no other's: a person's own kept faces stay at two at most. The first signing's time and
-        // choice stay: a session signed again within its hour gets no more time.
-        this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, firstFace || firstId ? 1 : 0)
+        // Didit keeps the face template of a face session that gave its stamp number its first face
+        // stamp, and no other face session's; an ID session Didit keeps whole. The first signing's time
+        // and choice stay: a session signed again within its hour gets no more time.
+        this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, input.kind === 'face' && firstFace ? 1 : 0)
         this.#closed.run(input.sessionId)
       }
       this.#db.exec(outcome === 'ok' ? 'COMMIT' : 'ROLLBACK')
@@ -262,6 +286,11 @@ export class Store {
       if (this.#db.isTransaction) this.#db.exec('ROLLBACK')
       throw error
     }
+  }
+
+  /** Every stamp number that holds a stamp, of either key. */
+  stampNumbers(): bigint[] {
+    return this.#stampNumbers.all().map((r) => fromBytes32(r.stamp_number as Uint8Array))
   }
 
   /** The stamps kept for this stamp number: the first face stamp signed for it, and every ID stamp. */
@@ -318,15 +347,45 @@ export class Store {
     return this.#due.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check, keepFace: r.keep_face === 1 }))
   }
 
-  /** The sessions opened at `before` or earlier that gave no stamp and are not yet deleted in Didit, oldest first. */
-  stale(before: number): { sessionId: string; kind: Check }[] {
-    return this.#stale.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check }))
+  /**
+   * The sessions opened at `before` or earlier that gave no stamp, oldest first, each with whether
+   * Didit has already deleted it, as a refused one.
+   */
+  stale(before: number): { sessionId: string; kind: Check; gone: boolean }[] {
+    return this.#stale.all(before).map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check, gone: r.gone === 1 }))
   }
 
-  /** Forgets a session's id and time, once Didit has deleted it. */
+  /** The sessions opened that gave no stamp and Didit has not refused, oldest first: those the sweep asks Didit about. */
+  undecided(): { sessionId: string; kind: Check }[] {
+    return this.#toPoll.all().map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check }))
+  }
+
+  /** A refusal of an opened session, by its code and its `vendor_data` at Didit; the first one stays. */
+  refuse(sessionId: string, code: string, vendorData: string): void {
+    this.#refuse.run(code, ownerOf(vendorData, sessionId), sessionId)
+  }
+
+  /** The code a session was refused with, if it was, and whether it was opened under this `vendor_data`. */
+  refusal(sessionId: string, vendorData: string): { code: string; theirs: boolean } | undefined {
+    const row = this.#refusal.get(sessionId)
+    return row && { code: row.code as string, theirs: Buffer.from(row.owner as Uint8Array).equals(Buffer.from(ownerOf(vendorData, sessionId))) }
+  }
+
+  /** The refused sessions not yet deleted in Didit, oldest first. */
+  refusedNotGone(): { sessionId: string; kind: Check }[] {
+    return this.#toRefuse.all().map((r) => ({ sessionId: r.session_id as string, kind: r.kind as Check }))
+  }
+
+  /** A refused session Didit has deleted: kept, with its code, till its day. */
+  gone(sessionId: string): void {
+    this.#gone.run(sessionId)
+  }
+
+  /** Forgets a session's id and time: once Didit has deleted it, or, for an ID session that gave a stamp, once its hour is over. */
   deleted(sessionId: string): void {
     this.#deleted.run(sessionId)
     this.#closed.run(sessionId)
+    this.#forgetRefusal.run(sessionId)
   }
 
   /** Whether this payment opened a session. */

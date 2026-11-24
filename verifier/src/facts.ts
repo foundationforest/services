@@ -1,4 +1,4 @@
-// What a stamp's facts are made from, and whether an ID check read the same person as a Didit user.
+// What a stamp's facts are made from.
 //
 // A stamp is the standard's (proofs/README.md, "The stamp and the verification"): the person's stamp
 // number and one field element, `facts`, signed with the standard's `signStamp`. Both of this
@@ -20,12 +20,6 @@
 // takes the same session's salts, and the verifier tells whether the face stamp a stamp number holds
 // is the one this session signed by their facts. To anyone without the
 // secret they are random; whoever holds it already holds every facts number the verifier signed.
-//
-// Who an ID check read is how the verifier knows a person came to it before, while keeping nothing
-// of who they are: Didit's face search finds the faces like this one, and the verifier compares what
-// this check read with each matched face's Didit user (`samePerson`). A name alone never decides,
-// so strangers with one name and birth date both pass; a face alone never decides, so twins pass.
-// The country is left out on purpose: a renewed document, or another country's, is the same person.
 
 import { createHmac } from 'node:crypto'
 
@@ -33,7 +27,7 @@ import { isFieldElement } from '@foundationforest/keys'
 import type { Fact } from '@foundationforest/proofs'
 import { b64u } from '@foundationforest/folders'
 
-import { DOCUMENT_FIELDS, type Document, type User } from './didit.ts'
+import { DOCUMENT_FIELDS, type Document } from './didit.ts'
 
 /** The face key's facts, by name, in their list's order. */
 export const FACE_FACTS = ['model', 'embedding'] as const
@@ -65,45 +59,6 @@ export function faceList(model: string, embedding: Uint8Array, salts: Salts): Fa
 /** The ID key's list: the face key's two, then every field of the document, in the order of their names. */
 export function idList(model: string, embedding: Uint8Array, document: Document, salts: Salts): Fact[] {
   return [...faceList(model, embedding, salts), ...Object.keys(document).sort().map((name) => fact(name, document[name]!, salts))]
-}
-
-/** Who an ID check read: the words of its first name and of its full name, and its birth date as YYYY-MM-DD. */
-export type Person = { first: string[]; full: string[]; birth: string }
-
-/** Days from 1970-01-01 to a YYYY-MM-DD date, or null for anything that is not a real date. */
-export function daysOf(birth: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birth)) return null
-  const [y, m, d] = birth.split('-').map(Number) as [number, number, number]
-  const ms = Date.UTC(y, m - 1, d)
-  // Date.UTC rolls 1990-02-30 over to March, and reads a year below 100 as 1900 and up: neither comes back the same.
-  return new Date(ms).toISOString().slice(0, 10) === birth ? ms / 86_400_000 : null
-}
-
-/** The words of a name: Unicode NFKD, its marks removed, lower case, letters only. */
-export const words = (name: string | null | undefined): string[] =>
-  (name ?? '').normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase().match(/\p{L}+/gu) ?? []
-
-/** Who a document step read; null when it read no name, first or full, or no real birth date. */
-export function person(document: Document | null): Person | null {
-  if (!document) return null
-  const [first, full] = [words(document.first_name), words(document.full_name)]
-  const birth = (document.date_of_birth ?? '').trim()
-  if ((first.length === 0 && full.length === 0) || daysOf(birth) === null) return null
-  return { first, full, birth }
-}
-
-/** Every one of `some`, at least one, is among `all`. */
-const within = (some: string[], all: string[]) => some.length > 0 && some.every((word) => all.includes(word))
-
-/**
- * Whether this check read the same person as a Didit user its face matched: the same birth date, and
- * names that fit, every word of this check's first name in the user's full name, or every word of
- * the user's full name in this check's. A user with no name: the birth date alone decides.
- */
-export function samePerson(person: Person, user: User): boolean {
-  if (user.birth?.trim() !== person.birth) return false
-  const theirs = words(user.fullName)
-  return theirs.length === 0 || within(person.first, theirs) || within(theirs, person.full)
 }
 
 /** A field element as decimal text, as the apps write a stamp number: no sign, no leading zero. */
