@@ -1,25 +1,26 @@
 // `/profiles/<address>/listing/<id>`: one listing, at its own address under /profiles. Its photos,
-// its fields in the order its market asks its role (its description first, then its preview's) with
-// each one's piece and each number's unit, the name places gives each of its places' centres, who
-// posted it and what that profile shows with the two latest reviews it received, and how to reach
-// them: the contact the listing gives, and a link to message the profile about this listing from
-// each app lists/apps.json names (its `about`). A listing that is not listed has its page too,
-// saying why, as its profile's page does.
+// its fields in the order its market asks its role (its title and description first, then its
+// preview's) with each one's piece and each number's unit, the name places gives each of its
+// places' centres, who posted it and what that profile shows with the two latest reviews it
+// received, and how to reach them: the contact the listing gives, and a link to message the profile
+// about this listing from each app lists/apps.json names (its `about`). A listing that is not listed
+// has its page too, saying why, as its profile's page does.
 //
 // Drawn the same with photos or without, the photos only adding the top: on a phone, full width and
 // swiped sideways (CSS scroll snapping), each with "1 / 3"; on a laptop, one at a time with round
-// arrows linking to each photo's anchor. Then its market and its role; its title, the description's
-// first line; its prices in the app's words (words.ts), each with its note under it; who posted it,
-// their animal, short name, rating and badges, linking to their page; its details, each field's
-// label small above its value as the markets read it, each place in words with a link to its point
-// on a map, the contact last; the rest of its description; the reviews; and the line saying this
-// index lists it, linking its JSON. On a phone, a bar fixed at the foot with its price and Message;
-// on a laptop, two columns, the right one staying in view, with its market, title, price, Message and
-// who posted it, and the reviews under. A listing whose market has left the directory says so.
+// arrows linking to each photo's anchor. Then its market and its role; its title, else the
+// description's first line; its prices in the app's words (words.ts), each with its note under it;
+// who posted it, their animal, short name, rating and badges, linking to their page; its details,
+// each field's label small above its value as the markets read it, each place in words with a link
+// to its point on a map, the contact last; the rest of its description, all of it under a title; the
+// reviews; and the line saying this index lists it, linking its JSON. On a phone, a bar fixed at the
+// foot with its price and Message; on a laptop, two columns, the right one staying in view, with its
+// market, title, price, Message and who posted it, and the reviews under. A listing whose market has
+// left the directory says so.
 
 import type { Check } from '../filter.ts'
 import { parse } from '../store.ts'
-import { aboutOf, animalHtml, answerText, askedOf, colorOf, fieldLabel, firstHost, firstLine, fits, goneHtml, inWords, isGone, isPlace, isRequest, type Listing, listingOf, mapUrl, marketHtml, offerOf, piecesOf, pricesOf, ratedHtml, type Result, reviewHtml, type Shown, shownFor, unitsOf, valueText, labelsOf, badgeHtml } from './common.ts'
+import { aboutOf, animalHtml, answerText, askedOf, colorOf, fieldLabel, firstHost, firstLine, fits, goneHtml, inWords, isGone, isPlace, isRequest, type Listing, listingOf, mapUrl, marketHtml, offerOf, piecesOf, pricesOf, ratedHtml, type Result, reviewHtml, type Shown, shownFor, unitsOf, valueText, labelsOf, badgeHtml, titleIn } from './common.ts'
 import { icon } from './icons.ts'
 import { type ReviewColumns, type ReviewEntry, reviewEntry } from './profile.ts'
 import { html, type Page, type Raw, short, urls } from './template.ts'
@@ -39,7 +40,7 @@ export type ListingPage = {
   listing: Listing & { time: number; listed: boolean; why?: string }
   checks: Check[]
 } & Shown & {
-  /** The fields its market asks its role's listings, in that order, as the markets' ask gives them: description first, then the preview's, contact last. */
+  /** The fields its market asks its role's listings, in that order, as the markets' ask gives them: title and description first, then the preview's, contact last. */
   fields: string[]
   /** Each of `fields`' piece, as its market names it: a `photo` field names photos. */
   pieces: { [field: string]: string }
@@ -58,10 +59,14 @@ export type ListingPage = {
 const descriptionOf = (o: ListingPage) => (typeof o.listing.body.description === 'string' ? o.listing.body.description : '')
 
 /**
- * The title, the description's first line, and the text under it, the rest. A first line longer
- * than a title holds is cut short, and then the whole description is the text, so none is lost.
+ * The heading and the text under it: with a title, the title and the whole description; else the
+ * description's first line and the rest. A first line longer than a heading holds is cut short, and
+ * then the whole description is the text, so none is lost.
  */
-function headOf(description: string): { head: string; rest: string } {
+function headOf(o: ListingPage): { head: string; rest: string } {
+  const title = titleIn(o.listing.body)
+  const description = descriptionOf(o)
+  if (title) return { head: title, rest: description.trim() }
   const [first = '', ...more] = description.split('\n')
   const line = first.trim()
   return line.length <= 100 ? { head: line, rest: more.join('\n').trim() } : { head: firstLine(line, 100), rest: description.trim() }
@@ -131,23 +136,24 @@ export const listing: Page<ListingPage> = {
       message: aboutOf(lists.apps, found.profile, found.address),
     }
   },
-  // Its title is its first price, in the app's words, and its description's first line.
-  title: (o, site) => [priceText(pricesOf(o.listing.body)[0], isRequest(site, o.market, o.role)), firstLine(descriptionOf(o), 60)].filter(Boolean).join(' · ') || 'A listing',
+  // Its title is its first price, in the app's words, and its own title, else its description's
+  // first line.
+  title: (o, site) => [priceText(pricesOf(o.listing.body)[0], isRequest(site, o.market, o.role)), titleIn(o.listing.body) || firstLine(descriptionOf(o), 60)].filter(Boolean).join(' · ') || 'A listing',
   description: (o) => descriptionOf(o) || null,
   body(o, base, site) {
     const body = o.listing.body
     const request = isRequest(site, o.market, o.role)
     // The fields: as its market orders them, then any the market does not name; never one drawn
-    // above or below them (the description, the price), a photo field (drawn as photos), or the
-    // standard's `files`, the list of what the files are. The contact comes last.
-    const drawn = ['description', 'price', 'contact', 'files']
+    // above or below them (the title, the description, the price), a photo field (drawn as photos),
+    // or the standard's `files`, the list of what the files are. The contact comes last.
+    const drawn = ['title', 'description', 'price', 'contact', 'files']
     const names = [...o.fields.filter((n) => n in body), ...Object.keys(body).filter((n) => !o.fields.includes(n))].filter((n) => !drawn.includes(n) && o.pieces[n] !== 'photo' && valueText(body[n]))
     // Each field's label and value as its market says them, for a listing that fits; one that does
     // not reads by its shape, under its name in words, but its places, in words wherever they are.
     const asked = askedOf(site.markets, o.market, o.role)
     const read = fits(site.markets, o.market, o.role, body)
     const fieldOf = (n: string) => asked.find((a) => a.name === n)
-    const { head, rest } = headOf(descriptionOf(o))
+    const { head, rest } = headOf(o)
     const prices = pricesOf(body)
     const contact = typeof body.contact === 'string' && body.contact ? body.contact : ''
     const value = (n: string): Raw | string => {
@@ -164,7 +170,7 @@ export const listing: Page<ListingPage> = {
     const photos = n
       ? html`<div class="gal" style="--h:${colorOf(site, o.market)}">${o.listing.photos.map(
           (src, i) =>
-            html`<figure class="ph" id="${`photo-${i + 1}`}"><img src="${src}" alt="${descriptionOf(o)}"${i ? html` loading="lazy"` : ''}>${
+            html`<figure class="ph" id="${`photo-${i + 1}`}"><img src="${src}" alt="${titleIn(body) || descriptionOf(o)}"${i ? html` loading="lazy"` : ''}>${
               n > 1 ? html`<a class="round back" href="${at(i - 1)}" aria-label="Previous photo">${icon('caret-left', 'bold')}</a><a class="round next" href="${at(i + 1)}" aria-label="Next photo">${icon('caret-right', 'bold')}</a>` : ''
             }<span class="at">${i + 1} / ${n}</span></figure>`,
         )}</div>`

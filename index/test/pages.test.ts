@@ -103,8 +103,8 @@ before(async () => {
       files: COAT.map((sha256, n) => ({ sha256, type: 'image/jpeg', size: 1000 + n })),
       contact: 'seller@example.com',
     }),
-    // A photo field named pastWork, not photos: the details leave it out by its piece.
-    at(repairer!, 'listing/taps', { description: 'Leaks and taps fixed.', repairs: ['plumbing'], base: { lat: '37.39', lon: '-5.98', radiusKm: 10 }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
+    // A photo field named pastWork, not photos: the details leave it out by its piece. Its own title.
+    at(repairer!, 'listing/taps', { title: 'Plumber in Seville', description: 'Leaks and taps fixed.', repairs: ['plumbing'], base: { lat: '37.39', lon: '-5.98', radiusKm: 10 }, licences: 'Gas', pastWork: [COAT[0]], files: [{ sha256: COAT[0], type: 'image/jpeg', size: 1000 }] }),
     at(uncounted!, 'listing/u', { description: 'Maths, uncounted.' }),
     at(s1!, 'review/a', { subject: a!.key.address, score: '9', listing: `${a!.key.address}/listing/a`, text: 'Very clear.' }),
     at(s2!, 'review/a', { subject: a!.key.address, score: '9', listing: `${a!.key.address}/listing/a` }),
@@ -375,6 +375,9 @@ test('results, one look: a picture and three lines in a grid, or two lines in a 
   assert.equal(titleOf(SITE, 'wardrobe', 'seller', { kind: 'shoes', footLength: '27' }), '27 centimetres')
   assert.equal(titleOf(SITE, 'wardrobe', 'seller', { kind: 'shoes', footLength: 27 }), '27')
   assert.equal(titleOf(SITE, 'lessons', 'tutor', {}), 'A listing')
+  // Its own title before all of these; one of only spaces is none.
+  assert.equal(titleOf(SITE, 'wardrobe', 'seller', { title: 'Camel coat', description: 'A wool coat.', footLength: '27' }), 'Camel coat')
+  assert.equal(titleOf(SITE, 'wardrobe', 'seller', { title: '  ', description: 'A wool coat.' }), 'A wool coat.')
 })
 
 test('trust and uniqueness only in a fold', async () => {
@@ -617,11 +620,11 @@ test("a listing's page and its twin: its fields in its market's order, its place
   assert.deepEqual(o.listing.body, p.listings.find((x) => x.address === `${a}/listing/a`)!.body)
   // Its message link is each app's about: the profile, and the listing's full address.
   assert.deepEqual(o.message, [{ name: 'Forest app', url: `https://app.test.example/message?to=${a}&listing=${encodeURIComponent(`${a}/listing/a`)}` }])
-  // The fields the market asks a tutor, in the markets' ask's order: the description first, then the
-  // preview, place after the mode its when names, then the rest, contact last.
-  assert.deepEqual(o.fields, ['description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'spots', 'hours', 'contact'])
+  // The fields the market asks a tutor, in the markets' ask's order: the title and the description
+  // first, then the preview, place after the mode its when names, then the rest, contact last.
+  assert.deepEqual(o.fields, ['title', 'description', 'subjects', 'price', 'mode', 'place', 'languages', 'levels', 'minutes', 'ages', 'spots', 'hours', 'contact'])
   const lessons = JSON.parse(readFileSync(join(MARKETS, 'markets/lessons.json'), 'utf8')) as { listing: { [name: string]: { piece: string } } }
-  assert.deepEqual(o.pieces, { ...Object.fromEntries(Object.entries(lessons.listing).map(([name, f]) => [name, f.piece])), contact: 'text' })
+  assert.deepEqual(o.pieces, { title: 'text', ...Object.fromEntries(Object.entries(lessons.listing).map(([name, f]) => [name, f.piece])), contact: 'text' })
   assert.deepEqual(o.units, { minutes: 'minutes', ages: 'years' })
   assert.deepEqual(o.labels, { subjects: { maths: 'Maths', physics: 'Physics' }, languages: { en: 'English', es: 'Spanish' }, mode: { 'in-person': 'In person' } })
   // Its place named by places at its centre: Madrid, whose size times 5 reaches its 5 km.
@@ -702,6 +705,8 @@ test("a listing's page and its twin: its fields in its market's order, its place
   // Its JSON-LD: the Offer at the listing's own page, each price a unit price for its count of its per.
   const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)
   assert.deepEqual([ld['@graph'][0]['@type'], ld['@graph'][0].mainEntity['@type'], ld['@graph'][0].mainEntity.url], ['ItemPage', 'Offer', `${BASE}/profiles/${a}/listing/a`])
+  // With no title, no name: its description says what it is.
+  assert.deepEqual([ld['@graph'][0].mainEntity.name, ld['@graph'][0].mainEntity.description], [undefined, 'Maths and physics, in Madrid.'])
   assert.deepEqual(ld['@graph'][0].mainEntity.priceSpecification, [
     { '@type': 'UnitPriceSpecification', price: '30', priceCurrency: 'USD', referenceQuantity: { '@type': 'QuantitativeValue', value: 1, unitText: 'hour' } },
     { '@type': 'UnitPriceSpecification', price: '1300', priceCurrency: 'MXN', referenceQuantity: { '@type': 'QuantitativeValue', value: 2, unitText: 'month' } },
@@ -752,6 +757,36 @@ test("photos: each file a listing's fields name, linked at its profile entry's f
   assert.deepEqual(photosOf({ photos: [COAT[0]], files: [] }, PHOTOS), [])
   assert.deepEqual(photosOf({ description: COAT[0]! }, PHOTOS), [])
   assert.deepEqual((await twin<ListingPage>(i, `/profiles/${addressOf('a')}/listing/a.json`)).body.listing.photos, [])
+})
+
+test("a listing's own title: its results', its page's heading, title and photos' words, its whole description under it, and its offer's name", async () => {
+  const repairer = addressOf('repairer')
+  const taps = `${BASE}/profiles/${repairer}/listing/taps`
+  // Every result shows its title, never its description: in search, in its market and on its profile's page.
+  for (const where of ['/search', '/markets/repairs', `/profiles/${repairer}`]) {
+    const shown = mainOf((await page(i, where)).text)
+    assert.ok(shown.includes(`<a class="result" href="${taps}">`) && shown.includes('<span class="t">Plumber in Seville</span>'), where)
+    assert.ok(!shown.includes('Leaks and taps fixed.'), where)
+  }
+  const html = (await page(i, `/profiles/${repairer}/listing/taps`)).text
+  // With no price, its page's title is the title alone; with one, the price first, as without a title.
+  assert.ok(html.includes('<title>Plumber in Seville</title>'))
+  const o = (await twin<ListingPage>(i, `/profiles/${repairer}/listing/taps.json`)).body
+  const priced = { ...o, listing: { ...o.listing, body: { ...o.listing.body, price: [{ amount: '40', currency: 'EUR', per: 'hour' }] } } }
+  assert.equal(listingPage.title(priced, SITE), '€40 an hour · Plumber in Seville')
+  // The heading, the photo's words, and the whole description under About; the title in no detail.
+  assert.ok(html.includes('<h1>Plumber in Seville</h1>'))
+  assert.ok(html.includes(`<img src="${host.url}/v1/files/${COAT[0]}" alt="Plumber in Seville">`), html)
+  assert.ok(html.includes('<section class="about"><h2>About</h2><p class="text">Leaks and taps fixed.</p></section>'))
+  assert.ok(!html.includes('<dt>Title</dt>'))
+  // The page's meta description is still its description.
+  assert.ok(html.includes('<meta name="description" content="Leaks and taps fixed.">'))
+  // Its Offer's name is its title, beside its description: on its page and in search's results.
+  const offer = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]!)['@graph'][0].mainEntity
+  assert.deepEqual([offer.name, offer.description], ['Plumber in Seville', 'Leaks and taps fixed.'])
+  const found = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec((await page(i, '/search')).text)![1]!)['@graph'][0].mainEntity.itemListElement
+  const item = found.map((e: { item: { url: string; name?: string } }) => e.item).find((e: { url: string }) => e.url === taps)
+  assert.equal(item.name, 'Plumber in Seville')
 })
 
 test('the apps a page links to: lists/apps.json, a message link and an about link each, none without it, and one that does not read stops the start', async () => {
