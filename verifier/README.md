@@ -436,9 +436,9 @@ check:
 > stamp is deleted a day after it began, its face with it. Didit also keeps its record of the full
 > name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps
 > it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them.
-> It gives you a stamp, with every text field read from your ID beside it (your name, date of birth,
-> document number and the rest), for you to keep; a profile that shows it says only that you were
-> checked.
+> It gives you an ID stamp, with every text field read from your ID beside it (your name, date of
+> birth, document number and the rest), for you to keep, and a face stamp from the same selfie if
+> you have none yet; a profile that shows either says only that you were checked.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
