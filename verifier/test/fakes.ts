@@ -313,8 +313,8 @@ const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-
 const TABLES = [
   'CREATE TABLE deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID',
   'CREATE TABLE face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE fingerprints (first_name BLOB NOT NULL, last_name BLOB NOT NULL, birth BLOB NOT NULL, personal_number BLOB NOT NULL, id_type BLOB NOT NULL, country BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (first_name, last_name, birth, personal_number, id_type, country, owner)) WITHOUT ROWID',
+  'CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL, deleted INTEGER NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
@@ -331,8 +331,8 @@ const TABLES = [
  * deleted, each with the payment that opened it while it is open, or null; of those, each refused,
  * with its code; each stamp number's face tries; the stamp numbers given each check's gift; each
  * payment that opened an ID session, by its Checkout Session's id, with its tries and whether it is
- * used up; by `vendor_data`, each stamp number whose face Didit holds, how many scrambled copies each
- * holds, and each face deletion with what became of it.
+ * used up; by `vendor_data`, each stamp number whose face Didit holds, each whose person deleted it,
+ * how many scrambled copies each holds, and each face deletion with what became of it.
  */
 export type Expected = {
   sessions: [string, bigint, Check][]
@@ -344,6 +344,7 @@ export type Expected = {
   idGifts?: bigint[]
   payments?: [string, number, boolean][]
   faces?: string[]
+  deletedFaces?: string[]
   fingerprints?: [string, number][]
   deletions?: [string, 'requested' | 'done'][]
   never: string[]
@@ -435,8 +436,11 @@ export function assertKept(path: string, expected: Expected): void {
     const wantPaid = payments.map(([payment, tries, stamped]) => `${Buffer.from(paymentHash(checkoutOf(payment))).toString('hex')} ${tries} ${stamped ? 1 : 0}`).sort()
     assert.deepEqual(paid, wantPaid, 'each payment, hashed, with its tries and whether it gave a stamp, and nothing beside it')
     const owner = (r: Record<string, unknown>) => Buffer.from(r.owner as Uint8Array).toString('hex')
-    const faces = db.prepare('SELECT owner FROM faces').all().map(owner).sort()
+    const faces = db.prepare('SELECT owner FROM faces WHERE deleted = 0').all().map(owner).sort()
     assert.deepEqual(faces, [...(expected.faces ?? [])].sort(), 'by its keyed hash, each stamp number whose face Didit holds')
+    const deleted = db.prepare('SELECT owner, until FROM faces WHERE deleted = 1').all()
+    assert.deepEqual(deleted.map(owner).sort(), [...(expected.deletedFaces ?? [])].sort(), 'by its keyed hash, each stamp number whose person deleted its face')
+    assert.ok(deleted.every((r) => r.until === 0), 'and no time beside it')
     const copies = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
     assert.deepEqual(copies, (expected.fingerprints ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many scrambled copies each stamp number holds')
     const deletions = db.prepare('SELECT owner, done_at FROM deletions').all().map((r) => `${owner(r)} ${r.done_at === null ? 'requested' : 'done'}`).sort()

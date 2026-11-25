@@ -819,7 +819,7 @@ test('releasing a session whose stamp number holds no stamp and has no other ses
   }
 })
 
-test('the scrambled copy: an ID check whose first name, first last name and birth date match another stamp number’s copy is refused, known_person, when Didit matched its face, from any country, or when no face of it is at Didit; a stranger who shares them, and the same stamp number again, pass', async () => {
+test('the scrambled copy: an ID check whose first name, first last name and birth date match another stamp number’s copy is refused, known_person, when Didit matched its face, from any country, or when its person deleted that face; a stranger who shares them, and the same stamp number again, pass', async () => {
   const seed = seedJson()
   const h = await start({ seed: seed.json })
   try {
@@ -852,7 +852,7 @@ test('the scrambled copy: an ID check whose first name, first last name and birt
     const gs = await h.idSession(passedId('zoe', zoe, { knownFaces: [stampHash(key, f)] }), g)
     assert.deepEqual((await Promise.all([idStamp(h, fs, f), idStamp(h, gs, g)])).map((r) => r.status).sort(), [200, 403])
 
-    // a deletes her face: 28 days on, Didit holds none of hers to compare...
+    // a deletes her face: 28 days on, Didit holds none of hers, and the file keeps that she deleted it...
     assert.equal((await h.post('/delete', { stampNumber: a.toString() })).status, 200)
     h.later(DELETE_AFTER_MS)
     await h.verifier.sweep()
@@ -862,13 +862,13 @@ test('the scrambled copy: an ID check whose first name, first last name and birt
     // and one that does not match passes: another birth date.
     assert.equal((await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace', { date_of_birth: '1990-04-02' })), e), e)).status, 200)
 
-    // Each stamp number with an ID stamp keeps its copy: a's two IDs, two rows; c's, e's, and one of f's and g's.
+    // Each stamp number with an ID stamp keeps its copy: a's two IDs, one row, as they give the same three details; c's, e's, and one of f's and g's.
     await h.verifier.close()
     const db = new DatabaseSync(h.dbPath, { readOnly: true })
     const rows = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => [Buffer.from(r.owner as Uint8Array).toString('hex'), r.n as number] as const)
     db.close()
     const passedOne = [f, g].find((k) => rows.some(([owner]) => owner === stampHash(key, k)))!
-    assert.deepEqual(new Map(rows), new Map([[stampHash(key, a), 2], [stampHash(key, c), 1], [stampHash(key, passedOne), 1], [stampHash(key, e), 1]]))
+    assert.deepEqual(new Map(rows), new Map([[stampHash(key, a), 1], [stampHash(key, c), 1], [stampHash(key, passedOne), 1], [stampHash(key, e), 1]]))
   } finally {
     await h.verifier.close().catch(() => {})
   }
@@ -953,8 +953,9 @@ test('a face deleted: POST /delete waits 28 days and can be undone till then; th
     await h.verifier.close()
     assertKept(h.dbPath, {
       sessions: [[signed.sessionId, n, 'face'], [idSession, n, 'id'], [next.sessionId, n, 'face'], [bob.sessionId, m, 'face']],
-      // n's new face, and of m none, deleted; both deletions, and the payment, forgotten.
+      // n's new face, held again; m's, deleted, kept so for good; both deletions, and the payment, forgotten.
       faces: [mine],
+      deletedFaces: [stampHash(key, m)],
       fingerprints: [[mine, 1]],
       never: [],
     })
@@ -963,13 +964,14 @@ test('a face deleted: POST /delete waits 28 days and can be undone till then; th
   }
 })
 
-test('a face template’s five years over: its Didit user deleted, the name and birth date Didit keeps with it too; a match of its scrambled copy then refuses alone', async () => {
+test('a face template’s five years over: its Didit user deleted, the name and birth date Didit keeps with it too; a match of its scrambled copy then passes, so a common name is not refused for good', async () => {
   const seed = seedJson()
   const h = await start({ seed: seed.json })
   try {
     const key = await hkdf(seed.bytes, 'vendor-data')
     const [n, m] = [await stampNumber(), await stampNumber()]
-    assert.equal((await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace')), n), n)).status, 200)
+    const first = await h.idSession(passedId('ada', doc('Lovelace')), n)
+    assert.equal((await idStamp(h, first, n)).status, 200)
     h.later(FACE_KEPT_MS - 1)
     await h.verifier.sweep()
     assert.deepEqual(h.faces.deletedUsers, [], 'not before')
@@ -981,10 +983,21 @@ test('a face template’s five years over: its Didit user deleted, the name and 
     await h.verifier.sweep()
     await h.verifier.sweep()
     assert.deepEqual(h.faces.deletedUsers, [stampHash(key, n)], 'once')
-    // With no face of n's at Didit, a match of n's copy refuses m.
-    assert.deepEqual(await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace')), m), m), { status: 403, body: { error: 'known_person' } })
-  } finally {
+    // n's face aged out, not deleted: a match of n's copy lets m through, whoever m is.
+    const later = await h.idSession(passedId('ada', doc('Lovelace')), m)
+    assert.equal((await idStamp(h, later, m)).status, 200)
     await h.verifier.close()
+    // n's face row gone with its years, its copy kept; m's face kept, as Didit held none of m's.
+    assertKept(h.dbPath, {
+      sessions: [[first, n, 'id'], [later, m, 'id']],
+      toDelete: [later],
+      payments: [[h.paidFor.get(later)!, ID_TRIES, true]],
+      faces: [stampHash(key, m)],
+      fingerprints: [[stampHash(key, n), 1], [stampHash(key, m), 1]],
+      never: [],
+    })
+  } finally {
+    await h.verifier.close().catch(() => {})
   }
 })
 
@@ -1691,7 +1704,7 @@ test('at start, a file an earlier version wrote moves to these tables: its stamp
     db.close()
     assert.equal(tables.stamps, 'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)) WITHOUT ROWID')
     assert.equal(tables.to_delete, 'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, keep_face INTEGER NOT NULL DEFAULT 1) WITHOUT ROWID')
-    assert.equal(tables.fingerprints, 'CREATE TABLE fingerprints (first_name BLOB NOT NULL, last_name BLOB NOT NULL, birth BLOB NOT NULL, personal_number BLOB NOT NULL, id_type BLOB NOT NULL, country BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (first_name, last_name, birth, personal_number, id_type, country, owner)) WITHOUT ROWID')
+    assert.equal(tables.fingerprints, 'CREATE TABLE fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID')
     assert.match(tables.payments, /^CREATE TABLE payments \(hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL, at INTEGER NOT NULL DEFAULT \d+\) WITHOUT ROWID$/)
     assert.equal('stamps_before' in tables, false)
     const kept = new DatabaseSync(dbPath, { readOnly: true })

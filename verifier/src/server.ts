@@ -74,8 +74,9 @@
 // that code when it asks for S, and deleted in Didit at once. A face check gives a new face stamp; an
 // ID check, a new ID stamp, and, when S holds no face stamp, a face stamp from the same selfie: an ID
 // check is a face check and a document. An ID check Didit approved is refused, `known_person`, when
-// another stamp number's scrambled copy (fingerprint.ts) matches its first name, first last name and
-// birth date and it is the same person: its face matched, or no face of it is at Didit (`seenBefore`).
+// another stamp number holds the same scrambled copy of its first name, first last name and birth date
+// (fingerprint.ts) and is the same person: its face matched, or its person deleted it (`seenBefore`).
+// One whose face's years are over is not, so a common name is never refused for good.
 //
 // One free face check: a face session for S that Didit finished (approved, declined or in review) and
 // that an app asked a stamp of, refused, is S's try, once (store.ts); after FACE_TRIES, S opens no
@@ -109,7 +110,7 @@ import { type Check, type Decision, DiditUnavailable, FACE_RETENTION_DAYS, type 
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceList, idList, saltsOf } from './facts.ts'
-import { type Fingerprint, fingerprintOf, personOf } from './fingerprint.ts'
+import { personOf, scrambled } from './fingerprint.ts'
 import { payPage } from './page.ts'
 import type { Ed25519Key } from './seed.ts'
 import { FACE_TRIES, type KeptStamp, type Store, paymentHash } from './store.ts'
@@ -755,15 +756,19 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   /**
    * Whether another stamp number already holds an ID stamp for this person, by its scrambled copy
-   * (fingerprint.ts): one whose copy matches this one's first name, first last name and birth date,
-   * and whose face Didit matched to this check's selfie, or holds no more, as its person deleted it or
-   * its years are over. One whose face Didit holds and did not match is a stranger who shares the
-   * details, and both are kept. A stamp number that holds an ID stamp is never refused by it: another
-   * ID of the same person is always fine, as its face matched its document.
+   * (fingerprint.ts): one that holds the same copy, and whose face Didit matched to this check's
+   * selfie, or whose person deleted it. One whose face Didit holds and did not match is a stranger who
+   * shares the details, and both are kept; one whose face's years are over, or that Didit never held,
+   * passes too, so strangers with a common name are not refused for good once faces age out. A stamp
+   * number that holds an ID stamp is never refused by it: another ID of the same person is always
+   * fine, as its face matched its document.
    */
-  function seenBefore(fingerprint: Fingerprint, decision: Decision): boolean {
+  function seenBefore(fingerprint: Uint8Array, decision: Decision): boolean {
     const others = store.holders(fingerprint).filter((other) => other !== decision.vendorData)
-    return others.some((other) => !store.faceKept(other) || decision.knownFaces.includes(other))
+    return others.some((other) => {
+      const face = store.face(other)
+      return face === 'deleted' || (face === 'held' && decision.knownFaces.includes(other))
+    })
   }
 
   /** A refusal of this session, kept, so the sweep deletes it in Didit at once, as one Didit refused. */
@@ -779,7 +784,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     // Signed again within its hour, the session's scrambled copy is kept already.
     const person = again ? null : personOf(decision, now())
     if (!again && !person) throw refuse(sessionId, decision, 'id_unclear')
-    const fingerprint = person ? fingerprintOf(deps.hashKeys.fingerprint, person) : undefined
+    // Slow on purpose, and on its own thread, outside the queue below.
+    const fingerprint = person ? await scrambled(deps.hashKeys.fingerprint, person) : undefined
     const embedded = await embedding(id, sessionId, decision)
     const salts = saltsOf(deps.hashKeys.salt, sessionId)
     const stamp = signed(id, stampNumber, idList(embedder.model, embedded, decision.document!, salts))

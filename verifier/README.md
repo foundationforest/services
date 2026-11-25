@@ -6,14 +6,14 @@ verified without saying who you are, or which of your other profiles they go wit
 Foundation runs this copy, at https://verifier.forest.foundation. Anyone can sign stamps; the main
 way is a verifier like this one, and each reader decides which verifiers count. It keeps your stamp
 number, which check gave it, the stamps and how many free face tries it used, and, from the ID
-check, a scrambled copy of your name, birth date and ID details, so no other seed of yours gets
-an ID stamp; of the ID check's payment, a hash for 30 days, never beside your stamp. Your face, and
-from the ID check your ID's photos and what is read on it, go to Didit, its check provider, which
-decides who is the same person; an hour after your stamp Didit keeps only a template of your face,
-with your name, birth date and ID's country after an ID check, until you delete your face or five
-years pass. How you paid stays with Stripe. Both checks are for people 18 and older. The face check
-is free, once; the ID check, which gives a face stamp too, holds $5 for your first ID and $2 for
-each you add, taken only if it gives you a new stamp. No key of yours, no account.
+check, a scrambled copy of your first name, first last name and birth date, so no other seed of
+yours gets an ID stamp; of the ID check's payment, a hash for 30 days, never beside your stamp. Your
+face, and from the ID check your ID's photos and what is read on it, go to Didit, its check
+provider, which decides who is the same person; an hour after your stamp Didit keeps only a template
+of your face, with your name, birth date and ID's country after an ID check, until you delete your
+face or five years pass. How you paid stays with Stripe. Both checks are for people 18 and older.
+The face check is free, once; the ID check, which gives a face stamp too, holds $5 for your first ID
+and $2 for each you add, taken only if it gives you a new stamp. No key of yours, no account.
 
 ## How it works
 
@@ -109,46 +109,43 @@ of them says.
 ### The scrambled copy
 
 Didit keeps no ID check ([The sweep](#the-sweep)), so the verifier counts each person once itself:
-every ID stamp keeps a row beside its stamp number's keyed hash, for good, each detail scrambled on
-its own.
+every ID stamp keeps one scrambled value beside its stamp number's keyed hash, for good, of three
+details, and nothing else of the ID.
 
-| Column | The detail |
+| Detail | From |
 |---|---|
-| `first_name` | The first given name |
-| `last_name` | The first family name |
-| `birth` | The birth date, Didit's `date_of_birth` |
-| `personal_number` | The ID's personal number, when it has one (Mexico's CURP), its letters and digits |
-| `id_type` | The ID's type, Didit's `document_type` (`Passport`, `Identity Card`) |
-| `country` | The ID's country, Didit's `issuing_state` |
+| The first given name | The document's machine-readable zone when it has one, as passports and most ID cards do, else what Didit read on its face |
+| The first family name | The same |
+| The birth date | Didit's `date_of_birth`, never the zone's, which writes the year in two digits |
 
-- **Scrambled:** each detail is HMAC-SHA256, under a key derived from the verifier's secret ([Its
-  keys](#its-keys)), of its column's name, a 0 byte and the detail: keyed and one-way, the same
-  detail always the same bytes. A detail the ID lacks is kept empty. Without the secret no guess can
-  be tested against one; whoever holds it can try every value of a detail, one detail at a time.
-- **The names** come from the document's machine-readable zone when it has one, as passports and
-  most ID cards do, and otherwise from what Didit read on its face; cleaned: capitals, no accents,
-  an apostrophe dropped and anything else that is not a letter a space, single spaces; then each is
-  its first word.
-- **The birth date and the country** are Didit's, never the zone's, which writes the year in two
-  digits and some countries' codes its own way (Germany's is `D`).
+- **Cleaned:** capitals, no accents, an apostrophe dropped and anything else that is not a letter a
+  space, single spaces; then each name is its first word.
+- **Scrambled together** by scrypt, a scramble made slow on purpose (N = 2^16, r = 8, p = 1: 64 MB
+  and about a fifth of a second a check), with a key derived from the verifier's secret as its salt
+  ([Its keys](#its-keys)), the three joined by 0 bytes: keyed, one-way, and the same three details
+  always the same value, so a check finds a match by its own value alone.
+- **What it can tell:** only whether a given name and birth date match. Without the secret no guess
+  can be tested at all; with it, one guess at a time: every birth date in a hundred years for one
+  known name is about two hours of one machine's time, the whole table thousands of years.
+- **The country is not in it,** so the same person's ID from a second country matches too. A rule
+  that needs another detail applies to the checks after it.
 
-A row matches another when its first name, first last name and birth date all match. The country is
-not part of it, so the same person's ID from a second country is found too; the other details are
-kept for rules to come. On every ID check Didit approves, before signing, for each other stamp
-number whose row matches:
+On every ID check Didit approves, before signing, for each other stamp number that holds the same
+value:
 
-| Its face at Didit | Didit's decision | Then |
+| Its face | Didit's decision | Then |
 |---|---|---|
-| Held | Matched this check's selfie to it (`matches[]`, by its `vendor_data`) | Refused, `known_person` |
-| Held | No match | It passes, both rows kept: a stranger who shares the details |
-| Gone, deleted or its five years over | | Refused, `known_person` |
+| Held at Didit | Matched this check's selfie to it (`matches[]`, by its `vendor_data`) | Refused, `known_person` |
+| Held at Didit | No match | It passes, both kept: a stranger who shares the details |
+| Deleted by its person ([Deleting a face](#deleting-a-face)) | | Refused, `known_person` |
+| Its five years over | | It passes, so a common name is not refused for good once faces age out |
 
 - **A stamp number that holds an ID stamp** is never refused by it: another ID of the same person is
   always fine, as its face matched its document.
-- **One at a time:** the rows are looked up in the same queue as an ID stamp's last steps, so two
-  checks of one person at once never both pass.
-- **Its face at Didit** is the file's `faces` ([What it keeps](#what-it-keeps)): Didit keeps one
-  template a stamp number, so the verifier knows whose face is there to compare.
+- **One at a time:** the values are looked up in the same queue as an ID stamp's last steps, so two
+  checks of one person at once never both pass; each is made before it, on its own thread.
+- **Its face** is the file's `faces` ([What it keeps](#what-it-keeps)): Didit keeps one template a
+  stamp number, so the verifier knows whose face is there to compare, and whose its person deleted.
 
 ### The ID check's payment
 
@@ -371,10 +368,12 @@ while it waits, the same date. Till then `POST /delete/undo` undoes it,
 2. **Once Didit lists none,** it deletes the Didit user (`POST /v3/users/delete/`): the full name,
    birth date and countries Didit keeps on it go too. A step Didit does not answer is tried at the
    next sweep.
-3. **Kept:** the stamps, and the scrambled copy. `POST /stamp` answers
-   `{"state":"done","doneOn":"<YYYY-MM-DD>"}` for 90 days, then the file forgets the deletion.
+3. **Kept:** the stamps, the scrambled copy, and, for good, that its person deleted the face, so a
+   match of its copy then refuses ([The scrambled copy](#the-scrambled-copy)). `POST /stamp` answers
+   `{"state":"done","doneOn":"<YYYY-MM-DD>"}` for 90 days, then the file forgets the deletion's days.
 
-Its next check that gives a stamp keeps a new template, as Didit holds none of that stamp number's.
+Its next check that gives a stamp keeps a new template, as Didit holds none of that stamp number's,
+and its face is held again.
 
 ### What it keeps
 
@@ -390,8 +389,8 @@ One SQLite file (a database in a single file), twelve tables:
 | `face_tries` | Each stamp number one of whose face sessions Didit finished without giving it a stamp, and how many | One free face check a stamp number |
 | `gifts`, `id_gifts` | Each stamp number given its face stamp's gift, or its ID stamp's, with a hash of the buy | One gift a person from each check; the same buy gets the same ticket |
 | `payments` | The SHA-256 of each payment that opened an ID session, how many sessions it opened, whether it is used up, and when it opened its first, for 30 days | One payment, three sessions at most and one ID stamp |
-| `fingerprints` | Each ID stamp's scrambled copy: its first name, first last name, birth date, personal number, ID type and country, each scrambled on its own, beside its stamp number's keyed hash, for good; one row for the same details twice | No other stamp number gets an ID stamp for the same person ([The scrambled copy](#the-scrambled-copy)) |
-| `faces` | Each stamp number's keyed hash whose face template Didit holds, and when its five years end | One template a stamp number; whose face the scrambled copy can compare; its Didit user deleted when it ends |
+| `fingerprints` | Each ID stamp's scrambled copy: one value of its first name, first last name and birth date, beside its stamp number's keyed hash, for good; one row for the same value twice | No other stamp number gets an ID stamp for the same person ([The scrambled copy](#the-scrambled-copy)) |
+| `faces` | Each stamp number's keyed hash whose face template Didit holds, and when its five years end, when the row goes; or whose person deleted their face, with no time, for good | One template a stamp number; whose face the scrambled copy can compare, and whose was deleted; its Didit user deleted when its years end |
 | `deletions` | Each stamp number's keyed hash whose person asked to delete their face, when it runs and, once it has, when it ran, for 90 days | Its day, its undo, and `POST /stamp` saying so |
 
 Nothing else: no face, no embedding, no name, no birth date, no document, no address, none of the
@@ -575,14 +574,15 @@ for Stripe to start: it asks for the prices once it runs ([Its keys](#its-keys))
 > you delete your face or five years pass; it keeps no second template when it already holds one of
 > yours. A check that does not pass is deleted at Didit once Forest has its answer, a day after it
 > began at the latest, and one left unfinished a day after it began. To count each person once,
-> Forest's verifier keeps a scrambled copy of your name, birth date and ID details, beside your
-> stamp, for good. Your details can't be read back from it. If another passkey's ID check matches
-> it, Didit compares faces, and the same face is refused. It stays if you delete your face, and if
-> you lose this passkey, no new one can get an ID stamp for you. Beside it, Forest keeps only the
-> stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose
-> them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date
-> of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if
-> you have none yet; a profile that shows either says only that you were checked.
+> Forest's verifier keeps a scrambled copy of your first name, first last name and birth date,
+> beside your stamp, for good. It can't be read back; it can only tell whether a given name and
+> birth date match. If another passkey's ID check matches it, Didit compares faces, and the same
+> face is refused. It stays if you delete your face. If you lose this passkey, no new one can get an
+> ID stamp for you while Didit keeps your face, or ever once you have deleted it. Beside it, Forest
+> keeps only the stamps it signed you, a one-way hash of what each check saw, so it can hand them
+> back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it
+> (your name, date of birth, document number and the rest), for you to keep, and a face stamp from
+> the same selfie if you have none yet; a profile that shows either says only that you were checked.
 
 **The line the person ticks.** `agree`, one tick before either check:
 
@@ -598,8 +598,7 @@ starts at once; until it gives a stamp, the app cancels it with `POST /id/cancel
 
 > Deleting your face waits 28 days, and you can undo it until then. Then Didit erases your checks,
 > the template of your face and what it keeps with it (after an ID check, your name, birth date and
-> your ID's country). Your stamps stay, and so does the scrambled copy of your name, birth date and
-> ID details.
+> your ID's country). Your stamps stay, and so does the scrambled copy of your name and birth date.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
@@ -729,16 +728,16 @@ codes and Stripe's page text, as the code has them.
 ## Promises
 
 - **It keeps which check session gave which stamp number, the stamps it signed and how many free
-  face tries each stamp number used, and for each ID stamp a scrambled copy of its first name, first
-  last name, birth date, personal number, ID type and country, and nothing else of a check; of a
-  payment, only a hash, how many sessions it opened and whether it is used up, for 30 days, beside
-  the sessions it opened only while it is open, a day at most, and never beside a stamp number.** No
-  face, no embedding, no name, no birth date, no document, and no session id in clear once a session
-  is deleted in Didit, but a refused one's id and code, kept till a day after it opened so the app
-  still gets its code. Beside a stamp number's keyed hash it keeps only its scrambled copies,
-  whether Didit holds its face, till when, and its face deletion's days. Deleted bytes are
-  overwritten. A test reads the raw file for names, birth dates, embeddings, references, payment ids
-  and session ids.
+  face tries each stamp number used, and for each ID stamp one scrambled value of its first name,
+  first last name and birth date, made by scrypt under a key from its secret, slow on purpose, and
+  nothing else of a check; of a payment, only a hash, how many sessions it opened and whether it is
+  used up, for 30 days, beside the sessions it opened only while it is open, a day at most, and
+  never beside a stamp number.** No face, no embedding, no name, no birth date, no document, and no
+  session id in clear once a session is deleted in Didit, but a refused one's id and code, kept till
+  a day after it opened so the app still gets its code. Beside a stamp number's keyed hash it keeps
+  only its scrambled values, whether Didit holds its face, till when, whether its person deleted it,
+  and its face deletion's days. Deleted bytes are overwritten. A test reads the raw file for names,
+  birth dates, embeddings, references, payment ids and session ids.
 - **It never logs a request, an address, a session, a stamp number or a stamp, and never writes down
   an address.** It logs an error's kind, never its message.
 - **It takes no key of the person's, has no sign-ups, and nothing it keeps ties a person to a
@@ -762,8 +761,9 @@ codes and Stripe's page text, as the code has them.
   matches nobody.
 - **A deleted face lets a person get a new face stamp:** on another seed, the face check finds no
   face of theirs.
-- **A lost seed means no new ID stamp:** a new seed's ID check matches the old one's scrambled copy,
-  and its face, or no face once that is deleted, so it is refused, `known_person`.
+- **A lost seed means no new ID stamp** while Didit keeps the old one's face, or ever once its
+  person deleted it: a new seed's ID check matches the old one's scrambled copy, and its face, or
+  none, so it is refused, `known_person`.
 - **A second ID with a differently written name can get through:** a licence without a
   machine-readable zone beside a passport, a letter the zone spells its own way (`Ø` for `OE`), or
   another name first, gives another first name or first last name, so no row matches and no face is
@@ -771,13 +771,13 @@ codes and Stripe's page text, as the code has them.
 - **Didit lists only its closest face matches,** five at most: a check whose face is like more than
   five others' can miss the one whose row it matches.
 - **A stranger who shares a person's first name, first last name and birth date is refused** once
-  that person's face is gone, `known_person`, and nobody reviews it.
+  that person deleted their face, `known_person`, and nobody reviews it.
 - **A twin or a look-alike is refused the face check,** `known_face`, and nobody reviews it; the ID
   check takes no action on a face seen before, so it is open to them, and gives them a face stamp
   too; a twin who shares the name too is refused it, `known_person`.
 - **Who counts as the same person is Didit's decision,** by settings the verifier cannot see, but
   for the scrambled copy: a check Didit approves is signed for the stamp number the person brings,
-  unless another's row matches it and its face does too, or is gone.
+  unless another holds the same copy and its face matches too, or was deleted.
 - **A person can hold a face stamp on one seed, and an ID stamp and a face stamp on another:** a
   face check reads no document, and the ID check takes no action on a face seen before, so it does
   not see the face check, and it gives a face stamp to a stamp number that holds none. Time solves
@@ -793,7 +793,7 @@ codes and Stripe's page text, as the code has them.
   a new hash for every stamp number, so Didit refuses each person it knows as another user's, until
   the checks move to an application that has none. The name, and so the stamp numbers, stay.
 - **Didit keeps a face template up to five years:** then a returning face is new to Didit, and a
-  match of its scrambled copy alone refuses.
+  match of its scrambled copy passes, so its person can get an ID stamp on another seed.
 - **Didit's age estimate can be off by years:** a person 18 to 20 whose face looks under 21 uses
   their free face check, and takes the paid ID check.
 - **Till a person's face is deleted or its five years end, Didit's list of users shows** the full
@@ -835,11 +835,12 @@ your seed and their labels. Only your seed connects the two, and it never leaves
 verification shows that we signed a stamp to the seed behind it, never which stamp number.
 
 **Can someone read my name from the scrambled copy?**
-Not without the verifier's secret: each detail is a keyed hash, and without the key nobody can even
-test a guess against one. The file shows only which rows share a detail, never what it is. Whoever
-holds the secret can read most of it back, by trying every value of each detail, one at a time:
-every birth date, every country and ID type, and a list of names; as they can already go from a
-stamp number to a person with what Didit keeps.
+No. It is one value of your first name, first last name and birth date together, made by a scramble
+slow on purpose, under a key derived from the verifier's secret. Without the secret nobody can test
+a guess against it. With it, the secret's holder can only test a name and birth date they already
+guess, a fifth of a second each: trying every birth date for a name they know takes hours, and
+reading back the whole table thousands of years. That holder can already go from a stamp number to a
+person with what Didit keeps.
 
 **Why are the salts derived, not drawn at random?**
 So a session signed again within its hour gives the same stamp, list and all, after an app lost the

@@ -1,5 +1,5 @@
-// The scrambled copy (src/fingerprint.ts): who a document is for, cleaned, and its row, each detail
-// scrambled on its own.
+// The scrambled copy (src/fingerprint.ts): who a document is for, cleaned, and the one slow, keyed
+// value made of it.
 //
 //   npm test
 
@@ -7,14 +7,14 @@ import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
 import { test } from 'node:test'
 
-import { COLUMNS, clean, cleanNumber, fingerprintOf, personOf } from '../src/fingerprint.ts'
+import { SCRYPT, clean, personOf, scrambled } from '../src/fingerprint.ts'
 import { doc, passedId } from './fakes.ts'
 
 const NOW = Date.UTC(2026, 10, 25)
 const key = new Uint8Array(randomBytes(32))
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString('hex')
 
-test('a name cleaned: capitals, no accents, no apostrophe, anything else not a letter a space, single spaces; a personal number, its letters and digits', () => {
+test('a name cleaned: capitals, no accents, no apostrophe, anything else not a letter a space, single spaces', () => {
   assert.equal(clean('  José  María '), 'JOSE MARIA')
   assert.equal(clean("O'Neil-Smith"), 'ONEIL SMITH')
   assert.equal(clean('D’Arcy'), 'DARCY')
@@ -23,48 +23,47 @@ test('a name cleaned: capitals, no accents, no apostrophe, anything else not a l
   assert.equal(clean('Ana2 Bo.'), 'ANA BO')
   assert.equal(clean('Søren'), 'SØREN', 'a letter with no accent to drop stays')
   assert.equal(clean(' - '), '')
-  assert.equal(cleanNumber(' rupa-900512 mdf.zxn09 '), 'RUPA900512MDFZXN09')
 })
 
-test('who a document is for: the first given and first family name from its machine-readable zone when it has one, else from what Didit read; the birth date, personal number, type and country from what Didit read', () => {
+test('who a document is for: the first given and first family name from its machine-readable zone when it has one, else from what Didit read; the birth date from what Didit read; nothing else of the ID', () => {
   // As Didit reads a Mexican INE: two family names in last_name, its first in extra_fields, and the CURP as its personal number.
-  const ine = doc('Ruiz Peña', { first_name: 'Ana Sofía', date_of_birth: '1990-05-12', issuing_state: 'mex', personal_number: 'RUPA900512MDFZXN09', document_type: 'Identity Card', 'extra_fields.first_surname': 'Ruiz' })
-  assert.deepEqual(personOf(passedId('ana', ine), NOW), { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-05-12', personalNumber: 'RUPA900512MDFZXN09', idType: 'IDENTITY CARD', country: 'MEX' })
-  // Its zone writes the names its own way: those, and never its own two-digit year or country code.
-  const zoned = passedId('ana', { ...ine, issuing_state: 'DEU' }, { mrz: { given: 'ANA<SOFIA', family: 'RUIZ<PENA' } })
-  assert.deepEqual(personOf(zoned, NOW), { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-05-12', personalNumber: 'RUPA900512MDFZXN09', idType: 'IDENTITY CARD', country: 'DEU' })
+  const ine = doc('Ruiz Peña', { first_name: 'Ana Sofía', date_of_birth: '1990-05-12', issuing_state: 'MEX', personal_number: 'RUPA900512MDFZXN09', document_type: 'Identity Card', 'extra_fields.first_surname': 'Ruiz' })
+  assert.deepEqual(personOf(passedId('ana', ine), NOW), { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-05-12' })
+  // Its zone writes the names its own way: those.
+  assert.deepEqual(personOf(passedId('ana', ine, { mrz: { given: 'ANA<SOFIA', family: 'RUIZ<PENA' } }), NOW), { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-05-12' })
   // A document that reads only a full name: its first word.
   const { first_name: _, last_name: __, ...fullOnly } = doc('Okafor', { full_name: 'Chidi Okafor' })
-  assert.deepEqual(personOf(passedId('chidi', fullOnly), NOW), { firstName: 'CHIDI', lastName: '', birth: '1990-04-01', personalNumber: '', idType: 'PASSPORT', country: 'GBR' })
-  // One name alone is a person; a detail the ID lacks, or a country that is none, is empty.
-  assert.deepEqual(personOf(passedId('sukarno', doc('', { first_name: 'Sukarno', full_name: 'Sukarno', issuing_state: 'GB', document_type: '' })), NOW), { firstName: 'SUKARNO', lastName: '', birth: '1990-04-01', personalNumber: '', idType: '', country: '' })
+  assert.deepEqual(personOf(passedId('chidi', fullOnly), NOW), { firstName: 'CHIDI', lastName: '', birth: '1990-04-01' })
+  // One name alone is a person, and no country is needed.
+  const { issuing_state: ___, ...countryless } = doc('', { first_name: 'Sukarno', full_name: 'Sukarno' })
+  assert.deepEqual(personOf(passedId('sukarno', countryless), NOW), { firstName: 'SUKARNO', lastName: '', birth: '1990-04-01' })
 
-  // Without a birth date (a real one, in a life) or any name: no person, and no row.
-  const { date_of_birth: ___, ...ageless } = doc('Lovelace')
+  // Without a birth date (a real one, in a life) or any name: no person, and no value.
+  const { date_of_birth: ____, ...ageless } = doc('Lovelace')
   for (const without of [ageless, doc('Lovelace', { date_of_birth: '1990-02-30' }), doc('Lovelace', { date_of_birth: '1850-01-01' }), doc('', { first_name: ' - ', full_name: '' })]) {
     assert.equal(personOf(passedId('ada', without), NOW), null, JSON.stringify(without))
   }
   assert.equal(personOf(passedId('ada', doc('Lovelace'), { document: null }), NOW), null)
 })
 
-test('the row: each detail scrambled on its own, keyed, the same detail always the same bytes, one column’s never another’s, a detail the ID lacks empty', () => {
-  const row = (read: Record<string, string>) => {
-    const person = personOf(passedId('ana', read), NOW)
-    assert.ok(person, JSON.stringify(read))
-    return Object.fromEntries(Object.entries(fingerprintOf(key, person)).map(([column, bytes]) => [column, hex(bytes)]))
+test('the scrambled copy: one value, scrypt at its cost with the key as its salt, the same for the same three details from any ID of any country, another for any other', async () => {
+  assert.deepEqual(SCRYPT, { N: 65536, r: 8, p: 1, maxmem: 134217728, bytes: 32 }, 'slow on purpose: 64 MB, about a fifth of a second')
+  const value = async (read: Record<string, string>, over = {}) => hex(await scrambled(key, personOf(passedId('ana', read, over), NOW)!))
+  const ine = await value(doc('Ruiz Peña', { first_name: 'Ana Sofía', issuing_state: 'MEX', personal_number: 'RUPA900512MDFZXN09', document_type: 'Identity Card' }))
+  assert.equal(ine.length, 64)
+  // Her passport from Spain, her names written otherwise: the same value.
+  assert.equal(await value(doc('RUIZ', { first_name: 'ANA', issuing_state: 'ESP', document_type: 'Passport' })), ine)
+  assert.equal(await value(doc('Other', { first_name: 'Other' }), { mrz: { given: 'ANA', family: 'RUIZ GARCIA' } }), ine)
+  // Another first name, first last name or birth date: another value.
+  for (const other of [doc('Ruiz', { first_name: 'Ania' }), doc('Ruis', { first_name: 'Ana' }), doc('Ruiz', { first_name: 'Ana', date_of_birth: '1990-04-02' })]) {
+    assert.notEqual(await value(other), ine, JSON.stringify(other))
   }
-  const ine = row(doc('Ruiz Peña', { first_name: 'Ana Sofía', personal_number: 'RUPA900512MDFZXN09', document_type: 'Identity Card', issuing_state: 'MEX' }))
-  assert.deepEqual(Object.keys(ine), [...COLUMNS])
-  for (const column of COLUMNS) assert.equal(ine[column]!.length, 64, column)
-  // The same person's passport, from Spain, its name written otherwise: the same first name, first last name and birth date.
-  const passport = row(doc('RUIZ', { first_name: 'ANA', document_type: 'Passport', issuing_state: 'ESP' }))
-  for (const column of ['first_name', 'last_name', 'birth'] as const) assert.equal(passport[column], ine[column], column)
-  assert.notEqual(passport.country, ine.country)
-  assert.notEqual(passport.id_type, ine.id_type)
-  assert.equal(passport.personal_number, '', 'none on it: empty')
-  // Each column its own: a first name is never the same bytes as the same word as a last name.
-  assert.notEqual(row(doc('Ana', { first_name: 'Ana' })).first_name, row(doc('Ana', { first_name: 'Ana' })).last_name)
-  // Another key: other bytes, so without it no guess can be tested.
-  const person = personOf(passedId('ana', doc('Ruiz', { first_name: 'Ana' })), NOW)!
-  assert.notEqual(hex(fingerprintOf(new Uint8Array(randomBytes(32)), person).first_name), hex(fingerprintOf(key, person).first_name))
+  // No detail runs into the next.
+  const [a, b] = await Promise.all([scrambled(key, { firstName: 'AN', lastName: 'ARUIZ', birth: '1990-04-01' }), scrambled(key, { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-04-01' })])
+  assert.notEqual(hex(a), hex(b))
+  // Another key, another value: without it no guess can be tested.
+  assert.notEqual(hex(await scrambled(new Uint8Array(randomBytes(32)), { firstName: 'ANA', lastName: 'RUIZ', birth: '1990-04-01' })), hex(b))
+  // It is what scrypt gives for those details, with the key as its salt.
+  const { scryptSync } = await import('node:crypto')
+  assert.equal(hex(b), scryptSync('ANA\0RUIZ\x001990-04-01', key, 32, { N: 65536, r: 8, p: 1, maxmem: 134217728 }).toString('hex'))
 })
