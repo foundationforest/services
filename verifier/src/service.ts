@@ -34,7 +34,7 @@ export const FACE_CONSENT =
 
 /** What an app shows before the person asks to delete their face (`POST /delete`), served in `GET /` as `face.deletion`. */
 export const DELETION =
-  'Deleting your face waits 28 days, and you can undo it until then. Then Didit erases your checks, the template of your face and what it keeps with it (after an ID check, your name, birth date and your ID\'s country). Your stamps stay, and so does the scrambled copy of your name and birth date.'
+  'Deleting your face waits 28 days, and you can undo it until then. Then Didit erases your checks, the template of your face and what it keeps with it (after an ID check, your name, birth date and your ID\'s country). Your stamps stay, and so does the scrambled copy of your name and birth date. After that, no new passkey can get an ID stamp for you.'
 
 /** The one line an app has the person tick, before either check, served in `GET /` as `agree`. */
 export const AGREE = 'I am 18 or older and I agree'

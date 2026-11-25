@@ -599,6 +599,7 @@ starts at once; until it gives a stamp, the app cancels it with `POST /id/cancel
 > Deleting your face waits 28 days, and you can undo it until then. Then Didit erases your checks,
 > the template of your face and what it keeps with it (after an ID check, your name, birth date and
 > your ID's country). Your stamps stay, and so does the scrambled copy of your name and birth date.
+> After that, no new passkey can get an ID stamp for you.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
