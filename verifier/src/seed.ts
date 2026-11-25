@@ -4,9 +4,10 @@
 //
 // It is made on the verifier's own machine, the first time the verifier starts without one (the
 // standard's `newSeed`), and kept in one file beside its database (`verifier-seed.json` in
-// DATABASE_PATH's directory), on the same volume: the secret and what it keeps of which checks it
-// signed for are kept, or lost, together. The file is `{"seed":"<64 hex>"}`, readable by the
-// verifier's own user only. Nothing prints or logs it.
+// DATABASE_PATH's directory), on the same volume. The file is `{"seed":"<64 hex>"}`, readable by the
+// verifier's own user only. Nothing prints or logs it. A copy of the file, locked with a passphrase,
+// is kept away from the volume, so a lost volume does not lose it (README.md, "The image and the
+// commands"); this code does not make it.
 //
 // What is derived from it, with the standard's `hkdf`, the same every time:
 //
@@ -22,6 +23,7 @@
 //   payment       the AES-256-GCM key a payment's stamp number is locked under, inside the payment
 //                 the verifier answers (server.ts), so the payment opens ID sessions for that stamp
 //                 number only and nothing keeps the two side by side
+//   fingerprint   the key of the scrambled copy an ID stamp keeps (fingerprint.ts)
 //
 // Each stamp key's facts recipe is fixed for good: a new recipe is a new key, under a new text here.
 // Never `face`, `id` or `id-fields`, the texts of the keys of the recipes before: their stamps are
@@ -44,6 +46,9 @@ export const INFO = {
   vendorData: 'vendor-data',
   salt: 'fact-salt',
   payment: 'payment',
+  // The text of an earlier version's key of the same kind, whose table it dropped: what this one keeps
+  // under it is its own, and none of that version's is left.
+  fingerprint: 'fingerprint',
 } as const
 
 /** An Ed25519 key: its address (the public key in base58), and its signature of a message. */

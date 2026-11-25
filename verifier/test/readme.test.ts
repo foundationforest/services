@@ -1,5 +1,6 @@
 // README.md says what the code holds: its consent screens are the texts GET / serves (FACE_CONSENT and
-// CONSENT), and so are the line the person ticks (AGREE) and the right to cancel (CANCEL_RIGHT); the
+// CONSENT), and so are the line the person ticks (AGREE), the right to cancel (CANCEL_RIGHT) and what
+// an app shows before the person deletes their face (DELETION); the
 // codes its Its API lists are the server's (CODES); and what Stripe's page says by its Pay button is
 // PAGE_TEXT. Each is read from the README as an app reads it: the quote after each heading, every
 // code in backticks from where errors are named to How we run it, and the quote after **By the Pay
@@ -10,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
 import { CODES } from '../src/codes.ts'
-import { AGREE, CANCEL_RIGHT, CONSENT, FACE_CONSENT } from '../src/service.ts'
+import { AGREE, CANCEL_RIGHT, CONSENT, DELETION, FACE_CONSENT } from '../src/service.ts'
 import { PAGE_TEXT } from '../src/stripe.ts'
 
 const README = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
@@ -22,11 +23,12 @@ function quoteAfter(heading: string): string {
   return block.split('\n').map((line) => line.replace(/^> /, '')).join(' ')
 }
 
-test('the consent screens, the line the person ticks and the right to cancel in README.md are what GET / serves, word for word', () => {
+test('the consent screens, the line the person ticks, the right to cancel and the face deletion in README.md are what GET / serves, word for word', () => {
   assert.equal(quoteAfter("**The face check's consent screen.**"), FACE_CONSENT)
   assert.equal(quoteAfter("**The ID check's consent screen.**"), CONSENT)
   assert.equal(quoteAfter('**The line the person ticks.**'), AGREE)
   assert.equal(quoteAfter('**The right to cancel.**'), CANCEL_RIGHT)
+  assert.equal(quoteAfter('**Deleting a face.**'), DELETION)
 })
 
 test("the codes README.md's Its API lists are CODES, each once", () => {

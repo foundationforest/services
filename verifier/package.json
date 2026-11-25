@@ -2,7 +2,7 @@
   "name": "@forest/verifier",
   "version": "0.0.0",
   "private": true,
-  "description": "The Forest Foundation's verifier: it checks with Didit that a person is one real person and signs them the standard's stamp, keeping each person under one stamp number. A face check gives a stamp from its face key, an ID check, whose $5 is held through Stripe and taken only for a new stamp, a stamp from its ID key. Both checks run in one Didit application, and every session of a stamp number carries its keyed hash as one Didit user: Didit decides who is the same person, the verifier signs only what Didit approved, and answers a refusal as one code. Each stamp's facts are the standard's facts as a list, carried beside it for the person: the face model's name and the selfie's embedding, and for the ID check every text field of the document. It keeps which check session gave which stamp number, and the stamp it signed, which it hands back by stamp number, and nothing about who the person is. At a stamp number's first stamp from each check it signs a sponsor's ticket for the host credits the person's app buys.",
+  "description": "The Forest Foundation's verifier: it checks with Didit that a person is one real person and signs them the standard's stamp, keeping each person under one stamp number. A face check gives a stamp from its face key, an ID check, whose $5 is held through Stripe and taken only for a new stamp, a stamp from its ID key. Both checks run in one Didit application, and every session of a stamp number carries its keyed hash as one Didit user: Didit decides who is the same person, the verifier signs only what Didit approved, and answers a refusal as one code. Each stamp's facts are the standard's facts as a list, carried beside it for the person: the face model's name and the selfie's embedding, and for the ID check every text field of the document. It keeps which check session gave which stamp number, and the stamp it signed, which it hands back by stamp number, and of who the person is only a scrambled copy of each ID stamp's first name, first last name and birth date, so no other stamp number gets an ID stamp for them. At a stamp number's first stamp from each check it signs a sponsor's ticket for the host credits the person's app buys.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -12,7 +12,7 @@
     "start": "node --disable-warning=ExperimentalWarning src/main.ts",
     "sandbox": "node --disable-warning=ExperimentalWarning scripts/sandbox.ts",
     "fetch": "node --disable-warning=ExperimentalWarning scripts/fetch.ts",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/verifier.test.ts test/facts.test.ts test/didit.test.ts test/face.test.ts test/gift.test.ts test/stripe.test.ts test/fetch.test.ts test/readme.test.ts",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-force-exit test/verifier.test.ts test/facts.test.ts test/fingerprint.test.ts test/didit.test.ts test/face.test.ts test/gift.test.ts test/stripe.test.ts test/fetch.test.ts test/readme.test.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {

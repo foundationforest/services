@@ -117,7 +117,9 @@ test('a decision is read from GET /v3/session/{id}/decision/ and cut down', asyn
     faceMatches: [],
     risks: [],
     faceImage: 'https://example.com/face.jpg',
+    knownFaces: [],
     document: null,
+    mrz: null,
   })
   assert.equal(judge(decision, WORKFLOW), null, 'an uppercase APPROVED counts')
 })
@@ -163,7 +165,8 @@ test("an ID check's decision: every text field read on the document, by Didit's 
     nationality: 'ESP',
     region: '',
     extra_fields: { profession: 'Ingeniera', 'DL Class': 'B', blood_group: 7, dl_categories: ['B'] },
-    mrz: { document_number: 'AB1234567', surname: 'GARCIA', given_names: 'MARIA' },
+    // As Didit reads a machine-readable zone: its given names as `name`.
+    mrz: { document_number: 'AB1234567', surname: 'GARCIA LOPEZ', name: 'MARIA', country: 'ESP', birth_date: '900512', mrz_string: 'IDESPAB1234567' },
     barcodes: [{ type: 'PDF417', data: 'ANSI 636000' }],
     extracted_data: { first_name: 'MARIA' },
     extra_files: ['https://media.example/extra.jpg?signature=1'],
@@ -185,13 +188,15 @@ test("an ID check's decision: every text field read on the document, by Didit's 
             { session_id: null, vendor_data: 'id-c0ffee00-0000-4000-8000-000000000002', similarity_percentage: 91, source: 'retained_template', user_details: null },
             { session_id: '66666666-2222-3333-4444-555555555555', vendor_data: 'id-c0ffee00-0000-4000-8000-000000000001', similarity_percentage: 90 },
             { session_id: null, vendor_data: null, source: 'list_entry', is_blocklisted: true },
+            // Didit leaves the session's own user out; were it ever listed, it is no other person.
+            { session_id: null, vendor_data: VENDOR_DATA, source: 'retained_template' },
           ],
           warnings: [{ feature: 'LIVENESS', risk: 'DUPLICATED_FACE', log_type: 'information', short_description: 'Duplicated face', node_id: 'liveness', additional_data: { duplicated_session_id: '11111111-2222-3333-4444-555555555555', duplicated_session_number: 7, api_service: null } }],
         },
         {
           node_id: 'liveness_2',
           status: 'Approved',
-          matches: [],
+          matches: [{ vendor_data: 'id-c0ffee00-0000-4000-8000-000000000003', similarity_percentage: 88, source: 'session' }, { vendor_data: 7 }],
           warnings: [
             { feature: 'LIVENESS', risk: 'LOW_FACE_QUALITY' },
             { risk: 7 },
@@ -214,6 +219,8 @@ test("an ID check's decision: every text field read on the document, by Didit's 
     // Approved: no warning set its status, whatever the steps' own warnings say.
     risks: [],
     faceImage: 'https://example.com/selfie.jpg',
+    // Whose faces Didit matched, by their users' vendor_data, once each, from every liveness step: nothing else of a match.
+    knownFaces: ['id-c0ffee00-0000-4000-8000-000000000001', 'id-c0ffee00-0000-4000-8000-000000000002', 'id-c0ffee00-0000-4000-8000-000000000003'],
     // The first document step's text, as Didit read it; a field with no text (null, empty, a number, a list) is absent.
     document: {
       address: 'Calle Mayor 1, 28001 Madrid',
@@ -234,9 +241,11 @@ test("an ID check's decision: every text field read on the document, by Didit's 
       personal_number: '99999999R',
       place_of_birth: 'Madrid',
     },
+    // Of its machine-readable zone, only the names.
+    mrz: { given: 'MARIA', family: 'GARCIA LOPEZ' },
   })
   const text = JSON.stringify(decision)
-  for (const never of ['media.example', 'Spain', 'Madrid, Spain', 'GARCIA', 'ANSI', '11111111', '66666666', '77777777', '88888888', 'c0ffee00', 'Someone Else', 'ocr', 'documentary', 'retained_template', 'LOW_FACE_QUALITY', 'DUPLICATED_FACE']) {
+  for (const never of ['media.example', 'Spain', 'Madrid, Spain', '900512', 'IDESP', 'ANSI', '11111111', '66666666', '77777777', '88888888', 'Someone Else', 'ocr', 'documentary', 'retained_template', 'similarity', 'LOW_FACE_QUALITY', 'DUPLICATED_FACE']) {
     assert.equal(text.includes(never), false, `${never} is not read`)
   }
   assert.equal(judge(decision, WORKFLOW, 'id'), null)
@@ -327,6 +336,32 @@ test('a user is deleted with POST /v3/users/delete/, by its vendor_data alone, k
     reply = () => answer
     await assert.rejects(client().deleteUser(VENDOR_DATA), (error: Error) => error instanceof DiditUnavailable && error.status === answer[0] && !error.message.includes(VENDOR_DATA) && !JSON.stringify(error).includes('person'))
   }
+})
+
+test("a face deleted: a user's sessions listed with GET /v3/sessions/ by its vendor_data, only its own, and each erased as a privacy erasure, keeping no template; one already gone is no error", async () => {
+  seen.length = 0
+  const other = 'c0ffee00'.repeat(8)
+  reply = () => [200, { count: 3, next: null, previous: null, results: [
+    { session_id: SESSION, vendor_data: VENDOR_DATA, status: 'Approved', full_name: 'Ada Lovelace' },
+    { session_id: '11111111-2222-3333-4444-555555555555', vendor_data: other },
+    { session_id: 7, vendor_data: VENDOR_DATA },
+  ] }]
+  assert.deepEqual(await client().sessionsOf(VENDOR_DATA), [SESSION], "its own sessions' ids, and nothing else of them")
+  assert.deepEqual([seen[0]!.method, seen[0]!.url, seen[0]!.key, seen[0]!.body], ['GET', `/v3/sessions/?vendor_data=${VENDOR_DATA}&page_size=100`, KEY, ''])
+  reply = () => [200, { detail: 'no results' }]
+  await assert.rejects(client().sessionsOf(VENDOR_DATA), (error: Error) => error instanceof DiditUnavailable && error.status === 200)
+  reply = () => [503, { code: 'unavailable' }]
+  await assert.rejects(client().sessionsOf(VENDOR_DATA), (error: Error) => error instanceof DiditUnavailable && error.status === 503 && !error.message.includes(VENDOR_DATA))
+
+  seen.length = 0
+  reply = () => [200, { session_id: SESSION, face_retention_outcome: 'deleted' }]
+  await client().eraseSession(SESSION)
+  assert.deepEqual([seen[0]!.method, seen[0]!.url], ['DELETE', `/v3/session/${SESSION}/delete/`])
+  assert.deepEqual(JSON.parse(seen[0]!.body), { deletion_instruction: 'privacy_erasure' }, 'every template of its user goes, whatever the application’s setting')
+  reply = () => [404, { detail: 'Not found.' }]
+  await client().eraseSession(SESSION)
+  reply = () => [400, { detail: 'retain_face_embeddings cannot be true with privacy_erasure' }]
+  await assert.rejects(client().eraseSession(SESSION), (error: Error) => error instanceof DiditUnavailable && error.status === 400 && !error.message.includes(SESSION))
 })
 
 test('a session Didit does not know is no decision; anything else unexpected throws, naming no session', async () => {

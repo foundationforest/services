@@ -5,7 +5,8 @@
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
 //                       signs its stamps, as an address, and the names of its facts; for the face
-//                       check also `consent`, the text an app shows before it; for the ID check also
+//                       check also `consent`, the text an app shows before it, and `deletion`, the
+//                       text an app shows before the person deletes their face; for the ID check also
 //                       `forSale` and `testPayments`, whether it is for sale and whether its payments
 //                       run on a test key, `price` and `addedPrice`, each {amount, currency} as
 //                       Stripe's Price says, or null until Stripe has said it, and `cancelRight`, the
@@ -45,16 +46,23 @@
 //                                                    when the stamp number held none, or null
 //   POST /id/cancel     {payment}                 -> 200 {cancelled: true}  the payment's hold cancelled at
 //                                                    once, while it gave no stamp, and the payment used up
-//   POST /stamp         {stampNumber}             -> 200 {face, id, faceTriesLeft}
+//   POST /stamp         {stampNumber}             -> 200 {face, id, faceTriesLeft, deletion}
 //                                                    what is kept for it: its face stamp or null, every
-//                                                    ID stamp, each without its list, and how many free
-//                                                    face tries it has left
+//                                                    ID stamp, each without its list, how many free
+//                                                    face tries it has left, and its face's deletion:
+//                                                    {state: "requested", runsOn} or {state: "done",
+//                                                    doneOn}, 90 days after, or null
+//   POST /delete        {stampNumber}             -> 200 {deletion: {state: "requested", runsOn}}
+//                                                    its face deleted in 28 days, for a stamp number
+//                                                    that holds a stamp: every session Didit holds of
+//                                                    it erased, and its Didit user deleted
+//   POST /delete/undo   {stampNumber}             -> 200 {deletion: {state: "undone"}}  while it waits
 //
 // Errors are `{error: <code>}`, each code in codes.ts: 400 a malformed body, 402 a payment not held
 // (or not the one that opened the session), 403 a check that does not count (the code says why: one
 // of Didit's refusals, which never pass, and `expired`, so the app starts a new session), 404
-// `not_found`, 409 a session already used for another stamp number, a payment used up, or the free
-// face tries used, 413 a body over 4 KB, 502 Didit or Stripe failing the request (logged by its status
+// `not_found`, 409 a session already used for another stamp number, a payment used up, the free face
+// tries used, nothing to delete or no deletion to undo, 413 a body over 4 KB, 502 Didit or Stripe failing the request (logged by its status
 // and codes, `why`), or Stripe's prices not yet known, 503 the ID check not for sale (no Stripe). A
 // refused or failed request uses nothing up, but for the ID check's refusals that end its payment
 // (`ends`), and a face check's that are a try (`UNFINISHED`).
@@ -65,7 +73,10 @@
 // the code Didit's risks say (`reasonOf`), kept in the file (store.ts's `refused`) so the app gets
 // that code when it asks for S, and deleted in Didit at once. A face check gives a new face stamp; an
 // ID check, a new ID stamp, and, when S holds no face stamp, a face stamp from the same selfie: an ID
-// check is a face check and a document.
+// check is a face check and a document. An ID check Didit approved is refused, `known_person`, when
+// another stamp number holds the same scrambled copy of its first name, first last name and birth date
+// (fingerprint.ts) and is the same person: its face matched, or its person deleted it (`seenBefore`).
+// One whose face's years are over is not, so a common name is never refused for good.
 //
 // One free face check: a face session for S that Didit finished (approved, declined or in review) and
 // that an app asked a stamp of, refused, is S's try, once (store.ts); after FACE_TRIES, S opens no
@@ -80,10 +91,11 @@
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
-// `session_used`. The sweep (`sweep`), every minute: after a session's hour, deletes a face session in
-// Didit, keeping its face template (didit.ts) only when it gave S its first face stamp, and forgets an
-// ID session, which Didit keeps; asks Didit about every session opened that gave no stamp, and deletes
-// one Didit refused at once, face and all; and deletes any other a day after it opened.
+// `session_used`. The sweep (`sweep`), every minute: after a session's hour, deletes it in Didit, face
+// or ID, keeping its face template (didit.ts) only when Didit held none of S; asks Didit about every
+// session opened that gave no stamp, and deletes one Didit refused at once, face and all; deletes any
+// other a day after it opened; erases S's sessions and deletes its Didit user 28 days after its person
+// asked to delete their face; and deletes its Didit user when its face template's five years are over.
 //
 // No request is logged, and the client's address is never read.
 
@@ -94,10 +106,11 @@ import { type Fact, factsNumber, fromBytes32, signStamp, stampToJson, toBytes32 
 import type { ServiceKey } from '@foundationforest/keys'
 
 import type { Code } from './codes.ts'
-import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge, reasonFor, refuses, stampHash } from './didit.ts'
+import { type Check, type Decision, DiditUnavailable, FACE_RETENTION_DAYS, type FaceCheck, judge, reasonFor, refuses, stampHash } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceList, idList, saltsOf } from './facts.ts'
+import { personOf, scrambled } from './fingerprint.ts'
 import { payPage } from './page.ts'
 import type { Ed25519Key } from './seed.ts'
 import { FACE_TRIES, type KeptStamp, type Store, paymentHash } from './store.ts'
@@ -257,8 +270,8 @@ export type VerifierDeps = {
   embedder: Embedder
   /** The two stamp keys, service keys: the face key and the ID key. */
   stampKeys: { face: ServiceKey; id: ServiceKey }
-  /** The keys of a stamp number's hash in `vendor_data` and of the facts' salts, derived from the verifier's secret (seed.ts). */
-  hashKeys: { vendorData: Uint8Array; salt: Uint8Array }
+  /** The keys of a stamp number's hash in `vendor_data`, of the facts' salts and of the scrambled copy, derived from the verifier's secret (seed.ts). */
+  hashKeys: { vendorData: Uint8Array; salt: Uint8Array; fingerprint: Uint8Array }
   /** The key a payment's stamp number is locked under (`lockPayment`), derived the same way. */
   paymentKey: Uint8Array
   /** `GET /`, canonical text, as it is now: its prices come once Stripe has said them. */
@@ -295,24 +308,43 @@ export const SWEEP_EVERY_MS = 60_000
 /** How often the sweep searches Stripe for old holds to cancel. */
 export const HOLDS_EVERY_MS = 3_600_000
 
+/** How long Didit keeps a face template, and when the sweep deletes its user, so its name and birth date never outlive the face. */
+export const FACE_KEPT_MS = FACE_RETENTION_DAYS * OPEN_FOR_MS
+
+/** 28 days: how long after the person asks the sweep deletes their face, so they can undo it till then. */
+export const DELETE_AFTER_MS = 28 * OPEN_FOR_MS
+
+/** 90 days: how long after a face deletion ran `POST /stamp` still says so. */
+export const DELETED_KEPT_MS = 90 * OPEN_FOR_MS
+
 /**
- * Every minute: each session whose stamp was first signed an hour ago or more, a face session deleted
- * in Didit, keeping its face template if it gave its stamp number its first face stamp (store.ts), and
- * an ID session, which Didit keeps, forgotten. Then Didit is asked about every session opened that
+ * 30 days: how long after its first session a payment's hash is kept. A payment opens sessions only
+ * in its first day (OPEN_FOR_MS), and Stripe says when it was made, so one forgotten after 30 days
+ * opens nothing, as one used up does.
+ */
+export const PAYMENT_KEPT_MS = 30 * OPEN_FOR_MS
+
+/**
+ * Every minute: each session whose stamp was first signed an hour ago or more, face or ID, deleted in
+ * Didit, keeping its face template when its stamp number had none there (store.ts). Then Didit is asked about every session opened that
  * gave no stamp, and each it refused, Declined or In Review, is kept with its code (`reasonFor`). Then
  * each session released: refused, deleted in Didit at once, without waiting for the app to ask; any
  * other a day after it opened; face and all. Releasing one, when its stamp number holds no stamp and
  * has no other session open, deletes its Didit user first, so Didit keeps a name and a birth date only
  * for a person with a stamp. That needs every open session's `vendor_data`: a sweep Didit did not tell
  * what one came to releases nothing. A deletion or a question Didit does not answer stays, for the next
- * sweep. Logs without the session: how many deletions and questions failed and why the last did
- * (`why`), and what Didit said it did with a face when it kept no template it was asked to.
+ * sweep. Then each face its person asked to delete 28 days ago: every session Didit holds of its
+ * stamp number erased, with every face template, and, once Didit lists none, its user deleted, its
+ * name, birth date and countries with it; and each user whose face template's years are over, deleted.
+ * Then each deletion that ran 90 days ago, and each payment first used 30 days ago, forgotten. Logs
+ * without the session: how many deletions and questions failed and why the last did (`why`), and what
+ * Didit said it did with a face when it kept no template it was asked to.
  */
 export async function sweep(deps: { store: Store; checks: Record<Check, FaceCheck>; vendorKey: Uint8Array; now?: () => number; log?: (line: string) => void }): Promise<void> {
   const log = deps.log ?? ((line) => console.log(line))
   const { store, checks } = deps
   const now = (deps.now ?? Date.now)()
-  const failed = { sessions: 0, users: 0, asked: 0, sessionsWhy: '', usersWhy: '', askedWhy: '' }
+  const failed = { sessions: 0, users: 0, asked: 0, faces: 0, sessionsWhy: '', usersWhy: '', askedWhy: '', facesWhy: '' }
   /** Deletes a session in Didit: what Didit did with its face, or null when Didit did not answer. */
   const remove = async (sessionId: string, check: Check, keepFace: boolean): Promise<string | null> => {
     try {
@@ -335,10 +367,6 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
   }
 
   for (const { sessionId, kind: check, keepFace } of store.due(now - SIGNED_FOR_MS)) {
-    if (check === 'id') {
-      store.deleted(sessionId)
-      continue
-    }
     const outcome = await remove(sessionId, check, keepFace)
     if (outcome === null) continue
     store.deleted(sessionId)
@@ -383,10 +411,36 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
       else store.gone(sessionId)
     }
   }
+
+  // A face deleted: Didit is asked again each sweep until it lists no session of the stamp number.
+  for (const vendorData of store.deletionsDue(now)) {
+    try {
+      const sessions = await checks.face.sessionsOf(vendorData)
+      for (const sessionId of sessions) await checks.face.eraseSession(sessionId)
+      if (sessions.length > 0) continue
+      await checks.face.deleteUser(vendorData)
+      store.faceDeleted(vendorData, now)
+    } catch (error) {
+      failed.faces++
+      failed.facesWhy = why(error)
+    }
+  }
+  for (const vendorData of store.facesEnded(now)) {
+    try {
+      await checks.face.deleteUser(vendorData)
+      store.faceGone(vendorData)
+    } catch (error) {
+      failed.users++
+      failed.usersWhy = why(error)
+    }
+  }
+  store.forget(now - DELETED_KEPT_MS, now - PAYMENT_KEPT_MS)
+
   const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
   if (failed.sessions) log(`verifier: ${plural(failed.sessions, 'session')} could not be deleted in Didit, kept for the next sweep (${failed.sessionsWhy})`)
   if (failed.users) log(`verifier: ${plural(failed.users, 'Didit user')} could not be deleted, kept for the next sweep (${failed.usersWhy})`)
   if (failed.asked) log(`verifier: Didit did not say what ${plural(failed.asked, 'session')} came to, asked again at the next sweep (${failed.askedWhy})`)
+  if (failed.faces) log(`verifier: ${plural(failed.faces, 'face deletion')} could not be finished in Didit, tried again at the next sweep (${failed.facesWhy})`)
 }
 
 /**
@@ -513,7 +567,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       throw unavailable('payment_unavailable', error)
     }
     if (heldAt === null || now() - heldAt >= OPEN_FOR_MS) throw new HttpError(402, 'not_paid')
-    kept(store.takeTry(hash))
+    kept(store.takeTry(hash, now()))
     let session
     try {
       session = await id.check.createSession({ vendorData: vendorData(stampNumber), callback })
@@ -643,7 +697,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     }
     // Checked again, for good, inside one transaction: the session may have given a stamp for another
     // stamp number while this request waited for Didit.
-    kept(store.remember({ sessionId, stampNumber, kind: 'face', since: since(), signedAt: now(), stamp }))
+    kept(store.remember({ sessionId, stampNumber, vendorData: vendorData(stampNumber), kind: 'face', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp }))
     const answer: Record<string, unknown> = { stamp: stampToJson(stamp) }
     if (gift) answer.gift = giveGift('face', stampNumber, gift.reference)
     return [200, answer]
@@ -700,10 +754,38 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     }
   }
 
+  /**
+   * Whether another stamp number already holds an ID stamp for this person, by its scrambled copy
+   * (fingerprint.ts): one that holds the same copy, and whose face Didit matched to this check's
+   * selfie, or whose person deleted it. One whose face Didit holds and did not match is a stranger who
+   * shares the details, and both are kept; one whose face's years are over, or that Didit never held,
+   * passes too, so strangers with a common name are not refused for good once faces age out. A stamp
+   * number that holds an ID stamp is never refused by it: another ID of the same person is always
+   * fine, as its face matched its document.
+   */
+  function seenBefore(fingerprint: Uint8Array, decision: Decision): boolean {
+    const others = store.holders(fingerprint).filter((other) => other !== decision.vendorData)
+    return others.some((other) => {
+      const face = store.face(other)
+      return face === 'deleted' || (face === 'held' && decision.knownFaces.includes(other))
+    })
+  }
+
+  /** A refusal of this session, kept, so the sweep deletes it in Didit at once, as one Didit refused. */
+  function refuse(sessionId: string, decision: Decision, code: Code): HttpError {
+    store.refuse(sessionId, code, decision.vendorData)
+    return new HttpError(403, code)
+  }
+
   async function signId(a: { sessionId: string; stampNumber: bigint; payment: string; hash: Uint8Array; again: boolean; gift?: { reference: unknown } }): Promise<[number, unknown]> {
     const { sessionId, stampNumber, hash, again } = a
     const payments = deps.payments!
     const decision = await decided(id, sessionId, stampNumber)
+    // Signed again within its hour, the session's scrambled copy is kept already.
+    const person = again ? null : personOf(decision, now())
+    if (!again && !person) throw refuse(sessionId, decision, 'id_unclear')
+    // Slow on purpose, and on its own thread, outside the queue below.
+    const fingerprint = person ? await scrambled(deps.hashKeys.fingerprint, person) : undefined
     const embedded = await embedding(id, sessionId, decision)
     const salts = saltsOf(deps.hashKeys.salt, sessionId)
     const stamp = signed(id, stampNumber, idList(embedder.model, embedded, decision.document!, salts))
@@ -713,6 +795,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     return settle(async () => {
       // Checked again: another request may have signed for this session or this payment meanwhile.
       kept(store.check({ sessionId, stampNumber, since: since(), payment: hash }))
+      // Here, one at a time, so two checks of one person at once never both pass.
+      if (fingerprint && store.stamps(stampNumber).id.length === 0 && seenBefore(fingerprint, decision)) throw refuse(sessionId, decision, 'known_person')
       if (!again) {
         let taken: boolean
         try {
@@ -726,7 +810,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
           throw new HttpError(409, 'payment_used')
         }
       }
-      kept(store.remember({ sessionId, stampNumber, kind: 'id', since: since(), signedAt: now(), stamp, face: faceStamp, payment: hash }))
+      kept(store.remember({ sessionId, stampNumber, vendorData: decision.vendorData, kind: 'id', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp, face: faceStamp, fingerprint, payment: hash }))
       // Read after `remember`: the face stamp goes with the answer only when it is the one S holds, this
       // session's, now or within its hour. The same facts mean the same session and selfie.
       const held = store.stamps(stampNumber).face
@@ -760,10 +844,20 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     })
   }
 
+  /** A day as the app is told it: its UTC date, YYYY-MM-DD. */
+  const day = (at: number) => new Date(at).toISOString().slice(0, 10)
+
+  /** What became of the stamp number's ask to delete its face, as the app is told it, or null. */
+  function deletionOf(stampNumber: bigint): Record<string, string> | null {
+    const deletion = store.deletion(vendorData(stampNumber))
+    if (!deletion) return null
+    return deletion.state === 'requested' ? { state: deletion.state, runsOn: day(deletion.runsAt) } : { state: deletion.state, doneOn: day(deletion.doneAt) }
+  }
+
   /**
    * What is kept for a stamp number: its face stamp, the first the face key signed for it, or null;
-   * every ID stamp; each without its list; and how many free face tries it has left. A stamp is no use
-   * without the seed behind its number.
+   * every ID stamp; each without its list; how many free face tries it has left; and what became of
+   * its ask to delete its face, or null. A stamp is no use without the seed behind its number.
    */
   async function stampBack(body: Record<string, unknown>): Promise<[number, unknown]> {
     const stampNumber = stampNumberIn(fields(body, ['stampNumber']).stampNumber)
@@ -774,8 +868,29 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
         face: kept.face ? keptToJson('face', stampNumber, kept.face) : null,
         id: kept.id.map((stamp) => keptToJson('id', stampNumber, stamp)),
         faceTriesLeft: Math.max(0, FACE_TRIES - store.faceTries(stampNumber)),
+        deletion: deletionOf(stampNumber),
       },
     ]
+  }
+
+  /**
+   * The person asks to delete their face, for a stamp number that holds a stamp: in 28 days the sweep
+   * erases every session Didit holds of it and deletes its Didit user (`sweep`). Asked again while it
+   * waits, the same day; after it ran, it waits again.
+   */
+  async function deleteFace(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const stampNumber = stampNumberIn(fields(body, ['stampNumber']).stampNumber)
+    const kept = store.stamps(stampNumber)
+    if (!kept.face && kept.id.length === 0) throw new HttpError(409, 'nothing_to_delete')
+    store.askDeletion(vendorData(stampNumber), now() + DELETE_AFTER_MS)
+    return [200, { deletion: deletionOf(stampNumber) }]
+  }
+
+  /** The person no longer asks to delete their face, while the deletion waits. */
+  async function undoDelete(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const stampNumber = stampNumberIn(fields(body, ['stampNumber']).stampNumber)
+    if (!store.undoDeletion(vendorData(stampNumber))) throw new HttpError(409, 'nothing_to_undo')
+    return [200, { deletion: { state: 'undone' } }]
   }
 
   const routes: Record<string, Route> = {
@@ -786,6 +901,8 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     '/id/stamp': idStamp,
     '/id/cancel': cancelId,
     '/stamp': stampBack,
+    '/delete': deleteFace,
+    '/delete/undo': undoDelete,
   }
 
   return (req, res) => {
