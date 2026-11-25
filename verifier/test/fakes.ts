@@ -34,7 +34,9 @@ export const passed = (person: string, over: Partial<Decision> = {}): Decision =
   faceMatches: [],
   risks: [],
   faceImage: selfie(person),
+  knownFaces: [],
   document: null,
+  mrz: null,
   ...over,
 })
 
@@ -123,6 +125,9 @@ export class FakeFaceCheck implements FaceCheck {
   /** Each Didit user deleted, by `vendor_data`, in order; with `usersDown`, Didit does not answer a user's deletion. */
   readonly deletedUsers: string[] = []
   usersDown = false
+  /** Each session erased, as a face deleted, in order; with `erasingDown`, Didit does not answer a list or an erasure. */
+  readonly erased: string[] = []
+  erasingDown = false
   #gate: Promise<void> | undefined
 
   constructor(application: FakeApplication = new FakeApplication()) {
@@ -176,6 +181,17 @@ export class FakeFaceCheck implements FaceCheck {
   async deleteUser(vendorData: string) {
     if (this.usersDown) throw this.fail
     this.deletedUsers.push(vendorData)
+  }
+
+  /** The sessions Didit came to a decision on, of either check, under `vendorData`. */
+  async sessionsOf(vendorData: string) {
+    if (this.erasingDown) throw this.fail
+    return [...this.sessions].filter(([, decision]) => decision.vendorData === vendorData).map(([sessionId]) => sessionId)
+  }
+
+  async eraseSession(sessionId: string) {
+    if (this.erasingDown) throw this.fail
+    if (this.sessions.delete(sessionId)) this.erased.push(sessionId)
   }
 
   async photo(url: string) {
@@ -295,11 +311,14 @@ export function seedJson(): { json: string; bytes: Uint8Array } {
 const sideFiles = (path: string) => [`${path}-journal`, `${path}-wal`, `${path}-shm`]
 
 const TABLES = [
+  'CREATE TABLE deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID',
   'CREATE TABLE face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE fingerprints (code BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (code, owner)) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
-  'CREATE TABLE payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL) WITHOUT ROWID',
+  'CREATE TABLE payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE refused (session_id TEXT PRIMARY KEY, code TEXT NOT NULL, owner BLOB NOT NULL, gone INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE sessions (hash BLOB PRIMARY KEY, stamp_number BLOB NOT NULL, kind TEXT NOT NULL) WITHOUT ROWID',
   'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)) WITHOUT ROWID',
@@ -312,19 +331,34 @@ const TABLES = [
  * deleted, each with the payment that opened it while it is open, or null; of those, each refused,
  * with its code; each stamp number's face tries; the stamp numbers given each check's gift; each
  * payment that opened an ID session, by its Checkout Session's id, with its tries and whether it is
- * used up.
+ * used up; by `vendor_data`, each stamp number whose face Didit holds, how many person codes each
+ * holds, and each face deletion with what became of it.
  */
-export type Expected = { sessions: [string, bigint, Check][]; toDelete?: string[]; opened?: [string, string | null][]; refused?: [string, string][]; faceTries?: [bigint, number][]; gifts?: bigint[]; idGifts?: bigint[]; payments?: [string, number, boolean][]; never: string[] }
+export type Expected = {
+  sessions: [string, bigint, Check][]
+  toDelete?: string[]
+  opened?: [string, string | null][]
+  refused?: [string, string][]
+  faceTries?: [bigint, number][]
+  gifts?: bigint[]
+  idGifts?: bigint[]
+  payments?: [string, number, boolean][]
+  faces?: string[]
+  codes?: [string, number][]
+  deletions?: [string, 'requested' | 'done'][]
+  never: string[]
+}
 
 /**
- * The file holds nine tables and nothing else: each session that gave a stamp as the hash of its id,
+ * The file holds twelve tables and nothing else: each session that gave a stamp as the hash of its id,
  * next to its stamp number and its check; one face stamp for each stamp number those sessions gave a
  * stamp, as an ID check gives one too, and one ID stamp for each ID session; those not yet deleted in
  * Didit, by id; each stamp number's face tries; the sessions opened that gave no stamp and are not yet
  * deleted, by id, each with the hash of the payment that opened it or none, and those refused, with
  * their codes; the stamp numbers given
  * each check's gift, each with a hash of its buy; each payment as the hash of its id, with its tries
- * and whether it is used up, and nothing else. None of `never` (names, birth dates, embeddings, a
+ * and whether it is used up, and when; by the stamp number's keyed hash, whose faces Didit holds, its
+ * person codes and its face deletions; and nothing else. None of `never` (names, birth dates, embeddings, a
  * gift's buy) is anywhere in its bytes, no payment id and no other session id is in the clear, and no
  * journal is left beside it.
  */
@@ -345,7 +379,7 @@ export function assertKept(path: string, expected: Expected): void {
   const db = new DatabaseSync(path, { readOnly: true })
   try {
     const schema = db.prepare('SELECT sql FROM sqlite_master ORDER BY name').all()
-    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'nine tables, and no index or other table beside them')
+    assert.deepEqual(schema.map((t) => t.sql), TABLES, 'twelve tables, and no index or other table beside them')
     const sessions = db
       .prepare('SELECT hash, stamp_number, kind FROM sessions')
       .all()
@@ -400,6 +434,13 @@ export function assertKept(path: string, expected: Expected): void {
       .sort()
     const wantPaid = payments.map(([payment, tries, stamped]) => `${Buffer.from(paymentHash(checkoutOf(payment))).toString('hex')} ${tries} ${stamped ? 1 : 0}`).sort()
     assert.deepEqual(paid, wantPaid, 'each payment, hashed, with its tries and whether it gave a stamp, and nothing beside it')
+    const owner = (r: Record<string, unknown>) => Buffer.from(r.owner as Uint8Array).toString('hex')
+    const faces = db.prepare('SELECT owner FROM faces').all().map(owner).sort()
+    assert.deepEqual(faces, [...(expected.faces ?? [])].sort(), 'by its keyed hash, each stamp number whose face Didit holds')
+    const codes = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
+    assert.deepEqual(codes, (expected.codes ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many person codes each stamp number holds')
+    const deletions = db.prepare('SELECT owner, done_at FROM deletions').all().map((r) => `${owner(r)} ${r.done_at === null ? 'requested' : 'done'}`).sort()
+    assert.deepEqual(deletions, (expected.deletions ?? []).map(([v, state]) => `${v} ${state}`).sort(), 'by its keyed hash, each face deletion and what became of it')
   } finally {
     db.close()
   }

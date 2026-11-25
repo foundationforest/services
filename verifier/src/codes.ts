@@ -38,6 +38,8 @@ export const CODES = [
   'session_used',
   'payment_used',
   'face_tries_used',
+  'nothing_to_delete',
+  'nothing_to_undo',
   // 404, 405, 413, 502, 503, 500
   'not_found',
   'post_only',

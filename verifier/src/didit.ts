@@ -3,16 +3,18 @@
 // Didit runs each check on its own page and holds the face, and for the ID check the document. Both
 // checks are workflows in one Didit application, with one key. Didit decides who is the same person:
 // each workflow compares its check with every other user's in the application, faces and documents,
-// and declines a person it has seen, as its settings say. The verifier asks Didit five things: to open
-// a session on a check's workflow, later what that session decided, the selfie the session took, to
-// compute the face's embedding (face.ts), to delete the session, and to delete a user who holds no
-// stamp, with what Didit keeps of them (server.ts's `sweep`). From a decision it reads the
-// session's workflow and `vendor_data`, its status, the status of each step (liveness; for the ID
-// check also the document and the face match), the risk of each warning that set a Declined or In
-// Review status (`decision_trace.status_warnings`), the selfie's address, and, from the document step,
-// the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from (facts.ts).
-// Everything else Didit returns is dropped the moment the answer is parsed. Nothing Didit says is
-// stored as it is.
+// and declines a person it has seen, as its settings say. The verifier asks Didit seven things: to
+// open a session on a check's workflow, later what that session decided, the selfie the session took,
+// to compute the face's embedding (face.ts), to delete the session, to list a user's sessions and
+// erase them, and to delete a user, with what Didit keeps of them (server.ts's `sweep`). From a
+// decision it reads the session's workflow and `vendor_data`, its status, the status of each step
+// (liveness; for the ID check also the document and the face match), the risk of each warning that
+// set a Declined or In Review status (`decision_trace.status_warnings`), the selfie's address, the
+// `vendor_data` of each other user whose face Didit matched to the selfie, and, from the document
+// step, the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from
+// (facts.ts), and the names its machine-readable zone holds, which the person codes are made from
+// (fingerprint.ts). Everything else Didit returns is dropped the moment the answer is parsed. Nothing
+// Didit says is stored as it is.
 //
 // One Didit user a person: every session the verifier opens for a stamp number, face or ID, carries
 // the same `vendor_data`, the keyed hash of that stamp number (`stampHash`), and nothing else. Didit
@@ -22,27 +24,33 @@
 //
 // The verifier signs only for an Approved session; Declined and In Review are a refusal, answered as
 // one code (`reasonOf`), from the risks that set the status, the first that applies in REASONS's
-// order. Which sessions Didit keeps and which the sweep deletes is server.ts's `sweep`.
+// order. When the sweep deletes each session is server.ts's `sweep`.
 //
 // Didit's API as read in November 2026 (docs.didit.me: creating, retrieving and deleting a session,
 // the decision's `decision_trace`, the liveness, face match and ID verification warnings, the ID
 // verification report as its Data models page lists it, and vendor_data's uniqueness and scope):
 // version 3, `x-api-key` header, `POST /v3/session/` (with `vendor_data`, and `callback`, the page
-// Didit sends the person to when the check is done), `GET /v3/session/{id}/decision/` and
-// `DELETE /v3/session/{id}/delete/` (`retain_face_embeddings` true or false, overriding the
-// application's own setting; 200 with `face_retention_outcome`, 404 for a session already gone), and
-// `POST /v3/users/delete/` (`vendor_data_list`; the user's record, its name and birth date among it,
-// and every face template kept for it go, its sessions do not; 200 `{deleted}`, 0 for one already
-// gone; a 409 or a 503 deletes nothing, and may be sent again). A
-// liveness step's `reference_image` is a signed URL to the selfie, valid for hours. A decision's
-// `decision_trace.status_warnings[]` lists the warnings that set a Declined or In Review status, each
-// with its `risk`; a status set by hand lists none. A document step's report (`id_verifications[]`)
-// holds the text read on the document (DOCUMENT_FIELDS, and `extra_fields`, its document-specific
-// ones), dates as YYYY-MM-DD and countries as ISO 3166-1 alpha-3, beside the step's own status, signed
-// URLs to its images and video, scores, Didit's own derivations and other sessions' matches. A
-// refusal's body varies by endpoint; a stable `code` sits beside `detail`, Didit's own words, when it
-// sends one. The thrown error keeps the status and that code, for the log line (server.ts), and never
-// `detail`.
+// Didit sends the person to when the check is done), `GET /v3/session/{id}/decision/` and `DELETE
+// /v3/session/{id}/delete/` (`retain_face_embeddings` true or false, overriding the application's
+// own setting; 200 with `face_retention_outcome`, 404 for a session already gone; with
+// `deletion_instruction: "privacy_erasure"` instead, every face template kept for the session's
+// user goes with it, and no setting keeps one), `GET /v3/sessions/` (`vendor_data`, `page_size`;
+// every session of that user, whatever its status, as `results[]`, each with its `session_id` and
+// `vendor_data`), and `POST /v3/users/delete/` (`vendor_data_list`; the user, its name and birth
+// date among what it holds, and every face template kept for it go, its sessions do not; 200
+// `{deleted}`, 0 for one already gone; a 409 or a 503 deletes nothing, and may be sent again). A
+// liveness step's `reference_image` is a signed URL to the selfie, valid for hours, and its
+// `matches[]` the faces Didit holds that are like the selfie, at most five, closest first, each
+// with its user's `vendor_data`, a face kept as a template among them, the session's own user's
+// never. A decision's `decision_trace.status_warnings[]` lists the warnings that set a Declined or
+// In Review status, each with its `risk`; a status set by hand lists none. A document step's report
+// (`id_verifications[]`) holds the text read on the document (DOCUMENT_FIELDS, and `extra_fields`,
+// its document-specific ones), dates as YYYY-MM-DD and countries as ISO 3166-1 alpha-3, and `mrz`,
+// its machine-readable zone as Didit read it (its `name`, the given names, and `surname`, among
+// others), beside the step's own status, signed URLs to its images and video, scores, Didit's own
+// derivations and other sessions' matches. A refusal's body varies by endpoint; a stable `code`
+// sits beside `detail`, Didit's own words, when it sends one. The thrown error keeps the status and
+// that code, for the log line (server.ts), and never `detail`.
 
 import { createHmac } from 'node:crypto'
 
@@ -116,8 +124,15 @@ export type Decision = {
   risks: string[]
   /** The first liveness step's selfie: a signed URL. Null when there is none. */
   faceImage: string | null
+  /**
+   * The `vendor_data` of each other user whose face Didit matched to a liveness step's selfie
+   * (`matches[]`), once each: at most five a step, the closest.
+   */
+  knownFaces: string[]
   /** What the first document step read. Null with no document step. */
   document: Document | null
+  /** The names in the first document step's machine-readable zone, given and family. Null for a document without one. */
+  mrz: { given: string; family: string } | null
 }
 
 export interface FaceCheck {
@@ -142,6 +157,13 @@ export interface FaceCheck {
    * none of its sessions. Throws if Didit can't answer or refuses, and the user is then still there.
    */
   deleteUser(vendorData: string): Promise<void>
+  /** The ids of the sessions Didit holds under `vendorData`, whatever came of them: a page of them. Throws if Didit can't answer. */
+  sessionsOf(vendorData: string): Promise<string[]>
+  /**
+   * Erase the session, as a person's request to delete their face: it goes, and with it every face
+   * template Didit keeps for its user. Throws if Didit can't answer, and the session is then still there.
+   */
+  eraseSession(sessionId: string): Promise<void>
 }
 
 /** How many days Didit keeps a deleted session's face template: 1825, five years, as long as Forest's Didit plan keeps anything. */
@@ -322,6 +344,11 @@ export function parseDecision(body: unknown): Decision {
   const status = (step: Record<string, unknown>) => ({ status: text(step.status) })
   const first = documents[0]
   const trace = typeof json.decision_trace === 'object' && json.decision_trace !== null ? (json.decision_trace as Record<string, unknown>) : {}
+  const own = text(json.vendor_data)
+  const matched = liveness.flatMap((step) => reports(step.matches).map((match) => text(match.vendor_data)))
+  const mrz = typeof first?.mrz === 'object' && first.mrz !== null ? (first.mrz as Record<string, unknown>) : {}
+  const given = isText(mrz.name) ? mrz.name : ''
+  const family = isText(mrz.surname) ? mrz.surname : ''
   return {
     workflowId: text(json.workflow_id),
     vendorData: text(json.vendor_data),
@@ -331,7 +358,9 @@ export function parseDecision(body: unknown): Decision {
     faceMatches: reports(json.face_matches).map(status),
     risks: [...new Set(reports(trace.status_warnings).map((warning) => text(warning.risk)).filter(Boolean))],
     faceImage: text(liveness[0]?.reference_image) || null,
+    knownFaces: [...new Set(matched.filter((v) => v !== '' && v !== own))],
     document: first ? fieldsOf(first) : null,
+    mrz: given || family ? { given, family } : null,
   }
 }
 
@@ -438,10 +467,33 @@ export class DiditClient implements FaceCheck {
     return typeof outcome === 'string' ? outcome : ''
   }
 
-  /** Never keeping a face template: a user deleted is one who holds no stamp. */
+  /** The user, its name and birth date, and every face template kept for it: one who holds no stamp, one whose face is deleted, or one whose template's years are over. */
   async deleteUser(vendorData: string): Promise<void> {
     const res = await this.#fetch('/v3/users/delete/', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ vendor_data_list: [vendorData] }) })
     if (!res.ok) throw await refused(res, 'a user deletion', this.#apiKey)
+  }
+
+  /** The first page, of up to 100: the sweep erases them and asks again until Didit lists none. */
+  async sessionsOf(vendorData: string): Promise<string[]> {
+    const query = new URLSearchParams({ vendor_data: vendorData, page_size: '100' })
+    const res = await this.#fetch(`/v3/sessions/?${query}`, { method: 'GET' })
+    if (!res.ok) throw await refused(res, 'a list of sessions', this.#apiKey)
+    const json = (await body(res)) as { results?: unknown } | null
+    if (!Array.isArray(json?.results)) throw new DiditUnavailable('Didit answered a list of sessions without its results', { status: res.status })
+    // Only the user's own: Didit's filter is the only thing that says so, and a session is never another's to erase.
+    return reports(json.results)
+      .filter((session) => session.vendor_data === vendorData && typeof session.session_id === 'string')
+      .map((session) => session.session_id as string)
+  }
+
+  async eraseSession(sessionId: string): Promise<void> {
+    const res = await this.#fetch(`/v3/session/${encodeURIComponent(sessionId)}/delete/`, {
+      method: 'DELETE',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deletion_instruction: 'privacy_erasure' }),
+    })
+    if (res.status === 404) return
+    if (!res.ok) throw await refused(res, 'an erasure', this.#apiKey)
   }
 
   async decision(sessionId: string): Promise<Decision | null> {

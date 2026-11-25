@@ -21,7 +21,12 @@
 //   DELETE /v3/session/{id}/delete/     deletes the session: its decision and its photo are gone; 200
 //                                       {session_id, face_retention_outcome}, `retained_with_user` when
 //                                       the body asks to retain the face (`retain_face_embeddings`), else
-//                                       `deleted`; 404 for a session it does not have
+//                                       `deleted`; a privacy erasure (`deletion_instruction`) that asks to
+//                                       retain it is a 400, as at Didit; 404 for a session it does not
+//                                       have
+//   GET  /v3/sessions/?vendor_data=     the sessions it holds under that `vendor_data`: {count, next,
+//                                       previous, results}, each result its session_id, vendor_data and
+//                                       status
 //   POST /v3/users/delete/              deletes the users of `vendor_data_list`: 200 {deleted}, how many
 //                                       of its sessions carry one; their sessions stay, as at Didit
 //   GET  /photo/{id}                    the selfie: a few bytes that are no photo. The verifier runs with
@@ -47,6 +52,7 @@ const opened = new Map<string, { workflow: string; vendorData: string; status: s
 const decision = /^\/v3\/session\/([0-9a-f-]{36})\/decision\/$/
 const deletion = /^\/v3\/session\/([0-9a-f-]{36})\/delete\/$/
 const photo = /^\/photo\/([0-9a-f-]{36})$/
+const list = /^\/v3\/sessions\/\?(.*)$/
 
 /** The status a sandbox scenario comes to. */
 const statusOf = (scenario: string) => (scenario.startsWith('review') ? 'In Review' : scenario.startsWith('decline') ? 'Declined' : 'Approved')
@@ -86,12 +92,22 @@ const server = createServer((req, res) => {
     if (deleted) {
       const gone = opened.get(deleted[1]!)
       if (!opened.delete(deleted[1]!)) return send(404, { detail: 'Not found.' })
-      let body: { retain_face_embeddings?: unknown } = {}
+      let body: { retain_face_embeddings?: unknown; deletion_instruction?: unknown } = {}
       try {
         body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
       } catch {}
+      if (body.deletion_instruction === 'privacy_erasure' && body.retain_face_embeddings === true) {
+        opened.set(deleted[1]!, gone!)
+        return send(400, { detail: 'A privacy erasure keeps no template.' })
+      }
       const outcome = body.retain_face_embeddings === true ? 'retained_with_user' : 'deleted'
       return send(200, { session_id: deleted[1], session_number: 0, face_retention_outcome: outcome, deleted_child_verifications: 0 })
+    }
+    const listed = req.method === 'GET' ? list.exec(req.url ?? '') : null
+    if (listed) {
+      const vendorData = new URLSearchParams(listed[1]).get('vendor_data') ?? ''
+      const results = [...opened].filter(([, session]) => session.vendorData === vendorData).map(([id, session]) => ({ session_id: id, vendor_data: session.vendorData, status: session.status }))
+      return send(200, { count: results.length, next: null, previous: null, results })
     }
     const asked = req.method === 'GET' ? photo.exec(req.url ?? '') : null
     if (asked && opened.has(asked[1]!)) {
