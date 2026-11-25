@@ -4,12 +4,14 @@
 // browser sends.
 //
 //   GET  /              who this verifier is, as canonical JSON: its name; for each check, the key that
-//                       signs its stamps, as an address, and the names of its facts; for the ID check
-//                       also `forSale` and `testPayments`, whether it is for sale and whether its
-//                       payments run on a test key, and `price` and `addedPrice`, each
-//                       {amount, currency} as Stripe's Price says, or null until Stripe has said it;
-//                       `recipe`, the standard's facts as a list; `consent`, the text an app shows
-//                       before the ID check; and, with gifts,
+//                       signs its stamps, as an address, and the names of its facts; for the face
+//                       check also `consent`, the text an app shows before it; for the ID check also
+//                       `forSale` and `testPayments`, whether it is for sale and whether its payments
+//                       run on a test key, `price` and `addedPrice`, each {amount, currency} as
+//                       Stripe's Price says, or null until Stripe has said it, and `cancelRight`, the
+//                       line the person agrees to that starts it now; `recipe`, the standard's facts
+//                       as a list; `consent`, the text an app shows before the ID check; `agree`, the
+//                       one line an app has the person tick, for either check; and, with gifts,
 //                       {"gift":{"face":n,"host":"<origin>","id":n,"sponsor":"<address>"}}
 //   POST /face/session  {stampNumber} or {stampNumber, returnUrl}
 //                                                 -> 201 {sessionId, url}   a face check for that stamp
@@ -41,6 +43,8 @@
 //                                                    taken, and its gift asked as the face stamp's is;
 //                                                    `face`, the face stamp signed from the same selfie
 //                                                    when the stamp number held none, or null
+//   POST /id/cancel     {payment}                 -> 200 {cancelled: true}  the payment's hold cancelled at
+//                                                    once, while it gave no stamp, and the payment used up
 //   POST /stamp         {stampNumber}             -> 200 {face, id, faceTriesLeft}
 //                                                    what is kept for it: its face stamp or null, every
 //                                                    ID stamp, each without its list, and how many free
@@ -63,15 +67,16 @@
 // ID check, a new ID stamp, and, when S holds no face stamp, a face stamp from the same selfie: an ID
 // check is a face check and a document.
 //
-// Two free face tries: a face session for S that Didit finished (approved, declined or in review) and
-// that an app asked a stamp of, refused, is one of S's tries, once (store.ts); after FACE_TRIES, S
-// opens no face session, `face_tries_used`, and takes the ID check.
+// One free face check: a face session for S that Didit finished (approved, declined or in review) and
+// that an app asked a stamp of, refused, is S's try, once (store.ts); after FACE_TRIES, S opens no
+// face session, `face_tries_used`, and takes the ID check.
 //
 // One payment opens up to ID_TRIES ID sessions in its first day (store.ts), all for its stamp number,
 // and gives one ID stamp, from one of the sessions it opened. Its price is only held until then:
 // taken when it gives an ID stamp; cancelled when its check is refused as a person or a face Didit has
-// seen (KNOWN), when its newest session, its last try, is refused, and by the hourly search two days
-// after it was held (`sweepHolds`).
+// seen or a birth date under 18 (KNOWN), when its newest session, its last try, is refused, when the
+// person cancels the check (`POST /id/cancel`), and by the hourly search two days after it was held
+// (`sweepHolds`).
 //
 // A session gives its stamp to one stamp number. Sent again with it within the hour after it was first
 // signed, it gives the same stamp: Didit still has the decision. After that hour it is refused,
@@ -89,7 +94,7 @@ import { type Fact, factsNumber, fromBytes32, signStamp, stampToJson, toBytes32 
 import type { ServiceKey } from '@foundationforest/keys'
 
 import type { Code } from './codes.ts'
-import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge, reasonOf, refuses, stampHash } from './didit.ts'
+import { type Check, type Decision, DiditUnavailable, type FaceCheck, judge, reasonFor, refuses, stampHash } from './didit.ts'
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceList, idList, saltsOf } from './facts.ts'
@@ -294,7 +299,7 @@ export const HOLDS_EVERY_MS = 3_600_000
  * Every minute: each session whose stamp was first signed an hour ago or more, a face session deleted
  * in Didit, keeping its face template if it gave its stamp number its first face stamp (store.ts), and
  * an ID session, which Didit keeps, forgotten. Then Didit is asked about every session opened that
- * gave no stamp, and each it refused, Declined or In Review, is kept with its code (`reasonOf`). Then
+ * gave no stamp, and each it refused, Declined or In Review, is kept with its code (`reasonFor`). Then
  * each session released: refused, deleted in Didit at once, without waiting for the app to ask; any
  * other a day after it opened; face and all. Releasing one, when its stamp number holds no stamp and
  * has no other session open, deletes its Didit user first, so Didit keeps a name and a birth date only
@@ -345,7 +350,7 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
     const decision = await ask(sessionId, check)
     if (decision === undefined) continue
     asked.set(sessionId, decision)
-    if (decision && refuses(decision)) store.refuse(sessionId, reasonOf(decision.risks), decision.vendorData)
+    if (decision && refuses(decision)) store.refuse(sessionId, reasonFor(decision, check, now), decision.vendorData)
   }
 
   const stale = store.stale(now - OPEN_FOR_MS)
@@ -408,8 +413,11 @@ const NOT_A_TRY = new Set<string>(['not_approved', 'unknown_session', 'wrong_wor
 /** The 403s that are no free face try: those, and a session the person never finished, expired or abandoned. */
 const UNFINISHED = new Set<string>([...NOT_A_TRY, 'expired'] satisfies string[])
 
-/** Didit's refusals of a person or a face it has seen, under another stamp number: no try of the same payment can pass. */
-const KNOWN = new Set<string>(['known_person', 'known_face'] satisfies Code[])
+/**
+ * The refusals no other try of the same payment can pass: a person or a face Didit has seen under
+ * another stamp number, and a birth date read that shows under 18.
+ */
+const KNOWN = new Set<string>(['known_person', 'known_face', 'too_young'] satisfies Code[])
 
 export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerResponse) => void {
   const { face, id, store, embedder } = deps
@@ -538,7 +546,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     } catch (error) {
       throw unavailable('face_check_unavailable', error)
     }
-    const refusal = judge(decision, c.workflowId, c.kind)
+    const refusal = judge(decision, c.workflowId, c.kind, now())
     if (refusal === 'unknown_session') {
       // Refused and deleted by the sweep while this request waited for Didit.
       kept()
@@ -616,7 +624,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   /**
    * A stamp from the face key, for this stamp number, from a face check Didit approved. The session,
    * asked again within its hour, gives the same stamp: its decision and its salts are the same. A
-   * refusal of a session Didit finished is one of S's free tries (`UNFINISHED`, store.ts).
+   * refusal of a session Didit finished is S's free try (`UNFINISHED`, store.ts).
    */
   async function faceStamp(body: Record<string, unknown>): Promise<[number, unknown]> {
     const { sessionId, stampNumber, gift } = stampAsked('face', body)
@@ -729,6 +737,30 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
+   * The ID check cancelled, for a payment that gave no stamp: its hold cancelled at Stripe at once,
+   * and the payment used up, so it opens no more sessions and gives no stamp. In the same queue as an
+   * ID stamp's last steps (`settle`), so a cancel and a stamp never both win. A payment whose price
+   * was taken gave a stamp, `payment_used`; one that holds nothing, unpaid or unknown to Stripe,
+   * `not_paid`. Cancelled before, by the verifier or this route, it is cancelled: the same answer.
+   */
+  async function cancelId(body: Record<string, unknown>): Promise<[number, unknown]> {
+    const payments = forSale()
+    const { payment } = openPayment(deps.paymentKey, fields(body, ['payment']).payment!)
+    return settle(async () => {
+      let outcome
+      try {
+        outcome = await payments.cancel(payment)
+      } catch (error) {
+        throw unavailable('payment_unavailable', error)
+      }
+      if (outcome === 'taken') throw new HttpError(409, 'payment_used')
+      if (outcome === 'none') throw new HttpError(402, 'not_paid')
+      store.useUp(paymentHash(payment))
+      return [200, { cancelled: true }]
+    })
+  }
+
+  /**
    * What is kept for a stamp number: its face stamp, the first the face key signed for it, or null;
    * every ID stamp; each without its list; and how many free face tries it has left. A stamp is no use
    * without the seed behind its number.
@@ -752,6 +784,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     '/id/payment': pay,
     '/id/session': openId,
     '/id/stamp': idStamp,
+    '/id/cancel': cancelId,
     '/stamp': stampBack,
   }
 

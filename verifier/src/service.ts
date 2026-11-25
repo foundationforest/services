@@ -19,14 +19,24 @@ import { Store } from './store.ts'
 import { type Payments, type Prices, StripeClient } from './stripe.ts'
 
 /**
- * The consent screen: what an app shows before the ID check, word for word, served in `GET /` as
- * `consent`. It is the foundation's legal text, with the tries a payment gives, so another verifier
- * running this code writes its own here. It names no price: the app shows the one `GET /` gives
- * beside it, as Stripe's Price says it. README.md quotes it, and test/readme.test.ts holds the two
- * together.
+ * The ID check's consent screen: what an app shows before the ID check, word for word, served in
+ * `GET /` as `consent`. It is the foundation's legal text, with the tries a payment gives and how long
+ * the foundation's Didit plan keeps a check, so another verifier running this code writes its own
+ * here. It names no price: the app shows the one `GET /` gives beside it, as Stripe's Price says it.
+ * README.md quotes it, and test/readme.test.ts holds the two together; so for the texts below.
  */
 export const CONSENT =
-  "The check's price is held through Stripe for the Open Forest Foundation and covers up to three tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is counted once. When the check passes, Didit keeps it, so it can tell if the same person comes back: photos of your ID and what it reads on it (your name, date of birth and document number), your selfie and a short video; Didit deletes the face images and face template in it after about a year, and keeps the rest. A check that does not pass is deleted at Didit once Forest has its answer, a day after it began at the latest, and one left unfinished a day after it began. For a person with a stamp, Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that shows either says only that you were checked."
+  "The check's price is held through Stripe for the Open Forest Foundation and covers up to three tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest Foundation, checks your face and a government ID with Didit, its provider, to make sure each person is counted once. Didit checks the birth date on your ID: Forest is for people 18 and older. When the check passes, Didit keeps it up to five years, so it can tell if the same person comes back: photos of your ID and what it reads on it (your name, date of birth and document number), your selfie, a short video and a template of your face. A check that does not pass is deleted at Didit once Forest has its answer, a day after it began at the latest, and one left unfinished a day after it began. For a person with a stamp, Didit also keeps its record of the full name, date of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with every text field read from your ID beside it (your name, date of birth, document number and the rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that shows either says only that you were checked."
+
+/** The face check's consent screen: what an app shows before the face check, served in `GET /` as `face.consent`. */
+export const FACE_CONSENT =
+  "Forest, run by the Open Forest Foundation, checks your face with Didit, its provider, to make sure each person is counted once. The check is free, once, and within it you can take your selfie up to three times. Didit also uses your selfie to estimate your age: Forest is for people 18 and older, and a face it estimates to be under 21 is refused, so you take the ID check, which reads your birth date. Didit keeps your selfie and a short video while it checks. An hour after your stamp is signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no photo) up to five years, so it can tell if you come back; it keeps none when you already hold a face stamp. A check that does not pass is deleted at Didit once Forest has its answer, a day after it began at the latest, and one left unfinished a day after it began. Forest keeps nothing about who you are: only the stamp it signed you, a one-way hash of what the check saw, so it can hand it back if you lose it. It gives you a face stamp, with the face model's name and the 128 numbers it makes from your selfie beside it, for you to keep; a profile that shows it says only that you were checked."
+
+/** The one line an app has the person tick, before either check, served in `GET /` as `agree`. */
+export const AGREE = 'I am 18 or older and I agree'
+
+/** The line the person agrees to before the ID check, so it starts at once, served in `GET /` as `id.cancelRight`. */
+export const CANCEL_RIGHT = 'I ask for the ID check to start now, and I understand that I lose my right to cancel it once it is done.'
 
 export type Config = {
   /** The verifier's name: what a person's stamp number at it is derived from (the standard's `stampNumberOf`), and what every stamp it signs carries. */
@@ -198,16 +208,18 @@ export async function startVerifier(
   const aboutWith = (prices: Prices | null) =>
     canonical({
       name: config.verifierName,
-      // Each key with the names of its facts, in their list's order (facts.ts).
-      face: { key: keys.face, facts: [...FACE_FACTS] },
+      // Each key with the names of its facts, in their list's order (facts.ts), and the face check's consent screen.
+      face: { key: keys.face, facts: [...FACE_FACTS], consent: FACE_CONSENT },
       // Beside the ID key, as the ID check is the one sold: whether it is for sale, through the same
       // Stripe its routes use, so this never says so while they answer `not_for_sale`; whether its
       // payments run on a test key; and its two prices, as Stripe's Prices say, so no app writes one.
       // All always there, false and null without a key, the prices null until Stripe has said them,
       // so an app reads them with no rule for one left out.
-      id: { key: keys.id, facts: [...ID_FACTS], forSale: payments !== undefined, testPayments: payments?.test ?? false, price: prices?.price ?? null, addedPrice: prices?.addedPrice ?? null },
+      id: { key: keys.id, facts: [...ID_FACTS], forSale: payments !== undefined, testPayments: payments?.test ?? false, price: prices?.price ?? null, addedPrice: prices?.addedPrice ?? null, cancelRight: CANCEL_RIGHT },
       recipe: RECIPE,
+      // The ID check's consent screen, where apps read it before the face check had its own.
       consent: CONSENT,
+      agree: AGREE,
       ...(gift && { gift: { face: gift.gift.credits.face, host: gift.gift.origin, id: gift.gift.credits.id, sponsor: sponsor.address } }),
     })
   // The prices are Stripe's to say, and the face check never waits for Stripe: the verifier starts

@@ -246,25 +246,35 @@ test('capture takes a held payment through its PaymentIntent; one taken before i
   }
 })
 
-test('cancel cancels a held payment; one taken or cancelled already is left as it is', async () => {
+test('cancel cancels a held payment, and says what came of it: cancelled, now or before; taken, left as it is; nothing held', async () => {
   let intent: [number, unknown] = [200, intentBody({ status: 'canceled', cancellation_reason: null })]
   let session = sessionBody()
   reply = (req) => (req.url!.startsWith('/v1/checkout/') ? [200, session] : intent)
   seen.length = 0
-  await client().cancel(PAYMENT)
+  assert.equal(await client().cancel(PAYMENT), 'cancelled')
   assert.deepEqual(seen.map((r) => [r.method, r.url]), [['GET', `/v1/checkout/sessions/${PAYMENT}?expand[]=payment_intent`], ['POST', `/v1/payment_intents/${INTENT}/cancel`]])
-  for (const status of ['succeeded', 'canceled']) {
+  // Settled meanwhile: as Stripe's refusal says.
+  for (const [status, outcome] of [['succeeded', 'taken'], ['canceled', 'cancelled']] as const) {
     intent = unexpected(status)
-    await client().cancel(PAYMENT)
+    assert.equal(await client().cancel(PAYMENT), outcome, status)
   }
   seen.length = 0
-  for (const over of [{ payment_intent: intentBody({ status: 'succeeded' }) }, { payment_intent: null }, { metadata: {} }]) {
+  for (const [over, outcome] of [
+    [{ payment_intent: intentBody({ status: 'succeeded' }) }, 'taken'],
+    [{ payment_intent: intentBody({ status: 'canceled' }) }, 'cancelled'],
+    [{ payment_intent: intentBody({ status: 'requires_payment_method' }) }, 'none'],
+    [{ payment_intent: null, status: 'open' }, 'none'],
+    [{ metadata: {} }, 'none'],
+  ] as const) {
     session = sessionBody(over)
-    await client().cancel(PAYMENT)
+    assert.equal(await client().cancel(PAYMENT), outcome, JSON.stringify(over))
   }
   assert.equal(seen.filter((r) => r.method === 'POST').length, 0, 'nothing to cancel')
+  reply = () => [404, { error: { type: 'invalid_request_error', code: 'resource_missing' } }]
+  assert.equal(await client().cancel(PAYMENT), 'none', 'one Stripe does not have')
   session = sessionBody()
   intent = [500, {}]
+  reply = (req) => (req.url!.startsWith('/v1/checkout/') ? [200, session] : intent)
   await assert.rejects(client().cancel(PAYMENT), (error: Error) => error instanceof PaymentUnavailable && error.message === 'Stripe answered 500 to a cancel')
 })
 

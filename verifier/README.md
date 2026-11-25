@@ -9,9 +9,9 @@ number, which check gave it, the stamps and how many free face tries it used, an
 you are; of the ID check's payment, a hash, never beside your stamp. Your face, and from the ID
 check your ID's photos and what is read on it, stay with Didit, its check provider, which decides
 who is the same person and keeps them so it can tell if you come back; how you paid stays with
-Stripe. The face check is free, for two failed tries; the ID check, which gives a face stamp too,
-holds $5 for your first ID and $2 for each you add, taken only if it gives you a new stamp. No key
-of yours, no account.
+Stripe. Both checks are for people 18 and older. The face check is free, once; the ID check, which
+gives a face stamp too, holds $5 for your first ID and $2 for each you add, taken only if it gives
+you a new stamp. No key of yours, no account.
 
 ## How it works
 
@@ -47,11 +47,14 @@ decides](#didit-decides)).
 - **Anything else unfinished** answers `403 not_approved`, and the app asks again once the person is
   done. A refused or failed request uses nothing up, but for the ID check's refusals that end its
   payment, and the face check's that are a try.
-- **Two free face tries a stamp number:** a try is a face session opened for S that Didit finished,
-  approved, declined or in review, that an app asked a stamp of, and that gave S no stamp, counted
-  once. A session never finished, expired, abandoned or still going, is no try. After two, `POST
-  /face/session` for S answers `409 face_tries_used`, and the person takes the ID check. `POST
-  /stamp` says how many are left, so an app knows before it opens one.
+- **One free face check a stamp number:** its try is a face session opened for S that Didit
+  finished, approved, declined or in review, that an app asked a stamp of, and that gave S no stamp,
+  counted once. A session never finished, expired, abandoned or still going, is no try. After it,
+  `POST /face/session` for S answers `409 face_tries_used`, and the person takes the ID check. `POST
+  /stamp` says whether it is left, so an app knows before it opens one. Within a check, Didit lets
+  the person take it up to three times.
+- **18 and older:** the face check refuses a face Didit estimates under 21, `too_young`, so the
+  person takes the ID check, which refuses a document whose birth date shows under 18.
 - **An ID check is a face check and a document:** it takes a live selfie and matches it to the
   document, so when it gives S an ID stamp and S holds no face stamp, it signs S one from the same
   selfie too, with no rule of its own and no gift of its own: the ID stamp's gift stands for both.
@@ -77,12 +80,13 @@ of them says.
 |---|---|---|
 | `known_person` | Another person's document has this one's birth date, country and a highly similar name | `POSSIBLE_DUPLICATED_USER` |
 | `known_face` | Another person's face | `DUPLICATED_FACE`, `POSSIBLE_DUPLICATED_FACE`, `DUPLICATED_FACE_NAME_MISMATCH`, `DUPLICATED_FACE_DOCUMENT_MISMATCH`, `FRONT_CAMERA_DUPLICATED_FACE`, `POSSIBLE_FRONT_CAMERA_DUPLICATED_FACE`, `FRONT_CAMERA_DUPLICATED_FACE_NAME_MISMATCH`, `FRONT_CAMERA_DUPLICATED_FACE_DOCUMENT_MISMATCH` |
+| `too_young` | A face Didit estimates under the face check's minimum; on the ID check, a birth date Didit read that shows under 18, while one it could not read is `id_unclear` | `AGE_BELOW_MINIMUM`, `MINIMUM_AGE_NOT_MET` |
 | `face_mismatch` | The selfie does not match the ID's photo | `LOW_FACE_MATCH_SIMILARITY`, `FACE_MATCH_MAX_ATTEMPTS_EXCEEDED`, `LOW_FRONT_CAMERA_FACE_MATCH_SIMILARITY` |
 | `id_unclear` | The ID can't be read | `COULD_NOT_RECOGNIZE_DOCUMENT`, `COULD_NOT_DETECT_DOCUMENT_TYPE`, `IMAGE_TOO_BLURRY`, `IMAGE_TOO_DARK`, `IMAGE_TOO_BRIGHT`, `NAME_NOT_DETECTED`, `DATE_OF_BIRTH_NOT_DETECTED`, `DOCUMENT_NUMBER_NOT_DETECTED`, `EXPIRATION_DATE_NOT_DETECTED`, `INVALID_DATE`, `MRZ_NOT_DETECTED`, `QR_NOT_DETECTED`, `BARCODE_NOT_DETECTED`, `PORTRAIT_IMAGE_NOT_DETECTED`, `DOCUMENT_HAS_NO_PORTRAIT`, `CRITICAL_FIELD_OCCLUSION_DETECTED`, `FACE_MATCH_NOT_COMPUTED`, `NO_REFERENCE_IMAGE` |
 | | It is expired, or not accepted | `DOCUMENT_EXPIRED`, `DOCUMENT_NOT_SUPPORTED_FOR_APPLICATION` |
 | | It looks altered | `SCREEN_CAPTURE_DETECTED`, `PRINTED_COPY_DETECTED`, `PORTRAIT_MANIPULATION_DETECTED`, `SPECIMEN_DOCUMENT_DETECTED`, `PUBLIC_DOCUMENT_IMAGE_DETECTED`, `MRZ_VALIDATION_FAILED`, `MRZ_AND_DATA_EXTRACTED_FROM_OCR_NOT_SAME`, `DATA_INCONSISTENT`, `DOCUMENT_SIDES_MISMATCH`, `QR_VALIDATION_FAILED`, `BARCODE_VALIDATION_FAILED`, `BARCODE_SIGNATURE_INVALID`, `DOCUMENT_NUMBER_FORMAT_MISMATCH`, `PERSONAL_NUMBER_FORMAT_MISMATCH` |
 | `face_unclear` | Not a live face | `LIVENESS_FACE_ATTACK`, `LOW_LIVENESS_SCORE`, `VIRTUAL_CAMERA_DETECTED`, `INJECTION_ATTACK_DETECTED`, `FRAME_INJECTION_SUSPECTED`, `SCREEN_CAPTURE_DURING_CAPTURE`, `EXTERNAL_CAPTURE_DEVICE_DETECTED`, `LIVENESS_VIDEO_ANOMALY` |
-| | The face can't be seen well | `NO_FACE_DETECTED`, `NO_FACE_IN_SELFIE`, `MULTIPLE_FACES_DETECTED`, `LOW_FACE_QUALITY`, `LOW_FACE_LUMINANCE`, `HIGH_FACE_LUMINANCE`; and an approved selfie in which [the face model](#the-face-model) finds no face |
+| | The face can't be seen well | `NO_FACE_DETECTED`, `AGE_NOT_DETECTED`, `NO_FACE_IN_SELFIE`, `MULTIPLE_FACES_DETECTED`, `LOW_FACE_QUALITY`, `LOW_FACE_LUMINANCE`, `HIGH_FACE_LUMINANCE`; and an approved selfie in which [the face model](#the-face-model) finds no face |
 | `other` | Anything else: a blocklist, an age limit, a decline by hand, no risk at all | Any other |
 
 - **A refusal is kept, and the session deleted at once:** the file keeps its code (`refused`), so
@@ -130,7 +134,10 @@ get it.
 The hold is cancelled, and the payment used up:
 
 - when its check is refused as a person or a face Didit has seen, `known_person` or `known_face`,
-  since no other try can pass;
+  or as a birth date read under 18, `too_young`, since no other try can pass;
+- when the person cancels the check, `POST /id/cancel` with the payment, while it gave no stamp: at
+  once, and the payment opens no more sessions; one that gave a stamp answers `409 payment_used`,
+  and one that holds nothing, not yet paid, `402 not_paid`;
 - when its newest session, its last try, is refused as a session that will never pass: any `403` but
   `not_approved`, `unknown_session` and `wrong_workflow`. An older session refused later ends
   nothing, since the newest may still pass;
@@ -229,9 +236,11 @@ signed it, and again from that session within its hour.
 
 `GET /` gives, in canonical JSON (one exact way of writing it): its name; its two keys as addresses,
 each with the names of its facts, `facts`, in their list's order (`extra_fields.<its key>` for each
-of a document's own), and the ID key with `forSale`, `testPayments`, `price` and `addedPrice`;
-`recipe`, the standard's facts as a list; `consent`, the text an app shows before the ID check ([The
-consent screen](#didit)); and with gifts,
+of a document's own), the face key with `consent`, the text an app shows before the face check, and
+the ID key with `forSale`, `testPayments`, `price`, `addedPrice` and `cancelRight`, the line the
+person agrees to that starts the ID check at once; `recipe`, the standard's facts as a list;
+`consent`, the text an app shows before the ID check; `agree`, the one line an app has the person
+tick before either check ([The consent screens](#didit)); and with gifts,
 `"gift":{"face":<n>,"host":"<origin>","id":<n>,"sponsor":"<address>"}`.
 
 - **The name** never changes: everyone's stamp number here is derived from it
@@ -243,9 +252,10 @@ consent screen](#didit)); and with gifts,
 - **`price` and `addedPrice`,** each `{"amount": <n>, "currency": "<code>"}` as Stripe's Price says
   it (its `unit_amount`, in the currency's smallest unit, so `500` is $5, and its `currency`, lower
   case): what a stamp number that holds no ID stamp pays, and what one that holds one pays. An app
-  tells which by `POST /stamp`'s `id`, empty or not, and shows it beside the consent screen, so no
-  app writes a price. Both `null` without a key, and until Stripe has said them: the verifier starts
-  without them and asks Stripe at once and at every sweep, so the face check never waits for Stripe.
+tells which by `POST /stamp`'s `id`, empty or not, and shows it beside the ID check's consent
+  screen, so no app writes a price. Both `null` without a key, and until Stripe has said them: the
+  verifier starts without them and asks Stripe at once and at every sweep, so the face check never
+  waits for Stripe.
 - **Two keys, one per check,** so a reader can trust or weigh them apart.
 - **One secret,** 32 random bytes made on its own machine at the first start that finds none (the
   standard's `newSeed`), kept in `verifier-seed.json` beside its database, readable by its own user
@@ -285,10 +295,11 @@ Every minute (`DELETE /v3/session/{id}/delete/` to delete one):
   on it (document number, nationality, dates), and its decision. A deletion, or a question, Didit
   does not answer is tried at the next sweep.
 - **A kept face template** (`retain_face_embeddings`, whatever the application's setting) is
-  numbers, no image, no name, used only for its application's face search, so a face that comes
-  back is known. Didit ends every kept template; the verifier asks for 3650 days, the longest it
-  allows. So a person's kept faces at Didit stay few: their ID checks, and one face check's
-  template; an added ID keeps its own check, a later face stamp keeps none.
+  numbers, no image, no name, used only for its application's face search, so a face that comes back
+  is known. Didit ends every kept template; the verifier asks for 1825 days, five years, as long as
+  the foundation's Didit plan keeps anything. So a person's kept faces at Didit stay few: their ID
+  checks, and one face check's template; an added ID keeps its own check, a later face stamp keeps
+  none.
 
 ### What it keeps
 
@@ -301,7 +312,7 @@ One SQLite file (a database in a single file), nine tables:
 | `to_delete` | The id of each session that gave a stamp, until its hour is over and, for a face check, Didit has deleted it: its check, when it was first signed, and whether Didit keeps its face | The hour, and the sweep |
 | `opened` | The id of each session opened that gave no stamp, till its day: its check, when it opened; for an ID session which of its payment's tries it is and the SHA-256 of that payment while it is not used up; for a face session whether it counted as a free try | The day, the sweep, a payment's stamp from its own sessions only, its last try, and a face try counted once. It goes with its day, or moves to `to_delete` |
 | `refused` | The id of each opened session refused, its code, whether Didit has deleted it, and the SHA-256 of its `vendor_data` with its id, which tells its stamp number from any other and ties no two rows together | The app gets the code when it asks, for that stamp number alone, and the sweep deletes the session in Didit at once. It goes with its `opened` row |
-| `face_tries` | Each stamp number one of whose face sessions Didit finished without giving it a stamp, and how many | Two free face tries a stamp number |
+| `face_tries` | Each stamp number one of whose face sessions Didit finished without giving it a stamp, and how many | One free face check a stamp number |
 | `gifts`, `id_gifts` | Each stamp number given its face stamp's gift, or its ID stamp's, with a hash of the buy | One gift a person from each check; the same buy gets the same ticket |
 | `payments` | The SHA-256 of each payment that opened an ID session, how many sessions it opened, and whether it is used up | One payment, three sessions at most and one ID stamp |
 
@@ -369,6 +380,7 @@ sees them, and pays nothing: the host lists its sponsor key and counts what its 
 | `GET /id/pay` | none: `#<clientSecret>` after its address | `200`, [the payment page](#the-payment-page) |
 | `POST /id/session` | `{"payment": "<as POST /id/payment answered it>"}`, and may add `"returnUrl"`, as for a face session | `201 {"sessionId", "url"}` |
 | `POST /id/stamp` | `{"sessionId", "stampNumber", "payment"}`, and may add `"gift"` | `200 {"stamp", "face"}`, `face` the face stamp signed from the same selfie, or `null`; with `"gift"` if asked |
+| `POST /id/cancel` | `{"payment": "<as POST /id/payment answered it>"}` | `200 {"cancelled": true}`: its hold cancelled, now or before, while it gave no stamp ([The ID check's payment](#the-id-checks-payment)) |
 | `POST /stamp` | `{"stampNumber": "<decimal>"}` | `200 {"face", "id", "faceTriesLeft"}`: a stamp or `null`, a list of stamps, a number |
 
 A stamp number is decimal text, as the standard's `stampNumberOf` gives it: no sign, no leading
@@ -385,12 +397,12 @@ locked. A body with any other field is refused. CORS is open to any origin. Ever
 - **`402`:** `not_paid` (no money held, held a day ago or more, no payment Stripe has, or not the
   payment that opened the session).
 - **`403`, the check does not count:** Didit's refusal, the first that applies ([Didit
-  decides](#didit-decides)): `known_person`, `known_face`, `face_mismatch`, `id_unclear`,
-  `face_unclear`, `other`; and `unknown_session`, `wrong_workflow` (another workflow's session, or
-  an approved one without a step its check needs), `expired`, `not_approved`.
+  decides](#didit-decides)): `known_person`, `known_face`, `too_young`, `face_mismatch`,
+  `id_unclear`, `face_unclear`, `other`; and `unknown_session`, `wrong_workflow` (another workflow's
+  session, or an approved one without a step its check needs), `expired`, `not_approved`.
 - **`409`:** `session_used` (opened for or given to another stamp number, or its hour is over),
   `payment_used` (it gave its stamp, opened its three sessions, or its hold was cancelled),
-  `face_tries_used` (the stamp number's two free face tries are used).
+  `face_tries_used` (the stamp number's free face check is used).
 - **Others:** `404 not_found` (no route); `405 post_only`, `405 get_only`; `413 too_large` (over
   4 KB); `502 face_check_unavailable`, `502 payment_unavailable` (Stripe, or its prices not yet said);
   `503 not_for_sale` (no Stripe); `500 internal`.
@@ -435,41 +447,69 @@ for Stripe to start: it asks for the prices once it runs ([Its keys](#its-keys))
 - **The foundation pays per check:** $0.10 a face check and $0.30 an ID check, on Didit's list. The
   cost is capped at Didit by a prepaid balance with no auto-refill. The ID check's price is in
   [Stripe](#stripe).
-- **Two free face tries a stamp number:** each try costs the foundation at Didit, so a person whose
-  face check fails twice takes the ID check, which they pay for.
+- **One free face check a stamp number:** each costs the foundation at Didit, so a person whose face
+  check fails takes the ID check, which they pay for.
 - **One application,** "forest id", with both workflows.
-- **"Forest face (Didit decides)":** liveness with face search; a duplicated face is declined.
+- **"Forest face (Didit decides)":** liveness with face search and an age estimate; a duplicated
+  face is declined, and so is a face estimated under 21.
 - **"Forest ID (Didit decides)":** a document, liveness and a face match; a possible duplicated user
   is declined; a duplicated face takes no action, so twins and look-alikes pass; a face match under
-  40 is declined; no setting sends a check to review.
-- **Retention:** the application's own window is unlimited. Its biometric retention deletes a kept
-  check's face images and face template after about a year, on the date its decision gives as
-  `biometric_retention.deletes_at`, and keeps the rest of the check. The verifier deletes every
+  40 is declined; a document showing under 18 is declined; no setting sends a check to review.
+- **Up to three takes in a check,** on either workflow.
+- **Retention:** Didit's Growth plan, which keeps a check up to five years, its face images and face
+  template too, as `biometric_retention.deletes_at` on the check says. The verifier deletes every
   session it opens but an ID check that gave a stamp ([The sweep](#the-sweep)).
 
-**The consent screen.** `GET /` serves it as `consent`, and an app shows what it gets, before the ID
-check:
+**The consent screens.** `GET /` serves each, and an app shows what it gets, before its check.
+
+**The face check's consent screen.** `face.consent`:
+
+> Forest, run by the Open Forest Foundation, checks your face with Didit, its provider, to make sure
+> each person is counted once. The check is free, once, and within it you can take your selfie up to
+> three times. Didit also uses your selfie to estimate your age: Forest is for people 18 and older,
+> and a face it estimates to be under 21 is refused, so you take the ID check, which reads your
+> birth date. Didit keeps your selfie and a short video while it checks. An hour after your stamp is
+> signed, Forest deletes the check at Didit, which still keeps a template of your face (numbers, no
+> photo) up to five years, so it can tell if you come back; it keeps none when you already hold a
+> face stamp. A check that does not pass is deleted at Didit once Forest has its answer, a day after
+> it began at the latest, and one left unfinished a day after it began. Forest keeps nothing about
+> who you are: only the stamp it signed you, a one-way hash of what the check saw, so it can hand it
+> back if you lose it. It gives you a face stamp, with the face model's name and the 128 numbers it
+> makes from your selfie beside it, for you to keep; a profile that shows it says only that you were
+> checked.
+
+**The ID check's consent screen.** `consent`, where apps read it before the face check had its own:
 
 > The check's price is held through Stripe for the Open Forest Foundation and covers up to three
 > tries in a day: it is taken only if the check gives you a new stamp, and is otherwise released
 > within two days. Stripe keeps your payment details and email; Forest keeps of the payment only a
 > one-way hash and how it was used, never beside your stamp. Forest, run by the Open Forest
 > Foundation, checks your face and a government ID with Didit, its provider, to make sure each
-> person is counted once. When the check passes, Didit keeps it, so it can tell if the same person
-> comes back: photos of your ID and what it reads on it (your name, date of birth and document
-> number), your selfie and a short video; Didit deletes the face images and face template in it
-> after about a year, and keeps the rest. A check that does not pass is deleted at Didit once Forest
-> has its answer, a day after it began at the latest, and one left unfinished a day after it began.
-> For a person with a stamp, Didit also keeps its record of the full name, date of birth and country
-> it read. Forest keeps nothing about who you are: only the stamps it signed you, a one-way hash of
-> what each check saw, so it can hand them back if you lose them. It gives you an ID stamp, with
-> every text field read from your ID beside it (your name, date of birth, document number and the
-> rest), for you to keep, and a face stamp from the same selfie if you have none yet; a profile that
-> shows either says only that you were checked.
+> person is counted once. Didit checks the birth date on your ID: Forest is for people 18 and older.
+> When the check passes, Didit keeps it up to five years, so it can tell if the same person comes
+> back: photos of your ID and what it reads on it (your name, date of birth and document number),
+> your selfie, a short video and a template of your face. A check that does not pass is deleted at
+> Didit once Forest has its answer, a day after it began at the latest, and one left unfinished a
+> day after it began. For a person with a stamp, Didit also keeps its record of the full name, date
+> of birth and country it read. Forest keeps nothing about who you are: only the stamps it signed
+> you, a one-way hash of what each check saw, so it can hand them back if you lose them. It gives
+> you an ID stamp, with every text field read from your ID beside it (your name, date of birth,
+> document number and the rest), for you to keep, and a face stamp from the same selfie if you have
+> none yet; a profile that shows either says only that you were checked.
+
+**The line the person ticks.** `agree`, one tick before either check:
+
+> I am 18 or older and I agree
+
+**The right to cancel.** `id.cancelRight`, which the person agrees to before the ID check, so it
+starts at once; until it gives a stamp, the app cancels it with `POST /id/cancel`:
+
+> I ask for the ID check to start now, and I understand that I lose my right to cancel it once it is
+> done.
 
 **Data law:** the Open Forest Foundation is the responsible party for both checks, so two things sit
 outside this code: a processing agreement with Didit, and Didit's retention setting. Paperwork and a
-setting; nothing here does them. The consent screen above is this code's, and an app shows it.
+setting; nothing here does them. The consent screens above are this code's, and an app shows them.
 
 ### Stripe
 
@@ -561,14 +601,14 @@ refusal kept and deleted at once, whether the app asked or not, a Didit user del
 stamp number holds no stamp and has no session open, the `vendor_data`, the ID check's hold, its
 tries, its cancels and its clock, its two prices and the payment's lock, the payment page's headers
 and its script, run with a stand-in for Stripe's, and its one message, an ID stamp for each document
-and the face stamp an ID check gives, the free face tries, which sessions keep their faces, the
-Stripe and Didit clients' requests, verifications and a facts proof made from the stamps and checked
-against the published keys, the lists, their salts and the `vendor_data` hash against pinned
-vectors, what is read of Didit's decision and ID report, stamps asked back, the secret, the sweep,
-the raw file and one an earlier version wrote, the face models on three portraits, both gifts'
-tickets taken by the host's own seller, what `GET /` says of the ID check's sale, what a failure at
-Stripe or Didit logs, the fetch's retries, and this README's consent screen, codes and Stripe's page
-text, as the code has them.
+and the face stamp an ID check gives, the free face check, the age refusals, cancelling an ID check,
+which sessions keep their faces, the Stripe and Didit clients' requests, verifications and a facts
+proof made from the stamps and checked against the published keys, the lists, their salts and the
+`vendor_data` hash against pinned vectors, what is read of Didit's decision and ID report, stamps
+asked back, the secret, the sweep, the raw file and one an earlier version wrote, the face models on
+three portraits, both gifts' tickets taken by the host's own seller, what `GET /` says of the ID
+check's sale, what a failure at Stripe or Didit logs, the fetch's retries, and this README's consent
+screens and lines, codes and Stripe's page text, as the code has them.
 
 ## Promises
 
@@ -615,9 +655,10 @@ text, as the code has them.
 - **A lost volume refuses everyone Didit knows:** a new secret gives every stamp number a new hash,
   so each person's earlier checks are another user's, until the checks move to an application that
   has none.
-- **A kept face template ends** after 3650 days at most, and an ID check's face images and face
-  template after about a year: then a returning face is new to Didit, and only the ID check's
-  document still finds the person.
+- **Didit keeps a face template, and a kept ID check, up to five years:** then a returning face or
+  document is new to Didit.
+- **Didit's age estimate can be off by years:** a person 18 to 20 whose face looks under 21 uses
+  their free face check, and takes the paid ID check.
 - **For a person with a stamp, Didit's list of users still shows** the full name, birth date and
   country each of their ID checks read, deleted ones too.
 - **A refusal the app never asks about ends no payment:** its hold waits for the hourly search, two
@@ -631,7 +672,7 @@ text, as the code has them.
 - **The same document checked twice gives a second stamp for it:** the person paid, and an index
   counts the ID key once.
 - **Each seed is its own stamp number,** so a new one, as a new passkey in an app gives, starts the
-  free face tries over.
+  free face check over.
 - **A face session no app asks a stamp of is no try,** however Didit finished it.
 - **Stamps signed before this code kept them do not come back:** `POST /stamp` holds none, and the
   person checks again.
