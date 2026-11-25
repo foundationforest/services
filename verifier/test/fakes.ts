@@ -314,7 +314,7 @@ const TABLES = [
   'CREATE TABLE deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID',
   'CREATE TABLE face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE fingerprints (code BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (code, owner)) WITHOUT ROWID',
+  'CREATE TABLE fingerprints (first_name BLOB NOT NULL, last_name BLOB NOT NULL, birth BLOB NOT NULL, personal_number BLOB NOT NULL, id_type BLOB NOT NULL, country BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (first_name, last_name, birth, personal_number, id_type, country, owner)) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
@@ -331,7 +331,7 @@ const TABLES = [
  * deleted, each with the payment that opened it while it is open, or null; of those, each refused,
  * with its code; each stamp number's face tries; the stamp numbers given each check's gift; each
  * payment that opened an ID session, by its Checkout Session's id, with its tries and whether it is
- * used up; by `vendor_data`, each stamp number whose face Didit holds, how many person codes each
+ * used up; by `vendor_data`, each stamp number whose face Didit holds, how many scrambled copies each
  * holds, and each face deletion with what became of it.
  */
 export type Expected = {
@@ -344,7 +344,7 @@ export type Expected = {
   idGifts?: bigint[]
   payments?: [string, number, boolean][]
   faces?: string[]
-  codes?: [string, number][]
+  fingerprints?: [string, number][]
   deletions?: [string, 'requested' | 'done'][]
   never: string[]
 }
@@ -358,7 +358,7 @@ export type Expected = {
  * their codes; the stamp numbers given
  * each check's gift, each with a hash of its buy; each payment as the hash of its id, with its tries
  * and whether it is used up, and when; by the stamp number's keyed hash, whose faces Didit holds, its
- * person codes and its face deletions; and nothing else. None of `never` (names, birth dates, embeddings, a
+ * scrambled copies and its face deletions; and nothing else. None of `never` (names, birth dates, embeddings, a
  * gift's buy) is anywhere in its bytes, no payment id and no other session id is in the clear, and no
  * journal is left beside it.
  */
@@ -437,8 +437,8 @@ export function assertKept(path: string, expected: Expected): void {
     const owner = (r: Record<string, unknown>) => Buffer.from(r.owner as Uint8Array).toString('hex')
     const faces = db.prepare('SELECT owner FROM faces').all().map(owner).sort()
     assert.deepEqual(faces, [...(expected.faces ?? [])].sort(), 'by its keyed hash, each stamp number whose face Didit holds')
-    const codes = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
-    assert.deepEqual(codes, (expected.codes ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many person codes each stamp number holds')
+    const copies = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
+    assert.deepEqual(copies, (expected.fingerprints ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many scrambled copies each stamp number holds')
     const deletions = db.prepare('SELECT owner, done_at FROM deletions').all().map((r) => `${owner(r)} ${r.done_at === null ? 'requested' : 'done'}`).sort()
     assert.deepEqual(deletions, (expected.deletions ?? []).map(([v, state]) => `${v} ${state}`).sort(), 'by its keyed hash, each face deletion and what became of it')
   } finally {

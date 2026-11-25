@@ -35,12 +35,14 @@
 //                  Session's id, how many sessions it opened, whether it is used up (`stamped`: it
 //                  gave a stamp, or its hold was cancelled), and when it opened its first, so it opens
 //                  at most ID_TRIES and gives one stamp; it goes 30 days after (server.ts)
-//   fingerprints   the two person codes of each ID stamp (fingerprint.ts), each beside its stamp
-//                  number's keyed hash, the `vendor_data` its Didit user is under, for good, so no other
-//                  stamp number gets an ID stamp for the same person
+//   fingerprints   for each ID stamp, its scrambled copy (fingerprint.ts): its first name, first last
+//                  name, birth date, personal number, ID type and country, each scrambled on its own,
+//                  beside its stamp number's keyed hash, the `vendor_data` its Didit user is under, for
+//                  good, so no other stamp number gets an ID stamp for the same person; one row for the
+//                  same details twice
 //   faces          each stamp number's hash whose face Didit holds, and until when: five years after
 //                  the template was kept, when the sweep deletes its Didit user; so a stamp number keeps
-//                  one template, and the person codes know whether a face is there to compare
+//                  one template, and the scrambled copy knows whether a face is there to compare
 //   deletions      each stamp number's hash whose face its person asked to delete: when it runs, 28
 //                  days after the ask, and when it ran, so the app can say so; it goes 90 days after it
 //                  ran
@@ -60,7 +62,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/proofs'
 
 import type { Check } from './didit.ts'
-import type { Codes } from './fingerprint.ts'
+import { COLUMNS, type Fingerprint } from './fingerprint.ts'
 
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {
@@ -110,6 +112,13 @@ const STAMPS = 'stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT N
 /** Whether Didit keeps a session's face when it is deleted; 1 for the rows of a file from before it was kept. */
 const KEEP_FACE = 'keep_face INTEGER NOT NULL DEFAULT 1'
 
+/**
+ * The scrambled copies' columns, each a detail's scrambled bytes, or none for one the ID lacks, and
+ * the stamp number's keyed hash; the details first, so a row is found by its first name, first last
+ * name and birth date.
+ */
+const FINGERPRINTS = `${COLUMNS.map((column) => `${column} BLOB NOT NULL`).join(', ')}, owner BLOB NOT NULL, PRIMARY KEY (${COLUMNS.join(', ')}, owner)`
+
 /** A stamp number's keyed hash as the file keeps it: the 32 bytes of its `vendor_data`'s hex. */
 const owner = (vendorData: string) => Buffer.from(vendorData, 'hex')
 const vendorDataOf = (row: Record<string, unknown>) => Buffer.from(row.owner as Uint8Array).toString('hex')
@@ -151,8 +160,8 @@ export class Store {
   readonly #toRefuse: StatementSync
   readonly #gone: StatementSync
   readonly #forgetRefusal: StatementSync
-  readonly #addCode: StatementSync
-  readonly #owners: StatementSync
+  readonly #addFingerprint: StatementSync
+  readonly #holders: StatementSync
   readonly #face: StatementSync
   readonly #addFace: StatementSync
   readonly #dropFace: StatementSync
@@ -184,7 +193,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS fingerprints (code BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (code, owner)) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS fingerprints (${FINGERPRINTS}) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID;
     `)
@@ -224,8 +233,9 @@ export class Store {
     this.#toRefuse = this.#db.prepare('SELECT r.session_id, o.kind FROM refused r JOIN opened o ON o.session_id = r.session_id WHERE r.gone = 0 ORDER BY o.opened_at')
     this.#gone = this.#db.prepare('UPDATE refused SET gone = 1 WHERE session_id = ?')
     this.#forgetRefusal = this.#db.prepare('DELETE FROM refused WHERE session_id = ?')
-    this.#addCode = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (code, owner) VALUES (?, ?)')
-    this.#owners = this.#db.prepare('SELECT owner FROM fingerprints WHERE code = ?')
+    this.#addFingerprint = this.#db.prepare(`INSERT OR IGNORE INTO fingerprints (${COLUMNS.join(', ')}, owner) VALUES (${COLUMNS.map(() => '?').join(', ')}, ?)`)
+    // The rule: the first name, the first last name and the birth date, and not the country.
+    this.#holders = this.#db.prepare('SELECT DISTINCT owner FROM fingerprints WHERE first_name = ? AND last_name = ? AND birth = ?')
     this.#face = this.#db.prepare('SELECT until FROM faces WHERE owner = ?')
     this.#addFace = this.#db.prepare('INSERT OR IGNORE INTO faces (owner, until) VALUES (?, ?)')
     this.#dropFace = this.#db.prepare('DELETE FROM faces WHERE owner = ?')
@@ -265,7 +275,7 @@ export class Store {
     const payments = sql('payments')
     if (payments !== undefined && !payments.includes(' at ')) this.#db.exec(`ALTER TABLE payments ADD COLUMN at INTEGER NOT NULL DEFAULT ${Math.floor(Date.now())}`)
     // An earlier version's table of the same name, of keyed hashes of a name and a birth date.
-    if (sql('fingerprints')?.includes('owner') === false) this.#db.exec('DROP TABLE fingerprints')
+    if (sql('fingerprints')?.includes('first_name') === false) this.#db.exec('DROP TABLE fingerprints')
   }
 
   /** Whether this session gave a stamp. */
@@ -301,7 +311,7 @@ export class Store {
    * moved from `opened` to `to_delete`, and the payment used up, in one transaction. `face` is the
    * face stamp an ID check signs from its selfie beside its ID stamp, kept only if the stamp number
    * holds none. `vendorData` is the stamp number's keyed hash: when Didit holds no face of it, this
-   * session's is kept, till `faceUntil`; an ID stamp's `codes` are kept beside it. Two requests can
+   * session's is kept, till `faceUntil`; an ID stamp's scrambled copy, `fingerprint`, is kept beside it. Two requests can
    * both pass every check before this while each waits for Didit; only the first to get here keeps
    * anything, and the second is checked against it. A session sent again within its hour uses no
    * payment.
@@ -316,7 +326,7 @@ export class Store {
     faceUntil: number
     stamp: KeptStamp
     face?: KeptStamp
-    codes?: Codes
+    fingerprint?: Fingerprint
     payment?: Uint8Array
   }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
@@ -342,7 +352,7 @@ export class Store {
         // choice stay: a session signed again within its hour gets no more time.
         const keepFace = !again && !this.faceKept(input.vendorData)
         if (keepFace) this.#addFace.run(owner(input.vendorData), input.faceUntil)
-        if (input.codes) for (const code of [input.codes.full, input.codes.short]) this.#addCode.run(code, owner(input.vendorData))
+        if (input.fingerprint) this.#addFingerprint.run(...COLUMNS.map((column) => input.fingerprint![column]), owner(input.vendorData))
         this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, keepFace ? 1 : 0)
         this.#closed.run(input.sessionId)
       }
@@ -360,9 +370,9 @@ export class Store {
     return this.#face.get(owner(vendorData)) !== undefined
   }
 
-  /** The `vendor_data` of each stamp number that holds this person code. */
-  holders(code: Uint8Array): string[] {
-    return this.#owners.all(code).map(vendorDataOf)
+  /** The `vendor_data` of each stamp number whose scrambled copy matches this one: its first name, first last name and birth date. */
+  holders(fingerprint: Fingerprint): string[] {
+    return this.#holders.all(fingerprint.first_name, fingerprint.last_name, fingerprint.birth).map(vendorDataOf)
   }
 
   /** The stamp numbers, by `vendor_data`, whose face template's years are over at `at`. */

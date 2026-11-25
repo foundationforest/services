@@ -12,7 +12,7 @@
 // set a Declined or In Review status (`decision_trace.status_warnings`), the selfie's address, the
 // `vendor_data` of each other user whose face Didit matched to the selfie, and, from the document
 // step, the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from
-// (facts.ts), and the names its machine-readable zone holds, which the person codes are made from
+// (facts.ts), and the names its machine-readable zone holds, which the scrambled copy is made from
 // (fingerprint.ts). Everything else Didit returns is dropped the moment the answer is parsed. Nothing
 // Didit says is stored as it is.
 //

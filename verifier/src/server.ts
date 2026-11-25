@@ -74,8 +74,8 @@
 // that code when it asks for S, and deleted in Didit at once. A face check gives a new face stamp; an
 // ID check, a new ID stamp, and, when S holds no face stamp, a face stamp from the same selfie: an ID
 // check is a face check and a document. An ID check Didit approved is refused, `known_person`, when
-// another stamp number holds its person codes (fingerprint.ts) and is the same person: its face
-// matched, or, with no face of it at Didit, its full code (`seenBefore`).
+// another stamp number's scrambled copy (fingerprint.ts) matches its first name, first last name and
+// birth date and it is the same person: its face matched, or no face of it is at Didit (`seenBefore`).
 //
 // One free face check: a face session for S that Didit finished (approved, declined or in review) and
 // that an app asked a stamp of, refused, is S's try, once (store.ts); after FACE_TRIES, S opens no
@@ -109,7 +109,7 @@ import { type Check, type Decision, DiditUnavailable, FACE_RETENTION_DAYS, type 
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceList, idList, saltsOf } from './facts.ts'
-import { type Codes, codesOf, personOf } from './fingerprint.ts'
+import { type Fingerprint, fingerprintOf, personOf } from './fingerprint.ts'
 import { payPage } from './page.ts'
 import type { Ed25519Key } from './seed.ts'
 import { FACE_TRIES, type KeptStamp, type Store, paymentHash } from './store.ts'
@@ -269,7 +269,7 @@ export type VerifierDeps = {
   embedder: Embedder
   /** The two stamp keys, service keys: the face key and the ID key. */
   stampKeys: { face: ServiceKey; id: ServiceKey }
-  /** The keys of a stamp number's hash in `vendor_data`, of the facts' salts and of the person codes, derived from the verifier's secret (seed.ts). */
+  /** The keys of a stamp number's hash in `vendor_data`, of the facts' salts and of the scrambled copy, derived from the verifier's secret (seed.ts). */
   hashKeys: { vendorData: Uint8Array; salt: Uint8Array; fingerprint: Uint8Array }
   /** The key a payment's stamp number is locked under (`lockPayment`), derived the same way. */
   paymentKey: Uint8Array
@@ -754,21 +754,16 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
   }
 
   /**
-   * Whether another stamp number already holds an ID stamp for this person, by its codes
-   * (fingerprint.ts): one that holds either code and whose face Didit matched to this check's selfie;
-   * or, when Didit holds no face of it to compare, as its person deleted it, one that holds the full
-   * code. One whose face Didit holds and did not match is a stranger who shares the details. A
-   * stamp number that holds an ID stamp is never refused by them: another ID of the same person is
-   * always fine, as its face matched its document.
+   * Whether another stamp number already holds an ID stamp for this person, by its scrambled copy
+   * (fingerprint.ts): one whose copy matches this one's first name, first last name and birth date,
+   * and whose face Didit matched to this check's selfie, or holds no more, as its person deleted it or
+   * its years are over. One whose face Didit holds and did not match is a stranger who shares the
+   * details, and both are kept. A stamp number that holds an ID stamp is never refused by it: another
+   * ID of the same person is always fine, as its face matched its document.
    */
-  function seenBefore(codes: Codes, decision: Decision): boolean {
-    const full = new Set(store.holders(codes.full))
-    const others = new Set([...full, ...store.holders(codes.short)])
-    others.delete(decision.vendorData)
-    for (const other of others) {
-      if (store.faceKept(other) ? decision.knownFaces.includes(other) : full.has(other)) return true
-    }
-    return false
+  function seenBefore(fingerprint: Fingerprint, decision: Decision): boolean {
+    const others = store.holders(fingerprint).filter((other) => other !== decision.vendorData)
+    return others.some((other) => !store.faceKept(other) || decision.knownFaces.includes(other))
   }
 
   /** A refusal of this session, kept, so the sweep deletes it in Didit at once, as one Didit refused. */
@@ -781,10 +776,10 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const { sessionId, stampNumber, hash, again } = a
     const payments = deps.payments!
     const decision = await decided(id, sessionId, stampNumber)
-    // Signed again within its hour, the session's codes are kept already.
+    // Signed again within its hour, the session's scrambled copy is kept already.
     const person = again ? null : personOf(decision, now())
     if (!again && !person) throw refuse(sessionId, decision, 'id_unclear')
-    const codes = person ? codesOf(deps.hashKeys.fingerprint, person) : undefined
+    const fingerprint = person ? fingerprintOf(deps.hashKeys.fingerprint, person) : undefined
     const embedded = await embedding(id, sessionId, decision)
     const salts = saltsOf(deps.hashKeys.salt, sessionId)
     const stamp = signed(id, stampNumber, idList(embedder.model, embedded, decision.document!, salts))
@@ -795,7 +790,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       // Checked again: another request may have signed for this session or this payment meanwhile.
       kept(store.check({ sessionId, stampNumber, since: since(), payment: hash }))
       // Here, one at a time, so two checks of one person at once never both pass.
-      if (codes && store.stamps(stampNumber).id.length === 0 && seenBefore(codes, decision)) throw refuse(sessionId, decision, 'known_person')
+      if (fingerprint && store.stamps(stampNumber).id.length === 0 && seenBefore(fingerprint, decision)) throw refuse(sessionId, decision, 'known_person')
       if (!again) {
         let taken: boolean
         try {
@@ -809,7 +804,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
           throw new HttpError(409, 'payment_used')
         }
       }
-      kept(store.remember({ sessionId, stampNumber, vendorData: decision.vendorData, kind: 'id', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp, face: faceStamp, codes, payment: hash }))
+      kept(store.remember({ sessionId, stampNumber, vendorData: decision.vendorData, kind: 'id', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp, face: faceStamp, fingerprint, payment: hash }))
       // Read after `remember`: the face stamp goes with the answer only when it is the one S holds, this
       // session's, now or within its hour. The same facts mean the same session and selfie.
       const held = store.stamps(stampNumber).face
