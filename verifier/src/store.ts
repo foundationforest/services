@@ -35,15 +35,16 @@
 //                  Session's id, how many sessions it opened, whether it is used up (`stamped`: it
 //                  gave a stamp, or its hold was cancelled), and when it opened its first, so it opens
 //                  at most ID_TRIES and gives one stamp; it goes 30 days after (server.ts)
-//   fingerprints   for each ID stamp, its scrambled copy (fingerprint.ts): one value of its first name,
-//                  first last name and birth date, beside its stamp number's keyed hash, the
-//                  `vendor_data` its Didit user is under, for good, so no other stamp number gets an ID
-//                  stamp for the same person; one row for the same details twice
+//   fingerprints   for each ID stamp, its scrambled copy (fingerprint.ts): one value and its kind,
+//                  `name`, of its first name, first last name and birth date, beside its stamp
+//                  number's keyed hash, the `vendor_data` its Didit user is under, so no other stamp
+//                  number gets an ID stamp for the same person; one row for the same value twice; it
+//                  goes with the stamp number's `faces` row, five years after Didit first kept its face
 //   faces          each stamp number's hash whose face Didit holds, and until when: five years after
-//                  the template was kept, when the sweep deletes its Didit user and the row goes; or
-//                  whose face its person deleted, with no time, for good; so a stamp number keeps one
-//                  template, and the scrambled copy knows whether a face is there to compare, and
-//                  whether its person deleted it
+//                  the template was kept, when the sweep deletes its Didit user, its copy and the row;
+//                  and whether its person deleted the face, which keeps the same date, so a stamp
+//                  number keeps one template, and the copy knows whether a face is there to compare,
+//                  and whether its person deleted it
 //   deletions      each stamp number's hash whose face its person asked to delete: when it runs, 28
 //                  days after the ask, and when it ran, so the app can say so; it goes 90 days after it
 //                  ran
@@ -63,6 +64,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/proofs'
 
 import type { Check } from './didit.ts'
+import type { Kind } from './fingerprint.ts'
 
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {
@@ -158,6 +160,7 @@ export class Store {
   readonly #forgetRefusal: StatementSync
   readonly #addFingerprint: StatementSync
   readonly #holders: StatementSync
+  readonly #dropFingerprints: StatementSync
   readonly #face: StatementSync
   readonly #addFace: StatementSync
   readonly #dropFace: StatementSync
@@ -190,7 +193,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS payments (hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL, at INTEGER NOT NULL) WITHOUT ROWID;
-      CREATE TABLE IF NOT EXISTS fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID;
+      CREATE TABLE IF NOT EXISTS fingerprints (value BLOB NOT NULL, kind TEXT NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL, deleted INTEGER NOT NULL) WITHOUT ROWID;
       CREATE TABLE IF NOT EXISTS deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID;
     `)
@@ -230,15 +233,16 @@ export class Store {
     this.#toRefuse = this.#db.prepare('SELECT r.session_id, o.kind FROM refused r JOIN opened o ON o.session_id = r.session_id WHERE r.gone = 0 ORDER BY o.opened_at')
     this.#gone = this.#db.prepare('UPDATE refused SET gone = 1 WHERE session_id = ?')
     this.#forgetRefusal = this.#db.prepare('DELETE FROM refused WHERE session_id = ?')
-    this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (value, owner) VALUES (?, ?)')
+    this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (value, kind, owner) VALUES (?, ?, ?)')
     this.#holders = this.#db.prepare('SELECT owner FROM fingerprints WHERE value = ?')
+    this.#dropFingerprints = this.#db.prepare('DELETE FROM fingerprints WHERE owner = ?')
     this.#face = this.#db.prepare('SELECT deleted FROM faces WHERE owner = ?')
     // A face kept again after its person deleted one is held again, its own years ahead.
     this.#addFace = this.#db.prepare('INSERT INTO faces (owner, until, deleted) VALUES (?, ?, 0) ON CONFLICT (owner) DO UPDATE SET until = excluded.until, deleted = 0 WHERE deleted = 1')
     this.#dropFace = this.#db.prepare('DELETE FROM faces WHERE owner = ?')
-    // Deleted by its person: kept, with no time, for good.
-    this.#faceDeleted = this.#db.prepare('UPDATE faces SET until = 0, deleted = 1 WHERE owner = ?')
-    this.#facesEnded = this.#db.prepare('SELECT owner FROM faces WHERE deleted = 0 AND until <= ? ORDER BY until')
+    // Deleted by its person: kept, with its date, so it goes with the copy when the years are over.
+    this.#faceDeleted = this.#db.prepare('UPDATE faces SET deleted = 1 WHERE owner = ?')
+    this.#facesEnded = this.#db.prepare('SELECT owner, deleted FROM faces WHERE until <= ? ORDER BY until')
     // Asked while one waits, the first stays; asked after one ran, it waits again.
     this.#askDeletion = this.#db.prepare('INSERT INTO deletions (owner, runs_at, done_at) VALUES (?, ?, NULL) ON CONFLICT (owner) DO UPDATE SET runs_at = excluded.runs_at, done_at = NULL WHERE done_at IS NOT NULL')
     this.#deletion = this.#db.prepare('SELECT runs_at, done_at FROM deletions WHERE owner = ?')
@@ -273,8 +277,9 @@ export class Store {
     // A payment kept before it had a time: counted from now, so none goes before its 30 days.
     const payments = sql('payments')
     if (payments !== undefined && !payments.includes(' at ')) this.#db.exec(`ALTER TABLE payments ADD COLUMN at INTEGER NOT NULL DEFAULT ${Math.floor(Date.now())}`)
-    // An earlier version's table of the same name, of keyed hashes of a name and a birth date.
-    if (sql('fingerprints')?.includes('value') === false) this.#db.exec('DROP TABLE fingerprints')
+    // An earlier version's table of the same name: keyed hashes of a name and a birth date, or one value
+    // with no kind and no date. Nothing dates their rows, so none is kept.
+    if (sql('fingerprints')?.includes('kind') === false) this.#db.exec('DROP TABLE fingerprints')
   }
 
   /** Whether this session gave a stamp. */
@@ -310,10 +315,10 @@ export class Store {
    * moved from `opened` to `to_delete`, and the payment used up, in one transaction. `face` is the
    * face stamp an ID check signs from its selfie beside its ID stamp, kept only if the stamp number
    * holds none. `vendorData` is the stamp number's keyed hash: when Didit holds no face of it, this
-   * session's is kept, till `faceUntil`; an ID stamp's scrambled copy, `fingerprint`, is kept beside it. Two requests can
-   * both pass every check before this while each waits for Didit; only the first to get here keeps
-   * anything, and the second is checked against it. A session sent again within its hour uses no
-   * payment.
+   * session's is kept, till `faceUntil`, five years on, and the copy, which goes with it; an ID stamp's
+   * scrambled `copy` is kept beside it. Two requests can both pass every check before this while
+   * each waits for Didit; only the first to get here keeps anything, and the second is checked
+   * against it. A session sent again within its hour uses no payment.
    */
   remember(input: {
     sessionId: string
@@ -325,7 +330,7 @@ export class Store {
     faceUntil: number
     stamp: KeptStamp
     face?: KeptStamp
-    fingerprint?: Uint8Array
+    copy?: Uint8Array
     payment?: Uint8Array
   }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
@@ -351,7 +356,7 @@ export class Store {
         // choice stay: a session signed again within its hour gets no more time.
         const keepFace = !again && !this.faceKept(input.vendorData)
         if (keepFace) this.#addFace.run(owner(input.vendorData), input.faceUntil)
-        if (input.fingerprint) this.#addFingerprint.run(input.fingerprint, owner(input.vendorData))
+        if (input.copy) this.#addFingerprint.run(input.copy, 'name' satisfies Kind, owner(input.vendorData))
         this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, keepFace ? 1 : 0)
         this.#closed.run(input.sessionId)
       }
@@ -375,19 +380,27 @@ export class Store {
     return this.face(vendorData) === 'held'
   }
 
-  /** The `vendor_data` of each stamp number whose scrambled copy is this one. */
-  holders(fingerprint: Uint8Array): string[] {
-    return this.#holders.all(fingerprint).map(vendorDataOf)
+  /** The `vendor_data` of each stamp number that holds this copy. */
+  holders(copy: Uint8Array): string[] {
+    return this.#holders.all(copy).map(vendorDataOf)
   }
 
-  /** The stamp numbers, by `vendor_data`, whose face template's years are over at `at`. */
-  facesEnded(at: number): string[] {
-    return this.#facesEnded.all(at).map(vendorDataOf)
+  /** The stamp numbers, by `vendor_data`, whose face template's years are over at `at`, and whether each was deleted by its person, which leaves no user at Didit to delete. */
+  facesEnded(at: number): { vendorData: string; deleted: boolean }[] {
+    return this.#facesEnded.all(at).map((r) => ({ vendorData: vendorDataOf(r), deleted: r.deleted === 1 }))
   }
 
-  /** Didit holds no face of this stamp number any more, its years over: its user is deleted, and the row goes. */
+  /** The years over: the face's row, its scrambled copy and the mark that its person deleted it go, on the day its Didit user does. */
   faceGone(vendorData: string): void {
-    this.#dropFace.run(owner(vendorData))
+    this.#db.exec('BEGIN IMMEDIATE')
+    try {
+      this.#dropFace.run(owner(vendorData))
+      this.#dropFingerprints.run(owner(vendorData))
+      this.#db.exec('COMMIT')
+    } catch (error) {
+      if (this.#db.isTransaction) this.#db.exec('ROLLBACK')
+      throw error
+    }
   }
 
   /** The person asks to delete their face, to run at `runsAt`: when it runs, the first such time while one waits. */

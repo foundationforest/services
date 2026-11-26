@@ -314,7 +314,7 @@ const TABLES = [
   'CREATE TABLE deletions (owner BLOB PRIMARY KEY, runs_at INTEGER NOT NULL, done_at INTEGER) WITHOUT ROWID',
   'CREATE TABLE face_tries (stamp_number BLOB PRIMARY KEY, tries INTEGER NOT NULL) WITHOUT ROWID',
   'CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL, deleted INTEGER NOT NULL) WITHOUT ROWID',
-  'CREATE TABLE fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID',
+  'CREATE TABLE fingerprints (value BLOB NOT NULL, kind TEXT NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID',
   'CREATE TABLE gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE id_gifts (stamp_number BLOB PRIMARY KEY, buy BLOB NOT NULL) WITHOUT ROWID',
   'CREATE TABLE opened (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, opened_at INTEGER NOT NULL, payment BLOB, try INTEGER) WITHOUT ROWID',
@@ -332,7 +332,7 @@ const TABLES = [
  * with its code; each stamp number's face tries; the stamp numbers given each check's gift; each
  * payment that opened an ID session, by its Checkout Session's id, with its tries and whether it is
  * used up; by `vendor_data`, each stamp number whose face Didit holds, each whose person deleted it,
- * how many scrambled copies each holds, and each face deletion with what became of it.
+ * whether each holds its scrambled copy, and each face deletion with what became of it.
  */
 export type Expected = {
   sessions: [string, bigint, Check][]
@@ -440,9 +440,10 @@ export function assertKept(path: string, expected: Expected): void {
     assert.deepEqual(faces, [...(expected.faces ?? [])].sort(), 'by its keyed hash, each stamp number whose face Didit holds')
     const deleted = db.prepare('SELECT owner, until FROM faces WHERE deleted = 1').all()
     assert.deepEqual(deleted.map(owner).sort(), [...(expected.deletedFaces ?? [])].sort(), 'by its keyed hash, each stamp number whose person deleted its face')
-    assert.ok(deleted.every((r) => r.until === 0), 'and no time beside it')
+    assert.ok(deleted.every((r) => (r.until as number) > 0), 'each with the date its years end, which takes it and the copy')
     const copies = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
     assert.deepEqual(copies, (expected.fingerprints ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many scrambled copies each stamp number holds')
+    assert.deepEqual(db.prepare('SELECT DISTINCT kind FROM fingerprints').all().map((r) => r.kind), (expected.fingerprints ?? []).length ? ['name'] : [], 'a copy is of kind name, the one kind there is')
     const deletions = db.prepare('SELECT owner, done_at FROM deletions').all().map((r) => `${owner(r)} ${r.done_at === null ? 'requested' : 'done'}`).sort()
     assert.deepEqual(deletions, (expected.deletions ?? []).map(([v, state]) => `${v} ${state}`).sort(), 'by its keyed hash, each face deletion and what became of it')
   } finally {

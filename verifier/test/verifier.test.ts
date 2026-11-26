@@ -219,6 +219,14 @@ test('GET /: the name, for each check the key that signs its stamps, as an addre
     })
     // The ID check's consent screen stays where today's app reads it; each check has its own.
     assert.notEqual(FACE_CONSENT, CONSENT)
+    // What the ID check's consent says of the scrambled copy, word for word, and none of what it said before.
+    const passage = "To count each person once, Forest's verifier keeps beside your stamp a scrambled copy of your first name, first last name and birth date. It can't be read back: it can only tell whether a given name and birth date match. Until five years after Didit first kept your face, an ID check on another passkey that shows your name and birth date is checked against your face: the same face is refused, a different face passes. If you have deleted your face, such a match is refused. Five years after Didit first kept your face, the copy is deleted. So if you lose this passkey, no new one can get an ID stamp for you until then, whether or not you delete your face. Your own check is refused the same way if it matches someone already counted. Beside it, Forest keeps only the stamps it signed you"
+    assert.ok(CONSENT.includes(passage))
+    for (const old of ['for good', 'Beside them', 'personal number', 'lifetime', 'CURP', 'Mexico', 'both copies', 'second one', 'unless the two IDs show different numbers', 'ID details', 'two scrambled codes']) assert.equal(CONSENT.includes(old), false, old)
+    // It claims nothing of a changed name: a lifelong number or a face is never said to catch one.
+    for (const text of [CONSENT, FACE_CONSENT, DELETION]) assert.equal(/name change|changed name|new name|changes? (of )?(your )?name/i.test(text), false)
+    assert.equal(DELETION, "Deleting your face waits 28 days, and you can undo it until then. Then Didit erases your checks, the template of your face and what it keeps with it (after an ID check, your name, birth date and your ID's country). Your stamps stay, and the scrambled copy stays until five years after Didit first kept your face, then is deleted. Until then a new passkey still can't get an ID stamp for you, the same as if you had kept it.")
+    assert.equal(JSON.parse(text).face.deletion, DELETION)
     assert.equal(AGREE, 'I am 18 or older and I agree')
     assert.equal(JSON.parse(text).recipe, RECIPE)
     assert.deepEqual(JSON.parse(text).id.facts.slice(0, 4), ['model', 'embedding', 'address', 'date_of_birth'])
@@ -388,9 +396,9 @@ test('an ID stamp for each document: the first at the price, each after at the a
     assert.equal(h.payments.state(h.paidFor.get(first)!), 'taken', 'a new ID stamp takes the hold')
     assert.equal(signed.body.face.verifier, h.verifier.keys.face, 'and n1 held no face stamp: one from the same selfie')
 
-    // Her document again, for another stamp number: Didit refuses a person it has seen; the payment
-    // ends on its first try, its hold cancelled, as no other try can pass.
-    const refused = await h.idSession(refusedWith(['POSSIBLE_DUPLICATED_USER'], { workflowId: ID_WORKFLOW }), n2)
+    // Her document again, for another stamp number: Didit matched her face to n1's, and her copy is
+    // n1's. Refused; the payment ends on its first try, its hold cancelled, as no other try can pass.
+    const refused = await h.idSession(passedId('ada', doc('Lovelace'), { knownFaces: [h.ids.vendorData.get(first)!] }), n2)
     assert.deepEqual(await idStamp(h, refused, n2), { status: 403, body: { error: 'known_person' } })
     assert.equal(h.payments.state(h.paidFor.get(refused)!), 'cancelled', 'its hold cancelled')
     assert.deepEqual(await h.post('/id/session', { payment: h.paidFor.get(refused) }), { status: 409, body: { error: 'payment_used' } }, 'and its payment used up')
@@ -537,7 +545,7 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
     const refused = (error: string) => ({ status: 403, body: { error } })
     // Each code, from the risks that set the status, the first in order when several apply.
     const codes: [string[], string][] = [
-      [['POSSIBLE_DUPLICATED_USER'], 'known_person'],
+      [['POSSIBLE_DUPLICATED_USER'], 'other'],
       [['DUPLICATED_FACE'], 'known_face'],
       [['AGE_BELOW_MINIMUM'], 'too_young'],
       [['LOW_FACE_MATCH_SIMILARITY'], 'face_mismatch'],
@@ -545,7 +553,7 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
       [['LOW_LIVENESS_SCORE'], 'face_unclear'],
       [['FACE_IN_BLOCKLIST'], 'other'],
       [[], 'other'],
-      [['LOW_LIVENESS_SCORE', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER'], 'known_person'],
+      [['LOW_LIVENESS_SCORE', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER'], 'known_face'],
     ]
     for (const status of ['Declined', 'In Review']) {
       for (const [risks, error] of codes) assert.deepEqual(await faceCheck(h, refusedWith(risks, { status }), await stampNumber()), refused(error), `${status} ${risks}`)
@@ -560,8 +568,10 @@ test('Didit decides who is the same person: a stamp only for what it approved; i
       const sessionId = await h.idSession(refusedWith(risks, { workflowId: ID_WORKFLOW, status, document }), k)
       return [(await idStamp(h, sessionId, k)).body.error, h.payments.state(h.paidFor.get(sessionId)!)]
     }
-    assert.deepEqual(await idRefused(['POSSIBLE_DUPLICATED_USER']), ['known_person', 'cancelled'])
+    assert.deepEqual(await idRefused(['DUPLICATED_FACE']), ['known_face', 'cancelled'])
     assert.deepEqual(await idRefused(['FRONT_CAMERA_DUPLICATED_FACE'], 'In Review'), ['known_face', 'cancelled'])
+    // Didit's own name check is no known_person, and ends no payment: it is another refusal, and the tries go on.
+    assert.deepEqual(await idRefused(['POSSIBLE_DUPLICATED_USER']), ['other', 'held'])
     // Too young, a birth date Didit read under 18: the same. One Didit did not read: an ID it could not read, and the tries go on.
     assert.deepEqual(await idRefused(['MINIMUM_AGE_NOT_MET'], 'Declined', doc('Young', { date_of_birth: '2015-06-01' })), ['too_young', 'cancelled'])
     assert.deepEqual(await idRefused(['MINIMUM_AGE_NOT_MET'], 'Declined', doc('Unread', { date_of_birth: '' })), ['id_unclear', 'held'])
@@ -647,7 +657,7 @@ test('the sweep: after its hour, a session that gave a stamp deleted in Didit, f
     assert.deepEqual(await idStamp(h, idDeclined, r), { status: 403, body: { error: 'id_unclear' } })
     // Refused, and the app never asks: a face check In Review, an ID check Declined.
     const unasked = await h.session(refusedWith(['DUPLICATED_FACE'], { status: 'In Review' }), t)
-    const idUnasked = await h.idSession(refusedWith(['POSSIBLE_DUPLICATED_USER'], { workflowId: ID_WORKFLOW }), r)
+    const idUnasked = await h.idSession(refusedWith(['DUPLICATED_FACE'], { workflowId: ID_WORKFLOW }), r)
     // Unfinished, and approved but never asked about.
     const unfinished = await h.session(passed('known', { status: 'In Progress' }), u)
     assert.deepEqual(await faceStamp(h, unfinished, u), { status: 403, body: { error: 'not_approved' } })
@@ -665,7 +675,7 @@ test('the sweep: after its hour, a session that gave a stamp deleted in Didit, f
     // The app asking later gets the code the sweep read, for that stamp number alone, with no question to Didit.
     const asked = h.faces.asked + h.ids.asked
     assert.deepEqual(await faceStamp(h, unasked, t), { status: 403, body: { error: 'known_face' } })
-    assert.deepEqual(await idStamp(h, idUnasked, r), { status: 403, body: { error: 'known_person' } })
+    assert.deepEqual(await idStamp(h, idUnasked, r), { status: 403, body: { error: 'known_face' } })
     assert.equal(h.faces.asked + h.ids.asked, asked)
     assert.equal(h.payments.state(h.paidFor.get(idUnasked)!), 'cancelled', 'its hold cancelled once the app asks with its payment')
     assert.deepEqual(await faceStamp(h, unasked, n), { status: 409, body: { error: 'session_used' } })
@@ -832,7 +842,7 @@ test('the scrambled copy: an ID check whose first name, first last name and birt
     const again = await h.idSession(passedId('ada', ada, { knownFaces: [stampHash(key, a)] }), b)
     assert.deepEqual(await idStamp(h, again, b), { status: 403, body: { error: 'known_person' } })
     assert.equal(h.payments.state(h.paidFor.get(again)!), 'cancelled')
-    // Her ID from a second country, another type, a second given and family name, its own personal number: the same first name, first last name and birth date, and her face.
+    // Her ID from a second country, another type, a second given and family name, its own numbers: the same first name, first last name and birth date, and her face.
     const abroad = doc('Lovelace Byron', { first_name: 'Ada Augusta', issuing_state: 'IRL', document_type: 'Identity Card', personal_number: '1234567TA', document_number: 'CD7654321' })
     assert.deepEqual(await idStamp(h, await h.idSession(passedId('ada', abroad, { knownFaces: [stampHash(key, a)] }), b), b), { status: 403, body: { error: 'known_person' } })
     assert.deepEqual((await stampBack(h, b)).body.id, [], 'b holds no ID stamp')
@@ -840,7 +850,7 @@ test('the scrambled copy: an ID check whose first name, first last name and birt
     await h.verifier.sweep()
     assert.ok(h.ids.deleted.includes(again))
 
-    // A stranger who shares her details: Didit matched another face, not a's, so c gets its stamp, and both copies are kept.
+    // A stranger who shares her details: Didit matched another face, not a's, so c gets its stamp, and both are kept.
     assert.equal((await idStamp(h, await h.idSession(passedId('eve', ada, { knownFaces: ['f'.repeat(64)] }), c), c)).status, 200)
     // a adding another ID: always fine, whatever Didit matched.
     assert.equal((await idStamp(h, await h.idSession(passedId('ada', abroad, { knownFaces: [stampHash(key, c)] }), a), a)).status, 200)
@@ -869,6 +879,60 @@ test('the scrambled copy: an ID check whose first name, first last name and birt
     db.close()
     const passedOne = [f, g].find((k) => rows.some(([owner]) => owner === stampHash(key, k)))!
     assert.deepEqual(new Map(rows), new Map([[stampHash(key, a), 1], [stampHash(key, c), 1], [stampHash(key, passedOne), 1], [stampHash(key, e), 1]]))
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('the match rule: a match of the copy is refused while Didit holds the earlier face only when Didit names it, a different face passes; once its person deleted the face, always; a changed name matches nothing; a stamp number that holds an ID stamp is never refused; the face check is open to a person refused the ID check', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
+  try {
+    const key = await hkdf(seed.bytes, 'vendor-data')
+    const face = (k: bigint) => stampHash(key, k)
+    const ana = (over: Record<string, string> = {}) => doc('Ruiz Peña', { first_name: 'Ana Sofía', date_of_birth: '1990-05-12', issuing_state: 'MEX', ...over })
+    const passport = (over: Record<string, string> = {}) => doc('RUIZ', { first_name: 'ANA', date_of_birth: '1990-05-12', issuing_state: 'ESP', document_type: 'Passport', ...over })
+    const check = async (read: Record<string, string>, over: object = {}) => {
+      const k = await stampNumber()
+      const res = await idStamp(h, await h.idSession(passedId('x', read, over), k), k)
+      return [res.status, res.body.error ?? null, k] as const
+    }
+    const status = async (read: Record<string, string>, over: object = {}) => (await check(read, over)).slice(0, 2)
+    const REFUSED = [403, 'known_person']
+    const PASSED = [200, null]
+
+    // The earlier person, n; her face is held at Didit.
+    const [, , n] = await check(ana())
+    assert.deepEqual(await status(passport(), { knownFaces: [face(n)] }), REFUSED, 'Didit names her face: the same face, from another country')
+    assert.deepEqual(await status(passport(), { knownFaces: ['f'.repeat(64)] }), PASSED, 'a different face: a stranger with the same name and birth date')
+    assert.deepEqual(await status(passport()), PASSED, 'Didit named no face')
+    // Another first name, first last name or birth date matches nothing, Didit naming her face or not.
+    for (const other of [passport({ first_name: 'ANIA' }), passport({ last_name: 'RUIS' }), passport({ date_of_birth: '1990-05-13' })]) assert.deepEqual(await status(other, { knownFaces: [face(n)] }), PASSED, JSON.stringify(other))
+    // A changed name matches no copy: her face is never checked, and she gets a second ID stamp, though Didit names it.
+    assert.deepEqual(await status(passport({ last_name: 'PENA RUIZ' }), { knownFaces: [face(n)] }), PASSED)
+
+    // She deletes her face. 28 days on, Didit holds none of her; the file keeps that she deleted it.
+    assert.equal((await h.post('/delete', { stampNumber: n.toString() })).status, 200)
+    h.later(DELETE_AFTER_MS)
+    await h.verifier.sweep()
+    assert.ok(h.faces.deletedUsers.includes(face(n)))
+    // Refused with no face to compare, whatever the new ID shows besides the name and the birth date, and whoever the person is.
+    assert.deepEqual(await status(passport()), REFUSED, 'a match')
+    assert.deepEqual(await status(ana({ personal_number: 'ANOTHER', document_number: 'OTHER1' })), REFUSED, 'another number on the new ID makes no difference')
+    assert.deepEqual(await status(passport(), { knownFaces: ['f'.repeat(64)] }), REFUSED, 'nor does another face')
+    // The match is of the name and the birth date alone: another of either passes.
+    assert.deepEqual(await status(passport({ date_of_birth: '1990-05-13' })), PASSED)
+    assert.deepEqual(await status(passport({ last_name: 'PENA RUIZ' })), PASSED, 'a changed name')
+
+    // A person refused the ID check can still get a face stamp: the face check compares faces, and Didit holds none of hers.
+    const k = await stampNumber()
+    const refused = await h.idSession(passedId('x', passport()), k)
+    assert.deepEqual(await idStamp(h, refused, k), { status: 403, body: { error: 'known_person' } })
+    assert.equal((await faceCheck(h, passed('ana'), k)).status, 200)
+
+    // A stamp number that holds an ID stamp is never refused, whatever matches: her own passport, an added ID.
+    const added = await h.idSession(passedId('x', passport()), n)
+    assert.equal((await idStamp(h, added, n)).status, 200, 'her own copy matches, and her face is deleted: still not refused')
   } finally {
     await h.verifier.close().catch(() => {})
   }
@@ -964,7 +1028,7 @@ test('a face deleted: POST /delete waits 28 days and can be undone till then; th
   }
 })
 
-test('a face template’s five years over: its Didit user deleted, the name and birth date Didit keeps with it too; a match of its scrambled copy then passes, so a common name is not refused for good', async () => {
+test('a face’s five years over: its Didit user, its stamp number’s scrambled copy and its row all go together, tried again if Didit does not answer; a match of them is then no match, though Didit still names the face', async () => {
   const seed = seedJson()
   const h = await start({ seed: seed.json })
   try {
@@ -972,30 +1036,123 @@ test('a face template’s five years over: its Didit user deleted, the name and 
     const [n, m] = [await stampNumber(), await stampNumber()]
     const first = await h.idSession(passedId('ada', doc('Lovelace')), n)
     assert.equal((await idStamp(h, first, n)).status, 200)
+    const copies = () => {
+      const db = new DatabaseSync(h.dbPath, { readOnly: true })
+      try {
+        return [db.prepare('SELECT count(*) AS n FROM fingerprints').get()!.n, db.prepare('SELECT count(*) AS n FROM faces').get()!.n]
+      } finally {
+        db.close()
+      }
+    }
+    assert.deepEqual(copies(), [1, 1], 'a name copy and a face')
     h.later(FACE_KEPT_MS - 1)
     await h.verifier.sweep()
     assert.deepEqual(h.faces.deletedUsers, [], 'not before')
+    assert.deepEqual(copies(), [1, 1])
+    // Till then a match of n's copy, with Didit naming n's face, is refused.
+    const before = await h.idSession(passedId('ada', doc('Lovelace'), { knownFaces: [stampHash(key, n)] }), m)
+    assert.deepEqual(await idStamp(h, before, m), { status: 403, body: { error: 'known_person' } })
     h.later(1)
     h.faces.usersDown = true
     await h.verifier.sweep()
     assert.deepEqual(h.logs, ['verifier: 1 Didit user could not be deleted, kept for the next sweep (Error)'])
+    assert.deepEqual(copies(), [1, 1], 'the copy stays while its user does')
     h.faces.usersDown = false
     await h.verifier.sweep()
     await h.verifier.sweep()
     assert.deepEqual(h.faces.deletedUsers, [stampHash(key, n)], 'once')
-    // n's face aged out, not deleted: a match of n's copy lets m through, whoever m is.
-    const later = await h.idSession(passedId('ada', doc('Lovelace')), m)
+    assert.deepEqual(copies(), [0, 0], 'its copy and its row go with its user')
+    // The same check now: Didit names n's face, there is no copy of n's to match, and m gets its stamp.
+    const later = await h.idSession(passedId('ada', doc('Lovelace'), { knownFaces: [stampHash(key, n)] }), m)
     assert.equal((await idStamp(h, later, m)).status, 200)
     await h.verifier.close()
-    // n's face row gone with its years, its copy kept; m's face kept, as Didit held none of m's.
+    // m's face and copy kept, as Didit held none of m's; n's gone, its stamp kept.
     assertKept(h.dbPath, {
       sessions: [[first, n, 'id'], [later, m, 'id']],
       toDelete: [later],
-      payments: [[h.paidFor.get(later)!, ID_TRIES, true]],
+      // The refused check, deleted in Didit at once and its code kept till its day.
+      opened: [[before, null]],
+      refused: [[before, 'known_person']],
+      payments: [[h.paidFor.get(later)!, ID_TRIES, true], [h.paidFor.get(before)!, ID_TRIES, true]],
       faces: [stampHash(key, m)],
-      fingerprints: [[stampHash(key, n), 1], [stampHash(key, m), 1]],
+      fingerprints: [[stampHash(key, m), 1]],
       never: [],
     })
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('a lost passkey stays locked out until five years after Didit first kept the face, whether or not the face was deleted; then the mark that it was deleted goes with the copies, and a new passkey counts as new', async () => {
+  const seed = seedJson()
+  const h = await start({ seed: seed.json })
+  try {
+    const key = await hkdf(seed.bytes, 'vendor-data')
+    const [kept, gone] = [await stampNumber(), await stampNumber()]
+    // Two people, both signed at once: one keeps their face, one deletes it.
+    assert.equal((await idStamp(h, await h.idSession(passedId('ada', doc('Lovelace')), kept), kept)).status, 200)
+    assert.equal((await idStamp(h, await h.idSession(passedId('bob', doc('Byron', { first_name: 'George' })), gone), gone)).status, 200)
+    assert.equal((await h.post('/delete', { stampNumber: gone.toString() })).status, 200)
+    h.later(DELETE_AFTER_MS)
+    await h.verifier.sweep()
+    assert.deepEqual(h.faces.deletedUsers, [stampHash(key, gone)], 'its user went with the deletion')
+    // The mark of the deletion keeps the date its years end, and nothing is kept "for good".
+    const db = () => new DatabaseSync(h.dbPath, { readOnly: true })
+    const rows = () => {
+      const d = db()
+      try {
+        return d.prepare('SELECT deleted, until FROM faces ORDER BY deleted').all().map((r) => [r.deleted, r.until])
+      } finally {
+        d.close()
+      }
+    }
+    assert.deepEqual(rows().map(([deleted]) => deleted), [0, 1])
+    assert.equal(rows()[0]![1], rows()[1]![1], 'both end on the same day: five years after the checks were signed')
+
+    // Locked out, a new passkey for either: the held face's by Didit naming it, the deleted one's with no face to name.
+    h.later(FACE_KEPT_MS - DELETE_AFTER_MS - 1)
+    await h.verifier.sweep()
+    const attempt = async (read: Record<string, string>, over: object) => {
+      const k = await stampNumber()
+      return (await idStamp(h, await h.idSession(passedId('x', read, over), k), k)).status
+    }
+    assert.equal(await attempt(doc('Lovelace'), { knownFaces: [stampHash(key, kept)] }), 403, 'the face Didit holds, named')
+    assert.equal(await attempt(doc('Byron', { first_name: 'George' }), {}), 403, 'the face its person deleted')
+    // The day: the held one's user goes, the deleted one's has gone; its copy and its row with it.
+    h.later(1)
+    await h.verifier.sweep()
+    assert.deepEqual(h.faces.deletedUsers.sort(), [stampHash(key, kept), stampHash(key, gone)].sort(), 'each user once')
+    assert.deepEqual(rows(), [])
+    const d = db()
+    assert.equal(d.prepare('SELECT count(*) AS n FROM fingerprints').get()!.n, 0)
+    d.close()
+    // A new passkey now counts as new, for either.
+    assert.equal(await attempt(doc('Lovelace'), { knownFaces: [stampHash(key, kept)] }), 200)
+    assert.equal(await attempt(doc('Byron', { first_name: 'George' }), {}), 200)
+  } finally {
+    await h.verifier.close().catch(() => {})
+  }
+})
+
+test('at start, a file that kept one value with no kind and a deleted face with no date loses that value, whose rows nothing dates, and keeps its faces and its stamps', async () => {
+  const dbPath = join(tempDir(), 'verifier.sqlite')
+  const old = new DatabaseSync(dbPath)
+  old.exec(`
+    CREATE TABLE fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID;
+    CREATE TABLE faces (owner BLOB PRIMARY KEY, until INTEGER NOT NULL, deleted INTEGER NOT NULL) WITHOUT ROWID;
+  `)
+  old.prepare('INSERT INTO fingerprints VALUES (?, ?)').run(new Uint8Array(32).fill(1), new Uint8Array(32).fill(2))
+  old.prepare('INSERT INTO faces VALUES (?, ?, 0)').run(new Uint8Array(32).fill(2), Date.now() + 1000)
+  old.close()
+  const h = await start({ dbPath })
+  try {
+    await h.verifier.close()
+    const db = new DatabaseSync(dbPath, { readOnly: true })
+    const tables = Object.fromEntries(db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'").all().map((t) => [t.name, t.sql]))
+    assert.equal(tables.fingerprints, 'CREATE TABLE fingerprints (value BLOB NOT NULL, kind TEXT NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID')
+    assert.equal(db.prepare('SELECT count(*) AS n FROM fingerprints').get()!.n, 0, 'a value with no kind, and no date to end it by, is not kept')
+    assert.equal(db.prepare('SELECT count(*) AS n FROM faces').get()!.n, 1)
+    db.close()
   } finally {
     await h.verifier.close().catch(() => {})
   }
@@ -1365,9 +1522,9 @@ test('Stripe or Didit failing a request: a 502, and one log line saying why by i
     assert.equal((await idStamp(h, taking, m)).status, 200)
     // Failing to cancel one: the refusal still answered, and the hold left for the hourly search.
     const o = await stampNumber()
-    const again = await h.idSession(refusedWith(['POSSIBLE_DUPLICATED_USER'], { workflowId: ID_WORKFLOW }), o)
+    const again = await h.idSession(refusedWith(['DUPLICATED_FACE'], { workflowId: ID_WORKFLOW }), o)
     h.payments.down = true
-    assert.deepEqual(await idStamp(h, again, o), { status: 403, body: { error: 'known_person' } })
+    assert.deepEqual(await idStamp(h, again, o), { status: 403, body: { error: 'known_face' } })
     assert.equal(h.logs.at(-1), 'verifier: a hold could not be cancelled at Stripe, left for the hourly search (PaymentUnavailable 500 api_error)')
     // Failing the search for old holds: logged, and tried again at the next sweep, not an hour later.
     h.later(HOLDS_EVERY_MS)
@@ -1704,7 +1861,7 @@ test('at start, a file an earlier version wrote moves to these tables: its stamp
     db.close()
     assert.equal(tables.stamps, 'CREATE TABLE stamps (stamp_number BLOB NOT NULL, kind TEXT NOT NULL, facts BLOB NOT NULL, r8 BLOB NOT NULL, s BLOB NOT NULL, PRIMARY KEY (stamp_number, kind, facts)) WITHOUT ROWID')
     assert.equal(tables.to_delete, 'CREATE TABLE to_delete (session_id TEXT PRIMARY KEY, kind TEXT NOT NULL, signed_at INTEGER NOT NULL, keep_face INTEGER NOT NULL DEFAULT 1) WITHOUT ROWID')
-    assert.equal(tables.fingerprints, 'CREATE TABLE fingerprints (value BLOB NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID')
+    assert.equal(tables.fingerprints, 'CREATE TABLE fingerprints (value BLOB NOT NULL, kind TEXT NOT NULL, owner BLOB NOT NULL, PRIMARY KEY (value, owner)) WITHOUT ROWID')
     assert.match(tables.payments, /^CREATE TABLE payments \(hash BLOB PRIMARY KEY, tries INTEGER NOT NULL, stamped INTEGER NOT NULL, at INTEGER NOT NULL DEFAULT \d+\) WITHOUT ROWID$/)
     assert.equal('stamps_before' in tables, false)
     const kept = new DatabaseSync(dbPath, { readOnly: true })

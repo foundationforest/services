@@ -74,9 +74,10 @@
 // that code when it asks for S, and deleted in Didit at once. A face check gives a new face stamp; an
 // ID check, a new ID stamp, and, when S holds no face stamp, a face stamp from the same selfie: an ID
 // check is a face check and a document. An ID check Didit approved is refused, `known_person`, when
-// another stamp number holds the same scrambled copy of its first name, first last name and birth date
-// (fingerprint.ts) and is the same person: its face matched, or its person deleted it (`seenBefore`).
-// One whose face's years are over is not, so a common name is never refused for good.
+// another stamp number holds the same scrambled copy (fingerprint.ts) of its first name, first last
+// name and birth date, and is the same person (`seenBefore`): while Didit holds that stamp number's
+// face, when Didit's match list names it; once its person deleted the face, always. Five years after
+// Didit first kept a face, its stamp number's copy is deleted, and matches nothing.
 //
 // One free face check: a face session for S that Didit finished (approved, declined or in review) and
 // that an app asked a stamp of, refused, is S's try, once (store.ts); after FACE_TRIES, S opens no
@@ -95,7 +96,8 @@
 // or ID, keeping its face template (didit.ts) only when Didit held none of S; asks Didit about every
 // session opened that gave no stamp, and deletes one Didit refused at once, face and all; deletes any
 // other a day after it opened; erases S's sessions and deletes its Didit user 28 days after its person
-// asked to delete their face; and deletes its Didit user when its face template's five years are over.
+// asked to delete their face; and, five years after Didit first kept a face, deletes its Didit user, the
+// stamp number's scrambled copy and the mark that its person deleted the face.
 //
 // No request is logged, and the client's address is never read.
 
@@ -110,7 +112,7 @@ import { type Check, type Decision, DiditUnavailable, FACE_RETENTION_DAYS, type 
 import { type Embedder, FaceError } from './face.ts'
 import { type Gift, buyOf, ticketFor } from './gift.ts'
 import { decimal, faceList, idList, saltsOf } from './facts.ts'
-import { personOf, scrambled } from './fingerprint.ts'
+import { copyOf, personOf } from './fingerprint.ts'
 import { payPage } from './page.ts'
 import type { Ed25519Key } from './seed.ts'
 import { FACE_TRIES, type KeptStamp, type Store, paymentHash } from './store.ts'
@@ -335,10 +337,12 @@ export const PAYMENT_KEPT_MS = 30 * OPEN_FOR_MS
  * what one came to releases nothing. A deletion or a question Didit does not answer stays, for the next
  * sweep. Then each face its person asked to delete 28 days ago: every session Didit holds of its
  * stamp number erased, with every face template, and, once Didit lists none, its user deleted, its
- * name, birth date and countries with it; and each user whose face template's years are over, deleted.
- * Then each deletion that ran 90 days ago, and each payment first used 30 days ago, forgotten. Logs
- * without the session: how many deletions and questions failed and why the last did (`why`), and what
- * Didit said it did with a face when it kept no template it was asked to.
+ * name, birth date and countries with it; and, for each face whose five years since Didit first
+ * kept it are over, its user deleted, and with it its stamp number's scrambled copy and the
+ * mark of its deletion. Then each deletion that ran 90 days ago, and each payment first used 30
+ * days ago, forgotten. Logs without the session: how many deletions and questions failed and why
+ * the last did (`why`), and what Didit said it did with a face when it kept no template it was
+ * asked to.
  */
 export async function sweep(deps: { store: Store; checks: Record<Check, FaceCheck>; vendorKey: Uint8Array; now?: () => number; log?: (line: string) => void }): Promise<void> {
   const log = deps.log ?? ((line) => console.log(line))
@@ -425,9 +429,11 @@ export async function sweep(deps: { store: Store; checks: Record<Check, FaceChec
       failed.facesWhy = why(error)
     }
   }
-  for (const vendorData of store.facesEnded(now)) {
+  // Five years after Didit first kept a face: its user, the copy, and the mark of a deletion go together.
+  // A face its person deleted has no user at Didit any more, so only the file's rows go.
+  for (const { vendorData, deleted } of store.facesEnded(now)) {
     try {
-      await checks.face.deleteUser(vendorData)
+      if (!deleted) await checks.face.deleteUser(vendorData)
       store.faceGone(vendorData)
     } catch (error) {
       failed.users++
@@ -756,18 +762,20 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
 
   /**
    * Whether another stamp number already holds an ID stamp for this person, by its scrambled copy
-   * (fingerprint.ts): one that holds the same copy, and whose face Didit matched to this check's
-   * selfie, or whose person deleted it. One whose face Didit holds and did not match is a stranger who
-   * shares the details, and both are kept; one whose face's years are over, or that Didit never held,
-   * passes too, so strangers with a common name are not refused for good once faces age out. A stamp
-   * number that holds an ID stamp is never refused by it: another ID of the same person is always
-   * fine, as its face matched its document.
+   * (fingerprint.ts): one that holds the same copy, and
+   * - while Didit holds its face, Didit's match list names it (`knownFaces`): the same face is
+   *   refused, and a different face passes, a stranger who shares a name and a birth date, and both
+   *   are kept;
+   * - once its person deleted the face, always;
+   * - with no row for its face, never: its five years are over, and its copy with them.
+   * A stamp number that holds an ID stamp is never refused by it: another ID of the same person is
+   * always fine, as its face matched its document.
    */
-  function seenBefore(fingerprint: Uint8Array, decision: Decision): boolean {
-    const others = store.holders(fingerprint).filter((other) => other !== decision.vendorData)
-    return others.some((other) => {
-      const face = store.face(other)
-      return face === 'deleted' || (face === 'held' && decision.knownFaces.includes(other))
+  function seenBefore(copy: Uint8Array, decision: Decision): boolean {
+    return store.holders(copy).some((vendorData) => {
+      if (vendorData === decision.vendorData) return false
+      const face = store.face(vendorData)
+      return face === 'deleted' || (face === 'held' && decision.knownFaces.includes(vendorData))
     })
   }
 
@@ -785,7 +793,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
     const person = again ? null : personOf(decision, now())
     if (!again && !person) throw refuse(sessionId, decision, 'id_unclear')
     // Slow on purpose, and on its own thread, outside the queue below.
-    const fingerprint = person ? await scrambled(deps.hashKeys.fingerprint, person) : undefined
+    const copy = person ? await copyOf(deps.hashKeys.fingerprint, person) : undefined
     const embedded = await embedding(id, sessionId, decision)
     const salts = saltsOf(deps.hashKeys.salt, sessionId)
     const stamp = signed(id, stampNumber, idList(embedder.model, embedded, decision.document!, salts))
@@ -796,7 +804,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
       // Checked again: another request may have signed for this session or this payment meanwhile.
       kept(store.check({ sessionId, stampNumber, since: since(), payment: hash }))
       // Here, one at a time, so two checks of one person at once never both pass.
-      if (fingerprint && store.stamps(stampNumber).id.length === 0 && seenBefore(fingerprint, decision)) throw refuse(sessionId, decision, 'known_person')
+      if (copy && store.stamps(stampNumber).id.length === 0 && seenBefore(copy, decision)) throw refuse(sessionId, decision, 'known_person')
       if (!again) {
         let taken: boolean
         try {
@@ -810,7 +818,7 @@ export function handler(deps: VerifierDeps): (req: IncomingMessage, res: ServerR
           throw new HttpError(409, 'payment_used')
         }
       }
-      kept(store.remember({ sessionId, stampNumber, vendorData: decision.vendorData, kind: 'id', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp, face: faceStamp, fingerprint, payment: hash }))
+      kept(store.remember({ sessionId, stampNumber, vendorData: decision.vendorData, kind: 'id', since: since(), signedAt: now(), faceUntil: now() + FACE_KEPT_MS, stamp, face: faceStamp, copy, payment: hash }))
       // Read after `remember`: the face stamp goes with the answer only when it is the one S holds, this
       // session's, now or within its hour. The same facts mean the same session and selfie.
       const held = store.stamps(stampNumber).face
