@@ -263,8 +263,8 @@ test("a decision's risks are those of the warnings Didit says set its status, on
   assert.equal(judge(byHand, WORKFLOW), 'other')
 })
 
-test('a refusal is one code: the first of known_person, known_face, too_young, face_mismatch, id_unclear and face_unclear that a risk says, else other', () => {
-  assert.deepEqual(REASONS.map(([reason]) => reason), ['known_person', 'known_face', 'too_young', 'face_mismatch', 'id_unclear', 'face_unclear'])
+test('a refusal is one code: the first of known_face, too_young, face_mismatch, id_unclear and face_unclear that a risk says, else other; Didit never says known_person', () => {
+  assert.deepEqual(REASONS.map(([reason]) => reason), ['known_face', 'too_young', 'face_mismatch', 'id_unclear', 'face_unclear'])
   const all = REASONS.flatMap(([, risks]) => [...risks])
   assert.equal(new Set(all).size, all.length, 'each risk says one code')
   for (const [reason, risks] of REASONS) {
@@ -272,7 +272,11 @@ test('a refusal is one code: the first of known_person, known_face, too_young, f
     for (const risk of risks) assert.equal(reasonOf([risk]), reason, risk)
   }
   assert.ok(CODES.includes('other'))
-  assert.equal(reasonOf(['POSSIBLE_DUPLICATED_USER']), 'known_person')
+  // Didit's own name check compares only with ID checks it still holds, which the verifier deletes after an hour, and
+  // refuses without comparing faces: it is no reason at all, so `known_person` is only ever the verifier's own refusal.
+  assert.equal(REASONS.flatMap(([, risks]) => [...risks]).includes('POSSIBLE_DUPLICATED_USER' as never), false)
+  assert.equal(reasonOf(['POSSIBLE_DUPLICATED_USER']), 'other')
+  assert.equal(reasonOf(['POSSIBLE_DUPLICATED_USER', 'LOW_LIVENESS_SCORE']), 'face_unclear', 'and it changes no other reason')
   assert.equal(reasonOf(['DUPLICATED_FACE']), 'known_face')
   assert.equal(reasonOf(['POSSIBLE_DUPLICATED_FACE']), 'known_face', 'the whole duplicated-face family')
   for (const risk of ['AGE_BELOW_MINIMUM', 'MINIMUM_AGE_NOT_MET']) assert.equal(reasonOf([risk]), 'too_young', risk)
@@ -281,7 +285,7 @@ test('a refusal is one code: the first of known_person, known_face, too_young, f
   for (const risk of ['IMAGE_TOO_BLURRY', 'DOCUMENT_EXPIRED', 'DOCUMENT_NOT_SUPPORTED_FOR_APPLICATION', 'PORTRAIT_MANIPULATION_DETECTED']) assert.equal(reasonOf([risk]), 'id_unclear', risk)
   for (const risk of ['LIVENESS_FACE_ATTACK', 'LOW_LIVENESS_SCORE', 'NO_FACE_DETECTED', 'MULTIPLE_FACES_DETECTED']) assert.equal(reasonOf([risk]), 'face_unclear', risk)
   // Several: the first in that order, whatever order Didit lists them in.
-  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER']), 'known_person')
+  assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'DUPLICATED_FACE', 'POSSIBLE_DUPLICATED_USER']), 'known_face')
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'AGE_BELOW_MINIMUM', 'DUPLICATED_FACE']), 'known_face')
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY', 'AGE_BELOW_MINIMUM']), 'too_young')
   assert.equal(reasonOf(['LOW_LIVENESS_SCORE', 'DOCUMENT_EXPIRED', 'LOW_FACE_MATCH_SIMILARITY']), 'face_mismatch')
@@ -411,7 +415,7 @@ test('too young: a face Didit estimates under its minimum; an ID check only for 
   for (const document of [{ date_of_birth: '2008-11-24' }, {}, { date_of_birth: '24/11/2008' }, { date_of_birth: '1890-01-01' }, null] as (Record<string, string> | null)[]) {
     assert.equal(reasonFor(refused(['MINIMUM_AGE_NOT_MET'], document), 'id', at), 'id_unclear', JSON.stringify(document))
   }
-  assert.equal(reasonFor(refused(['POSSIBLE_DUPLICATED_USER', 'MINIMUM_AGE_NOT_MET'], {}), 'id', at), 'known_person', 'the order first')
+  assert.equal(reasonFor(refused(['DUPLICATED_FACE', 'MINIMUM_AGE_NOT_MET'], {}), 'id', at), 'known_face', 'the order first')
   assert.equal(judge({ ...refused(['MINIMUM_AGE_NOT_MET'], { date_of_birth: '2015-06-01' }), workflowId: WORKFLOW }, WORKFLOW, 'id', at), 'too_young')
   assert.equal(judge({ ...refused(['MINIMUM_AGE_NOT_MET'], {}), workflowId: WORKFLOW }, WORKFLOW, 'id', at), 'id_unclear')
 })
@@ -425,7 +429,8 @@ test("what Didit's decision means to the verifier, in order", () => {
   for (const status of ['Declined', 'DECLINED', 'In Review', 'IN_REVIEW']) {
     assert.equal(judge({ ...ok, status }, WORKFLOW), 'other', status)
     assert.equal(judge({ ...ok, status, risks: ['DUPLICATED_FACE'] }, WORKFLOW), 'known_face', status)
-    assert.equal(judge({ ...ok, status, risks: ['DOCUMENT_EXPIRED', 'POSSIBLE_DUPLICATED_USER'] }, WORKFLOW, 'id'), 'known_person', status)
+    assert.equal(judge({ ...ok, status, risks: ['DOCUMENT_EXPIRED', 'POSSIBLE_DUPLICATED_USER'] }, WORKFLOW, 'id'), 'id_unclear', status)
+    assert.equal(judge({ ...ok, status, risks: ['POSSIBLE_DUPLICATED_USER'] }, WORKFLOW, 'id'), 'other', `${status}: Didit’s name check alone is no known_person`)
   }
   assert.equal(judge({ ...ok, risks: ['DUPLICATED_FACE'] }, WORKFLOW), null, 'Approved is Didit passing it, whatever it says')
   for (const status of ['Expired', 'EXPIRED', 'Abandoned', 'ABANDONED']) assert.equal(judge({ ...ok, status }, WORKFLOW), 'expired', status)

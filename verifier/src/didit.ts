@@ -12,7 +12,7 @@
 // set a Declined or In Review status (`decision_trace.status_warnings`), the selfie's address, the
 // `vendor_data` of each other user whose face Didit matched to the selfie, and, from the document
 // step, the text it read on the document (`fieldsOf`), which the ID stamp's facts are made from
-// (facts.ts), and the names its machine-readable zone holds, which the scrambled copy is made from
+// (facts.ts), and the names its machine-readable zone holds, which the scrambled copies are made from
 // (fingerprint.ts). Everything else Didit returns is dropped the moment the answer is parsed. Nothing
 // Didit says is stored as it is.
 //
@@ -175,9 +175,14 @@ export const MINIMUM_AGE = 18
 /**
  * Why Didit refused a check, as the app is told, each with the risks that say it, in order: the first
  * that applies wins. Any other risk, or none, as for a status set by hand, is `other`.
+ *
+ * There is no `known_person` here. Didit's own name check, `POSSIBLE_DUPLICATED_USER`, compares a
+ * document only with ID checks Didit still holds, and the verifier deletes each an hour after its
+ * stamp, so it catches almost nothing, and it refuses without comparing faces. The ID workflow takes
+ * no action on it, it never becomes `known_person`, and nothing matches on it: `known_person` is the
+ * verifier's own refusal (server.ts, fingerprint.ts), which compares faces.
  */
 export const REASONS = [
-  ['known_person', ['POSSIBLE_DUPLICATED_USER']],
   [
     'known_face',
     [
