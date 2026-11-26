@@ -35,17 +35,15 @@
 //                  Session's id, how many sessions it opened, whether it is used up (`stamped`: it
 //                  gave a stamp, or its hold was cancelled), and when it opened its first, so it opens
 //                  at most ID_TRIES and gives one stamp; it goes 30 days after (server.ts)
-//   fingerprints   for each ID stamp, its scrambled copies (fingerprint.ts), each one value and its
-//                  kind: the `name` copy of its first name, first last name and birth date, and, when
-//                  the ID shows a lifelong number, the `number` copy of it and its country; each beside
-//                  its stamp number's keyed hash, the `vendor_data` its Didit user is under, so no other
-//                  stamp number gets an ID stamp for the same person; one row for the same value twice;
-//                  they go with the stamp number's `faces` row, five years after Didit first kept its
-//                  face
+//   fingerprints   for each ID stamp, its scrambled copy (fingerprint.ts): one value and its kind,
+//                  `name`, of its first name, first last name and birth date, beside its stamp
+//                  number's keyed hash, the `vendor_data` its Didit user is under, so no other stamp
+//                  number gets an ID stamp for the same person; one row for the same value twice; it
+//                  goes with the stamp number's `faces` row, five years after Didit first kept its face
 //   faces          each stamp number's hash whose face Didit holds, and until when: five years after
-//                  the template was kept, when the sweep deletes its Didit user, its copies and the row;
+//                  the template was kept, when the sweep deletes its Didit user, its copy and the row;
 //                  and whether its person deleted the face, which keeps the same date, so a stamp
-//                  number keeps one template, and the copies know whether a face is there to compare,
+//                  number keeps one template, and the copy knows whether a face is there to compare,
 //                  and whether its person deleted it
 //   deletions      each stamp number's hash whose face its person asked to delete: when it runs, 28
 //                  days after the ask, and when it ran, so the app can say so; it goes 90 days after it
@@ -66,7 +64,7 @@ import { DatabaseSync, type StatementSync } from 'node:sqlite'
 import { type StampSignature, fromBytes32, toBytes32 } from '@foundationforest/proofs'
 
 import type { Check } from './didit.ts'
-import type { Copies } from './fingerprint.ts'
+import type { Kind } from './fingerprint.ts'
 
 /** What the file keeps of a session id: its SHA-256, so the file lists no Didit session. */
 export function sessionHash(sessionId: string): Uint8Array {
@@ -162,7 +160,6 @@ export class Store {
   readonly #forgetRefusal: StatementSync
   readonly #addFingerprint: StatementSync
   readonly #holders: StatementSync
-  readonly #numbers: StatementSync
   readonly #dropFingerprints: StatementSync
   readonly #face: StatementSync
   readonly #addFace: StatementSync
@@ -238,13 +235,12 @@ export class Store {
     this.#forgetRefusal = this.#db.prepare('DELETE FROM refused WHERE session_id = ?')
     this.#addFingerprint = this.#db.prepare('INSERT OR IGNORE INTO fingerprints (value, kind, owner) VALUES (?, ?, ?)')
     this.#holders = this.#db.prepare('SELECT owner FROM fingerprints WHERE value = ?')
-    this.#numbers = this.#db.prepare("SELECT count(*) AS n FROM fingerprints WHERE owner = ? AND kind = 'number'")
     this.#dropFingerprints = this.#db.prepare('DELETE FROM fingerprints WHERE owner = ?')
     this.#face = this.#db.prepare('SELECT deleted FROM faces WHERE owner = ?')
     // A face kept again after its person deleted one is held again, its own years ahead.
     this.#addFace = this.#db.prepare('INSERT INTO faces (owner, until, deleted) VALUES (?, ?, 0) ON CONFLICT (owner) DO UPDATE SET until = excluded.until, deleted = 0 WHERE deleted = 1')
     this.#dropFace = this.#db.prepare('DELETE FROM faces WHERE owner = ?')
-    // Deleted by its person: kept, with its date, so it goes with the copies when the years are over.
+    // Deleted by its person: kept, with its date, so it goes with the copy when the years are over.
     this.#faceDeleted = this.#db.prepare('UPDATE faces SET deleted = 1 WHERE owner = ?')
     this.#facesEnded = this.#db.prepare('SELECT owner, deleted FROM faces WHERE until <= ? ORDER BY until')
     // Asked while one waits, the first stays; asked after one ran, it waits again.
@@ -319,8 +315,8 @@ export class Store {
    * moved from `opened` to `to_delete`, and the payment used up, in one transaction. `face` is the
    * face stamp an ID check signs from its selfie beside its ID stamp, kept only if the stamp number
    * holds none. `vendorData` is the stamp number's keyed hash: when Didit holds no face of it, this
-   * session's is kept, till `faceUntil`, five years on, and the copies, which go with it; an ID stamp's
-   * scrambled `copies` are kept beside it. Two requests can both pass every check before this while
+   * session's is kept, till `faceUntil`, five years on, and the copy, which goes with it; an ID stamp's
+   * scrambled `copy` is kept beside it. Two requests can both pass every check before this while
    * each waits for Didit; only the first to get here keeps anything, and the second is checked
    * against it. A session sent again within its hour uses no payment.
    */
@@ -334,7 +330,7 @@ export class Store {
     faceUntil: number
     stamp: KeptStamp
     face?: KeptStamp
-    copies?: Copies
+    copy?: Uint8Array
     payment?: Uint8Array
   }): Remembered {
     this.#db.exec('BEGIN IMMEDIATE')
@@ -360,10 +356,7 @@ export class Store {
         // choice stay: a session signed again within its hour gets no more time.
         const keepFace = !again && !this.faceKept(input.vendorData)
         if (keepFace) this.#addFace.run(owner(input.vendorData), input.faceUntil)
-        if (input.copies) {
-          this.#addFingerprint.run(input.copies.name, 'name', owner(input.vendorData))
-          if (input.copies.number) this.#addFingerprint.run(input.copies.number, 'number', owner(input.vendorData))
-        }
+        if (input.copy) this.#addFingerprint.run(input.copy, 'name' satisfies Kind, owner(input.vendorData))
         this.#addToDelete.run(input.sessionId, input.kind, input.signedAt, keepFace ? 1 : 0)
         this.#closed.run(input.sessionId)
       }
@@ -387,18 +380,9 @@ export class Store {
     return this.face(vendorData) === 'held'
   }
 
-  /**
-   * Each stamp number whose copies match these, by `vendor_data`: whether it matched by the number
-   * copy, and whether it holds any number copy at all, which says whether its ID showed a number.
-   */
-  matches(copies: Copies): { vendorData: string; byNumber: boolean; holdsNumber: boolean }[] {
-    const byName = this.#holders.all(copies.name).map(vendorDataOf)
-    const byNumber = new Set(copies.number ? this.#holders.all(copies.number).map(vendorDataOf) : [])
-    return [...new Set([...byName, ...byNumber])].map((vendorData) => ({
-      vendorData,
-      byNumber: byNumber.has(vendorData),
-      holdsNumber: (this.#numbers.get(owner(vendorData))!.n as number) > 0,
-    }))
+  /** The `vendor_data` of each stamp number that holds this copy. */
+  holders(copy: Uint8Array): string[] {
+    return this.#holders.all(copy).map(vendorDataOf)
   }
 
   /** The stamp numbers, by `vendor_data`, whose face template's years are over at `at`, and whether each was deleted by its person, which leaves no user at Didit to delete. */
@@ -406,7 +390,7 @@ export class Store {
     return this.#facesEnded.all(at).map((r) => ({ vendorData: vendorDataOf(r), deleted: r.deleted === 1 }))
   }
 
-  /** The years over: the face's row, its scrambled copies and the mark that its person deleted it go, on the day its Didit user does. */
+  /** The years over: the face's row, its scrambled copy and the mark that its person deleted it go, on the day its Didit user does. */
   faceGone(vendorData: string): void {
     this.#db.exec('BEGIN IMMEDIATE')
     try {

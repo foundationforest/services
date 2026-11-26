@@ -332,7 +332,7 @@ const TABLES = [
  * with its code; each stamp number's face tries; the stamp numbers given each check's gift; each
  * payment that opened an ID session, by its Checkout Session's id, with its tries and whether it is
  * used up; by `vendor_data`, each stamp number whose face Didit holds, each whose person deleted it,
- * how many scrambled copies each holds, and each face deletion with what became of it.
+ * whether each holds its scrambled copy, and each face deletion with what became of it.
  */
 export type Expected = {
   sessions: [string, bigint, Check][]
@@ -440,10 +440,10 @@ export function assertKept(path: string, expected: Expected): void {
     assert.deepEqual(faces, [...(expected.faces ?? [])].sort(), 'by its keyed hash, each stamp number whose face Didit holds')
     const deleted = db.prepare('SELECT owner, until FROM faces WHERE deleted = 1').all()
     assert.deepEqual(deleted.map(owner).sort(), [...(expected.deletedFaces ?? [])].sort(), 'by its keyed hash, each stamp number whose person deleted its face')
-    assert.ok(deleted.every((r) => (r.until as number) > 0), 'each with the date its years end, which takes it and the copies')
+    assert.ok(deleted.every((r) => (r.until as number) > 0), 'each with the date its years end, which takes it and the copy')
     const copies = db.prepare('SELECT owner, count(*) AS n FROM fingerprints GROUP BY owner').all().map((r) => `${owner(r)} ${r.n}`).sort()
     assert.deepEqual(copies, (expected.fingerprints ?? []).map(([v, n]) => `${v} ${n}`).sort(), 'by its keyed hash, how many scrambled copies each stamp number holds')
-    assert.deepEqual(db.prepare('SELECT DISTINCT kind FROM fingerprints ORDER BY kind').all().map((r) => r.kind).filter((kind) => kind !== 'name' && kind !== 'number'), [], 'a copy is a name copy or a number copy')
+    assert.deepEqual(db.prepare('SELECT DISTINCT kind FROM fingerprints').all().map((r) => r.kind), (expected.fingerprints ?? []).length ? ['name'] : [], 'a copy is of kind name, the one kind there is')
     const deletions = db.prepare('SELECT owner, done_at FROM deletions').all().map((r) => `${owner(r)} ${r.done_at === null ? 'requested' : 'done'}`).sort()
     assert.deepEqual(deletions, (expected.deletions ?? []).map(([v, state]) => `${v} ${state}`).sort(), 'by its keyed hash, each face deletion and what became of it')
   } finally {

@@ -23,7 +23,7 @@
 //   payment       the AES-256-GCM key a payment's stamp number is locked under, inside the payment
 //                 the verifier answers (server.ts), so the payment opens ID sessions for that stamp
 //                 number only and nothing keeps the two side by side
-//   fingerprint   the key of the scrambled copies an ID stamp keeps (fingerprint.ts)
+//   fingerprint   the key of the scrambled copy an ID stamp keeps (fingerprint.ts)
 //
 // Each stamp key's facts recipe is fixed for good: a new recipe is a new key, under a new text here.
 // Never `face`, `id` or `id-fields`, the texts of the keys of the recipes before: their stamps are
