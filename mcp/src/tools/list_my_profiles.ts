@@ -1,10 +1,11 @@
 // The person's profiles this login acts in, from its connection, by label, never an address.
 //
 // With no label: each profile whose market the directory still lists (a profile whose market has
-// left it is left out, as the Forest app forgets it), with what its access key can do there as its
-// profile entry, read from its hosts, lists it now (nothing once the key has ended), its listings
-// as its folder holds them (id, title, and the app's link to it), and its rating, trust and review
-// count as the index shows them, with whether the index counts it, which is what search shows.
+// left it is left out, as the Forest app forgets it), with its link in the app, what its access key
+// can do there as its profile entry, read from its hosts, lists it now (nothing once the key has
+// ended), its listings as its folder holds them (id, title, and the app's link to it), and its
+// rating, trust and review count as the index shows them, with whether the index counts it, which is
+// what search shows.
 //
 // With a label: that profile in full: its listings and their fields, and the reviews, vouches and
 // reports it received (strangers' words) and wrote (the person's), as the index shows them, each
@@ -20,7 +21,7 @@ import { forAi, titleOf } from '../shape.ts'
 export const name = 'list_my_profiles'
 export const title = 'List my profiles'
 export const description =
-  "The person's profiles this login acts in, each by its label, such as tutoring/tutor, never an address. With no label: for each, what this login may do there (read, read-inbox, write, message: nothing once the person ended its key), its listings (id, title, link to it in the Forest app), and its rating, trust and review count as the index shows them; inSearch false means the index does not count the profile yet, so its listings do not show in search. With a label: that profile in full: its listings with their fields, the reviews, vouches and reports it received (what strangers wrote sits under strangersWrote) and wrote, as the index shows them; each one it wrote has a path for delete_entry. Needs the person's login."
+  "The person's profiles this login acts in, each by its label, such as tutoring/tutor, never an address. With no label: for each, its link in the Forest app, what this login may do there (read, read-inbox, write, message: nothing once the person ended its key), its listings (id, title, link to it in the Forest app), and its rating, trust and review count as the index shows them; inSearch false means the index does not count the profile yet, so its listings do not show in search. With a label: that profile in full: its listings with their fields, the reviews, vouches and reports it received (what strangers wrote sits under strangersWrote) and wrote, as the index shows them; each one it wrote has a path for delete_entry. Needs the person's login."
 export const params: Param[] = [{ name: 'label', type: 'string', description: "One profile, by its label: <market>/<role>, such as tutoring/tutor. Left out: every profile." }]
 export const login = true
 export const annotations = { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
@@ -75,6 +76,7 @@ export async function run(args: Args, ctx: Ctx) {
     const index = await indexOf(ctx, me.address)
     return {
       label: me.label,
+      ...(links.profile(me.label) && { link: links.profile(me.label) }),
       can: view.keys.find((k) => k.key === me.key.address && k.until === undefined)?.can ?? [],
       inSearch: index.counts,
       listings: listingsOf(view).map((l) => ({ id: l.id, title: l.title, ...(links.listing(me.label, l.id) && { link: links.listing(me.label, l.id) }), fields: l.body })),
@@ -91,6 +93,7 @@ export async function run(args: Args, ctx: Ctx) {
       const index = await indexOf(ctx, me.address)
       return {
         label,
+        ...(links.profile(label) && { link: links.profile(label) }),
         can: view.keys.find((k) => k.key === me.key.address && k.until === undefined)?.can ?? [],
         inSearch: index.counts,
         ...shownOf(index.page),

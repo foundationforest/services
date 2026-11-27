@@ -427,7 +427,7 @@ async function main() {
   const beforeListing = await held(seller.address)
   const posted = await seller.ai!.call('post_listing', { label: seller.label, id: 'offer', fields: offer })
   assert.equal(posted.posted, 'offer')
-  assert.equal(posted.link, `${new URL(page!.url).origin}/listing#label=${seller.label}&id=offer`, 'with the link to it in the app, where photos are added')
+  assert.equal(posted.link, `${new URL(page!.url).origin}/#/${seller.label}/listing/offer`, 'with the link to it in the app, where photos are added')
   const listingAddress = `${seller.address}/listing/offer`
   const onHost = (await readFolder([s.host], seller.address, Date.now())).current.get('listing/offer')?.entry
   assert.equal(onHost?.body?.description, offer.description, 'on the host, and current')
@@ -465,7 +465,8 @@ async function main() {
   say(`mcp: the buyer’s AI found the listing in the index’s search, and messaged the seller, paid from the buyer's balance by its bytes: ${paid.price / CREDIT} credits, and ${paid.copyPrice / CREDIT} for its copy, and the seller's balance as it was`)
 
   // What the index shows of the buyer beside its message: its market, role and face check, from the
-  // seller's AI's read of its conversations. What the buyer wrote sits under strangersWrote.
+  // seller's AI's read of its conversations, which holds the message once the index shows the
+  // buyer's check. What the buyer wrote sits under strangersWrote.
   type Talk = { with: { address: string; market?: string; role?: string; checks?: Array<{ label: string }> }; newest: { from: string; strangersWrote?: { text?: string } }; conversation?: string }
   const asked = await waitFor('the index to show the buyer, beside its message', INDEX_WAIT, async () => {
     const t = ((await seller.ai!.call('read_messages', { label: seller.label })).conversations as Talk[]).find((x) => x.newest.strangersWrote?.text === text)
@@ -474,7 +475,7 @@ async function main() {
   assert.equal(asked.with.address, buyer.address, 'from the buyer’s profile')
   assert.equal(asked.newest.from, 'them')
   assert.deepEqual([asked.with.market, asked.with.role], [MARKET.name, SIDES.buyer], 'the buyer’s market and role, as the index shows them')
-  assert.equal(asked.conversation, `${new URL(page!.url).origin}/thread#label=${seller.label}&with=${buyer.address}`, 'and the link to the conversation in the app')
+  assert.equal(asked.conversation, `${new URL(page!.url).origin}/#/${seller.label}/messages/${buyer.address}`, 'and the link to the conversation in the app')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
   await message(seller, asked.with.address, replyText)
   say('mcp: the seller’s AI read it, from a sender whose profile entry counts, with the buyer’s market, role and face check as the index shows them, and replied, paid the same way')

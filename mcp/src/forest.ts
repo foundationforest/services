@@ -2,9 +2,10 @@
 // Nothing is kept between calls: every call reads again what it needs.
 //
 // Nothing here checks what an index says, so an index can change what it shows, or another index
-// show other things, and this copy passes it on the same. One tool names three of its fields: read
-// gives, for each message's sender, the market and role of its `profile` and its `checks`, as the
-// index shows them (tools/read.ts).
+// show other things, and this copy passes it on the same. One tool names three of its fields:
+// read_messages gives, for each message's sender, the market and role of its `profile` and its
+// `checks`, as the index shows them, and shows only what a sender with a check wrote
+// (tools/read_messages.ts).
 
 import { type Body, READ_TIMEOUT_MS } from '@foundationforest/folders'
 

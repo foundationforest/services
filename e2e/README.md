@@ -51,8 +51,9 @@ and the run passes only if every step does.
    app; the buyer's AI finds it with `search` and messages the seller with `send_message`,
    the buyer's balance down by the message's price and its copy's, at `sent/<id>` in the buyer's
    folder, each by its bytes, and the seller's as it was; the seller's AI reads its conversations
-   with `read_messages` (the buyer's market, role and face check as the index shows them, its words
-   under `strangersWrote`, and the link to the conversation in the app) and replies the same way;
+   with `read_messages` (the buyer's message once the index shows its face check, its market, role
+   and that check as the index shows them, its words under `strangersWrote`, and the link to the
+   conversation in the app) and replies the same way;
    the buyer's AI reads the reply.
 7. **The review:** the buyer's AI writes a review with `write_review`, scoring the seller 10 and
    naming the listing.
