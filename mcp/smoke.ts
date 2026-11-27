@@ -3,13 +3,13 @@
 // login through the stand-in connect page; after a deploy, `npm run smoke -- <url>` runs it against
 // the deployed copy, and checks what needs no person.
 //
-// What it checks: how Forest works comes first, as the server's instructions, with the mark as the
-// server's icon; there is no session; every tool is listed; reading works with no login; a call to
+// What it checks: how Forest works, in under 2,000 characters and nothing an index said, as the
+// server's instructions, with the mark as the server's icon; there is no session; every tool is listed; reading works with no login; a call to
 // a tool that acts for the person, with no token, gets the 401 challenge, naming the metadata; the
 // metadata names this copy as the resource and its own authorization server; its public encryption
 // key is at /open-key; an AI app can register; /authorize sends the person to the app's connect
 // page, or says logins wait; the same tools answer at /mcp; the icon is at /favicon.ico and
-// /icon.svg. Given a way through the connect page, also: the login, and my_profiles answering, with
+// /icon.svg. Given a way through the connect page, also: the login, and list_my_profiles answering, with
 // the profiles ticked or with why the connection's hosts were not reached.
 
 import assert from 'node:assert/strict'
@@ -20,7 +20,7 @@ import { type OAuthClientProvider, UnauthorizedError } from '@modelcontextprotoc
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 
 import { ICO, ICON, SVG } from './src/icon.ts'
-import { HOW, TOOLS } from './src/tools.ts'
+import { HOW, MAX_INSTRUCTIONS, TOOLS } from './src/tools.ts'
 
 type Result = { isError?: boolean; content: Array<{ type: string; text?: string }> }
 const text = (r: unknown) => (r as Result).content[0]?.text ?? ''
@@ -42,12 +42,14 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
   const origin = new URL(url).origin
   const { client, transport, tools } = await connected(new URL(url), login?.provider)
   try {
-    assert.ok(client.getInstructions()?.startsWith(`${HOW}\n\nThe index`), "how Forest works comes first, then what the index says of its guide")
+    const how = client.getInstructions() ?? ''
+    assert.ok(how.startsWith(HOW) && how.length < MAX_INSTRUCTIONS, 'how Forest works, in under 2,000 characters, and nothing an index said')
+    assert.ok(!how.includes('The index gave no guide') && !how.includes("The index's guide"), 'no guide of the index in the instructions')
     assert.deepEqual(client.getServerVersion()?.icons, [ICON], 'the mark on paper is the server’s icon')
     assert.equal(transport.sessionId, undefined, 'no session: each request gets a fresh server')
     assert.deepEqual(tools.map((t) => t.name), TOOLS.map((t) => t.name), 'every tool is listed')
 
-    const markets = (await client.callTool({ name: 'markets', arguments: {} })) as Result
+    const markets = (await client.callTool({ name: 'list_markets', arguments: {} })) as Result
     assert.notEqual(markets.isError, true, `reading needs no login: ${text(markets)}`)
     const listed = JSON.parse(text(markets)).markets as Array<{ name: string; status: string }>
     assert.ok(listed.length > 0 && listed.every((m) => m.status === 'live' || m.status === 'beta'), 'the directory, each market live or beta')
@@ -55,7 +57,7 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     const challenge = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_my_profiles', arguments: {} } }),
     })
     assert.equal(challenge.status, 401, 'a tool that acts for the person, with no token, gets the challenge')
     assert.equal(challenge.headers.get('www-authenticate'), `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`)
@@ -83,11 +85,11 @@ export async function smoke(url: string, login?: { provider: OAuthClientProvider
     const seen: Record<string, unknown> = { tools: tools.map((t) => t.name), logins, icon: ['/favicon.ico', '/icon.svg'] }
 
     if (login) {
-      await assert.rejects(client.callTool({ name: 'my_profiles', arguments: {} }), UnauthorizedError, 'a tool that acts for the person starts the login')
+      await assert.rejects(client.callTool({ name: 'list_my_profiles', arguments: {} }), UnauthorizedError, 'a tool that acts for the person starts the login')
       await transport.finishAuth((await login.browse(login.provider.authorization!)).get('code')!)
-      // The login is taken: my_profiles answers, with the profiles' labels, or with why the
+      // The login is taken: list_my_profiles answers, with the profiles' labels, or with why the
       // connection's hosts were not reached from this copy.
-      const mine = (await client.callTool({ name: 'my_profiles', arguments: {} })) as Result
+      const mine = (await client.callTool({ name: 'list_my_profiles', arguments: {} })) as Result
       seen.login = mine.isError ? { refused: text(mine) } : (JSON.parse(text(mine)) as { profiles: Array<{ label: string }> }).profiles.map((p) => p.label)
     }
     return seen

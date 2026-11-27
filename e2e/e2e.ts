@@ -32,9 +32,9 @@
 //       hands the MCP server the pointer;
 //    6. MCP server: the seller's AI writes a listing, paid from the profile's balance; the buyer's
 //       finds it through the index's search and messages the seller, paid from the buyer's balance
-//       by its bytes, the seller's balance as it was; the seller's reads the inbox, the buyer's
-//       market, role and checks as the index shows them, and replies the same way; the buyer's
-//       reads the reply;
+//       by its bytes, the seller's balance as it was; the seller's reads its conversations, the
+//       buyer's market, role and checks as the index shows them, and replies the same way; the
+//       buyer's reads the reply;
 //    7. the review: the buyer's AI reviews the seller, naming the listing;
 //    8. the end-to-end test's index counts it all: both profiles, the listing, the review, and what
 //       each profile shows (ratings, trust, uniqueness) as its own ranking makes them, signed; no
@@ -42,7 +42,7 @@
 //    9. the trust carried: the seller's device finds its leaf by its profile, proves its trust onto
 //       its second profile, and the index shows the proof;
 //   10. added: the seller's app, from the seed alone, adds the second profile to its AI's connection;
-//       with no new login, the AI acts as both, and writes a locked note as the second profile;
+//       with no new login, the AI acts as both, and messages as the second profile;
 //   11. ended: the seller's app ends the connection, its entry gone and both keys ended; the MCP
 //       server refuses the AI's next call, 401; what the keys wrote still counts on the host and
 //       the index, and a new write by either is refused;
@@ -354,7 +354,7 @@ async function logInAs(p: Person) {
     page!.at = null
   }
   p.ai = new AI(c)
-  assert.deepEqual((await p.ai.call('my_profiles')).profiles, [{ label: p.label, can: SWITCHES }], 'it acts in this profile, by its label, with every switch')
+  assert.deepEqual((await p.ai.call('list_my_profiles')).profiles.map((x: { label: string; can: string[] }) => ({ label: x.label, can: x.can })), [{ label: p.label, can: SWITCHES }], 'it acts in this profile, by its label, with every switch')
   const keys = await p.app!.keys(p.label)
   assert.equal(keys.length, 1, 'one access key in the profile entry')
   assert.deepEqual(keys[0]!.can, SWITCHES)
@@ -415,7 +415,7 @@ async function main() {
 
   // 6. MCP server: every call through the AI's own client.
   const [market, sellerRole] = seller.label.split('/') as [string, string]
-  const read = await seller.ai!.call('markets', { name: market })
+  const read = await seller.ai!.call('list_markets', { name: market })
   type Words = Array<{ name: string; question: string }>
   const asks = (kind: 'listing' | 'review') => (read.roles[sellerRole] as { [kind: string]: Words })[kind]!.map((f) => f.name)
   assert.ok(asks('listing').includes('description') && asks('review').includes('listing') && read.fields.listing.description.takes, 'the seller’s AI reads what its listing and a review about it ask, and how each answer is written')
@@ -425,7 +425,9 @@ async function main() {
     ...(read.fields.listing.price?.piece === 'price' && { price: [{ amount: '2', currency: 'USD' }] }),
   }
   const beforeListing = await held(seller.address)
-  assert.equal((await seller.ai!.call('write', { label: seller.label, path: 'listing/offer', body: offer })).written, 'listing/offer')
+  const posted = await seller.ai!.call('post_listing', { label: seller.label, id: 'offer', fields: offer })
+  assert.equal(posted.posted, 'offer')
+  assert.equal(posted.link, `${new URL(page!.url).origin}/listing#label=${seller.label}&id=offer`, 'with the link to it in the app, where photos are added')
   const listingAddress = `${seller.address}/listing/offer`
   const onHost = (await readFolder([s.host], seller.address, Date.now())).current.get('listing/offer')?.entry
   assert.equal(onHost?.body?.description, offer.description, 'on the host, and current')
@@ -439,12 +441,15 @@ async function main() {
    * keeps one: each one's price, by its bytes, from the sender's balance, and nothing from the
    * recipient's.
    */
+  const sentPaths = async (address: string) => [...(await readFolder([s.host], address, Date.now())).current.keys()].filter((p) => p.startsWith('sent/'))
   const message = async (from: Person, to: string, text: string) => {
     const [fromBefore, toBefore] = [await held(from.address), await held(to)]
-    const sent = await from.ai!.call('message', { label: from.label, to, body: { text } })
-    assert.deepEqual([sent.sent, sent.hosts], [true, 1])
+    const copiesBefore = await sentPaths(from.address)
+    const sent = await from.ai!.call('send_message', { label: from.label, to, text })
+    assert.deepEqual([sent.sent, sent.from], [true, from.label])
     const price = await entryPrice(await newestInbox(to))
-    const copy = (await readFolder([s.host], from.address, Date.now())).current.get(sent.copy)?.entry
+    const [copyPath] = (await sentPaths(from.address)).filter((p) => !copiesBefore.includes(p))
+    const copy = (await readFolder([s.host], from.address, Date.now())).current.get(copyPath!)?.entry
     assert.equal(copy?.key, from.key, 'its copy at sent/<id> in the sender’s folder, signed by the access key')
     const copyPrice = await entryPrice(Buffer.byteLength(encodeEntry(copy!)))
     assert.deepEqual([await held(from.address), await held(to)], [fromBefore - price - copyPrice, toBefore], 'each price from the sender, by its bytes, and the recipient’s balance as it was')
@@ -453,31 +458,36 @@ async function main() {
 
   const found = await waitFor('the listing in the index’s search, through the mcp', INDEX_WAIT, async () => {
     const out = await buyer.ai!.call('search', { filters: { q: 'test listing', market, role: sellerRole } })
-    return (out.index.answer.results as Array<{ profile: string; listing: { address: string } }> | undefined)?.find((r) => r.listing.address === listingAddress)
+    return (out.answer.results as Array<{ profile: string; listing: { address: string } }> | undefined)?.find((r) => r.listing.address === listingAddress)
   })
   const text = 'Is Tuesday at six free? A test message, sent through mcp by e2e.'
   const paid = await message(buyer, found.profile, text)
   say(`mcp: the buyer’s AI found the listing in the index’s search, and messaged the seller, paid from the buyer's balance by its bytes: ${paid.price / CREDIT} credits, and ${paid.copyPrice / CREDIT} for its copy, and the seller's balance as it was`)
 
-  type Message = { from?: string; time: number; body: { text?: string }; counts: boolean; index?: { market?: string; role?: string; checks?: Array<{ key: string }> } }
+  // What the index shows of the buyer beside its message: its market, role and face check, from the
+  // seller's AI's read of its conversations. What the buyer wrote sits under strangersWrote.
+  type Talk = { with: { address: string; market?: string; role?: string; checks?: Array<{ label: string }> }; newest: { from: string; strangersWrote?: { text?: string } }; conversation?: string }
   const asked = await waitFor('the index to show the buyer, beside its message', INDEX_WAIT, async () => {
-    const m = ((await seller.ai!.call('read', { label: seller.label, inbox: true })).messages as Message[]).find((x) => x.body.text === text)
-    return m?.index?.checks?.some((c) => c.key === s.verifier.keys.face) ? m : null
+    const t = ((await seller.ai!.call('read_messages', { label: seller.label })).conversations as Talk[]).find((x) => x.newest.strangersWrote?.text === text)
+    return t?.with.checks?.some((c) => c.label === 'face check') ? t : null
   })
-  assert.equal(asked.from, buyer.address, 'from the buyer’s profile')
-  assert.equal(asked.counts, true, 'whose profile entry lists the key that signed it with message')
-  assert.deepEqual([asked.index!.market, asked.index!.role], [MARKET.name, SIDES.buyer], 'the buyer’s market and role, as the index shows them')
+  assert.equal(asked.with.address, buyer.address, 'from the buyer’s profile')
+  assert.equal(asked.newest.from, 'them')
+  assert.deepEqual([asked.with.market, asked.with.role], [MARKET.name, SIDES.buyer], 'the buyer’s market and role, as the index shows them')
+  assert.equal(asked.conversation, `${new URL(page!.url).origin}/thread#label=${seller.label}&with=${buyer.address}`, 'and the link to the conversation in the app')
   const replyText = 'Tuesday at six, yes. A test reply, sent through mcp by e2e.'
-  await message(seller, asked.from!, replyText)
-  say('mcp: the seller’s AI read it, counted, with the buyer’s market, role and face check as the index shows them, and replied, paid the same way')
-  const replied = ((await buyer.ai!.call('read', { label: buyer.label, inbox: true })).messages as Message[]).find((m) => m.body.text === replyText)
-  assert.deepEqual([replied?.from, replied?.counts], [seller.address, true], 'the buyer’s AI reads the seller’s reply')
+  await message(seller, asked.with.address, replyText)
+  say('mcp: the seller’s AI read it, from a sender whose profile entry counts, with the buyer’s market, role and face check as the index shows them, and replied, paid the same way')
+  const replied = ((await buyer.ai!.call('read_messages', { label: buyer.label, with: seller.address })).messages as Array<{ from: string; strangersWrote?: { text?: string } }>).find((m) => m.strangersWrote?.text === replyText)
+  assert.equal(replied?.from, 'them', 'the buyer’s AI reads the seller’s reply')
   say('mcp: the buyer’s AI read the reply')
 
   // 7. The review, written by the buyer's AI, naming the listing.
   const review = { subject: found.profile, score: '10', text: 'Clear and patient. A test review.', listing: listingAddress }
-  assert.equal((await buyer.ai!.call('write', { label: buyer.label, path: 'review/offer', body: review })).written, 'review/offer')
-  const reviewed = (await readFolder([s.host], buyer.address, Date.now())).current.get('review/offer')?.entry
+  const { subject, ...reviewFields } = review
+  const written = await buyer.ai!.call('write_review', { label: buyer.label, kind: 'review', subject, fields: reviewFields })
+  assert.match(written.path, /^review\/[0-9a-f]{16}$/)
+  const reviewed = (await readFolder([s.host], buyer.address, Date.now())).current.get(written.path)?.entry
   assert.deepEqual([reviewed?.body?.listing, reviewed?.key], [listingAddress, buyer.key], 'on the host, naming the listing, signed by the buyer’s access key')
   say('the review: the buyer’s AI scored the seller 10, naming the listing')
 
@@ -491,7 +501,7 @@ async function main() {
   const ranked = rank(
     [{ address: seller.address, uniqueness: face }, { address: buyer.address, uniqueness: face }],
     [{ writer: buyer.address, subject: seller.address, score: 10 }],
-    [{ writer: buyer.address, subject: seller.address, kind: 'rating', time: 0, address: `${buyer.address}/review/offer` }],
+    [{ writer: buyer.address, subject: seller.address, kind: 'rating', time: 0, address: `${buyer.address}/${written.path}` }],
     SCORING,
   )
   const want = (address: string) => ({
@@ -510,7 +520,7 @@ async function main() {
       if (!v.checks.some((c: { key: string }) => c.key === s.verifier.keys.face)) return null
       if (JSON.stringify(shownOf(v)) !== JSON.stringify(w)) return null
     }
-    const got = t.body.reviews.received.find((r: { address: string }) => r.address === `${buyer.address}/review/offer`)
+    const got = t.body.reviews.received.find((r: { address: string }) => r.address === `${buyer.address}/${written.path}`)
     if (!got?.counted) return null
     if (!t.body.listings.some((l: { address: string; listed: boolean }) => l.address === listingAddress && l.listed)) return null
     return { seller: t.body as Shown, buyer: st.body as Shown }
@@ -552,15 +562,15 @@ async function main() {
 
   // 10. Added: the seller's app, finding the connection from the seed alone, adds the second profile
   // to it, with every switch: one access key more, its note, its access entry. With no new login,
-  // the seller's AI acts as both, and writes a locked note as the second profile.
+  // the seller's AI acts as both, and messages as the second profile.
   await new App({ seed: seller.seed, hosts: [s.host] }).addToConnection(seller.connection!, SECOND)
-  assert.deepEqual((await seller.ai!.call('my_profiles')).profiles, [SECOND, seller.label].sort().map((label) => ({ label, can: SWITCHES })), 'with no new login, both, by their labels')
+  assert.deepEqual((await seller.ai!.call('list_my_profiles')).profiles.map((x: { label: string; can: string[] }) => ({ label: x.label, can: x.can })), [SECOND, seller.label].sort().map((label) => ({ label, can: SWITCHES })), 'with no new login, both, by their labels')
   const secondKey = (await seller.app!.keys(SECOND))[0]!.key
-  const plan = { text: 'Football on Saturdays. A test note, locked, written by an AI through mcp by e2e.' }
-  assert.equal((await seller.ai!.call('write', { label: SECOND, path: 'notes/plan', body: plan, locked: true })).locked, true)
-  assert.deepEqual((await seller.ai!.call('read', { label: SECOND, path: 'notes/plan' })).body, plan, 'and reads it back')
-  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get('notes/plan')?.entry.key, secondKey, 'on the host, signed by the second profile’s access key')
-  say(`added: the seller's app added ${SECOND} to its AI's connection, from the seed alone; with no new login, the AI wrote a locked note as the second profile, signed by its access key ${secondKey}`)
+  const note = 'Football on Saturdays? A test message as the second profile, sent through mcp by e2e.'
+  assert.equal((await seller.ai!.call('send_message', { label: SECOND, to: buyer.address, text: note })).from, SECOND)
+  const [secondCopy] = await sentPaths(second.address)
+  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get(secondCopy!)?.entry.key, secondKey, 'on the host, its copy signed by the second profile’s access key')
+  say(`added: the seller's app added ${SECOND} to its AI's connection, from the seed alone; with no new login, the AI messaged as the second profile, signed by its access key ${secondKey}`)
 
   // 11. Ended: the seller's app ends the connection: its connection entry deleted, then each key it
   // holds ended, listed in its profile entry with until, with its note and its access entry deleted.
@@ -580,18 +590,18 @@ async function main() {
   const ended = await fetch(s.mcp, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${seller.ai!.token()}` },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'my_profiles', arguments: {} } }),
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_my_profiles', arguments: {} } }),
   })
   assert.equal(ended.status, 401, 'the mcp refuses the ended connection’s token')
   const why = ended.headers.get('www-authenticate') ?? ''
   assert.match(why, /error="invalid_token", error_description="the connection this login points to is gone"/)
-  const next = await seller.ai!.call('write', { label: seller.label, path: 'listing/more', body: { ...offer, description: 'Another test listing, after the connection ended.' } }).then(
+  const next = await seller.ai!.call('post_listing', { label: seller.label, id: 'more', fields: { ...offer, description: 'Another test listing, after the connection ended.' } }).then(
     () => assert.fail('the mcp acted for an ended connection'),
     (err: Error) => err,
   )
   assert.ok(!(next instanceof Refused), `the AI's next call is refused before any tool, so it must log in again: ${next.message}`)
   assert.equal((await readFolder([s.host], seller.address, Date.now())).current.get('listing/offer')?.entry.key, seller.key, 'the listing its key wrote still counts')
-  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get('notes/plan')?.entry.key, secondKey, 'and so does the second profile’s note')
+  assert.equal((await readFolder([s.host], second.address, Date.now())).current.get(secondCopy!)?.entry.key, secondKey, 'and so does the second profile’s copy')
   for (const k of keys) {
     const [o] = await write([s.host], [entry({ profile: k.address, key: k.key }, 'notes/after', { text: 'After the key ended. A test entry.' }, Date.now())])
     assert.equal(o!.results[0]?.error, 'unlisted', `the host refuses a new entry by ${k.label}'s ended key`)
@@ -601,7 +611,7 @@ async function main() {
     const listed = (t.body?.profile?.keys as Body[] | undefined)?.find((k) => k.key === seller.key)
     return listed?.until !== undefined && t.body.listings.some((l: { address: string; listed: boolean }) => l.address === listingAddress && l.listed) ? true : null
   })
-  say(`ended: the seller's app ended its AI's connection; the MCP server answered its next call 401 (${why.split('error_description=')[1]}); the listing and the note its keys wrote still count, on the host and at the index, and the host refused a new entry by either key`)
+  say(`ended: the seller's app ended its AI's connection; the MCP server answered its next call 401 (${why.split('error_description=')[1]}); the listing and the message copy its keys wrote still count, on the host and at the index, and the host refused a new entry by either key`)
 
   // 12. A new device: the seller's seed alone gives its Profiles folder, its two profiles and its stamp.
   const device = await App.find(seller.seed, [s.host])

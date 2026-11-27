@@ -12,12 +12,13 @@ function settings() {
   const origin = env('PUBLIC_URL') ?? 'https://mcp.forest.foundation'
   if (normalizeOrigin(origin) !== origin) refuse(`PUBLIC_URL is an origin, https://host[:port], as AI apps reach this copy: not ${origin}`)
   const appUrl = env('APP_URL')
-  if (appUrl !== undefined && !(URL.canParse(appUrl) && normalizeOrigin(new URL(appUrl).origin))) refuse(`APP_URL is the app's connect page, an https address (http only on loopback): not ${appUrl}`)
+  if (appUrl !== undefined && !(URL.canParse(appUrl) && normalizeOrigin(new URL(appUrl).origin))) refuse(`APP_URL is the Forest app's connect page, an https address (http only on loopback): not ${appUrl}`)
   const port = Number(env('PORT') ?? 8080)
   if (!Number.isSafeInteger(port) || port < 0 || port > 65_535) refuse('PORT is a port number')
   return {
     origin,
     ...(appUrl && { appUrl }),
+    ...(env('OPENAI_APPS_CHALLENGE') && { openaiChallenge: env('OPENAI_APPS_CHALLENGE')! }),
     dataDir: env('DATA_DIR') ?? refuse('DATA_DIR is where this copy keeps its two keys, on a volume'),
     read: { index: env('INDEX_URL') ?? INDEX },
     // Loopback unless told otherwise: the image says 0.0.0.0.
