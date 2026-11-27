@@ -28,6 +28,8 @@ export type Ctx = Context & {
   connection: () => Promise<Connection>
   /** The person's own addresses this request has seen, each with what an answer says instead: its profiles' by their labels, and the pay addresses of each profile entry it read. */
   own: Map<string, string>
+  /** The Forest app's origin, from APP_URL's; none without one, and then no answer holds an app link. */
+  app?: string | undefined
 }
 
 export type Tool = {
@@ -39,8 +41,8 @@ export type Tool = {
   params: Param[]
   /** Whether it acts for the person, and so needs a login. */
   login: boolean
-  /** The MCP specification's hints: whether it only reads, may destroy, and reaches outside this copy. */
-  annotations: ToolAnnotations
+  /** The MCP specification's hints, all three, as both app directories require: whether it only reads, whether it may destroy, and whether it reaches outside this copy. */
+  annotations: ToolAnnotations & { readOnlyHint: boolean; destructiveHint: boolean; openWorldHint: boolean }
   run: (args: Args, ctx: Ctx) => Promise<unknown>
 }
 

@@ -8,7 +8,7 @@
 // `hostFetch`, which reaches only public addresses unless told otherwise, since anyone can make a
 // connection, and a profile entry names any host.
 
-import { type Body, type ReadHow, type View, b64u, readFolder } from '@foundationforest/folders'
+import { type Body, FolderError, type PublishOutcome, type ReadHow, type SignedEntry, type View, b64u, entry, nextTime, readFolder, write } from '@foundationforest/folders'
 import { type AccessKey, accessKey } from '@foundationforest/keys'
 import { isObject, refuse } from './forest.ts'
 import type { Ctx } from './params.ts'
@@ -28,7 +28,7 @@ export const how = (ctx: Ctx): ReadHow => ({ fetch: ctx.hostFetch, redirect: 'er
 
 /** One of the person's profiles this login acts in, by its label, or a refusal. */
 export async function ownProfile(ctx: Ctx, label: string): Promise<Own> {
-  const p = (await ctx.connection()).profiles.find((x) => x.label === label) ?? refuse(`${label} is not a profile this login acts in: my_profiles lists them`)
+  const p = (await ctx.connection()).profiles.find((x) => x.label === label) ?? refuse(`${label} is not a profile this login acts in: list_my_profiles lists them`)
   return { label, address: p.address, hosts: p.hosts, key: await accessKey(b64u.decode(p.key)) }
 }
 
@@ -40,11 +40,16 @@ export function folderOf(ctx: Ctx, address: string, hosts: string[]): Promise<Vi
 /** A view's current profile entry's body, or null when it has none. */
 export const profileEntryOf = (view: View): Body | null => view.current.get('profile')?.entry.body ?? null
 
+/** The pay addresses of one of the person's own profile entries, added to what answers leave out. */
+export function leavePayOut(ctx: Ctx, me: Own, profile: Body): void {
+  if (isObject(profile.pay)) for (const [type, address] of Object.entries(profile.pay)) if (typeof address === 'string') ctx.own.set(address, `${me.label}'s ${type} pay address`)
+}
+
 /** One of the person's own folders, read, its profile entry's pay addresses added to what answers leave out; refused when its hosts hold no profile entry. */
 export async function ownFolder(ctx: Ctx, me: Own): Promise<{ view: View; profile: Body }> {
   const view = await folderOf(ctx, me.address, me.hosts)
   const profile = profileEntryOf(view) ?? refuse(`${me.label}'s hosts hold no profile entry for it`)
-  if (isObject(profile.pay)) for (const [type, address] of Object.entries(profile.pay)) if (typeof address === 'string') ctx.own.set(address, `${me.label}'s ${type} pay address`)
+  leavePayOut(ctx, me, profile)
   return { view, profile }
 }
 
@@ -70,3 +75,36 @@ export function leaveOut<T>(value: T, own: Map<string, string>): T {
   }
   return walk(value) as T
 }
+
+/** The text a host's refusal for credits carries: where credits are sold, which no answer here gives. */
+const SHORT = /credits are sold at|and the folder holds/
+
+/** Each host's refusal, in words. A host out of credits is said as the same plain thing everywhere, with no link: the person adds credits in the Forest app. */
+export function why(outcomes: PublishOutcome[]): string {
+  return outcomes
+    .map((o) => {
+      const said = o.results[0] ? `${o.results[0].error}: ${o.results[0].message ?? ''}`.trim() : (o.error ?? `answered ${o.status}`)
+      return `${o.host} (${SHORT.test(said) ? "this profile is out of credits there: the person adds credits in the Forest app" : said})`
+    })
+    .join('; ')
+}
+
+/**
+ * `body` written at `path` in the person's profile, signed by its access key, to the hosts its
+ * profile entry names; null deletes. Refused, with each host's reason, when none took it.
+ */
+export async function publish(ctx: Ctx, me: Own, view: View, path: string, body: Body | null): Promise<{ time: number; hosts: number }> {
+  let signed: SignedEntry
+  try {
+    signed = entry({ profile: me.address, key: me.key }, path, body, nextTime(Date.now(), view, path))
+  } catch (err) {
+    refuse(err instanceof FolderError ? `not an entry: ${err.message}` : String(err))
+  }
+  const outcomes = await write(view.hosts, [signed], how(ctx))
+  const took = outcomes.filter((o) => o.results[0]?.ok)
+  if (!took.length) refuse(`no host took it: ${why(outcomes)}`)
+  return { time: signed.time, hosts: took.length }
+}
+
+/** The body of the entry now at `path` in a folder: null when there is none, or it was deleted. */
+export const bodyAt = (view: View, path: string): Body | null => view.current.get(path)?.entry.body ?? null

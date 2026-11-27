@@ -1,7 +1,8 @@
 # mcp
 
 The [MCP](https://modelcontextprotocol.io) server lets your AI app (Claude, ChatGPT) act for you:
-find people, post, review and message, within the access keys you give it. An access key is a key
+find people, post, review and message, within the access keys you give it, and it hands you a link
+to your Forest app whenever something needs your passkey or is better seen than read. An access key is a key
 one of your profiles hands out: its profile entry lists each one with what it `can` do (`read`,
 `read-inbox`, `write`, `message`). Hosts and readers check `write` and `message`; `read` and
 `read-inbox` work by envelopes: whoever locks an entry or a message locks it to the keys listed with
@@ -29,88 +30,115 @@ this offer as tutoring/tutor").
 
 ### The tools
 
-Six, each with a title and the MCP specification's hints. Two read with no login, so an AI app can
-read before the person connects anything; four act for the person and need one.
+Eight. Each name starts with a verb, each has a title, and each sets all three of the MCP
+specification's marks, `readOnlyHint`, `destructiveHint` and `openWorldHint`, true or false, as both
+Claude's and ChatGPT's app directories require. Two read with no login, so an AI app can read before
+the person connects anything; six act for the person and need one.
 
-| Tool | Marked | The AI gives | What it does |
-|---|---|---|---|
-| `markets` | read-only | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first, after its title and description); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, the same for every role (its piece, `several`, `roles`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written); `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
-| `search` | read-only | `filters`, or `address` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; beside it, with a login, `mine`, the person's own profiles it holds, by label |
-| `my_profiles` | read-only | nothing | Each profile the login acts in, by label, with what its access key `can` do as its profile entry lists it now, nothing once it has ended. Never an address |
-| `read` | read-only | `label`, then `path` or `inbox: true` | The current entry at a path in that profile's folder, its body and time, opened when it is locked and the key may open it; or the inbox, with the profile's sent copies, below |
-| `write` | may destroy | `label`, `path`, `body` (null deletes), `locked` | An entry in that profile's folder, signed by its access key, written to the hosts its profile entry names |
-| `message` | reaches out | `label`, `to`, `body` | An inbox entry signed by the access key, locked to the public encryption keys `to`'s profile entry gives, left with each of `to`'s hosts, carrying the sender's first host so the recipient's app finds the sender's folder, each host paid from the profile's balance there, by its bytes, with a payment signed by the access key; then a copy in the profile's own folder, below |
+| Tool | Read only | Destructive | Open world | The AI gives | What it does |
+|---|---|---|---|---|---|
+| `list_markets` | yes | no | no | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first, after its title and description); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, with the `roles` it is for (a field can be for some roles only) and its piece, `several`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written; `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
+| `search` | yes | no | yes | `filters`, or `address`, or `guide: true` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; or its guide. Answers `{ word, page, answer }`, below |
+| `list_my_profiles` | yes | no | no | `label`, or nothing | With no label, each profile this login acts in whose market the directory still lists (the rest are left out, as the app forgets them): its label, what its access key `can` do as its profile entry lists it now (nothing once it has ended), its listings (`id`, `title` and the link to it in the app), `inSearch` (whether the index counts the profile), and its rating, trust and review count as the index shows them. With a label, that profile in full: its listings with their fields, and the reviews, vouches and reports it received (under `strangersWrote`) and wrote, as the index shows them, each one it wrote with its `path` |
+| `read_messages` | yes | no | no | `label`, `with`, or nothing | With nothing, every profile's conversations, newest first: for each, the person's profile it is with (`label`), the other side (its address, and its market, role and checks as the index shows them, or the label of another of the person's profiles), its newest message, how many there are, and the link to the conversation in the app. With `label` and `with` (an address), that one conversation, the newest 100 messages |
+| `send_message` | no | yes | yes | `to`, `text`, `listing`, `label` | A message `{ text, listing? }`, the app's shape, signed by the access key and locked to the recipient's public encryption keys, from the person's profile `label` or, with none, their profile on the other side of the recipient's market (the same role in a market with one role); with none, refused with the link to make that profile |
+| `post_listing` | no | yes | yes | `label`, `id`, `fields` | `listing/<id>`, a new id when `id` is left out, checked against the market with `checkEntry`, written to the profile's hosts. Answers the link to it in the app |
+| `write_review` | no | yes | yes | `label`, `kind`, `subject`, `fields` | A `review`, `vouch` or `report` about another profile, checked the same way |
+| `delete_entry` | no | yes | yes | `label`, `path` | Deletes one of the person's listings, reviews, vouches or reports |
 
-MCP tool names take no spaces, so the person's profiles are `my_profiles`, titled "My profiles".
+**Why those marks.** Read only is a tool that changes nothing. Destructive is one whose change cannot
+be taken back, or replaces what was there: a message once sent, a listing posted with an id that
+exists (it replaces the listing), a review written again about the same profile (it replaces the
+earlier one), a deletion. Open world is a tool that reaches other people or the public: search reads
+the index, which holds other people's words; a message goes to someone; a listing or a review is
+public. `list_markets`, `list_my_profiles` and `read_messages` read the directory this copy holds
+and the person's own folders, and what the index shows of their own profiles, so they are not open
+world.
 
-- **An index's answers pass through whole.** `search` passes on whatever filters it is given, so
-  any index can take what it likes, and the AI learns what it holds from the index's own guide. Its
-  description names the filters the foundation's index takes on a market's own fields once
-  `market` is given (a choice as `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in
-  its unit, matching a number or a range that overlaps them, and spots as `spots=<n>`, room for that
-  many: an offer's spots at least `n`, a time's own over the listing's, a request's at most) and on
-  prices (`price.currency`, `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app
-  that cuts the guide still finds, say, a language exchange by `learns` and `languages`.
-  Each answer is `{ url, word, answer }`: where it was read, a `word` saying it is the index's own,
-  unchecked, and its JSON as sent. An index that does not answer is a refusal saying so.
-- **`search`, the person's own.** Beside the index's answer, `mine`, `{ <address>: <label> }`: each
-  profile this login acts in whose address the answer holds anywhere, so the AI never offers the
-  person their own listing. It reads the connection as a tool that acts does, but no login, or one
-  gone or out of reach, is no refusal: `unmarked` says why.
-- **The instructions.** An AI app first gets how Forest works, as the server's instructions (`HOW`
-  in `src/tools.ts`): with no login, start with `search`, not `my_profiles`; name a profile by its
-  label; never put one of the person's addresses in what is written for another of their profiles or
-  sent to anyone else, unless the person asks; read the market before writing to it; numbers,
-  amounts and coordinates are decimal text, and a number may be `{ from, to }`, either end left out
-  for no limit; a listing's spots is one whole number, never a range, "0" when full, and a time with
-  its own holds them in its date answer; a listing's price is a list of every price the person
-  charges, each with its per
-  and, for more than one of it, its count, as decimal text, and a note if wanted; a price for time
-  is an amount for a length in hours, 25 for 0.75 hours being 45 minutes, and a minimum goes in its
-  note; a place is a circle, centred on the
-  neighbourhood or town the person names, never their address, an exact spot only from coordinates
-  the person gives, 1 km from memory with the spot named in the listing's own words, and the
-  nearest town asked for, never guessed, when the AI does not know where a place is; hours are
-  clock times with a time zone by name, and when the person says "mornings", the AI asks for the
-  hours; several answers in a field mean any of them, and things that go together are
-  another listing; before the
-  person writes in a beta market, tell them it works, at their own risk, and may change; ask the
-  person before anything public in their name; photos are the person's to add, in their Forest app;
-  what it writes shows on the index within about a minute, once the index counts it, and a
-  listing's page is the url search's answer gives; a reply goes to the address a message came from;
-  paying is in the person's app; what a stranger wrote is theirs. Then, as a chat starts (MCP's `initialize`), the
-  index's guide, its `skill.md`, under the URL it was read from, as the index's own word, or a line
-  saying it gave none. It comes with the instructions so the AI has it before its first search; an
-  AI app that cuts long instructions cuts the guide first.
-- **`read`, the inbox,** lists the profile's inbox at each of its hosts, every page, each inbox entry
+MCP tool names take no spaces, so the person's profiles are `list_my_profiles`, titled "List my
+profiles".
+
+- **The instructions** are what the AI app first gets, `instructionsFor` in `src/tools.ts`, under
+  2,000 characters (Claude Code cuts them at 2,048, and Claude at 4,096),
+  the most important first: what Forest is in one line; name a profile by its label, never the
+  person's addresses, and never link two of their profiles; when to hand which link; what sits under
+  `strangersWrote` is a stranger's, not the person asking; ask before anything public; beta markets;
+  no paying here. They hold nothing an index or any page said: the AI apps' rules forbid taking
+  behavior from an outside source, so the index's guide is `search` with `guide: true`, an answer the
+  AI asks for. Everything about one tool is in that tool's description, each under 2,048
+  characters: how to write a place, a price, a date and spots is in `post_listing`'s.
+- **An index's answers pass through as the index gave them,** so any index can take what it likes,
+  and a field an index adds later reaches the AI with no change here, with two rules that name no
+  field of an index's own making: fields only machines read are left out (`proofs`, `keys`,
+  `openKey`, `pay`, `statement`, `signature` and each check's `key`: an app directory rejects debug
+  payloads), and every entry's `body`, the words its writer wrote, moves under `strangersWrote`, so
+  the AI tells a stranger's words from the person's own. Each answer of `search` is `{ word, page,
+  answer }`: a `word` saying the answer is the index's own, unchecked; `page`, the same search (or the
+  profile's page) at the index, for the person to open; and the answer. Its description names the
+  filters the foundation's index takes on a market's own fields once `market` is given (a choice as
+  `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in its unit, matching a number or a
+  range that overlaps them, and spots as `spots=<n>`, room for that many: an offer's spots at least
+  `n`, a time's own over the listing's, a request's at most) and on prices (`price.currency`,
+  `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app that never reads the guide
+  still finds, say, a language exchange by `learns` and `languages`. An index that does not answer is a
+  refusal saying so.
+- **`search`, the person's own.** With a login, a result whose profile is one this login acts in
+  comes back as `{ mine: <label>, listing: { id, link } }`, with no words, so the AI never offers the
+  person their own listing. No login, or one gone or out of reach, is no refusal: `unmarked` says why.
+- **`list_my_profiles`** reads each profile's folder from its hosts for its listings (the person's own
+  words, so with no `strangersWrote` around them) and asks the index for its page: `inSearch` is
+  true when the page holds the index's signed statement, which only a profile it counts has. A
+  profile whose market left the directory is left out of the list; asked for by label, it is read
+  all the same.
+- **`read_messages`** lists the profile's inbox at each of its hosts, every page, each inbox entry
   once, in order of arrival (an inbox entry carries no time), and opens the newest 100 with the
-  access key, each signature checked as the standard says (`openInbox`). For each message: its time
-  and body; `from`, the sender's address, or `fromLabel` for another of the person's own profiles;
-  `counts`, whether the sender's profile entry stands behind the signing key (`senderCounts`); and
-  for a stranger `index`, the index's word on the sender, only its market, role and `checks`. Among
-  them, the newest 100 of the profile's sent copies (below), each `mine: true` with its time, body
-  and `to`, or `toLabel`; all newest first by time, as the Forest app orders a thread. `unopened`
-  counts those the key does not open: inbox entries left before it was listed with `read-inbox`,
-  copies locked before it was listed with `read`; `older`, those past the newest 100.
-- **`write`, public,** the main way: at `<kind>/<id>`, a kind every market defines (`listing`,
-  `review`, `vouch`, `report`), the body checked against the profile entry's `market` before
-  anything is signed, with the markets package's `checkEntry`, the index's own check, so a body
-  refused here would not be listed: each field one the market names for the role (in a review, the
-  role of the profile it is about), or a listing's `contact`, held only where its `when` matches,
-  written as its piece is, a choice among its values, a `photo` one the body lists in `files`. Then
-  `subject` an address, and the profile in a review's `listing`. A body that does not fit is
-  refused with `checkEntry`'s own words, naming the field.
-- **`write`, locked** (`locked: true`): at any path but `profile` and `key/…`, the body the person's
-  own and unchecked, with no `files` (anyone fetches a file by its hash), locked to every key that
-  may read the folder (`lockKeysOf`): the main key's public encryption key and each access key
-  listed with `read`. No access key writes `profile`. Whether the key may write is the hosts' to
-  say, and each host's refusal is passed on, so an ended key hears `unlisted`; a `message` is
-  checked here first, since only the recipient's app would see it does not count.
-- **`message`, its copy:** once a host took the message, a copy in the sending profile's own folder,
-  as the Forest app keeps one: at `sent/<id>`, 16 random bytes in hex, `{ to, time, body }`, locked
-  to every key that may read the folder (`lockKeysOf`) and written as any entry, so the person's app
-  shows the AI's side of a thread. It answers `copy`, its path; or `null` and `why`, each host's
-  refusal, when none took it, as for a key listed without `write`: the message went all the same.
+  access key, each signature checked as the standard says (`openInbox`) and each sender's profile
+  entry checked to stand behind the signing key (`senderCounts`); a message whose sender's entry
+  does not is dropped, as the Forest app drops it. Among them, the newest 100 of the profile's sent
+  copies (below), so a conversation reads whole. A message shows `time`, `from` (`you`, `them`, or
+  `your other profile`) and its `text` and `listing`, the other side's under `strangersWrote`.
+  Whatever else its body holds, a photo or anything the standard adds that this copy does not know,
+  is named in `unreadable`, and the conversation's link in the app is given, where the person sees
+  it and sends a photo, a proof or their location. `unopened` counts, when more than none, the
+  entries the key does not open: inbox entries left before it was listed with `read-inbox`, copies
+  locked before it was listed with `read`.
+- **`send_message`'s sender.** With a `label`, that profile. With none, the recipient's profile entry
+  names its market and role, and the sender is the person's profile in that market in another role
+  (in a market with one role, the same role); none, or more than one, is refused (with the link to
+  make the profile, `<app>/new#market=<market>&role=<role>`, or asking for a `label`). `listing` is
+  the recipient's, its full address, or `listing/<id>` for one of the sending profile's own, which
+  this copy fills in as `<address>/listing/<id>` (a reply to a request with an offer); any other is
+  refused. It checks first that the sender's profile entry lists the key with `message` and it has
+  not ended, since only the recipient's app would see it does not count. The recipient's `hosts`
+  each take their price, by its bytes, from the profile's balance there, with a payment signed by
+  the access key.
+- **`send_message`, its copy:** once a host took the message, a copy in the sending profile's own
+  folder, as the Forest app keeps one: at `sent/<id>`, 16 random bytes in hex, `{ to, time, body }`,
+  locked to every key that may read the folder (`lockKeysOf`) and written as any entry, so the
+  person's app shows the AI's side of a thread. When no host took it, as for a key listed without
+  `write`, the message went all the same and the answer says so in `note`.
+- **`post_listing`** checks `fields` against the profile entry's `market` before anything is signed,
+  with the markets package's `checkEntry`, the index's own check, so a listing refused here would
+  not be listed: each field one the market names for the role, or `contact`, held only where its
+  `when` matches, written as its piece is, a choice among its values. A body that does not fit is
+  refused with `checkEntry`'s own words, naming the field. With the id of a listing that exists,
+  it updates it: fields left out stay, a field sent as `null` is removed. A listing's photos, its
+  `files` list and each photo field the market names for the role, are always carried over from
+  what is there by this copy, which takes no photo field from the AI (it is refused, with the
+  link to the listing in the app); a new listing has none. The answer is `{ posted, link }`, and
+  `beta` for a market that is beta (it works at the person's own risk and may change), and
+  `notInSearch` when the index does not count the profile.
+- **`write_review`** writes the body `{ ...fields, subject }` at `<kind>/<id>`: `subject` an
+  address, never one of the person's own profiles, and for a review the `listing` it names a full
+  address. The index counts one vouch and one report per writer and profile, the latest, and a
+  review's latest per profile and listing, so when the profile's folder already holds an entry of
+  that kind about that subject (for a review, that listing too) this writes at its path, which
+  updates it, and the folder holds no dead copies; otherwise at a new id, 8 random bytes in hex.
+- **`delete_entry`** takes `listing/<id>`, `review/<id>`, `vouch/<id>` or `report/<id>`, one that
+  holds an entry now. Nothing else is written or deleted by any tool: not `profile`, which no access
+  key writes, nor the person's notes at `key/…`, nor any other path, and no locked entry.
+  Whether the key may write is the hosts' to say, and each host's refusal is passed on, so an ended
+  key hears `unlisted`. A host out of credits is said as one plain refusal, with no link.
 - **Other folders** (a recipient, a sender, a review's subject) are looked for at the hosts the
   person's own profiles use, and a message's own `host`, then every host the folder's profile entry
   names: that is where the profiles the person deals with live today, and a message names its
@@ -118,14 +146,39 @@ MCP tool names take no spaces, so the person's profiles are `my_profiles`, title
   only in its own format, which `search` never names. Following any host anyone names would reach
   any address, so every host is reached with `publicFetch` (`src/public.ts`), which reaches only
   public addresses and follows no redirect.
-- **The person's own addresses.** In every answer of the four tools that act, each address of a
-  profile in the connection becomes its label, and each pay address of a profile entry it read
-  becomes `<label>'s <type> pay address`, wherever it appears. `search` only reads: its answer
-  stays the index's, whole, with the person's addresses where the index put them.
+- **The person's own addresses.** In every answer of every tool, each address of a profile in the
+  connection becomes its label, and each pay address of a profile entry it read becomes `<label>'s
+  <type> pay address`, wherever it appears.
 
 What this copy says itself is a refusal, in plain words: an argument that does not fit, a label the
 login does not act in, a path that is none, a body that does not fit, a host that took nothing, with
 each host's reason.
+
+### The links
+
+The AI hands the person a link whenever something needs their passkey (making a profile, getting
+verified, photos, proofs, their location) or is better seen than read (an offer, someone's profile, a
+page of results). The Forest app's links put what they are about after `#`, which a browser never
+sends to a server, and their origin is `APP_URL`'s. The app's chat builds the same strings, so they
+are written exactly:
+
+| For | Link |
+|---|---|
+| Make a profile | `<app>/new#market=<market>&role=<role>` |
+| One of their listings | `<app>/listing#label=<label>&id=<id>` |
+| A conversation, to send a photo, a proof or their location | `<app>/thread#label=<label>&with=<address>` |
+| Get verified, or add the ID check | `<app>/id` |
+| Which profiles the AI uses | `<app>/ai-apps` |
+| Anything else: email, passkeys | `<app>/you` |
+
+A label's `/` stays as it is; each other part is made of characters a link takes as they are. The
+instructions carry these with the app's origin filled in, and the tools give the ones they know the
+parts of: a listing's link (`list_my_profiles`, `post_listing`, `search`'s `mine`), a conversation's
+(`read_messages`, `send_message`), the profile to make (`send_message`'s refusal). Other people's
+things link to the index: a result's `url`, a profile's page at `<index>/profiles/<address>`, a
+search's `page`. There is no link to buy credits or to any checkout anywhere, since OpenAI's
+directory rejects one: a profile that runs out of credits is told to add credits in the Forest app.
+With no `APP_URL` the instructions say the app's links are not set up here, and no answer holds one.
 
 ### The login
 
@@ -215,8 +268,9 @@ Profiles folder. Its wallet, the Profiles folder's balance, takes gifts and buys
 
 | Route | What |
 |---|---|
-| `/`, `/mcp` | MCP over Streamable HTTP: [the six tools](#the-tools). `/mcp` is for connectors added before |
+| `/`, `/mcp` | MCP over Streamable HTTP: [the eight tools](#the-tools). `/mcp` is for connectors added before |
 | `GET /open-key` | This copy's public encryption key |
+| `GET /.well-known/openai-apps-challenge` | `OPENAI_APPS_CHALLENGE` as plain text, for OpenAI's domain check; 404 while it is unset |
 | `GET /.well-known/oauth-protected-resource` | The resource's metadata |
 | `GET /.well-known/oauth-authorization-server` | The authorization server's metadata |
 | `POST /register` | Registration (DCR) |
@@ -232,8 +286,9 @@ Profiles folder. Its wallet, the Profiles folder's balance, takes gifts and buys
   packages) and this directory, started as `node src/main.ts` on every address, `DATA_DIR=/data`.
 - **Where:** Railway, service `mcp`, `RAILWAY_DOCKERFILE_PATH=mcp/deploy/Dockerfile`, one replica, a
   volume at `/data` holding its two keys, a public domain to `PORT`, and no health check, since the
-  root answers only what an MCP client sends. `APP_URL` is the Forest app's connect page. Another app
-  runs its own copy, and its page.
+  root answers only what an MCP client sends. `APP_URL` is the Forest app's connect page, and its
+  origin is the one every app link is built on ([the links](#the-links)). Another app runs its own
+  copy, and its page.
 - **What it reads:** the foundation's index, the markets at `MARKETS` (from the checkout, so every
   answer comes from the commit the tests ran against), and the folders each login points to and deals
   with, on public hosts only.
@@ -243,10 +298,11 @@ Profiles folder. Its wallet, the Profiles folder's balance, takes gifts and buys
   - at most 4,096 characters for a pointer, one envelope to one key holding up to 8 hosts, so the
     token that carries it stays well under the 16 KB of headers Node takes;
   - at most 100 access entries opened a call, the first by path, and the newest 100 inbox entries
-    and 100 sent copies a read: each takes a post-quantum opening, and anyone can leave entries in
-    an inbox;
-  - 10 seconds for the index's guide as a chat starts, so a slow index does not hold the chat; 60 for
-    any other read of the index, and the folders client's 60 for a host;
+    and 100 sent copies a profile read: each takes a post-quantum opening, and anyone can leave
+    entries in an inbox;
+  - under 2,000 characters of instructions, and under 2,048 for each tool's description, checked
+    when it starts: the limits of the AI apps that cut them;
+  - 60 seconds for any read of the index, and the folders client's 60 for a host;
   - at most 4,194,304 bytes for an MCP request or an index's answer.
 - **Free,** with no rate limit. **Keeps** only its two keys, on the volume. **Logs** one line when it
   starts, nothing for a request, and no address. Payments are the person's app's. The index and the
@@ -261,6 +317,7 @@ Profiles folder. Its wallet, the Profiles folder's balance, takes gifts and buys
 | `PUBLIC_URL` | Its origin: the resource and the authorization server | https://mcp.forest.foundation |
 | `APP_URL` | The app's connect page | none: logins wait |
 | `INDEX_URL` | The index whose `skill.md`, search and profile pages it passes on | https://index.forest.foundation |
+| `OPENAI_APPS_CHALLENGE` | What `GET /.well-known/openai-apps-challenge` answers, as plain text | none: that path is a 404 |
 | `PORT`, `BIND` | Where it listens | 8080, 127.0.0.1 |
 
 ```sh
@@ -279,7 +336,8 @@ loopback, with this repo's host, a stand-in index whose answers carry a field th
 seen, and a stand-in connect page running the reference app: the login end to end through the MCP
 SDK's own client and every refusal on its way, every tool and its refusals, on markets of its own
 (`test/markets/`), so no market at `MARKETS` changes what it finds, a key ended and the
-connection ended, `publicFetch`, and the image's own command. `npm run smoke` runs the same client
+connection ended, the limits of the instructions and the descriptions, each link, OpenAI's domain
+check, `publicFetch`, and the image's own command. `npm run smoke` runs the same client
 (`smoke.ts`) against a deployed copy, without the login, which needs a person; CI does not, since a
 check that cannot reach it would skip.
 
@@ -306,9 +364,10 @@ keeps working, and logs in again the first time it acts.
   the person ends stops acting; a connection folder's address alone acts for no one.
 - **It moves no money, and spends only the credits in the profiles the person connected, as their
   access keys allow:** what each write and message stores, from its profile's balance.
-- **The AI never gets a key, nor one of the person's own addresses,** from a tool that acts for them:
-  it names each profile by its label.
-- **What an index says is passed on as the index's word, whole, and labelled so;** `read` picks only
+- **The AI never gets a key, nor one of the person's own addresses,** from any tool: it names each
+  profile by its label.
+- **What an index says is passed on as the index's word, whole but for the fields only machines
+  read,** and labelled so, with every entry's words under `strangersWrote`; `read_messages` picks only
   a sender's market, role and checks from it, labelled the same.
 
 ## Limits
@@ -321,23 +380,30 @@ keeps working, and logs in again the first time it acts.
 - **A key opens nothing locked before it was listed.**
 - **A stranger's folder is found only on the person's hosts or a message's own host;** one that lives
   only elsewhere can be read about through the index, not messaged.
-- **The AI sees the newest 100 inbox entries and 100 sent copies a read,** and cannot reach older
-  ones: `read` has no paging.
+- **The AI sees the newest 100 inbox entries and 100 sent copies of a profile,** and cannot reach
+  older ones: `read_messages` has no paging.
+- **The AI writes only listings, reviews, vouches and reports,** and reads only the listings of the
+  person's folders and their messages: no profile entry, no notes, no locked entry, no other path.
+- **The AI cannot send a photo, a proof or a location,** or add photos to a listing: the person does,
+  in the Forest app, at the link it hands them.
 - **A key listed without `write` keeps no copy of what it sends.**
 - **Each call that acts, and each search with a login, reads the connection from its hosts,** one
   post-quantum opening a profile; with none of the hosts answering, the tools that act refuse, and
   search marks nothing.
 - **A connection folder is public:** anyone can see it exists and how many profiles it holds, never
   which.
-- **Search gives the AI the map of the person's profiles the index shows:** `mine` names, by label,
-  each one whose address the index's answer holds.
+- **Search tells the AI which results are the person's own:** `mine` names, by label, each result
+  whose profile is one this login acts in.
 - **A code works more than once in its 60 seconds,** only for the AI app holding its PKCE verifier.
 - **The markets are the directory's at one commit:** a market added since is unknown until `MARKETS`
   moves.
-- **An index's answer may hold anything.**
+- **An index's answer may hold anything,** its words in the places it chooses, and a field only
+  machines read under a name this copy does not know reaches the AI: the two rules name the
+  fields they know.
 - **No rate limit:** anyone can keep the copy busy.
-- **Not here:** paying, putting or deleting files, buying a host's credits, views in the AI app (MCP
-  Apps), and a copy on the person's own computer.
+- **Not here:** paying, buying a host's credits (a profile out of credits is told to add them in the
+  Forest app, with no link), putting or deleting files, views in the AI app (MCP Apps), and a copy
+  on the person's own computer.
 - **Railway's own request logs** hold each request's client address and path.
 
 ## FAQ
@@ -352,3 +418,15 @@ app.
 Anyone can read this copy's public encryption key, so anyone can lock a pointer naming someone's
 connection folder, in a login of their own. Only the app that wrote the entry, and this server,
 which opens it on each call, know the secret in it.
+
+**Why does the AI send no photos, and why do its updates keep the ones a listing has?**
+A photo is a file the person picks on their device and a listing names by its hash, which the Forest
+app does with their passkey. So `post_listing` takes no photo field, and when it updates a listing
+that has photos it carries them over itself: an AI that did not see them must not lose them. The
+person adds more at the link in its answer.
+
+**Why does `search` pass the index's answer on instead of choosing its fields?**
+An index changes: its fields are reworked, and another index shows others. A copy that chose fields
+would need a change each time, and would hide what a newer index adds. It names only what no
+person or AI acts on (the fields only machines read) and what someone else wrote (every entry's
+`body`, moved under `strangersWrote`), so those two rules hold for any index.

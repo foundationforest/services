@@ -45,15 +45,17 @@ and the run passes only if every step does.
    access key listed; its note at `key/<id>`, locked to the main key alone, naming the key and this
    MCP server and holding the connection folder's key; and the connection found from the seed, its
    entry locked to its own key and the MCP server's.
-6. **The MCP server:** the seller's AI reads `markets` and writes a listing, `listing/offer`, a
-   description, and a price of 2 USD, a list of one, when the market has a price, signed by its
-   access key and paid at its price; the buyer's AI finds it with `search` and messages the seller,
+6. **The MCP server:** the seller's AI reads `list_markets` and posts a listing, `listing/offer`
+   with `post_listing`, a description, and a price of 2 USD, a list of one, when the market has a
+   price, signed by its access key and paid at its price, and answered with the link to it in the
+   app; the buyer's AI finds it with `search` and messages the seller with `send_message`,
    the buyer's balance down by the message's price and its copy's, at `sent/<id>` in the buyer's
-   folder, each by its bytes, and the seller's as it was; the seller's AI reads its inbox (the
-   message counted, with the buyer's market, role and face check as the index shows them) and
-   replies the same way; the buyer's AI reads the reply.
-7. **The review:** the buyer's AI writes `review/offer`, scoring the seller 10 and naming the
-   listing.
+   folder, each by its bytes, and the seller's as it was; the seller's AI reads its conversations
+   with `read_messages` (the buyer's market, role and face check as the index shows them, its words
+   under `strangersWrote`, and the link to the conversation in the app) and replies the same way;
+   the buyer's AI reads the reply.
+7. **The review:** the buyer's AI writes a review with `write_review`, scoring the seller 10 and
+   naming the listing.
 8. **The index** shows both profiles counted under the face key, the listing listed, the review
    counted, and what its own ranking, with `index/config/scoring.json`, makes of it: today the seller
    rated 10.0 by one, trust 61; the buyer no rating, trust 50; each uniqueness 75. Each statement is
@@ -63,7 +65,8 @@ and the run passes only if every step does.
    profiles; the app funds the second profile from the wallet with 2 credits and adds it, and the
    index shows the proof on its page.
 10. **Added:** from the seed alone, the seller's app adds the second profile to the connection; with
-    no new login, `my_profiles` shows both, and the AI writes and reads back a locked note as it.
+    no new login, `list_my_profiles` shows both, and the AI sends a message as it, whose copy in the
+    second profile's folder its access key signed.
 11. **Ended:** the app deletes the connection entry and ends each key, which its profile entry lists
     with `until`, with its note and its access entry deleted; the MCP server answers the AI 401;
     what the keys wrote still counts on the host and the index, and a new write by them is refused

@@ -139,8 +139,8 @@ export async function checkDeployed(s: Services, say: (line: string) => void): P
     const { client } = await aiApp(s.mcp)
     try {
       const tools = (await client.listTools()).tools.map((t) => t.name)
-      const markets = (await client.callTool({ name: 'markets', arguments: {} })) as { isError?: boolean; content: Array<{ text?: string }> }
-      if (markets.isError || !tools.includes('write')) throw new Error(`the deployed mcp ${s.mcp} does not answer as an mcp`)
+      const markets = (await client.callTool({ name: 'list_markets', arguments: {} })) as { isError?: boolean; content: Array<{ text?: string }> }
+      if (markets.isError || !tools.includes('post_listing')) throw new Error(`the deployed mcp ${s.mcp} does not answer as an mcp`)
       say(`the deployed mcp answers: ${tools.length} tools, and the markets`)
     } finally {
       await client.close()

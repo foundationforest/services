@@ -59,6 +59,9 @@ const TUTOR = 'lessons/tutor'
 const STUDENT = 'lessons/student'
 const SELLER = 'wardrobe/seller'
 const SWITCHES = ['read-inbox', 'read', 'write', 'message']
+
+/** The labels a list_my_profiles answer holds, each with what the login may do there. */
+const shortOf = (answer: unknown) => (JSON.parse(text(answer)).profiles as Array<{ label: string; can: string[] }>).map(({ label, can }) => ({ label, can }))
 const hash = (request: string) => createHash('sha256').update(request).digest('hex')
 const randomSecret = () => b64u.encode(crypto.getRandomValues(new Uint8Array(32)))
 
@@ -82,8 +85,8 @@ async function tokenWith(make: (request: string) => Promise<string>): Promise<st
   return ((await res.json()) as { access_token: string }).access_token
 }
 
-/** A JSON-RPC request to the copy at `at` with `token`: by default a call to my_profiles. */
-function asked(token: string, at = w.mcp.origin, method = 'tools/call', params: Body = { name: 'my_profiles', arguments: {} }): Promise<Response> {
+/** A JSON-RPC request to the copy at `at` with `token`: by default a call to list_my_profiles. */
+function asked(token: string, at = w.mcp.origin, method = 'tools/call', params: Body = { name: 'list_my_profiles', arguments: {} }): Promise<Response> {
   return fetch(at, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', authorization: `Bearer ${token}` },
@@ -107,14 +110,14 @@ async function entriesOf(key: { address: string }, kind: string): Promise<Array<
 describe('discovery', () => {
   test('reading needs no login', async () => {
     const { client } = await aiApp(w.mcp.origin)
-    const markets = (await client.callTool({ name: 'markets', arguments: {} })) as Result
+    const markets = (await client.callTool({ name: 'list_markets', arguments: {} })) as Result
     assert.notEqual(markets.isError, true, text(markets))
     assert.ok(JSON.parse(text(markets)).markets.some((m: { name: string }) => m.name === 'lessons'))
     await client.close()
   })
 
   test('a tool that acts for the person, with no token, gets the 401 challenge naming the metadata', async () => {
-    for (const name of ['my_profiles', 'read', 'write', 'message']) {
+    for (const name of ['list_my_profiles', 'read_messages', 'send_message', 'post_listing', 'write_review', 'delete_entry']) {
       const res = await fetch(w.mcp.origin, {
         method: 'POST',
         headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
@@ -156,8 +159,8 @@ describe('the login, end to end', () => {
     const c = await aiApp(w.mcp.origin)
     const back = await logIn(c)
     assert.equal(back.get('iss'), w.mcp.origin, 'the response names this copy, as RFC 9207 asks')
-    const mine = (await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result
-    assert.deepEqual(JSON.parse(text(mine)), { profiles: [STUDENT, TUTOR].map((label) => ({ label, can: SWITCHES })) }, 'in the order of their labels')
+    const mine = (await c.client.callTool({ name: 'list_my_profiles', arguments: {} })) as Result
+    assert.deepEqual(shortOf(mine), [STUDENT, TUTOR].map((label) => ({ label, can: SWITCHES })), 'in the order of their labels')
     // One new access key in each profile ticked, with every switch, and none in the third.
     const after = await w.app.keys(TUTOR)
     assert.equal(after.length, before.length + 1)
@@ -202,7 +205,7 @@ describe('the login, end to end', () => {
     await logIn(c)
     assert.ok(c.app.authorization!.searchParams.get('client_id')!.startsWith('https://'))
     assert.equal((await w.app.keys('lessons/student')).length, before + 1)
-    assert.equal(((await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result).isError, undefined)
+    assert.equal(((await c.client.callTool({ name: 'list_my_profiles', arguments: {} })) as Result).isError, undefined)
     await c.client.close()
   })
 
@@ -211,7 +214,7 @@ describe('the login, end to end', () => {
     try {
       const c = await aiApp(w.mcp.origin)
       await logIn(c)
-      assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [{ label: 'wardrobe/seller', can: ['write'] }] })
+      assert.deepEqual(shortOf(await c.client.callTool({ name: 'list_my_profiles', arguments: {} })), [{ label: 'wardrobe/seller', can: ['write'] }])
       const [listed] = await w.app.keys('wardrobe/seller')
       assert.deepEqual(listed!.can, ['write'])
       assert.equal(listed!.open, undefined, 'a key that may not read gives no open key')
@@ -231,12 +234,12 @@ describe('a connection, changed with no new login', () => {
     assert.ok((await device.connections()).some((x) => x.address === folder.address), 'a new device finds it from the seed')
     await device.addToConnection(folder.address, SELLER)
     assert.equal((await entriesOf(folder, 'access')).length, 3, 'one access entry more')
-    const mine = async () => JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))).profiles
+    const mine = async () => shortOf(await c.client.callTool({ name: 'list_my_profiles', arguments: {} }))
     assert.deepEqual(await mine(), [STUDENT, TUTOR, SELLER].map((label) => ({ label, can: SWITCHES })), 'by label')
-    const wrote = (await c.client.callTool({ name: 'write', arguments: { label: SELLER, path: 'notes/added', body: { text: 'Added with no new login.' }, locked: true } })) as Result
-    assert.equal(JSON.parse(text(wrote)).written, 'notes/added')
+    const wrote = (await c.client.callTool({ name: 'post_listing', arguments: { label: SELLER, id: 'added', fields: { description: 'Added with no new login.' } } })) as Result
+    assert.equal(JSON.parse(text(wrote)).posted, 'added')
     const sellerKey = (await w.app.keys(SELLER)).at(-1)!.key
-    assert.equal((await readFolder([w.host], w.own[SELLER]!, Date.now())).current.get('notes/added')?.entry.key, sellerKey, 'signed by its new access key')
+    assert.equal((await readFolder([w.host], w.own[SELLER]!, Date.now())).current.get('listing/added')?.entry.key, sellerKey, 'signed by its new access key')
     const studentKey = (await w.app.keys(STUDENT)).at(-1)!.key
     await device.endKey(STUDENT, studentKey)
     const profile = (await readFolder([w.host], w.own[STUDENT]!, Date.now())).current.get('profile')!.entry
@@ -267,7 +270,7 @@ describe('a connection, changed with no new login', () => {
     assert.equal(res.status, 401)
     assert.match(res.headers.get('www-authenticate')!, /error="invalid_token", error_description="the connection this login points to is gone"/)
     await logIn(c)
-    assert.equal(((await c.client.callTool({ name: 'my_profiles', arguments: {} })) as Result).isError, undefined, 'a new login, a new connection')
+    assert.equal(((await c.client.callTool({ name: 'list_my_profiles', arguments: {} })) as Result).isError, undefined, 'a new login, a new connection')
     await c.client.close()
   })
 })
@@ -372,8 +375,7 @@ describe('refused', () => {
       entry(folder.key, 'access/0000000000000000000000000000000a', await lock(stray, [folder.key.openKey]), Date.now()),
       entry(folder.key, 'access/0000000000000000000000000000000b', await lock({ ...stray, can: SWITCHES }, [folder.key.openKey, await openKey()]), Date.now()),
     ])
-    const mine = JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} })))
-    assert.deepEqual(mine.profiles.map((p: { label: string }) => p.label), [STUDENT, TUTOR])
+    assert.deepEqual(shortOf(await c.client.callTool({ name: 'list_my_profiles', arguments: {} })).map((p) => p.label), [STUDENT, TUTOR])
     await c.client.close()
   })
 
@@ -385,7 +387,7 @@ describe('refused', () => {
     // ids, sort after them.
     const stray = await lock({ text: 'not an access entry' }, [folder.key.openKey, await openKey()])
     await write([w.host], Array.from({ length: MAX_ACCESS }, (_, i) => entry(folder.key, `access/${i.toString(16).padStart(32, '0')}`, stray, Date.now())))
-    assert.deepEqual(JSON.parse(text(await c.client.callTool({ name: 'my_profiles', arguments: {} }))), { profiles: [] })
+    assert.deepEqual(shortOf(await c.client.callTool({ name: 'list_my_profiles', arguments: {} })), [])
     await c.client.close()
   })
 
@@ -428,7 +430,7 @@ describe('refused', () => {
       assert.equal(res.status, 503)
       assert.match(await res.text(), /wait for the Forest app's connect page/)
       const { client } = await aiApp(waiting.mcp.origin)
-      assert.notEqual(((await client.callTool({ name: 'markets', arguments: {} })) as Result).isError, true)
+      assert.notEqual(((await client.callTool({ name: 'list_markets', arguments: {} })) as Result).isError, true)
       await client.close()
     } finally {
       await waiting.close()

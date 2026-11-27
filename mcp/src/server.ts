@@ -19,7 +19,8 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js'
 import { leaveOut } from './act.ts'
-import { type Context, MAX_ANSWER_BYTES, indexSays, isObject, refuse } from './forest.ts'
+import { type Context, MAX_ANSWER_BYTES, isObject, refuse } from './forest.ts'
+import { appOrigin } from './links.ts'
 import { TooLarge, json, readBody } from './http.ts'
 import { ICO, ICON, SVG } from './icon.ts'
 import { loadKey, loadOpening } from './keys.ts'
@@ -27,7 +28,7 @@ import { Login } from './login.ts'
 import type { Connection } from './connection.ts'
 import { type Ctx, type Tool, checkArgs } from './params.ts'
 import { publicFetch } from './public.ts'
-import { HOW, TOOLS } from './tools.ts'
+import { TOOLS, instructionsFor } from './tools.ts'
 
 const VERSION = '0.0.0'
 
@@ -39,18 +40,8 @@ export function inputSchema(tool: Tool) {
   return { type: 'object' as const, properties, ...(required.length > 0 && { required }) }
 }
 
-/** How long a chat's start waits for the index's guide: an index that is slow to give it delays every chat. */
-export const GUIDE_MS = 10_000
-
-/** The server's instructions: HOW, then the index's guide, its own word, read as a chat starts. */
-export async function instructions(ctx: Context): Promise<string> {
-  const said = await indexSays(ctx, 'skill.md', 'text', GUIDE_MS)
-  const guide = 'answer' in said ? `The index's guide to what its answers hold and which filters its search takes, its own word, from ${said.url}:\n\n${said.answer as string}` : `The index gave no guide (${said.url}: ${said.unread}): read its answers as they come.`
-  return `${HOW}\n\n${guide}`
-}
-
 /** An MCP server for one request: `how` as its instructions, the mark as its icon, and every tool. */
-export function mcpServer(ctx: Ctx, how = HOW): Server {
+export function mcpServer(ctx: Ctx, how: string): Server {
   const server = new Server({ name: 'forest', version: VERSION, icons: [ICON] }, { capabilities: { tools: {} }, instructions: how })
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: inputSchema(t), annotations: { title: t.title, ...t.annotations } })),
@@ -59,18 +50,16 @@ export function mcpServer(ctx: Ctx, how = HOW): Server {
     try {
       const tool = TOOLS.find((t) => t.name === call.params.name) ?? refuse(`no tool ${call.params.name}`)
       const out = await tool.run(checkArgs(tool, call.params.arguments ?? {}), ctx)
-      // What a tool that acts for the person answers never holds one of the person's own addresses.
-      const shown = tool.login ? leaveOut(out, ctx.own) : out
+      // What a tool answers never holds one of the person's own addresses.
+      const shown = leaveOut(out, ctx.own)
       return { content: [{ type: 'text' as const, text: JSON.stringify(shown, null, 2) }] }
     } catch (err) {
-      const text = tool(call.params.name)?.login ? leaveOut((err as Error).message, ctx.own) : (err as Error).message
+      const text = leaveOut((err as Error).message, ctx.own)
       return { isError: true, content: [{ type: 'text' as const, text }] }
     }
   })
   return server
 }
-
-const tool = (name: string) => TOOLS.find((t) => t.name === name)
 
 /** What a hosted copy serves besides its tools: the icon. */
 const FILES: { [path: string]: { type: string; body: string | Buffer } } = {
@@ -97,6 +86,8 @@ export type Settings = {
   hostFetch?: typeof fetch
   /** The markets checkout it reads: the one beside this directory unless told otherwise. */
   marketsDir?: string
+  /** What OpenAI's domain check expects at /.well-known/openai-apps-challenge; none, and that path is a 404. */
+  openaiChallenge?: string
 }
 
 /** A copy serving: its origin, and where it listens. */
@@ -110,6 +101,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
   const login = new Login(key, opening, known)
   const hostFetch = settings.hostFetch ?? publicFetch
   const markets = loadMarkets(settings.marketsDir)
+  const app = appOrigin(settings.appUrl)
 
   async function mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const pointer = login.bearer(req)
@@ -145,6 +137,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
       markets,
       hostFetch,
       own,
+      app,
       connection: async (): Promise<Connection> => {
         if (pointer === null) return refuse('Acting for the person needs a login.')
         const got = await read(pointer)
@@ -152,7 +145,7 @@ export async function serve(settings: Settings, hostname: string, port: number):
         return 'unreached' in got ? refuse(got.unreached) : got
       },
     }
-    const server = mcpServer(ctx, messages.some((m) => m.method === 'initialize') ? await instructions(settings.read) : HOW)
+    const server = mcpServer(ctx, instructionsFor(app))
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
     res.on('close', () => {
       void transport.close()
@@ -181,6 +174,17 @@ export async function serve(settings: Settings, hostname: string, port: number):
         return mcp(req, res)
       case '/open-key':
         if (get) return login.openKey(res)
+        break
+      case '/.well-known/openai-apps-challenge':
+        // OpenAI's domain check: the variable's text, plain, and nothing while it is unset.
+        if (get && settings.openaiChallenge) {
+          res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(settings.openaiChallenge)
+          return
+        }
+        if (get) {
+          res.writeHead(404).end()
+          return
+        }
         break
       case '/.well-known/oauth-protected-resource':
       case '/.well-known/oauth-protected-resource/':
