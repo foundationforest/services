@@ -38,7 +38,7 @@ the person connects anything; six act for the person and need one.
 | Tool | Read only | Destructive | Open world | The AI gives | What it does |
 |---|---|---|---|---|---|
 | `list_markets` | yes | no | no | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first, after its title and description); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, with the `roles` it is for (a field can be for some roles only) and its piece, `several`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written; `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
-| `search` | yes | no | yes | `filters`, or `address`, or `guide: true` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; or its guide. Answers `{ word, page, answer }`, below |
+| `search` | yes | no | yes | `filters`, or `address`, or `guide: true` | The index's search, its `filters` (each a text value) passed on as they are, its description opening with what it finds and naming those the foundation's index takes on a place and on a market's fields; or a profile's page at the index; or its guide. Answers `{ word, page, answer }`, below |
 | `list_my_profiles` | yes | no | no | `label`, or nothing | With no label, each profile this login acts in whose market the directory still lists (the rest are left out, as the app forgets them): its label, its link in the app, what its access key `can` do as its profile entry lists it now (nothing once it has ended), its listings (`id`, `title` and the link to it in the app), `inSearch` (whether the index counts the profile), and its rating, trust and review count as the index shows them. With a label, that profile in full: its listings with their fields, and the reviews, vouches and reports it received (under `strangersWrote`) and wrote, as the index shows them, each one it wrote with its `path` |
 | `read_messages` | yes | no | no | `label`, `with`, or nothing | Only messages from senders the index shows a check for, as the Forest app shows them, and the person's own. With nothing, every profile's conversations, newest first: for each, the person's profile it is with (`label`), the other side (its address, and its market, role and checks as the index shows them, or the label of another of the person's profiles), its newest message, how many there are, and the link to the conversation in the app. With `label` and `with` (an address), that one conversation, the newest 100 messages. With the index out of reach, every message, its sender's checks `unknown` |
 | `send_message` | no | yes | yes | `to`, `text`, `listing`, `label` | A message `{ text, listing? }`, the app's shape, signed by the access key and locked to the recipient's public encryption keys, from the person's profile `label` or, with none, their profile on the other side of the recipient's market (the same role in a market with one role); with none, refused with that profile's link, where the app makes it |
@@ -74,14 +74,18 @@ profiles".
   payloads), and every entry's `body`, the words its writer wrote, moves under `strangersWrote`, so
   the AI tells a stranger's words from the person's own. Each answer of `search` is `{ word, page,
   answer }`: a `word` saying the answer is the index's own, unchecked; `page`, the same search (or the
-  profile's page) at the index, for the person to open; and the answer. Its description names the
-  filters the foundation's index takes on a market's own fields once `market` is given (a choice as
+  profile's page) at the index, for the person to open; and the answer. Its description opens with
+  what it finds: people who offer or ask for things, in person near a place or online, in Forest's
+  markets (`list_markets` names them), each checked as a real person and ranked by the index. It
+  says what the tool does, never that the AI should prefer it. It names the filters the foundation's
+  index takes on a place (`where`, in words, with `km`, how far, 10 unless given, and `sort=near`),
+  on a market's own fields once `market` is given (a choice as
   `<field>=<value>`, a number as `<field>.min` and `<field>.max`, in its unit, matching a number or a
   range that overlaps them, and spots as `spots=<n>`, room for that many: an offer's spots at least
   `n`, a time's own over the listing's, a request's at most) and on prices (`price.currency`,
   `price.per`, `price.min`, `price.max` and `sort=price`), so an AI app that never reads the guide
-  still finds, say, a language exchange by `learns` and `languages`. An index that does not answer is a
-  refusal saying so.
+  still finds, say, a language exchange by `learns` and `languages`, or a repairer near a town by
+  `where`. An index that does not answer is a refusal saying so.
 - **`search`, the person's own.** With a login, a result whose profile is one this login acts in
   comes back as `{ mine: <label>, listing: { id, link } }`, with no words, so the AI never offers the
   person their own listing. No login, or one gone or out of reach, is no refusal: `unmarked` says why.
@@ -99,9 +103,12 @@ profiles".
   `your other profile`) and its `text` and `listing`, the other side's under `strangersWrote`.
   Whatever else its body holds, a photo or anything the standard adds that this copy does not know,
   is named in `unreadable`, and the conversation's link in the app is given, where the person sees
-  it and sends a photo, a proof or their location. `unopened` counts, when more than none, the
-  entries the key does not open: inbox entries left before it was listed with `read-inbox`, copies
-  locked before it was listed with `read`. With no label, the profiles are read at the same time.
+  it and sends a photo, a proof or their location. `unopened`, when more than none, is
+  `{ count, why }`: `count`, the entries the key does not open (inbox entries left before it was
+  listed with `read-inbox`, copies locked before it was listed with `read`), whoever wrote them,
+  since the writer is locked too; `why`, in plain words, that these are messages locked before this
+  connection could read them, which the person opens in the Forest app, with its link, so the AI
+  never guesses what they are. With no label, the profiles are read at the same time.
 - **`read_messages`, only senders with a check,** as the Forest app shows them: a message whose
   sender has no check in the index's word for it, its page's `checks` (none when the index has no
   page for it), is left out and not counted. The person's own words, and their other profiles',
