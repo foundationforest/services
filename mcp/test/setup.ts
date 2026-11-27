@@ -128,6 +128,8 @@ async function standIn(stranger: string, listing: string): Promise<{ url: string
     const url = new URL(req.url ?? '/', 'http://x')
     const body = said[url.pathname]
     if (body === undefined) res.writeHead(404).end()
+    // A status alone, such as 503: the index answering nothing.
+    else if (typeof body === 'number') res.writeHead(body).end()
     else if (typeof body === 'string') res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8' }).end(body)
     else res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(url.pathname === '/search.json' ? { ...body, asked: Object.fromEntries(url.searchParams) } : body))
   })
@@ -234,7 +236,7 @@ export type World = {
   host: string
   /** The stand-in index, and the stand-in connect page. */
   index: string
-  /** What the stand-in index serves, by path; its search adds `asked`. */
+  /** What the stand-in index serves, by path, a number for a status alone; its search adds `asked`. */
   said: { [path: string]: unknown }
   appUrl: string
   /** What the person chooses at the connect page, from now on. */

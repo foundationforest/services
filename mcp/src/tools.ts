@@ -23,9 +23,9 @@ export function instructionsFor(app: string | undefined): string {
   const go = app
     ? `- Give the person a link when something needs their passkey (making a profile, getting verified, photos, proofs, their location) or is better seen than read (an offer, someone's profile, a page of results). Use these exactly:
   - the Forest app: ${app}
-  - make a profile: ${app}/new#market=<market>&role=<role>
-  - one of their listings: ${app}/listing#label=<label>&id=<id>
-  - a conversation, to send a photo, a proof or their location: ${app}/thread#label=<label>&with=<address>
+  - one of their profiles, or making it when they have none: ${app}/#/<market>/<role>
+  - one of its listings: ${app}/#/<market>/<role>/listing/<id>
+  - a conversation, to send a photo, a proof or their location: ${app}/#/<market>/<role>/messages/<their address>
   - get verified or add the ID check: ${app}/id
   - which profiles you use: ${app}/ai-apps
   - email, passkeys, anything else: ${app}/you

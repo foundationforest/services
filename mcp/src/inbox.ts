@@ -4,7 +4,8 @@
 // stands behind the key that signed (senderCounts); a message whose sender's entry does not count
 // is dropped, as the Forest app drops it. Among them, the profile's own copies of what it sent, at
 // sent/<id> in its folder, { to, time, body }, as the Forest app and send_message keep them, so a
-// conversation reads whole. At most the newest INBOX_MAX of each are opened.
+// conversation reads whole. At most the newest INBOX_MAX of each are opened. Which senders the index
+// shows a check for is read_messages' to ask, with indexWordOn.
 
 import { type Body, type CheckedInbox, isLocked, readInbox, senderCounts } from '@foundationforest/folders'
 import { openInbox, openLocked } from '@foundationforest/folders/locked'
@@ -94,12 +95,19 @@ export async function messagesOf(ctx: Ctx, me: Own): Promise<{ messages: Message
   return { messages, unopened, older: Math.max(0, all.length - INBOX_MAX) + Math.max(0, copies.length - INBOX_MAX) }
 }
 
-/** What the index shows of another profile: its market, role and checks, from its page; or why it showed none. */
-export async function indexWordOn(ctx: Ctx, address: string): Promise<{ market?: unknown; role?: unknown; checks?: unknown; unread?: string }> {
+/** What the index shows of another profile, from its page: its market, role and checks, as the Forest app reads them beside a message. */
+export type IndexWord = { market?: unknown; role?: unknown; checks: unknown[] } | { checks: 'unknown'; unread: string }
+
+/**
+ * What the index shows of another profile: its market, role and checks, from its page, each check
+ * without its key. An index that has no page for it, answering 404, shows no check; one that gives
+ * no answer leaves its checks unknown, with why.
+ */
+export async function indexWordOn(ctx: Ctx, address: string): Promise<IndexWord> {
   const said = await indexSays(ctx, `profiles/${address}.json`)
-  if (!('answer' in said)) return { unread: said.unread }
+  if (!('answer' in said)) return said.unread.includes('answered 404') ? { checks: [] } : { checks: 'unknown', unread: said.unread }
   const answer = isObject(said.answer) ? said.answer : {}
   const shown = isObject(answer.profile) ? answer.profile : {}
-  const checks = Array.isArray(answer.checks) ? answer.checks.map((c) => (isObject(c) ? { verifier: c.verifier, label: c.label } : c)) : undefined
-  return { market: shown.market, role: shown.role, ...(checks && { checks }) }
+  const checks = Array.isArray(answer.checks) ? answer.checks.map((c) => (isObject(c) ? { verifier: c.verifier, label: c.label } : c)) : []
+  return { market: shown.market, role: shown.role, checks }
 }

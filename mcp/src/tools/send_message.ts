@@ -53,7 +53,7 @@ async function senderFor(ctx: Ctx, to: string, theirs: Body): Promise<Own> {
   const labels = sides.map((r) => `${market}/${r}`)
   const mine = (await ctx.connection()).profiles.filter((p) => labels.includes(p.label))
   if (mine.length === 0) {
-    const link = appLinks(ctx.app).newProfile(market, sides[0]!)
+    const link = appLinks(ctx.app).profile(`${market}/${sides[0]!}`)
     return refuse(`the person has no ${labels.join(' or ')} profile to send this from: they make one in the Forest app${link ? `: ${link}` : ''}`)
   }
   if (mine.length > 1) return refuse(`more than one profile could send this (${mine.map((p) => p.label).join(', ')}): give label`)
@@ -96,7 +96,7 @@ export async function run(args: Args, ctx: Ctx) {
   const path = `sent/${hex.encode(randomBytes(16))}`
   const copy = await lock({ to, time, body }, lockKeysOf(profile))
   const kept = await write(view.hosts, [entry({ profile: me.address, key: me.key }, path, copy, nextTime(time, view, path))], how(ctx))
-  const link = appLinks(ctx.app).thread(me.label, to)
+  const link = appLinks(ctx.app).conversation(me.label, to)
   return {
     sent: true,
     from: me.label,

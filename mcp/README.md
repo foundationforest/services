@@ -39,10 +39,10 @@ the person connects anything; six act for the person and need one.
 |---|---|---|---|---|---|
 | `list_markets` | yes | no | no | `name`, or nothing | With no name, every market in the directory, as the directory gives it: its summary, description, status (`live` or `beta`), number and icon, its roles and what each lists (offers or requests). With a name, that market as the markets package's `ask` says it ([the markets manual](https://github.com/foundationforest/markets/blob/main/build/README.md)): `market` (the file's name, summary, description, status, icon, number and roles, and `preview`, the fields a listing's preview shows first, after its title and description); `fields`, for each kind (`listing`, `review`, `vouch`, `report`), each field's rules once, with the `roles` it is for (a field can be for some roles only) and its piece, `several`, `when`, a number's `unit`, a price's `per`, a choice's `choices`, each value with how it reads, and `takes`, how an answer is written; `roles`, for each role, the fields its listings ask and those a review about it asks, in order, each with its `label`, `question`, `hint` and `start`, where its input opens; and `vouch` and `report`, the same. A choice that takes a shared list gives the list's name, `list`, in place of its values, and its `takes` says how they are written: languages by their ISO 639-1 codes, countries by their ISO 3166-1 alpha-2 codes, which any AI knows, so a market's answer stays a few KB |
 | `search` | yes | no | yes | `filters`, or `address`, or `guide: true` | The index's search, its `filters` (each a text value) passed on as they are, its description naming those the foundation's index takes on a market's fields; or a profile's page at the index; or its guide. Answers `{ word, page, answer }`, below |
-| `list_my_profiles` | yes | no | no | `label`, or nothing | With no label, each profile this login acts in whose market the directory still lists (the rest are left out, as the app forgets them): its label, what its access key `can` do as its profile entry lists it now (nothing once it has ended), its listings (`id`, `title` and the link to it in the app), `inSearch` (whether the index counts the profile), and its rating, trust and review count as the index shows them. With a label, that profile in full: its listings with their fields, and the reviews, vouches and reports it received (under `strangersWrote`) and wrote, as the index shows them, each one it wrote with its `path` |
-| `read_messages` | yes | no | no | `label`, `with`, or nothing | With nothing, every profile's conversations, newest first: for each, the person's profile it is with (`label`), the other side (its address, and its market, role and checks as the index shows them, or the label of another of the person's profiles), its newest message, how many there are, and the link to the conversation in the app. With `label` and `with` (an address), that one conversation, the newest 100 messages |
-| `send_message` | no | yes | yes | `to`, `text`, `listing`, `label` | A message `{ text, listing? }`, the app's shape, signed by the access key and locked to the recipient's public encryption keys, from the person's profile `label` or, with none, their profile on the other side of the recipient's market (the same role in a market with one role); with none, refused with the link to make that profile |
-| `post_listing` | no | yes | yes | `label`, `id`, `fields` | `listing/<id>`, a new id when `id` is left out, checked against the market with `checkEntry`, written to the profile's hosts. Answers the link to it in the app |
+| `list_my_profiles` | yes | no | no | `label`, or nothing | With no label, each profile this login acts in whose market the directory still lists (the rest are left out, as the app forgets them): its label, its link in the app, what its access key `can` do as its profile entry lists it now (nothing once it has ended), its listings (`id`, `title` and the link to it in the app), `inSearch` (whether the index counts the profile), and its rating, trust and review count as the index shows them. With a label, that profile in full: its listings with their fields, and the reviews, vouches and reports it received (under `strangersWrote`) and wrote, as the index shows them, each one it wrote with its `path` |
+| `read_messages` | yes | no | no | `label`, `with`, or nothing | Only messages from senders the index shows a check for, as the Forest app shows them, and the person's own. With nothing, every profile's conversations, newest first: for each, the person's profile it is with (`label`), the other side (its address, and its market, role and checks as the index shows them, or the label of another of the person's profiles), its newest message, how many there are, and the link to the conversation in the app. With `label` and `with` (an address), that one conversation, the newest 100 messages. With the index out of reach, every message, its sender's checks `unknown` |
+| `send_message` | no | yes | yes | `to`, `text`, `listing`, `label` | A message `{ text, listing? }`, the app's shape, signed by the access key and locked to the recipient's public encryption keys, from the person's profile `label` or, with none, their profile on the other side of the recipient's market (the same role in a market with one role); with none, refused with that profile's link, where the app makes it |
+| `post_listing` | no | yes | yes | `label`, `id`, `fields` | `listing/<id>`, a new id when `id` is left out, checked against the market with `checkEntry`, written to the profile's hosts. Answers the link to it in the app, and the market's key fields, its preview, that it leaves empty |
 | `write_review` | no | yes | yes | `label`, `kind`, `subject`, `fields` | A `review`, `vouch` or `report` about another profile, checked the same way |
 | `delete_entry` | no | yes | yes | `label`, `path` | Deletes one of the person's listings, reviews, vouches or reports |
 
@@ -101,11 +101,16 @@ profiles".
   is named in `unreadable`, and the conversation's link in the app is given, where the person sees
   it and sends a photo, a proof or their location. `unopened` counts, when more than none, the
   entries the key does not open: inbox entries left before it was listed with `read-inbox`, copies
-  locked before it was listed with `read`.
+  locked before it was listed with `read`. With no label, the profiles are read at the same time.
+- **`read_messages`, only senders with a check,** as the Forest app shows them: a message whose
+  sender has no check in the index's word for it, its page's `checks` (none when the index has no
+  page for it), is left out and not counted. The person's own words, and their other profiles',
+  always show. When the index gives no answer, every message shows, its sender's `checks` `unknown`,
+  with why. The index is asked about every sender at once.
 - **`send_message`'s sender.** With a `label`, that profile. With none, the recipient's profile entry
   names its market and role, and the sender is the person's profile in that market in another role
-  (in a market with one role, the same role); none, or more than one, is refused (with the link to
-  make the profile, `<app>/new#market=<market>&role=<role>`, or asking for a `label`). `listing` is
+  (in a market with one role, the same role); none, or more than one, is refused (with that
+  profile's link, `<app>/#/<market>/<role>`, where the app makes it, or asking for a `label`). `listing` is
   the recipient's, its full address, or `listing/<id>` for one of the sending profile's own, which
   this copy fills in as `<address>/listing/<id>` (a reply to a request with an offer); any other is
   refused. It checks first that the sender's profile entry lists the key with `message` and it has
@@ -125,9 +130,13 @@ profiles".
   it updates it: fields left out stay, a field sent as `null` is removed. A listing's photos, its
   `files` list and each photo field the market names for the role, are always carried over from
   what is there by this copy, which takes no photo field from the AI (it is refused, with the
-  link to the listing in the app); a new listing has none. The answer is `{ posted, link }`, and
-  `beta` for a market that is beta (it works at the person's own risk and may change), and
-  `notInSearch` when the index does not count the profile.
+  link to the listing in the app); a new listing has none. The answer is `{ posted, link }`;
+  `empty`, the market's key fields, its preview in its order (`previewOf`), that the listing leaves
+  empty, each one the market asks the role and only where its `when` holds, so a listing is never
+  told it lacks a field it may not hold; `beta` for a market that is beta (it works at the person's
+  own risk and may change); and `notInSearch` when the index does not count the profile. Its
+  description asks the AI to ask the person, in one go, for the key fields they have not given, to
+  post only what they said, and to say what a field left out costs.
 - **`write_review`** writes the body `{ ...fields, subject }` at `<kind>/<id>`: `subject` an
   address, never one of the person's own profiles, and for a review the `listing` it names a full
   address. The index counts one vouch and one report per writer and profile, the latest, and a
@@ -158,23 +167,24 @@ each host's reason.
 
 The AI hands the person a link whenever something needs their passkey (making a profile, getting
 verified, photos, proofs, their location) or is better seen than read (an offer, someone's profile, a
-page of results). The Forest app's links put what they are about after `#`, which a browser never
-sends to a server, and their origin is `APP_URL`'s. The app's chat builds the same strings, so they
-are written exactly:
+page of results). The Forest app's links read like paths after `#`, which a browser never sends
+to a server, and their origin is `APP_URL`'s. The app builds the same paths, so they are written
+exactly:
 
 | For | Link |
 |---|---|
-| Make a profile | `<app>/new#market=<market>&role=<role>` |
-| One of their listings | `<app>/listing#label=<label>&id=<id>` |
-| A conversation, to send a photo, a proof or their location | `<app>/thread#label=<label>&with=<address>` |
+| One of their profiles, or making it when they have none | `<app>/#/<market>/<role>` |
+| One of its listings | `<app>/#/<market>/<role>/listing/<id>` |
+| A conversation, to send a photo, a proof or their location | `<app>/#/<market>/<role>/messages/<their address>` |
 | Get verified, or add the ID check | `<app>/id` |
 | Which profiles the AI uses | `<app>/ai-apps` |
 | Anything else: email, passkeys | `<app>/you` |
 
-A label's `/` stays as it is; each other part is made of characters a link takes as they are. The
-instructions carry these with the app's origin filled in, and the tools give the ones they know the
-parts of: a listing's link (`list_my_profiles`, `post_listing`, `search`'s `mine`), a conversation's
-(`read_messages`, `send_message`), the profile to make (`send_message`'s refusal). Other people's
+A profile's `<market>/<role>` is its label; each part is made of characters a link takes as they
+are. The instructions carry these with the app's origin filled in, and the tools give the ones they
+know the parts of: a profile's (`list_my_profiles`, and `send_message`'s refusal when the person has
+none), a listing's (`list_my_profiles`, `post_listing`, `search`'s `mine`), a conversation's
+(`read_messages`, `send_message`). Other people's
 things link to the index: a result's `url`, a profile's page at `<index>/profiles/<address>`, a
 search's `page`. There is no link to buy credits or to any checkout anywhere, since OpenAI's
 directory rejects one: a profile that runs out of credits is told to add credits in the Forest app.
@@ -380,8 +390,8 @@ keeps working, and logs in again the first time it acts.
 - **A key opens nothing locked before it was listed.**
 - **A stranger's folder is found only on the person's hosts or a message's own host;** one that lives
   only elsewhere can be read about through the index, not messaged.
-- **The AI sees the newest 100 inbox entries and 100 sent copies of a profile,** and cannot reach
-  older ones: `read_messages` has no paging.
+- **The AI sees the newest 100 inbox entries and 100 sent copies of a profile,** those from senders
+  with no check left out, and cannot reach older ones: `read_messages` has no paging.
 - **The AI writes only listings, reviews, vouches and reports,** and reads only the listings of the
   person's folders and their messages: no profile entry, no notes, no locked entry, no other path.
 - **The AI cannot send a photo, a proof or a location,** or add photos to a listing: the person does,

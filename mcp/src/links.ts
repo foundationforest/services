@@ -1,10 +1,12 @@
 // The links the AI hands the person, written once. Two kinds:
 //
 // - The person's own things and what needs their passkey are the Forest app's. The app's origin is
-//   APP_URL's; what a link is about comes after #, which a browser never sends to a server, so the
-//   app's host never learns which profile or listing it was. The app's chat builds these same
-//   strings, so they are written exactly as it does: only the label's `/` is kept as it is, since a
-//   market, a role, an id and an address are made of characters a fragment takes as they are.
+//   APP_URL's; what a link is about reads like a path after #, which a browser never sends to a
+//   server, so the app's host never learns which profile or listing it was. A profile's path is its
+//   label, <market>/<role>; the app builds these same paths, so they are written exactly as it does:
+//   each part encoded, the label's `/` kept, though a market, a role, an id and an address are made
+//   of characters a fragment takes as they are. A profile's link opens it, or makes it when the
+//   person has none.
 // - Other people's things are the index's pages, never the app's.
 //
 // No link to buy credits or to any checkout exists here: a profile that runs out says to add credits
@@ -22,12 +24,12 @@ const part = (text: string) => encodeURIComponent(text).replaceAll('%2F', '/')
 export function appLinks(app: string | undefined) {
   const at = (rest: string) => (app === undefined ? undefined : `${app}${rest}`)
   return {
-    /** Make a profile in a market, as a role. */
-    newProfile: (market: string, role: string) => at(`/new#market=${part(market)}&role=${part(role)}`),
-    /** One of their listings: photos are added there. */
-    listing: (label: string, id: string) => at(`/listing#label=${part(label)}&id=${part(id)}`),
+    /** One of their profiles, by its label, <market>/<role>: the app makes it when they have none. */
+    profile: (label: string) => at(`/#/${part(label)}`),
+    /** One of its listings: photos are added there. */
+    listing: (label: string, id: string) => at(`/#/${part(label)}/listing/${part(id)}`),
     /** A conversation, to send a photo, a proof or their location. */
-    thread: (label: string, address: string) => at(`/thread#label=${part(label)}&with=${part(address)}`),
+    conversation: (label: string, address: string) => at(`/#/${part(label)}/messages/${part(address)}`),
     /** Get verified, or add the ID check. */
     id: () => at('/id'),
     /** Which profiles the AI uses. */

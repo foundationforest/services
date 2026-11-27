@@ -28,7 +28,7 @@ import { type Asked, loadMarkets } from '@foundationforest/markets'
 import { why } from '../src/act.ts'
 import { WORD } from '../src/forest.ts'
 import { serve } from '../src/server.ts'
-import { HOW, MAX_INSTRUCTIONS } from '../src/tools.ts'
+import { HOW, MAX_INSTRUCTIONS, instructionsFor } from '../src/tools.ts'
 import { App } from './app.ts'
 import { LESSONS, MARKETS, SKILL, type World, aiApp, lesson, logIn, world } from './setup.ts'
 
@@ -141,6 +141,10 @@ describe('reading, with no login', () => {
       'Several answers in a field mean any of them; things that go together are another listing',
       'beta (it works, at the person\'s own risk, and may change)',
       'does not count the profile, so the listing will not show in search',
+      'A listing is there to be found',
+      'ask the person in one go for any of its key fields (its preview) they have not given, photos aside; post only what they said, never a value you guessed',
+      'If they choose to leave a key field out, post it and tell them what that costs: with no area, nobody searching nearby finds it',
+      'The answer names in empty the key fields still empty',
     ]) assert.ok(byName.post_listing!.includes(line), line)
     assert.ok(!/fields you leave out stay.*send every field/.test(byName.post_listing!), 'no line to copy a listing and send it all')
     assert.ok(!/morning|"count": \d/.test(byName.post_listing!.replace('"mornings"', '')), 'no part of the day, no numeric count')
@@ -150,11 +154,14 @@ describe('reading, with no login', () => {
     const how = client.getInstructions()!
     assert.ok(how.startsWith(HOW))
     assert.ok(how.length < MAX_INSTRUCTIONS, `${how.length} characters`)
+    const deployed = instructionsFor('https://app.forest.foundation')
+    assert.ok(deployed.length < MAX_INSTRUCTIONS, `with the Forest app's own origin, ${deployed.length} characters`)
+    assert.ok(!/\/new#|#market=|#label=/.test(how), 'no link of the old shapes')
     for (const line of [
       `the Forest app: ${APP}\n`,
-      `make a profile: ${APP}/new#market=<market>&role=<role>`,
-      `one of their listings: ${APP}/listing#label=<label>&id=<id>`,
-      `a conversation, to send a photo, a proof or their location: ${APP}/thread#label=<label>&with=<address>`,
+      `one of their profiles, or making it when they have none: ${APP}/#/<market>/<role>\n`,
+      `one of its listings: ${APP}/#/<market>/<role>/listing/<id>\n`,
+      `a conversation, to send a photo, a proof or their location: ${APP}/#/<market>/<role>/messages/<their address>\n`,
       `get verified or add the ID check: ${APP}/id`,
       `which profiles you use: ${APP}/ai-apps`,
       `email, passkeys, anything else: ${APP}/you`,
@@ -287,11 +294,11 @@ describe('reading, with no login', () => {
 })
 
 describe('acting for the person', () => {
-  test('list_my_profiles: the two lessons profiles by label, every switch, their listings (none yet), what the index shows (nothing: it has no page for them); no address', async () => {
+  test("list_my_profiles: the two lessons profiles by label, each one's link in the app, every switch, their listings (none yet), what the index shows (nothing: it has no page for them); no address", async () => {
     assert.deepEqual(await call('list_my_profiles'), {
       profiles: [
-        { label: STUDENT, can: SWITCHES, inSearch: false, listings: [] },
-        { label: TUTOR, can: SWITCHES, inSearch: false, listings: [] },
+        { label: STUDENT, link: `${APP}/#/lessons/student`, can: SWITCHES, inSearch: false, listings: [] },
+        { label: TUTOR, link: `${APP}/#/lessons/tutor`, can: SWITCHES, inSearch: false, listings: [] },
       ],
     })
     assert.match((await call('list_my_profiles', { label: SELLER })).refused, /wardrobe\/seller is not a profile this login acts in: list_my_profiles lists them/)
@@ -307,7 +314,7 @@ describe('acting for the person', () => {
     try {
       const mine = await call('list_my_profiles')
       assert.deepEqual(mine.profiles.map((p: { label: string }) => p.label), [STUDENT, TUTOR], 'knitting/knitter, in no market of the directory, is left out')
-      assert.deepEqual(mine.profiles[1], { label: TUTOR, can: SWITCHES, inSearch: true, rating: 8.5, reviews: 3, trust: 61, listings: [] })
+      assert.deepEqual(mine.profiles[1], { label: TUTOR, link: `${APP}/#/lessons/tutor`, can: SWITCHES, inSearch: true, rating: 8.5, reviews: 3, trust: 61, listings: [] })
     } finally {
       delete w.said[`/profiles/${tutor}.json`]
     }
@@ -322,7 +329,7 @@ describe('acting for the person', () => {
       const found = await call('search', { filters: { q: 'maths' } })
       assert.equal(found.answer.results.length, 2)
       assert.equal(found.answer.results[0].profile, w.stranger.address)
-      assert.deepEqual(found.answer.results[1], { mine: TUTOR, listing: { id: 'maths', link: `${APP}/listing#label=lessons/tutor&id=maths` } })
+      assert.deepEqual(found.answer.results[1], { mine: TUTOR, listing: { id: 'maths', link: `${APP}/#/lessons/tutor/listing/maths` } })
       assert.equal(found.unmarked, undefined)
       const { client: anon } = await aiApp(w.mcp.origin)
       try {
@@ -341,7 +348,7 @@ describe('acting for the person', () => {
     const posted = await call('post_listing', { label: TUTOR, id: 'maths', fields: lesson('Maths, from the AI.') })
     assert.deepEqual(posted, {
       posted: 'maths',
-      link: `${APP}/listing#label=lessons/tutor&id=maths`,
+      link: `${APP}/#/lessons/tutor/listing/maths`,
       beta: "This market is in beta: it works, at the person's own risk, and may change. Tell them.",
       notInSearch: 'The index does not count this profile yet, so this listing will not show in search.',
     })
@@ -353,6 +360,16 @@ describe('acting for the person', () => {
     assert.match(fresh.posted, /^[0-9a-f]{16}$/)
     assert.equal((await at(TUTOR, `listing/${fresh.posted}`))?.key, tutorKey)
     assert.equal((await call('delete_entry', { label: TUTOR, path: `listing/${fresh.posted}` })).deleted, `listing/${fresh.posted}`)
+  })
+
+  test("post_listing names the market's key fields the listing leaves empty, in the preview's order: only where each applies", async () => {
+    // lessons' preview: subjects, description, price, mode and place, its place only for lessons in person.
+    const inPerson = await call('post_listing', { label: TUTOR, id: 'bare', fields: { description: 'Maths.', mode: ['in-person'] } })
+    assert.deepEqual(inPerson.empty, ['subjects', 'price', 'place'])
+    const online = await call('post_listing', { label: TUTOR, id: 'bare', fields: { mode: ['online'] } })
+    assert.deepEqual(online.empty, ['subjects', 'price'], 'no area asked of lessons online')
+    assert.equal((await call('post_listing', { label: TUTOR, id: 'bare', fields: lesson('Maths.') })).empty, undefined, 'none left empty: no word')
+    await call('delete_entry', { label: TUTOR, path: 'listing/bare' })
   })
 
   test('post_listing: when the index counts the profile, no word about search; the wardrobe, a live market, no beta note', async () => {
@@ -387,7 +404,7 @@ describe('acting for the person', () => {
     assert.match((await call('post_listing', { label: TUTOR, id: 'A/b', fields: lesson('x') })).refused, /is no path|one segment after the kind/)
     assert.match((await call('post_listing', { label: TUTOR, id: 'Bad', fields: lesson('x') })).refused, /is no path/)
     assert.match((await call('post_listing', { label: SELLER, id: 'x', fields: {} })).refused, /wardrobe\/seller is not a profile this login acts in/)
-    assert.match((await call('post_listing', { label: TUTOR, fields: { description: 'x', files: [PHOTO] } })).refused, /files is photos, which are never sent here: the person adds them in the Forest app, at https?:\/\/[^/]+\/listing#label=lessons\/tutor&id=[0-9a-f]{16}$/)
+    assert.match((await call('post_listing', { label: TUTOR, fields: { description: 'x', files: [PHOTO] } })).refused, /files is photos, which are never sent here: the person adds them in the Forest app, at https?:\/\/[^/]+\/#\/lessons\/tutor\/listing\/[0-9a-f]{16}$/)
   })
 
   test('post_listing, an existing id updates it: fields left out stay, null removes one, and the same fields replace', async () => {
@@ -402,7 +419,7 @@ describe('acting for the person', () => {
 
   test('list_my_profiles: the listing it posted, by id, title and the link in the app; in full, its fields and nothing a stranger wrote among them', async () => {
     const mine = await call('list_my_profiles')
-    assert.deepEqual(mine.profiles.find((p: { label: string }) => p.label === TUTOR).listings, [{ id: 'maths', title: 'Maths and more.', link: `${APP}/listing#label=lessons/tutor&id=maths` }])
+    assert.deepEqual(mine.profiles.find((p: { label: string }) => p.label === TUTOR).listings, [{ id: 'maths', title: 'Maths and more.', link: `${APP}/#/lessons/tutor/listing/maths` }])
     const tutor = w.own[TUTOR]!
     const given = { address: `${tutor}/review/offer`, body: { subject: w.stranger.address, score: '8' }, time: 3, counted: true, weight: 1, market: 'lessons', role: 'tutor', checks: [] }
     w.said[`/profiles/${tutor}.json`] = {
@@ -413,8 +430,8 @@ describe('acting for the person', () => {
     }
     try {
       const full = await call('list_my_profiles', { label: TUTOR })
-      assert.deepEqual([full.label, full.can, full.inSearch], [TUTOR, SWITCHES, false])
-      assert.deepEqual(full.listings, [{ id: 'maths', title: 'Maths and more.', link: `${APP}/listing#label=lessons/tutor&id=maths`, fields: (await at(TUTOR, 'listing/maths'))!.body }])
+      assert.deepEqual([full.label, full.link, full.can, full.inSearch], [TUTOR, `${APP}/#/lessons/tutor`, SWITCHES, false])
+      assert.deepEqual(full.listings, [{ id: 'maths', title: 'Maths and more.', link: `${APP}/#/lessons/tutor/listing/maths`, fields: (await at(TUTOR, 'listing/maths'))!.body }])
       assert.equal(full.index.listings, undefined, 'its listings are the person’s own words, from its folder')
       assert.deepEqual(full.index.profile, { market: 'lessons', role: 'tutor' }, 'no open key or access keys')
       assert.equal(full.index.reviews.received[0].strangersWrote.text, 'Great.', 'what a stranger wrote about it')
@@ -478,7 +495,7 @@ describe('acting for the person', () => {
     assert.deepEqual(talk.with, { address: w.stranger.address, market: 'lessons', role: 'tutor', checks: [{ verifier: 'verifier.forest.foundation', label: 'face check' }] })
     assert.deepEqual(talk.newest.strangersWrote, { text: 'Hello from a stranger: do you teach physics too?' })
     assert.deepEqual([talk.newest.from, talk.count], ['them', 1], 'the one from before the login was locked to keys this login is not among')
-    assert.equal(talk.conversation, `${APP}/thread#label=lessons/tutor&with=${w.stranger.address}`)
+    assert.equal(talk.conversation, `${APP}/#/lessons/tutor/messages/${w.stranger.address}`)
     assert.equal(all.unopened, 1)
     assert.deepEqual((await call('read_messages', { label: TUTOR })).conversations, all.conversations)
     assert.deepEqual((await call('read_messages', { label: STUDENT })).conversations, [])
@@ -490,16 +507,37 @@ describe('acting for the person', () => {
   test('read_messages of one conversation: what an AI cannot read is named, with the conversation’s link', async () => {
     await strangerWrites('Here is a photo of the board.', undefined, { files: [PHOTO], location: { lat: '40.4', lon: '-3.7' } })
     const talk = await call('read_messages', { label: TUTOR, with: w.stranger.address })
-    assert.equal(talk.conversation, `${APP}/thread#label=lessons/tutor&with=${w.stranger.address}`)
+    assert.equal(talk.conversation, `${APP}/#/lessons/tutor/messages/${w.stranger.address}`)
     assert.deepEqual(talk.messages.map((m: { strangersWrote: { text: string } }) => m.strangersWrote.text), ['Here is a photo of the board.', 'Hello from a stranger: do you teach physics too?'])
     assert.deepEqual(talk.messages[0].unreadable, ['a photo or file', 'its location'])
     assert.equal(talk.messages[1].unreadable, undefined)
     assert.equal(JSON.stringify(talk).includes(PHOTO.sha256), false, 'a file’s hash is no help to the AI')
   })
 
+  test('read_messages shows only what a sender with a check wrote, as the Forest app shows it, and counts nothing else; with the index out of reach, everything, its checks unknown', async () => {
+    const path = `/profiles/${w.stranger.address}.json`
+    const page = w.said[path] as { checks: unknown[] }
+    try {
+      for (const [said, why] of [[{ ...page, checks: [] }, 'a page with no check'], [undefined, 'no page at the index']] as const) {
+        if (said === undefined) delete w.said[path]
+        else w.said[path] = said
+        assert.deepEqual((await call('read_messages', { label: TUTOR })).conversations, [], `${why}: left out`)
+        const one = await call('read_messages', { label: TUTOR, with: w.stranger.address })
+        assert.deepEqual([one.messages, one.conversation], [[], undefined], why)
+      }
+      w.said[path] = 503
+      const [talk] = (await call('read_messages')).conversations
+      assert.deepEqual([talk.with.address, talk.with.checks, talk.count], [w.stranger.address, 'unknown', 2], 'the index out of reach: shown, its checks unknown')
+      assert.match(talk.with.unread, /answered 503/)
+      assert.equal((await call('read_messages', { label: TUTOR, with: w.stranger.address })).messages.length, 2)
+    } finally {
+      w.said[path] = page
+    }
+  })
+
   test('send_message, with no label: from the person’s profile on the other side of the recipient’s market, which the recipient opens, signed by the access key; its copy as the Forest app keeps one', async () => {
     const sent = await call('send_message', { to: w.stranger.address, text: 'Yes, physics too.' })
-    assert.deepEqual(sent, { sent: true, from: STUDENT, to: w.stranger.address, conversation: `${APP}/thread#label=lessons/student&with=${w.stranger.address}` })
+    assert.deepEqual(sent, { sent: true, from: STUDENT, to: w.stranger.address, conversation: `${APP}/#/lessons/student/messages/${w.stranger.address}` })
     const page = await readInbox(w.host, w.stranger.address)
     const { message } = await openInbox(page.entries.at(-1)!.entry, w.stranger.identity)
     const studentKey = (await w.app.keys(STUDENT)).at(-1)!.key
@@ -531,10 +569,26 @@ describe('acting for the person', () => {
     assert.match((await call('send_message', { label: TUTOR, to: w.stranger.address, text: 'x', listing: 'physics' })).refused, /listing is the full address of one of the recipient's listings/)
   })
 
+  test("read_messages, a sender with no check: the person's own words in that conversation still show, and only they count", async () => {
+    const path = `/profiles/${w.stranger.address}.json`
+    const page = w.said[path] as { checks: unknown[] }
+    const talk = async () => (await call('read_messages', { label: TUTOR })).conversations.find((c: { with: { address?: string } }) => c.with.address === w.stranger.address)
+    assert.equal((await talk()).count, 4, "the stranger's two and the tutor's two")
+    w.said[path] = { ...page, checks: [] }
+    try {
+      const mine = await talk()
+      assert.deepEqual([mine.count, mine.newest.from, mine.newest.text], [2, 'you', 'Here is mine.'])
+      const one = await call('read_messages', { label: TUTOR, with: w.stranger.address })
+      assert.deepEqual(one.messages.map((m: { from: string }) => m.from), ['you', 'you'])
+    } finally {
+      w.said[path] = page
+    }
+  })
+
   test('send_message, refused: no profile on the other side (with the link to make one), no label to choose, text empty, an address that is none, a recipient no host holds, a key without message', async () => {
     const buyer = await wardrobeBuyer()
     const refused = (await call('send_message', { to: buyer.address, text: 'Is it still for sale?' })).refused as string
-    assert.equal(refused, `the person has no wardrobe/seller profile to send this from: they make one in the Forest app: ${APP}/new#market=wardrobe&role=seller`)
+    assert.equal(refused, `the person has no wardrobe/seller profile to send this from: they make one in the Forest app: ${APP}/#/wardrobe/seller`)
     assert.match((await call('send_message', { to: 'nobody', text: 'x' })).refused, /nobody is not a profile's address/)
     assert.match((await call('send_message', { to: w.stranger.address, text: '  ' })).refused, /text is empty/)
     const nobody = (await mainKey(new Uint8Array(32).fill(5), 'lessons/tutor')).address
@@ -569,8 +623,9 @@ describe('acting for the person', () => {
     try {
       await logIn(c)
       const posted = await call('post_listing', { label: SELLER, id: 'coat', fields: { description: 'A wool coat.', size: 'm' } }, c.client)
-      assert.deepEqual(Object.keys(posted).sort(), ['link', 'notInSearch', 'posted'], 'wardrobe is live: no beta note')
-      assert.equal(posted.link, `${APP}/listing#label=wardrobe/seller&id=coat`)
+      assert.deepEqual(Object.keys(posted).sort(), ['empty', 'link', 'notInSearch', 'posted'], 'wardrobe is live: no beta note')
+      assert.deepEqual(posted.empty, ['price', 'location'], 'a market with no preview of its own: price, then its place fields')
+      assert.equal(posted.link, `${APP}/#/wardrobe/seller/listing/coat`)
       // The person adds a photo in their app: the listing's files and its photo field, written by the main key.
       const main = await mainKey(w.seed, SELLER)
       const view = await readFolder([w.host], w.own[SELLER]!, Date.now())
