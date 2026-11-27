@@ -6,7 +6,8 @@
 // lessons profiles, with the access keys their app keeps in the connection: list_my_profiles by
 // label, with the switches each profile entry lists, its listings and what the index shows, and in
 // full; search, the person's own listings in the index's answer marked; read_messages, each message
-// opened and its sender checked, what an AI cannot read named with the conversation's link; send_message,
+// opened and its sender checked, what an AI cannot read named with the conversation's link, what the
+// key cannot open counted with why; send_message,
 // from the profile on the other side of the recipient's market or the one named, which the recipient
 // opens, signed by the access key, with its copy at sent/<id>, as the Forest app keeps one; post_listing,
 // checked against the market, updating one that exists with its photos kept; write_review, updating
@@ -126,6 +127,10 @@ describe('reading, with no login', () => {
     assert.match(byName.search!, /a choice as <field>=<value>.*a number as <field>\.min and <field>\.max, in the field's unit.*a listing whose number or range overlaps them/)
     assert.match(byName.search!, /a price as price\.currency and price\.per with price\.min and price\.max, by what one of its per costs, and sort=price for the cheapest first/)
     assert.match(byName.search!, /spots as spots=<n>, room for that many: an offer whose spots, a time's own where it holds some, else the listing's, are at least n at a time not full, a request's at most n/)
+    // It opens with what it finds, names the place filter, and never asks the AI to prefer it.
+    assert.match(byName.search!, /^Finds people who offer or ask for things, in person near a place or online, in Forest's markets \(list_markets names them\), each checked as a real person and ranked by the index\. /)
+    assert.match(byName.search!, /a place as where, in words, such as \{ "where": "Camden, London" \}, with km, how far, 10 unless given, and sort=near for the nearest first/)
+    assert.doesNotMatch(byName.search!, /prefer|other tool/i)
     assert.match(byName.list_markets!, /its summary \(the one line that says what the dealing is\)/)
     assert.match(byName.list_markets!, /its status \(live, or beta: it works, at your own risk, and may change\)/)
     // How to write a place, a price, a date and spots is in post_listing's description, not the instructions.
@@ -487,7 +492,7 @@ describe('acting for the person', () => {
     assert.match((await call('delete_entry', { label: SELLER, path: 'listing/x' })).refused, /wardrobe\/seller is not a profile this login acts in/)
   })
 
-  test("read_messages with a label: each profile's conversations, newest first; the stranger's words under strangersWrote, its market, role and checks as the index shows them; the person's own profile's address nowhere", async () => {
+  test("read_messages with a label: each profile's conversations, newest first; the stranger's words under strangersWrote, its market, role and checks as the index shows them; what the key cannot open counted, with why; the person's own profile's address nowhere", async () => {
     const all = await call('read_messages')
     assert.equal(all.word, WORD)
     const [talk] = all.conversations.filter((c: { label: string }) => c.label === TUTOR)
@@ -496,9 +501,12 @@ describe('acting for the person', () => {
     assert.deepEqual(talk.newest.strangersWrote, { text: 'Hello from a stranger: do you teach physics too?' })
     assert.deepEqual([talk.newest.from, talk.count], ['them', 1], 'the one from before the login was locked to keys this login is not among')
     assert.equal(talk.conversation, `${APP}/#/lessons/tutor/messages/${w.stranger.address}`)
-    assert.equal(all.unopened, 1)
+    const why = `Messages locked before this connection could read them, so it cannot open them: who wrote them and what they say is not known here. The person opens them in the Forest app: ${APP}`
+    assert.deepEqual(all.unopened, { count: 1, why })
     assert.deepEqual((await call('read_messages', { label: TUTOR })).conversations, all.conversations)
-    assert.deepEqual((await call('read_messages', { label: STUDENT })).conversations, [])
+    assert.deepEqual((await call('read_messages', { label: TUTOR, with: w.stranger.address })).unopened, { count: 1, why }, 'one conversation says it too')
+    const student = await call('read_messages', { label: STUDENT })
+    assert.deepEqual([student.conversations, student.unopened], [[], undefined], 'nothing locked: no unopened')
     assert.match((await call('read_messages', { with: w.stranger.address })).refused, /with needs label/)
     assert.match((await call('read_messages', { label: TUTOR, with: 'nobody' })).refused, /nobody is not the address of a profile the person talks with/)
     assert.match((await call('read_messages', { label: SELLER })).refused, /wardrobe\/seller is not a profile this login acts in/)

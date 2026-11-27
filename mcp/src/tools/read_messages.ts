@@ -8,7 +8,9 @@
 // photo, a proof or their location. What the other side wrote sits under strangersWrote. A message
 // is shown and counted only when its sender has a check in the index's word for it, as the Forest
 // app shows them, or it is the person's own; with the index out of reach, every message is, its
-// checks unknown. The profiles are read at the same time.
+// checks unknown. What the key cannot open is counted, whoever wrote it, since the writer is locked
+// too, and said in plain words with the app's link, so the AI never guesses what it is. The profiles
+// are read at the same time.
 
 import { publicKeyFromAddress } from '@foundationforest/folders'
 import { ownProfile } from '../act.ts'
@@ -40,6 +42,15 @@ function readOf(body: { [key: string]: unknown }): { read: { text?: string; list
     else unreadable.push(NAMES[key] ?? `its ${key}`)
   }
   return { read, unreadable }
+}
+
+/**
+ * How many entries the key could not open, and why in plain words: never that the app shows them,
+ * since one from a sender with no check stays hidden there too once opened.
+ */
+function unopenedOf(count: number, app: string | undefined) {
+  const why = `Messages locked before this connection could read them, so it cannot open them: who wrote them and what they say is not known here. The person opens them in the Forest app${app ? `: ${app}` : '.'}`
+  return { count, why }
 }
 
 /** One message as the AI is shown it: the person's own words as they are, the other side's under strangersWrote. */
@@ -107,12 +118,12 @@ export async function run(args: Args, ctx: Ctx) {
     // That one conversation: the newest INBOX_MAX, newest first.
     const label = labels[0]!
     const t = shownTalks[0]
-    if (!t) return { word: WORD, label, with: await side(other), messages: [], ...(unopened && { unopened }) }
-    return { word: WORD, label, with: await side(t.address), ...(t.link && { conversation: t.link }), messages: t.messages.slice(0, INBOX_MAX).map((m) => shown(m, t.withOwn)), ...(unopened && { unopened }) }
+    if (!t) return { word: WORD, label, with: await side(other), messages: [], ...(unopened && { unopened: unopenedOf(unopened, ctx.app) }) }
+    return { word: WORD, label, with: await side(t.address), ...(t.link && { conversation: t.link }), messages: t.messages.slice(0, INBOX_MAX).map((m) => shown(m, t.withOwn)), ...(unopened && { unopened: unopenedOf(unopened, ctx.app) }) }
   }
   const out = await Promise.all(
     shownTalks.map(async (t) => ({ time: t.messages[0]!.time, conversation: { label: t.label, with: await side(t.address), newest: shown(t.messages[0]!, t.withOwn), count: t.messages.length, ...(t.link && { conversation: t.link }) } })),
   )
   out.sort((a, b) => b.time - a.time)
-  return { word: WORD, conversations: out.map((o) => o.conversation), ...(problems.length && { couldNotRead: problems }), ...(unopened && { unopened }) }
+  return { word: WORD, conversations: out.map((o) => o.conversation), ...(problems.length && { couldNotRead: problems }), ...(unopened && { unopened: unopenedOf(unopened, ctx.app) }) }
 }
